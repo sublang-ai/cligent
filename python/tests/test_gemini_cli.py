@@ -10,7 +10,7 @@ from agents.gemini.gemini_cli import (
     GeminiRecord, 
     GeminiLogFile, 
     GeminiStore, 
-    GeminiCliAgent
+    GeminiCligent
 )
 from core.models import Role, Chat
 

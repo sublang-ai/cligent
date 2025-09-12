@@ -1,5 +1,5 @@
 """Qwen Code specific implementation for parsing session logs."""
 
-from .qwen_code import QwenCodeAgent
+from .qwen_code import QwenCligent
 
-__all__ = ['QwenCodeAgent']
+__all__ = ['QwenCligent']

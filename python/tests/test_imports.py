@@ -1,24 +1,30 @@
 """Test that all public imports work correctly."""
 
-def test_main_package_imports():
-    """Test that core imports work."""
-    from core import Chat, Message, Role, cligent, AgentBackend
-    assert callable(cligent)  # Main factory function
+def test_core_imports():
+    """Test that core imports work (self-contained)."""
+    from core import Chat, Message, Role, LogStore
     assert Chat is not None
     assert Message is not None
-    assert AgentBackend is not None
+    assert Role is not None
+    assert LogStore is not None
+
+
+def test_main_package_imports():
+    """Test that main package imports work."""
+    import src
+    from src import cligent, Cligent
+    assert callable(cligent)  # Main factory function
+    assert Cligent is not None
+    
+    # Verify agent creation works
+    agent = cligent("claude")
+    assert agent.name == "claude-code"
 
 
 def test_direct_imports():
-    """Test that direct imports work."""
-    from core import (
-        cligent,  # Main factory function 
-        Chat, 
-        Message, 
-        Role,
-        LogStore,
-        AgentBackend
-    )
+    """Test that direct imports work through main package."""
+    import src
+    from src import Chat, Message, Role, LogStore, Cligent, cligent
     
     # Verify classes can be instantiated
     msg = Message(role=Role.USER, content="test")
@@ -32,26 +38,30 @@ def test_direct_imports():
     assert agent.name == "claude-code"
 
 
-def test_convenience_imports():
-    """Test convenience imports from core."""
-    from core import claude, gemini, qwen, Chat, Message
-
-    # Should be able to create agents directly
-    agent1 = claude()
-    agent2 = gemini() 
-    agent3 = qwen()
+def test_simplified_factory():
+    """Test simplified factory function (no individual functions)."""
+    import src
+    
+    # Test all agent types through single factory
+    agent1 = src.cligent("claude")
+    agent2 = src.cligent("gemini") 
+    agent3 = src.cligent("qwen")
     
     assert agent1.name == "claude-code"
     assert agent2.name == "gemini-cli"
     assert agent3.name == "qwen-code"
+    
+    # Test default parameter
+    default_agent = src.cligent()
+    assert default_agent.name == "claude-code"
 
 
 def test_backwards_compatibility():
     """Test backwards compatibility aliases."""
-    from core import cligent as ChatParser, Chat, Message
-
-    # Should be able to use old ChatParser function
-    agent = ChatParser("claude")
+    import src
+    
+    # Should be able to use ChatParser alias
+    agent = src.ChatParser("claude")
     assert agent.name == "claude-code"
 
 

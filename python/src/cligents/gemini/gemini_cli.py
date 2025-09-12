@@ -1,4 +1,4 @@
-"""Qwen Code specific implementation for parsing JSONL session logs."""
+"""Gemini CLI specific implementation for parsing session logs."""
 
 import json
 import os
@@ -7,26 +7,25 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from core.models import Message, Chat, ErrorReport, Role
-from core.models import LogStore
-from core.agent import AgentBackend
+from ...core.models import Message, Chat, ErrorReport, Role
+from ...core.models import LogStore
+from ...cligent import Cligent
 
 
 @dataclass
-class QwenRecord:
-    """A single JSON record from a Qwen log file."""
+class GeminiRecord:
+    """A single message record in a Gemini CLI JSON log file."""
 
-    role: str  # user, model, assistant, system, etc.
+    role: str  # user, assistant, system, tool_use, tool_result, model
     timestamp: Optional[str] = None
     content: str = ""
     session_id: Optional[str] = None
-    checkpoint_tag: Optional[str] = None
-    model: Optional[str] = None
+    message_id: Optional[int] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, json_string: str) -> 'QwenRecord':
-        """Parse a JSON string into a QwenRecord."""
+    def load(cls, json_string: str) -> 'GeminiRecord':
+        """Parse a JSON string into a GeminiRecord."""
         try:
             data = json.loads(json_string)
             
@@ -37,24 +36,21 @@ class QwenRecord:
                 content = cls._extract_parts_content(data.get('parts', []))
                 timestamp = ''  # No timestamp in Google format
                 session_id = ''
-                checkpoint_tag = ''
-                model = ''
+                message_id = None
             else:
-                # Legacy JSONL format - prioritize type/messageType fields for role
-                role = data.get('type', data.get('messageType', data.get('role', data.get('sender', data.get('from', 'unknown')))))
+                # Legacy format for main logs.json - type field becomes role
+                role = data.get('type', data.get('role', data.get('sender', 'unknown')))
                 content = data.get('content', data.get('text', data.get('message', '')))
                 timestamp = data.get('timestamp', data.get('time', data.get('created_at', '')))
-                session_id = data.get('session_id', data.get('sessionId', data.get('conversationId', '')))
-                checkpoint_tag = data.get('checkpoint_tag', data.get('checkpointTag', data.get('tag', '')))
-                model = data.get('model', data.get('modelName', ''))
+                session_id = data.get('session_id', data.get('sessionId', data.get('conversation_id', '')))
+                message_id = data.get('message_id', data.get('messageId'))
             
             return cls(
                 role=role,
                 content=content,
                 timestamp=timestamp,
                 session_id=session_id,
-                checkpoint_tag=checkpoint_tag,
-                model=model,
+                message_id=message_id,
                 raw_data=data
             )
         except (json.JSONDecodeError, KeyError) as e:
@@ -73,24 +69,24 @@ class QwenRecord:
                         content_parts.append(text)
                 # Skip function calls and other non-text parts for now
         
-        return ''.join(content_parts)  # Join without separator for Qwen (parts are often single chars)
+        return '\n'.join(content_parts)
 
     def extract_message(self) -> Optional[Message]:
         """Get a Message from this record, if applicable."""
         if not self.is_message():
             return None
 
-        # Map Qwen Code roles to our Role enum
+        # Map Gemini CLI roles to our Role enum
         role_mapping = {
             'user': Role.USER,
             'assistant': Role.ASSISTANT,
-            'model': Role.ASSISTANT,  # Qwen often uses 'model' for assistant
-            'qwen': Role.ASSISTANT,   # Qwen-specific role
+            'model': Role.ASSISTANT,  # Gemini often uses 'model' instead of 'assistant'
             'system': Role.SYSTEM,
-            'human': Role.USER,       # Alternative user role
-            'ai': Role.ASSISTANT,     # Alternative assistant role
+            'human': Role.USER,  # Alternative user role
+            'ai': Role.ASSISTANT,  # Alternative assistant role
         }
 
+        # Use role field (which contains the original type value)
         role = role_mapping.get(self.role.lower() if self.role else '', Role.ASSISTANT)
 
         # Handle different content formats
@@ -100,11 +96,7 @@ class QwenRecord:
             content_parts = []
             for item in content:
                 if isinstance(item, dict):
-                    # Handle various content block types
                     text = item.get('text', item.get('content', ''))
-                    if not text and 'tool_use' in item:
-                        # Skip tool use blocks for text output
-                        continue
                 elif isinstance(item, str):
                     text = item
                 else:
@@ -135,18 +127,13 @@ class QwenRecord:
                     timestamp = datetime.fromisoformat(self.timestamp)
                 else:
                     # Try parsing as Unix timestamp
-                    try:
-                        timestamp = datetime.fromtimestamp(float(self.timestamp))
-                    except ValueError:
-                        pass
+                    timestamp = datetime.fromtimestamp(float(self.timestamp))
             except (ValueError, AttributeError):
                 pass
 
         metadata = {
             'role': self.role,
             'session_id': self.session_id,
-            'checkpoint_tag': self.checkpoint_tag,
-            'model': self.model,
             'raw_data': self.raw_data
         }
 
@@ -160,10 +147,10 @@ class QwenRecord:
     def is_message(self) -> bool:
         """Check if this record represents a message."""
         message_roles = {
-            'user', 'assistant', 'system', 'human', 'ai', 'model', 'qwen', 'message', 'unknown'
+            'user', 'assistant', 'system', 'human', 'ai', 'model', 'message', 'unknown'
         }
         # Skip checkpoint and tool records
-        skip_roles = {'checkpoint', 'tool_use', 'tool_result'}
+        skip_roles = {'tool_use', 'tool_result'}
         
         # Check if content has meaningful data
         has_content = False
@@ -182,13 +169,12 @@ class QwenRecord:
 
 
 @dataclass
-class QwenLogFile:
-    """A complete JSONL log file representing a Qwen Code chat."""
+class GeminiLogFile:
+    """A complete JSONL log file representing a Gemini CLI chat."""
 
     file_path: Path
     session_id: Optional[str] = None
-    checkpoint_tags: List[str] = field(default_factory=list)
-    records: List[QwenRecord] = field(default_factory=list)
+    records: List[GeminiRecord] = field(default_factory=list)
 
     def load(self) -> None:
         """Read and parse all Records from the file."""
@@ -196,8 +182,6 @@ class QwenLogFile:
             raise FileNotFoundError(f"Log file not found: {self.file_path}")
 
         self.records.clear()
-        self.checkpoint_tags.clear()
-        
         try:
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
@@ -205,34 +189,28 @@ class QwenLogFile:
                     return
 
                 try:
-                    # Try to parse as JSON array first (checkpoint files)
+                    # Try to parse as JSON array first
                     data = json.loads(content)
                     if isinstance(data, list):
                         # Handle JSON array format
                         for record_data in data:
                             try:
-                                record = QwenRecord.load(json.dumps(record_data))
+                                record = GeminiRecord.load(json.dumps(record_data))
                                 self.records.append(record)
 
                                 # Extract session metadata
                                 if not self.session_id and record.session_id:
                                     self.session_id = record.session_id
-                                
-                                # Collect checkpoint tags
-                                if record.checkpoint_tag and record.checkpoint_tag not in self.checkpoint_tags:
-                                    self.checkpoint_tags.append(record.checkpoint_tag)
 
                             except ValueError as e:
                                 print(f"Warning: Skipped invalid record: {e}")
                                 continue
                     else:
                         # Handle single JSON object
-                        record = QwenRecord.load(content)
+                        record = GeminiRecord.load(content)
                         self.records.append(record)
                         if not self.session_id and record.session_id:
                             self.session_id = record.session_id
-                        if record.checkpoint_tag and record.checkpoint_tag not in self.checkpoint_tags:
-                            self.checkpoint_tags.append(record.checkpoint_tag)
 
                 except json.JSONDecodeError:
                     # Fall back to JSONL format for backward compatibility
@@ -242,19 +220,14 @@ class QwenLogFile:
                             continue
 
                         try:
-                            record = QwenRecord.load(line)
+                            record = GeminiRecord.load(line)
                             self.records.append(record)
 
                             # Extract session metadata
                             if not self.session_id and record.session_id:
                                 self.session_id = record.session_id
-                            
-                            # Collect checkpoint tags
-                            if record.checkpoint_tag and record.checkpoint_tag not in self.checkpoint_tags:
-                                self.checkpoint_tags.append(record.checkpoint_tag)
 
                         except ValueError as e:
-                            # Log parsing error but continue
                             print(f"Warning: Skipped invalid record at line {line_num}: {e}")
                             continue
 
@@ -273,39 +246,28 @@ class QwenLogFile:
         return Chat(messages=messages)
 
 
-class QwenStore(LogStore):
-    """Qwen Code log store implementation."""
+class GeminiStore(LogStore):
+    """Gemini CLI log store implementation."""
 
     def __init__(self):
-        """Initialize with base path for Qwen Code logs.
+        """Initialize with base path for Gemini CLI logs.
         
-        Note: Qwen Code stores logs globally in ~/.qwen/, not per-project.
+        Note: Gemini CLI stores logs globally in ~/.gemini/, not per-project.
         """
-        # Qwen Code stores logs in ~/.qwen/ directory
-        qwen_base = Path.home() / ".qwen"
+        # Gemini CLI typically stores logs in ~/.gemini/tmp or ~/.gemini/logs
+        gemini_base = Path.home() / ".gemini"
+        self._logs_dir = gemini_base / "tmp"
         
-        # Qwen uses the same structure as Gemini - session directories in tmp folder
-        self._logs_dir = qwen_base / "tmp"
-        
-        # Fallback to other directories if tmp doesn't exist
+        # Fallback to logs directory if tmp doesn't exist
         if not self._logs_dir.exists():
-            possible_dirs = [
-                qwen_base / "logs",
-                qwen_base / "sessions", 
-                qwen_base / "conversations",
-                qwen_base,  # Root qwen directory
-            ]
+            self._logs_dir = gemini_base / "logs"
             
-            for dir_path in possible_dirs:
-                if dir_path.exists():
-                    self._logs_dir = dir_path
-                    break
-            else:
-                # Default to logs directory if none found
-                self._logs_dir = qwen_base / "logs"
+        # If neither exists, use sessions subdirectory
+        if not self._logs_dir.exists():
+            self._logs_dir = gemini_base / "logs" / "sessions"
 
         # Use current directory for LogStore base class compatibility
-        super().__init__("qwen-code", str(Path.cwd()))
+        super().__init__("gemini-cli", str(Path.cwd()))
 
     def list(self) -> List[Tuple[str, Dict[str, Any]]]:
         """Show available session logs, including checkpoint files."""
@@ -315,7 +277,7 @@ class QwenStore(LogStore):
             if not self._logs_dir.exists():
                 return logs
 
-            # Scan for all JSON files in session directories (like Gemini)
+            # Scan for all JSON files in session directories
             for session_dir in self._logs_dir.iterdir():
                 if not session_dir.is_dir():
                     continue
@@ -336,20 +298,6 @@ class QwenStore(LogStore):
                             "session_id": session_id
                         }
                         logs.append((log_uri, metadata))
-
-            # Also scan for legacy JSONL files in the logs directory for backward compatibility
-            for log_file in self._logs_dir.glob("*.jsonl"):
-                if log_file.is_file():
-                    stat = log_file.stat()
-                    session_id = log_file.stem
-                    metadata = {
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "accessible": log_file.is_file() and os.access(log_file, os.R_OK),
-                        "file_name": log_file.name,
-                        "session_id": session_id
-                    }
-                    logs.append((session_id, metadata))
 
         except (OSError, PermissionError):
             # Return empty list if we can't access the directory
@@ -377,16 +325,8 @@ class QwenStore(LogStore):
             # Full path format
             log_path = Path(log_uri)
         else:
-            # Legacy: just session ID, try JSON first, then JSONL
-            json_path = self._logs_dir / log_uri / "logs.json"
-            jsonl_path = self._logs_dir / f"{log_uri}.jsonl"
-            
-            if json_path.exists():
-                log_path = json_path
-            elif jsonl_path.exists():
-                log_path = jsonl_path
-            else:
-                log_path = json_path  # Will fail with proper error message
+            # Legacy: just session ID, assume logs.json
+            log_path = self._logs_dir / log_uri / "logs.json"
 
         try:
             if not log_path.exists():
@@ -411,23 +351,23 @@ class QwenStore(LogStore):
         return sorted_logs[0][0] if sorted_logs else None
 
 
-class QwenCodeAgent(AgentBackend):
-    """Qwen Code agent implementation."""
+class GeminiCligent(Cligent):
+    """Gemini CLI agent implementation."""
 
     def __init__(self):
-        """Initialize Qwen Code agent."""
+        """Initialize Gemini CLI agent."""
         super().__init__()
 
     @property
     def name(self) -> str:
-        return "qwen-code"
+        return "gemini-cli"
         
     @property
     def display_name(self) -> str:
-        return "Qwen Code"
+        return "Gemini CLI"
 
     def _create_store(self) -> LogStore:
-        return QwenStore()
+        return GeminiStore()
 
     def parse_content(self, content: str, log_uri: str) -> Chat:
         # Handle new <uuid>/<file_name> format
@@ -444,18 +384,10 @@ class QwenCodeAgent(AgentBackend):
             # Full path format
             file_path = Path(log_uri)
         else:
-            # Legacy: just session ID, try JSON first, then JSONL
-            json_path = self.store._logs_dir / log_uri / "logs.json"
-            jsonl_path = self.store._logs_dir / f"{log_uri}.jsonl"
-            
-            if json_path.exists():
-                file_path = json_path
-            elif jsonl_path.exists():
-                file_path = jsonl_path
-            else:
-                file_path = json_path  # Will fail with proper error message
+            # Legacy: just session ID, assume logs.json
+            file_path = self.store._logs_dir / log_uri / "logs.json"
 
-        log_file = QwenLogFile(file_path=file_path)
+        log_file = GeminiLogFile(file_path=file_path)
         log_file.load()
         return log_file.to_chat()
 

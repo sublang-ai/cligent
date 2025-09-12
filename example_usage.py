@@ -6,12 +6,12 @@ from typing import Optional
 
 # Add python/src to path so we can import from the flattened structure
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python'))
 
-from core import claude, gemini, qwen, cligent, AgentBackend
+from src import cligent, Cligent
 
 
-def get_agent() -> AgentBackend:
+def get_agent() -> Cligent:
     """Get agent from user input."""
     print("Cligent Chat Parser - Interactive CLI")
     print("=" * 40)
@@ -51,7 +51,7 @@ def show_menu():
     print("  9. quit      - Exit")
 
 
-def handle_info(agent: AgentBackend):
+def handle_info(agent: Cligent):
     """Handle info command."""
     info = agent.get_agent_info()
     print(f"\nAgent Information:")
@@ -59,11 +59,11 @@ def handle_info(agent: AgentBackend):
     print(f"  Display Name: {info['display_name']}")
 
 
-def handle_list(agent: AgentBackend):
+def handle_list(agent: Cligent):
     """Handle list command."""
     print("\nListing logs...")
     try:
-        logs = agent.list()
+        logs = agent.list_logs()
         if logs:
             # Sort logs by modified time (newest first)
             sorted_logs = sorted(logs, key=lambda x: x[1].get('modified', ''), reverse=True)
@@ -82,7 +82,7 @@ def handle_list(agent: AgentBackend):
         print(f"✗ Error listing logs: {e}")
 
 
-def handle_parse(agent: AgentBackend):
+def handle_parse(agent: Cligent):
     """Handle parse command."""
     log_uri = input("Enter log URI/ID to parse: ").strip()
     if not log_uri:
@@ -110,7 +110,7 @@ def handle_parse(agent: AgentBackend):
         print(f"✗ Error parsing log: {e}")
 
 
-def handle_live(agent: AgentBackend):
+def handle_live(agent: Cligent):
     """Handle live command."""
     try:
         print("\nParsing live/most recent log...")
@@ -128,7 +128,7 @@ def handle_live(agent: AgentBackend):
         print(f"✗ Error parsing live log: {e}")
 
 
-def handle_select(agent: AgentBackend):
+def handle_select(agent: Cligent):
     """Handle select command."""
     log_uri = input("Enter log URI/ID to select from: ").strip()
     if not log_uri:
@@ -153,7 +153,7 @@ def handle_select(agent: AgentBackend):
         print(f"✗ Error selecting messages: {e}")
 
 
-def handle_compose(agent: AgentBackend):
+def handle_compose(agent: Cligent):
     """Handle compose command."""
     try:
         if not agent.selected_messages:
@@ -185,7 +185,7 @@ def handle_compose(agent: AgentBackend):
         print(f"✗ Error composing YAML: {e}")
 
 
-def handle_clear(agent: AgentBackend):
+def handle_clear(agent: Cligent):
     """Handle clear command."""
     count = len(agent.selected_messages)
     agent.clear_selection()

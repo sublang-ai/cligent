@@ -8,8 +8,6 @@ from .errors import (
     LogCorruptionError,
     InvalidFormatError,
 )
-from .agent import AgentBackend, claude, gemini, qwen, cligent
-
 __all__ = [
     # Core models
     "Chat",
@@ -17,15 +15,6 @@ __all__ = [
     "Role",
     "ErrorReport",
     "LogStore",
-    
-    # Agent framework
-    "AgentBackend",
-    
-    # Factory functions
-    "claude",
-    "gemini", 
-    "qwen",
-    "cligent",
     
     # Errors
     "ChatParserError",

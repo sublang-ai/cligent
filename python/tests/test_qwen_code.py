@@ -10,7 +10,7 @@ from agents.qwen.qwen_code import (
     QwenRecord, 
     QwenLogFile, 
     QwenStore, 
-    QwenCodeAgent
+    QwenCligent
 )
 from core.models import Role, Chat
 
