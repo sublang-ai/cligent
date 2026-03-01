@@ -19,10 +19,13 @@ npm install cligent
 import { AdapterRegistry, runAgent } from 'cligent';
 import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
 
+// Register at least one adapter to map agent names to implementations.
 const registry = new AdapterRegistry();
 registry.register(new ClaudeCodeAdapter());
 
-for await (const event of runAgent('claude-code', 'Refactor auth module', undefined, registry)) {
+// runAgent returns an async generator of AgentEvent objects.
+// Switch on event.type to handle streaming tokens, tool calls, errors, etc.
+for await (const event of runAgent('claude-code', 'Refactor auth module', { model: 'claude-opus-4-6' }, registry)) {
   if (event.type === 'text_delta') process.stdout.write(event.payload.delta);
   if (event.type === 'done') console.log('\nDone:', event.payload.status);
 }
