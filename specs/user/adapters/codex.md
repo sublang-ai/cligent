@@ -46,4 +46,8 @@ The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../de
 
 ### CODEX-005
 
-When `resume` is provided in options, the adapter shall call `codex.resumeThread(threadId)` for session continuation.
+When `resume` is provided in options, the adapter shall continue the previous thread identified by the token.
+
+### CODEX-006
+
+The adapter shall set `DonePayload.resumeToken` to the thread identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).

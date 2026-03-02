@@ -61,10 +61,16 @@ The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002
 
 ### GEMINI-007
 
-The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`.
+The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`, `resume` → `--resume`.
 
 ## Abort Handling
 
 ### GEMINI-008
 
 When `AbortSignal` fires, the adapter shall send `SIGTERM` to the spawned process. When the process exits after SIGTERM, the adapter shall yield `done` (`status: 'interrupted'`).
+
+## Resume Token
+
+### GEMINI-009
+
+When the Gemini CLI stream provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value, enabling `Cligent` auto-resume via `--resume` per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token). When no session identifier is received, the adapter shall omit `resumeToken`.

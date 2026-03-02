@@ -3,6 +3,8 @@
 
 # IR-002: Core Engine and Adapter Registry
 
+> **Note:** The `AdapterRegistry` and `runAgent()` API from this iteration are replaced by the `Cligent` class in [DR-003](../decisions/003-role-scoped-session-management.md). Protocol hardening logic (done-terminal, done-cardinality, abort, error synthesis) carries forward into `Cligent.run()`.
+
 ## Goal
 
 Implement the core engine: an adapter registry for managing agent adapters, the `runAgent()` entry point that looks up an adapter and yields events, and `runParallel()` for merging multiple agent streams — per the driver-adapter architecture in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#driver-adapter-architecture).

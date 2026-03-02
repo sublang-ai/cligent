@@ -22,7 +22,7 @@ Multiple CLI agents (e.g., Claude Code, Codex CLI, Gemini CLI) have different in
 ### Interface Pattern
 
 ```typescript
-// Illustrative — actual interface design is out of scope for this decision
+// Illustrative — event schema finalized in DR-002, session API in DR-003
 interface AgentEvent {
   type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done';
   agent: string;
@@ -30,10 +30,11 @@ interface AgentEvent {
   payload: TextEvent | ToolUseEvent | ToolResultEvent | ErrorEvent | DoneEvent;
 }
 
-async function* runAgent(agent: string, prompt: string, options?: AgentOptions): AsyncGenerator<AgentEvent>;
+const agent = new Cligent(adapter, { role: 'coder' });
+for await (const event of agent.run(prompt)) { /* ... */ }
 ```
 
-The key architectural choice is that all adapters emit a **common event structure** (with its final design in [DR-002](002-unified-event-stream-and-adapter-interface.md)), allowing UI layers to render replies uniformly.
+The key architectural choice is that all adapters emit a **common event structure** (with its final design in [DR-002](002-unified-event-stream-and-adapter-interface.md)), and callers interact through role-scoped session wrappers (with its final design in [DR-003](003-role-scoped-session-management.md)).
 
 ## Architecture
 

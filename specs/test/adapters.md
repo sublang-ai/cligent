@@ -33,7 +33,7 @@ Given `PermissionPolicy` combinations, the Claude Code adapter shall produce the
 
 ### TADAPT-006
 
-The Codex adapter shall emit `codex:file_change` extension events for file changes, and when `resume` is provided, shall call `resumeThread(threadId)`.
+The Codex adapter shall emit `codex:file_change` extension events for file changes.
 
 ## Gemini
 
@@ -51,4 +51,34 @@ The OpenCode adapter shall filter events by `sessionId`, emit `opencode:file_par
 
 ### TADAPT-009
 
-Given `allowedTools` and `disallowedTools` options, each adapter shall restrict tools according to whitelist and precedence semantics per [ENG-013](../user/engine.md#eng-013).
+Given `allowedTools` and `disallowedTools` options, each adapter shall restrict tools according to whitelist and precedence semantics per [ENG-017](../user/engine.md#eng-017).
+
+## Resume Token
+
+### TADAPT-010
+
+The Claude Code adapter shall set `DonePayload.resumeToken` to the session identifier from the SDK result per [CLAUDE-007](../user/adapters/claude-code.md#claude-007).
+
+### TADAPT-011
+
+The Codex adapter shall set `DonePayload.resumeToken` to the thread identifier per [CODEX-006](../user/adapters/codex.md#codex-006).
+
+### TADAPT-012
+
+The OpenCode adapter shall set `DonePayload.resumeToken` to the session identifier per [OPENCODE-011](../user/adapters/opencode.md#opencode-011).
+
+### TADAPT-013
+
+Given a Gemini stream that provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value. Given a stream with no session identifier (e.g., early error), the adapter shall omit `resumeToken` per [GEMINI-009](../user/adapters/gemini.md#gemini-009).
+
+## Concurrency
+
+### TADAPT-014
+
+Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and not mutate adapter instance state per [ENG-018](../user/engine.md#eng-018).
+
+## Codex Resume
+
+### TADAPT-015
+
+When `resume` is provided, the Codex adapter shall continue the previous thread per [CODEX-005](../user/adapters/codex.md#codex-005).

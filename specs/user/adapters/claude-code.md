@@ -52,3 +52,9 @@ The `canUseTool` callback shall match tool categories to UPM capabilities: `Writ
 ### CLAUDE-006
 
 The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, `resume` → SDK `resume`.
+
+## Resume Token
+
+### CLAUDE-007
+
+The adapter shall set `DonePayload.resumeToken` to the session identifier from the SDK result, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).

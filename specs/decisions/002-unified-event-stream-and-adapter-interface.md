@@ -62,7 +62,14 @@ interface BaseEvent {
   sessionId: string;
   metadata?: Record<string, unknown>;  // vendor-specific fields
 }
+
+// CligentEvent adds role attribution (DR-003); adapters emit AgentEvent only.
+type CligentEvent = AgentEvent & {
+  role?: string;  // injected by Cligent, not by adapters
+};
 ```
+
+Adapters emit `AgentEvent`; the `Cligent` layer ([DR-003](003-role-scoped-session-management.md)) wraps these as `CligentEvent` with optional `role` injection.
 
 #### Key Payloads
 
@@ -117,6 +124,7 @@ interface ToolResultPayload {
 interface DonePayload {
   status: 'success' | 'error' | 'interrupted' | 'max_turns' | 'max_budget';
   result?: string;
+  resumeToken?: string;  // backend-resumable session token, if supported (DR-003)
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -169,6 +177,10 @@ Adapters translate these primitives to vendor-specific controls where supported 
 interface AgentAdapter {
   readonly agent: AgentType;
 
+  /** Must be safe for concurrent calls on the same instance unless the
+      adapter explicitly documents an environmental constraint (DR-003).
+      Each call shall create fresh local state; run() shall not mutate
+      adapter instance state. */
   run(
     prompt: string,
     options?: AgentOptions
@@ -183,7 +195,7 @@ interface AgentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  resume?: string;
+  resume?: string;             // backend session token for resumption
   abortSignal?: AbortSignal;
   allowedTools?: string[];     // whitelist: only these tools can be used
   disallowedTools?: string[];  // blacklist: these tools cannot be used
@@ -192,13 +204,15 @@ interface AgentOptions {
 
 Tool filtering: if `allowedTools` is set, only listed tools are available; `disallowedTools` further excludes from that set. Tool names are exact identifiers unless an adapter explicitly documents pattern support. Adapters should emit `permission_request` when user decision is required and handle approvals via adapter-native mechanisms (SDK callbacks, CLI prompts). Headless adapters may not support interactive approvals.
 
+Callers interact with adapters through `Cligent` instances ([DR-003](003-role-scoped-session-management.md)), which handle protocol hardening, session continuity, role attribution, and option merging.
+
 ### Session Control
 
-The async generator supports interruption via `AbortSignal`:
+Interruption via `AbortSignal`, passed as a per-call override through `Cligent.run()` ([DR-003](003-role-scoped-session-management.md)):
 
 ```typescript
 const controller = new AbortController();
-const stream = adapter.run(prompt, { abortSignal: controller.signal });
+const stream = agent.run(prompt, { abortSignal: controller.signal });
 
 // Soft interrupt
 controller.abort();
@@ -207,19 +221,22 @@ controller.abort();
 ### Parallel Execution
 
 ```typescript
-async function* runParallel(
-  tasks: Array<{ adapter: AgentAdapter; prompt: string; options?: AgentOptions }>
-): AsyncGenerator<AgentEvent> {
-  // Merge streams, events tagged by adapter.agent
-}
+// Cligent.parallel() merges streams from multiple role-scoped instances.
+// Events carry both agent (backend) and role (task) identity.
+for await (const event of Cligent.parallel([
+  { agent: coder, prompt: 'Fix lint errors' },
+  { agent: reviewer, prompt: 'Review the fix' },
+])) { /* event.agent, event.role */ }
 ```
 
 ## Consequences
 
-- **Adapters** translate native events to UES; each agent needs one adapter
+- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are stateless and thread-safe for concurrent `run()` calls unless they document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
+- **`Cligent` class** is the primary API ([DR-003](003-role-scoped-session-management.md)) — wraps adapter with role config, session state, and protocol hardening
 - **UPM** uses capability primitives (`fileWrite`, `shellExecute`, `networkAccess`) mapped by adapters to vendor controls
 - **AbortSignal** standardizes interruption (no custom `interrupt()` method)
-- **Session resumption** via `resume` option; checkpointing is adapter-specific
+- **Session resumption** via `resumeToken` in `DonePayload`; `Cligent` auto-injects on subsequent calls; adapters that don't support resumption omit the token
+- **Role attribution** via `role` field on `CligentEvent` (not `BaseEvent`), distinguishing multiple sessions on the same backend; adapters do not emit `role`
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` supported by all agents; implementation varies (CLI flags, permissions config, policy engine)
 - **Budgeting**: `maxTurns` supported by Claude Code, OpenCode (`steps`), Gemini (`maxSessionTurns`); `maxBudgetUsd` only by Claude Code

@@ -71,3 +71,9 @@ When `AbortSignal` fires, the adapter shall yield `done` (`status: 'interrupted'
 ### OPENCODE-010
 
 When the managed server crashes, the adapter shall yield an `error` event (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) and clean up resources.
+
+## Resume Token
+
+### OPENCODE-011
+
+The adapter shall set `DonePayload.resumeToken` to the session identifier from the run result, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
