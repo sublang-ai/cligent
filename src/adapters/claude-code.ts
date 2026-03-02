@@ -542,6 +542,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions(options);
 
     let sessionId = options?.resume ?? generateSessionId();
+    const initialSessionId = sessionId;
     const startTime = Date.now();
     let doneYielded = false;
 
@@ -675,6 +676,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             {
               status,
               result: asString(result.result),
+              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(result.usage),
               durationMs,
             },

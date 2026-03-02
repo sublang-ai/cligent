@@ -544,6 +544,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     let serverExitPromise: Promise<ServerCloseInfo> | undefined;
 
     let sessionId = options?.resume ?? generateSessionId();
+    const initialSessionId = sessionId;
 
     const onAbort = () => {
       abortRequested = true;
@@ -884,6 +885,7 @@ export class OpenCodeAdapter implements AgentAdapter {
             {
               status: mapDoneStatus(asString(event.status)),
               result: asString(event.result),
+              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(event.usage),
               durationMs:
                 asNumber(event.durationMs) ??

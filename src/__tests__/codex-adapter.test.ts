@@ -675,4 +675,56 @@ describe('CodexAdapter', () => {
 
     mapped.cleanupAbort();
   });
+
+  it('sets resumeToken on done when backend provides a new thread ID', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'item.completed',
+            item: { type: 'message', text: 'hello' },
+            threadId: 'thread-new-abc',
+          },
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              result: 'done',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+            threadId: 'thread-new-abc',
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('thread-new-abc');
+  });
+
+  it('omits resumeToken when backend provides no thread ID', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              result: 'done',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBeUndefined();
+  });
 });

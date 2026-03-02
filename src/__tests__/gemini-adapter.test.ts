@@ -490,4 +490,84 @@ describe('GeminiAdapter', () => {
 
     await expect(adapter.isAvailable()).resolves.toBe(true);
   });
+
+  it('sets resumeToken on done when backend provides a new session ID', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            model: 'gemini-pro',
+            cwd: '/repo',
+            tools: [],
+            sessionId: 'gemini-session-new',
+          }),
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            result: 'done',
+            usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+            durationMs: 100,
+            sessionId: 'gemini-session-new',
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {},
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('gemini-session-new');
+  });
+
+  it('omits resumeToken when backend provides no session ID', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            model: 'gemini-pro',
+            cwd: '/repo',
+            tools: [],
+          }),
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            result: 'done',
+            usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+            durationMs: 100,
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {},
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBeUndefined();
+  });
 });

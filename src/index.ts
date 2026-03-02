@@ -19,6 +19,9 @@ export type {
   PermissionPolicy,
   AgentAdapter,
   AgentOptions,
+  CligentEvent,
+  CligentOptions,
+  RunOptions,
 } from './types.js';
 
 export { AdapterRegistry } from './registry.js';
@@ -26,3 +29,5 @@ export { runAgent, runParallel } from './engine.js';
 export type { ParallelTask } from './engine.js';
 export { createEvent, generateSessionId, isAgentEvent } from './events.js';
 export type { AgentEventMap } from './events.js';
+export { Cligent } from './cligent.js';
+export type { CligentParallelTask } from './cligent.js';

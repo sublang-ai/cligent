@@ -591,4 +591,59 @@ describe('OpenCodeAdapter', () => {
       'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.',
     );
   });
+
+  it('sets resumeToken on done when backend provides a new session ID', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'oc-session-new' },
+          events: [
+            {
+              type: 'session.idle',
+              sessionId: 'oc-session-new',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('oc-session-new');
+  });
+
+  it('omits resumeToken when backend provides no session ID', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: {},
+          events: [
+            {
+              type: 'session.idle',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBeUndefined();
+  });
 });

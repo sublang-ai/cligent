@@ -77,6 +77,7 @@ export interface ToolResultPayload {
 export interface DonePayload {
   status: 'success' | 'error' | 'interrupted' | 'max_turns' | 'max_budget';
   result?: string;
+  resumeToken?: string;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -127,4 +128,22 @@ export interface AgentOptions {
   abortSignal?: AbortSignal;
   allowedTools?: string[];
   disallowedTools?: string[];
+}
+
+export type CligentEvent = AgentEvent & { role?: string };
+
+export interface CligentOptions {
+  role?: string;
+  cwd?: string;
+  model?: string;
+  permissions?: PermissionPolicy;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}
+
+export interface RunOptions extends CligentOptions {
+  abortSignal?: AbortSignal;
+  resume?: string | false;
 }

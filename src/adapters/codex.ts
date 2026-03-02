@@ -583,6 +583,7 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     let sessionId = options?.resume ?? generateSessionId();
+    const initialSessionId = sessionId;
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
@@ -711,6 +712,7 @@ export class CodexAdapter implements AgentAdapter {
             {
               status,
               result: asString(turn.result) ?? asString(event.result),
+              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(turn.usage ?? event.usage),
               durationMs,
             },

@@ -607,4 +607,56 @@ describe('ClaudeCodeAdapter', () => {
     const done = events[2] as AgentEvent & { payload: { status: string } };
     expect(done.payload.status).toBe('error');
   });
+
+  it('sets resumeToken on done when backend provides a new session ID', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'backend-session-xyz',
+        },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'done',
+          usage: { input_tokens: 5, output_tokens: 10, tool_uses: 0 },
+          duration_ms: 100,
+          sessionId: 'backend-session-xyz',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('backend-session-xyz');
+  });
+
+  it('omits resumeToken when backend provides no session ID', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'done',
+          usage: { input_tokens: 5, output_tokens: 10, tool_uses: 0 },
+          duration_ms: 100,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBeUndefined();
+  });
 });

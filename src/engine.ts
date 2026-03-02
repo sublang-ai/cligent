@@ -7,77 +7,14 @@ import type {
   AgentAdapter,
   AgentOptions,
 } from './types.js';
-import { createEvent, generateSessionId } from './events.js';
+import { generateSessionId } from './events.js';
+import { safeReturn, raceAbort, makeSynthDone, makeSynthError } from './protocol.js';
 import type { AdapterRegistry } from './registry.js';
 
 export interface ParallelTask {
   adapter: AgentAdapter;
   prompt: string;
   options?: AgentOptions;
-}
-
-function safeReturn(gen: AsyncGenerator<AgentEvent, void, void>): void {
-  try {
-    gen.return(undefined as never).catch(() => {});
-  } catch {
-    // swallow synchronous cleanup errors
-  }
-}
-
-function raceAbort(
-  promise: Promise<IteratorResult<AgentEvent, void>>,
-  signal: AbortSignal | undefined,
-): Promise<IteratorResult<AgentEvent, void>> {
-  if (!signal || signal.aborted) {
-    if (signal?.aborted) {
-      promise.catch(() => {}); // suppress unhandled rejection on orphaned promise
-      return Promise.resolve({ done: true, value: undefined });
-    }
-    return promise;
-  }
-  return Promise.race([
-    promise,
-    new Promise<IteratorResult<AgentEvent, void>>((resolve) => {
-      const onAbort = () => resolve({ done: true, value: undefined });
-      signal.addEventListener('abort', onAbort, { once: true });
-      promise.then(
-        () => signal.removeEventListener('abort', onAbort),
-        () => signal.removeEventListener('abort', onAbort),
-      );
-    }),
-  ]);
-}
-
-function makeSynthDone(
-  agent: AgentType,
-  status: 'error' | 'interrupted',
-  sessionId: string,
-  startTime: number,
-): AgentEvent {
-  return createEvent(
-    'done',
-    agent,
-    {
-      status,
-      usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
-      durationMs: Date.now() - startTime,
-    },
-    sessionId,
-  );
-}
-
-function makeSynthError(
-  agent: AgentType,
-  code: string,
-  message: string,
-  sessionId: string,
-): AgentEvent {
-  return createEvent(
-    'error',
-    agent,
-    { code, message, recoverable: false },
-    sessionId,
-  );
 }
 
 export async function* runAgent(
