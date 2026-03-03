@@ -5,7 +5,7 @@ on:
     tags: ['v[0-9]*']
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -39,4 +39,29 @@ jobs:
 
       - run: npm test
 
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract the section for this version (between its heading and the next heading)
+          NOTES=$(awk -v ver="$VERSION" '
+            /^## \[/ { if (found) exit; if ($0 == "## [" ver "]" || index($0, "## [" ver "] -")) found=1; next }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$(echo "$NOTES" | tr -d '[:space:]')" ]; then
+            echo "::error::No release notes found for version $VERSION in CHANGELOG.md"
+            exit 1
+          fi
+          # Write to step output using delimiter to handle multiline
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$NOTES"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - run: npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "${{ steps.notes.outputs.body }}"
