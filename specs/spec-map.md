@@ -39,6 +39,7 @@ Authoring rules: [dev/style.md](dev/style.md).
 | IR-004 | [004-codex-adapter.md](iterations/004-codex-adapter.md) | Codex adapter via @openai/codex-sdk |
 | IR-005 | [005-gemini-cli-adapter.md](iterations/005-gemini-cli-adapter.md) | Gemini CLI adapter via child_process spawn + NDJSON |
 | IR-006 | [006-opencode-adapter.md](iterations/006-opencode-adapter.md) | OpenCode adapter via @opencode-ai/sdk with SSE |
+| IR-007 | [007-allsides-tmux-app.md](iterations/007-allsides-tmux-app.md) | AllSides multi-agent tmux chat app using cligent |
 
 ## Spec Files
 
