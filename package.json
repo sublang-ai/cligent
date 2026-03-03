@@ -1,6 +1,6 @@
 {
   "name": "cligent",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Unified interface for CLI-based AI coding agents",
   "type": "module",
   "license": "Apache-2.0",
