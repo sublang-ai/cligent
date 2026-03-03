@@ -4,6 +4,29 @@
   "description": "Unified interface for CLI-based AI coding agents",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sublang-dev/cligent.git"
+  },
+  "homepage": "https://github.com/sublang-dev/cligent#readme",
+  "bugs": "https://github.com/sublang-dev/cligent/issues",
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "unified",
+    "adapter"
+  ],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -35,7 +58,8 @@
     "build": "tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": "*",

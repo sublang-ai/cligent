@@ -15,6 +15,10 @@ export default [
     },
     rules: {
       ...eslint.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_' },
+      ],
     },
   },
   {
