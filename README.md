@@ -3,8 +3,8 @@
 
 # cligent
 
-[![npm version](https://img.shields.io/npm/v/cligent)](https://www.npmjs.com/package/cligent)
-[![Node.js](https://img.shields.io/node/v/cligent)](https://nodejs.org/)
+[![npm version](https://img.shields.io/npm/v/@sublang/cligent)](https://www.npmjs.com/package/@sublang/cligent)
+[![Node.js](https://img.shields.io/node/v/@sublang/cligent)](https://nodejs.org/)
 [![CI](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml)
 
 Unified TypeScript interface for CLI-based AI coding agents.
@@ -14,14 +14,14 @@ Register an adapter, send a prompt, and consume a single async event stream — 
 ## Install
 
 ```bash
-npm install cligent
+npm install @sublang/cligent
 ```
 
 ## Quick start
 
 ```ts
-import { Cligent } from 'cligent';
-import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 
 // Cligent wraps an adapter with role identity, session continuity,
 // option merging, and protocol hardening.
@@ -59,6 +59,7 @@ We welcome contributions of all kinds. If you'd like to help:
 - [Open an issue](https://github.com/sublang-dev/cligent/issues) for bugs or feature requests.
 - [Open a PR](https://github.com/sublang-dev/cligent/pulls) for fixes or improvements.
 - Discuss on [Discord](https://discord.gg/cxUsykWr) for support or new ideas.
+- Star the repo if you find it useful — it helps others discover the project.
 
 ## License
 
