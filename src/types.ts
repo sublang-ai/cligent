@@ -143,7 +143,7 @@ export interface CligentOptions {
   disallowedTools?: string[];
 }
 
-export interface RunOptions extends CligentOptions {
+export interface RunOptions extends Omit<CligentOptions, 'role'> {
   abortSignal?: AbortSignal;
   resume?: string | false;
 }

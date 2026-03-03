@@ -305,6 +305,54 @@ describe('Cligent session continuity', () => {
     const opts = captured()!;
     expect(opts.resume).toBeUndefined();
   });
+
+  // Stale-token regression: stored token cleared when adapter omits resumeToken
+  it('clears stored resumeToken when adapter omits it on subsequent run', async () => {
+    let callCount = 0;
+    const adapter: AgentAdapter = {
+      agent: 'claude-code',
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        callCount++;
+        if (callCount === 1) {
+          // First call: emit done with resumeToken
+          yield textEvent('claude-code', 'hello');
+          yield doneEvent('claude-code', 'success', 'test-sid', {
+            resumeToken: 'tok-A',
+          });
+        } else if (callCount === 2) {
+          // Second call: emit done without resumeToken
+          yield textEvent('claude-code', 'hello');
+          yield doneEvent('claude-code', 'success', 'test-sid');
+        } else {
+          // Third call: capture what was injected
+          lastOpts = options;
+          yield textEvent('claude-code', 'hello');
+          yield doneEvent('claude-code', 'success', 'test-sid');
+        }
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    let lastOpts: AgentOptions | undefined;
+
+    const agent = new Cligent(adapter);
+
+    // Run 1: adapter provides resumeToken
+    await collectEvents(agent.run('first'));
+    expect(agent.resumeToken).toBe('tok-A');
+
+    // Run 2: adapter omits resumeToken → clears stored token (ENG-006)
+    await collectEvents(agent.run('second'));
+    expect(agent.resumeToken).toBeUndefined();
+
+    // Run 3: no stale token injected
+    await collectEvents(agent.run('third'));
+    expect(lastOpts?.resume).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

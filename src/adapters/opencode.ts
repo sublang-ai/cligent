@@ -198,9 +198,11 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
   };
 }
 
+/** Broad extractor — used for runResult where `id` plausibly is the session. */
 function loadSessionId(message: unknown): string | undefined {
   const record = asRecord(message);
   const session = asRecord(record.session);
+  const thread = asRecord(record.thread);
 
   return (
     asString(record.sessionId) ??
@@ -208,7 +210,24 @@ function loadSessionId(message: unknown): string | undefined {
     asString(record.threadId) ??
     asString(record.thread_id) ??
     asString(record.id) ??
-    asString(session.id)
+    asString(session.id) ??
+    asString(thread.id)
+  );
+}
+
+/** Strict extractor — explicit session/thread fields only, no generic `id`. */
+function loadStreamSessionId(message: unknown): string | undefined {
+  const record = asRecord(message);
+  const session = asRecord(record.session);
+  const thread = asRecord(record.thread);
+
+  return (
+    asString(record.sessionId) ??
+    asString(record.session_id) ??
+    asString(record.threadId) ??
+    asString(record.thread_id) ??
+    asString(session.id) ??
+    asString(thread.id)
   );
 }
 
@@ -544,7 +563,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     let serverExitPromise: Promise<ServerCloseInfo> | undefined;
 
     let sessionId = options?.resume ?? generateSessionId();
-    const initialSessionId = sessionId;
+    let backendProvidedSessionId = false;
 
     const onAbort = () => {
       abortRequested = true;
@@ -603,7 +622,11 @@ export class OpenCodeAdapter implements AgentAdapter {
         ...mappedPermissions,
       });
 
-      sessionId = loadSessionId(runResult) ?? sessionId;
+      const loadedId = loadSessionId(runResult);
+      if (loadedId) {
+        sessionId = loadedId;
+        backendProvidedSessionId = true;
+      }
 
       if (!initYielded) {
         const runRecord = asRecord(runResult);
@@ -708,20 +731,20 @@ export class OpenCodeAdapter implements AgentAdapter {
         const eventType = asString(event.type);
         if (!eventType) continue;
 
+        // Use strict extractor — only explicit session fields, no generic `id`
+        // that could match message/event IDs and cause false filtering.
         const eventSessionId =
-          loadSessionId(event) ??
-          loadSessionId(event.data) ??
-          loadSessionId(event.message) ??
-          loadSessionId(event.part) ??
-          loadSessionId(event.permission);
+          loadStreamSessionId(event) ??
+          loadStreamSessionId(event.data) ??
+          loadStreamSessionId(event.message);
 
         if (eventSessionId) {
-          if (!sessionId) {
-            sessionId = eventSessionId;
-          }
           if (eventSessionId !== sessionId) {
             continue;
           }
+          // Only mark backend-provided after confirming the event belongs
+          // to this session — foreign events must not flip the flag.
+          backendProvidedSessionId = true;
         }
 
         if (eventType === 'message.part.updated') {
@@ -885,7 +908,7 @@ export class OpenCodeAdapter implements AgentAdapter {
             {
               status: mapDoneStatus(asString(event.status)),
               result: asString(event.result),
-              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
+              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(event.usage),
               durationMs:
                 asNumber(event.durationMs) ??

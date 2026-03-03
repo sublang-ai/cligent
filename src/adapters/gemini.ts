@@ -471,7 +471,7 @@ export class GeminiAdapter implements AgentAdapter {
 
     const startTime = Date.now();
     let sessionId = options?.resume ?? generateSessionId();
-    const initialSessionId = sessionId;
+    let backendProvidedSessionId = false;
     let doneYielded = false;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
@@ -574,7 +574,11 @@ export class GeminiAdapter implements AgentAdapter {
         }
 
         const message = asRecord(parsed.data);
-        sessionId = loadSessionId(parsed.data) ?? sessionId;
+        const loadedId = loadSessionId(parsed.data);
+        if (loadedId) {
+          sessionId = loadedId;
+          backendProvidedSessionId = true;
+        }
         const eventType = asString(message.type);
 
         if (!eventType) continue;
@@ -693,7 +697,7 @@ export class GeminiAdapter implements AgentAdapter {
             {
               status: mapDoneStatus(asString(message.status)),
               result: asString(message.result),
-              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
+              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(message.usage),
               durationMs:
                 asNumber(message.durationMs) ??

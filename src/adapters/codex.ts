@@ -583,7 +583,7 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     let sessionId = options?.resume ?? generateSessionId();
-    const initialSessionId = sessionId;
+    let backendProvidedSessionId = false;
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
@@ -639,7 +639,11 @@ export class CodexAdapter implements AgentAdapter {
 
     try {
       for await (const rawEvent of runStream) {
-        sessionId = loadSessionId(rawEvent) ?? sessionId;
+        const loadedId = loadSessionId(rawEvent);
+        if (loadedId) {
+          sessionId = loadedId;
+          backendProvidedSessionId = true;
+        }
 
         const event = asRecord(rawEvent);
         if (!initYielded) {
@@ -712,7 +716,7 @@ export class CodexAdapter implements AgentAdapter {
             {
               status,
               result: asString(turn.result) ?? asString(event.result),
-              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
+              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(turn.usage ?? event.usage),
               durationMs,
             },

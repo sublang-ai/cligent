@@ -542,7 +542,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions(options);
 
     let sessionId = options?.resume ?? generateSessionId();
-    const initialSessionId = sessionId;
+    let backendProvidedSessionId = false;
     const startTime = Date.now();
     let doneYielded = false;
 
@@ -551,7 +551,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         prompt,
         ...queryOptions,
       })) {
-        sessionId = loadSessionId(message) ?? sessionId;
+        const loadedId = loadSessionId(message);
+        if (loadedId) {
+          sessionId = loadedId;
+          backendProvidedSessionId = true;
+        }
 
         if (!isObjectWithType(message)) {
           continue;
@@ -676,7 +680,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             {
               status,
               result: asString(result.result),
-              ...(sessionId !== initialSessionId ? { resumeToken: sessionId } : {}),
+              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(result.usage),
               durationMs,
             },

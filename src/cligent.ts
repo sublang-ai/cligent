@@ -84,6 +84,14 @@ export class Cligent {
     this.defaults = options ?? {};
   }
 
+  get agentType(): string {
+    return this.adapter.agent;
+  }
+
+  get role(): string | undefined {
+    return this.defaults.role;
+  }
+
   get resumeToken(): string | undefined {
     return this._resumeToken;
   }
@@ -260,8 +268,18 @@ export class Cligent {
         pending.delete(index);
 
         if (raceResult.isError) {
-          // Each run() handles its own errors (ENG-015), so this shouldn't
-          // normally happen. But if it does, just remove from pool.
+          // run() normally handles its own errors, but if the generator
+          // itself throws (e.g. single-flight), yield synthetic error + done
+          // so the caller sees every task complete (ENG-015).
+          const task = tasks[index];
+          const agentName = task.agent.agentType;
+          const taskRole = task.agent.role;
+          const sid = generateSessionId();
+          const msg = raceResult.error instanceof Error
+            ? raceResult.error.message
+            : String(raceResult.error);
+          yield injectRole(makeSynthError(agentName, 'PARALLEL_TASK_ERROR', msg, sid), taskRole);
+          yield injectRole(makeSynthDone(agentName, 'error', sid, Date.now()), taskRole);
           states[index] = null;
           continue;
         }

@@ -50,7 +50,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 
 ### OPENCODE-006
 
-While the SSE stream carries events for all sessions, the adapter shall emit only events matching the current `sessionId`.
+While the SSE stream carries events for all sessions, the adapter shall emit only events matching the current `sessionId`. Events that carry no session or thread identifier shall pass through unfiltered, since many event types in a multiplexed stream lack explicit session tags.
 
 ## Permission Mapping
 

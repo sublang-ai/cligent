@@ -646,4 +646,214 @@ describe('OpenCodeAdapter', () => {
     const payload = done.payload as { resumeToken?: string };
     expect(payload.resumeToken).toBeUndefined();
   });
+
+  it('filters and resumes correctly when stream events use threadId', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { threadId: 'thread-A' },
+          events: [
+            // Matching event via threadId
+            {
+              type: 'message.part.updated',
+              threadId: 'thread-A',
+              part: { type: 'text', text: 'hello' },
+            },
+            // Foreign event via thread_id — should be filtered
+            {
+              type: 'message.part.updated',
+              thread_id: 'thread-B',
+              part: { type: 'text', text: 'ignore me' },
+            },
+            // Terminal event via threadId
+            {
+              type: 'session.idle',
+              threadId: 'thread-A',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const types = events.map((e) => e.type);
+
+    // Foreign thread-B text must be filtered; matching thread-A text present
+    expect(types).toEqual(['init', 'text', 'done']);
+
+    // resumeToken emitted from backend-provided threadId
+    const payload = events[2].payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('thread-A');
+  });
+
+  it('omits resumeToken when only foreign-session events carry IDs', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          // runResult has no session ID
+          runResult: {},
+          events: [
+            // Foreign event with a different session ID — should be filtered
+            {
+              type: 'message.part.updated',
+              sessionId: 'foreign-session-999',
+              part: { type: 'text', content: 'hello' },
+            },
+            // Terminal event with no session ID
+            {
+              type: 'session.idle',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+
+    // Exact event sequence: init + done — no leaked foreign events
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['init', 'done']);
+
+    // Terminal done must have expected status and no fabricated resumeToken
+    const payload = events[1].payload as { status: string; resumeToken?: string };
+    expect(payload.status).toBe('success');
+    expect(payload.resumeToken).toBeUndefined();
+  });
+
+  it('filters and resumes correctly when stream events use nested thread.id', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { thread: { id: 'thread-nested-1' } },
+          events: [
+            // Matching event via nested thread.id
+            {
+              type: 'message.part.updated',
+              thread: { id: 'thread-nested-1' },
+              part: { type: 'text', text: 'matched' },
+            },
+            // Foreign event via nested thread.id — should be filtered
+            {
+              type: 'message.part.updated',
+              thread: { id: 'thread-nested-2' },
+              part: { type: 'text', text: 'foreign' },
+            },
+            {
+              type: 'session.idle',
+              thread: { id: 'thread-nested-1' },
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['init', 'text', 'done']);
+
+    // Verify surviving text is from matching thread, not the foreign one
+    const textPayload = events[1].payload as { content: string };
+    expect(textPayload.content).toBe('matched');
+
+    const payload = events[2].payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('thread-nested-1');
+  });
+
+  it('does not use generic message.id for session filtering', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'real-session' },
+          events: [
+            // Event with matching sessionId but message carries unrelated id
+            {
+              type: 'message.part.updated',
+              sessionId: 'real-session',
+              message: { id: 'msg-777', role: 'assistant' },
+              part: { type: 'text', text: 'valid' },
+            },
+            {
+              type: 'session.idle',
+              sessionId: 'real-session',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const types = events.map((e) => e.type);
+
+    // message.id must not interfere with session matching
+    expect(types).toEqual(['init', 'text', 'done']);
+
+    const payload = events[2].payload as { resumeToken?: string };
+    expect(payload.resumeToken).toBe('real-session');
+  });
+
+  // Design choice: events without any session/thread identifier pass through
+  // unfiltered. In a multiplexed SSE stream, many event types lack explicit
+  // session tags; dropping them would lose broadcast/system information.
+  it('passes through events that carry no session identifier', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'real-session' },
+          events: [
+            // Event with no session/thread fields at all
+            {
+              type: 'message.part.updated',
+              message: { id: 'msg-888', role: 'assistant' },
+              part: { type: 'text', text: 'untagged' },
+            },
+            {
+              type: 'session.idle',
+              sessionId: 'real-session',
+              status: 'success',
+              usage: { inputTokens: 5, outputTokens: 10, toolUses: 0 },
+              durationMs: 100,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const types = events.map((e) => e.type);
+
+    // Id-less event passes through — not filtered
+    expect(types).toEqual(['init', 'text', 'done']);
+  });
 });

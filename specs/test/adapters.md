@@ -45,7 +45,7 @@ Given partial lines, malformed JSON, and empty lines, `parseNDJSON()` shall prod
 
 ### TADAPT-008
 
-The OpenCode adapter shall filter events by `sessionId`, emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
+The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [OPENCODE-006](../user/adapters/opencode.md#opencode-006), emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
 
 ## Tool Filtering
 
