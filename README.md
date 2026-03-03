@@ -3,6 +3,10 @@
 
 # cligent
 
+[![npm version](https://img.shields.io/npm/v/cligent)](https://www.npmjs.com/package/cligent)
+[![Node.js](https://img.shields.io/node/v/cligent)](https://nodejs.org/)
+[![CI](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml)
+
 Unified TypeScript interface for CLI-based AI coding agents.
 
 Register an adapter, send a prompt, and consume a single async event stream — regardless of which agent runs underneath.
@@ -47,6 +51,14 @@ for await (const event of agent.run('Now add tests for it')) {
 ## Documentation
 
 See [docs/guide.md](docs/guide.md) for the `Cligent` class, adapters, permissions, session continuity, parallel execution, and more.
+
+## Contributing
+
+We welcome contributions of all kinds. If you'd like to help:
+
+- [Open an issue](https://github.com/sublang-dev/cligent/issues) for bugs or feature requests.
+- [Open a PR](https://github.com/sublang-dev/cligent/pulls) for fixes or improvements.
+- Discuss on [Discord](https://discord.gg/cxUsykWr) for support or new ideas.
 
 ## License
 
