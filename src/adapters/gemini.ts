@@ -390,7 +390,7 @@ export function mapAgentOptionsToGeminiCommand(
   args.push(...toolConfig.args);
 
   // Prompt as positional argument (--prompt is deprecated)
-  args.push('--', prompt);
+  args.push(prompt);
 
   return {
     command: 'gemini',

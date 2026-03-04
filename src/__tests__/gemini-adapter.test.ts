@@ -382,10 +382,27 @@ describe('GeminiAdapter', () => {
       '7',
       '--allowed-tools',
       'ShellTool,custom-tool',
-      '--',
       'build this',
     ]);
     expect(mapped.toolConfig.disallowedTools).toEqual(['edit', 'never-tool']);
+  });
+
+  it('passes prompt as final positional argument (not --prompt flag)', () => {
+    const mapped = mapAgentOptionsToGeminiCommand('explain this code', undefined);
+
+    // Prompt must be the last element, with no --prompt flag
+    expect(mapped.args[mapped.args.length - 1]).toBe('explain this code');
+    expect(mapped.args).not.toContain('--prompt');
+  });
+
+  it('passes leading-dash prompt as positional without -- separator', () => {
+    // Gemini CLI does not support -- as end-of-options marker.
+    // Prompts starting with - are passed as-is; single-word flag-like
+    // prompts (e.g. "--help") may be misinterpreted by the CLI.
+    const mapped = mapAgentOptionsToGeminiCommand('-v explain', undefined);
+
+    expect(mapped.args[mapped.args.length - 1]).toBe('-v explain');
+    expect(mapped.args).not.toContain('--');
   });
 
   it('passes settings override environment to spawned process', async () => {
