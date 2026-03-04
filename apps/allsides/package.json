@@ -1,0 +1,22 @@
+{
+  "name": "@sublang/allsides",
+  "version": "0.1.0",
+  "description": "Multi-agent tmux chat app powered by cligent",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "allsides": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sublang/cligent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}

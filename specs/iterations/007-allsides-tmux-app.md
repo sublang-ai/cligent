@@ -9,7 +9,7 @@ Build `allsides`, a CLI application that uses cligent to broadcast a single prom
 
 ## Status
 
-Pending
+Done
 
 ## Layout
 

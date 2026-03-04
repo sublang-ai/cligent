@@ -4,6 +4,9 @@
   "description": "Unified interface for CLI-based AI coding agents",
   "type": "module",
   "license": "Apache-2.0",
+  "workspaces": [
+    "apps/*"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/sublang-dev/cligent.git"
