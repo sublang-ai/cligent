@@ -3,7 +3,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { parseArgs } from 'node:util';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync, accessSync, constants } from 'node:fs';
 import { parseAgentArg } from './agents.js';
 import { launch } from './launcher.js';
 import { runSession } from './session.js';
@@ -29,8 +29,17 @@ if (values.session) {
     console.error('Error: --work-dir is required in session mode');
     process.exit(1);
   }
-  if (!existsSync(values['work-dir'])) {
-    console.error(`Error: work dir does not exist: ${values['work-dir']}`);
+  if (
+    !existsSync(values['work-dir']) ||
+    !statSync(values['work-dir']).isDirectory()
+  ) {
+    console.error(`Error: work dir does not exist or is not a directory: ${values['work-dir']}`);
+    process.exit(1);
+  }
+  try {
+    accessSync(values['work-dir'], constants.W_OK | constants.X_OK);
+  } catch {
+    console.error(`Error: work dir is not writable: ${values['work-dir']}`);
     process.exit(1);
   }
 

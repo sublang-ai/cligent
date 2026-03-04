@@ -4,7 +4,7 @@
 import { createInterface } from 'node:readline';
 import { createWriteStream, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
 import type { CligentEvent } from '@sublang/cligent';
 import { resolveAgents, type AgentEntry, type ResolvedAgent } from './agents.js';
@@ -48,7 +48,11 @@ export async function runSession(options: SessionOptions): Promise<void> {
   const streams = new Map<string, WriteStream>();
   for (const agent of agents) {
     const logPath = join(workDir, `${agent.name}.log`);
-    streams.set(agent.name, createWriteStream(logPath, { flags: 'a' }));
+    const stream = createWriteStream(logPath, { flags: 'a' });
+    stream.on('error', (err) => {
+      console.error(`[${agent.name}] log write error: ${err.message}`);
+    });
+    streams.set(agent.name, stream);
   }
 
   let abortController: AbortController | null = null;
@@ -69,11 +73,7 @@ export async function runSession(options: SessionOptions): Promise<void> {
     }
 
     // Kill tmux session
-    try {
-      execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'ignore' });
-    } catch {
-      // Session may already be dead
-    }
+    spawnSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
   };
 
   process.on('SIGINT', () => {
@@ -96,44 +96,49 @@ export async function runSession(options: SessionOptions): Promise<void> {
   };
   prompt();
 
-  rl.on('line', async (line: string) => {
+  // Promise chain to serialize line processing (Cligent is single-flight)
+  let pending = Promise.resolve();
+
+  rl.on('line', (line: string) => {
     const text = line.trim();
     if (!text) {
       prompt();
       return;
     }
 
-    // Echo prompt to all log files
-    for (const stream of streams.values()) {
-      stream.write(`boss> ${text}\n\n`);
-    }
-
-    abortController = new AbortController();
-    const { signal } = abortController;
-
-    // Run all agents in parallel
-    const drainAgent = async (agent: ResolvedAgent) => {
-      const stream = streams.get(agent.name)!;
-      try {
-        for await (const event of agent.cligent.run(text, {
-          abortSignal: signal,
-        })) {
-          const formatted = formatEvent(event);
-          if (formatted !== null) {
-            stream.write(formatted);
-          }
-        }
-      } catch (err) {
-        stream.write(
-          `[error: ${err instanceof Error ? err.message : String(err)}]\n`,
-        );
+    pending = pending.then(async () => {
+      // Echo prompt to all log files
+      for (const stream of streams.values()) {
+        stream.write(`boss> ${text}\n\n`);
       }
-    };
 
-    await Promise.allSettled(agents.map(drainAgent));
-    abortController = null;
+      abortController = new AbortController();
+      const { signal } = abortController;
 
-    prompt();
+      // Run all agents in parallel
+      const drainAgent = async (agent: ResolvedAgent) => {
+        const stream = streams.get(agent.name)!;
+        try {
+          for await (const event of agent.cligent.run(text, {
+            abortSignal: signal,
+          })) {
+            const formatted = formatEvent(event);
+            if (formatted !== null) {
+              stream.write(formatted);
+            }
+          }
+        } catch (err) {
+          stream.write(
+            `[error: ${err instanceof Error ? err.message : String(err)}]\n`,
+          );
+        }
+      };
+
+      await Promise.allSettled(agents.map(drainAgent));
+      abortController = null;
+
+      prompt();
+    });
   });
 
   rl.on('close', () => {
