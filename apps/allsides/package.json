@@ -4,19 +4,42 @@
   "description": "Multi-agent tmux chat app powered by cligent",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sublang-dev/cligent.git",
+    "directory": "apps/allsides"
+  },
+  "homepage": "https://github.com/sublang-dev/cligent/tree/main/apps/allsides#readme",
+  "bugs": "https://github.com/sublang-dev/cligent/issues",
+  "keywords": [
+    "ai",
+    "agent",
+    "tmux",
+    "multi-agent",
+    "cli",
+    "cligent"
+  ],
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
   "bin": {
     "allsides": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@sublang/cligent": "*"
+    "@sublang/cligent": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
