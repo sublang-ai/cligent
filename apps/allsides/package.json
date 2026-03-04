@@ -30,6 +30,7 @@
     "build": "tsc",
     "postbuild": "chmod +x dist/cli.js",
     "test": "vitest run",
+    "test:acceptance": "vitest run --config vitest.acceptance.config.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
