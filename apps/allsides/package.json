@@ -28,6 +28,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "chmod +x dist/cli.js",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },

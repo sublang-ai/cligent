@@ -59,6 +59,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:all": "tsc && npm run build --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
