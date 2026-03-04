@@ -37,7 +37,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 - Triggers on main push only (protects secrets)
 - Node 22 only
 - Installs: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`, `@google/gemini-cli` (global)
-- API keys from GitHub secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `OPENCODE_API_KEY`
+- API keys from GitHub secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY`
 - Runs `npm run test:acceptance -w apps/allsides`
 
 ## Deliverables
@@ -69,7 +69,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
    - Trigger: push to main only (not PRs, to protect secrets)
    - Node 22, ubuntu-latest
    - Install agent SDKs: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`, `@google/gemini-cli` (global)
-   - Set API keys from secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `OPENCODE_API_KEY`
+   - Set API keys from secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY`
    - Run `npm run test:acceptance -w apps/allsides`
 
 ## Verification
