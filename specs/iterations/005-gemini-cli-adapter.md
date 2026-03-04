@@ -29,7 +29,7 @@ Done
 2. **Implement `GeminiAdapter`** (`src/adapters/gemini.ts`)
    - Implements `AgentAdapter` with `agent: 'gemini'`
    - `isAvailable()` — checks if `gemini` CLI is on PATH via spawn-based probe (e.g., `execFile('gemini', ['--version'])`)
-   - `run()` — spawns `gemini --output-format stream-json --prompt <prompt>`, pipes stdout through `parseNDJSON()`, yields normalized events
+   - `run()` — spawns `gemini --output-format stream-json -- <prompt>`, pipes stdout through `parseNDJSON()`, yields normalized events
 
 3. **Gemini NDJSON → AgentEvent normalization**
    - `init` NDJSON event → `init` event (model, cwd, tools)

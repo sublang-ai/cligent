@@ -376,14 +376,14 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).toEqual([
       '--output-format',
       'stream-json',
-      '--prompt',
-      'build this',
       '--model',
       'gemini-2.5-pro',
       '--max-session-turns',
       '7',
       '--allowed-tools',
       'ShellTool,custom-tool',
+      '--',
+      'build this',
     ]);
     expect(mapped.toolConfig.disallowedTools).toEqual(['edit', 'never-tool']);
   });

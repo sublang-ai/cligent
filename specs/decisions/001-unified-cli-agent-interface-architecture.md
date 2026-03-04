@@ -75,7 +75,7 @@ The SDK is preferred over non-interactive CLI mode [^2]. The wrapper normalizes 
 Spawn CLI and parse streaming JSON output [^3]:
 
 ```typescript
-spawn('gemini', ['--output-format', 'stream-json', '--prompt', prompt]);
+spawn('gemini', ['--output-format', 'stream-json', '--', prompt]);
 // Parse NDJSON events: init, message, tool_use, tool_result, error, result
 ```
 

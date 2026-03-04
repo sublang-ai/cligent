@@ -21,7 +21,7 @@ The adapter shall implement `AgentAdapter` with `agent: 'gemini'`; it has no SDK
 
 ### GEMINI-003
 
-`run()` shall spawn `gemini --output-format stream-json` with the prompt and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001).
+`run()` shall spawn `gemini --output-format stream-json -- <prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001).
 
 ## Event Normalization
 

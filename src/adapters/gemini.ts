@@ -377,7 +377,7 @@ export function mapAgentOptionsToGeminiCommand(
     disallowedTools: options?.disallowedTools,
   });
 
-  const args = ['--output-format', 'stream-json', '--prompt', prompt] as string[];
+  const args = ['--output-format', 'stream-json'] as string[];
 
   if (options?.model) {
     args.push('--model', options.model);
@@ -388,6 +388,9 @@ export function mapAgentOptionsToGeminiCommand(
   }
 
   args.push(...toolConfig.args);
+
+  // Prompt as positional argument (--prompt is deprecated)
+  args.push('--', prompt);
 
   return {
     command: 'gemini',
