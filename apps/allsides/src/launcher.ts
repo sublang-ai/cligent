@@ -25,6 +25,13 @@ function tmux(...args: string[]): void {
 }
 
 export async function launch(options: LaunchOptions): Promise<void> {
+  // Check tmux is installed
+  const probe = spawnSync('tmux', ['-V'], { stdio: 'pipe' });
+  if (probe.error) {
+    console.error('Error: tmux is not installed — see https://github.com/tmux/tmux#installation');
+    process.exit(1);
+  }
+
   // Resolve agents to validate names / check availability
   const agents = await resolveAgents(options.agentEntries, options.cwd);
   const agentNames = agents.map((a) => a.name);
