@@ -701,7 +701,7 @@ export class GeminiAdapter implements AgentAdapter {
               status: mapDoneStatus(asString(message.status)),
               result: asString(message.result),
               ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
-              usage: mapUsage(message.usage),
+              usage: mapUsage(message.stats),
               durationMs:
                 asNumber(message.durationMs) ??
                 asNumber(message.duration_ms) ??
