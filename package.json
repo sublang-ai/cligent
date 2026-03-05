@@ -63,6 +63,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:acceptance": "npm run test:acceptance -w apps/allsides --",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -82,6 +83,9 @@
     }
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.69",
+    "@openai/codex-sdk": "^0.107.0",
+    "@opencode-ai/sdk": "^1.2.17",
     "@types/node": "^25.3.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

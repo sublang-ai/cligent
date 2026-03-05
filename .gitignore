@@ -1,3 +1,6 @@
+# Tool-specific config (user-local)
+opencode.json
+
 # Logs
 logs
 *.log
