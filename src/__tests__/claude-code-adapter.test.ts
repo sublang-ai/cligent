@@ -10,8 +10,7 @@ import {
 } from '../adapters/claude-code.js';
 import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
 
-interface MockSdkOptions {
-  prompt: string;
+interface MockSdkInnerOptions {
   cwd?: string;
   model?: string;
   maxTurns?: number;
@@ -25,13 +24,20 @@ interface MockSdkOptions {
   abortController?: AbortController;
 }
 
+interface MockSdkOptions {
+  prompt: string;
+  options?: MockSdkInnerOptions;
+}
+
 function makeLoader(
   messages: unknown[],
-  onOptions?: (options: MockSdkOptions) => void,
+  onOptions?: (options: MockSdkInnerOptions & { prompt: string }) => void,
 ): () => Promise<{ query(options: MockSdkOptions): AsyncIterable<unknown> }> {
   return async () => ({
     query(options: MockSdkOptions): AsyncIterable<unknown> {
-      onOptions?.(options);
+      if (onOptions) {
+        onOptions({ prompt: options.prompt, ...options.options });
+      }
       return {
         async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
           for (const message of messages) {
@@ -326,7 +332,7 @@ describe('ClaudeCodeAdapter', () => {
   });
 
   it('passes agent options through to SDK query options', async () => {
-    let captured: MockSdkOptions | undefined;
+    let captured: (MockSdkInnerOptions & { prompt: string }) | undefined;
 
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader(
@@ -380,8 +386,8 @@ describe('ClaudeCodeAdapter', () => {
 
     const adapter = new ClaudeCodeAdapter({
       loadSdk: async () => ({
-        query(options: MockSdkOptions): AsyncIterable<unknown> {
-          innerAbortController = options.abortController;
+        query(opts: MockSdkOptions): AsyncIterable<unknown> {
+          innerAbortController = opts.options?.abortController;
           return {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
@@ -392,11 +398,11 @@ describe('ClaudeCodeAdapter', () => {
               };
 
               await new Promise<void>((resolve) => {
-                if (options.abortController?.signal.aborted) {
+                if (opts.options?.abortController?.signal.aborted) {
                   resolve();
                   return;
                 }
-                options.abortController?.signal.addEventListener(
+                opts.options?.abortController?.signal.addEventListener(
                   'abort',
                   () => resolve(),
                   {
@@ -439,7 +445,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const adapter = new ClaudeCodeAdapter({
       loadSdk: async () => ({
-        query(options: MockSdkOptions): AsyncIterable<unknown> {
+        query(opts: MockSdkOptions): AsyncIterable<unknown> {
           return {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
@@ -451,11 +457,11 @@ describe('ClaudeCodeAdapter', () => {
               };
 
               await new Promise<void>((resolve) => {
-                if (options.abortController?.signal.aborted) {
+                if (opts.options?.abortController?.signal.aborted) {
                   resolve();
                   return;
                 }
-                options.abortController?.signal.addEventListener('abort', () => resolve(), {
+                opts.options?.abortController?.signal.addEventListener('abort', () => resolve(), {
                   once: true,
                 });
               });
@@ -483,7 +489,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const adapter = new ClaudeCodeAdapter({
       loadSdk: async () => ({
-        query(options: MockSdkOptions): AsyncIterable<unknown> {
+        query(opts: MockSdkOptions): AsyncIterable<unknown> {
           return {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
@@ -495,11 +501,11 @@ describe('ClaudeCodeAdapter', () => {
               };
 
               await new Promise<void>((resolve) => {
-                if (options.abortController?.signal.aborted) {
+                if (opts.options?.abortController?.signal.aborted) {
                   resolve();
                   return;
                 }
-                options.abortController?.signal.addEventListener('abort', () => resolve(), {
+                opts.options?.abortController?.signal.addEventListener('abort', () => resolve(), {
                   once: true,
                 });
               });

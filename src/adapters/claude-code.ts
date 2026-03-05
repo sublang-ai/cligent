@@ -36,7 +36,10 @@ interface ClaudeQueryOptions {
 }
 
 interface ClaudeAgentSdk {
-  query(options: ClaudeQueryOptions): AsyncIterable<unknown>;
+  query(options: {
+    prompt: string;
+    options?: Omit<ClaudeQueryOptions, 'prompt'>;
+  }): AsyncIterable<unknown>;
 }
 
 interface ClaudeTextBlock {
@@ -549,7 +552,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     try {
       for await (const message of sdk.query({
         prompt,
-        ...queryOptions,
+        options: queryOptions,
       })) {
         const loadedId = loadSessionId(message);
         if (loadedId) {

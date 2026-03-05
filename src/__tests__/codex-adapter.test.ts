@@ -29,7 +29,10 @@ interface MockThreadOptions {
 }
 
 interface MockCodexThread {
-  runStreamed(prompt: string, options?: MockRunOptions): AsyncIterable<unknown>;
+  runStreamed(
+    prompt: string,
+    options?: MockRunOptions,
+  ): Promise<{ events: AsyncIterable<unknown> }>;
 }
 
 interface MockCodexClient {
@@ -52,16 +55,21 @@ function makeLoader(config: {
       startThread(options?: MockThreadOptions): MockCodexThread {
         config.onStartThread?.(options);
         return {
-          runStreamed(prompt: string, runOptions?: MockRunOptions): AsyncIterable<unknown> {
+          async runStreamed(
+            prompt: string,
+            runOptions?: MockRunOptions,
+          ): Promise<{ events: AsyncIterable<unknown> }> {
             config.onRun?.(prompt, runOptions);
             return {
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
-                for (const event of config.events) {
-                  yield event;
-                }
-                if (config.throwFromRun) {
-                  throw config.throwFromRun;
-                }
+              events: {
+                async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                  for (const event of config.events) {
+                    yield event;
+                  }
+                  if (config.throwFromRun) {
+                    throw config.throwFromRun;
+                  }
+                },
               },
             };
           },
@@ -74,16 +82,21 @@ function makeLoader(config: {
       ): MockCodexThread {
         config.onResumeThread?.(threadId, options);
         return {
-          runStreamed(prompt: string, runOptions?: MockRunOptions): AsyncIterable<unknown> {
+          async runStreamed(
+            prompt: string,
+            runOptions?: MockRunOptions,
+          ): Promise<{ events: AsyncIterable<unknown> }> {
             config.onRun?.(prompt, runOptions);
             return {
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
-                for (const event of config.events) {
-                  yield event;
-                }
-                if (config.throwFromRun) {
-                  throw config.throwFromRun;
-                }
+              events: {
+                async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                  for (const event of config.events) {
+                    yield event;
+                  }
+                  if (config.throwFromRun) {
+                    throw config.throwFromRun;
+                  }
+                },
               },
             };
           },
@@ -573,9 +586,11 @@ describe('CodexAdapter', () => {
         Codex: class {
           startThread(): MockCodexThread {
             return {
-              runStreamed(): AsyncIterable<unknown> {
+              async runStreamed(): Promise<{ events: AsyncIterable<unknown> }> {
                 return {
-                  async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {},
+                  events: {
+                    async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {},
+                  },
                 };
               },
             };
@@ -600,25 +615,28 @@ describe('CodexAdapter', () => {
           startThread(options?: MockThreadOptions): MockCodexThread {
             capturedSignal = options?.abortSignal;
             return {
-              runStreamed(prompt: string, runOptions?: MockRunOptions): AsyncIterable<unknown> {
-                void prompt;
-                void runOptions;
+              async runStreamed(
+                _prompt: string,
+                _runOptions?: MockRunOptions,
+              ): Promise<{ events: AsyncIterable<unknown> }> {
                 return {
-                  async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
-                    yield {
-                      type: 'item.completed',
-                      item: { type: 'message', text: 'started' },
-                    };
+                  events: {
+                    async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                      yield {
+                        type: 'item.completed',
+                        item: { type: 'message', text: 'started' },
+                      };
 
-                    await new Promise<void>((resolve) => {
-                      if (options?.abortSignal?.aborted) {
-                        resolve();
-                        return;
-                      }
-                      options?.abortSignal?.addEventListener('abort', () => resolve(), {
-                        once: true,
+                      await new Promise<void>((resolve) => {
+                        if (options?.abortSignal?.aborted) {
+                          resolve();
+                          return;
+                        }
+                        options?.abortSignal?.addEventListener('abort', () => resolve(), {
+                          once: true,
+                        });
                       });
-                    });
+                    },
                   },
                 };
               },

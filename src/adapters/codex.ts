@@ -58,7 +58,10 @@ interface CodexRunOptions {
 }
 
 interface CodexThread {
-  runStreamed?: (prompt: string, options?: CodexRunOptions) => AsyncIterable<unknown>;
+  runStreamed?: (
+    prompt: string,
+    options?: CodexRunOptions,
+  ) => Promise<{ events: AsyncIterable<unknown> }>;
   run?: (prompt: string, options?: CodexRunOptions) => AsyncIterable<unknown>;
 }
 
@@ -574,9 +577,15 @@ export class CodexAdapter implements AgentAdapter {
       thread = codex.startThread(threadOptions);
     }
 
-    const runStream =
-      thread.runStreamed?.(prompt, runOptions) ??
-      thread.run?.(prompt, runOptions);
+    const streamResult = await (thread.runStreamed?.(prompt, runOptions) as
+      | Promise<{ events: AsyncIterable<unknown> }>
+      | undefined);
+
+    if (!streamResult) {
+      throw new Error('Codex SDK does not support runStreamed() in this version');
+    }
+
+    const runStream = streamResult.events;
 
     if (!isAsyncIterable(runStream)) {
       throw new Error('Codex thread does not provide an async event stream');

@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   OpenCodeAdapter,
   mapPermissionsToOpenCodeOptions,
+  wrapOpencodeClient,
 } from '../adapters/opencode.js';
 import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
 
@@ -855,5 +856,277 @@ describe('OpenCodeAdapter', () => {
 
     // Id-less event passes through — not filtered
     expect(types).toEqual(['init', 'text', 'done']);
+  });
+});
+
+/**
+ * Tests for wrapOpencodeClient — the v1 SDK compatibility wrapper that adapts
+ * createOpencodeClient's nested API (session.create/prompt, event.subscribe,
+ * instance.dispose) to the flat OpenCodeClient interface.
+ */
+describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
+  function makeV1Sdk(config: {
+    createResult?: Record<string, unknown>;
+    promptResult?: unknown;
+    subscribeResult?: { stream?: AsyncIterable<unknown>; events?: AsyncIterable<unknown> };
+    onCreateSession?: () => void;
+    onPrompt?: (args: unknown) => void;
+    onSubscribe?: (args: unknown) => void;
+    onDispose?: () => void;
+  }): Record<string, unknown> {
+    return {
+      session: {
+        async create(): Promise<Record<string, unknown>> {
+          config.onCreateSession?.();
+          return config.createResult ?? { id: 'v1-session-1' };
+        },
+        async prompt(args: unknown): Promise<unknown> {
+          config.onPrompt?.(args);
+          return config.promptResult ?? {};
+        },
+      },
+      event: {
+        async subscribe(args: unknown): Promise<unknown> {
+          config.onSubscribe?.(args);
+          return config.subscribeResult ?? { stream: (async function* () {})() };
+        },
+      },
+      instance: {
+        async dispose(): Promise<void> {
+          config.onDispose?.();
+        },
+      },
+    };
+  }
+
+  function makeV1Loader(config: Parameters<typeof makeV1Sdk>[0]): () => Promise<{
+    createClient(options?: { baseUrl?: string }): MockOpenCodeClient;
+  }> {
+    return async () => ({
+      createClient(options?: { baseUrl?: string }): MockOpenCodeClient {
+        void options;
+        const real = makeV1Sdk(config);
+        return wrapOpencodeClient(real) as unknown as MockOpenCodeClient;
+      },
+    });
+  }
+
+  it('creates session and forwards prompt through session.prompt', async () => {
+    let capturedPromptArgs: unknown;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          createResult: { id: 'new-session-42' },
+          promptResult: { sessionId: 'new-session-42', model: 'kimi' },
+          subscribeResult: {
+            stream: (async function* () {
+              yield {
+                type: 'session.idle',
+                sessionId: 'new-session-42',
+                status: 'success',
+                usage: { input_tokens: 1, output_tokens: 2, tool_uses: 0 },
+              };
+            })(),
+          },
+          onPrompt(args) {
+            capturedPromptArgs = args;
+          },
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('hello v1'));
+    expect(events.map((e) => e.type)).toEqual(['init', 'done']);
+
+    // Verify the prompt call received the correct structure
+    const promptArgs = capturedPromptArgs as {
+      path: { id: string };
+      body: { parts: Array<{ type: string; text: string }> };
+    };
+    expect(promptArgs.path.id).toBe('new-session-42');
+    expect(promptArgs.body.parts).toEqual([{ type: 'text', text: 'hello v1' }]);
+  });
+
+  it('resumes existing session instead of creating a new one', async () => {
+    let createCalled = false;
+    let capturedPromptArgs: unknown;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          promptResult: { sessionId: 'resumed-session', model: 'kimi' },
+          subscribeResult: {
+            stream: (async function* () {
+              yield {
+                type: 'session.idle',
+                sessionId: 'resumed-session',
+                status: 'success',
+                usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+              };
+            })(),
+          },
+          onCreateSession() {
+            createCalled = true;
+          },
+          onPrompt(args) {
+            capturedPromptArgs = args;
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('continue', { resume: 'resumed-session' }),
+    );
+    expect(events.map((e) => e.type)).toEqual(['init', 'done']);
+
+    // session.create must NOT be called when resuming
+    expect(createCalled).toBe(false);
+
+    // session.prompt must target the resumed session ID
+    const promptArgs = capturedPromptArgs as { path: { id: string } };
+    expect(promptArgs.path.id).toBe('resumed-session');
+  });
+
+  it('forwards steps, permission, and tools to session.prompt body', async () => {
+    let capturedPromptArgs: unknown;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          createResult: { id: 'opts-session' },
+          promptResult: { sessionId: 'opts-session' },
+          subscribeResult: {
+            stream: (async function* () {
+              yield {
+                type: 'session.idle',
+                sessionId: 'opts-session',
+                status: 'success',
+                usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+              };
+            })(),
+          },
+          onPrompt(args) {
+            capturedPromptArgs = args;
+          },
+        }),
+      },
+    );
+
+    await collect(
+      adapter.run('test options', {
+        model: 'kimi-k2',
+        cwd: '/workspace',
+        maxTurns: 5,
+        permissions: {
+          fileWrite: 'allow',
+          shellExecute: 'ask',
+          networkAccess: 'deny',
+        },
+        allowedTools: ['edit', 'bash'],
+        disallowedTools: ['webfetch'],
+      }),
+    );
+
+    const promptArgs = capturedPromptArgs as {
+      body: {
+        parts: unknown[];
+        model?: string;
+        cwd?: string;
+        steps?: number;
+        permission?: { edit: string; bash: string; webfetch: string };
+        tools?: { core?: string[]; exclude?: string[] };
+      };
+    };
+
+    expect(promptArgs.body.model).toBe('kimi-k2');
+    expect(promptArgs.body.cwd).toBe('/workspace');
+    expect(promptArgs.body.steps).toBe(5);
+    expect(promptArgs.body.permission).toEqual({
+      edit: 'allow',
+      bash: 'ask',
+      webfetch: 'deny',
+    });
+    expect(promptArgs.body.tools).toEqual({
+      core: ['edit', 'bash'],
+      exclude: ['webfetch'],
+    });
+  });
+
+  it('streams events through event.subscribe and yields unified events', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          createResult: { id: 'stream-session' },
+          promptResult: { sessionId: 'stream-session', model: 'kimi' },
+          subscribeResult: {
+            stream: (async function* () {
+              yield {
+                type: 'message.part.updated',
+                sessionId: 'stream-session',
+                part: { type: 'text', text: 'hello from v1' },
+              };
+              yield {
+                type: 'message.part.updated',
+                sessionId: 'stream-session',
+                part: {
+                  type: 'tool_call',
+                  id: 'tc-1',
+                  name: 'bash',
+                  input: { command: 'echo hi' },
+                },
+              };
+              yield {
+                type: 'session.idle',
+                sessionId: 'stream-session',
+                status: 'success',
+                result: 'all done',
+                usage: { input_tokens: 10, output_tokens: 20, tool_uses: 1 },
+                duration_ms: 150,
+              };
+            })(),
+          },
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'text',
+      'tool_use',
+      'done',
+    ]);
+
+    const text = events[1] as AgentEvent & { payload: { content: string } };
+    expect(text.payload.content).toBe('hello from v1');
+
+    const toolUse = events[2] as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+    };
+    expect(toolUse.payload.toolName).toBe('bash');
+    expect(toolUse.payload.toolUseId).toBe('tc-1');
+    expect(toolUse.payload.input).toEqual({ command: 'echo hi' });
+  });
+
+  it('calls instance.dispose on close', async () => {
+    let disposeCalled = false;
+
+    const real = makeV1Sdk({
+      onDispose() {
+        disposeCalled = true;
+      },
+    });
+
+    const client = wrapOpencodeClient(real);
+    await client.close?.();
+
+    expect(disposeCalled).toBe(true);
   });
 });

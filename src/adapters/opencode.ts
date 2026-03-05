@@ -453,13 +453,130 @@ export function mapPermissionsToOpenCodeOptions(
   };
 }
 
+export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClient {
+  const session = asRecord(real.session);
+  const event = asRecord(real.event);
+  const instance = asRecord(real.instance);
+
+  return {
+    async run(options: Record<string, unknown>): Promise<unknown> {
+      const resumeId = asString(options.sessionId);
+
+      let sessionId: string | undefined;
+
+      if (resumeId) {
+        // Resume an existing session instead of creating a new one.
+        sessionId = resumeId;
+      } else {
+        const createFn = session.create;
+        if (typeof createFn !== 'function') {
+          throw new Error('OpenCode SDK client.session.create() not available');
+        }
+
+        const created = asRecord(
+          await (createFn as (body?: unknown) => Promise<unknown>)(),
+        );
+        sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
+      }
+
+      const promptFn = session.prompt;
+      if (typeof promptFn !== 'function') {
+        throw new Error('OpenCode SDK client.session.prompt() not available');
+      }
+
+      const permissionObj = options.permission;
+      const toolsObj = options.tools;
+
+      const result = await (promptFn as (args: unknown) => Promise<unknown>)({
+        path: { id: sessionId },
+        body: {
+          parts: [{ type: 'text', text: options.prompt }],
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.cwd ? { cwd: options.cwd } : {}),
+          ...(options.steps !== undefined ? { steps: options.steps } : {}),
+          ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
+          ...(toolsObj !== undefined ? { tools: toolsObj } : {}),
+        },
+      });
+
+      const resultRecord = asRecord(result);
+      return {
+        ...resultRecord,
+        id: sessionId,
+        sessionId,
+      };
+    },
+
+    events(options?: Record<string, unknown>): AsyncIterable<unknown> {
+      const subscribeFn = event.subscribe;
+      if (typeof subscribeFn !== 'function') {
+        throw new Error('OpenCode SDK client.event.subscribe() not available');
+      }
+
+      // Return an async iterable that lazily calls subscribe
+      return {
+        [Symbol.asyncIterator]() {
+          let innerIterator: AsyncIterator<unknown> | undefined;
+          let started = false;
+
+          return {
+            async next(): Promise<IteratorResult<unknown>> {
+              if (!started) {
+                started = true;
+                const subResult = asRecord(
+                  await (subscribeFn as (args?: unknown) => Promise<unknown>)(options),
+                );
+                const stream = subResult.stream ?? subResult.events ?? subResult;
+                if (isAsyncIterable(stream)) {
+                  innerIterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                } else {
+                  return { done: true, value: undefined };
+                }
+              }
+
+              if (!innerIterator) {
+                return { done: true, value: undefined };
+              }
+
+              return innerIterator.next();
+            },
+          };
+        },
+      };
+    },
+
+    async close(): Promise<void> {
+      const disposeFn = instance.dispose;
+      if (typeof disposeFn === 'function') {
+        await (disposeFn as () => Promise<void>)();
+      }
+    },
+  };
+}
+
 export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
   const mod = (await import('@opencode-ai/sdk')) as {
+    createOpencodeClient?: unknown;
     createClient?: unknown;
     OpenCodeClient?: unknown;
     OpenCode?: unknown;
   };
 
+  // v1.x SDK: createOpencodeClient with nested API
+  if (typeof mod.createOpencodeClient === 'function') {
+    const factory = mod.createOpencodeClient as (
+      config?: { baseUrl?: string; directory?: string },
+    ) => Record<string, unknown>;
+
+    return {
+      createClient: (options?: { baseUrl?: string }) => {
+        const real = factory({ baseUrl: options?.baseUrl });
+        return wrapOpencodeClient(real);
+      },
+    };
+  }
+
+  // Legacy fallbacks (pre-1.x)
   if (typeof mod.createClient === 'function') {
     return {
       createClient: mod.createClient as OpenCodeSdk['createClient'],
