@@ -33,6 +33,7 @@ interface ClaudeQueryOptions {
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: (tool: ClaudeToolUseContext) => boolean | undefined;
   abortController?: AbortController;
+  env?: Record<string, string | undefined>;
 }
 
 interface ClaudeAgentSdk {
@@ -90,6 +91,7 @@ interface ClaudeSystemMessage {
 interface ClaudeAssistantMessage {
   type?: unknown;
   content?: unknown;
+  message?: { content?: unknown };
   text?: unknown;
   delta?: unknown;
   sessionId?: unknown;
@@ -493,6 +495,9 @@ export function mapAgentOptionsToClaudeQueryOptions(
     }
   }
 
+  const env: Record<string, string | undefined> = { ...process.env };
+  delete env.CLAUDECODE;
+
   return {
     queryOptions: {
       cwd: options?.cwd,
@@ -506,6 +511,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       allowDangerouslySkipPermissions: permissionOptions.allowDangerouslySkipPermissions,
       canUseTool: permissionOptions.canUseTool,
       abortController,
+      env,
     },
     cleanupAbort,
   };
@@ -591,7 +597,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             yield createEvent('text_delta', AGENT, { delta }, sessionId);
           }
 
-          const contentEvents = parseAssistantContent(assistant.content);
+          const contentEvents = parseAssistantContent(
+            assistant.content ?? assistant.message?.content,
+          );
 
           for (const contentEvent of contentEvents) {
             if (contentEvent.type === 'text') {

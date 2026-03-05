@@ -22,6 +22,7 @@ interface MockSdkInnerOptions {
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: (tool: { name?: string; toolName?: string }) => boolean | undefined;
   abortController?: AbortController;
+  env?: Record<string, string | undefined>;
 }
 
 interface MockSdkOptions {
@@ -639,6 +640,68 @@ describe('ClaudeCodeAdapter', () => {
     const done = events.find((e) => e.type === 'done')!;
     const payload = done.payload as { resumeToken?: string };
     expect(payload.resumeToken).toBe('backend-session-xyz');
+  });
+
+  it('parses assistant content from nested message.content (real SDK shape)', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude-3-7-sonnet',
+          cwd: '/repo',
+          tools: ['Write'],
+          sessionId: 'session-nested',
+        },
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'nested hello' },
+              { type: 'tool_use', id: 'tool-n1', name: 'Write', input: { path: '/tmp/f' } },
+            ],
+          },
+          sessionId: 'session-nested',
+        },
+        {
+          type: 'result',
+          status: 'success',
+          usage: { input_tokens: 5, output_tokens: 10, tool_uses: 1 },
+          duration_ms: 50,
+          sessionId: 'session-nested',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((e) => e.type)).toEqual(['init', 'text', 'tool_use', 'done']);
+
+    const text = events[1] as AgentEvent & { payload: { content: string } };
+    expect(text.payload.content).toBe('nested hello');
+
+    const toolUse = events[2] as AgentEvent & {
+      payload: { toolName: string; toolUseId: string };
+    };
+    expect(toolUse.payload.toolName).toBe('Write');
+    expect(toolUse.payload.toolUseId).toBe('tool-n1');
+  });
+
+  it('excludes CLAUDECODE from env passed to SDK query options', () => {
+    const original = process.env.CLAUDECODE;
+    process.env.CLAUDECODE = '1';
+
+    try {
+      const mapped = mapAgentOptionsToClaudeQueryOptions({});
+      expect(mapped.queryOptions.env).toBeDefined();
+      expect(mapped.queryOptions.env!.CLAUDECODE).toBeUndefined();
+      // process.env is NOT mutated
+      expect(process.env.CLAUDECODE).toBe('1');
+    } finally {
+      if (original !== undefined) {
+        process.env.CLAUDECODE = original;
+      } else {
+        delete process.env.CLAUDECODE;
+      }
+    }
   });
 
   it('omits resumeToken when backend provides no session ID', async () => {
