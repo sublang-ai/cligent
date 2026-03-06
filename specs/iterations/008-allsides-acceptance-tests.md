@@ -9,7 +9,7 @@ Add end-to-end acceptance tests that exercise the full AllSides pipeline (prompt
 
 ## Status
 
-Todo
+Complete
 
 ## Design
 
@@ -17,12 +17,66 @@ Todo
 
 `apps/allsides/src/allsides.acceptance.test.ts`
 
-- Creates a temp work dir with log files, a `.allsides-session` marker, and a sentinel file (`SENTINEL_<uuid>.txt`) used to verify output correctness
+- Unsets `CLAUDECODE` env var to allow nested Claude Code sessions
+- Creates a work dir inside the project tree (`.test-accept/run-<random>/`) so agents with project-scoped security policies can access the files
+- Populates sentinel file (`SENTINEL_<uuid>.txt`) with known content (`CANARY_<uuid>`)
 - Calls `resolveAgents()` with all four agents explicitly to test AllSides wiring
-- Runs each agent via `cligent.run()` with `cwd` set to the work dir and run-time `permissions: { shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` (Codex overridden to all-allow since it requires that for `approvalPolicy: 'never'`)
-- Reads each agent's log file after completion
-- Asserts each log contains: boss echo, the sentinel filename in text output, and a `[success | ...]` done line
-- 120 s timeout, abort signal, cleanup
+- Permissions: `{ shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` (Codex overridden to all-allow since it requires that for `approvalPolicy: 'never'`)
+- Prompts use absolute paths so agents work regardless of their resolved cwd
+- 110 s abort timeout per agent, cleanup in `afterAll`
+
+### Output normalization
+
+Adapter outputs may contain ANSI escape codes (`\x1b[7m`, `\x1b[27m`) and line-wrapping that splits UUIDs across lines. Two helpers handle this:
+
+- `normalizeLog(s)` — strips ESC/CSI-prefixed ANSI sequences and collapses newlines to spaces. Used for log assertions (`boss>`, `[success |`).
+- `assertContainsText(text, needle)` — strips all non-content characters (`[^a-zA-Z0-9._-]`) before checking `toContain`. Used for sentinel name and canary value assertions where line-wrapping inserts spaces inside UUIDs.
+
+### Helper functions
+
+| Helper | Purpose |
+|--------|---------|
+| `collectEvents(agent, prompt, options)` | Runs `cligent.run()`, returns `{ events, log, output }` where `output` combines formatted log + `done.payload.result` |
+| `permissionsFor(agentName)` | Returns codex-all-allow vs standard permissions |
+| `findDoneEvent(events)` | Extracts the single `done` event (throws if missing) |
+| `findToolUseEvents(events)` | Extracts all `tool_use` events |
+
+### Test groups
+
+#### Group 1: `sentinel file listing` (existing)
+
+4 `it()` blocks, one per agent. Prompt: `` `List the files in the directory ${workDir}` ``. Asserts: boss echo, sentinel filename in combined output, `[success |` done line.
+
+#### Group 2: `tool use and event lifecycle` (new)
+
+Shared `beforeAll` runs all 4 agents sequentially with prompt `` `Read the file ${join(workDir, sentinelName)} and state its contents` `` (absolute path), caching `RunResult` per agent. 4 `it()` blocks per agent (16 total), all reading from cache (zero extra API calls):
+
+| Test | Assertion |
+|------|-----------|
+| `produces valid event lifecycle` | Has content events (text/text_delta/init/error); exactly 1 done as last event; `status === 'success'`; non-negative token counts |
+| `emits no unknown_tool names in tool_use events` | When `tool_use` events are present, **none** may have `toolName === 'unknown_tool'` — failure includes full raw event JSON for debugging. (Some adapters like Claude Code bundle tools inside the result message and emit no discrete `tool_use` events.) |
+| `reads file and returns sentinel content` | `sentinelContent` string (`CANARY_<uuid>`) appears in combined output |
+| `captures resumeToken after successful run` | If `done.payload.resumeToken` present, it's a non-empty string matching `agent.cligent.resumeToken` |
+
+The unknown-tool diagnostic (second test) catches adapter tool-name parsing failures that surface as `[tool: unknown_tool]` in logs.
+
+#### Group 3: `auto-detection` (new, zero API cost)
+
+1 `it()` block. Calls `resolveAgents(undefined, workDir)` — only invokes `isAvailable()`, no API tokens. Asserts: at least 1 agent detected; all names in known set; logs which agents detected for CI visibility.
+
+#### Group 4: `abort handling` (new, near-zero API cost)
+
+4 `it()` blocks, one per agent. Pre-aborts the `AbortController` before calling `run()`. Cligent's pre-abort short-circuit (ENG-009) yields a synthetic `done` immediately. Asserts: done event present with `status === 'interrupted'`. 30 s timeout (fast, deterministic, zero tokens).
+
+### Token budget
+
+| Group | API calls | Token spend |
+|-------|-----------|-------------|
+| 1 (listing) | 4 (1/agent) | Low |
+| 2 (tool use) | 4 (1/agent) | Low-medium |
+| 3 (auto-detect) | 0 | Zero |
+| 4 (abort) | 4 (pre-aborted) | Zero |
+| **Total** | **12 calls, 8 real** | **Low** |
 
 ### Test separation
 
@@ -42,11 +96,11 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 
 ## Deliverables
 
-- [ ] `apps/allsides/src/allsides.acceptance.test.ts` — acceptance test file
-- [ ] `apps/allsides/vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
-- [ ] `apps/allsides/vitest.acceptance.config.ts` — vitest config for acceptance tests only
-- [ ] `apps/allsides/package.json` — add `test:acceptance` script
-- [ ] `.github/workflows/ci.yml` — add `acceptance` job
+- [x] `apps/allsides/src/allsides.acceptance.test.ts` — acceptance test file with 4 test groups
+- [x] `apps/allsides/vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
+- [x] `apps/allsides/vitest.acceptance.config.ts` — vitest config for acceptance tests only
+- [x] `apps/allsides/package.json` — add `test:acceptance` script
+- [x] `.github/workflows/ci.yml` — add `acceptance` job
 
 ## Tasks
 
@@ -57,12 +111,13 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 
 2. **Write acceptance test** (`apps/allsides/src/allsides.acceptance.test.ts`)
    - Create temp work dir via `mkdtempSync`
-   - Create empty `<agent>.log` files, `.allsides-session` marker, and a sentinel file (`SENTINEL_<uuid>.txt`) in the work dir
-   - Call `resolveAgents()` with explicit entries for all four agents to test AllSides wiring
-   - For each agent, run `cligent.run("List the files in the current directory", { cwd: workDir, permissions, abortSignal })` where permissions default to `{ shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` with Codex overridden to all-allow (required for `approvalPolicy: 'never'`); drain events to the log file using `formatEvent()`
-   - Read each agent's log after completion
-   - Assert: boss echo present, sentinel filename appears in text output, `[success | ...]` done line
-   - 120 s vitest timeout, AbortController with timeout, cleanup in afterAll
+   - Create log files, `.allsides-session` marker, and sentinel file with known content (`CANARY_<uuid>`)
+   - Call `resolveAgents()` with explicit entries for all four agents
+   - **Group 1**: Sentinel file listing — prompt each agent to list files, assert sentinel filename in output
+   - **Group 2**: Tool use and event lifecycle — prompt each agent to read sentinel file; assert valid event lifecycle, known tool names (unknown-tool diagnostic), sentinel content in log, resumeToken capture
+   - **Group 3**: Auto-detection — call `resolveAgents(undefined, workDir)`, assert at least 1 agent detected with known names
+   - **Group 4**: Abort handling — pre-abort AbortController, assert `done` with `status === 'interrupted'`
+   - Helper functions: `collectEvents`, `permissionsFor`, `findDoneEvent`, `findToolUseEvents`
 
 3. **Add CI acceptance job**
    - New `acceptance` job in `.github/workflows/ci.yml`
@@ -76,4 +131,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 
 - `npm test` still passes (unit tests only, no acceptance tests included)
 - `npm run test:acceptance -w apps/allsides` passes with API keys and SDKs present
+- Unknown-tool test (Group 2) fails loudly with raw event JSON if any adapter falls back to `'unknown_tool'`
+- Auto-detection test (Group 3) logs which agents are available in the environment
+- Abort test (Group 4) completes in <1 s per agent
 - CI acceptance job green on main push
