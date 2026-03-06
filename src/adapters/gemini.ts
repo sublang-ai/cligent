@@ -624,10 +624,16 @@ export class GeminiAdapter implements AgentAdapter {
         }
 
         if (eventType === 'tool_use' || eventType === 'tool_call_request') {
-          // Some Gemini CLI versions nest tool info under a `value` wrapper
-          // (the raw Turn event shape) or a `functionCall` / `function_call` key.
+          // Tool info may sit at: top level, inside a `functionCall` /
+          // `function_call` key, or inside a `value` wrapper that itself
+          // may contain a `functionCall` sub-object.
+          const wrapper = asRecord(message.value);
           const nested = asRecord(
-            message.value ?? message.functionCall ?? message.function_call,
+            wrapper.functionCall ??
+              wrapper.function_call ??
+              message.functionCall ??
+              message.function_call ??
+              message.value,
           );
 
           const toolName =
@@ -671,16 +677,27 @@ export class GeminiAdapter implements AgentAdapter {
         }
 
         if (eventType === 'tool_result' || eventType === 'tool_call_response') {
+          // Tool results may sit at: top level, inside a `functionResponse`
+          // / `function_response` key, or inside a `value` wrapper that
+          // itself may contain a `functionResponse` sub-object.
+          const wrapper = asRecord(message.value);
           const nested = asRecord(
-            message.value ?? message.functionCall ?? message.function_call,
+            wrapper.functionResponse ??
+              wrapper.function_response ??
+              message.functionResponse ??
+              message.function_response ??
+              message.value,
           );
 
-          const statusText = asString(message.status)?.toLowerCase();
+          const nestedStatus = asString(nested.status)?.toLowerCase();
+          const statusText =
+            asString(message.status)?.toLowerCase() ?? nestedStatus;
           const status: 'success' | 'error' | 'denied' =
             statusText === 'denied'
               ? 'denied'
               : message.isError === true ||
                   message.is_error === true ||
+                  nested.isError === true ||
                   statusText === 'error'
                 ? 'error'
                 : 'success';
@@ -713,6 +730,7 @@ export class GeminiAdapter implements AgentAdapter {
                 message.content ??
                 nested.output ??
                 nested.result ??
+                nested.response ??
                 null,
               durationMs:
                 asNumber(message.durationMs) ?? asNumber(message.duration_ms),

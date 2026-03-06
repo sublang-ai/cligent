@@ -50,6 +50,9 @@ jobs:
 
       - run: npm run build
 
+      - name: Link local cligent for acceptance tests
+        run: rm -rf node_modules/@sublang/cligent && ln -s ../.. node_modules/@sublang/cligent
+
       - name: Install Gemini CLI
         run: npm install -g @google/gemini-cli
 

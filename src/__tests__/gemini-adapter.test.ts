@@ -303,6 +303,140 @@ describe('GeminiAdapter', () => {
     expect(toolResult.payload.status).toBe('success');
   });
 
+  it('parses nested functionResponse tool_result payload', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            sessionId: 'fn-resp',
+            model: 'gemini-2.5-pro',
+            cwd: '/repo',
+          }),
+          // tool_use with functionCall nesting
+          JSON.stringify({
+            type: 'tool_use',
+            sessionId: 'fn-resp',
+            functionCall: { name: 'Read', id: 'call-99', args: { path: '/a' } },
+          }),
+          // tool_result with functionResponse nesting (Gemini API style)
+          JSON.stringify({
+            type: 'tool_result',
+            sessionId: 'fn-resp',
+            functionResponse: {
+              name: 'Read',
+              id: 'call-99',
+              status: 'success',
+              response: 'file contents here',
+            },
+          }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 'fn-resp',
+            status: 'success',
+            stats: { input_tokens: 5, output_tokens: 10, tool_uses: 1 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('read it'));
+
+    const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+    };
+    expect(toolUse).toBeDefined();
+    expect(toolUse.payload.toolName).toBe('Read');
+    expect(toolUse.payload.toolUseId).toBe('call-99');
+    expect(toolUse.payload.input).toEqual({ path: '/a' });
+
+    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; status: string; output: unknown };
+    };
+    expect(toolResult).toBeDefined();
+    expect(toolResult.payload.toolName).toBe('Read');
+    expect(toolResult.payload.toolUseId).toBe('call-99');
+    expect(toolResult.payload.status).toBe('success');
+    expect(toolResult.payload.output).toBe('file contents here');
+  });
+
+  it('parses value-wrapped functionCall/functionResponse payloads', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            sessionId: 'val-wrap',
+            model: 'gemini-2.5-pro',
+            cwd: '/repo',
+          }),
+          // value wrapper around functionCall (raw Turn event shape)
+          JSON.stringify({
+            type: 'tool_use',
+            sessionId: 'val-wrap',
+            value: {
+              functionCall: { name: 'Bash', id: 'bash-1', args: { command: 'ls' } },
+            },
+          }),
+          // value wrapper around functionResponse
+          JSON.stringify({
+            type: 'tool_result',
+            sessionId: 'val-wrap',
+            value: {
+              functionResponse: {
+                name: 'Bash',
+                id: 'bash-1',
+                status: 'success',
+                response: 'file1.txt\nfile2.txt',
+              },
+            },
+          }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 'val-wrap',
+            status: 'success',
+            stats: { input_tokens: 3, output_tokens: 7, tool_uses: 1 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('list files'));
+
+    const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+    };
+    expect(toolUse).toBeDefined();
+    expect(toolUse.payload.toolName).toBe('Bash');
+    expect(toolUse.payload.toolUseId).toBe('bash-1');
+    expect(toolUse.payload.input).toEqual({ command: 'ls' });
+
+    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; status: string; output: unknown };
+    };
+    expect(toolResult).toBeDefined();
+    expect(toolResult.payload.toolName).toBe('Bash');
+    expect(toolResult.payload.toolUseId).toBe('bash-1');
+    expect(toolResult.payload.status).toBe('success');
+    expect(toolResult.payload.output).toBe('file1.txt\nfile2.txt');
+  });
+
   it('emits recoverable error on malformed NDJSON line and continues', async () => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(

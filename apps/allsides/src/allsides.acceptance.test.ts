@@ -23,6 +23,17 @@ import type {
 
 const AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const;
 
+/**
+ * Agents the CI workflow provisions (SDKs + binaries). If any of these are
+ * missing in a CI run, beforeAll fails the entire suite loudly rather than
+ * letting tests pass vacuously.
+ */
+const CI_EXPECTED_AGENTS: ReadonlySet<string> = new Set([
+  'claude',
+  'codex',
+  'gemini',
+]);
+
 /** Strip ANSI escape sequences (ESC[ or CSI) and collapse newlines. */
 function normalizeLog(s: string): string {
   // eslint-disable-next-line no-control-regex
@@ -137,6 +148,19 @@ describe('AllSides acceptance', () => {
     availableAgentNames = new Set(detected.map((a) => a.name));
     console.log(`[setup] Available agents: ${[...availableAgentNames].join(', ')}`);
 
+    // In CI, assert the provisioned agent set is present. If a provisioned
+    // agent disappears (e.g. SDK removed, binary missing), fail loudly.
+    if (process.env.CI) {
+      for (const expected of CI_EXPECTED_AGENTS) {
+        if (!availableAgentNames.has(expected)) {
+          throw new Error(
+            `CI requires agent "${expected}" but it was not detected. ` +
+              `Available: ${[...availableAgentNames].join(', ')}`,
+          );
+        }
+      }
+    }
+
     // Resolve all four agents (needed for abort tests which don't hit APIs)
     agents = await resolveAgents(
       AGENTS.map((name) => ({ name })),
@@ -159,7 +183,10 @@ describe('AllSides acceptance', () => {
   describe('sentinel file listing', () => {
     for (const agentName of AGENTS) {
       it(`${agentName} lists sentinel file`, async () => {
-        if (!availableAgentNames.has(agentName)) return;
+        if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available in this environment`);
+          return;
+        }
         const agent = agents.find((a) => a.name === agentName)!;
         const logPath = join(workDir, `${agentName}.log`);
 
@@ -201,7 +228,10 @@ describe('AllSides acceptance', () => {
     beforeAll(async () => {
       // Run available agents sequentially, caching results
       for (const agentName of AGENTS) {
-        if (!availableAgentNames.has(agentName)) continue;
+        if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available — skipping tool-use collection`);
+          continue;
+        }
         const agent = agents.find((a) => a.name === agentName)!;
         const ac = new AbortController();
         const timeout = setTimeout(() => ac.abort(), 110_000);
@@ -225,7 +255,10 @@ describe('AllSides acceptance', () => {
     for (const agentName of AGENTS) {
       describe(agentName, () => {
         it('produces valid event lifecycle', () => {
-          if (!availableAgentNames.has(agentName)) return;
+          if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available in this environment`);
+          return;
+        }
           const { events } = results.get(agentName)!;
 
           // Has activity events before done (text, text_delta, tool_use, init, or error)
@@ -249,7 +282,10 @@ describe('AllSides acceptance', () => {
         });
 
         it('emits no unknown_tool names in tool_use events', () => {
-          if (!availableAgentNames.has(agentName)) return;
+          if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available in this environment`);
+          return;
+        }
           const { events } = results.get(agentName)!;
           const toolEvents = findToolUseEvents(events);
 
@@ -266,13 +302,19 @@ describe('AllSides acceptance', () => {
         });
 
         it('reads file and returns sentinel content', () => {
-          if (!availableAgentNames.has(agentName)) return;
+          if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available in this environment`);
+          return;
+        }
           const { output } = results.get(agentName)!;
           assertContainsText(output, sentinelContent);
         });
 
         it('captures resumeToken after successful run', () => {
-          if (!availableAgentNames.has(agentName)) return;
+          if (!availableAgentNames.has(agentName)) {
+          console.warn(`[skip] ${agentName} not available in this environment`);
+          return;
+        }
           const { events } = results.get(agentName)!;
           const done = findDoneEvent(events);
           const agent = agents.find((a) => a.name === agentName)!;
