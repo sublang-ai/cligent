@@ -221,16 +221,6 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
   };
 }
 
-function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Symbol.asyncIterator in value &&
-    typeof (value as { [Symbol.asyncIterator]: unknown })[Symbol.asyncIterator] ===
-      'function'
-  );
-}
-
 interface MappedCodexOptions {
   threadOptions: CodexThreadOptions;
   runOptions: CodexRunOptions;
@@ -580,18 +570,11 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('Codex SDK does not support runStreamed() in this version');
     }
 
-    // The SDK returns { events: AsyncGenerator }, but handle the case where
-    // it returns an AsyncIterable directly or the shape differs.
+    // The SDK normally returns { events: AsyncGenerator }. Prefer .events
+    // but fall back to iterating the result directly if the shape differs
+    // (e.g. due to transpilation or a non-standard SDK version).
     const streamObj = streamResult as Record<string, unknown>;
-    const runStream = isAsyncIterable(streamObj.events)
-      ? (streamObj.events as AsyncIterable<unknown>)
-      : isAsyncIterable(streamResult)
-        ? streamResult
-        : undefined;
-
-    if (!runStream) {
-      throw new Error('Codex thread does not provide an async event stream');
-    }
+    const runStream = (streamObj.events ?? streamResult) as AsyncIterable<unknown>;
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;

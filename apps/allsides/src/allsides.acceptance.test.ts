@@ -110,7 +110,10 @@ describe('AllSides acceptance', () => {
   let workDir: string;
   let sentinelName: string;
   let sentinelContent: string;
+  /** All four agents (forced) — used for abort tests that don't need API. */
   let agents: ResolvedAgent[];
+  /** Names of agents whose isAvailable() returned true. */
+  let availableAgentNames: Set<string>;
 
   beforeAll(async () => {
     // Create work dir inside the project tree so that agents with project-
@@ -129,7 +132,12 @@ describe('AllSides acceptance', () => {
     sentinelContent = `CANARY_${randomUUID()}`;
     writeFileSync(join(workDir, sentinelName), sentinelContent);
 
-    // Resolve all four agents
+    // Detect which agents are actually available (SDK + binary installed)
+    const detected = await resolveAgents(undefined, workDir);
+    availableAgentNames = new Set(detected.map((a) => a.name));
+    console.log(`[setup] Available agents: ${[...availableAgentNames].join(', ')}`);
+
+    // Resolve all four agents (needed for abort tests which don't hit APIs)
     agents = await resolveAgents(
       AGENTS.map((name) => ({ name })),
       workDir,
@@ -151,6 +159,7 @@ describe('AllSides acceptance', () => {
   describe('sentinel file listing', () => {
     for (const agentName of AGENTS) {
       it(`${agentName} lists sentinel file`, async () => {
+        if (!availableAgentNames.has(agentName)) return;
         const agent = agents.find((a) => a.name === agentName)!;
         const logPath = join(workDir, `${agentName}.log`);
 
@@ -190,8 +199,9 @@ describe('AllSides acceptance', () => {
     const results = new Map<string, RunResult>();
 
     beforeAll(async () => {
-      // Run all 4 agents sequentially, caching results
+      // Run available agents sequentially, caching results
       for (const agentName of AGENTS) {
+        if (!availableAgentNames.has(agentName)) continue;
         const agent = agents.find((a) => a.name === agentName)!;
         const ac = new AbortController();
         const timeout = setTimeout(() => ac.abort(), 110_000);
@@ -215,6 +225,7 @@ describe('AllSides acceptance', () => {
     for (const agentName of AGENTS) {
       describe(agentName, () => {
         it('produces valid event lifecycle', () => {
+          if (!availableAgentNames.has(agentName)) return;
           const { events } = results.get(agentName)!;
 
           // Has activity events before done (text, text_delta, tool_use, init, or error)
@@ -238,6 +249,7 @@ describe('AllSides acceptance', () => {
         });
 
         it('emits no unknown_tool names in tool_use events', () => {
+          if (!availableAgentNames.has(agentName)) return;
           const { events } = results.get(agentName)!;
           const toolEvents = findToolUseEvents(events);
 
@@ -254,11 +266,13 @@ describe('AllSides acceptance', () => {
         });
 
         it('reads file and returns sentinel content', () => {
+          if (!availableAgentNames.has(agentName)) return;
           const { output } = results.get(agentName)!;
           assertContainsText(output, sentinelContent);
         });
 
         it('captures resumeToken after successful run', () => {
+          if (!availableAgentNames.has(agentName)) return;
           const { events } = results.get(agentName)!;
           const done = findDoneEvent(events);
           const agent = agents.find((a) => a.name === agentName)!;

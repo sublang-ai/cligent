@@ -656,9 +656,10 @@ export class OpenCodeAdapter implements AgentAdapter {
     let sdk: OpenCodeSdk;
     try {
       sdk = await this.loadSdkFn();
-    } catch {
+    } catch (err) {
       throw new Error(
-        'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.',
+        'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.' +
+          (err instanceof Error ? ` (${err.message})` : ''),
       );
     }
 

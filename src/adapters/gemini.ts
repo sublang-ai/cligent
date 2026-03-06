@@ -623,11 +623,20 @@ export class GeminiAdapter implements AgentAdapter {
           continue;
         }
 
-        if (eventType === 'tool_use') {
+        if (eventType === 'tool_use' || eventType === 'tool_call_request') {
+          // Some Gemini CLI versions nest tool info under a `value` wrapper
+          // (the raw Turn event shape) or a `functionCall` / `function_call` key.
+          const nested = asRecord(
+            message.value ?? message.functionCall ?? message.function_call,
+          );
+
           const toolName =
             asString(message.toolName) ??
             asString(message.tool_name) ??
             asString(message.name) ??
+            asString(nested.name) ??
+            asString(nested.toolName) ??
+            asString(nested.tool_name) ??
             'unknown_tool';
 
           const toolUseId =
@@ -635,6 +644,9 @@ export class GeminiAdapter implements AgentAdapter {
             asString(message.tool_id) ??
             asString(message.id) ??
             asString(message.callId) ??
+            asString(nested.callId) ??
+            asString(nested.id) ??
+            asString(nested.tool_id) ??
             generateSessionId();
 
           yield createEvent(
@@ -644,7 +656,13 @@ export class GeminiAdapter implements AgentAdapter {
               toolName,
               toolUseId,
               input: parseToolInput(
-                message.input ?? message.parameters ?? message.args ?? message.arguments,
+                message.input ??
+                  message.parameters ??
+                  message.args ??
+                  message.arguments ??
+                  nested.args ??
+                  nested.parameters ??
+                  nested.input,
               ),
             },
             sessionId,
@@ -652,7 +670,11 @@ export class GeminiAdapter implements AgentAdapter {
           continue;
         }
 
-        if (eventType === 'tool_result') {
+        if (eventType === 'tool_result' || eventType === 'tool_call_response') {
+          const nested = asRecord(
+            message.value ?? message.functionCall ?? message.function_call,
+          );
+
           const statusText = asString(message.status)?.toLowerCase();
           const status: 'success' | 'error' | 'denied' =
             statusText === 'denied'
@@ -671,18 +693,26 @@ export class GeminiAdapter implements AgentAdapter {
                 asString(message.toolName) ??
                 asString(message.tool_name) ??
                 asString(message.name) ??
+                asString(nested.name) ??
+                asString(nested.toolName) ??
+                asString(nested.tool_name) ??
                 'unknown_tool',
               toolUseId:
                 asString(message.toolUseId) ??
                 asString(message.tool_id) ??
                 asString(message.id) ??
                 asString(message.callId) ??
+                asString(nested.callId) ??
+                asString(nested.id) ??
+                asString(nested.tool_id) ??
                 generateSessionId(),
               status,
               output:
                 message.output ??
                 message.result ??
                 message.content ??
+                nested.output ??
+                nested.result ??
                 null,
               durationMs:
                 asNumber(message.durationMs) ?? asNumber(message.duration_ms),
