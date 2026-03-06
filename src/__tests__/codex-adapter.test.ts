@@ -529,20 +529,14 @@ describe('CodexAdapter', () => {
     );
 
     expect(capturedThreadOptions).toMatchObject({
-      cwd: '/tmp/repo',
+      workingDirectory: '/tmp/repo',
       model: 'gpt-5-codex',
-      maxTurns: 12,
       sandboxMode: 'workspace-write',
       approvalPolicy: 'untrusted',
       networkAccessEnabled: false,
-      allowedTools: ['bash', 'read_file'],
-      disallowedTools: ['web_fetch'],
     });
-    expect(capturedThreadOptions?.abortSignal).toBeUndefined();
-    expect(capturedThreadOptions?.signal).toBeUndefined();
 
     expect(capturedRunPrompt).toBe('implement feature');
-    expect(capturedRunOptions?.abortSignal).toBeUndefined();
     expect(capturedRunOptions?.signal).toBeUndefined();
   });
 
@@ -612,13 +606,13 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter({
       loadSdk: async () => ({
         Codex: class {
-          startThread(options?: MockThreadOptions): MockCodexThread {
-            capturedSignal = options?.abortSignal;
+          startThread(_options?: MockThreadOptions): MockCodexThread {
             return {
               async runStreamed(
                 _prompt: string,
-                _runOptions?: MockRunOptions,
+                runOptions?: MockRunOptions,
               ): Promise<{ events: AsyncIterable<unknown> }> {
+                capturedSignal = runOptions?.signal;
                 return {
                   events: {
                     async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
@@ -628,11 +622,11 @@ describe('CodexAdapter', () => {
                       };
 
                       await new Promise<void>((resolve) => {
-                        if (options?.abortSignal?.aborted) {
+                        if (runOptions?.signal?.aborted) {
                           resolve();
                           return;
                         }
-                        options?.abortSignal?.addEventListener('abort', () => resolve(), {
+                        runOptions?.signal?.addEventListener('abort', () => resolve(), {
                           once: true,
                         });
                       });
@@ -684,14 +678,78 @@ describe('CodexAdapter', () => {
     expect(mapped.threadOptions.approvalPolicy).toBe('never');
     expect(mapped.threadOptions.networkAccessEnabled).toBe(true);
 
-    expect(mapped.threadOptions.abortSignal).toBeDefined();
-    expect(mapped.threadOptions.abortSignal).toBe(mapped.runOptions.abortSignal);
+    expect(mapped.runOptions.signal).toBeDefined();
 
     externalAbort.abort();
 
-    expect(mapped.threadOptions.abortSignal?.aborted).toBe(true);
+    expect(mapped.runOptions.signal?.aborted).toBe(true);
 
     mapped.cleanupAbort();
+  });
+
+  it('throws descriptive error when Codex constructor fails', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: async () => ({
+        Codex: class {
+          constructor() {
+            throw new Error('Unable to locate Codex CLI binaries');
+          }
+
+          startThread(): MockCodexThread {
+            throw new Error('unreachable');
+          }
+        },
+      }),
+    });
+
+    const stream = adapter.run('prompt');
+    await expect(stream.next()).rejects.toThrow(
+      'CodexAdapter failed to initialize: Unable to locate Codex CLI binaries',
+    );
+  });
+
+  it('handles runStreamed returning a direct AsyncIterable without events wrapper', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: async () => ({
+        Codex: class {
+          startThread(): {
+            runStreamed(
+              prompt: string,
+              options?: MockRunOptions,
+            ): Promise<AsyncIterable<unknown>>;
+          } {
+            return {
+              async runStreamed(): Promise<AsyncIterable<unknown>> {
+                return {
+                  async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                    yield {
+                      type: 'item.completed',
+                      item: { type: 'message', text: 'direct iterable' },
+                    };
+                    yield {
+                      type: 'turn.completed',
+                      turn: {
+                        status: 'success',
+                        usage: { input_tokens: 1, output_tokens: 2, tool_uses: 0 },
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          }
+        },
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((e) => e.type)).toEqual(['init', 'text', 'done']);
+
+    const text = events[1] as AgentEvent & { payload: { content: string } };
+    expect(text.payload.content).toBe('direct iterable');
+
+    const done = events[2] as AgentEvent & { payload: { status: string } };
+    expect(done.payload.status).toBe('success');
   });
 
   it('sets resumeToken on done when backend provides a new thread ID', async () => {

@@ -626,11 +626,13 @@ export class GeminiAdapter implements AgentAdapter {
         if (eventType === 'tool_use') {
           const toolName =
             asString(message.toolName) ??
+            asString(message.tool_name) ??
             asString(message.name) ??
             'unknown_tool';
 
           const toolUseId =
             asString(message.toolUseId) ??
+            asString(message.tool_id) ??
             asString(message.id) ??
             asString(message.callId) ??
             generateSessionId();
@@ -642,7 +644,7 @@ export class GeminiAdapter implements AgentAdapter {
               toolName,
               toolUseId,
               input: parseToolInput(
-                message.input ?? message.args ?? message.arguments,
+                message.input ?? message.parameters ?? message.args ?? message.arguments,
               ),
             },
             sessionId,
@@ -667,10 +669,12 @@ export class GeminiAdapter implements AgentAdapter {
             {
               toolName:
                 asString(message.toolName) ??
+                asString(message.tool_name) ??
                 asString(message.name) ??
                 'unknown_tool',
               toolUseId:
                 asString(message.toolUseId) ??
+                asString(message.tool_id) ??
                 asString(message.id) ??
                 asString(message.callId) ??
                 generateSessionId(),

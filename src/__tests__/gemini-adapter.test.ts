@@ -239,6 +239,70 @@ describe('GeminiAdapter', () => {
     expect(done.payload.durationMs).toBe(222);
   });
 
+  it('parses snake_case tool_use fields from Gemini CLI v0.31+', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            sessionId: 'snake-session',
+            model: 'gemini-2.5-pro',
+            cwd: '/repo',
+            tools: ['Read', 'Bash'],
+          }),
+          JSON.stringify({
+            type: 'tool_use',
+            sessionId: 'snake-session',
+            tool_name: 'Read',
+            tool_id: 'read-42',
+            parameters: { file_path: '/repo/file.txt' },
+          }),
+          JSON.stringify({
+            type: 'tool_result',
+            sessionId: 'snake-session',
+            tool_name: 'Read',
+            tool_id: 'read-42',
+            status: 'success',
+            output: 'file contents',
+            duration_ms: 5,
+          }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 'snake-session',
+            status: 'success',
+            stats: { input_tokens: 10, output_tokens: 20, tool_uses: 1 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('read a file'));
+
+    const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+    };
+    expect(toolUse).toBeDefined();
+    expect(toolUse.payload.toolName).toBe('Read');
+    expect(toolUse.payload.toolUseId).toBe('read-42');
+    expect(toolUse.payload.input).toEqual({ file_path: '/repo/file.txt' });
+
+    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
+      payload: { toolName: string; toolUseId: string; status: string };
+    };
+    expect(toolResult).toBeDefined();
+    expect(toolResult.payload.toolName).toBe('Read');
+    expect(toolResult.payload.toolUseId).toBe('read-42');
+    expect(toolResult.payload.status).toBe('success');
+  });
+
   it('emits recoverable error on malformed NDJSON line and continues', async () => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(

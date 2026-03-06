@@ -40,21 +40,15 @@ interface CodexItem {
 }
 
 interface CodexThreadOptions {
-  cwd?: string;
+  workingDirectory?: string;
   model?: string;
-  maxTurns?: number;
   sandboxMode?: CodexSandboxMode;
   approvalPolicy?: CodexApprovalPolicy;
   networkAccessEnabled?: boolean;
-  allowedTools?: string[];
-  disallowedTools?: string[];
-  abortSignal?: AbortSignal;
-  signal?: AbortSignal;
 }
 
 interface CodexRunOptions {
   signal?: AbortSignal;
-  abortSignal?: AbortSignal;
 }
 
 interface CodexThread {
@@ -267,20 +261,14 @@ export function mapAgentOptionsToCodexOptions(
 
   return {
     threadOptions: {
-      cwd: options?.cwd,
+      workingDirectory: options?.cwd,
       model: options?.model,
-      maxTurns: options?.maxTurns,
       sandboxMode: permissions.sandboxMode,
       approvalPolicy: permissions.approvalPolicy,
       networkAccessEnabled: permissions.networkAccessEnabled,
-      allowedTools: options?.allowedTools,
-      disallowedTools: options?.disallowedTools,
-      abortSignal: signal,
-      signal,
     },
     runOptions: {
       signal,
-      abortSignal: signal,
     },
     cleanupAbort,
   };
@@ -565,7 +553,14 @@ export class CodexAdapter implements AgentAdapter {
     const { threadOptions, runOptions, cleanupAbort } =
       mapAgentOptionsToCodexOptions(options);
 
-    const codex = new sdk.Codex();
+    let codex: CodexClient;
+    try {
+      codex = new sdk.Codex();
+    } catch (err) {
+      throw new Error(
+        `CodexAdapter failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     let thread: CodexThread;
     if (options?.resume) {
@@ -578,16 +573,23 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     const streamResult = await (thread.runStreamed?.(prompt, runOptions) as
-      | Promise<{ events: AsyncIterable<unknown> }>
+      | Promise<{ events: AsyncIterable<unknown> } | AsyncIterable<unknown>>
       | undefined);
 
     if (!streamResult) {
       throw new Error('Codex SDK does not support runStreamed() in this version');
     }
 
-    const runStream = streamResult.events;
+    // The SDK returns { events: AsyncGenerator }, but handle the case where
+    // it returns an AsyncIterable directly or the shape differs.
+    const streamObj = streamResult as Record<string, unknown>;
+    const runStream = isAsyncIterable(streamObj.events)
+      ? (streamObj.events as AsyncIterable<unknown>)
+      : isAsyncIterable(streamResult)
+        ? streamResult
+        : undefined;
 
-    if (!isAsyncIterable(runStream)) {
+    if (!runStream) {
       throw new Error('Codex thread does not provide an async event stream');
     }
 
@@ -742,7 +744,7 @@ export class CodexAdapter implements AgentAdapter {
       }
 
       if (!doneYielded) {
-        if (threadOptions.abortSignal?.aborted || threadOptions.signal?.aborted) {
+        if (options?.abortSignal?.aborted || runOptions.signal?.aborted) {
           yield createEvent(
             'done',
             AGENT,
@@ -783,7 +785,7 @@ export class CodexAdapter implements AgentAdapter {
         initYielded = true;
       }
 
-      if (threadOptions.abortSignal?.aborted || threadOptions.signal?.aborted) {
+      if (options?.abortSignal?.aborted || runOptions.signal?.aborted) {
         yield createEvent(
           'done',
           AGENT,

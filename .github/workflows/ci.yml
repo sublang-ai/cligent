@@ -50,9 +50,6 @@ jobs:
 
       - run: npm run build
 
-      - name: Install agent SDKs
-        run: npm install @anthropic-ai/claude-agent-sdk @openai/codex-sdk @opencode-ai/sdk
-
       - name: Install Gemini CLI
         run: npm install -g @google/gemini-cli
 
