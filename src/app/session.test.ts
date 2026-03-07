@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { formatEvent } from './session.js';
-import type { CligentEvent } from '@sublang/cligent';
+import type { CligentEvent } from '../types.js';
 
 function makeEvent(
   type: string,

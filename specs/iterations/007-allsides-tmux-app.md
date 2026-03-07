@@ -105,29 +105,28 @@ This iteration targets the simplest useful version:
 
 ## Deliverables
 
-- [ ] `apps/allsides/package.json` — ESM package, `"bin": { "allsides": "./dist/cli.js" }`, depends on `@sublang/cligent` (workspace or published)
-- [ ] `apps/allsides/tsconfig.json` — extends root or standalone strict config
-- [ ] `apps/allsides/src/cli.ts` — entry point with arg parsing, mode dispatch
-- [ ] `apps/allsides/src/launcher.ts` — tmux session setup (temp dir, pane layout, attach)
-- [ ] `apps/allsides/src/session.ts` — boss readline loop, agent orchestration, log file routing
-- [ ] `apps/allsides/src/agents.ts` — adapter import, resolution, availability check
+- [ ] `package.json` — `"bin": { "allsides": "./dist/app/cli.js" }`
+- [ ] `tsconfig.json` — includes `src/app`
+- [ ] `src/app/cli.ts` — entry point with arg parsing, mode dispatch
+- [ ] `src/app/launcher.ts` — tmux session setup (temp dir, pane layout, attach)
+- [ ] `src/app/session.ts` — boss readline loop, agent orchestration, log file routing
+- [ ] `src/app/agents.ts` — adapter import, resolution, availability check
 - [ ] Unit tests for agent resolution and event-to-log formatting
 
 ## Tasks
 
-1. **Scaffold `apps/allsides/` package**
-   - `package.json` with `"type": "module"`, `"bin"` field, dependency on `@sublang/cligent`
-   - `tsconfig.json` (strict, ESM, declaration not needed for an app)
-   - Add `apps/allsides` to root workspace if applicable, or keep standalone
+1. **Add `src/app/` to root package**
+   - `bin` field in root `package.json` pointing to `./dist/app/cli.js`
+   - App source uses relative imports to cligent core (no separate package)
 
-2. **Implement CLI entry point** (`src/cli.ts`)
+2. **Implement CLI entry point** (`src/app/cli.ts`)
    - Parse args: `--agent <name[=model]>` (repeatable), `--session <id>`, `--work-dir <dir>`, `--cwd <dir>`
    - Minimal arg parsing (hand-rolled or `node:util.parseArgs`)
    - **Fail-fast validation for session mode:** if `--session` is present, require `--work-dir`; exit with a usage error if it is missing, does not exist, or is not writable — before any agent or tmux actions
    - Dispatch to launcher or session mode based on `--session` presence
    - Shebang line: `#!/usr/bin/env node`
 
-3. **Implement launcher** (`src/launcher.ts`)
+3. **Implement launcher** (`src/app/launcher.ts`)
    - Generate session ID (short random hex)
    - Create temp dir with `node:fs.mkdtempSync`
    - Create empty `<agent>.log` files
@@ -141,12 +140,12 @@ This iteration targets the simplest useful version:
      - `tmux set pane-border-status top` to show titles
    - Run `tmux attach-session -t <name>` via `execSync` (replaces process)
 
-4. **Implement agent resolution** (`src/agents.ts`)
+4. **Implement agent resolution** (`src/app/agents.ts`)
    - Map CLI names → adapter constructors
    - `resolveAgents(entries?: Array<{ name: string, model?: string }>)`: if entries provided, validate names against known agent map (throw on unknown names), reject duplicate agent names, then import and instantiate adapters with per-entry model; if omitted, import all, filter by `isAvailable()` (default models); throw if result is empty
    - Return array of `{ name: string, cligent: Cligent }`
 
-5. **Implement session mode** (`src/session.ts`)
+5. **Implement session mode** (`src/app/session.ts`)
    - Accept session ID, agent entries (name + optional model), work dir, cwd from parsed args
    - Call `resolveAgents()` to get Cligent instances
    - Open write streams (`node:fs.createWriteStream` in append mode) for each agent's log file under work dir
@@ -162,7 +161,7 @@ This iteration targets the simplest useful version:
 
 ## Verification
 
-- `tsc --noEmit` passes in `apps/allsides/`
-- `vitest run` passes unit tests
+- `tsc --noEmit` passes
+- `vitest run` passes unit tests (including `src/app/*.test.ts`)
 - Manual: `allsides --agent claude --agent gemini` launches tmux with correct layout, prompts fan out, responses stream into panes
 - Manual: Ctrl+C cleanly kills session and removes temp files

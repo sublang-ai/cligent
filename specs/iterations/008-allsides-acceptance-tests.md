@@ -15,7 +15,7 @@ Complete
 
 ### Test file
 
-`apps/allsides/src/allsides.acceptance.test.ts`
+`src/app/allsides.acceptance.test.ts`
 
 - Unsets `CLAUDECODE` env var to allow nested Claude Code sessions
 - Creates a work dir inside the project tree (`.test-accept/run-<random>/`) so agents with project-scoped security policies can access the files
@@ -92,24 +92,24 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 - Node 22 only
 - Installs: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`, `@google/gemini-cli` (global)
 - API keys from GitHub secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
-- Runs `npm run test:acceptance -w apps/allsides`
+- Runs `npm run test:acceptance`
 
 ## Deliverables
 
-- [x] `apps/allsides/src/allsides.acceptance.test.ts` — acceptance test file with 4 test groups
-- [x] `apps/allsides/vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
-- [x] `apps/allsides/vitest.acceptance.config.ts` — vitest config for acceptance tests only
-- [x] `apps/allsides/package.json` — add `test:acceptance` script
-- [x] `.github/workflows/ci.yml` — add `acceptance` job
+- [ ] `src/app/allsides.acceptance.test.ts` — acceptance test file
+- [ ] `vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
+- [ ] `vitest.acceptance.config.ts` — vitest config for acceptance tests only
+- [ ] `package.json` — add `test:acceptance` script
+- [ ] `.github/workflows/ci.yml` — add `acceptance` job
 
 ## Tasks
 
 1. **Update vitest config for test separation**
-   - Change `apps/allsides/vitest.config.ts` include to exclude `*.acceptance.test.ts`
-   - Create `apps/allsides/vitest.acceptance.config.ts` including only `*.acceptance.test.ts`
-   - Add `test:acceptance` script to `apps/allsides/package.json`
+   - Change `vitest.config.ts` include to exclude `*.acceptance.test.ts`
+   - Create `vitest.acceptance.config.ts` including only `*.acceptance.test.ts`
+   - Add `test:acceptance` script to `package.json`
 
-2. **Write acceptance test** (`apps/allsides/src/allsides.acceptance.test.ts`)
+2. **Write acceptance test** (`src/app/allsides.acceptance.test.ts`)
    - Create temp work dir via `mkdtempSync`
    - Create log files, `.allsides-session` marker, and sentinel file with known content (`CANARY_<uuid>`)
    - Call `resolveAgents()` with explicit entries for all four agents
@@ -125,13 +125,10 @@ New `acceptance` job in `.github/workflows/ci.yml`:
    - Node 22, ubuntu-latest
    - Install agent SDKs: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`, `@google/gemini-cli` (global)
    - Set API keys from secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
-   - Run `npm run test:acceptance -w apps/allsides`
+   - Run `npm run test:acceptance`
 
 ## Verification
 
 - `npm test` still passes (unit tests only, no acceptance tests included)
-- `npm run test:acceptance -w apps/allsides` passes with API keys and SDKs present
-- Unknown-tool test (Group 2) fails loudly with raw event JSON if any adapter falls back to `'unknown_tool'`
-- Auto-detection test (Group 3) logs which agents are available in the environment
-- Abort test (Group 4) completes in <1 s per agent
+- `npm run test:acceptance` passes with API keys and SDKs present
 - CI acceptance job green on main push

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { Cligent } from '@sublang/cligent';
+import { Cligent } from '../cligent.js';
+import type { AgentAdapter } from '../types.js';
 
 export interface AgentEntry {
   name: string;
@@ -19,16 +20,16 @@ type KnownAgentName = (typeof KNOWN_AGENTS)[number];
 
 const ADAPTER_IMPORTS: Record<
   KnownAgentName,
-  () => Promise<{ new (): import('@sublang/cligent').AgentAdapter }>
+  () => Promise<{ new (): AgentAdapter }>
 > = {
   claude: async () =>
-    (await import('@sublang/cligent/adapters/claude-code')).ClaudeCodeAdapter,
+    (await import('../adapters/claude-code.js')).ClaudeCodeAdapter,
   codex: async () =>
-    (await import('@sublang/cligent/adapters/codex')).CodexAdapter,
+    (await import('../adapters/codex.js')).CodexAdapter,
   gemini: async () =>
-    (await import('@sublang/cligent/adapters/gemini')).GeminiAdapter,
+    (await import('../adapters/gemini.js')).GeminiAdapter,
   opencode: async () =>
-    (await import('@sublang/cligent/adapters/opencode')).OpenCodeAdapter,
+    (await import('../adapters/opencode.js')).OpenCodeAdapter,
 };
 
 function isKnownAgent(name: string): name is KnownAgentName {

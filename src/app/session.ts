@@ -6,7 +6,7 @@ import { createWriteStream, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
-import type { CligentEvent } from '@sublang/cligent';
+import type { CligentEvent } from '../types.js';
 import { resolveAgents, type AgentEntry, type ResolvedAgent } from './agents.js';
 
 export interface SessionOptions {
