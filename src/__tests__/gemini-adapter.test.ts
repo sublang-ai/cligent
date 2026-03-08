@@ -785,4 +785,49 @@ describe('GeminiAdapter', () => {
     const payload = done.payload as { resumeToken?: string };
     expect(payload.resumeToken).toBeUndefined();
   });
+
+  it('sums cache tokens into inputTokens', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            model: 'gemini-pro',
+            cwd: '/repo',
+            tools: [],
+          }),
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            result: 'ok',
+            stats: {
+              input_tokens: 7,
+              output_tokens: 15,
+              cache_read_input_tokens: 60,
+              cache_creation_input_tokens: 25,
+              tool_uses: 0,
+            },
+            duration_ms: 50,
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {},
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    expect(usage.inputTokens).toBe(92);
+  });
 });

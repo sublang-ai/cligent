@@ -57,7 +57,7 @@ Authoring rules: [dev/style.md](dev/style.md).
 | File | Summary |
 | --- | --- |
 | [meta.md](user/meta.md) | GEARS syntax definition and test-spec mapping |
-| [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics |
+| [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics, usage reporting |
 | [ndjson.md](user/ndjson.md) | parseNDJSON() behavioral contract |
 | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization, UPM mapping, options mapping, resume token |
 | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption |

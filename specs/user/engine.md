@@ -90,3 +90,9 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 ### ENG-018
 
 `AgentAdapter.run()` shall be safe for concurrent calls on the same adapter instance unless the adapter explicitly documents an environmental constraint. Each call shall create fresh local state and `run()` shall not mutate adapter instance state per [DR-003](../decisions/003-role-scoped-session-management.md#adapter-thread-safety).
+
+## Usage Reporting
+
+### ENG-019
+
+Adapter-reported `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation). Adapters shall sum provider-specific cache fields (e.g. `cacheReadInputTokens`, `cacheCreationInputTokens`) into the single `inputTokens` value.

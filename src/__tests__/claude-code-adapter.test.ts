@@ -728,4 +728,56 @@ describe('ClaudeCodeAdapter', () => {
     const payload = done.payload as { resumeToken?: string };
     expect(payload.resumeToken).toBeUndefined();
   });
+
+  it('sums cache tokens into inputTokens (snake_case)', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: {
+            input_tokens: 5,
+            output_tokens: 20,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 50,
+            tool_uses: 0,
+          },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    expect(usage.inputTokens).toBe(155);
+  });
+
+  it('sums cache tokens into inputTokens (camelCase)', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: {
+            inputTokens: 8,
+            outputTokens: 15,
+            cacheReadInputTokens: 200,
+            cacheCreationInputTokens: 0,
+            toolUses: 0,
+          },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    expect(usage.inputTokens).toBe(208);
+  });
 });

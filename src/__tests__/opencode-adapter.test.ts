@@ -1408,4 +1408,36 @@ describe('OpenCode SSE event structure', () => {
       .map((e) => (e.payload as { content: string }).content);
     expect(texts).toEqual(['matched']);
   });
+
+  it('sums cache tokens into inputTokens', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          events: [
+            {
+              type: 'session.idle',
+              status: 'success',
+              usage: {
+                inputTokens: 6,
+                outputTokens: 18,
+                cacheReadInputTokens: 90,
+                cacheCreationInputTokens: 40,
+                toolUses: 0,
+              },
+              durationMs: 50,
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    expect(usage.inputTokens).toBe(136);
+  });
 });

@@ -803,4 +803,33 @@ describe('CodexAdapter', () => {
     const payload = done.payload as { resumeToken?: string };
     expect(payload.resumeToken).toBeUndefined();
   });
+
+  it('sums cache tokens into inputTokens', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              result: 'ok',
+              usage: {
+                input_tokens: 10,
+                output_tokens: 20,
+                cache_read_input_tokens: 80,
+                cache_creation_input_tokens: 30,
+                tool_uses: 0,
+              },
+              duration_ms: 50,
+            },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((e) => e.type === 'done')!;
+    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    expect(usage.inputTokens).toBe(120);
+  });
 });

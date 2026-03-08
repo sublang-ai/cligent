@@ -151,8 +151,13 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 
   const usage = rawUsage as Record<string, unknown>;
 
-  const inputTokens =
+  const baseInput =
     asNumber(usage.inputTokens) ?? asNumber(usage.input_tokens) ?? 0;
+  const cacheRead =
+    asNumber(usage.cacheReadInputTokens) ?? asNumber(usage.cache_read_input_tokens) ?? 0;
+  const cacheCreation =
+    asNumber(usage.cacheCreationInputTokens) ?? asNumber(usage.cache_creation_input_tokens) ?? 0;
+  const inputTokens = baseInput + cacheRead + cacheCreation;
 
   const outputTokens =
     asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens) ?? 0;

@@ -267,12 +267,28 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 
   const usage = rawUsage as Record<string, unknown>;
 
-  const inputTokens =
+  const baseInput =
     typeof usage.inputTokens === 'number'
       ? usage.inputTokens
       : typeof usage.input_tokens === 'number'
         ? usage.input_tokens
         : 0;
+
+  const cacheRead =
+    typeof usage.cacheReadInputTokens === 'number'
+      ? usage.cacheReadInputTokens
+      : typeof usage.cache_read_input_tokens === 'number'
+        ? usage.cache_read_input_tokens
+        : 0;
+
+  const cacheCreation =
+    typeof usage.cacheCreationInputTokens === 'number'
+      ? usage.cacheCreationInputTokens
+      : typeof usage.cache_creation_input_tokens === 'number'
+        ? usage.cache_creation_input_tokens
+        : 0;
+
+  const inputTokens = baseInput + cacheRead + cacheCreation;
 
   const outputTokens =
     typeof usage.outputTokens === 'number'
