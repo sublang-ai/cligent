@@ -60,10 +60,10 @@
   "scripts": {
     "build": "tsc",
     "postbuild": "node -e \"require('fs').chmodSync('dist/app/cli.js',0o755)\"",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "test": "vitest run",
-    "test:acceptance": "vitest run --config vitest.acceptance.config.ts",
+    "lint": "eslint --config config/eslint.config.js .",
+    "format": "prettier --config config/prettierrc.json --write .",
+    "test": "vitest run --config config/vitest.config.ts",
+    "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {

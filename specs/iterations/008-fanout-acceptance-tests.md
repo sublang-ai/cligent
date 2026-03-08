@@ -43,8 +43,8 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 ## Deliverables
 
 - [ ] `src/app/fanout.acceptance.test.ts` — acceptance test file
-- [ ] `vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
-- [ ] `vitest.acceptance.config.ts` — vitest config for acceptance tests only
+- [ ] `config/vitest.config.ts` — update include to exclude `*.acceptance.test.ts`
+- [ ] `config/vitest.acceptance.config.ts` — vitest config for acceptance tests only
 - [ ] `package.json` — add `test:acceptance` script
 - [ ] `.github/workflows/ci.yml` — add `acceptance` job
 
