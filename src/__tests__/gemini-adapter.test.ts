@@ -667,8 +667,6 @@ describe('GeminiAdapter', () => {
       'stream-json',
       '--model',
       'gemini-2.5-pro',
-      '--max-session-turns',
-      '7',
       '--allowed-tools',
       'ShellTool,custom-tool',
       'build this',

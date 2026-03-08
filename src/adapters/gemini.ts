@@ -388,9 +388,8 @@ export function mapAgentOptionsToGeminiCommand(
     args.push('--model', options.model);
   }
 
-  if (options?.maxTurns !== undefined) {
-    args.push('--max-session-turns', String(options.maxTurns));
-  }
+  // Note: Gemini CLI does not support a turn-limit flag.
+  // options.maxTurns is intentionally not forwarded.
 
   args.push(...toolConfig.args);
 
