@@ -477,12 +477,91 @@ describe('GeminiAdapter', () => {
     expect(text.payload.content).toBe('after parse error');
   });
 
+  it('surfaces error.message from terminal result events', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({ type: 'init', sessionId: 's-err', model: 'gem', cwd: '/tmp' }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 's-err',
+            status: 'error',
+            error: { message: 'API key not valid. Please pass a valid API key.' },
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        1,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((e) => e.type)).toEqual(['init', 'error', 'done']);
+
+    const errorEvt = events[1] as AgentEvent & {
+      payload: { message: string; recoverable: boolean };
+    };
+    expect(errorEvt.payload.message).toBe(
+      'API key not valid. Please pass a valid API key.',
+    );
+    expect(errorEvt.payload.recoverable).toBe(false);
+
+    const done = events[2] as AgentEvent & {
+      payload: { status: string; result?: string };
+    };
+    expect(done.payload.status).toBe('error');
+    expect(done.payload.result).toBe(
+      'API key not valid. Please pass a valid API key.',
+    );
+  });
+
+  it('surfaces diagnostic dump when result has error status but no error.message', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({ type: 'init', sessionId: 's-bare', model: 'gem', cwd: '/tmp' }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 's-bare',
+            status: 'error',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        1,
+        null,
+      );
+    });
+
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((e) => e.type)).toEqual(['init', 'error', 'done']);
+
+    const errorEvt = events[1] as AgentEvent & {
+      payload: { code?: string; message: string; recoverable: boolean };
+    };
+    expect(errorEvt.payload.code).toBe('GEMINI_RESULT_ERROR');
+    expect(errorEvt.payload.message).toContain('Gemini result error');
+    expect(errorEvt.payload.message).toContain('"status":"error"');
+    expect(errorEvt.payload.recoverable).toBe(false);
+  });
+
   it.each([
-    { code: 0, expected: 'success' },
-    { code: 1, expected: 'error' },
-    { code: 42, expected: 'error' },
-    { code: 53, expected: 'max_turns' },
-  ])('maps exit code $code to done status $expected', async ({ code, expected }) => {
+    { code: 0, expected: 'success', hasError: false },
+    { code: 1, expected: 'error', hasError: true },
+    { code: 42, expected: 'error', hasError: true },
+    { code: 53, expected: 'max_turns', hasError: false },
+  ])('maps exit code $code to done status $expected', async ({ code, expected, hasError }) => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(
         process,
@@ -501,10 +580,22 @@ describe('GeminiAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
+    const expectedTypes = hasError
+      ? ['init', 'text', 'error', 'done']
+      : ['init', 'text', 'done'];
+    expect(events.map((event) => event.type)).toEqual(expectedTypes);
 
-    const done = events[2] as AgentEvent & { payload: { status: string } };
+    const done = events[events.length - 1] as AgentEvent & { payload: { status: string; result?: string } };
     expect(done.payload.status).toBe(expected);
+
+    if (hasError) {
+      const errorEvt = events[events.length - 2] as AgentEvent & {
+        payload: { code?: string; message: string };
+      };
+      expect(errorEvt.payload.code).toBe('GEMINI_EXIT_ERROR');
+      expect(errorEvt.payload.message).toContain(`code ${code}`);
+      expect(done.payload.result).toContain(`code ${code}`);
+    }
   });
 
   it('maps permission policy combinations to tool groups', () => {

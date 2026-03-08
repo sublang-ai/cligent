@@ -751,12 +751,44 @@ export class GeminiAdapter implements AgentAdapter {
         }
 
         if (eventType === 'result') {
+          const doneStatus = mapDoneStatus(asString(message.status));
+
+          // Surface terminal error from result event (e.g. auth/quota/model).
+          // Extract from known fields; fall back to a raw dump so the
+          // provider error is never silently swallowed.
+          if (doneStatus === 'error') {
+            const resultError = asRecord(message.error);
+            const errorMsg =
+              asString(resultError.message) ??
+              asString((message as Record<string, unknown>).errorMessage) ??
+              asString(message.result);
+            const diagMsg = errorMsg
+              || `Gemini result error (raw: ${JSON.stringify({ error: message.error, result: message.result, status: message.status })})`;
+
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                ...(errorMsg ? toErrorPayload(message) : {
+                  code: 'GEMINI_RESULT_ERROR',
+                  message: diagMsg,
+                  recoverable: false,
+                }),
+              },
+              sessionId,
+            );
+          }
+
+          const resultText =
+            asString(message.result) ??
+            asString(asRecord(message.error).message);
+
           yield createEvent(
             'done',
             AGENT,
             {
-              status: mapDoneStatus(asString(message.status)),
-              result: asString(message.result),
+              status: doneStatus,
+              result: resultText,
               ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(message.stats),
               durationMs:
@@ -785,14 +817,30 @@ export class GeminiAdapter implements AgentAdapter {
 
       if (!doneYielded) {
         const status = mapExitCodeToDoneStatus(close, abortRequested);
+        const stderrText = stderr.trim();
+        const fallbackMsg = stderrText || (status === 'error'
+          ? `Gemini CLI exited with code ${close?.code ?? 'null'} without a result event`
+          : undefined);
+
+        if (status === 'error' && fallbackMsg) {
+          yield createEvent(
+            'error',
+            AGENT,
+            {
+              code: 'GEMINI_EXIT_ERROR',
+              message: fallbackMsg,
+              recoverable: false,
+            },
+            sessionId,
+          );
+        }
+
         yield createEvent(
           'done',
           AGENT,
           {
             status,
-            ...(status === 'error' && stderr.trim().length > 0
-              ? { result: stderr.trim() }
-              : {}),
+            ...(fallbackMsg ? { result: fallbackMsg } : {}),
             usage: { ...DEFAULT_DONE_USAGE },
             durationMs: Date.now() - startTime,
           },
