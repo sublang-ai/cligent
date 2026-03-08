@@ -71,6 +71,7 @@ describe('Fanout acceptance', () => {
           cwd: workDir,
           permissions,
           abortSignal: ac.signal,
+          maxTurns: 2,
           ...(model ? { model } : {}),
         })) {
           const formatted = formatEvent(event);
