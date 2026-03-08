@@ -7,7 +7,7 @@
 [![Node.js](https://img.shields.io/node/v/@sublang/cligent)](https://nodejs.org/)
 [![CI](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml)
 
-Unified TypeScript interface for CLI-based AI coding agents.
+Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, OpenCode, and more).
 
 Register an adapter, send a prompt, and consume a single async event stream — regardless of which agent runs underneath.
 
@@ -59,7 +59,8 @@ We welcome contributions of all kinds. If you'd like to help:
 - [Open an issue](https://github.com/sublang-dev/cligent/issues) for bugs or feature requests.
 - [Open a PR](https://github.com/sublang-dev/cligent/pulls) for fixes or improvements.
 - Discuss on [Discord](https://discord.gg/cxUsykWr) for support or new ideas.
-- Star the repo if you find it useful — it helps others discover the project.
+
+🌟 Star our repo if you find it useful — it helps others discover the project.
 
 ## License
 
