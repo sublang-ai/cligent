@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createInterface } from 'node:readline';
-import { createWriteStream, existsSync, rmSync } from 'node:fs';
+import { createWriteStream } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
@@ -61,15 +61,9 @@ export async function runSession(options: SessionOptions): Promise<void> {
     // Abort any in-flight runs
     abortController?.abort();
 
-    // Close streams
+    // Close streams (logs persist in .fanout/)
     for (const stream of streams.values()) {
       stream.end();
-    }
-
-    // Remove work dir only if marker exists
-    const markerPath = join(workDir, '.fanout-session');
-    if (existsSync(markerPath)) {
-      rmSync(workDir, { recursive: true, force: true });
     }
 
     // Kill tmux session

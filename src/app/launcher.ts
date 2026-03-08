@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolveAgents, type AgentEntry } from './agents.js';
@@ -39,8 +38,10 @@ export async function launch(options: LaunchOptions): Promise<void> {
   const sessionId = randomBytes(4).toString('hex');
   const sessionName = `fanout-${sessionId}`;
 
-  // Create temp directory and log files
-  const workDir = mkdtempSync(join(tmpdir(), 'fanout-'));
+  // Create persistent log directory under project root
+  const projectDir = options.cwd ?? process.cwd();
+  const workDir = join(projectDir, '.fanout');
+  mkdirSync(workDir, { recursive: true });
   for (const name of agentNames) {
     writeFileSync(join(workDir, `${name}.log`), '');
   }
@@ -60,7 +61,7 @@ export async function launch(options: LaunchOptions): Promise<void> {
   }
   const bossCmd = bossArgs.map(shellQuote).join(' ');
 
-  // Build tmux session
+  // Build tmux session (IR-007 layout)
   // a. Create session with first agent pane
   const firstLog = join(workDir, `${agentNames[0]}.log`);
   tmux('new-session', '-d', '-s', sessionName, 'tail', '-f', firstLog);
@@ -83,8 +84,10 @@ export async function launch(options: LaunchOptions): Promise<void> {
   }
   tmux('select-pane', '-t', `${sessionName}:0.${agentNames.length}`, '-T', 'boss');
 
-  // Enable pane border titles
+  // Enable pane border titles (name only, no index)
   tmux('set', '-t', sessionName, 'pane-border-status', 'top');
+  tmux('set', '-t', sessionName, 'pane-border-format',
+    '#{?pane_active,#[reverse],}#{pane_title}#[default]');
 
   // Attach (replaces current terminal)
   const attach = spawnSync('tmux', ['attach-session', '-t', sessionName], { stdio: 'inherit' });
