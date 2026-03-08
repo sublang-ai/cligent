@@ -36,7 +36,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
 
 - Triggers on main push only (protects secrets)
 - Node 22 only
-- Installs: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`, `@google/gemini-cli` (global)
+- Installs agent CLIs globally: `@google/gemini-cli`, `opencode-ai`
 - API keys from GitHub secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
 - Runs `npm run test:acceptance`
 
@@ -59,7 +59,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
    - Create temp work dir via `mkdtempSync`, run `git init` (required by Codex/OpenCode)
    - Create empty `<agent>.log` files, `.fanout-session` marker, and a sentinel file (`SENTINEL_<short-uuid>.txt`) in the work dir
    - Call `resolveAgents()` with explicit entries for all four agents to test Fanout wiring
-   - For each agent, run `cligent.run("List the files in the current directory", { cwd: workDir, permissions, abortSignal, model? })` where permissions default to `{ shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` with Codex overridden to all-allow (required for `approvalPolicy: 'never'`); OpenCode requires an explicit `model` selected from available API keys (`MOONSHOT_API_KEY` → `moonshotai-cn/kimi-k2-turbo-preview`, `OPENAI_API_KEY` → `openai/gpt-4.1-nano`; skip if neither is set); drain events to the log file using `formatEvent()`
+   - For each agent, run `cligent.run("List the files in the current directory", { cwd: workDir, permissions, abortSignal, model? })` where permissions default to `{ shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` with Codex overridden to all-allow (required for `approvalPolicy: 'never'`); OpenCode uses explicit `model: 'moonshotai-cn/kimi-k2.5'`; drain events to the log file using `formatEvent()`
    - Read each agent's log after completion
    - Assert: boss echo present, sentinel filename appears in text output, `[success | ...]` done line
    - 120 s vitest timeout, AbortController with timeout, cleanup in afterAll

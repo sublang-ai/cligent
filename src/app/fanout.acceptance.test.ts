@@ -12,14 +12,7 @@ import { formatEvent } from './session.js';
 
 const AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const;
 
-// OpenCode needs an explicit model; pick one based on available API keys.
-function pickOpencodeModel(): string | undefined {
-  if (process.env.MOONSHOT_API_KEY) return 'moonshotai-cn/kimi-k2-turbo-preview';
-  if (process.env.OPENAI_API_KEY) return 'openai/gpt-4.1-nano';
-  return undefined;
-}
-
-const OPENCODE_MODEL = pickOpencodeModel();
+const OPENCODE_MODEL = 'moonshotai-cn/kimi-k2.5';
 
 describe('Fanout acceptance', () => {
   let workDir: string;
@@ -71,12 +64,6 @@ describe('Fanout acceptance', () => {
         // Echo prompt to log (matches session behavior)
         const prompt = 'List the files in the current directory';
         let log = `boss> ${prompt}\n\n`;
-
-        if (agentName === 'opencode' && !OPENCODE_MODEL) {
-          // No recognized API key for OpenCode — skip instead of
-          // producing a confusing 401 failure.
-          return;
-        }
 
         const model = agentName === 'opencode' ? OPENCODE_MODEL : undefined;
 
