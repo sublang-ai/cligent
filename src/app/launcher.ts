@@ -37,14 +37,14 @@ export async function launch(options: LaunchOptions): Promise<void> {
   const agentNames = agents.map((a) => a.name);
 
   const sessionId = randomBytes(4).toString('hex');
-  const sessionName = `allsides-${sessionId}`;
+  const sessionName = `fanout-${sessionId}`;
 
   // Create temp directory and log files
-  const workDir = mkdtempSync(join(tmpdir(), 'allsides-'));
+  const workDir = mkdtempSync(join(tmpdir(), 'fanout-'));
   for (const name of agentNames) {
     writeFileSync(join(workDir, `${name}.log`), '');
   }
-  writeFileSync(join(workDir, '.allsides-session'), sessionId);
+  writeFileSync(join(workDir, '.fanout-session'), sessionId);
 
   // Build the boss pane command args (no shell interpolation)
   const selfBin = process.argv[1];

@@ -27,7 +27,7 @@
     "README.md"
   ],
   "bin": {
-    "allsides": "./dist/app/cli.js"
+    "fanout": "./dist/app/cli.js"
   },
   "sideEffects": false,
   "main": "dist/index.js",
@@ -59,7 +59,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "postbuild": "chmod +x dist/app/cli.js",
+    "postbuild": "node -e \"require('fs').chmodSync('dist/app/cli.js',0o755)\"",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",

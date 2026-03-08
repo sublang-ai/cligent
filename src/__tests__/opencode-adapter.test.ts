@@ -385,6 +385,7 @@ describe('OpenCodeAdapter', () => {
         waitForServerReady: async (processRef) => {
           readyCalled = true;
           processRef.stdout.write('ready\n');
+          return 'http://127.0.0.1:4788';
         },
       },
     );
@@ -397,7 +398,7 @@ describe('OpenCodeAdapter', () => {
 
     expect(invocations).toHaveLength(1);
     expect(invocations[0]?.command).toBe('opencode');
-    expect(invocations[0]?.args).toEqual(['serve', '--host', '127.0.0.1', '--port', '4788']);
+    expect(invocations[0]?.args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '4788']);
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
@@ -458,7 +459,7 @@ describe('OpenCodeAdapter', () => {
         }),
         spawnProcess,
         probeCliAvailability: async () => true,
-        waitForServerReady: async () => {},
+        waitForServerReady: async () => 'http://127.0.0.1:4788',
       },
     );
 
@@ -524,7 +525,7 @@ describe('OpenCodeAdapter', () => {
         }),
         spawnProcess,
         probeCliAvailability: async () => true,
-        waitForServerReady: async () => {},
+        waitForServerReady: async () => 'http://127.0.0.1:4788',
       },
     );
 
@@ -1128,5 +1129,283 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     await client.close?.();
 
     expect(disposeCalled).toBe(true);
+  });
+
+  it('prefers promptAsync over prompt when both are available', async () => {
+    let promptAsyncCalled = false;
+    let promptSyncCalled = false;
+
+    const real = {
+      session: {
+        async create() { return { id: 'pa-session' }; },
+        async promptAsync(args: unknown) {
+          void args;
+          promptAsyncCalled = true;
+          return {};
+        },
+        async prompt(args: unknown) {
+          void args;
+          promptSyncCalled = true;
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {
+            yield { type: 'session.idle', sessionId: 'pa-session' };
+          })() };
+        },
+      },
+    };
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: async () => ({
+          createClient() {
+            return wrapOpencodeClient(real as Record<string, unknown>) as unknown as MockOpenCodeClient;
+          },
+        }),
+      },
+    );
+
+    await collect(adapter.run('test'));
+    expect(promptAsyncCalled).toBe(true);
+    expect(promptSyncCalled).toBe(false);
+  });
+
+  it('parses "provider/model" strings into { providerID, modelID }', async () => {
+    let capturedPromptArgs: unknown;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          createResult: { id: 'model-session' },
+          subscribeResult: {
+            stream: (async function* () {
+              yield { type: 'session.idle', sessionId: 'model-session' };
+            })(),
+          },
+          onPrompt(args) { capturedPromptArgs = args; },
+        }),
+      },
+    );
+
+    await collect(adapter.run('test', { model: 'moonshotai-cn/kimi-k2' }));
+
+    const promptArgs = capturedPromptArgs as {
+      body: { model?: { providerID: string; modelID: string } };
+    };
+    expect(promptArgs.body.model).toEqual({
+      providerID: 'moonshotai-cn',
+      modelID: 'kimi-k2',
+    });
+  });
+});
+
+describe('OpenCode SSE event structure', () => {
+  it('unwraps properties envelope and handles message.part.delta', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'sse-session' },
+          events: [
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'sse-session',
+                delta: 'hello',
+              },
+            },
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'sse-session',
+                delta: ' world',
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: {
+                sessionID: 'sse-session',
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['init', 'text_delta', 'text_delta', 'done']);
+
+    const d1 = events[1] as AgentEvent & { payload: { delta: string } };
+    expect(d1.payload.delta).toBe('hello');
+
+    const d2 = events[2] as AgentEvent & { payload: { delta: string } };
+    expect(d2.payload.delta).toBe(' world');
+  });
+
+  it('handles session.error events', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'err-session' },
+          events: [
+            {
+              type: 'session.error',
+              properties: {
+                sessionID: 'err-session',
+                error: {
+                  name: 'APIError',
+                  data: { message: 'Invalid Authentication', statusCode: 401 },
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'err-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['init', 'error', 'done']);
+
+    const err = events[1] as AgentEvent & { payload: { message: string } };
+    expect(err.payload.message).toBe('Invalid Authentication');
+  });
+
+  it('treats session.status idle as terminal', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'status-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'status-session',
+                  type: 'text',
+                  text: 'done',
+                },
+              },
+            },
+            {
+              type: 'session.status',
+              properties: {
+                sessionID: 'status-session',
+                status: { type: 'idle' },
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['init', 'text', 'done']);
+  });
+
+  it('accumulates step-finish token usage for done event', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'usage-session',
+                  type: 'step-finish',
+                  tokens: { input: 100, output: 50, reasoning: 20 },
+                  cost: 0.003,
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'usage-session',
+                  type: 'step-finish',
+                  tokens: { input: 80, output: 30, reasoning: 10 },
+                  cost: 0.002,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'usage-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((e) => e.type === 'done')!;
+    const payload = done.payload as {
+      usage: { inputTokens: number; outputTokens: number; totalCostUsd?: number };
+    };
+    expect(payload.usage.inputTokens).toBe(180);
+    expect(payload.usage.outputTokens).toBe(80);
+    expect(payload.usage.totalCostUsd).toBe(0.005);
+  });
+
+  it('extracts sessionID from part inside properties envelope', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'part-session' },
+          events: [
+            // Part carries sessionID inside properties.part
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'part-session',
+                  type: 'text',
+                  text: 'matched',
+                },
+              },
+            },
+            // Foreign session via part.sessionID
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'other-session',
+                  type: 'text',
+                  text: 'foreign',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'part-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const texts = events
+      .filter((e) => e.type === 'text')
+      .map((e) => (e.payload as { content: string }).content);
+    expect(texts).toEqual(['matched']);
   });
 });

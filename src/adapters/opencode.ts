@@ -19,7 +19,7 @@ import type {
 } from '../types.js';
 
 const AGENT = 'opencode' as const;
-const DEFAULT_MANAGED_URL = 'http://127.0.0.1:4093';
+const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   inputTokens: 0,
@@ -66,7 +66,7 @@ interface OpenCodeAdapterDeps {
   waitForServerReady?: (
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
-  ) => Promise<void>;
+  ) => Promise<string>;
 }
 
 interface OpenCodePermissionOptions {
@@ -222,6 +222,7 @@ function loadStreamSessionId(message: unknown): string | undefined {
   const thread = asRecord(record.thread);
 
   return (
+    asString(record.sessionID) ??
     asString(record.sessionId) ??
     asString(record.session_id) ??
     asString(record.threadId) ??
@@ -238,6 +239,8 @@ function toErrorPayload(message: unknown): {
 } {
   const top = asRecord(message);
   const nested = asRecord(top.error);
+  const data = asRecord(top.data);
+  const nestedData = asRecord(nested.data);
 
   const code =
     asString(top.code) ??
@@ -247,6 +250,8 @@ function toErrorPayload(message: unknown): {
   const text =
     asString(top.message) ??
     asString(nested.message) ??
+    asString(data.message) ??
+    asString(nestedData.message) ??
     'OpenCode SDK error';
 
   const recoverable =
@@ -303,11 +308,11 @@ async function defaultProbeCliAvailability(): Promise<boolean> {
 function defaultWaitForServerReady(
   processRef: ChildProcessWithoutNullStreams,
   timeoutMs: number,
-): Promise<void> {
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false;
 
-    const finish = (err?: Error) => {
+    const finish = (err?: Error, url?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -321,13 +326,16 @@ function defaultWaitForServerReady(
         return;
       }
 
-      resolve();
+      resolve(url ?? '');
     };
 
+    let buffer = '';
+
     const onData = (chunk: string | Buffer) => {
-      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-      if (/ready|listening|http:\/\//i.test(text)) {
-        finish();
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      const urlMatch = buffer.match(/https?:\/\/[^\s]+/i);
+      if (urlMatch) {
+        finish(undefined, urlMatch[0]);
       }
     };
 
@@ -387,7 +395,7 @@ function parseUrlHostPort(url: string): { host: string; port: string } {
 
 function createManagedServerArgs(serverUrl: string): string[] {
   const { host, port } = parseUrlHostPort(serverUrl);
-  return ['serve', '--host', host, '--port', port];
+  return ['serve', '--hostname', host, '--port', port];
 }
 
 function createClientFromSdk(sdk: OpenCodeSdk, baseUrl: string): OpenCodeClient {
@@ -454,9 +462,35 @@ export function mapPermissionsToOpenCodeOptions(
 }
 
 export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClient {
-  const session = asRecord(real.session);
-  const event = asRecord(real.event);
-  const instance = asRecord(real.instance);
+  // Keep references to the real SDK service objects so that method calls
+  // retain `this` binding (the generated SDK stores `_client` on each
+  // service instance and accesses it via `this._client`).
+  const session = real.session as Record<string, unknown> | undefined;
+  const event = real.event as Record<string, unknown> | undefined;
+  const instance = real.instance as Record<string, unknown> | undefined;
+
+  if (!session || typeof session.create !== 'function') {
+    throw new Error('OpenCode SDK client.session.create() not available');
+  }
+  if (typeof session.promptAsync !== 'function' && typeof session.prompt !== 'function') {
+    throw new Error('OpenCode SDK client.session.{promptAsync,prompt}() not available');
+  }
+  if (!event || typeof event.subscribe !== 'function') {
+    throw new Error('OpenCode SDK client.event.subscribe() not available');
+  }
+
+  // Bind methods to their owning service objects to preserve `this`.
+  const sessionCreate = session.create.bind(session) as (body?: unknown) => Promise<unknown>;
+  const sessionPromptAsync = typeof session.promptAsync === 'function'
+    ? (session.promptAsync.bind(session) as (args: unknown) => Promise<unknown>)
+    : undefined;
+  const sessionPromptSync = typeof session.prompt === 'function'
+    ? (session.prompt.bind(session) as (args: unknown) => Promise<unknown>)
+    : undefined;
+  const eventSubscribe = event.subscribe.bind(event) as (args?: unknown) => Promise<unknown>;
+  const instanceDispose = instance && typeof instance.dispose === 'function'
+    ? (instance.dispose.bind(instance) as () => Promise<void>)
+    : undefined;
 
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
@@ -468,51 +502,92 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
         // Resume an existing session instead of creating a new one.
         sessionId = resumeId;
       } else {
-        const createFn = session.create;
-        if (typeof createFn !== 'function') {
-          throw new Error('OpenCode SDK client.session.create() not available');
-        }
-
-        const created = asRecord(
-          await (createFn as (body?: unknown) => Promise<unknown>)(),
-        );
+        const created = asRecord(await sessionCreate());
         sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
-      }
-
-      const promptFn = session.prompt;
-      if (typeof promptFn !== 'function') {
-        throw new Error('OpenCode SDK client.session.prompt() not available');
       }
 
       const permissionObj = options.permission;
       const toolsObj = options.tools;
 
-      const result = await (promptFn as (args: unknown) => Promise<unknown>)({
-        path: { id: sessionId },
-        body: {
-          parts: [{ type: 'text', text: options.prompt }],
-          ...(options.model ? { model: options.model } : {}),
-          ...(options.cwd ? { cwd: options.cwd } : {}),
-          ...(options.steps !== undefined ? { steps: options.steps } : {}),
-          ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-          ...(toolsObj !== undefined ? { tools: toolsObj } : {}),
-        },
-      });
+      // OpenCode v1 expects model as { providerID, modelID }.  Parse
+      // "provider/model" strings into that format; pass other values as-is.
+      let modelVal: unknown;
+      if (typeof options.model === 'string' && options.model.includes('/')) {
+        const slashIdx = options.model.indexOf('/');
+        modelVal = {
+          providerID: options.model.slice(0, slashIdx),
+          modelID: options.model.slice(slashIdx + 1),
+        };
+      } else {
+        modelVal = options.model;
+      }
 
-      const resultRecord = asRecord(result);
+      const promptBody = {
+        parts: [{ type: 'text', text: options.prompt }],
+        ...(modelVal ? { model: modelVal } : {}),
+        ...(options.cwd ? { cwd: options.cwd } : {}),
+        ...(options.steps !== undefined ? { steps: options.steps } : {}),
+        ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
+        ...(toolsObj !== undefined ? { tools: toolsObj } : {}),
+      };
+
+      // The SDK's event stream is a lazy async generator — the HTTP
+      // fetch inside it only fires on the first .next() call (see
+      // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
+      // the SSE connection BEFORE sending the prompt so fast early
+      // events are not lost on the live-only (no replay) endpoint.
+      const subResult = asRecord(await eventSubscribe());
+      const rawStream = subResult.stream ?? subResult.events ?? subResult;
+      let events: AsyncIterable<unknown> | undefined;
+      let eagerFirst: Promise<IteratorResult<unknown>> | undefined;
+      let rawIterator: AsyncIterator<unknown> | undefined;
+
+      if (isAsyncIterable(rawStream)) {
+        rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        eagerFirst = rawIterator.next(); // triggers fetch()
+      }
+
+      if (sessionPromptAsync) {
+        // Fire-and-forget: promptAsync returns 204 immediately.
+        await sessionPromptAsync({
+          path: { id: sessionId },
+          body: promptBody,
+        });
+      } else if (sessionPromptSync) {
+        await sessionPromptSync({
+          path: { id: sessionId },
+          body: promptBody,
+        });
+      }
+
+      // Wrap the iterator so the eagerly-fetched first result is not lost.
+      if (eagerFirst && rawIterator) {
+        const first = eagerFirst;
+        const rest = rawIterator;
+        events = {
+          [Symbol.asyncIterator](): AsyncIterator<unknown> {
+            let consumedFirst = false;
+            return {
+              async next() {
+                if (!consumedFirst) {
+                  consumedFirst = true;
+                  return first;
+                }
+                return rest.next();
+              },
+            };
+          },
+        };
+      }
+
       return {
-        ...resultRecord,
         id: sessionId,
         sessionId,
+        ...(events ? { events } : {}),
       };
     },
 
     events(options?: Record<string, unknown>): AsyncIterable<unknown> {
-      const subscribeFn = event.subscribe;
-      if (typeof subscribeFn !== 'function') {
-        throw new Error('OpenCode SDK client.event.subscribe() not available');
-      }
-
       // Return an async iterable that lazily calls subscribe
       return {
         [Symbol.asyncIterator]() {
@@ -523,9 +598,7 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
             async next(): Promise<IteratorResult<unknown>> {
               if (!started) {
                 started = true;
-                const subResult = asRecord(
-                  await (subscribeFn as (args?: unknown) => Promise<unknown>)(options),
-                );
+                const subResult = asRecord(await eventSubscribe(options));
                 const stream = subResult.stream ?? subResult.events ?? subResult;
                 if (isAsyncIterable(stream)) {
                   innerIterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
@@ -546,9 +619,8 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
     },
 
     async close(): Promise<void> {
-      const disposeFn = instance.dispose;
-      if (typeof disposeFn === 'function') {
-        await (disposeFn as () => Promise<void>)();
+      if (instanceDispose) {
+        await instanceDispose();
       }
     },
   };
@@ -620,7 +692,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   private readonly waitForServerReady: (
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
-  ) => Promise<void>;
+  ) => Promise<string>;
 
   constructor(
     config: OpenCodeAdapterConfig = {},
@@ -676,12 +748,20 @@ export class OpenCodeAdapter implements AgentAdapter {
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
 
+    let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
     let serverClosed = false;
     let serverExitPromise: Promise<ServerCloseInfo> | undefined;
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
+
+    // Accumulate usage from step-finish parts (OpenCode's session.idle
+    // event doesn't carry usage data).
+    let accumulatedInputTokens = 0;
+    let accumulatedOutputTokens = 0;
+    let accumulatedToolUses = 0;
+    let accumulatedCost = 0;
 
     const onAbort = () => {
       abortRequested = true;
@@ -717,14 +797,14 @@ export class OpenCodeAdapter implements AgentAdapter {
           return info;
         });
 
-        await this.waitForServerReady(serverProcess, this.readyTimeoutMs);
+        actualServerUrl = await this.waitForServerReady(serverProcess, this.readyTimeoutMs);
 
         if (abortRequested) {
           onAbort();
         }
       }
 
-      client = createClientFromSdk(sdk, this.serverUrl);
+      client = createClientFromSdk(sdk, actualServerUrl);
 
       const runFn = resolveRunFunction(client);
       if (!runFn) {
@@ -845,16 +925,25 @@ export class OpenCodeAdapter implements AgentAdapter {
         const { result } = raceResult;
         if (result.done) break;
 
-        const event = asRecord(result.value);
-        const eventType = asString(event.type);
+        const rawEvent = asRecord(result.value);
+        const eventType = asString(rawEvent.type);
         if (!eventType) continue;
+
+        // OpenCode SSE events wrap data in { type, properties: { ... } }.
+        // Flatten so downstream code can access fields directly.
+        const props = asRecord(rawEvent.properties);
+        const event =
+          Object.keys(props).length > 0
+            ? { ...props, type: eventType }
+            : rawEvent;
 
         // Use strict extractor — only explicit session fields, no generic `id`
         // that could match message/event IDs and cause false filtering.
         const eventSessionId =
           loadStreamSessionId(event) ??
           loadStreamSessionId(event.data) ??
-          loadStreamSessionId(event.message);
+          loadStreamSessionId(event.message) ??
+          loadStreamSessionId(asRecord(event.part));
 
         if (eventSessionId) {
           if (eventSessionId !== sessionId) {
@@ -863,6 +952,14 @@ export class OpenCodeAdapter implements AgentAdapter {
           // Only mark backend-provided after confirming the event belongs
           // to this session — foreign events must not flip the flag.
           backendProvidedSessionId = true;
+        }
+
+        if (eventType === 'message.part.delta') {
+          const delta = asString(event.delta);
+          if (delta) {
+            yield createEvent('text_delta', AGENT, { delta }, sessionId);
+          }
+          continue;
         }
 
         if (eventType === 'message.part.updated') {
@@ -897,6 +994,7 @@ export class OpenCodeAdapter implements AgentAdapter {
             partType === 'tool_call' ||
             partType === 'tool_use'
           ) {
+            accumulatedToolUses++;
             yield createEvent(
               'tool_use',
               AGENT,
@@ -904,12 +1002,14 @@ export class OpenCodeAdapter implements AgentAdapter {
                 toolName:
                   asString(part.toolName) ??
                   asString(part.name) ??
+                  asString(part.tool) ??
                   asString(asRecord(part.tool).name) ??
                   'unknown_tool',
                 toolUseId:
                   asString(part.toolUseId) ??
                   asString(part.id) ??
                   asString(part.callId) ??
+                  asString(part.callID) ??
                   generateSessionId(),
                 input: parseToolInput(
                   part.input ??
@@ -944,6 +1044,15 @@ export class OpenCodeAdapter implements AgentAdapter {
 
           if (partType === 'image' || partType === 'image_part') {
             yield createEvent('opencode:image_part', AGENT, part, sessionId);
+            continue;
+          }
+
+          // Accumulate usage from step-finish parts.
+          if (partType === 'step-finish') {
+            const tokens = asRecord(part.tokens);
+            accumulatedInputTokens += asNumber(tokens.input) ?? 0;
+            accumulatedOutputTokens += asNumber(tokens.output) ?? 0;
+            accumulatedCost += asNumber(part.cost) ?? 0;
             continue;
           }
 
@@ -1014,12 +1123,37 @@ export class OpenCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        if (eventType === 'error') {
-          yield createEvent('error', AGENT, toErrorPayload(event), sessionId);
+        if (eventType === 'error' || eventType === 'session.error') {
+          const errorData = eventType === 'session.error'
+            ? toErrorPayload(event.error ?? event)
+            : toErrorPayload(event);
+          yield createEvent('error', AGENT, errorData, sessionId);
           continue;
         }
 
-        if (eventType === 'session.idle') {
+        // session.idle (OpenCode sends { sessionID } with no usage/status)
+        // or session.status with status.type === 'idle'.
+        if (
+          eventType === 'session.idle' ||
+          (eventType === 'session.status' &&
+            asString(asRecord(event.status).type) === 'idle')
+        ) {
+          // Use event-provided usage if available, otherwise fall back to
+          // values accumulated from step-finish parts.
+          const eventUsage = mapUsage(event.usage);
+          const hasEventUsage =
+            eventUsage.inputTokens > 0 || eventUsage.outputTokens > 0;
+          const usage = hasEventUsage
+            ? eventUsage
+            : {
+                inputTokens: accumulatedInputTokens,
+                outputTokens: accumulatedOutputTokens,
+                toolUses: accumulatedToolUses,
+                ...(accumulatedCost > 0
+                  ? { totalCostUsd: accumulatedCost }
+                  : {}),
+              };
+
           yield createEvent(
             'done',
             AGENT,
@@ -1027,7 +1161,7 @@ export class OpenCodeAdapter implements AgentAdapter {
               status: mapDoneStatus(asString(event.status)),
               result: asString(event.result),
               ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
-              usage: mapUsage(event.usage),
+              usage,
               durationMs:
                 asNumber(event.durationMs) ??
                 asNumber(event.duration_ms) ??

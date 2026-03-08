@@ -39,8 +39,8 @@ Authoring rules: [dev/style.md](dev/style.md).
 | IR-004 | [004-codex-adapter.md](iterations/004-codex-adapter.md) | Codex adapter via @openai/codex-sdk |
 | IR-005 | [005-gemini-cli-adapter.md](iterations/005-gemini-cli-adapter.md) | Gemini CLI adapter via child_process spawn + NDJSON |
 | IR-006 | [006-opencode-adapter.md](iterations/006-opencode-adapter.md) | OpenCode adapter via @opencode-ai/sdk with SSE |
-| IR-007 | [007-allsides-tmux-app.md](iterations/007-allsides-tmux-app.md) | AllSides multi-agent tmux chat app using cligent |
-| IR-008 | [008-allsides-acceptance-tests.md](iterations/008-allsides-acceptance-tests.md) | AllSides end-to-end acceptance tests with real API keys |
+| IR-007 | [007-fanout-tmux-app.md](iterations/007-fanout-tmux-app.md) | Fanout multi-agent tmux chat app using cligent |
+| IR-008 | [008-fanout-acceptance-tests.md](iterations/008-fanout-acceptance-tests.md) | Fanout end-to-end acceptance tests with real API keys |
 
 ## Spec Files
 

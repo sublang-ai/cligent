@@ -40,7 +40,7 @@ export function formatEvent(event: CligentEvent): string | null {
 
 export async function runSession(options: SessionOptions): Promise<void> {
   const { sessionId, agentEntries, workDir, cwd } = options;
-  const sessionName = `allsides-${sessionId}`;
+  const sessionName = `fanout-${sessionId}`;
 
   const agents = await resolveAgents(agentEntries, cwd);
 
@@ -67,7 +67,7 @@ export async function runSession(options: SessionOptions): Promise<void> {
     }
 
     // Remove work dir only if marker exists
-    const markerPath = join(workDir, '.allsides-session');
+    const markerPath = join(workDir, '.fanout-session');
     if (existsSync(markerPath)) {
       rmSync(workDir, { recursive: true, force: true });
     }

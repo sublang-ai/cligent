@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
 
-# IR-007: AllSides — Multi-Agent tmux Chat App
+# IR-007: Fanout — Multi-Agent tmux Chat App
 
 ## Goal
 
-Build `allsides`, a CLI application that uses cligent to broadcast a single prompt to multiple AI agents in parallel, displaying each agent's streaming response in its own tmux pane.
+Build `fanout`, a CLI application that uses cligent to broadcast a single prompt to multiple AI agents in parallel, displaying each agent's streaming response in its own tmux pane.
 
 ## Status
 
@@ -31,7 +31,7 @@ The upper region is split into _n_ vertical panes (one per agent). The bottom pa
 
 ### Single binary, two modes
 
-`allsides` is one Node.js CLI entry point with two modes selected by the presence of `--session`:
+`fanout` is one Node.js CLI entry point with two modes selected by the presence of `--session`:
 
 | Mode | Trigger | Responsibility |
 | --- | --- | --- |
@@ -41,13 +41,13 @@ The upper region is split into _n_ vertical panes (one per agent). The bottom pa
 ### Launcher mode
 
 1. Validate agents — from `--agent` flags or auto-detect via `adapter.isAvailable()`. Reject unknown agent names with an error listing valid names. Reject duplicate agent names (each agent name may appear at most once). If auto-detect yields zero available agents, exit with a clear message (e.g., "No agents available — install at least one agent SDK").
-2. Create temp directory with `node:fs.mkdtempSync` (e.g., `/tmp/allsides-XXXXXX/`) and one empty `<agent>.log` per agent. The resulting absolute path is the **work dir**.
-3. Write a marker file `.allsides-session` into the work dir (used by session mode to confirm launcher ownership before cleanup).
-4. Build a tmux session named `allsides-<id>` in this exact order:
+2. Create temp directory with `node:fs.mkdtempSync` (e.g., `/tmp/fanout-XXXXXX/`) and one empty `<agent>.log` per agent. The resulting absolute path is the **work dir**.
+3. Write a marker file `.fanout-session` into the work dir (used by session mode to confirm launcher ownership before cleanup).
+4. Build a tmux session named `fanout-<id>` in this exact order:
    a. `tmux new-session -d -s <name>` with the first agent pane running `tail -f <workdir>/<agent>.log`.
    b. `tmux split-window -h -t <name>` for each additional agent pane, each running `tail -f`.
    c. `tmux select-layout -t <name> even-horizontal` to tile the agent panes evenly **before** creating the boss pane.
-   d. `tmux split-window -v -f -t <name>` for the boss pane (full-width bottom) running `allsides --session <id> --agent <agent[=model]> [--agent ...] --work-dir <workdir> [passthrough flags]`.
+   d. `tmux split-window -v -f -t <name>` for the boss pane (full-width bottom) running `fanout --session <id> --agent <agent[=model]> [--agent ...] --work-dir <workdir> [passthrough flags]`.
    e. Set pane titles via `select-pane -T <agent>` and enable `pane-border-format` to show titles.
 4. Attach to the tmux session (replaces current terminal).
 
@@ -68,7 +68,7 @@ The upper region is split into _n_ vertical panes (one per agent). The bottom pa
    - When all agents complete, re-display the `boss$ ` prompt.
 4. On `SIGINT` / `SIGTERM` or EOF:
    - Abort any in-flight agent runs via `AbortController`.
-   - Remove the work dir **only if** the `.allsides-session` marker file is present (confirms launcher ownership; prevents accidental deletion of arbitrary directories passed via `--work-dir`).
+   - Remove the work dir **only if** the `.fanout-session` marker file is present (confirms launcher ownership; prevents accidental deletion of arbitrary directories passed via `--work-dir`).
    - Kill the tmux session (`tmux kill-session`).
 
 ### Agent resolution
@@ -89,10 +89,10 @@ Auto-detect (no `--agent` flags): import all four, call `isAvailable()`, keep th
 `--agent` is repeatable. Each value is `<name>` or `<name>=<model>`:
 
 ```
-allsides --agent claude --agent gemini                              # default models
-allsides --agent claude=claude-opus-4-6 --agent gemini              # per-agent model
-allsides --agent claude=claude-opus-4-6 --agent gemini=gemini-2.5-pro
-allsides                                                            # auto-detect all available
+fanout --agent claude --agent gemini                              # default models
+fanout --agent claude=claude-opus-4-6 --agent gemini              # per-agent model
+fanout --agent claude=claude-opus-4-6 --agent gemini=gemini-2.5-pro
+fanout                                                            # auto-detect all available
 ```
 
 ### No frills
@@ -101,11 +101,11 @@ This iteration targets the simplest useful version:
 
 - No config files, no persistent history, no custom themes.
 - No scrollback management (tmux native scroll applies).
-- No resume across `allsides` restarts.
+- No resume across `fanout` restarts.
 
 ## Deliverables
 
-- [ ] `package.json` — `"bin": { "allsides": "./dist/app/cli.js" }`
+- [ ] `package.json` — `"bin": { "fanout": "./dist/app/cli.js" }`
 - [ ] `tsconfig.json` — includes `src/app`
 - [ ] `src/app/cli.ts` — entry point with arg parsing, mode dispatch
 - [ ] `src/app/launcher.ts` — tmux session setup (temp dir, pane layout, attach)
@@ -130,7 +130,7 @@ This iteration targets the simplest useful version:
    - Generate session ID (short random hex)
    - Create temp dir with `node:fs.mkdtempSync`
    - Create empty `<agent>.log` files
-   - Write `.allsides-session` marker into work dir
+   - Write `.fanout-session` marker into work dir
    - Build tmux commands **in this order**:
      - `tmux new-session -d -s <name>` with first pane running `tail -f`
      - `tmux split-window -h -t <name>` for each additional agent pane
@@ -151,7 +151,7 @@ This iteration targets the simplest useful version:
    - Open write streams (`node:fs.createWriteStream` in append mode) for each agent's log file under work dir
    - readline loop:
      - On line: write separator to all logs, run all agents in parallel, route events to log streams
-     - On close / SIGINT: abort agents, remove work dir only if `.allsides-session` marker is present, kill tmux session
+     - On close / SIGINT: abort agents, remove work dir only if `.fanout-session` marker is present, kill tmux session
    - Event routing function: switch on `event.type`, format and write to the correct stream
 
 6. **Write tests**
@@ -163,5 +163,5 @@ This iteration targets the simplest useful version:
 
 - `tsc --noEmit` passes
 - `vitest run` passes unit tests (including `src/app/*.test.ts`)
-- Manual: `allsides --agent claude --agent gemini` launches tmux with correct layout, prompts fan out, responses stream into panes
+- Manual: `fanout --agent claude --agent gemini` launches tmux with correct layout, prompts fan out, responses stream into panes
 - Manual: Ctrl+C cleanly kills session and removes temp files
