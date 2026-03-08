@@ -50,8 +50,8 @@ jobs:
 
       - run: npm run build
 
-      - name: Install Gemini CLI
-        run: npm install -g @google/gemini-cli
+      - name: Install agent CLIs
+        run: npm install -g @google/gemini-cli opencode-ai
 
       - name: Run acceptance tests
         env:
