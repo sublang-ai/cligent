@@ -24,6 +24,14 @@ export function formatEvent(event: CligentEvent): string | null {
       return (event.payload as { content: string }).content + '\n';
     case 'tool_use':
       return `[tool: ${(event.payload as { toolName: string }).toolName}]\n`;
+    case 'tool_result': {
+      const output = (event.payload as { output: unknown }).output;
+      if (typeof output === 'string') return output + '\n';
+      if (typeof output === 'object' && output !== null && 'stdout' in output) {
+        return String((output as { stdout: unknown }).stdout) + '\n';
+      }
+      return JSON.stringify(output) + '\n';
+    }
     case 'error':
       return `[error: ${(event.payload as { message: string }).message}]\n`;
     case 'done': {

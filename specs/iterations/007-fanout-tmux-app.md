@@ -62,6 +62,7 @@ The upper region is split into _n_ vertical panes (one per agent). The bottom pa
      - `text_delta` — append `payload.delta`
      - `text` — append `payload.content` + newline
      - `tool_use` — append `[tool: <toolName>]` + newline
+     - `tool_result` — append tool output (string as-is, `{stdout}` extracted, other objects JSON-stringified) + newline
      - `error` — append `[error: <message>]` + newline
      - `done` — append newline + status line (status, token counts)
      - All other events — silently drop

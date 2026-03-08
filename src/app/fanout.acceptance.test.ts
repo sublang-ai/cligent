@@ -71,7 +71,7 @@ describe('Fanout acceptance', () => {
           cwd: workDir,
           permissions,
           abortSignal: ac.signal,
-          maxTurns: 2,
+          maxTurns: 4,
           ...(model ? { model } : {}),
         })) {
           const formatted = formatEvent(event);
@@ -86,10 +86,11 @@ describe('Fanout acceptance', () => {
         // Assert boss echo present
         expect(log).toContain('boss>');
 
-        // Assert sentinel filename appears in output.  Strip all
-        // non-alphanumeric characters so token-boundary line breaks,
-        // markdown formatting, and other agent rendering quirks do
-        // not cause false negatives.
+        // Assert sentinel filename appears in the formatted log
+        // (includes text, text_delta, and tool_result output).
+        // Strip non-alphanumeric characters so token-boundary line
+        // breaks, markdown formatting, and other agent rendering
+        // quirks do not cause false negatives.
         const alphaLog = log.replace(/[^a-zA-Z0-9]/g, '');
         const alphaSentinel = sentinelName.replace(/[^a-zA-Z0-9]/g, '');
         expect(alphaLog).toContain(alphaSentinel);

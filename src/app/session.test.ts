@@ -38,6 +38,36 @@ describe('formatEvent', () => {
     expect(formatEvent(event)).toBe('[tool: read_file]\n');
   });
 
+  it('formats tool_result with string output', () => {
+    const event = makeEvent('tool_result', {
+      toolUseId: 'id-1',
+      toolName: 'run_shell',
+      status: 'success',
+      output: 'file.txt\nSENTINEL.txt',
+    });
+    expect(formatEvent(event)).toBe('file.txt\nSENTINEL.txt\n');
+  });
+
+  it('formats tool_result with stdout object', () => {
+    const event = makeEvent('tool_result', {
+      toolUseId: 'id-2',
+      toolName: 'run_shell',
+      status: 'success',
+      output: { stdout: 'hello world' },
+    });
+    expect(formatEvent(event)).toBe('hello world\n');
+  });
+
+  it('formats tool_result with other object as JSON', () => {
+    const event = makeEvent('tool_result', {
+      toolUseId: 'id-3',
+      toolName: 'read_file',
+      status: 'success',
+      output: { content: 'data' },
+    });
+    expect(formatEvent(event)).toBe('{"content":"data"}\n');
+  });
+
   it('formats error events', () => {
     const event = makeEvent('error', {
       message: 'something broke',
