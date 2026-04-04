@@ -5,7 +5,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@sublang/cligent)](https://www.npmjs.com/package/@sublang/cligent)
 [![Node.js](https://img.shields.io/node/v/@sublang/cligent)](https://nodejs.org/)
-[![CI](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-dev/cligent/actions/workflows/ci.yml)
+[![CI](https://github.com/sublang-ai/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-ai/cligent/actions/workflows/ci.yml)
 
 Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, OpenCode, and more).
 
@@ -56,11 +56,10 @@ See [docs/guide.md](docs/guide.md) for the `Cligent` class, adapters, permission
 
 We welcome contributions of all kinds. If you'd like to help:
 
-- [Open an issue](https://github.com/sublang-dev/cligent/issues) for bugs or feature requests.
-- [Open a PR](https://github.com/sublang-dev/cligent/pulls) for fixes or improvements.
-- Discuss on [Discord](https://discord.gg/cxUsykWr) for support or new ideas.
-
-🌟 Star our repo if you find it useful — it helps others discover the project.
+- 🌟 Star our repo if you find cligent useful.
+- [Open an issue](https://github.com/sublang-ai/cligent/issues) for bugs or feature requests.
+- [Open a PR](https://github.com/sublang-ai/cligent/pulls) for fixes or improvements.
+- Discuss on [Discord](https://discord.gg/XxTPjNqy9g) for support or new ideas.
 
 ## License
 
