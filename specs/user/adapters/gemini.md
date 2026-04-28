@@ -23,6 +23,12 @@ The adapter shall implement `AgentAdapter` with `agent: 'gemini'`; it has no SDK
 
 `run()` shall spawn `gemini --output-format stream-json <prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001).
 
+## Environment
+
+### GEMINI-010
+
+The adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` in the spawned Gemini CLI environment by default for headless runs. When `process.env.GEMINI_CLI_TRUST_WORKSPACE` is already set, the adapter shall pass that value through unchanged.
+
 ## Event Normalization
 
 ### GEMINI-004
@@ -62,10 +68,6 @@ The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002
 ### GEMINI-007
 
 The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`, `resume` → `--resume`.
-
-### GEMINI-010
-
-The adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` in the spawned Gemini CLI environment by default for headless runs, while preserving an explicit caller-provided environment value.
 
 ## Abort Handling
 

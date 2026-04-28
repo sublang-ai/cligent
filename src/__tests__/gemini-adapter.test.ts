@@ -765,6 +765,46 @@ describe('GeminiAdapter', () => {
     }
   });
 
+  it('preserves an existing Gemini workspace trust environment value', async () => {
+    const previousTrust = process.env.GEMINI_CLI_TRUST_WORKSPACE;
+    process.env.GEMINI_CLI_TRUST_WORKSPACE = 'false';
+
+    try {
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        writeEventsAndClose(
+          process,
+          [
+            JSON.stringify({
+              type: 'result',
+              status: 'success',
+              stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            }),
+          ],
+          0,
+          null,
+        );
+      });
+
+      const adapter = new GeminiAdapter({
+        spawnProcess,
+        probeAvailability: async () => true,
+      });
+
+      await collect(adapter.run('prompt'));
+
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0]?.options.env?.GEMINI_CLI_TRUST_WORKSPACE).toBe(
+        'false',
+      );
+    } finally {
+      if (previousTrust === undefined) {
+        delete process.env.GEMINI_CLI_TRUST_WORKSPACE;
+      } else {
+        process.env.GEMINI_CLI_TRUST_WORKSPACE = previousTrust;
+      }
+    }
+  });
+
   it('sends SIGTERM on abort and emits interrupted done status', async () => {
     const controller = new AbortController();
 

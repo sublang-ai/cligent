@@ -73,7 +73,7 @@ Given a Gemini stream that provides a session identifier, the adapter shall set 
 
 ### TADAPT-016
 
-The Gemini adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` by default in the spawned process environment per [GEMINI-010](../user/adapters/gemini.md#gemini-010).
+The Gemini adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` by default in the spawned process environment and preserve an existing parent environment value per [GEMINI-010](../user/adapters/gemini.md#gemini-010).
 
 ## Concurrency
 
