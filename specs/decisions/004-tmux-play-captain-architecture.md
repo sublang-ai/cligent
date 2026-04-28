@@ -5,7 +5,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -51,6 +51,19 @@ and cleanup.
 Where `tmux-play` launches a session, the Boss/Captain pane shall be the wide
 left pane and role panes shall be read-only panes on the right in config
 order.
+
+The following diagram illustrates the topology; the textual rules below are
+the binding specification:
+
+```text
++----------------------+----------------+----------------+
+| Boss <-> Captain     | Role: Coder    | Role: Reviewer |
+|                      | (tail -f log)  | (tail -f log)  |
+| ...history...        |                |                |
+|                      |                |                |
+| boss> _              |                |                |
++----------------------+----------------+----------------+
+```
 
 Where one role is configured, the role presentation shall create one right-side
 column. Where two or more roles are configured, the role presentation shall
@@ -248,6 +261,20 @@ Where tool events are formatted, `tool_use` output shall include at least the
 tool name, `tool_result` shall include string output as-is, `tool_result`
 shall include `{stdout}` when present, and other `tool_result` objects shall
 format as JSON.
+
+### Out of Scope
+
+The following topics are out of scope for this decision:
+
+- implementing `RouterCaptain`;
+- additional presentation surfaces beyond the tmux app;
+- publicly exporting the internal record or observer API;
+- persisting cross-launch history;
+- interactive permission UI beyond adapter defaults;
+- multi-Boss or shared sessions.
+
+Where future work adds any out-of-scope topic, it shall introduce a separate
+decision or iteration record that defines the new behavior explicitly.
 
 ## Consequences
 
