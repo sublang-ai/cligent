@@ -41,6 +41,7 @@ Authoring rules: [dev/style.md](dev/style.md).
 | IR-006 | [006-opencode-adapter.md](iterations/006-opencode-adapter.md) | OpenCode adapter via @opencode-ai/sdk with SSE |
 | IR-007 | [007-fanout-tmux-app.md](iterations/007-fanout-tmux-app.md) | Fanout multi-agent tmux chat app using cligent |
 | IR-008 | [008-fanout-acceptance-tests.md](iterations/008-fanout-acceptance-tests.md) | Fanout end-to-end acceptance tests with real API keys |
+| IR-009 | [009-cligent-play-captain-tmux-app.md](iterations/009-cligent-play-captain-tmux-app.md) | cligent-play Captain/role tmux app extending fanout |
 
 ## Spec Files
 
