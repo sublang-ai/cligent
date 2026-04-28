@@ -504,6 +504,8 @@ export class GeminiAdapter implements AgentAdapter {
         ...mapped.spawnOptions,
         env: {
           ...process.env,
+          GEMINI_CLI_TRUST_WORKSPACE:
+            process.env.GEMINI_CLI_TRUST_WORKSPACE ?? 'true',
           ...(mapped.spawnOptions.env ?? {}),
           ...settingsOverride.env,
         },

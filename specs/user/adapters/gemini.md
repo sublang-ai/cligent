@@ -63,6 +63,10 @@ The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002
 
 The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`, `resume` → `--resume`.
 
+### GEMINI-010
+
+The adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` in the spawned Gemini CLI environment by default for headless runs, while preserving an explicit caller-provided environment value.
+
 ## Abort Handling
 
 ### GEMINI-008

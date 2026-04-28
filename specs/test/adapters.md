@@ -71,6 +71,10 @@ The OpenCode adapter shall set `DonePayload.resumeToken` to the session identifi
 
 Given a Gemini stream that provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value. Given a stream with no session identifier (e.g., early error), the adapter shall omit `resumeToken` per [GEMINI-009](../user/adapters/gemini.md#gemini-009).
 
+### TADAPT-016
+
+The Gemini adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` by default in the spawned process environment per [GEMINI-010](../user/adapters/gemini.md#gemini-010).
+
 ## Concurrency
 
 ### TADAPT-014
