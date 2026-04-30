@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describe, it, expect } from 'vitest';
-import { formatCligentEvent } from './shared/events.js';
-import type { CligentEvent } from '../types.js';
+import type { CligentEvent } from '../../types.js';
+import { formatCligentEvent } from './events.js';
 
 function makeEvent(
   type: string,
@@ -18,7 +18,7 @@ function makeEvent(
   } as CligentEvent;
 }
 
-describe('formatEvent', () => {
+describe('formatCligentEvent', () => {
   it('formats text_delta events', () => {
     const event = makeEvent('text_delta', { delta: 'hello ' });
     expect(formatCligentEvent(event)).toBe('hello ');

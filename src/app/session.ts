@@ -11,8 +11,6 @@ import {
 } from './shared/logs.js';
 import { killTmuxSession } from './shared/tmux.js';
 
-export { formatCligentEvent as formatEvent } from './shared/events.js';
-
 export interface SessionOptions {
   sessionId: string;
   agentEntries?: AgentEntry[];

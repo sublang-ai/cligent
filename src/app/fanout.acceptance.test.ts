@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { resolveAgents, type ResolvedAgent } from './agents.js';
-import { formatEvent } from './session.js';
+import { formatCligentEvent } from './shared/events.js';
 
 const AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const;
 
@@ -74,7 +74,7 @@ describe('Fanout acceptance', () => {
           maxTurns: 4,
           ...(model ? { model } : {}),
         })) {
-          const formatted = formatEvent(event);
+          const formatted = formatCligentEvent(event);
           if (formatted !== null) {
             log += formatted;
           }
