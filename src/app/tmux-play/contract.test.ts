@@ -5,17 +5,20 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   KNOWN_ROLE_ADAPTERS,
+  createTmuxPlayRuntime,
   defineConfig,
   type BossTurn,
   type Captain,
   type CaptainContext,
   type CaptainRunResult,
+  type RuntimeCaptainConfig,
   type RoleHandle,
   type RoleRunResult,
   type RunStatus,
   type RunTmuxPlayOptions,
   type TmuxPlayConfig,
 } from './index.js';
+import type { RecordObserver } from './records.js';
 
 describe('tmux-play public contract', () => {
   it('accepts Captain implementations', () => {
@@ -39,12 +42,20 @@ describe('tmux-play public contract', () => {
   });
 
   it('exports runtime API option types', () => {
+    expectTypeOf<RuntimeCaptainConfig>().toMatchTypeOf<{
+      adapter: RoleHandle['adapter'];
+      model?: string;
+      instruction?: string;
+    }>();
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;
+      captainConfig: RuntimeCaptainConfig;
       roles: readonly RoleHandle[];
+      observers?: readonly RecordObserver[];
       cwd?: string;
       signal?: AbortSignal;
     }>();
+    expectTypeOf(createTmuxPlayRuntime).toBeFunction();
   });
 
   it('uses stable run result status values', () => {

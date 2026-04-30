@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { RoleAdapterName } from './roles.js';
+import type { RecordObserver } from './records.js';
+import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
 
 export interface Captain {
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
@@ -68,9 +69,18 @@ export interface RuntimeRoleConfig {
   readonly instruction?: string;
 }
 
+export interface RuntimeCaptainConfig {
+  readonly adapter: RoleAdapterName;
+  readonly model?: string;
+  readonly instruction?: string;
+}
+
 export interface RunTmuxPlayOptions {
   readonly captain: Captain;
+  readonly captainConfig: RuntimeCaptainConfig;
   readonly roles: readonly RuntimeRoleConfig[];
+  readonly observers?: readonly RecordObserver[];
   readonly cwd?: string;
   readonly signal?: AbortSignal;
+  readonly adapterImports?: RoleAdapterImports;
 }

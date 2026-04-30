@@ -24,6 +24,7 @@ export type {
   CaptainCallOptions,
   CaptainContext,
   CaptainRunResult,
+  RuntimeCaptainConfig,
   RoleCallOptions,
   RoleHandle,
   RoleRunResult,
@@ -31,6 +32,8 @@ export type {
   RunTmuxPlayOptions,
   RuntimeRoleConfig,
 } from './contract.js';
+
+export { TmuxPlayRuntime, createTmuxPlayRuntime } from './runtime.js';
 
 export { KNOWN_ROLE_ADAPTERS, isKnownRoleAdapter } from './roles.js';
 export type {

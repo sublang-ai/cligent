@@ -28,6 +28,13 @@ export interface ResolvedRole {
   cligent: Cligent;
 }
 
+export interface CreateRoleCligentOptions {
+  cwd?: string;
+  model?: string;
+  role?: string;
+  adapterImports?: RoleAdapterImports;
+}
+
 export interface ResolveRolesOptions {
   cwd?: string;
   adapterImports?: RoleAdapterImports;
@@ -85,6 +92,19 @@ export function validateRoleConfigs(configs: readonly RoleConfig[]): void {
   }
 }
 
+export async function createRoleCligent(
+  adapterName: RoleAdapterName,
+  options: CreateRoleCligentOptions = {},
+): Promise<Cligent> {
+  const adapterImports = options.adapterImports ?? DEFAULT_ADAPTER_IMPORTS;
+  const AdapterClass = await adapterImports[adapterName]();
+  return new Cligent(new AdapterClass(), {
+    cwd: options.cwd,
+    model: options.model,
+    role: options.role,
+  });
+}
+
 export async function resolveRoles(
   configs: readonly RoleConfig[],
   options: ResolveRolesOptions = {},
@@ -96,8 +116,8 @@ export async function resolveRoles(
 
   for (const config of configs) {
     const adapterName = config.adapter as RoleAdapterName;
-    const AdapterClass = await adapterImports[adapterName]();
-    const cligent = new Cligent(new AdapterClass(), {
+    const cligent = await createRoleCligent(adapterName, {
+      adapterImports,
       cwd: options.cwd,
       model: config.model,
       role: config.id,
