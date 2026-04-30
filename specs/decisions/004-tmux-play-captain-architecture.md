@@ -117,9 +117,11 @@ interface CaptainContext {
 
 interface RoleHandle {
   readonly id: string;
-  readonly adapter: string;
+  readonly adapter: RoleAdapterName;
   readonly model?: string;
 }
+
+type RoleAdapterName = 'claude' | 'codex' | 'gemini' | 'opencode';
 
 type RunStatus = 'ok' | 'aborted' | 'error';
 
