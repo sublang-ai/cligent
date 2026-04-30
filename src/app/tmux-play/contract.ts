@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { RecordObserver } from './records.js';
 import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
 
 export interface Captain {
@@ -79,7 +78,9 @@ export interface RunTmuxPlayOptions {
   readonly captain: Captain;
   readonly captainConfig: RuntimeCaptainConfig;
   readonly roles: readonly RuntimeRoleConfig[];
-  readonly observers?: readonly RecordObserver[];
+  readonly observers?: readonly {
+    onRecord(record: unknown): void | Promise<void>;
+  }[];
   readonly cwd?: string;
   readonly signal?: AbortSignal;
   readonly adapterImports?: RoleAdapterImports;

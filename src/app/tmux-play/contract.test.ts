@@ -18,7 +18,6 @@ import {
   type RunTmuxPlayOptions,
   type TmuxPlayConfig,
 } from './index.js';
-import type { RecordObserver } from './records.js';
 
 describe('tmux-play public contract', () => {
   it('accepts Captain implementations', () => {
@@ -51,7 +50,9 @@ describe('tmux-play public contract', () => {
       captain: Captain;
       captainConfig: RuntimeCaptainConfig;
       roles: readonly RoleHandle[];
-      observers?: readonly RecordObserver[];
+      observers?: readonly {
+        onRecord(record: unknown): void | Promise<void>;
+      }[];
       cwd?: string;
       signal?: AbortSignal;
     }>();

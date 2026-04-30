@@ -130,7 +130,11 @@ describe('TmuxPlayRuntime', () => {
           instruction: 'Role instruction.',
         },
       ],
-      observers: [{ onRecord: (record) => records.push(record) }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
       adapterImports: adapterImports({
         codex: {
           agent: 'codex',
@@ -266,12 +270,13 @@ describe('TmuxPlayRuntime', () => {
       observers: [
         {
           async onRecord(record) {
-            seen.push(`${record.type}:start`);
-            if (record.type === 'captain_status') {
+            const tmuxPlayRecord = record as TmuxPlayRecord;
+            seen.push(`${tmuxPlayRecord.type}:start`);
+            if (tmuxPlayRecord.type === 'captain_status') {
               statusStarted.resolve();
               await releaseStatus.promise;
             }
-            seen.push(`${record.type}:end`);
+            seen.push(`${tmuxPlayRecord.type}:end`);
           },
         },
       ],
@@ -307,7 +312,11 @@ describe('TmuxPlayRuntime', () => {
       captain,
       captainConfig: { adapter: 'claude' },
       roles: [{ id: 'coder', adapter: 'codex' }],
-      observers: [{ onRecord: (record) => records.push(record) }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
       adapterImports: adapterImports({
         codex: {
           agent: 'codex',
@@ -359,7 +368,11 @@ describe('TmuxPlayRuntime', () => {
       captain,
       captainConfig: { adapter: 'claude' },
       roles: [{ id: 'coder', adapter: 'codex' }],
-      observers: [{ onRecord: (record) => records.push(record) }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
       adapterImports: adapterImports({}),
     });
 

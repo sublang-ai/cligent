@@ -23,7 +23,6 @@ import {
   ObserverDispatchError,
   RecordDispatcher,
   makeRecordBase,
-  type RecordObserver,
   type RuntimeErrorRecord,
 } from './records.js';
 import {
@@ -50,6 +49,9 @@ interface CligentCallResult {
   readonly finalText?: string;
   readonly error?: string;
 }
+
+type PublicRecordObserver =
+  NonNullable<RunTmuxPlayOptions['observers']>[number];
 
 export class TmuxPlayRuntime {
   private readonly captain: Captain;
@@ -95,7 +97,7 @@ export class TmuxPlayRuntime {
     }
   }
 
-  addObserver(observer: RecordObserver): () => void {
+  addObserver(observer: PublicRecordObserver): () => void {
     return this.dispatcher.addObserver(observer);
   }
 
