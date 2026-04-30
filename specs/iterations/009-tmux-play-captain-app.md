@@ -30,9 +30,9 @@ Out of scope: see DR-004 §Out of Scope.
 - [ ] `src/app/tmux-play/cli.ts` — arg parsing, launcher/session dispatch.
 - [ ] `src/app/tmux-play/config.ts` — config loading, validation, snapshot writer, `captain.from` rewriting.
 - [ ] `src/app/tmux-play/roles.ts` — role resolution and per-role `Cligent` construction.
-- [ ] `src/app/tmux-play/contract.ts` — `Captain`, `BossTurn`, `CaptainContext`, `RoleHandle`, `RoleRunResult`, `CaptainRunResult`, `RoleCallOptions`, `CaptainCallOptions`.
-- [ ] `src/app/tmux-play/records.ts` — record types and observer dispatcher with status-drain semantics.
-- [ ] `src/app/tmux-play/runtime.ts` — programmatic runtime API; turn loop, abort, `dispose`, `emitStatus`.
+- [ ] `src/app/tmux-play/contract.ts` — `Captain`, `BossTurn`, `CaptainContext`, `CaptainTelemetry`, `RoleHandle`, `RoleRunResult`, `CaptainRunResult`, `RoleCallOptions`, `CaptainCallOptions`.
+- [ ] `src/app/tmux-play/records.ts` — record types (including `captain_telemetry`) and observer dispatcher with status/telemetry-drain semantics.
+- [ ] `src/app/tmux-play/runtime.ts` — programmatic runtime API; turn loop, abort, `dispose`, `emitStatus`, `emitTelemetry`.
 - [ ] `src/app/tmux-play/presenter-tmux.ts` — tmux observer.
 - [ ] `src/app/tmux-play/launcher.ts` — work-dir/logs, snapshot, tmux session, attach.
 - [ ] `src/app/tmux-play/session.ts` — Boss readline, runtime invocation, abort/cleanup.
@@ -49,9 +49,9 @@ Out of scope: see DR-004 §Out of Scope.
 3. Config loading for `.mjs`/`.js`/`.json` with discovery and `--config <path>`. Validate the Captain and role schemas; fail fast on unknown adapters, missing fields, unsupported extensions, invalid IDs, and non-serializable values.
 4. Snapshot writer: rewrite local `captain.from` paths to absolute `file://` URLs against the original config directory; pass package specifiers through unchanged; emit JSON to the work directory.
 5. Define the Captain extension contract types and runtime API in `src/app/tmux-play/`; wire the `@sublang/cligent/tmux-play` sub-export.
-6. Record types and observer dispatcher: registration-order delivery, awaited per record, no drops; `runtime_error` on observer failure; `captain_status` drains before subsequent records and before `turn_finished`/`turn_aborted`.
-7. Runtime: turn serialization, persistent Captain and role `Cligent`s, `callRole`/`callCaptain` wrappers bound to the abort signal with record emission, `emitStatus` returning `Promise<void>`, and `dispose()` on shutdown.
-8. Tmux presenter: route role records to role logs, Captain/Boss records to the Boss/Captain pane.
+6. Record types and observer dispatcher: registration-order delivery, awaited per record, no drops; `runtime_error` on observer failure; `captain_status` and `captain_telemetry` both drain before subsequent records and before `turn_finished`/`turn_aborted`.
+7. Runtime: turn serialization, persistent Captain and role `Cligent`s, `callRole`/`callCaptain` wrappers bound to the abort signal with record emission, `emitStatus` and `emitTelemetry` both returning `Promise<void>`, and `dispose()` on shutdown.
+8. Tmux presenter: route role records to role logs, Captain/Boss records to the Boss/Captain pane; ignore `captain_telemetry` (it is for opt-in observers, not the Boss pane).
 9. `fanout` Captain at `src/captains/fanout.ts`: factory, role prompts, concurrent role calls, bounded summary prompt, `callCaptain`.
 10. Launcher: load config, run snapshot writer, build Boss-left/roles-right tmux layout, set pane titles, attach.
 11. Session CLI: read snapshot, dynamic-import `captain.from`, construct factory and roles, readline loop, observer dispatch, handle SIGINT/SIGTERM/EOF and `dispose()`.
@@ -67,7 +67,7 @@ Out of scope: see DR-004 §Out of Scope.
 - The launcher writes a JSON snapshot to work-dir; local `captain.from` paths become absolute `file://` URLs and package specifiers are unchanged.
 - The session reads the snapshot and does not re-execute user JS.
 - A non-tmux observer for one Boss turn asserts causality: `turn_started` first; per role `role_prompt` → `role_event`s → one `role_finished`; per `callCaptain()` `captain_prompt` → `captain_event`s → `captain_finished`; `turn_finished` last (or `turn_aborted` on abort).
-- `emitStatus()` records deliver in emission order, before any subsequent record and before `turn_finished`/`turn_aborted`.
+- `emitStatus()` and `emitTelemetry()` records deliver in emission order, before any subsequent record and before `turn_finished`/`turn_aborted`. Telemetry records carry the active turn ID. The tmux presenter receives `captain_telemetry` and ignores it; a test observer asserts the records are delivered with the expected `topic`/`payload` shape.
 - An observer or runtime failure emits `runtime_error`, aborts the active turn, and runs cleanup.
 - `dispose()` is invoked exactly once on session shutdown.
 - For the fanout Captain: role runs execute concurrently; Captain summary appears in the Boss pane after roles settle; raw role events are not copied into the Boss pane.
