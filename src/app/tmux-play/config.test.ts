@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  TMUX_PLAY_CONFIG_SNAPSHOT,
+  createTmuxPlayConfigSnapshot,
   defineConfig,
   findTmuxPlayConfig,
   loadTmuxPlayConfig,
+  writeTmuxPlayConfigSnapshot,
   type TmuxPlayConfig,
 } from './config.js';
 
@@ -282,5 +292,90 @@ export default {
     await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
       'config.captain.options.createActor contains non-serializable function',
     );
+  });
+
+  it('rewrites relative local captain modules against the config directory', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configDir = join(workDir, 'configs');
+    const configPath = join(configDir, 'tmux-play.config.json');
+    mkdirSync(configDir);
+    writeJson(configPath, validConfig({
+      captain: {
+        from: './captains/fanout.js',
+        adapter: 'claude',
+        options: {},
+      },
+    }));
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshot = createTmuxPlayConfigSnapshot(loaded);
+
+    expect(snapshot.captain.from).toBe(
+      pathToFileURL(join(configDir, 'captains/fanout.js')).href,
+    );
+    expect(loaded.config.captain.from).toBe('./captains/fanout.js');
+  });
+
+  it('passes package captain specifiers through unchanged', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, 'tmux-play.config.json');
+    writeJson(configPath, validConfig({
+      captain: {
+        from: 'my-captain-pkg/subpath',
+        adapter: 'claude',
+        options: {},
+      },
+    }));
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshot = createTmuxPlayConfigSnapshot(loaded);
+
+    expect(snapshot.captain.from).toBe('my-captain-pkg/subpath');
+  });
+
+  it('converts absolute local captain paths to file URLs', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const captainPath = join(workDir, 'captains/fanout.js');
+    const configPath = join(workDir, 'tmux-play.config.json');
+    writeJson(configPath, validConfig({
+      captain: {
+        from: captainPath,
+        adapter: 'claude',
+        options: {},
+      },
+    }));
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshot = createTmuxPlayConfigSnapshot(loaded);
+
+    expect(snapshot.captain.from).toBe(pathToFileURL(captainPath).href);
+  });
+
+  it('writes the rewritten config snapshot to the work directory', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, 'tmux-play.config.json');
+    const sessionWorkDir = join(workDir, 'session');
+    writeJson(configPath, validConfig({
+      captain: {
+        from: './captains/fanout.js',
+        adapter: 'claude',
+        options: { summaryExcerptChars: 5000 },
+      },
+    }));
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(
+      loaded,
+      sessionWorkDir,
+    );
+
+    expect(snapshotPath).toBe(join(sessionWorkDir, TMUX_PLAY_CONFIG_SNAPSHOT));
+    expect(JSON.parse(readFileSync(snapshotPath, 'utf8'))).toEqual({
+      ...loaded.config,
+      captain: {
+        ...loaded.config.captain,
+        from: pathToFileURL(join(workDir, 'captains/fanout.js')).href,
+      },
+    });
   });
 });

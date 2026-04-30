@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { extname, isAbsolute, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import {
   isKnownRoleAdapter,
   validateRoleConfigs,
@@ -47,6 +47,8 @@ const DEFAULT_CONFIG_FILES = [
   'tmux-play.config.json',
 ] as const;
 
+export const TMUX_PLAY_CONFIG_SNAPSHOT = 'tmux-play.config.snapshot.json';
+
 const SUPPORTED_EXTENSIONS = new Set(['.mjs', '.js', '.json']);
 
 export function defineConfig(config: TmuxPlayConfig): TmuxPlayConfig {
@@ -84,8 +86,64 @@ export async function loadTmuxPlayConfig(
   return { path: configPath, config };
 }
 
+export function createTmuxPlayConfigSnapshot(
+  loaded: LoadedTmuxPlayConfig,
+): TmuxPlayConfig {
+  const config = structuredCloneJson(loaded.config);
+  config.captain.from = normalizeCaptainFrom(config.captain.from, loaded.path);
+  return config;
+}
+
+export async function writeTmuxPlayConfigSnapshot(
+  loaded: LoadedTmuxPlayConfig,
+  workDir: string,
+): Promise<string> {
+  const snapshotPath = join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT);
+  const snapshot = createTmuxPlayConfigSnapshot(loaded);
+  await mkdir(workDir, { recursive: true });
+  await writeFile(snapshotPath, JSON.stringify(snapshot, null, 2) + '\n');
+  return snapshotPath;
+}
+
 function resolveConfigPath(cwd: string, configPath: string): string {
   return isAbsolute(configPath) ? configPath : resolve(cwd, configPath);
+}
+
+function normalizeCaptainFrom(from: string, configPath: string): string {
+  if (isFileUrl(from)) {
+    return pathToFileURL(fileURLToPath(from)).href;
+  }
+
+  if (isLocalPathSpecifier(from)) {
+    const absolutePath = isAbsolute(from)
+      ? from
+      : resolve(dirname(configPath), from);
+    return pathToFileURL(absolutePath).href;
+  }
+
+  return from;
+}
+
+function isFileUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'file:';
+  } catch {
+    return false;
+  }
+}
+
+function isLocalPathSpecifier(value: string): boolean {
+  return (
+    value === '.' ||
+    value === '..' ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    isAbsolute(value)
+  );
+}
+
+function structuredCloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 async function loadConfigValue(path: string): Promise<unknown> {
