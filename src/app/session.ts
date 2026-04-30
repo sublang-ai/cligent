@@ -2,12 +2,16 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createInterface } from 'node:readline';
-import { createWriteStream } from 'node:fs';
-import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
-import type { WriteStream } from 'node:fs';
-import type { CligentEvent } from '../types.js';
 import { resolveAgents, type AgentEntry, type ResolvedAgent } from './agents.js';
+import { formatCligentEvent } from './shared/events.js';
+import {
+  closeLogStreams,
+  openAppendLogStreams,
+  writeBossPrompt,
+} from './shared/logs.js';
+import { killTmuxSession } from './shared/tmux.js';
+
+export { formatCligentEvent as formatEvent } from './shared/events.js';
 
 export interface SessionOptions {
   sessionId: string;
@@ -16,52 +20,19 @@ export interface SessionOptions {
   cwd?: string;
 }
 
-export function formatEvent(event: CligentEvent): string | null {
-  switch (event.type) {
-    case 'text_delta':
-      return (event.payload as { delta: string }).delta;
-    case 'text':
-      return (event.payload as { content: string }).content + '\n';
-    case 'tool_use':
-      return `[tool: ${(event.payload as { toolName: string }).toolName}]\n`;
-    case 'tool_result': {
-      const output = (event.payload as { output: unknown }).output;
-      if (typeof output === 'string') return output + '\n';
-      if (typeof output === 'object' && output !== null && 'stdout' in output) {
-        return String((output as { stdout: unknown }).stdout) + '\n';
-      }
-      return JSON.stringify(output) + '\n';
-    }
-    case 'error':
-      return `[error: ${(event.payload as { message: string }).message}]\n`;
-    case 'done': {
-      const p = event.payload as {
-        status: string;
-        usage: { inputTokens: number; outputTokens: number };
-      };
-      return `\n[${p.status} | in: ${p.usage.inputTokens} out: ${p.usage.outputTokens}]\n`;
-    }
-    default:
-      return null;
-  }
-}
-
 export async function runSession(options: SessionOptions): Promise<void> {
   const { sessionId, agentEntries, workDir, cwd } = options;
   const sessionName = `fanout-${sessionId}`;
 
   const agents = await resolveAgents(agentEntries, cwd);
 
-  // Open log streams
-  const streams = new Map<string, WriteStream>();
-  for (const agent of agents) {
-    const logPath = join(workDir, `${agent.name}.log`);
-    const stream = createWriteStream(logPath, { flags: 'a' });
-    stream.on('error', (err) => {
-      console.error(`[${agent.name}] log write error: ${err.message}`);
-    });
-    streams.set(agent.name, stream);
-  }
+  const streams = openAppendLogStreams(
+    workDir,
+    agents.map((agent) => agent.name),
+    (name, err) => {
+      console.error(`[${name}] log write error: ${err.message}`);
+    },
+  );
 
   let abortController: AbortController | null = null;
 
@@ -70,12 +41,10 @@ export async function runSession(options: SessionOptions): Promise<void> {
     abortController?.abort();
 
     // Close streams (logs persist in .fanout/)
-    for (const stream of streams.values()) {
-      stream.end();
-    }
+    closeLogStreams(streams.values());
 
     // Kill tmux session
-    spawnSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
+    killTmuxSession(sessionName);
   };
 
   process.on('SIGINT', () => {
@@ -110,9 +79,7 @@ export async function runSession(options: SessionOptions): Promise<void> {
 
     pending = pending.then(async () => {
       // Echo prompt to all log files
-      for (const stream of streams.values()) {
-        stream.write(`boss> ${text}\n\n`);
-      }
+      writeBossPrompt(streams.values(), text);
 
       abortController = new AbortController();
       const { signal } = abortController;
@@ -124,7 +91,7 @@ export async function runSession(options: SessionOptions): Promise<void> {
           for await (const event of agent.cligent.run(text, {
             abortSignal: signal,
           })) {
-            const formatted = formatEvent(event);
+            const formatted = formatCligentEvent(event);
             if (formatted !== null) {
               stream.write(formatted);
             }
