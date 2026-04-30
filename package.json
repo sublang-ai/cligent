@@ -52,6 +52,10 @@
     "./adapters/opencode": {
       "import": "./dist/adapters/opencode.js",
       "types": "./dist/adapters/opencode.d.ts"
+    },
+    "./tmux-play": {
+      "import": "./dist/app/tmux-play/index.js",
+      "types": "./dist/app/tmux-play/index.d.ts"
     }
   },
   "engines": {
