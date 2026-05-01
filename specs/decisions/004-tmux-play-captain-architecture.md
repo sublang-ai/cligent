@@ -79,6 +79,7 @@ The minimum record set is:
 Every record carries a stable role ID where applicable.
 Turn-bound records carry `turnId: number`.
 Session-scoped `captain_status` / `captain_telemetry` emitted outside an active turn carry `turnId: null`.
+`runtime_error` carries the active turn ID when the failure belongs to a turn and `turnId: null` for startup/init failures before any turn is active.
 
 Per turn: `turn_started` first; each role gets `role_prompt` → `role_event`s → one `role_finished`; each `callCaptain()` gets `captain_prompt` → `captain_event`s → `captain_finished`; `turn_finished` last (or `turn_aborted` on abort).
 
@@ -87,7 +88,7 @@ The dispatcher delivers each record in registration order, awaits the returned p
 `captain_status` and `captain_telemetry` share that same ordered per-session queue regardless of origin (`init`, turn, between turns).
 Turn-bound emissions drain before `turn_finished` / `turn_aborted`; `turnId: null` emissions dispatch in emission order without a turn boundary.
 Observers bridging to external transports must enqueue and return synchronously — the dispatcher is non-blocking on network flushes.
-On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn, and runs normal cleanup.
+On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn if one exists, and runs normal cleanup.
 
 The tmux presenter is the first observer; it consumes `captain_status` and ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels).
 Coordination stays testable without tmux; new observers attach without changing the Captain or role contracts.

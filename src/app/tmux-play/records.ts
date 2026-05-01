@@ -9,73 +9,66 @@ import type {
   RoleRunResult,
 } from './contract.js';
 
-export interface BaseRecord<TType extends string = string> {
+export interface BaseRecord<
+  TType extends string = string,
+  TTurnId extends number | null = number,
+> {
   readonly type: TType;
-  readonly turnId: number | null;
+  readonly turnId: TTurnId;
   readonly timestamp: number;
 }
 
-export interface TurnStartedRecord extends BaseRecord {
-  readonly type: 'turn_started';
+export interface TurnStartedRecord extends BaseRecord<'turn_started'> {
   readonly turn: BossTurn;
 }
 
-export interface TurnFinishedRecord extends BaseRecord {
-  readonly type: 'turn_finished';
-}
+export type TurnFinishedRecord = BaseRecord<'turn_finished'>;
 
-export interface TurnAbortedRecord extends BaseRecord {
-  readonly type: 'turn_aborted';
+export interface TurnAbortedRecord extends BaseRecord<'turn_aborted'> {
   readonly reason?: string;
 }
 
-export interface RolePromptRecord extends BaseRecord {
-  readonly type: 'role_prompt';
+export interface RolePromptRecord extends BaseRecord<'role_prompt'> {
   readonly roleId: string;
   readonly prompt: string;
 }
 
-export interface RoleEventRecord extends BaseRecord {
-  readonly type: 'role_event';
+export interface RoleEventRecord extends BaseRecord<'role_event'> {
   readonly roleId: string;
   readonly event: CligentEvent;
 }
 
-export interface RoleFinishedRecord extends BaseRecord {
-  readonly type: 'role_finished';
+export interface RoleFinishedRecord extends BaseRecord<'role_finished'> {
   readonly roleId: string;
   readonly result: RoleRunResult;
 }
 
-export interface CaptainPromptRecord extends BaseRecord {
-  readonly type: 'captain_prompt';
+export interface CaptainPromptRecord extends BaseRecord<'captain_prompt'> {
   readonly prompt: string;
 }
 
-export interface CaptainEventRecord extends BaseRecord {
-  readonly type: 'captain_event';
+export interface CaptainEventRecord extends BaseRecord<'captain_event'> {
   readonly event: CligentEvent;
 }
 
-export interface CaptainFinishedRecord extends BaseRecord {
-  readonly type: 'captain_finished';
+export interface CaptainFinishedRecord extends BaseRecord<'captain_finished'> {
   readonly result: CaptainRunResult;
 }
 
-export interface CaptainStatusRecord extends BaseRecord {
-  readonly type: 'captain_status';
+export interface CaptainStatusRecord
+  extends BaseRecord<'captain_status', number | null> {
   readonly message: string;
   readonly data?: Record<string, unknown>;
 }
 
-export interface CaptainTelemetryRecord extends BaseRecord {
-  readonly type: 'captain_telemetry';
+export interface CaptainTelemetryRecord
+  extends BaseRecord<'captain_telemetry', number | null> {
   readonly topic: string;
   readonly payload: unknown;
 }
 
-export interface RuntimeErrorRecord extends BaseRecord {
-  readonly type: 'runtime_error';
+export interface RuntimeErrorRecord
+  extends BaseRecord<'runtime_error', number | null> {
   readonly message: string;
   readonly sourceRecordType?: TmuxPlayRecordType;
   readonly observerIndex?: number;
@@ -96,6 +89,14 @@ export type TmuxPlayRecord =
   | RuntimeErrorRecord;
 
 export type TmuxPlayRecordType = TmuxPlayRecord['type'];
+export type NullableTurnIdRecordType =
+  | 'captain_status'
+  | 'captain_telemetry'
+  | 'runtime_error';
+export type TurnBoundRecordType = Exclude<
+  TmuxPlayRecordType,
+  NullableTurnIdRecordType
+>;
 
 export interface RecordObserver {
   onRecord(record: TmuxPlayRecord): void | Promise<void>;
@@ -215,11 +216,21 @@ export class RecordDispatcher {
   }
 }
 
-export function makeRecordBase<TType extends TmuxPlayRecordType>(
+export function makeRecordBase<TType extends TurnBoundRecordType>(
+  type: TType,
+  turnId: number,
+  timestamp?: number,
+): BaseRecord<TType>;
+export function makeRecordBase<TType extends NullableTurnIdRecordType>(
   type: TType,
   turnId: number | null,
+  timestamp?: number,
+): BaseRecord<TType, number | null>;
+export function makeRecordBase(
+  type: TmuxPlayRecordType,
+  turnId: number | null,
   timestamp = Date.now(),
-): BaseRecord<TType> {
+): BaseRecord<TmuxPlayRecordType, number | null> {
   return { type, turnId, timestamp };
 }
 
