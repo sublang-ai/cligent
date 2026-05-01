@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { accessSync, constants, existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Writable } from 'node:stream';
@@ -51,11 +56,10 @@ export async function runTmuxPlayCli(
     }
 
     if (values.session) {
-      validateSessionOptions(values);
-      validateWorkDir(values['work-dir']);
+      const workDir = validateSessionOptions(values);
       await (options.runSession ?? runTmuxPlaySession)({
         sessionId: values.session,
-        workDir: values['work-dir'],
+        workDir,
         cwd: values.cwd,
       });
       return 0;
@@ -81,19 +85,19 @@ function validateSessionOptions(values: {
   readonly config?: string;
   readonly session?: string;
   readonly 'work-dir'?: string;
-}): void {
+}): string {
   if (values.config) {
     throw new Error('--config is only valid in launcher mode');
   }
-  if (!values['work-dir']) {
-    throw new Error('--work-dir is required in session mode');
-  }
-}
-
-function validateWorkDir(workDir: string | undefined): asserts workDir is string {
+  const workDir = values['work-dir'];
   if (!workDir) {
     throw new Error('--work-dir is required in session mode');
   }
+  validateWorkDir(workDir);
+  return workDir;
+}
+
+function validateWorkDir(workDir: string): void {
   if (!existsSync(workDir) || !statSync(workDir).isDirectory()) {
     throw new Error(
       `work dir does not exist or is not a directory: ${workDir}`,
@@ -119,10 +123,21 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isCliEntry(): boolean {
-  return process.argv[1]
-    ? fileURLToPath(import.meta.url) === resolve(process.argv[1])
-    : false;
+/**
+ * @internal Exported for tests; not part of the tmux-play public API.
+ */
+export function isCliEntry(
+  argv1 = process.argv[1],
+  moduleUrl = import.meta.url,
+): boolean {
+  if (!argv1) {
+    return false;
+  }
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
 }
 
 if (isCliEntry()) {

@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runTmuxPlayCli } from './cli.js';
+import { isCliEntry, runTmuxPlayCli } from './cli.js';
 
 class MemoryOutput {
   chunks: string[] = [];
@@ -116,5 +123,18 @@ describe('runTmuxPlayCli', () => {
 
     expect(code).toBe(0);
     expect(stdout.text()).toContain('tmux-play [--config <path>]');
+  });
+
+  it('detects symlinked bin invocations as CLI entries', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-cli-'));
+    const realCli = join(tempDir, 'real-cli.js');
+    const binDir = join(tempDir, 'bin');
+    const symlinkedCli = join(binDir, 'tmux-play');
+    writeFileSync(realCli, '');
+    mkdirSync(binDir);
+    symlinkSync(realCli, symlinkedCli);
+
+    expect(isCliEntry(symlinkedCli, pathToFileURL(realCli).href)).toBe(true);
+    expect(isCliEntry(realCli, pathToFileURL(symlinkedCli).href)).toBe(true);
   });
 });
