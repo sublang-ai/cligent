@@ -27,7 +27,7 @@
     "README.md"
   ],
   "bin": {
-    "fanout": "./dist/app/cli.js"
+    "tmux-play": "./dist/app/tmux-play/cli.js"
   },
   "sideEffects": false,
   "main": "dist/index.js",
@@ -56,6 +56,10 @@
     "./tmux-play": {
       "import": "./dist/app/tmux-play/index.js",
       "types": "./dist/app/tmux-play/index.d.ts"
+    },
+    "./captains/fanout": {
+      "import": "./dist/captains/fanout.js",
+      "types": "./dist/captains/fanout.d.ts"
     }
   },
   "engines": {
@@ -63,7 +67,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "postbuild": "node -e \"require('fs').chmodSync('dist/app/cli.js',0o755)\"",
+    "postbuild": "node -e \"require('fs').chmodSync('dist/app/tmux-play/cli.js',0o755)\"",
     "lint": "eslint --config config/eslint.config.js .",
     "format": "prettier --config config/prettierrc.json --write .",
     "test": "vitest run --config config/vitest.config.ts",

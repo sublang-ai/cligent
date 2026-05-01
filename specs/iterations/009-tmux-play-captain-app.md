@@ -25,9 +25,9 @@ Out of scope: see DR-004 §Out of Scope.
 
 ## Deliverables
 
-- [ ] `package.json` — replace `bin: fanout` with `bin: tmux-play`; retarget the `postbuild` chmod; add `./tmux-play` and `./captains/fanout` exports.
+- [x] `package.json` — replace `bin: fanout` with `bin: tmux-play`; retarget the `postbuild` chmod; add `./tmux-play` and `./captains/fanout` exports.
 - [x] `src/app/shared/` — tmux, log, shell-quoting, and event-formatting helpers.
-- [ ] `src/app/tmux-play/cli.ts` — arg parsing, launcher/session dispatch.
+- [x] `src/app/tmux-play/cli.ts` — arg parsing, launcher/session dispatch.
 - [x] `src/app/tmux-play/config.ts` — config loading, validation, snapshot writer, `captain.from` rewriting.
 - [x] `src/app/tmux-play/roles.ts` — role resolution and per-role `Cligent` construction.
 - [x] `src/app/tmux-play/contract.ts` — `Captain` (with optional `init(session)` and `dispose()`), `BossTurn`, `CaptainSession`, `CaptainContext`, `CaptainTelemetry`, `RoleHandle`, `RunStatus`, `RoleRunResult`, `CaptainRunResult`. No per-call options until a consumer needs them.
