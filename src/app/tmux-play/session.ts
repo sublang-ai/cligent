@@ -21,7 +21,7 @@ import {
   type TmuxPlayConfig,
 } from './config.js';
 import { createTmuxPresenter } from './presenter-tmux.js';
-import type { RecordObserver } from './records.js';
+import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
   isKnownRoleAdapter,
@@ -165,7 +165,11 @@ export class TmuxPlaySession {
         try {
           await this.runtime?.runBossTurn(prompt);
         } catch (error) {
-          this.writeOutput(`[runtime error: ${errorMessage(error)}]\n`);
+          // Non-observer failures are already emitted as runtime_error records
+          // by the runtime and rendered by the tmux presenter.
+          if (error instanceof ObserverDispatchError) {
+            this.writeOutput(`[runtime error: ${errorMessage(error)}]\n`);
+          }
         } finally {
           if (!this.shuttingDown) {
             this.readline?.prompt();
@@ -189,23 +193,28 @@ export class TmuxPlaySession {
 
   private async shutdown(reason: string): Promise<void> {
     if (this.shuttingDown) {
-      return this.done;
+      return;
     }
     this.shuttingDown = true;
     this.unregisterSignals();
     this.runtime?.abortActiveTurn(reason);
 
-    try {
-      await this.runtime?.dispose();
-      closeLogStreams(this.logStreams?.values() ?? []);
-      this.cleanupWorkDir();
-      (this.options.killSession ?? killTmuxSession)(this.sessionName());
+    const errors: unknown[] = [];
+    await runShutdownStep(errors, () => this.runtime?.dispose());
+    await runShutdownStep(errors, () =>
+      closeLogStreams(this.logStreams?.values() ?? []),
+    );
+    await runShutdownStep(errors, () => this.cleanupWorkDir());
+    await runShutdownStep(errors, () =>
+      (this.options.killSession ?? killTmuxSession)(this.sessionName()),
+    );
+
+    if (errors.length > 0) {
+      this.doneDeferred.reject(errors[0]);
+    } else {
       this.doneDeferred.resolve();
-    } catch (error) {
-      this.doneDeferred.reject(error);
     }
 
-    return this.done;
   }
 
   private cleanupWorkDir(): void {
@@ -269,6 +278,17 @@ async function defaultImportCaptain(specifier: string): Promise<unknown> {
 
 function defaultRemoveWorkDir(workDir: string): void {
   rmSync(workDir, { recursive: true, force: true });
+}
+
+async function runShutdownStep(
+  errors: unknown[],
+  step: () => void | Promise<void>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    errors.push(error);
+  }
 }
 
 function runtimeRoles(roles: readonly RoleConfig[]): RuntimeRoleConfig[] {

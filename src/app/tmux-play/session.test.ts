@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
+import { ObserverDispatchError } from './records.js';
 import {
   readConfigSnapshot,
   TmuxPlaySession,
@@ -184,6 +185,103 @@ describe('TmuxPlaySession', () => {
     expect(killSession).toHaveBeenCalledWith('tmux-play-abc123');
   });
 
+  it('continues cleanup when runtime disposal fails', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const dispose = vi.fn(async () => {
+      throw new Error('dispose failed');
+    });
+    const killSession = vi.fn();
+    const removeWorkDir = vi.fn();
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose,
+        runBossTurn: async () => undefined,
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+      killSession,
+      removeWorkDir,
+    });
+
+    await session.start();
+    readline.close();
+    await expect(session.done).rejects.toThrow('dispose failed');
+
+    expect(removeWorkDir).toHaveBeenCalledWith(tempDir);
+    expect(killSession).toHaveBeenCalledWith('tmux-play-abc123');
+  });
+
+  it('does not duplicate non-observer runtime errors in the Boss pane', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const output = new MemoryOutput();
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: async () => undefined,
+        runBossTurn: async () => {
+          throw new Error('captain failed');
+        },
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+      output,
+    });
+
+    await session.start();
+    readline.emitLine('fail');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(output.text()).not.toContain('[runtime error: captain failed]');
+  });
+
+  it('renders observer dispatch failures that bypass tmux presenter records', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const output = new MemoryOutput();
+    const error = new ObserverDispatchError(
+      {
+        type: 'turn_started',
+        turnId: 1,
+        timestamp: 100,
+        turn: {
+          id: 1,
+          prompt: 'fail',
+          timestamp: 100,
+        },
+      },
+      0,
+      new Error('observer failed'),
+    );
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: async () => undefined,
+        runBossTurn: async () => {
+          throw error;
+        },
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+      output,
+    });
+
+    await session.start();
+    readline.emitLine('fail');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(output.text()).toContain(
+      '[runtime error: Record observer 0 failed while handling turn_started: observer failed]',
+    );
+  });
+
   it('handles SIGINT by closing the readline session', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();
@@ -224,6 +322,9 @@ function baseOptions(workDir: string): TmuxPlaySessionOptions {
     cwd: '/repo',
     input: process.stdin,
     output: new MemoryOutput(),
+    killSession: vi.fn(),
+    removeWorkDir: vi.fn(),
+    signalTarget: new SignalHub(),
   };
 }
 
