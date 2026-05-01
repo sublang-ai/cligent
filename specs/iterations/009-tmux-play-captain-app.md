@@ -34,7 +34,7 @@ Out of scope: see DR-004 §Out of Scope.
 - [x] `src/app/tmux-play/records.ts` — record types (including `captain_telemetry`); session-scoped `captain_status` / `captain_telemetry` carry `turnId: number | null`; observer dispatcher with multi-observer registration, shared per-session queue, and turn-bound drain semantics.
 - [x] `src/app/tmux-play/runtime.ts` — programmatic runtime API; turn loop, abort, `Captain.init(session)` and `dispose()`, `CaptainSession` (session abort, roles, `emitStatus`, `emitTelemetry`), `CaptainContext` (turn abort, roles, `callRole`, `callCaptain`), observer registration, shutdown drain order.
 - [x] `src/app/tmux-play/presenter-tmux.ts` — tmux observer; consumes `captain_status`, ignores `captain_telemetry`.
-- [ ] `src/app/tmux-play/launcher.ts` — work-dir/logs, snapshot, tmux session, attach.
+- [x] `src/app/tmux-play/launcher.ts` — work-dir/logs, snapshot, tmux session, attach.
 - [ ] `src/app/tmux-play/session.ts` — Boss readline, runtime invocation, observer registration (tmux plus configured opt-in presenters), abort/cleanup.
 - [x] `src/app/tmux-play/index.ts` — public re-exports for `@sublang/cligent/tmux-play`, including the observer-registration contract and `CaptainSession`.
 - [x] `src/captains/fanout.ts` — `fanout` Captain factory and prompt logic.
