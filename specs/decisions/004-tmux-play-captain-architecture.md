@@ -76,30 +76,35 @@ The minimum record set is:
 - `captain_telemetry`
 - `runtime_error`
 
-Every record carries a stable role ID (where applicable) and a session-local turn ID.
+Every record carries a stable role ID where applicable.
+Turn-bound records carry `turnId: number`.
+Session-scoped `captain_status` / `captain_telemetry` emitted outside an active turn carry `turnId: null`.
+
 Per turn: `turn_started` first; each role gets `role_prompt` → `role_event`s → one `role_finished`; each `callCaptain()` gets `captain_prompt` → `captain_event`s → `captain_finished`; `turn_finished` last (or `turn_aborted` on abort).
 
 Presenters subscribe as observers.
-The dispatcher delivers each record in registration order, awaits any returned promise before the next, and never drops or coalesces.
-`captain_status` records from `emitStatus()` and `captain_telemetry` records from `emitTelemetry()` queue in emission order; each fully dispatches before the next runtime record, and all drain before `turn_finished`/`turn_aborted`.
-Observers that bridge to external transports (SSE, WebSocket, IPC) must enqueue internally and return synchronously; the dispatcher contract is non-blocking on network flushes.
-If an observer throws or rejects, the runtime emits `runtime_error` to the rest where possible, aborts the active turn, and runs normal cleanup.
+The dispatcher delivers each record in registration order, awaits the returned promise, and never drops or coalesces.
+`captain_status` and `captain_telemetry` share that same ordered per-session queue regardless of origin (`init`, turn, between turns).
+Turn-bound emissions drain before `turn_finished` / `turn_aborted`; `turnId: null` emissions dispatch in emission order without a turn boundary.
+Observers bridging to external transports must enqueue and return synchronously — the dispatcher is non-blocking on network flushes.
+On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn, and runs normal cleanup.
 
-The tmux presenter is the first observer.
-It ignores `captain_telemetry` by default — that channel is structured, machine-readable, and intended for opt-in observers (visualizer presenters, metrics collectors), not the Boss/Captain pane.
-Coordination stays testable without tmux, and new observers attach without changing Captain or role contracts.
-Records are an internal contract, not exported from the root package.
+The tmux presenter is the first observer; it consumes `captain_status` and ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels).
+Coordination stays testable without tmux; new observers attach without changing the Captain or role contracts.
+Runtime record types and the observer-registration contract are exported from `@sublang/cligent/tmux-play`, not the root package.
 
 ### Captain
 
 A Captain handles one Boss turn at a time.
-The runtime hands it the turn, an abort signal, and a context that mediates access to the configured roles and the Captain `Cligent`.
-The runtime owns the persistent `Cligent` instances; how the Captain composes context calls — fanout, planner/router, pass-through — is its own choice.
+Turn-scoped resources (turn abort, role/captain run methods) arrive on `CaptainContext`.
+Session-scoped resources (session abort, status/telemetry emission, role manifest) arrive on `CaptainSession` via the optional `init(session)` lifecycle, so emissions are not bound to a turn.
+The runtime owns the persistent `Cligent` instances; how the Captain composes calls — fanout, planner/router, pass-through — is its own choice.
 
 The Captain extension contract is exported from `@sublang/cligent/tmux-play`:
 
 ```typescript
 interface Captain {
+  init?(session: CaptainSession): Promise<void>;
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
   dispose?(): Promise<void>;
 }
@@ -110,13 +115,18 @@ interface BossTurn {
   timestamp: number;
 }
 
-interface CaptainContext {
-  readonly signal: AbortSignal;
+interface CaptainSession {
+  readonly signal: AbortSignal;            // session-scoped abort
   readonly roles: readonly RoleHandle[];
-  callRole(roleId: string, prompt: string, options?: RoleCallOptions): Promise<RoleRunResult>;
-  callCaptain(prompt: string, options?: CaptainCallOptions): Promise<CaptainRunResult>;
   emitStatus(message: string, data?: Record<string, unknown>): Promise<void>;
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
+}
+
+interface CaptainContext {
+  readonly signal: AbortSignal;            // turn-scoped abort
+  readonly roles: readonly RoleHandle[];
+  callRole(roleId: string, prompt: string): Promise<RoleRunResult>;
+  callCaptain(prompt: string): Promise<CaptainRunResult>;
 }
 
 interface CaptainTelemetry {
@@ -130,7 +140,8 @@ interface RoleHandle {
   readonly model?: string;
 }
 
-type RoleAdapterName = 'claude' | 'codex' | 'gemini' | 'opencode';
+// `RoleAdapterName` is the canonical type from the tmux-play module
+// (claude | codex | gemini | opencode); not redefined here.
 
 type RunStatus = 'ok' | 'aborted' | 'error';
 
@@ -148,31 +159,33 @@ interface CaptainRunResult {
   readonly finalText?: string;
   readonly error?: string;
 }
-
-interface RoleCallOptions {
-  readonly metadata?: Record<string, unknown>;
-}
-
-type CaptainCallOptions = RoleCallOptions;
 ```
 
-The context never exposes raw `Cligent` instances; `callRole()` and `callCaptain()` are the only paths to a run, so every run is recorded and bound to `context.signal`.
+Neither context exposes raw `Cligent`; `callRole` and `callCaptain` are the only paths to a run, so every run is recorded and bound to `context.signal`.
+Per-call options are intentionally absent until a concrete consumer needs them.
 
-`emitStatus()` emits `captain_status` records — free-form, human-readable Captain messages (inspector URLs, state transitions) routed to the Boss/Captain pane.
-The returned promise resolves on full dispatch; fire-and-forget is safe because the runtime preserves emission order.
-This keeps stateful Captains (e.g., XState coordinators) inside the runtime/presentation boundary instead of writing raw stdout.
+`emitStatus` emits `captain_status`: free-form, human-readable; routed to the Boss/Captain pane.
+`emitTelemetry` emits `captain_telemetry`: structured, topic-routed; ignored by the tmux pane and consumed by opt-in observers (visualizer, metrics).
+Topics are namespaced by convention (`sketch.diagram`, `sketch.highlight`, `metrics.*`); the runtime never interprets them.
 
-`emitTelemetry(event)` emits `captain_telemetry` records — structured, machine-readable events with a topic string and opaque payload. Topics are namespaced by convention (`sketch.diagram`, `sketch.highlight`, `metrics.*`); the runtime does not interpret them. Use telemetry for any data an observer other than the Boss/Captain pane should consume — visualizer streams, metrics, third-party panels.
-Same dispatcher guarantees as `emitStatus()`: ordered, awaited, never dropped, drained before turn completion. Observer authors are responsible for non-blocking bridges to external transports (see runtime/presentation paragraph above).
-For sustained streams (e.g., XState microstep highlights), the Captain rate-limits before emission as needed; the runtime applies no coalescing.
+Both live on `CaptainSession`, share one ordered per-session queue, and may be called from `init`, during turns, or between turns.
+Records carry the active `turnId` else `null`.
+Delivery is ordered, awaited, never dropped; turn-bound emissions drain before turn completion.
+For sustained streams the Captain rate-limits; the runtime never coalesces.
 
-Visualizer presentation and browser transport belong to a presenter/observer by default. Captains may own actor-side instrumentation resources (e.g., inspectors, matchers, generic inspector servers per the `dispose()` contract above), but for visualizer rendering specifically should emit structured telemetry rather than serving the visualizer UI from the Captain.
+The split between the two methods is deliberate: status is the human-facing affordance; telemetry is the machine-readable lane.
+Collapsing them into a reserved `topic: 'status'` would move the contract into payload convention rather than removing it.
+
+Visualizer rendering and browser transport belong to a presenter/observer.
+Captains may own actor-side instrumentation (inspectors, matchers) but should emit telemetry rather than serve UI.
 
 Each Captain module's default export is a factory `(options: unknown) => Captain | Promise<Captain>`.
-The launcher only verifies `captain.from` resolves; the session imports and constructs it, surfacing factory failures in the Boss/Captain pane.
-On session shutdown the runtime invokes `dispose()` (if present) to release long-lived resources — actors, inspector servers, subscriptions.
+The launcher verifies `captain.from` resolves; the session imports and constructs it.
 
-Built-in Captains use the same contract a third-party Captain does — there is no internal mode registry or special casing.
+Lifecycle: construct → attach observers → `init(session)` → serve turns → shutdown (see Serialization and Abort) → `dispose()` → detach observers.
+Observers straddle the Captain lifetime, so init-time emissions and init failures reach attached observers.
+
+Built-in Captains use the same contract as third-party ones — no internal mode registry or special casing.
 `fanout` is the first such Captain and reproduces the original fanout chat coordination.
 
 ### Configuration
@@ -209,16 +222,14 @@ export default defineConfig({
 });
 ```
 
-Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-owned Captain `Cligent` (target of `callCaptain()`); `options` is opaque to the runtime and passed verbatim to the factory.
+Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-owned Captain `Cligent` (target of `callCaptain`); `options` is opaque to the runtime and passed verbatim to the factory.
 
-The launcher rewrites `captain.from` before snapshotting: local paths (e.g. `./captains/foo.js`) resolve against the original config file's directory and become absolute `file://` URLs; package specifiers (`@sublang/cligent/captains/fanout`, `my-captain-pkg`) pass through unchanged.
-The session hands `captain.from` to `import()` and applies the factory to `captain.options`.
-Built-in and third-party Captains use the same mechanism.
+`captain.from` accepts local paths (resolved against the config file's directory) or package specifiers; both resolve through the same `import()` path.
 
 Role IDs match `^[a-z][a-z0-9_-]*$`, are unique within a config, and may not equal `captain`.
-Role ID is the runtime identity; multiple roles may share an adapter and model.
+Multiple roles may share an adapter and model — the role ID is the runtime identity.
 
-Adapter names use the existing short scheme: `claude`, `codex`, `gemini`, `opencode`.
+Adapter names use the canonical short scheme: `claude`, `codex`, `gemini`, `opencode`.
 
 ### Serialization and Abort
 
@@ -227,9 +238,18 @@ Within a turn, role calls may run concurrently at the Captain's discretion.
 
 Each role and the Captain own one persistent `Cligent` per session.
 
-SIGINT, SIGTERM, or EOF aborts the active turn.
-Abort propagates through the Captain's abort signal to active runs.
-Once the active turn unwinds, the runtime invokes the Captain's `dispose()` if present, then completes session cleanup.
+SIGINT, SIGTERM, or EOF aborts the active turn via `context.signal`.
+`CaptainSession.signal` aborts on session shutdown, not per-turn cancellation.
+
+Session shutdown order:
+
+1. Active turn unwinds; turn-bound emissions drain before `turn_finished` / `turn_aborted`.
+2. Abort `CaptainSession.signal` so producers wired to it (matcher subscriptions, timers) detach.
+3. Drain already-accepted session emissions; post-abort `emit*` calls reject.
+4. `Captain.dispose()`.
+5. Detach observers.
+
+Aborting before draining detaches producers cleanly and delivers their in-flight records without racing new ones.
 
 ### Distribution and Extension
 
@@ -238,8 +258,8 @@ The package is ESM, Node ≥18; there is no compiled binary.
 
 The package separates the runtime API from the CLI:
 
-- The runtime API takes an instantiated Captain, role configs, and an observer, and runs the coordination in-process — tmux-independent, suitable for embedding in other presentations.
-- The CLI's launcher loads the config, snapshots it to the work directory, builds the tmux session, and exits. The session reads the snapshot, imports `captain.from`, constructs the Captain, and calls the runtime API with the tmux presenter attached.
+- The runtime API takes an instantiated Captain, role configs, and zero or more observers (registered via the observer-registration contract), and runs the coordination in-process — tmux-independent, suitable for embedding in other presentations.
+- The CLI's launcher loads the config, snapshots it to the work directory, builds the tmux session, and exits. The session reads the snapshot, imports `captain.from`, constructs the Captain, registers the configured observers (the tmux presenter plus any opt-in sketch/metrics presenters), and calls the runtime API.
 
 Built-in Captains live under sub-exports such as `@sublang/cligent/captains/fanout`.
 They are not privileged: third-party Captains in their own packages are reached the same way and use the same contract.
@@ -250,7 +270,7 @@ The Captain extension types and runtime API are exported from `@sublang/cligent/
 
 - Additional built-in Captains beyond `fanout`.
 - Additional **shipped** presentation surfaces beyond tmux (e.g., a built-in web/Electron presenter). Adding observers that consume runtime records — including `captain_telemetry` — is in scope and does not require a new DR.
-- Publicly exporting the runtime record or observer API.
+- Re-exporting the runtime record or observer API from the root `@sublang/cligent` package (the `@sublang/cligent/tmux-play` sub-export carries them, per the runtime/presentation section).
 - Persisting cross-launch history.
 - Interactive permission UI beyond adapter defaults.
 - Multi-Boss or shared sessions.
@@ -261,8 +281,9 @@ New behavior in any of these areas requires a separate decision record.
 
 - `tmux-play` replaces the standalone fanout CLI; fanout becomes a regular Captain shipped as a sub-export.
 - Custom Captains use the same contract as built-ins: a `captain.from` specifier in CLI config, or a Captain instance via the runtime API.
-- Stateful Captains (XState actors, planners) hold session-scoped resources via `dispose()`, surface human-readable status through `captain_status`, and emit structured machine-readable events through `captain_telemetry`.
+- Stateful Captains (XState actors, planners) acquire session-scoped resources in `init(session)`, hold the session reference for emissions across turns, and release in `dispose()`. They surface human-readable status through `emitStatus`/`captain_status` and structured machine-readable events through `emitTelemetry`/`captain_telemetry`. Both emit methods are session-scoped so a Captain can fire telemetry while idle between turns (e.g., an XState `after:` timer) without the per-turn binding gymnastics that an earlier draft of this DR required.
 - `captain_telemetry` is a generic topic-routed lane. An XState Captain emits visualizer streams (`sketch.diagram`, `sketch.highlight` per [DR-002 §8](../../../playbook/specs/decisions/002-in-page-xstate-visualizer.md#8-cross-process-deployment)) without the runtime knowing about visualizers; a sketch presenter consumes the records and owns SSE/WebSocket transport, with internal buffering to keep the dispatcher non-blocking.
+- Out-of-turn emissions carry `turnId: null`; turn-bound emissions carry the active session-local turn ID. Observers handle both deliberately rather than assuming every record is turn-scoped.
 - Coordination is testable without tmux because the runtime emits records before formatting.
-- New observers (visualizer presenters, metrics collectors, etc.) attach without touching Captain or role contracts; the runtime stays presentation-agnostic.
+- The runtime record types and observer-registration contract export from `@sublang/cligent/tmux-play` (not the root package), so out-of-package observers — sketch presenters, metrics collectors — attach without depending on internal modules.
 - Shared app primitives are still needed for tmux process management, shell quoting, log handling, and event formatting.
