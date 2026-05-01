@@ -11,6 +11,9 @@ import {
   type Captain,
   type CaptainContext,
   type CaptainRunResult,
+  type CaptainSession,
+  type CaptainTelemetry,
+  type RecordObserver,
   type RuntimeCaptainConfig,
   type RoleHandle,
   type RoleRunResult,
@@ -22,14 +25,20 @@ import {
 describe('tmux-play public contract', () => {
   it('accepts Captain implementations', () => {
     const captain: Captain = {
+      async init(session: CaptainSession) {
+        expectTypeOf(session.roles).toEqualTypeOf<readonly RoleHandle[]>();
+        await session.emitStatus('ready', { phase: 'init' });
+        const telemetry: CaptainTelemetry = {
+          topic: 'metrics.ready',
+          payload: { ok: true },
+        };
+        await session.emitTelemetry(telemetry);
+      },
       async handleBossTurn(turn: BossTurn, context: CaptainContext) {
         expectTypeOf(turn.id).toEqualTypeOf<number>();
         expectTypeOf(context.roles).toEqualTypeOf<readonly RoleHandle[]>();
 
-        await context.emitStatus('ready', { turnId: turn.id });
-        await context.callRole('coder', turn.prompt, {
-          metadata: { source: 'test' },
-        });
+        await context.callRole('coder', turn.prompt);
         await context.callCaptain('summarize');
       },
       async dispose() {
@@ -50,9 +59,7 @@ describe('tmux-play public contract', () => {
       captain: Captain;
       captainConfig: RuntimeCaptainConfig;
       roles: readonly RoleHandle[];
-      observers?: readonly {
-        onRecord(record: unknown): void | Promise<void>;
-      }[];
+      observers?: readonly RecordObserver[];
       cwd?: string;
       signal?: AbortSignal;
     }>();

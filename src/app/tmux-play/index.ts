@@ -21,17 +21,31 @@ export type {
 export type {
   BossTurn,
   Captain,
-  CaptainCallOptions,
   CaptainContext,
   CaptainRunResult,
+  CaptainSession,
+  CaptainTelemetry,
   RuntimeCaptainConfig,
-  RoleCallOptions,
   RoleHandle,
   RoleRunResult,
   RunStatus,
   RunTmuxPlayOptions,
   RuntimeRoleConfig,
 } from './contract.js';
+
+export {
+  ObserverDispatchError,
+  RecordDispatcher,
+  telemetryRecord,
+} from './records.js';
+export type {
+  CaptainStatusRecord,
+  CaptainTelemetryRecord,
+  RecordObserver,
+  RuntimeErrorRecord,
+  TmuxPlayRecord,
+  TmuxPlayRecordType,
+} from './records.js';
 
 export { TmuxPlayRuntime, createTmuxPlayRuntime } from './runtime.js';
 

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEvent } from '../../events.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
-import type { Captain, RoleRunResult } from './contract.js';
+import type { Captain, CaptainSession, RoleRunResult } from './contract.js';
 import type { TmuxPlayRecord } from './records.js';
 import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
 import { createTmuxPlayRuntime } from './runtime.js';
@@ -258,9 +258,13 @@ describe('TmuxPlayRuntime', () => {
     const statusStarted = deferred();
     const releaseStatus = deferred();
     const seen: string[] = [];
+    let session!: CaptainSession;
     const captain: Captain = {
-      async handleBossTurn(_turn, context) {
-        void context.emitStatus('working');
+      async init(captainSession) {
+        session = captainSession;
+      },
+      async handleBossTurn() {
+        void session.emitStatus('working');
       },
     };
     const runtime = await createTmuxPlayRuntime({
@@ -296,6 +300,47 @@ describe('TmuxPlayRuntime', () => {
       'captain_status:end',
       'turn_finished:start',
       'turn_finished:end',
+    ]);
+  });
+
+  it('emits init telemetry with null turn id before turns', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async init(session) {
+        await session.emitStatus('ready');
+        await session.emitTelemetry({
+          topic: 'metrics.ready',
+          payload: { ok: true },
+        });
+      },
+      async handleBossTurn() {
+        // no-op
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      roles: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record),
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('after init');
+
+    expect(records).toMatchObject([
+      { type: 'captain_status', turnId: null, message: 'ready' },
+      {
+        type: 'captain_telemetry',
+        turnId: null,
+        topic: 'metrics.ready',
+        payload: { ok: true },
+      },
+      { type: 'turn_started', turnId: 1 },
+      { type: 'turn_finished', turnId: 1 },
     ]);
   });
 
@@ -389,5 +434,69 @@ describe('TmuxPlayRuntime', () => {
     await expect(runtime.runBossTurn('after dispose')).rejects.toThrow(
       'tmux-play runtime is disposed',
     );
+  });
+
+  it('still disposes after observer failure', async () => {
+    let disposeCount = 0;
+    const captain: Captain = {
+      async handleBossTurn() {
+        // no-op
+      },
+      async dispose() {
+        disposeCount += 1;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      roles: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord() {
+            throw new Error('observer failed');
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await expect(runtime.runBossTurn('fail observer')).rejects.toThrow(
+      'observer failed',
+    );
+    await runtime.dispose();
+
+    expect(disposeCount).toBe(1);
+  });
+
+  it('aborts the session signal and rejects post-abort emissions before dispose', async () => {
+    const order: string[] = [];
+    let session!: CaptainSession;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+        session.signal.addEventListener('abort', () => {
+          order.push('session-aborted');
+        });
+      },
+      async handleBossTurn() {
+        // no-op
+      },
+      async dispose() {
+        order.push('dispose');
+        await expect(session.emitStatus('late')).rejects.toThrow(
+          'tmux-play session emissions are closed',
+        );
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      roles: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.dispose();
+
+    expect(order).toEqual(['session-aborted', 'dispose']);
   });
 });

@@ -14,6 +14,8 @@ import type {
   Captain,
   CaptainContext,
   CaptainRunResult,
+  CaptainSession,
+  CaptainTelemetry,
   RoleHandle,
   RoleRunResult,
   RunStatus,
@@ -23,6 +25,8 @@ import {
   ObserverDispatchError,
   RecordDispatcher,
   makeRecordBase,
+  telemetryRecord,
+  type RecordObserver,
   type RuntimeErrorRecord,
 } from './records.js';
 import {
@@ -50,23 +54,24 @@ interface CligentCallResult {
   readonly error?: string;
 }
 
-type PublicRecordObserver =
-  NonNullable<RunTmuxPlayOptions['observers']>[number];
-
 export class TmuxPlayRuntime {
   private readonly captain: Captain;
   private readonly captainCligent: Cligent;
   private readonly captainInstruction: string | undefined;
   private readonly roleHandles: readonly RoleHandle[];
   private readonly rolesById: ReadonlyMap<string, ResolvedRole>;
+  private readonly sessionController = new AbortController();
+  private readonly session: CaptainSession;
   private readonly dispatcher = new RecordDispatcher();
   private readonly externalSignal: AbortSignal | undefined;
   private readonly removeExternalAbort: (() => void) | undefined;
+  private readonly removeObservers: (() => void)[] = [];
   private nextTurnId = 1;
   private turnTail: Promise<void> = Promise.resolve();
   private activeTurn: ActiveTurn | undefined = undefined;
   private disposed = false;
   private captainDisposed = false;
+  private sessionEmissionsClosed = false;
 
   constructor(
     options: RunTmuxPlayOptions,
@@ -83,9 +88,15 @@ export class TmuxPlayRuntime {
     }));
     this.rolesById = new Map(roles.map((role) => [role.id, role]));
     this.externalSignal = options.signal;
+    this.session = {
+      signal: this.sessionController.signal,
+      roles: this.roleHandles,
+      emitStatus: (message, data) => this.emitSessionStatus(message, data),
+      emitTelemetry: (event) => this.emitSessionTelemetry(event),
+    };
 
     for (const observer of options.observers ?? []) {
-      this.dispatcher.addObserver(observer);
+      this.removeObservers.push(this.dispatcher.addObserver(observer));
     }
 
     if (this.externalSignal) {
@@ -97,8 +108,28 @@ export class TmuxPlayRuntime {
     }
   }
 
-  addObserver(observer: PublicRecordObserver): () => void {
-    return this.dispatcher.addObserver(observer);
+  addObserver(observer: RecordObserver): () => void {
+    const remove = this.dispatcher.addObserver(observer);
+    this.removeObservers.push(remove);
+    return () => {
+      remove();
+      const index = this.removeObservers.indexOf(remove);
+      if (index !== -1) {
+        this.removeObservers.splice(index, 1);
+      }
+    };
+  }
+
+  async initialize(): Promise<void> {
+    try {
+      await this.captain.init?.(this.session);
+    } catch (error) {
+      await this.emitRuntimeError(null, error);
+      await this.shutdownSessionEmissions();
+      await this.disposeCaptain();
+      this.detachObservers();
+      throw error;
+    }
   }
 
   abortActiveTurn(reason = 'aborted'): void {
@@ -129,9 +160,17 @@ export class TmuxPlayRuntime {
       // The original runBossTurn caller observes the turn failure.
     }
 
-    if (!this.captainDisposed) {
-      this.captainDisposed = true;
-      await this.captain.dispose?.();
+    try {
+      await this.shutdownSessionEmissions();
+    } catch {
+      // The active turn caller observes dispatcher failures. Cleanup still
+      // needs to release Captain resources and detach observers.
+    }
+
+    try {
+      await this.disposeCaptain();
+    } finally {
+      this.detachObservers();
     }
   }
 
@@ -191,12 +230,6 @@ export class TmuxPlayRuntime {
       roles: this.roleHandles,
       callRole: (roleId, prompt) => this.callRole(turn, signal, roleId, prompt),
       callCaptain: (prompt) => this.callCaptain(turn, signal, prompt),
-      emitStatus: (message, data) =>
-        this.dispatcher.emitStatus({
-          ...makeRecordBase('captain_status', turn.id),
-          message,
-          data,
-        }),
     };
   }
 
@@ -284,21 +317,82 @@ export class TmuxPlayRuntime {
     return this.dispatcher.emit(record);
   }
 
+  private emitSessionStatus(
+    message: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
+    const error = this.sessionEmissionError();
+    if (error) {
+      return Promise.reject(error);
+    }
+    return this.dispatcher.emitStatus({
+      ...makeRecordBase('captain_status', this.activeTurn?.turn.id ?? null),
+      message,
+      data,
+    });
+  }
+
+  private emitSessionTelemetry(event: CaptainTelemetry): Promise<void> {
+    const error = this.sessionEmissionError();
+    if (error) {
+      return Promise.reject(error);
+    }
+    return this.dispatcher.emitTelemetry(
+      telemetryRecord(event, this.activeTurn?.turn.id ?? null),
+    );
+  }
+
+  private sessionEmissionError(): Error | undefined {
+    if (this.sessionEmissionsClosed || this.sessionController.signal.aborted) {
+      return new Error('tmux-play session emissions are closed');
+    }
+    return undefined;
+  }
+
   private async handleRuntimeFailure(
     turnId: number,
     error: unknown,
   ): Promise<void> {
     if (!(error instanceof ObserverDispatchError)) {
-      const runtimeError: RuntimeErrorRecord = {
-        ...makeRecordBase('runtime_error', turnId),
-        message: errorMessage(error),
-      };
-      await this.dispatcher.emit(runtimeError);
+      await this.emitRuntimeError(turnId, error);
       await this.dispatcher.drain();
       await this.dispatcher.emit({
         ...makeRecordBase('turn_aborted', turnId),
         reason: errorMessage(error),
       });
+    }
+  }
+
+  private async emitRuntimeError(
+    turnId: number | null,
+    error: unknown,
+  ): Promise<void> {
+    const runtimeError: RuntimeErrorRecord = {
+      ...makeRecordBase('runtime_error', turnId),
+      message: errorMessage(error),
+    };
+    await this.dispatcher.emit(runtimeError);
+    await this.dispatcher.drain();
+  }
+
+  private async shutdownSessionEmissions(): Promise<void> {
+    if (!this.sessionController.signal.aborted) {
+      this.sessionController.abort('runtime disposed');
+    }
+    this.sessionEmissionsClosed = true;
+    await this.dispatcher.drain();
+  }
+
+  private async disposeCaptain(): Promise<void> {
+    if (!this.captainDisposed) {
+      this.captainDisposed = true;
+      await this.captain.dispose?.();
+    }
+  }
+
+  private detachObservers(): void {
+    for (const remove of this.removeObservers.splice(0)) {
+      remove();
     }
   }
 }
@@ -316,7 +410,9 @@ export async function createTmuxPlayRuntime(
     role: 'captain',
     adapterImports: options.adapterImports,
   });
-  return new TmuxPlayRuntime(options, roles, captainCligent);
+  const runtime = new TmuxPlayRuntime(options, roles, captainCligent);
+  await runtime.initialize();
+  return runtime;
 }
 
 async function runCligentCall(

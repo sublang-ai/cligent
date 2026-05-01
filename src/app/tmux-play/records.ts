@@ -4,13 +4,14 @@
 import type { CligentEvent } from '../../types.js';
 import type {
   BossTurn,
+  CaptainTelemetry,
   CaptainRunResult,
   RoleRunResult,
 } from './contract.js';
 
 export interface BaseRecord<TType extends string = string> {
   readonly type: TType;
-  readonly turnId: number;
+  readonly turnId: number | null;
   readonly timestamp: number;
 }
 
@@ -67,6 +68,12 @@ export interface CaptainStatusRecord extends BaseRecord {
   readonly data?: Record<string, unknown>;
 }
 
+export interface CaptainTelemetryRecord extends BaseRecord {
+  readonly type: 'captain_telemetry';
+  readonly topic: string;
+  readonly payload: unknown;
+}
+
 export interface RuntimeErrorRecord extends BaseRecord {
   readonly type: 'runtime_error';
   readonly message: string;
@@ -85,6 +92,7 @@ export type TmuxPlayRecord =
   | CaptainEventRecord
   | CaptainFinishedRecord
   | CaptainStatusRecord
+  | CaptainTelemetryRecord
   | RuntimeErrorRecord;
 
 export type TmuxPlayRecordType = TmuxPlayRecord['type'];
@@ -156,6 +164,10 @@ export class RecordDispatcher {
     return this.emit(record);
   }
 
+  emitTelemetry(record: CaptainTelemetryRecord): Promise<void> {
+    return this.emit(record);
+  }
+
   async drain(): Promise<void> {
     await this.tail;
     if (this.failure) {
@@ -205,10 +217,22 @@ export class RecordDispatcher {
 
 export function makeRecordBase<TType extends TmuxPlayRecordType>(
   type: TType,
-  turnId: number,
+  turnId: number | null,
   timestamp = Date.now(),
 ): BaseRecord<TType> {
   return { type, turnId, timestamp };
+}
+
+export function telemetryRecord(
+  telemetry: CaptainTelemetry,
+  turnId: number | null,
+  timestamp = Date.now(),
+): CaptainTelemetryRecord {
+  return {
+    ...makeRecordBase('captain_telemetry', turnId, timestamp),
+    topic: telemetry.topic,
+    payload: telemetry.payload,
+  };
 }
 
 function errorMessage(error: unknown): string {

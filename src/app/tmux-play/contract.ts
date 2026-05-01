@@ -2,8 +2,10 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
+import type { RecordObserver } from './records.js';
 
 export interface Captain {
+  init?(session: CaptainSession): Promise<void>;
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
   dispose?(): Promise<void>;
 }
@@ -14,22 +16,26 @@ export interface BossTurn {
   timestamp: number;
 }
 
-export interface CaptainContext {
+export interface CaptainSession {
   readonly signal: AbortSignal;
   readonly roles: readonly RoleHandle[];
-  callRole(
-    roleId: string,
-    prompt: string,
-    options?: RoleCallOptions,
-  ): Promise<RoleRunResult>;
-  callCaptain(
-    prompt: string,
-    options?: CaptainCallOptions,
-  ): Promise<CaptainRunResult>;
   emitStatus(
     message: string,
     data?: Record<string, unknown>,
   ): Promise<void>;
+  emitTelemetry(event: CaptainTelemetry): Promise<void>;
+}
+
+export interface CaptainContext {
+  readonly signal: AbortSignal;
+  readonly roles: readonly RoleHandle[];
+  callRole(roleId: string, prompt: string): Promise<RoleRunResult>;
+  callCaptain(prompt: string): Promise<CaptainRunResult>;
+}
+
+export interface CaptainTelemetry {
+  readonly topic: string;
+  readonly payload: unknown;
 }
 
 export interface RoleHandle {
@@ -55,12 +61,6 @@ export interface CaptainRunResult {
   readonly error?: string;
 }
 
-export interface RoleCallOptions {
-  readonly metadata?: Record<string, unknown>;
-}
-
-export type CaptainCallOptions = RoleCallOptions;
-
 export interface RuntimeRoleConfig {
   readonly id: string;
   readonly adapter: RoleAdapterName;
@@ -78,9 +78,7 @@ export interface RunTmuxPlayOptions {
   readonly captain: Captain;
   readonly captainConfig: RuntimeCaptainConfig;
   readonly roles: readonly RuntimeRoleConfig[];
-  readonly observers?: readonly {
-    onRecord(record: unknown): void | Promise<void>;
-  }[];
+  readonly observers?: readonly RecordObserver[];
   readonly cwd?: string;
   readonly signal?: AbortSignal;
   readonly adapterImports?: RoleAdapterImports;

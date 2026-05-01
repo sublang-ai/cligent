@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ObserverDispatchError,
   RecordDispatcher,
+  type CaptainTelemetryRecord,
   type CaptainStatusRecord,
   type RecordObserver,
   type TmuxPlayRecord,
@@ -31,12 +32,29 @@ function turnFinished(turnId = 1): TmuxPlayRecord {
   };
 }
 
-function status(message: string, turnId = 1): CaptainStatusRecord {
+function status(
+  message: string,
+  turnId: number | null = 1,
+): CaptainStatusRecord {
   return {
     type: 'captain_status',
     turnId,
     timestamp: 150,
     message,
+  };
+}
+
+function telemetry(
+  topic: string,
+  payload: unknown,
+  turnId: number | null = 1,
+): CaptainTelemetryRecord {
+  return {
+    type: 'captain_telemetry',
+    turnId,
+    timestamp: 150,
+    topic,
+    payload,
   };
 }
 
@@ -156,6 +174,31 @@ describe('RecordDispatcher', () => {
     gate.resolve();
     await drained;
     expect(seen).toEqual(['captain_status']);
+  });
+
+  it('queues status and telemetry on the same session lane', async () => {
+    const dispatcher = new RecordDispatcher();
+    const seen: TmuxPlayRecord[] = [];
+
+    dispatcher.addObserver({
+      onRecord(record) {
+        seen.push(record);
+      },
+    });
+
+    void dispatcher.emitStatus(status('ready', null));
+    void dispatcher.emitTelemetry(telemetry('metrics.ready', { ok: true }, null));
+    await dispatcher.drain();
+
+    expect(seen).toMatchObject([
+      { type: 'captain_status', turnId: null, message: 'ready' },
+      {
+        type: 'captain_telemetry',
+        turnId: null,
+        topic: 'metrics.ready',
+        payload: { ok: true },
+      },
+    ]);
   });
 
   it('emits runtime_error to remaining observers on observer failure', async () => {
