@@ -54,7 +54,7 @@ export class TmuxPresenter implements RecordObserver {
         this.writeRoleFinished(record);
         break;
       case 'captain_prompt':
-        this.boss.write(`[captain prompt]\n${record.prompt}\n\n`);
+        this.boss.write(`[captain llm prompt]\n${record.prompt}\n\n`);
         break;
       case 'captain_event':
         this.writeFormatted(this.boss, record.event);
@@ -75,7 +75,7 @@ export class TmuxPresenter implements RecordObserver {
 
   private writeRolePrompt(record: RolePromptRecord): void {
     const writer = this.roleWriter(record.roleId);
-    writer.write(`[captain prompt]\n${record.prompt}\n\n`);
+    writer.write(`[from captain]\n${record.prompt}\n\n`);
   }
 
   private writeRoleEvent(record: RoleEventRecord): void {

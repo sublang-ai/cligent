@@ -52,7 +52,7 @@ describe('TmuxPresenter', () => {
     });
 
     expect(coder.text()).toBe(
-      '[captain prompt]\nimplement feature\n\ndone\n[role coder ok]\n',
+      '[from captain]\nimplement feature\n\ndone\n[role coder ok]\n',
     );
     expect(reviewer.text()).toBe('');
     expect(boss.text()).toBe('');
@@ -120,7 +120,7 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe(
       'boss> ship it\n\n' +
         '[status] reviewing {"roleCount":1}\n' +
-        '[captain prompt]\nsummarize role output\n\n' +
+        '[captain llm prompt]\nsummarize role output\n\n' +
         'answer\n' +
         '[captain ok]\n' +
         '[runtime error: observer failed]\n' +

@@ -90,7 +90,7 @@ Turn-bound emissions drain before `turn_finished` / `turn_aborted`; `turnId: nul
 Observers bridging to external transports must enqueue and return synchronously — the dispatcher is non-blocking on network flushes.
 On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn if one exists, and runs normal cleanup.
 
-The tmux presenter is the first observer; it consumes `captain_status` and ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels).
+The tmux presenter is the first observer; it consumes `captain_status`, renders `runtime_error` in the Boss/Captain pane, and ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels).
 Coordination stays testable without tmux; new observers attach without changing the Captain or role contracts.
 Runtime record types and the observer-registration contract are exported from `@sublang/cligent/tmux-play`, not the root package.
 
