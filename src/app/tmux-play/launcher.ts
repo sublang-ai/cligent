@@ -93,8 +93,8 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const bossCommand = buildSessionCommand(options);
 
   runTmux('new-session', '-d', '-s', options.sessionName, bossCommand);
-  createRolePanes(options.sessionName, options.workDir, roles);
-  setPaneTitles(options.sessionName, roles);
+  const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
+  setPaneTitles(options.sessionName, rolePanes);
   runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
   runTmux(
     'set',
@@ -126,8 +126,11 @@ function createRolePanes(
   sessionName: string,
   workDir: string,
   roles: readonly RoleConfig[],
-): void {
+): RolePane[] {
   const firstColumnCount = Math.ceil(roles.length / 2);
+  const rolePanes: RolePane[] = [];
+  let nextPaneIndex = 1;
+
   runTmux(
     'split-window',
     '-h',
@@ -137,41 +140,75 @@ function createRolePanes(
     sessionName,
     tailCommand(workDir, roles[0]),
   );
+  rolePanes[0] = { role: requireRole(roles[0]), paneIndex: nextPaneIndex++ };
 
+  if (roles.length < 2) {
+    return rolePanes;
+  }
+
+  runTmux(
+    'split-window',
+    '-h',
+    '-p',
+    '50',
+    '-t',
+    paneTarget(sessionName, rolePanes[0].paneIndex),
+    tailCommand(workDir, roles[firstColumnCount]),
+  );
+  rolePanes[firstColumnCount] = {
+    role: requireRole(roles[firstColumnCount]),
+    paneIndex: nextPaneIndex++,
+  };
+
+  let firstColumnLastPane = rolePanes[0].paneIndex;
   for (let i = 1; i < firstColumnCount; i++) {
     runTmux(
       'split-window',
       '-v',
       '-t',
-      paneTarget(sessionName, i),
+      paneTarget(sessionName, firstColumnLastPane),
       tailCommand(workDir, roles[i]),
     );
+    firstColumnLastPane = nextPaneIndex++;
+    rolePanes[i] = {
+      role: requireRole(roles[i]),
+      paneIndex: firstColumnLastPane,
+    };
   }
 
-  for (let i = firstColumnCount; i < roles.length; i++) {
-    const firstColumnIndex = 1 + i - firstColumnCount;
+  let secondColumnLastPane = rolePanes[firstColumnCount].paneIndex;
+  for (let i = firstColumnCount + 1; i < roles.length; i++) {
     runTmux(
       'split-window',
-      '-h',
+      '-v',
       '-t',
-      paneTarget(sessionName, firstColumnIndex),
+      paneTarget(sessionName, secondColumnLastPane),
       tailCommand(workDir, roles[i]),
     );
+    secondColumnLastPane = nextPaneIndex++;
+    rolePanes[i] = {
+      role: requireRole(roles[i]),
+      paneIndex: secondColumnLastPane,
+    };
   }
+
+  return rolePanes;
 }
 
-function setPaneTitles(
-  sessionName: string,
-  roles: readonly RoleConfig[],
-): void {
+interface RolePane {
+  readonly role: RoleConfig;
+  readonly paneIndex: number;
+}
+
+function setPaneTitles(sessionName: string, rolePanes: readonly RolePane[]): void {
   runTmux('select-pane', '-t', paneTarget(sessionName, 0), '-T', 'Boss/Captain');
-  for (let i = 0; i < roles.length; i++) {
+  for (const pane of rolePanes) {
     runTmux(
       'select-pane',
       '-t',
-      paneTarget(sessionName, i + 1),
+      paneTarget(sessionName, pane.paneIndex),
       '-T',
-      `Role: ${roles[i]?.id}`,
+      `Role: ${pane.role.id}`,
     );
   }
 }
@@ -181,6 +218,13 @@ function tailCommand(workDir: string, role: RoleConfig | undefined): string {
     throw new Error('tmux-play requires at least one role pane');
   }
   return ['tail', '-f', logFilePath(workDir, role.id)].map(shellQuote).join(' ');
+}
+
+function requireRole(role: RoleConfig | undefined): RoleConfig {
+  if (!role) {
+    throw new Error('tmux-play requires at least one role pane');
+  }
+  return role;
 }
 
 function paneTarget(sessionName: string, paneIndex: number): string {

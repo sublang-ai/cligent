@@ -107,18 +107,20 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock).toHaveBeenNthCalledWith(
       3,
       'split-window',
-      '-v',
+      '-h',
+      '-p',
+      '50',
       '-t',
       'tmux-play-abc123:0.1',
-      tailCommand(workDir, 'reviewer'),
+      tailCommand(workDir, 'analyst'),
     );
     expect(runTmuxMock).toHaveBeenNthCalledWith(
       4,
       'split-window',
-      '-h',
+      '-v',
       '-t',
       'tmux-play-abc123:0.1',
-      tailCommand(workDir, 'analyst'),
+      tailCommand(workDir, 'reviewer'),
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
@@ -134,8 +136,64 @@ describe('launchTmuxPlay', () => {
       '-T',
       'Role: coder',
     );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.3',
+      '-T',
+      'Role: reviewer',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.2',
+      '-T',
+      'Role: analyst',
+    );
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      count: 4,
+      roles: ['r1', 'r2', 'r3', 'r4'],
+      expected: [
+        ['split-window', '-h', '-p', '40', '-t', 'tmux-play-grid4', 'r1'],
+        ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid4:0.1', 'r3'],
+        ['split-window', '-v', '-t', 'tmux-play-grid4:0.1', 'r2'],
+        ['split-window', '-v', '-t', 'tmux-play-grid4:0.2', 'r4'],
+      ],
+    },
+    {
+      count: 5,
+      roles: ['r1', 'r2', 'r3', 'r4', 'r5'],
+      expected: [
+        ['split-window', '-h', '-p', '40', '-t', 'tmux-play-grid5', 'r1'],
+        ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid5:0.1', 'r4'],
+        ['split-window', '-v', '-t', 'tmux-play-grid5:0.1', 'r2'],
+        ['split-window', '-v', '-t', 'tmux-play-grid5:0.3', 'r3'],
+        ['split-window', '-v', '-t', 'tmux-play-grid5:0.2', 'r5'],
+      ],
+    },
+  ])(
+    'creates columns before rows for $count roles',
+    async ({ count, roles, expected }) => {
+      tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+      const configPath = writeConfig(tempDir, roles);
+      const workDir = join(tempDir, 'work');
+
+      await launchTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: `grid${count}`,
+        workDir,
+        selfBin: '/tmp/cli.js',
+        attach: false,
+      });
+
+      expect(splitWindowCalls(workDir, roles)).toEqual(expected);
+    },
+  );
 
   it('attaches to the session by default', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
@@ -185,4 +243,18 @@ function tailCommand(workDir: string, roleId: string): string {
   return ['tail', '-f', join(workDir, `${roleId}.log`)]
     .map(shellQuote)
     .join(' ');
+}
+
+function splitWindowCalls(
+  workDir: string,
+  roleIds: readonly string[],
+): unknown[][] {
+  return runTmuxMock.mock.calls
+    .filter((call) => call[0] === 'split-window')
+    .map((call) => {
+      const roleId =
+        roleIds.find((id) => call.at(-1) === tailCommand(workDir, id)) ??
+        call.at(-1);
+      return [...call.slice(0, -1), roleId];
+    });
 }
