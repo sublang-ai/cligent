@@ -92,7 +92,7 @@ function roleResultSection(
 ): string {
   const body = result.finalText ?? result.error ?? '(no final text)';
   const lines = [
-    `<role id="${escapeAttribute(result.roleId)}" status="${result.status}">`,
+    `=== role:${result.roleId} status:${result.status} ===`,
     truncate(body, maxChars),
   ];
 
@@ -100,7 +100,7 @@ function roleResultSection(
     lines.push('', `Error: ${result.error}`);
   }
 
-  lines.push('</role>');
+  lines.push(`=== /role:${result.roleId} ===`);
   return lines.join('\n');
 }
 
@@ -126,10 +126,6 @@ function truncate(value: string, maxChars: number): string {
     return value;
   }
   return `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]`;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
