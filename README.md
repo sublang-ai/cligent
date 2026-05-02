@@ -54,7 +54,8 @@ for await (const event of agent.run('Now add tests for it')) {
 showcase of what you can compose with the SDK. You chat with a **Captain**
 on the left pane; the Captain dispatches work to **roles** (coder,
 reviewer, planner, …), each a `Cligent` on its own adapter and model,
-streaming live into its own pane on the right.
+streaming live into its own pane on the right. Requires
+[`tmux`](https://github.com/tmux/tmux/wiki/Installing).
 
 ```bash
 npx tmux-play                                 # auto-discover config
@@ -68,12 +69,13 @@ XState graph, anything. The built-in `fanout` Captain runs every role in
 parallel and synthesizes their answers; swap it for your own using the
 same contract.
 
-See [docs/guide.md#tmux-play](docs/guide.md#tmux-play) for config, layout,
-and writing a Captain.
+See [docs/tmux-play.md](docs/tmux-play.md) for config, layout, and writing
+a Captain.
 
 ## Documentation
 
-See [docs/guide.md](docs/guide.md) for the `Cligent` class, adapters, permissions, session continuity, parallel execution, tmux-play, and more.
+- [docs/guide.md](docs/guide.md) — `Cligent` class, adapters, permissions, session continuity, parallel execution, event types.
+- [docs/tmux-play.md](docs/tmux-play.md) — `tmux-play` config, layout, snapshot, and writing custom Captains.
 
 ## Contributing
 
