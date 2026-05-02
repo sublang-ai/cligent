@@ -191,41 +191,40 @@ Built-in Captains use the same contract as third-party ones — no internal mode
 
 ### Configuration
 
-`tmux-play` loads config from `.mjs`, `.js`, or `.json`.
-JavaScript configs load through `import(pathToFileURL(path))`; JSON configs load through `fs.readFile()` and `JSON.parse()`.
-These formats use Node's built-in loaders, keeping the package zero-runtime-dependency per [PKG-003](../dev/package.md).
+`tmux-play` configs are YAML.
+Parsing uses the `yaml` package, a single-purpose runtime dep permitted under [PKG-003](../dev/package.md#pkg-003).
 
-Default discovery checks `tmux-play.config.mjs`, `tmux-play.config.js`, then `tmux-play.config.json` in the current directory.
+Discovery checks `tmux-play.config.yaml` in the current directory first, then `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` as a home fallback.
 `--config <path>` overrides discovery.
 
-CLI configs must be JSON-serializable.
-The launcher resolves the config and writes a snapshot to the work directory; the session reads the snapshot rather than re-running user code.
-JS configs may use imports and `defineConfig`, but the resolved object must serialize cleanly.
+If neither location holds a file and `--config` was not given, the launcher writes a default to the home path, prints a one-line notice naming the path, and continues.
+The default wires the built-in `fanout` Captain plus two stub roles; the user edits it.
+
+YAML must serialize cleanly to JSON: the launcher writes a JSON snapshot of the resolved config to the work directory, and the session reads the snapshot rather than re-parsing YAML.
 Captains are referenced by specifier, never as a constructed instance — instances are accepted only by the programmatic runtime API.
 
-Example (`.js` and `.json` carry the same shape):
+Example:
 
-```js
-import { defineConfig } from '@sublang/cligent/tmux-play';
-
-export default defineConfig({
-  captain: {
-    from: '@sublang/cligent/captains/fanout',
-    adapter: 'claude',
-    model: 'claude-opus-4-7',
-    instruction: 'You are the Captain. Coordinate roles and answer the Boss.',
-    options: {},
-  },
-  roles: [
-    { id: 'coder', adapter: 'codex', instruction: 'Implement code changes.' },
-    { id: 'reviewer', adapter: 'claude', instruction: 'Review proposed changes.' },
-  ],
-});
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  model: claude-opus-4-7
+  instruction: Coordinate roles and answer the Boss.
+  options:
+    maxRoleOutputChars: 4000
+roles:
+  - id: coder
+    adapter: codex
+    instruction: Implement code changes.
+  - id: reviewer
+    adapter: claude
+    instruction: Review the result.
 ```
 
 Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-owned Captain `Cligent` (target of `callCaptain`); `options` is opaque to the runtime and passed verbatim to the factory.
 
-`captain.from` accepts local paths (resolved against the config file's directory) or package specifiers; both resolve through the same `import()` path.
+`captain.from` accepts local paths (resolved against the config file's directory) or package specifiers; both resolve through `import()` at session startup.
 
 Role IDs match `^[a-z][a-z0-9_-]*$`, are unique within a config, and may not equal `captain`.
 Multiple roles may share an adapter and model — the role ID is the runtime identity.
