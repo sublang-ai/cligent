@@ -39,7 +39,7 @@ Out of scope: see DR-004 §Out of Scope.
 - [x] `src/app/tmux-play/index.ts` — public re-exports for `@sublang/cligent/tmux-play`, including the observer-registration contract and `CaptainSession`.
 - [x] `src/captains/fanout.ts` — `fanout` Captain factory and prompt logic.
 - [ ] Tests: config + snapshot, role resolution, contract types, observer dispatch (multi-observer registration, status/telemetry drain, `turnId` nullable for session-scoped emissions), `init`/`dispose` lifecycle, shutdown drain order, fanout prompts and result collection, runtime causality.
-- [ ] Replace `src/app/fanout.acceptance.test.ts` with a tmux-play acceptance test driving the fanout Captain through the runtime API.
+- [x] Replace `src/app/fanout.acceptance.test.ts` with a tmux-play acceptance test driving the fanout Captain through the runtime API.
 - [ ] README for `tmux-play`, config formats, snapshot mechanism, layout, and writing custom Captains.
 
 ## Tasks
