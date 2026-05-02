@@ -23,6 +23,7 @@
   ],
   "files": [
     "dist",
+    "docs",
     "LICENSE",
     "README.md"
   ],
