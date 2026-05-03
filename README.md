@@ -58,9 +58,13 @@ streaming live into its own pane on the right. Requires
 [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
 
 ```bash
-npx tmux-play                                 # auto-discover config
-npx tmux-play --config ./tmux-play.config.json
+npx tmux-play                                 # discover or create config
+npx tmux-play --config ./tmux-play.config.yaml
 ```
+
+On first run, if neither the cwd nor the home config exists, `tmux-play`
+creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` and starts
+with the built-in `fanout` Captain and two stub roles.
 
 **The Captain is the extension point.** `tmux-play` owns role
 orchestration, panes, and event streaming; you write a Captain to decide

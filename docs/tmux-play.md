@@ -9,8 +9,8 @@ coordinates per-role `Cligent` instances whose output streams into
 read-only panes on the right.
 
 ```bash
-npx tmux-play                                 # auto-discover config
-npx tmux-play --config ./tmux-play.config.json
+npx tmux-play                                 # discover or create config
+npx tmux-play --config ./tmux-play.config.yaml
 ```
 
 [`tmux`](https://github.com/tmux/tmux/wiki/Installing) must be installed,
@@ -19,25 +19,36 @@ and each configured adapter must work the same way it would for direct
 
 ## Config
 
-Discovery in the cwd: `tmux-play.config.mjs`, `.js`, `.json`. JS configs
-may import helpers but must default-export a JSON-serializable object.
+Discovery order:
 
-```js
-import { defineConfig } from '@sublang/cligent/tmux-play';
+1. `tmux-play.config.yaml` in the cwd.
+2. `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml`.
 
-export default defineConfig({
-  captain: {
-    from: '@sublang/cligent/captains/fanout',
-    adapter: 'claude',
-    model: 'claude-opus-4-7',
-    instruction: 'Coordinate the roles and answer the Boss.',
-    options: { maxRoleOutputChars: 4000 },
-  },
-  roles: [
-    { id: 'coder', adapter: 'codex', instruction: 'Implement code changes.' },
-    { id: 'reviewer', adapter: 'claude', instruction: 'Review the result.' },
-  ],
-});
+If neither file exists and `--config` is not set, `tmux-play` creates the
+home config with the default `fanout` Captain and two stub roles, prints a
+one-line notice, and continues. Existing home configs are preserved, and a
+cwd config takes precedence over the home file. `--config <path>` points at
+a specific YAML file and disables discovery and auto-create behavior.
+
+Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
+`tmux-play.config.json` are ignored; when one is present without a cwd YAML
+config, `tmux-play` prints a warning to rename or convert it.
+
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  model: claude-opus-4-7
+  instruction: Coordinate the roles and answer the Boss.
+  options:
+    maxRoleOutputChars: 4000
+roles:
+  - id: coder
+    adapter: codex
+    instruction: Implement code changes.
+  - id: reviewer
+    adapter: claude
+    instruction: Review the result.
 ```
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
@@ -58,8 +69,8 @@ The launcher validates the config and writes
 `os.tmpdir()`, then re-execs itself in session mode with `--work-dir` set.
 Local `captain.from` paths are rewritten to absolute `file://` URLs
 relative to the original config file; package specifiers pass through
-unchanged. The session reads the snapshot, so user config JS is not
-re-executed inside tmux.
+unchanged. The session reads the snapshot, so YAML is not re-parsed inside
+tmux.
 
 ## Custom Captains
 
