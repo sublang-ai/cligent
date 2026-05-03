@@ -248,6 +248,33 @@ describe('launchTmuxPlay', () => {
     expect(existsSync(join(configHome, 'tmux-play/config.yaml'))).toBe(true);
   });
 
+  it('warns when ignoring a legacy cwd config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const cwd = join(tempDir, 'project');
+    const configHome = join(tempDir, 'xdg');
+    const workDir = join(tempDir, 'work');
+    const stdout = new MemoryOutput();
+    const stderr = new MemoryOutput();
+    mkdirSync(cwd);
+    const legacyConfig = join(cwd, 'tmux-play.config.json');
+    writeFileSync(legacyConfig, '{}');
+
+    await launchTmuxPlay({
+      cwd,
+      configHome,
+      sessionId: 'legacy',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      stdout,
+      stderr,
+      attach: false,
+    });
+
+    expect(stderr.text()).toContain(
+      `Found legacy tmux-play config at ${legacyConfig}; tmux-play now requires tmux-play.config.yaml. Rename or convert it.`,
+    );
+  });
+
   it('fails before config loading when tmux is unavailable', async () => {
     isTmuxAvailableMock.mockReturnValue(false);
 

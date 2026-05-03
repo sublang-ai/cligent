@@ -43,6 +43,7 @@ export interface LoadTmuxPlayConfigOptions {
   configPath?: string;
   configHome?: string;
   onDefaultConfigCreated?: (path: string) => void;
+  onLegacyConfigIgnored?: (path: string) => void;
 }
 
 export const TMUX_PLAY_CONFIG_FILE = 'tmux-play.config.yaml';
@@ -50,6 +51,11 @@ export const TMUX_PLAY_HOME_CONFIG = join('tmux-play', 'config.yaml');
 export const TMUX_PLAY_CONFIG_SNAPSHOT = 'tmux-play.config.snapshot.json';
 
 const SUPPORTED_EXTENSIONS = new Set(['.yaml']);
+const LEGACY_CONFIG_FILES = [
+  'tmux-play.config.mjs',
+  'tmux-play.config.js',
+  'tmux-play.config.json',
+] as const;
 
 const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   captain: {
@@ -99,6 +105,13 @@ export async function loadTmuxPlayConfig(
     ? resolveConfigPath(cwd, options.configPath)
     : findTmuxPlayConfig(cwd, configHome);
 
+  if (!options.configPath && !existsSync(resolve(cwd, TMUX_PLAY_CONFIG_FILE))) {
+    const legacyConfig = findLegacyTmuxPlayConfig(cwd);
+    if (legacyConfig) {
+      options.onLegacyConfigIgnored?.(legacyConfig);
+    }
+  }
+
   if (!configPath) {
     configPath = homeConfigPath(configHome);
     await writeDefaultTmuxPlayConfig(configPath);
@@ -136,11 +149,21 @@ function resolveConfigPath(cwd: string, configPath: string): string {
 }
 
 function defaultConfigHome(): string {
-  return process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
+  return process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
 }
 
 function homeConfigPath(configHome: string): string {
   return join(configHome, TMUX_PLAY_HOME_CONFIG);
+}
+
+function findLegacyTmuxPlayConfig(cwd: string): string | undefined {
+  for (const file of LEGACY_CONFIG_FILES) {
+    const candidate = resolve(cwd, file);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 async function writeDefaultTmuxPlayConfig(path: string): Promise<void> {

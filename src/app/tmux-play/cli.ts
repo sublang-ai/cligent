@@ -74,6 +74,7 @@ export async function runTmuxPlayCli(
       cwd: values.cwd,
       selfBin: options.selfBin ?? process.argv[1],
       ...(options.stdout ? { stdout } : {}),
+      ...(options.stderr ? { stderr } : {}),
     };
 
     await (options.launch ?? launchTmuxPlay)(launchOptions);

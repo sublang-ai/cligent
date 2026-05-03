@@ -82,8 +82,12 @@ function writeYamlConfig(path: string, config = validConfig()): void {
 
 describe('tmux-play config loading', () => {
   let workDir: string | undefined;
+  const originalHome = process.env.HOME;
+  const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   afterEach(() => {
+    restoreEnv('HOME', originalHome);
+    restoreEnv('XDG_CONFIG_HOME', originalXdgConfigHome);
     if (workDir) {
       rmSync(workDir, { recursive: true, force: true });
       workDir = undefined;
@@ -126,6 +130,22 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.path).toBe(homeConfig);
     expect(loaded.config).toEqual(validConfig());
+  });
+
+  it('treats an empty XDG_CONFIG_HOME as unset', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    mkdirSync(cwd);
+    process.env.HOME = workDir;
+    process.env.XDG_CONFIG_HOME = '';
+
+    const loaded = await loadTmuxPlayConfig({ cwd });
+    const fallbackConfig = join(workDir, '.config', TMUX_PLAY_HOME_CONFIG);
+
+    expect(loaded.path).toBe(fallbackConfig);
+    expect(readFileSync(fallbackConfig, 'utf8')).toContain(
+      '@sublang/cligent/captains/fanout',
+    );
   });
 
   it('auto-creates a home default on first run', async () => {
@@ -173,6 +193,24 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.captain.adapter).toBe('opencode');
     expect(readFileSync(homeConfig, 'utf8')).toBe(before);
+  });
+
+  it('reports legacy cwd configs when no yaml cwd config exists', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    const ignored: string[] = [];
+    mkdirSync(cwd);
+    const legacyConfig = join(cwd, 'tmux-play.config.json');
+    writeFileSync(legacyConfig, '{}');
+
+    await loadTmuxPlayConfig({
+      cwd,
+      configHome,
+      onLegacyConfigIgnored: (path) => ignored.push(path),
+    });
+
+    expect(ignored).toEqual([legacyConfig]);
   });
 
   it('lets an explicit yaml config path override discovery', async () => {
@@ -369,3 +407,11 @@ describe('tmux-play config loading', () => {
     });
   });
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}

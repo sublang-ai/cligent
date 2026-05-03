@@ -14,6 +14,7 @@ import {
   runTmux,
 } from '../shared/tmux.js';
 import {
+  TMUX_PLAY_CONFIG_FILE,
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,
   type LoadedTmuxPlayConfig,
@@ -32,6 +33,7 @@ export interface LaunchTmuxPlayOptions {
   readonly workDir?: string;
   readonly selfBin?: string;
   readonly stdout?: Output;
+  readonly stderr?: Output;
   readonly attach?: boolean;
 }
 
@@ -58,6 +60,11 @@ export async function launchTmuxPlay(
     onDefaultConfigCreated: (path) => {
       (options.stdout ?? process.stdout).write(
         `Created tmux-play config at ${path}\n`,
+      );
+    },
+    onLegacyConfigIgnored: (path) => {
+      (options.stderr ?? process.stderr).write(
+        `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
       );
     },
   });
