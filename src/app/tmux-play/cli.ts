@@ -69,11 +69,14 @@ export async function runTmuxPlayCli(
       throw new Error('--work-dir is only valid with --session');
     }
 
-    await (options.launch ?? launchTmuxPlay)({
+    const launchOptions: LaunchTmuxPlayOptions = {
       configPath: values.config,
       cwd: values.cwd,
       selfBin: options.selfBin ?? process.argv[1],
-    });
+      ...(options.stdout ? { stdout } : {}),
+    };
+
+    await (options.launch ?? launchTmuxPlay)(launchOptions);
     return 0;
   } catch (error) {
     stderr.write(`Error: ${errorMessage(error)}\n`);

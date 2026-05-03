@@ -3,8 +3,9 @@
 
 export {
   TMUX_PLAY_CONFIG_SNAPSHOT,
+  TMUX_PLAY_CONFIG_FILE,
+  TMUX_PLAY_HOME_CONFIG,
   createTmuxPlayConfigSnapshot,
-  defineConfig,
   findTmuxPlayConfig,
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,

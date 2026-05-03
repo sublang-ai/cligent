@@ -3,8 +3,10 @@
 
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { parse, stringify } from 'yaml';
 import {
   isKnownRoleAdapter,
   validateRoleConfigs,
@@ -39,29 +41,52 @@ export interface LoadedTmuxPlayConfig {
 export interface LoadTmuxPlayConfigOptions {
   cwd?: string;
   configPath?: string;
+  configHome?: string;
+  onDefaultConfigCreated?: (path: string) => void;
 }
 
-const DEFAULT_CONFIG_FILES = [
-  'tmux-play.config.mjs',
-  'tmux-play.config.js',
-  'tmux-play.config.json',
-] as const;
-
+export const TMUX_PLAY_CONFIG_FILE = 'tmux-play.config.yaml';
+export const TMUX_PLAY_HOME_CONFIG = join('tmux-play', 'config.yaml');
 export const TMUX_PLAY_CONFIG_SNAPSHOT = 'tmux-play.config.snapshot.json';
 
-const SUPPORTED_EXTENSIONS = new Set(['.mjs', '.js', '.json']);
+const SUPPORTED_EXTENSIONS = new Set(['.yaml']);
 
-export function defineConfig(config: TmuxPlayConfig): TmuxPlayConfig {
-  return config;
-}
+const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
+  captain: {
+    from: '@sublang/cligent/captains/fanout',
+    adapter: 'claude',
+    model: 'claude-opus-4-7',
+    instruction: 'Coordinate roles and answer the Boss.',
+    options: { maxRoleOutputChars: 4000 },
+  },
+  roles: [
+    {
+      id: 'coder',
+      adapter: 'codex',
+      instruction: 'Implement code changes.',
+    },
+    {
+      id: 'reviewer',
+      adapter: 'claude',
+      instruction: 'Review the result.',
+    },
+  ],
+};
 
-export function findTmuxPlayConfig(cwd = process.cwd()): string | undefined {
-  for (const file of DEFAULT_CONFIG_FILES) {
-    const candidate = resolve(cwd, file);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
+export function findTmuxPlayConfig(
+  cwd = process.cwd(),
+  configHome = defaultConfigHome(),
+): string | undefined {
+  const cwdConfig = resolve(cwd, TMUX_PLAY_CONFIG_FILE);
+  if (existsSync(cwdConfig)) {
+    return cwdConfig;
   }
+
+  const homeConfig = homeConfigPath(configHome);
+  if (existsSync(homeConfig)) {
+    return homeConfig;
+  }
+
   return undefined;
 }
 
@@ -69,14 +94,15 @@ export async function loadTmuxPlayConfig(
   options: LoadTmuxPlayConfigOptions = {},
 ): Promise<LoadedTmuxPlayConfig> {
   const cwd = options.cwd ?? process.cwd();
-  const configPath = options.configPath
+  const configHome = options.configHome ?? defaultConfigHome();
+  let configPath = options.configPath
     ? resolveConfigPath(cwd, options.configPath)
-    : findTmuxPlayConfig(cwd);
+    : findTmuxPlayConfig(cwd, configHome);
 
   if (!configPath) {
-    throw new Error(
-      `No tmux-play config found in ${cwd}. Checked: ${DEFAULT_CONFIG_FILES.join(', ')}`,
-    );
+    configPath = homeConfigPath(configHome);
+    await writeDefaultTmuxPlayConfig(configPath);
+    options.onDefaultConfigCreated?.(configPath);
   }
 
   const raw = await loadConfigValue(configPath);
@@ -107,6 +133,19 @@ export async function writeTmuxPlayConfigSnapshot(
 
 function resolveConfigPath(cwd: string, configPath: string): string {
   return isAbsolute(configPath) ? configPath : resolve(cwd, configPath);
+}
+
+function defaultConfigHome(): string {
+  return process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
+}
+
+function homeConfigPath(configHome: string): string {
+  return join(configHome, TMUX_PLAY_HOME_CONFIG);
+}
+
+async function writeDefaultTmuxPlayConfig(path: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, stringify(DEFAULT_TMUX_PLAY_CONFIG));
 }
 
 function normalizeCaptainFrom(from: string, configPath: string): string {
@@ -151,17 +190,19 @@ async function loadConfigValue(path: string): Promise<unknown> {
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     throw new Error(
       `Unsupported tmux-play config extension "${ext || '(none)'}". ` +
-        'Supported extensions: .mjs, .js, .json',
+        'Supported extension: .yaml',
     );
   }
 
-  if (ext === '.json') {
+  try {
     const source = await readFile(path, 'utf8');
-    return JSON.parse(source) as unknown;
+    return parse(source) as unknown;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to parse tmux-play config ${path}: ${error.message}`);
+    }
+    throw error;
   }
-
-  const mod = await import(pathToFileURL(path).href);
-  return (mod as { default?: unknown }).default;
 }
 
 function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {

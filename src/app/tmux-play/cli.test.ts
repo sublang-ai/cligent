@@ -41,14 +41,14 @@ describe('runTmuxPlayCli', () => {
     const launch = vi.fn(async () => undefined);
 
     const code = await runTmuxPlayCli({
-      argv: ['--config', 'tmux-play.config.json', '--cwd', '/repo'],
+      argv: ['--config', 'tmux-play.config.yaml', '--cwd', '/repo'],
       launch,
       selfBin: '/dist/app/tmux-play/cli.js',
     });
 
     expect(code).toBe(0);
     expect(launch).toHaveBeenCalledWith({
-      configPath: 'tmux-play.config.json',
+      configPath: 'tmux-play.config.yaml',
       cwd: '/repo',
       selfBin: '/dist/app/tmux-play/cli.js',
     });
@@ -100,7 +100,7 @@ describe('runTmuxPlayCli', () => {
         '--work-dir',
         tempDir,
         '--config',
-        'tmux-play.config.json',
+        'tmux-play.config.yaml',
       ],
       runSession,
       stderr,

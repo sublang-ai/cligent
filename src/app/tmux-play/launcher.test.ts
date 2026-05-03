@@ -3,6 +3,7 @@
 
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -31,6 +32,19 @@ import {
 } from './launcher.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import { shellQuote } from '../shared/shell.js';
+
+class MemoryOutput {
+  chunks: string[] = [];
+
+  write(chunk: string | Uint8Array): boolean {
+    this.chunks.push(String(chunk));
+    return true;
+  }
+
+  text(): string {
+    return this.chunks.join('');
+  }
+}
 
 describe('launchTmuxPlay', () => {
   let tempDir: string | undefined;
@@ -210,31 +224,56 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).toHaveBeenCalledWith('tmux-play-def456');
   });
 
+  it('prints a notice when creating the first-run home config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const cwd = join(tempDir, 'project');
+    const configHome = join(tempDir, 'xdg');
+    const workDir = join(tempDir, 'work');
+    const stdout = new MemoryOutput();
+    mkdirSync(cwd);
+
+    await launchTmuxPlay({
+      cwd,
+      configHome,
+      sessionId: 'fresh',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      stdout,
+      attach: false,
+    });
+
+    expect(stdout.text()).toContain(
+      `Created tmux-play config at ${join(configHome, 'tmux-play/config.yaml')}`,
+    );
+    expect(existsSync(join(configHome, 'tmux-play/config.yaml'))).toBe(true);
+  });
+
   it('fails before config loading when tmux is unavailable', async () => {
     isTmuxAvailableMock.mockReturnValue(false);
 
     await expect(
-      launchTmuxPlay({ configPath: '/missing/config.json' }),
+      launchTmuxPlay({ configPath: '/missing/config.yaml' }),
     ).rejects.toThrow('tmux is not installed');
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 });
 
 function writeConfig(dir: string, roleIds: readonly string[]): string {
-  const configPath = join(dir, 'tmux-play.config.json');
+  const configPath = join(dir, 'tmux-play.config.yaml');
   writeFileSync(
     configPath,
-    JSON.stringify({
-      captain: {
-        from: '@sublang/cligent/captains/fanout',
-        adapter: 'claude',
-        options: {},
-      },
-      roles: roleIds.map((id) => ({
-        id,
-        adapter: 'codex',
-      })),
-    }),
+    [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+      'roles:',
+      ...roleIds.flatMap((id) => [
+        `  - id: ${id}`,
+        '    adapter: codex',
+      ]),
+      '',
+    ].join('\n'),
   );
   return configPath;
 }

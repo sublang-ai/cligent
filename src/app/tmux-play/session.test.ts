@@ -81,7 +81,7 @@ describe('TmuxPlaySession', () => {
     }
   });
 
-  it('reads the config snapshot without importing user config JS', async () => {
+  it('reads the config snapshot without reloading user config', async () => {
     tempDir = makeWorkDir();
 
     await expect(readConfigSnapshot(tempDir)).resolves.toMatchObject({

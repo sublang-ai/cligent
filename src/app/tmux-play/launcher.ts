@@ -5,6 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import type { Writable } from 'node:stream';
 import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import {
@@ -21,12 +22,16 @@ import type { RoleConfig } from './roles.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 
+type Output = Pick<Writable, 'write'>;
+
 export interface LaunchTmuxPlayOptions {
   readonly cwd?: string;
   readonly configPath?: string;
+  readonly configHome?: string;
   readonly sessionId?: string;
   readonly workDir?: string;
   readonly selfBin?: string;
+  readonly stdout?: Output;
   readonly attach?: boolean;
 }
 
@@ -49,6 +54,12 @@ export async function launchTmuxPlay(
   const loaded = await loadTmuxPlayConfig({
     cwd: options.cwd,
     configPath: options.configPath,
+    configHome: options.configHome,
+    onDefaultConfigCreated: (path) => {
+      (options.stdout ?? process.stdout).write(
+        `Created tmux-play config at ${path}\n`,
+      );
+    },
   });
   const sessionId = options.sessionId ?? randomBytes(4).toString('hex');
   const sessionName = `tmux-play-${sessionId}`;

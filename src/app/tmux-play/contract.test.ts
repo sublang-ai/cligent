@@ -6,7 +6,6 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   KNOWN_ROLE_ADAPTERS,
   createTmuxPlayRuntime,
-  defineConfig,
   type BossTurn,
   type Captain,
   type CaptainContext,
@@ -19,7 +18,6 @@ import {
   type RoleRunResult,
   type RunStatus,
   type RunTmuxPlayOptions,
-  type TmuxPlayConfig,
 } from './index.js';
 
 describe('tmux-play public contract', () => {
@@ -84,17 +82,7 @@ describe('tmux-play public contract', () => {
     expect(captainResult.status).toBe('error');
   });
 
-  it('re-exports defineConfig and known adapters', () => {
-    const config: TmuxPlayConfig = {
-      captain: {
-        from: '@sublang/cligent/captains/fanout',
-        adapter: 'claude',
-        options: {},
-      },
-      roles: [{ id: 'coder', adapter: 'codex' }],
-    };
-
-    expect(defineConfig(config)).toBe(config);
+  it('re-exports known adapters', () => {
     expect(KNOWN_ROLE_ADAPTERS).toEqual([
       'claude',
       'codex',
