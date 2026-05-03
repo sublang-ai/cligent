@@ -19,7 +19,7 @@ The package shall require Node >= 18 via `"engines": { "node": ">=18" }`.
 
 ### PKG-003
 
-The package shall have zero runtime `dependencies`; build-time and test-time packages shall be `devDependencies`.
+The package's runtime `dependencies` shall be limited to single-purpose, zero-transitive-dep packages required by the bundled CLI; build-time and test-time packages shall be `devDependencies`.
 
 ### PKG-004
 
