@@ -214,12 +214,10 @@ captain:
   options:
     maxRoleOutputChars: 4000
 roles:
-  - id: coder
-    adapter: codex
-    instruction: Implement code changes.
-  - id: reviewer
+  - id: claude
     adapter: claude
-    instruction: Review the result.
+  - id: codex
+    adapter: codex
 ```
 
 Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-owned Captain `Cligent` (target of `callCaptain`); `options` is opaque to the runtime and passed verbatim to the factory.

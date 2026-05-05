@@ -52,19 +52,28 @@ for await (const event of agent.run('Now add tests for it')) {
 
 `tmux-play` is a reference application built on `Cligent` — a working
 showcase of what you can compose with the SDK. You chat with a **Captain**
-on the left pane; the Captain dispatches work to **roles** (coder,
-reviewer, planner, …), each a `Cligent` on its own adapter and model,
-streaming live into its own pane on the right. Requires
-[`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+on the left pane; the Captain dispatches work to **roles**, each a
+`Cligent` on its own adapter and model, streaming live into its own pane
+on the right.
 
 ```bash
-npx tmux-play                                 # discover or create config
-npx tmux-play --config ./tmux-play.config.yaml
+npm install @sublang/cligent
+tmux-play                                # discover or create config
+tmux-play --config ./tmux-play.config.yaml
 ```
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`
 creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` and starts
-with the built-in `fanout` Captain and two stub roles.
+with the built-in `fanout` Captain plus a `claude` and a `codex` role.
+
+Requirements:
+
+- [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+- Credentials and any out-of-process CLIs for the adapters you use:
+  [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
+  [Codex CLI](https://github.com/openai/codex),
+  [Gemini CLI](https://github.com/google-gemini/gemini-cli),
+  [OpenCode](https://opencode.ai).
 
 **The Captain is the extension point.** `tmux-play` owns role
 orchestration, panes, and event streaming; you write a Captain to decide

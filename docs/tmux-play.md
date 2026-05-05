@@ -9,12 +9,20 @@ coordinates per-role `Cligent` instances whose output streams into
 read-only panes on the right.
 
 ```bash
-npx tmux-play                                 # discover or create config
-npx tmux-play --config ./tmux-play.config.yaml
+tmux-play                                 # discover or create config
+tmux-play --config ./tmux-play.config.yaml
 ```
 
-[`tmux`](https://github.com/tmux/tmux/wiki/Installing) must be installed,
-and each configured adapter must work the same way it would for direct
+Requirements:
+
+- [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+- Credentials and any out-of-process CLIs for the adapters you use:
+  [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
+  [Codex CLI](https://github.com/openai/codex),
+  [Gemini CLI](https://github.com/google-gemini/gemini-cli),
+  [OpenCode](https://opencode.ai).
+
+Each configured adapter behaves the same way it would for direct
 `Cligent` use (see [guide.md](guide.md)).
 
 ## Config
@@ -43,12 +51,10 @@ captain:
   options:
     maxRoleOutputChars: 4000
 roles:
-  - id: coder
-    adapter: codex
-    instruction: Implement code changes.
-  - id: reviewer
+  - id: claude
     adapter: claude
-    instruction: Review the result.
+  - id: codex
+    adapter: codex
 ```
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.

@@ -67,14 +67,12 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   },
   roles: [
     {
-      id: 'coder',
-      adapter: 'codex',
-      instruction: 'Implement code changes.',
+      id: 'claude',
+      adapter: 'claude',
     },
     {
-      id: 'reviewer',
-      adapter: 'claude',
-      instruction: 'Review the result.',
+      id: 'codex',
+      adapter: 'codex',
     },
   ],
 };

@@ -168,8 +168,8 @@ describe('tmux-play config loading', () => {
       "@sublang/cligent/captains/fanout",
     );
     expect(loaded.config.roles.map((role) => role.id)).toEqual([
-      'coder',
-      'reviewer',
+      'claude',
+      'codex',
     ]);
   });
 
