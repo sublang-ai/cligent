@@ -29,6 +29,8 @@ jobs:
 
       - run: npm run build
 
+      - run: npm run test:smoke
+
       - run: npm run lint
 
       - run: npm test

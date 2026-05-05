@@ -72,6 +72,7 @@
     "lint": "eslint --config config/eslint.config.js .",
     "format": "prettier --config config/prettierrc.json --write .",
     "test": "vitest run --config config/vitest.config.ts",
+    "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",
     "prepublishOnly": "npm run build"
   },
