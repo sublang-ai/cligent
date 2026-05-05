@@ -43,6 +43,7 @@ describe('tmux-play fanout acceptance', () => {
       }
 
       const workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-'));
+      execFileSync('git', ['init'], { cwd: workDir, stdio: 'ignore' });
       const sentinel = `SENTINEL_${randomUUID().slice(0, 8)}`;
       const records: TmuxPlayRecord[] = [];
       let runtime: TmuxPlayRuntime | undefined;
@@ -101,8 +102,11 @@ describe('tmux-play fanout acceptance', () => {
         ...ROLE_ADAPTERS,
       ]);
       for (const record of roleFinished) {
-        expect(record.result.status).toBe('ok');
-        expect(normalized(record.result.finalText)).toContain(
+        expect(
+          record.result.status,
+          `${record.roleId} failed: ${record.result.error ?? '(no error text)'}`,
+        ).toBe('ok');
+        expect(normalized(record.result.finalText), record.roleId).toContain(
           normalized(sentinel),
         );
       }
