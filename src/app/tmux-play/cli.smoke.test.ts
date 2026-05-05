@@ -37,6 +37,20 @@ describe('tmux-play built CLI smoke', () => {
     }
   });
 
+  it('executes the built bin directly on POSIX', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const result = spawnSync(builtCliPath(), ['--help'], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+
+    expectSuccess(result);
+    expect(result.stdout).toContain('tmux-play [--config <path>]');
+  });
+
   it('discovers cwd YAML, writes a rewritten snapshot, and invokes tmux', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');
@@ -213,12 +227,7 @@ function runCli(
   env: NodeJS.ProcessEnv = {},
   input?: string,
 ): SpawnSyncReturns<string> {
-  const cliPath = join(process.cwd(), 'dist/app/tmux-play/cli.js');
-  if (!existsSync(cliPath)) {
-    throw new Error('Missing dist/app/tmux-play/cli.js; run npm run build first');
-  }
-
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [builtCliPath(), ...args], {
     encoding: 'utf8',
     env: {
       ...harness.env,
@@ -227,6 +236,14 @@ function runCli(
     input,
     timeout: 10_000,
   });
+}
+
+function builtCliPath(): string {
+  const cliPath = join(process.cwd(), 'dist/app/tmux-play/cli.js');
+  if (!existsSync(cliPath)) {
+    throw new Error('Missing dist/app/tmux-play/cli.js; run npm run build first');
+  }
+  return cliPath;
 }
 
 function expectSuccess(result: SpawnSyncReturns<string>): void {
