@@ -57,7 +57,7 @@ on the left pane; the Captain dispatches work to **roles**, each a
 on the right.
 
 ```bash
-npm install @sublang/cligent
+npm install -g @sublang/cligent
 tmux-play                                # discover or create config
 tmux-play --config ./tmux-play.config.yaml
 ```
