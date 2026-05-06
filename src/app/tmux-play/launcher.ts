@@ -22,6 +22,10 @@ import {
 import type { RoleConfig } from './roles.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
+const INITIAL_TMUX_COLUMNS = '240';
+const INITIAL_TMUX_ROWS = '67';
+const ROLE_AREA_PERCENT = '75';
+const SECOND_ROLE_COLUMN_PERCENT = '50';
 
 type Output = Pick<Writable, 'write'>;
 
@@ -110,7 +114,17 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const roles = options.loaded.config.roles;
   const bossCommand = buildSessionCommand(options);
 
-  runTmux('new-session', '-d', '-s', options.sessionName, bossCommand);
+  runTmux(
+    'new-session',
+    '-d',
+    '-x',
+    INITIAL_TMUX_COLUMNS,
+    '-y',
+    INITIAL_TMUX_ROWS,
+    '-s',
+    options.sessionName,
+    bossCommand,
+  );
   const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
   setPaneTitles(options.sessionName, rolePanes);
   runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
@@ -153,7 +167,7 @@ function createRolePanes(
     'split-window',
     '-h',
     '-p',
-    '40',
+    ROLE_AREA_PERCENT,
     '-t',
     sessionName,
     tailCommand(workDir, roles[0]),
@@ -168,7 +182,7 @@ function createRolePanes(
     'split-window',
     '-h',
     '-p',
-    '50',
+    SECOND_ROLE_COLUMN_PERCENT,
     '-t',
     paneTarget(sessionName, rolePanes[0].paneIndex),
     tailCommand(workDir, roles[firstColumnCount]),
@@ -219,16 +233,20 @@ interface RolePane {
 }
 
 function setPaneTitles(sessionName: string, rolePanes: readonly RolePane[]): void {
-  runTmux('select-pane', '-t', paneTarget(sessionName, 0), '-T', 'Boss/Captain');
+  runTmux('select-pane', '-t', paneTarget(sessionName, 0), '-T', 'Captain');
   for (const pane of rolePanes) {
     runTmux(
       'select-pane',
       '-t',
       paneTarget(sessionName, pane.paneIndex),
       '-T',
-      `Role: ${pane.role.id}`,
+      titleCaseRoleId(pane.role.id),
     );
   }
+}
+
+function titleCaseRoleId(roleId: string): string {
+  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
 }
 
 function tailCommand(workDir: string, role: RoleConfig | undefined): string {

@@ -68,7 +68,7 @@ describe('tmux-play built CLI smoke', () => {
 
     const calls = readTmuxCalls(harness);
     const newSession = requiredCall(calls, 'new-session');
-    const sessionName = newSession[3];
+    const sessionName = valueAfter(newSession, '-s') ?? '';
     const workDir = extractWorkDir(newSession.at(-1) ?? '');
     const snapshot = JSON.parse(
       readFileSync(join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT), 'utf8'),
@@ -81,6 +81,10 @@ describe('tmux-play built CLI smoke', () => {
       pathToFileURL(join(cwd, 'captains/router.js')).href,
     );
     expect(snapshot.roles.map((role) => role.id)).toEqual(['coder', 'reviewer']);
+    expect(newSession).toContain('-x');
+    expect(valueAfter(newSession, '-x')).toBe('240');
+    expect(newSession).toContain('-y');
+    expect(valueAfter(newSession, '-y')).toBe('67');
     expect(requiredCall(calls, 'attach-session')).toEqual([
       'attach-session',
       '-t',
@@ -266,6 +270,11 @@ function requiredCall(calls: readonly string[][], command: string): string[] {
   const call = calls.find((candidate) => candidate[0] === command);
   expect(call, `Expected fake tmux call for ${command}`).toBeDefined();
   return call ?? [];
+}
+
+function valueAfter(args: readonly string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
 }
 
 function extractWorkDir(command: string): string {

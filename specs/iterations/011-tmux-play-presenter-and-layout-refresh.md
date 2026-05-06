@@ -29,7 +29,7 @@ Out of scope: non-tmux UIs.
 
 ## Deliverables
 
-- [ ] `src/app/tmux-play/launcher.ts`.
+- [x] `src/app/tmux-play/launcher.ts`.
 - [ ] `src/app/tmux-play/presenter-tmux.ts`.
 - [ ] `src/captains/fanout.ts`.
 - [ ] Tests for TTMUX-021..029; update TTMUX-014.
@@ -38,7 +38,7 @@ Out of scope: non-tmux UIs.
 
 Each task is one commit.
 
-1. Layout and geometry — TMUX-027/028, TMUX-035, TMUX-036.
+1. [x] Layout and geometry — TMUX-027/028, TMUX-035, TMUX-036.
 2. Presenter rewrite — TMUX-037..040.
 3. Fanout role prompt — TMUX-042.
 4. Role continuity verification — TMUX-041.

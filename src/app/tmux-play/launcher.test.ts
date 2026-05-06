@@ -98,14 +98,18 @@ describe('launchTmuxPlay', () => {
       1,
       'new-session',
       '-d',
+      '-x',
+      '240',
+      '-y',
+      '67',
       '-s',
       'tmux-play-abc123',
       expect.stringContaining('--session abc123'),
     );
-    expect(runTmuxMock.mock.calls[0]?.[4]).toContain(
+    expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "--work-dir '" + workDir + "'",
     );
-    expect(runTmuxMock.mock.calls[0]?.[4]).toContain(
+    expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "'/tmp/tmux play/cli.js'",
     );
     expect(runTmuxMock).toHaveBeenNthCalledWith(
@@ -113,7 +117,7 @@ describe('launchTmuxPlay', () => {
       'split-window',
       '-h',
       '-p',
-      '40',
+      '75',
       '-t',
       'tmux-play-abc123',
       tailCommand(workDir, 'coder'),
@@ -141,28 +145,28 @@ describe('launchTmuxPlay', () => {
       '-t',
       'tmux-play-abc123:0.0',
       '-T',
-      'Boss/Captain',
+      'Captain',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.1',
       '-T',
-      'Role: coder',
+      'Coder',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.3',
       '-T',
-      'Role: reviewer',
+      'Reviewer',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.2',
       '-T',
-      'Role: analyst',
+      'Analyst',
     );
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
@@ -172,7 +176,7 @@ describe('launchTmuxPlay', () => {
       count: 4,
       roles: ['r1', 'r2', 'r3', 'r4'],
       expected: [
-        ['split-window', '-h', '-p', '40', '-t', 'tmux-play-grid4', 'r1'],
+        ['split-window', '-h', '-p', '75', '-t', 'tmux-play-grid4', 'r1'],
         ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid4:0.1', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.2', 'r4'],
@@ -182,7 +186,7 @@ describe('launchTmuxPlay', () => {
       count: 5,
       roles: ['r1', 'r2', 'r3', 'r4', 'r5'],
       expected: [
-        ['split-window', '-h', '-p', '40', '-t', 'tmux-play-grid5', 'r1'],
+        ['split-window', '-h', '-p', '75', '-t', 'tmux-play-grid5', 'r1'],
         ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid5:0.1', 'r4'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.3', 'r3'],

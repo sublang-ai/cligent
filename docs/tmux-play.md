@@ -4,7 +4,7 @@
 # tmux-play
 
 `tmux-play` is a reference application built on the `@sublang/cligent`
-SDK. The Boss chats with a Captain in the wide left pane; the Captain
+SDK. The Boss chats with a Captain in the left pane; the Captain
 coordinates per-role `Cligent` instances whose output streams into
 read-only panes on the right.
 
@@ -64,9 +64,10 @@ roles:
 
 ## Layout
 
-Boss/Captain occupies the wide left pane; roles fill the right in config
-order. With ≥2 roles `tmux-play` uses two columns, putting
-`ceil(roleCount / 2)` roles in the first column from top to bottom.
+Boss/Captain occupies the left pane; roles fill the right in config
+order. Sessions start on a 240x67 grid. With ≥2 roles `tmux-play` uses a
+4/6/6 column split, putting `ceil(roleCount / 2)` roles in the first role
+column from top to bottom.
 
 ## Snapshot and work directory
 

@@ -95,7 +95,7 @@ Given the built bin on PATH (or invoked directly with execute permission), when 
 
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028)
 
-Given N configured roles, when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N role panes on the right in config order; with N ≥ 2, the right side shall use two columns and the first column shall hold `ceil(N / 2)` roles top-to-bottom.
+Given N configured roles, when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N role panes on the right in config order; with N ≥ 2, the Boss/Captain pane shall occupy 4/16 of the window width, the right side shall use two 6/16 role columns, and the first role column shall hold `ceil(N / 2)` roles top-to-bottom.
 
 ### TTMUX-015
 
