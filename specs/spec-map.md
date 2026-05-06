@@ -53,6 +53,7 @@ Authoring rules: [dev/style.md](dev/style.md).
 | --- | --- |
 | [git.md](dev/git.md) | Commit message format and AI co-authorship trailers |
 | [package.md](dev/package.md) | Package/TS config, exports map, dependency constraints |
+| [release.md](dev/release.md) | SemVer, changelog, tag-driven release workflow, npm provenance |
 | [style.md](dev/style.md) | Spec naming, ID format, GEARS syntax, cross-refs, record format, and SPDX headers |
 
 ### `user/`
@@ -66,6 +67,7 @@ Authoring rules: [dev/style.md](dev/style.md).
 | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption |
 | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token |
 | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token |
+| [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config, discovery and auto-create, Captain contract, records, observers, topology, runtime API, fanout |
 
 ### `test/`
 
@@ -74,3 +76,4 @@ Authoring rules: [dev/style.md](dev/style.md).
 | [spdx-headers.md](test/spdx-headers.md) | Copyright and license header presence checks |
 | [engine.md](test/engine.md) | Cligent lifecycle, session continuity, protocol hardening verification |
 | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter) |
+| [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance |
