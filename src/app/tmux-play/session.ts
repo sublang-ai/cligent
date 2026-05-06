@@ -168,7 +168,9 @@ export class TmuxPlaySession {
           // Non-observer failures are already emitted as runtime_error records
           // by the runtime and rendered by the tmux presenter.
           if (error instanceof ObserverDispatchError) {
-            this.writeOutput(`[runtime error: ${errorMessage(error)}]\n`);
+            this.writeOutput(
+              `captain> [runtime error: ${errorMessage(error)}]\n`,
+            );
           }
         } finally {
           if (!this.shuttingDown) {
@@ -177,7 +179,9 @@ export class TmuxPlaySession {
         }
       })
       .catch((error) => {
-        this.writeOutput(`[runtime error: ${errorMessage(error)}]\n`);
+        this.writeOutput(
+          `captain> [runtime error: ${errorMessage(error)}]\n`,
+        );
       });
   }
 

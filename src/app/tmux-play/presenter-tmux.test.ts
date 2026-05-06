@@ -23,6 +23,23 @@ function textEvent(content: string): CligentEvent {
   return createEvent('text', 'codex', { content }, 'sid');
 }
 
+function errorEvent(message: string): CligentEvent {
+  return createEvent('error', 'codex', { message, recoverable: false }, 'sid');
+}
+
+function doneEvent(): CligentEvent {
+  return createEvent(
+    'done',
+    'codex',
+    {
+      status: 'interrupted',
+      usage: { inputTokens: 1, outputTokens: 0, toolUses: 0 },
+      durationMs: 100,
+    },
+    'sid',
+  );
+}
+
 describe('TmuxPresenter', () => {
   it('routes role records to the matching role log', () => {
     const boss = new MemoryWriter();
@@ -36,8 +53,8 @@ describe('TmuxPresenter', () => {
       ]),
     });
 
-    presenter.onRecord(rolePrompt('coder', 'implement feature'));
-    presenter.onRecord(roleEvent('coder', textEvent('done')));
+    presenter.onRecord(rolePrompt('coder', 'implement\nfeature'));
+    presenter.onRecord(roleEvent('coder', textEvent('done\nagain')));
     presenter.onRecord({
       type: 'role_finished',
       turnId: 1,
@@ -52,7 +69,10 @@ describe('TmuxPresenter', () => {
     });
 
     expect(coder.text()).toBe(
-      '[from captain]\nimplement feature\n\ndone\n[role coder ok]\n',
+      'captain> implement\n' +
+        'captain> feature\n' +
+        'coder> done\n' +
+        'coder> again\n',
     );
     expect(reviewer.text()).toBe('');
     expect(boss.text()).toBe('');
@@ -118,15 +138,113 @@ describe('TmuxPresenter', () => {
     });
 
     expect(boss.text()).toBe(
-      'boss> ship it\n\n' +
-        '[status] reviewing {"roleCount":1}\n' +
-        '[captain llm prompt]\nsummarize role output\n\n' +
-        'answer\n' +
-        '[captain ok]\n' +
-        '[runtime error: observer failed]\n' +
-        '[turn finished]\n',
+      'captain> [status] reviewing {"roleCount":1}\n' +
+        'captain> answer\n' +
+        'captain> [runtime error: observer failed]\n',
     );
     expect(coder.text()).toBe('');
+  });
+
+  it('renders final failures once with speaker prefixes', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', errorEvent('role failed')));
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 1,
+      timestamp: 100,
+      roleId: 'coder',
+      result: {
+        status: 'error',
+        roleId: 'coder',
+        turnId: 1,
+        error: 'role failed',
+      },
+    });
+    presenter.onRecord({
+      type: 'captain_event',
+      turnId: 1,
+      timestamp: 101,
+      event: errorEvent('captain failed'),
+    });
+    presenter.onRecord({
+      type: 'captain_finished',
+      turnId: 1,
+      timestamp: 102,
+      result: {
+        status: 'error',
+        turnId: 1,
+        error: 'captain failed',
+      },
+    });
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 2,
+      timestamp: 103,
+      roleId: 'coder',
+      result: {
+        status: 'aborted',
+        roleId: 'coder',
+        turnId: 2,
+      },
+    });
+    presenter.onRecord({
+      type: 'captain_event',
+      turnId: 2,
+      timestamp: 104,
+      event: doneEvent(),
+    });
+    presenter.onRecord({
+      type: 'captain_finished',
+      turnId: 2,
+      timestamp: 105,
+      result: {
+        status: 'aborted',
+        turnId: 2,
+      },
+    });
+
+    expect(coder.text()).toBe(
+      'coder> [error: role failed]\n' +
+        'coder> [aborted]\n',
+    );
+    expect(boss.text()).toBe(
+      'captain> [error: captain failed]\n' +
+        'captain> [aborted]\n',
+    );
+  });
+
+  it('omits Boss prompt re-echo and Captain prompt bodies', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord({
+      type: 'turn_started',
+      turnId: 1,
+      timestamp: 100,
+      turn: {
+        id: 1,
+        prompt: 'ship it',
+        timestamp: 100,
+      },
+    });
+    presenter.onRecord({
+      type: 'captain_prompt',
+      turnId: 1,
+      timestamp: 101,
+      prompt: '=== role:coder status:ok ===\nraw role text\n=== /role:coder ===',
+    });
+
+    expect(boss.text()).toBe('');
   });
 
   it('ignores captain telemetry', () => {
@@ -166,7 +284,7 @@ describe('TmuxPresenter', () => {
       data: circular,
     });
 
-    expect(boss.text()).toBe('[status] ready [unserializable data]\n');
+    expect(boss.text()).toBe('captain> [status] ready [unserializable data]\n');
   });
 
   it('fails when a role log writer is missing', () => {

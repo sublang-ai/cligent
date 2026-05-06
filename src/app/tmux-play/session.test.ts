@@ -278,7 +278,7 @@ describe('TmuxPlaySession', () => {
     await Promise.resolve();
 
     expect(output.text()).toContain(
-      '[runtime error: Record observer 0 failed while handling turn_started: observer failed]',
+      'captain> [runtime error: Record observer 0 failed while handling turn_started: observer failed]',
     );
   });
 

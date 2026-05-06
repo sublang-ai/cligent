@@ -5,7 +5,6 @@ import { formatCligentEvent } from '../shared/events.js';
 import type {
   CaptainRunResult,
   RoleRunResult,
-  RunStatus,
 } from './contract.js';
 import type {
   RecordObserver,
@@ -27,6 +26,7 @@ export interface TmuxPresenterOptions {
 export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
+  private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
@@ -36,13 +36,15 @@ export class TmuxPresenter implements RecordObserver {
   onRecord(record: TmuxPlayRecord): void {
     switch (record.type) {
       case 'turn_started':
-        this.boss.write(`boss> ${record.turn.prompt}\n\n`);
         break;
       case 'turn_finished':
-        this.boss.write('[turn finished]\n');
         break;
       case 'turn_aborted':
-        this.boss.write(`[turn aborted: ${record.reason ?? 'aborted'}]\n`);
+        this.writePrefixedLine(
+          this.boss,
+          'captain',
+          `[turn aborted: ${record.reason ?? 'aborted'}]`,
+        );
         break;
       case 'role_prompt':
         this.writeRolePrompt(record);
@@ -54,10 +56,9 @@ export class TmuxPresenter implements RecordObserver {
         this.writeRoleFinished(record);
         break;
       case 'captain_prompt':
-        this.boss.write(`[captain llm prompt]\n${record.prompt}\n\n`);
         break;
       case 'captain_event':
-        this.writeFormatted(this.boss, record.event);
+        this.writeFormatted(this.boss, 'captain', record.event);
         break;
       case 'captain_finished':
         this.writeRunResult(this.boss, 'captain', record.result);
@@ -68,24 +69,32 @@ export class TmuxPresenter implements RecordObserver {
       case 'captain_telemetry':
         break;
       case 'runtime_error':
-        this.boss.write(`[runtime error: ${record.message}]\n`);
+        this.writePrefixedLine(
+          this.boss,
+          'captain',
+          `[runtime error: ${record.message}]`,
+        );
         break;
     }
   }
 
   private writeRolePrompt(record: RolePromptRecord): void {
     const writer = this.roleWriter(record.roleId);
-    writer.write(`[from captain]\n${record.prompt}\n\n`);
+    this.writePrefixedBlock(writer, 'captain', record.prompt);
   }
 
   private writeRoleEvent(record: RoleEventRecord): void {
-    this.writeFormatted(this.roleWriter(record.roleId), record.event);
+    this.writeFormatted(
+      this.roleWriter(record.roleId),
+      record.roleId,
+      record.event,
+    );
   }
 
   private writeRoleFinished(record: RoleFinishedRecord): void {
     this.writeRunResult(
       this.roleWriter(record.roleId),
-      `role ${record.roleId}`,
+      record.roleId,
       record.result,
     );
   }
@@ -94,25 +103,90 @@ export class TmuxPresenter implements RecordObserver {
     message: string,
     data: Record<string, unknown> | undefined,
   ): void {
-    this.boss.write(`[status] ${message}${formatStatusData(data)}\n`);
+    this.writePrefixedLine(
+      this.boss,
+      'captain',
+      `[status] ${message}${formatStatusData(data)}`,
+    );
   }
 
   private writeRunResult(
     writer: TmuxPresenterWriter,
-    label: string,
+    who: string,
     result: RoleRunResult | CaptainRunResult,
   ): void {
-    const suffix = result.error ? `: ${result.error}` : '';
-    writer.write(`[${label} ${statusLabel(result.status)}${suffix}]\n`);
+    if (result.status === 'ok') {
+      return;
+    }
+
+    const line =
+      result.status === 'error'
+        ? `[error: ${result.error ?? 'Agent run failed'}]`
+        : '[aborted]';
+    this.writePrefixedLine(writer, who, line);
   }
 
   private writeFormatted(
     writer: TmuxPresenterWriter,
+    who: string,
     event: Parameters<typeof formatCligentEvent>[0],
   ): void {
+    if (event.type === 'done' || event.type === 'error') {
+      return;
+    }
+
     const formatted = formatCligentEvent(event);
     if (formatted !== null) {
-      writer.write(formatted);
+      this.writePrefixed(writer, who, formatted);
+    }
+  }
+
+  private writePrefixedBlock(
+    writer: TmuxPresenterWriter,
+    who: string,
+    value: string,
+  ): void {
+    this.writePrefixed(writer, who, ensureTrailingNewline(value));
+  }
+
+  private writePrefixedLine(
+    writer: TmuxPresenterWriter,
+    who: string,
+    line: string,
+  ): void {
+    this.breakLineIfNeeded(writer);
+    this.writePrefixed(writer, who, `${line}\n`);
+  }
+
+  private writePrefixed(
+    writer: TmuxPresenterWriter,
+    who: string,
+    value: string,
+  ): void {
+    let atLineStart = this.lineStarts.get(writer) ?? true;
+    let output = '';
+
+    for (const char of value) {
+      if (atLineStart) {
+        output += `${who}> `;
+        atLineStart = false;
+      }
+      output += char;
+      if (char === '\n') {
+        atLineStart = true;
+      }
+    }
+
+    this.lineStarts.set(writer, atLineStart);
+    if (output) {
+      writer.write(output);
+    }
+  }
+
+  private breakLineIfNeeded(writer: TmuxPresenterWriter): void {
+    if (this.lineStarts.get(writer) === false) {
+      writer.write('\n');
+      this.lineStarts.set(writer, true);
     }
   }
 
@@ -131,10 +205,6 @@ export function createTmuxPresenter(
   return new TmuxPresenter(options);
 }
 
-function statusLabel(status: RunStatus): string {
-  return status === 'ok' ? 'ok' : status;
-}
-
 function formatStatusData(
   data: Record<string, unknown> | undefined,
 ): string {
@@ -147,4 +217,8 @@ function formatStatusData(
   } catch {
     return ' [unserializable data]';
   }
+}
+
+function ensureTrailingNewline(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`;
 }
