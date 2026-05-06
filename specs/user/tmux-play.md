@@ -125,11 +125,11 @@ When SIGINT, SIGTERM, or stdin EOF reaches the session, the runtime shall abort 
 
 ### TMUX-027
 
-The Boss/Captain pane shall occupy the wide left column. Role panes shall fill the right side in config order, read-only.
+The Boss/Captain pane shall occupy the left column. Role panes shall fill the right side in config order, read-only.
 
 ### TMUX-028
 
-With two or more roles, `tmux-play` shall use two role columns; the first column shall hold `ceil(roleCount / 2)` roles from top to bottom.
+With two or more roles, `tmux-play` shall use two role columns. The Boss/Captain pane shall occupy 4/16 of the window width and each role column shall occupy 6/16 of the window width. The first column shall hold `ceil(roleCount / 2)` roles from top to bottom.
 
 ## Programmatic Runtime API
 
@@ -162,3 +162,43 @@ A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, a
 ### TMUX-034
 
 The launcher shall convert the resolved YAML config into a JSON snapshot written to the session's work directory, with local `captain.from` paths normalized to absolute `file://` URLs and package specifiers passed through unchanged. Session mode shall read the snapshot rather than reloading the YAML, so config changes made between launch and session start shall not affect the running session.
+
+## Initial Window Geometry
+
+### TMUX-035
+
+When the launcher creates the tmux session, the session shall be created with a 16:9 cell grid sized for a 1920×1080 display, defaulting to 240 columns by 67 rows. When a client attaches with a different window size, tmux's normal size negotiation shall govern the displayed layout.
+
+## Pane Titles
+
+### TMUX-036
+
+The Boss/Captain pane title shall be `Captain`. Each role pane title shall be the role `id` rendered with the first character upper-cased and the remaining characters preserved (e.g., `coder` → `Coder`, `reviewer` → `Reviewer`). The literal `Role:` prefix shall not appear in pane titles.
+
+## Presenter Output
+
+### TMUX-037
+
+While in session mode, the Boss readline shall echo the user's input line as the user types it (standard readline behavior). When the runtime emits `turn_started`, the presenter shall not write the Boss prompt to the Boss/Captain pane, so the user's input shall appear exactly once in the pane.
+
+### TMUX-038
+
+The presenter shall tag every textual line written to a tmux-play pane with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. The Boss readline prompt shall be `boss> `; the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
+
+### TMUX-039
+
+When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'` or `status: 'aborted'`, the presenter shall write a single `<who>> [error: <message>]` or `<who>> [aborted: <reason>]` line in the corresponding pane.
+
+### TMUX-040
+
+The Boss/Captain pane shall display the Boss's input lines and the Captain's synthesized reply only. Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane.
+
+## Role Session Continuity
+
+### TMUX-041
+
+Within a single tmux-play session, each role's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so role responses on later turns may build on prior context for adapters that support session continuity.
+
+### TMUX-042
+
+The built-in fanout Captain shall convey each role's identity once, via the role's `instruction` configured at `Cligent` construction. Per Boss turn, the per-role prompt the fanout Captain passes to `callRole` shall consist of the Boss prompt and turn-specific instructions only, and shall not repeat a role identity preamble such as `You are the "<role>" role`.
