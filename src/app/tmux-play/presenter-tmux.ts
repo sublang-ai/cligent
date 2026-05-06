@@ -131,6 +131,8 @@ export class TmuxPresenter implements RecordObserver {
     who: string,
     event: Parameters<typeof formatCligentEvent>[0],
   ): void {
+    // Final result records own visible status; raw terminal protocol events would
+    // duplicate failures and reintroduce noisy ok/usage footers.
     if (event.type === 'done' || event.type === 'error') {
       return;
     }

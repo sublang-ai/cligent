@@ -191,7 +191,7 @@ When a role or Captain run finishes with `status: 'ok'`, the presenter shall not
 
 ### TMUX-040
 
-The Boss/Captain pane shall display the Boss's input lines and the Captain's synthesized reply only. Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane.
+The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), and operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`). Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane.
 
 ## Role Session Continuity
 
