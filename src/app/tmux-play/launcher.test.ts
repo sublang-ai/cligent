@@ -140,6 +140,30 @@ describe('launchTmuxPlay', () => {
       'tmux-play-abc123:0.1',
       tailCommand(workDir, 'reviewer'),
     );
+    const initialColumns = Number(
+      valueAfter(runTmuxMock.mock.calls[0] ?? [], '-x'),
+    );
+    const roleAreaPercent = Number(
+      valueAfter(runTmuxMock.mock.calls[1] ?? [], '-p'),
+    );
+    const secondRoleColumnPercent = Number(
+      valueAfter(runTmuxMock.mock.calls[2] ?? [], '-p'),
+    );
+    const roleAreaColumns = Math.floor(
+      (initialColumns * roleAreaPercent) / 100,
+    );
+    const secondRoleColumnColumns = Math.floor(
+      (roleAreaColumns * secondRoleColumnPercent) / 100,
+    );
+    expect({
+      bossColumns: initialColumns - roleAreaColumns,
+      firstRoleColumnColumns: roleAreaColumns - secondRoleColumnColumns,
+      secondRoleColumnColumns,
+    }).toEqual({
+      bossColumns: 60,
+      firstRoleColumnColumns: 90,
+      secondRoleColumnColumns: 90,
+    });
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
@@ -327,4 +351,13 @@ function splitWindowCalls(
         call.at(-1);
       return [...call.slice(0, -1), roleId];
     });
+}
+
+function valueAfter(args: readonly unknown[], flag: string): string {
+  const index = args.indexOf(flag);
+  const value = index === -1 ? undefined : args[index + 1];
+  if (typeof value !== 'string') {
+    throw new Error(`Missing ${flag} value in tmux args: ${args.join(' ')}`);
+  }
+  return value;
 }
