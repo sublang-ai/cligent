@@ -50,16 +50,14 @@ export class FanoutCaptain implements Captain {
 
 export function rolePrompt(
   bossPrompt: string,
-  role: RoleHandle,
+  _role: RoleHandle,
 ): string {
   return [
-    `You are the "${role.id}" role in a fanout Captain session.`,
-    '',
     'The Boss asked:',
     bossPrompt,
     '',
     'Respond independently with the most useful answer you can provide.',
-    'Focus on your role; do not wait for or speculate about other roles.',
+    'Use your configured role instructions; do not wait for or speculate about other roles.',
   ].join('\n');
 }
 

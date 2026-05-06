@@ -61,26 +61,26 @@ describe('fanout Captain', () => {
     expect(captain.handleBossTurn).toEqual(expect.any(Function));
   });
 
-  it('builds role prompts from the Boss prompt and role id', () => {
-    expect(rolePrompt('Ship it', role('reviewer'))).toContain(
-      'You are the "reviewer" role',
-    );
-    expect(rolePrompt('Ship it', role('reviewer'))).toContain(
-      'The Boss asked:\nShip it',
-    );
+  it('builds role prompts from the Boss prompt without identity preambles', () => {
+    const prompt = rolePrompt('Ship it', role('reviewer'));
+
+    expect(prompt).toContain('The Boss asked:\nShip it');
+    expect(prompt).toContain('Use your configured role instructions');
+    expect(prompt).not.toContain('You are the');
+    expect(prompt).not.toContain('reviewer');
   });
 
   it('calls every role concurrently before summarizing', async () => {
     const captain = createFanoutCaptain();
     const coder = deferred<RoleRunResult>();
     const reviewer = deferred<RoleRunResult>();
-    const roleCalls: string[] = [];
+    const roleCalls: Array<{ roleId: string; prompt: string }> = [];
     const captainPrompts: string[] = [];
     const context: CaptainContext = {
       signal: new AbortController().signal,
       roles: [role('coder'), role('reviewer')],
-      callRole(roleId) {
-        roleCalls.push(roleId);
+      callRole(roleId, prompt) {
+        roleCalls.push({ roleId, prompt });
         return roleId === 'coder' ? coder.promise : reviewer.promise;
       },
       async callCaptain(prompt) {
@@ -96,7 +96,16 @@ describe('fanout Captain', () => {
     const run = captain.handleBossTurn(turn('Build it'), context);
     await Promise.resolve();
 
-    expect(roleCalls).toEqual(['coder', 'reviewer']);
+    expect(roleCalls.map((call) => call.roleId)).toEqual(['coder', 'reviewer']);
+    expect(roleCalls.map((call) => call.prompt)).toEqual([
+      rolePrompt('Build it', role('coder')),
+      rolePrompt('Build it', role('reviewer')),
+    ]);
+    expect(roleCalls.map((call) => call.prompt).join('\n')).not.toContain(
+      'You are the',
+    );
+    expect(roleCalls[0]?.prompt).not.toContain('coder');
+    expect(roleCalls[1]?.prompt).not.toContain('reviewer');
     expect(captainPrompts).toEqual([]);
 
     reviewer.resolve(roleResult('reviewer', 'review notes'));
