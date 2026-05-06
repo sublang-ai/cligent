@@ -177,13 +177,13 @@ Given session mode handling a Boss turn, the captured Boss/Captain pane shall co
 
 Verifies: [TMUX-039](../user/tmux-play.md#tmux-039)
 
-Given a role and Captain that finish with `status: 'ok'`, the captured pane content shall not contain `[role <id> ok]` or `[captain ok]`. Given a role that finishes with `status: 'error'`, the role pane shall contain a single `<roleId>> [error: <message>]` line.
+Given a role and Captain that finish with `status: 'ok'`, the captured pane content shall not contain `[role <id> ok]` or `[captain ok]`. Given a role that finishes with `status: 'error'`, the role pane shall contain a single `<roleId>> [error: <message>]` line where `<message>` matches `result.error`; given a Captain run that finishes with `status: 'error'`, the Boss/Captain pane shall contain a single `captain> [error: <message>]` line where `<message>` matches `result.error`. Given a role that finishes with `status: 'aborted'`, the role pane shall contain a single `<roleId>> [aborted]` line; given a Captain run that finishes with `status: 'aborted'`, the Boss/Captain pane shall contain a single `captain> [aborted]` line.
 
 ### TTMUX-027
 
 Verifies: [TMUX-040](../user/tmux-play.md#tmux-040)
 
-Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane shall not contain any role's `finalText` and shall not contain the Captain's prompt body (the `=== role:<id>` sections).
+Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane shall not contain any line beginning with `=== role:<id>` and shall not contain a `=== /role:<id> ===` line — i.e., the open/close sentinel framing of the Captain's prompt body shall not leak through. Synthesized references to role content within the Captain's reply shall be permitted.
 
 ## Role Session Continuity
 

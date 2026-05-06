@@ -187,7 +187,7 @@ The presenter shall tag every textual line written to a tmux-play pane with a `<
 
 ### TMUX-039
 
-When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'` or `status: 'aborted'`, the presenter shall write a single `<who>> [error: <message>]` or `<who>> [aborted: <reason>]` line in the corresponding pane.
+When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
 
 ### TMUX-040
 

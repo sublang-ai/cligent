@@ -37,21 +37,24 @@ One CLI keeps distribution simple; the split keeps the launcher short-lived and 
 
 ### tmux Topology
 
-Boss/Captain occupies the wide left pane.
+Boss/Captain occupies the left pane.
 Role panes are read-only on the right, in config order:
 
 ```text
-+----------------------+----------------+----------------+
-| Boss <-> Captain     | Role: Coder    | Role: Reviewer |
-|                      | (tail -f log)  | (tail -f log)  |
-| ...history...        |                |                |
-|                      |                |                |
-| boss> _              |                |                |
-+----------------------+----------------+----------------+
++--------------+------------------------+------------------------+
+| Boss/Captain | Coder                  | Reviewer               |
+|              | (tail -f log)          | (tail -f log)          |
+| ...history.. |                        |                        |
+|              |                        |                        |
+| boss> _      |                        |                        |
++--------------+------------------------+------------------------+
 ```
 
 One role uses one right column.
 Two or more roles use two columns, with `ceil(roleCount / 2)` roles in the first column from top to bottom.
+
+Pane titles are single tokens — `Captain` for the Boss/Captain pane and the title-cased role `id` for each role pane (no `Role:` prefix).
+Width split is 4/16 for the Boss/Captain pane and 6/16 for each role column; the spec items in [user/tmux-play.md](../user/tmux-play.md) carry the normative ratios.
 
 The Boss/Captain pane runs `tmux-play --session <id> --work-dir <path>`.
 Role panes tail their log and accept no input.
