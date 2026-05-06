@@ -1,5 +1,6 @@
 # Tool-specific config (user-local)
 opencode.json
+.claude/
 
 # Logs
 logs
