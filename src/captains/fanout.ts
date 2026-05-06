@@ -57,7 +57,7 @@ export function rolePrompt(
     bossPrompt,
     '',
     'Respond independently with the most useful answer you can provide.',
-    'Use your configured role instructions; do not wait for or speculate about other roles.',
+    'Do not wait for or speculate about other roles.',
   ].join('\n');
 }
 

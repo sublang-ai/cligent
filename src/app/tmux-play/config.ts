@@ -69,10 +69,14 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     {
       id: 'claude',
       adapter: 'claude',
+      instruction:
+        'You are the claude role in a fanout Captain session. Provide an independent answer.',
     },
     {
       id: 'codex',
       adapter: 'codex',
+      instruction:
+        'You are the codex role in a fanout Captain session. Provide an independent answer.',
     },
   ],
 };

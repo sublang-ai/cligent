@@ -171,6 +171,10 @@ describe('tmux-play config loading', () => {
       'claude',
       'codex',
     ]);
+    expect(loaded.config.roles.map((role) => role.instruction)).toEqual([
+      'You are the claude role in a fanout Captain session. Provide an independent answer.',
+      'You are the codex role in a fanout Captain session. Provide an independent answer.',
+    ]);
   });
 
   it('preserves an existing home config across runs', async () => {

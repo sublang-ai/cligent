@@ -55,7 +55,7 @@ When neither location holds a config and `--config` is not supplied, the launche
 
 ### TMUX-011
 
-The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two roles whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter).
+The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two roles whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). Each default role shall include an `instruction` that identifies that role for the runtime-created `Cligent` instance.
 
 ### TMUX-012
 

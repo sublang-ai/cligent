@@ -65,7 +65,8 @@ describe('fanout Captain', () => {
     const prompt = rolePrompt('Ship it', role('reviewer'));
 
     expect(prompt).toContain('The Boss asked:\nShip it');
-    expect(prompt).toContain('Use your configured role instructions');
+    expect(prompt).toContain('Do not wait for or speculate about other roles.');
+    expect(prompt).not.toContain('configured role instructions');
     expect(prompt).not.toContain('You are the');
     expect(prompt).not.toContain('reviewer');
   });
