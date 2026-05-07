@@ -209,4 +209,4 @@ Within a single tmux-play session, each role's `Cligent` instance shall be creat
 
 ### TMUX-042
 
-The built-in fanout Captain shall convey each role's identity once, via the role's `instruction` configured at `Cligent` construction. Per Boss turn, the per-role prompt the fanout Captain passes to `callRole` shall consist of the Boss prompt and turn-specific instructions only, and shall not repeat a role identity preamble such as `You are the "<role>" role`.
+The built-in fanout Captain shall convey each role's identity once, via the role's `instruction` configured at `Cligent` construction. Per Boss turn, the per-role prompt the fanout Captain passes to `callRole` shall begin with the Boss prompt verbatim and contain only turn-specific instructions thereafter — no role identity preamble such as `You are the "<role>" role`, and no static framing label such as `The Boss asked:` wrapping the Boss prompt. Static framing labels are permitted in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they naturally describe context rather than instruct a role.

@@ -197,7 +197,7 @@ Given a tmux-play session and a role whose adapter supports `resumeToken`, when 
 
 Verifies: [TMUX-042](../user/tmux-play.md#tmux-042)
 
-Given the fanout Captain handling a Boss turn, the prompt string passed to `callRole` shall not contain the substring `You are the` and shall not repeat the role's `id` in an identity preamble. The role's `instruction`, configured at `Cligent` construction, shall be the sole source of role identity.
+Given the fanout Captain handling a Boss turn, the prompt string passed to `callRole` shall begin with the Boss prompt verbatim, shall not contain the substring `You are the`, shall not contain the substring `The Boss asked`, and shall not repeat the role's `id` in an identity preamble. The role's `instruction`, configured at `Cligent` construction, shall be the sole source of role identity.
 
 ## Real-tmux Acceptance
 

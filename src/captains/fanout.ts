@@ -53,7 +53,6 @@ export function rolePrompt(
   _role: RoleHandle,
 ): string {
   return [
-    'The Boss asked:',
     bossPrompt,
     '',
     'Respond independently with the most useful answer you can provide.',

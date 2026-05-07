@@ -61,11 +61,12 @@ describe('fanout Captain', () => {
     expect(captain.handleBossTurn).toEqual(expect.any(Function));
   });
 
-  it('builds role prompts from the Boss prompt without identity preambles', () => {
+  it('builds role prompts from the Boss prompt without identity or framing preambles', () => {
     const prompt = rolePrompt('Ship it', role('reviewer'));
 
-    expect(prompt).toContain('The Boss asked:\nShip it');
+    expect(prompt.startsWith('Ship it\n')).toBe(true);
     expect(prompt).toContain('Do not wait for or speculate about other roles.');
+    expect(prompt).not.toContain('The Boss asked');
     expect(prompt).not.toContain('configured role instructions');
     expect(prompt).not.toContain('You are the');
     expect(prompt).not.toContain('reviewer');
@@ -104,6 +105,9 @@ describe('fanout Captain', () => {
     ]);
     expect(roleCalls.map((call) => call.prompt).join('\n')).not.toContain(
       'You are the',
+    );
+    expect(roleCalls.map((call) => call.prompt).join('\n')).not.toContain(
+      'The Boss asked',
     );
     expect(roleCalls[0]?.prompt).not.toContain('coder');
     expect(roleCalls[1]?.prompt).not.toContain('reviewer');
