@@ -696,6 +696,31 @@ export class CodexAdapter implements AgentAdapter {
           continue;
         }
 
+        if (eventType === 'turn.failed') {
+          // Codex emits turn.failed when a turn cannot complete (model
+          // mismatch, server-side rejection, etc.) and then exits with a
+          // non-zero code. Yield the structured error and a terminal done
+          // so the underlying message reaches the caller before the SDK's
+          // exec wrapper raises a generic "Codex Exec exited" exception.
+          const payload = toErrorPayload(event);
+          yield createEvent('error', AGENT, payload, sessionId);
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'error',
+              ...(backendProvidedSessionId
+                ? { resumeToken: sessionId }
+                : {}),
+              usage: mapUsage(event.usage),
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          return;
+        }
+
         if (eventType === 'turn.completed') {
           const turn = asRecord(event.turn);
           const status = mapDoneStatus(

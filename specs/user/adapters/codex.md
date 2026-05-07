@@ -30,7 +30,10 @@ The adapter shall normalize Codex events to `AgentEvent` types:
 | `item.completed` (tool result) | `tool_result` |
 | File change events | `codex:file_change` (extension) |
 | `turn.completed` | `done` (usage) |
+| `turn.failed` | `error` followed by `done` (`status: 'error'`) |
 | Errors | `error` |
+
+When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream. This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
 
 ## Permission Mapping
 

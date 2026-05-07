@@ -48,8 +48,19 @@ function makeLoader(config: {
     options: MockThreadOptions | undefined,
   ) => void;
   onRun?: (prompt: string, options: MockRunOptions | undefined) => void;
+  onEventConsumed?: (event: unknown) => void;
   throwFromRun?: Error;
 }): () => Promise<{ Codex: new () => MockCodexClient }> {
+  async function* eventStream(): AsyncGenerator<unknown, void, void> {
+    for (const event of config.events) {
+      config.onEventConsumed?.(event);
+      yield event;
+    }
+    if (config.throwFromRun) {
+      throw config.throwFromRun;
+    }
+  }
+
   return async () => ({
     Codex: class {
       startThread(options?: MockThreadOptions): MockCodexThread {
@@ -62,14 +73,7 @@ function makeLoader(config: {
             config.onRun?.(prompt, runOptions);
             return {
               events: {
-                async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
-                  for (const event of config.events) {
-                    yield event;
-                  }
-                  if (config.throwFromRun) {
-                    throw config.throwFromRun;
-                  }
-                },
+                [Symbol.asyncIterator]: () => eventStream(),
               },
             };
           },
@@ -89,14 +93,7 @@ function makeLoader(config: {
             config.onRun?.(prompt, runOptions);
             return {
               events: {
-                async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
-                  for (const event of config.events) {
-                    yield event;
-                  }
-                  if (config.throwFromRun) {
-                    throw config.throwFromRun;
-                  }
-                },
+                [Symbol.asyncIterator]: () => eventStream(),
               },
             };
           },
@@ -417,6 +414,67 @@ describe('CodexAdapter', () => {
 
     const done = events[2] as AgentEvent & { payload: { status: string } };
     expect(done.payload.status).toBe('error');
+  });
+
+  it('surfaces turn.failed message and stops iterating before SDK exit', async () => {
+    let eventsConsumed = 0;
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'thread.started',
+            thread_id: 'thread-fail',
+          },
+          {
+            type: 'turn.started',
+          },
+          {
+            type: 'turn.failed',
+            error: {
+              message:
+                "The 'gpt-5.5' model requires a newer version of Codex.",
+              code: 'model_not_found',
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'never read' }],
+            },
+          },
+        ],
+        onEventConsumed: () => {
+          eventsConsumed += 1;
+        },
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+
+    const error = events[1] as AgentEvent & {
+      payload: { code?: string; message: string; recoverable: boolean };
+    };
+    expect(error.payload.message).toContain('gpt-5.5');
+    expect(error.payload.message).toContain(
+      'requires a newer version of Codex',
+    );
+    expect(error.payload.code).toBe('model_not_found');
+
+    const done = events[2] as AgentEvent & {
+      payload: { status: string; resumeToken?: string };
+    };
+    expect(done.payload.status).toBe('error');
+    expect(done.payload.resumeToken).toBe('thread-fail');
+
+    // Iteration must stop at turn.failed; trailing events shall not be read.
+    expect(eventsConsumed).toBe(3);
   });
 
   it('returns false from isAvailable when SDK load fails', async () => {
