@@ -61,15 +61,15 @@ describe('fanout Captain', () => {
     expect(captain.handleBossTurn).toEqual(expect.any(Function));
   });
 
-  it('builds role prompts from the Boss prompt without identity or framing preambles', () => {
+  it('passes the Boss prompt verbatim with no framing or trailing instructions', () => {
     const prompt = rolePrompt('Ship it', role('reviewer'));
 
-    expect(prompt.startsWith('Ship it\n')).toBe(true);
-    expect(prompt).toContain('Do not wait for or speculate about other roles.');
+    expect(prompt).toBe('Ship it');
     expect(prompt).not.toContain('The Boss asked');
+    expect(prompt).not.toContain('Respond independently');
+    expect(prompt).not.toContain('other roles');
     expect(prompt).not.toContain('configured role instructions');
     expect(prompt).not.toContain('You are the');
-    expect(prompt).not.toContain('reviewer');
   });
 
   it('calls every role concurrently before summarizing', async () => {
@@ -103,12 +103,11 @@ describe('fanout Captain', () => {
       rolePrompt('Build it', role('coder')),
       rolePrompt('Build it', role('reviewer')),
     ]);
-    expect(roleCalls.map((call) => call.prompt).join('\n')).not.toContain(
-      'You are the',
-    );
-    expect(roleCalls.map((call) => call.prompt).join('\n')).not.toContain(
-      'The Boss asked',
-    );
+    const joinedPrompts = roleCalls.map((call) => call.prompt).join('\n');
+    expect(joinedPrompts).not.toContain('You are the');
+    expect(joinedPrompts).not.toContain('The Boss asked');
+    expect(joinedPrompts).not.toContain('Respond independently');
+    expect(joinedPrompts).not.toContain('other roles');
     expect(roleCalls[0]?.prompt).not.toContain('coder');
     expect(roleCalls[1]?.prompt).not.toContain('reviewer');
     expect(captainPrompts).toEqual([]);

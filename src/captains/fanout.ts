@@ -52,12 +52,7 @@ export function rolePrompt(
   bossPrompt: string,
   _role: RoleHandle,
 ): string {
-  return [
-    bossPrompt,
-    '',
-    'Respond independently with the most useful answer you can provide.',
-    'Do not wait for or speculate about other roles.',
-  ].join('\n');
+  return bossPrompt;
 }
 
 export function summaryPrompt(
