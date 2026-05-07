@@ -116,8 +116,8 @@ describe('launchTmuxPlay', () => {
       2,
       'split-window',
       '-h',
-      '-p',
-      '75',
+      '-l',
+      '75%',
       '-t',
       'tmux-play-abc123',
       tailCommand(workDir, 'coder'),
@@ -126,8 +126,8 @@ describe('launchTmuxPlay', () => {
       3,
       'split-window',
       '-h',
-      '-p',
-      '50',
+      '-l',
+      '50%',
       '-t',
       'tmux-play-abc123:0.1',
       tailCommand(workDir, 'analyst'),
@@ -144,10 +144,10 @@ describe('launchTmuxPlay', () => {
       valueAfter(runTmuxMock.mock.calls[0] ?? [], '-x'),
     );
     const roleAreaPercent = Number(
-      valueAfter(runTmuxMock.mock.calls[1] ?? [], '-p'),
+      valueAfter(runTmuxMock.mock.calls[1] ?? [], '-l').replace('%', ''),
     );
     const secondRoleColumnPercent = Number(
-      valueAfter(runTmuxMock.mock.calls[2] ?? [], '-p'),
+      valueAfter(runTmuxMock.mock.calls[2] ?? [], '-l').replace('%', ''),
     );
     const roleAreaColumns = Math.floor(
       (initialColumns * roleAreaPercent) / 100,
@@ -275,8 +275,8 @@ describe('launchTmuxPlay', () => {
       count: 4,
       roles: ['r1', 'r2', 'r3', 'r4'],
       expected: [
-        ['split-window', '-h', '-p', '75', '-t', 'tmux-play-grid4', 'r1'],
-        ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid4:0.1', 'r3'],
+        ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid4', 'r1'],
+        ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid4:0.1', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.2', 'r4'],
       ],
@@ -285,8 +285,8 @@ describe('launchTmuxPlay', () => {
       count: 5,
       roles: ['r1', 'r2', 'r3', 'r4', 'r5'],
       expected: [
-        ['split-window', '-h', '-p', '75', '-t', 'tmux-play-grid5', 'r1'],
-        ['split-window', '-h', '-p', '50', '-t', 'tmux-play-grid5:0.1', 'r4'],
+        ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid5', 'r1'],
+        ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid5:0.1', 'r4'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.3', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.2', 'r5'],

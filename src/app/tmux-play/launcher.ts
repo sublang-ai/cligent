@@ -24,8 +24,8 @@ import type { RoleConfig } from './roles.js';
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 const INITIAL_TMUX_COLUMNS = '240';
 const INITIAL_TMUX_ROWS = '67';
-const ROLE_AREA_PERCENT = '75';
-const SECOND_ROLE_COLUMN_PERCENT = '50';
+const ROLE_AREA_SIZE = '75%';
+const SECOND_ROLE_COLUMN_SIZE = '50%';
 
 type Output = Pick<Writable, 'write'>;
 
@@ -169,8 +169,8 @@ function createRolePanes(
   runTmux(
     'split-window',
     '-h',
-    '-p',
-    ROLE_AREA_PERCENT,
+    '-l',
+    ROLE_AREA_SIZE,
     '-t',
     sessionName,
     tailCommand(workDir, roles[0]),
@@ -184,8 +184,8 @@ function createRolePanes(
   runTmux(
     'split-window',
     '-h',
-    '-p',
-    SECOND_ROLE_COLUMN_PERCENT,
+    '-l',
+    SECOND_ROLE_COLUMN_SIZE,
     '-t',
     paneTarget(sessionName, rolePanes[0].paneIndex),
     tailCommand(workDir, roles[firstColumnCount]),
