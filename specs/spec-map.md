@@ -77,4 +77,4 @@ Authoring rules: [dev/style.md](dev/style.md).
 | [spdx-headers.md](test/spdx-headers.md) | Copyright and license header presence checks |
 | [engine.md](test/engine.md) | Cligent lifecycle, session continuity, protocol hardening verification |
 | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter) |
-| [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance |
+| [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, real-tmux acceptance |

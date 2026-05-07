@@ -9,7 +9,7 @@ Implement [TMUX-027/028](../user/tmux-play.md#tmux-027) and [TMUX-035..042](../u
 
 ## Status
 
-In progress
+Done
 
 ## Scope
 
