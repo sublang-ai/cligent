@@ -207,51 +207,58 @@ describe('TmuxPlayRuntime', () => {
     expect(handled).toEqual(['one', 'two']);
   });
 
-  it('keeps role and Captain Cligents across turns', async () => {
+  it('reuses role Cligents and passes prior resume tokens across turns', async () => {
     const roleResumes: (string | undefined)[] = [];
-    const captainResumes: (string | undefined)[] = [];
+    const roleInstanceIds: number[] = [];
+    const constructedRoleInstanceIds: number[] = [];
     let roleRuns = 0;
-    let captainRuns = 0;
     const captain: Captain = {
       async handleBossTurn(turn, context) {
         await context.callRole('coder', `role ${turn.prompt}`);
-        await context.callCaptain(`captain ${turn.prompt}`);
       },
     };
+    class ContinuityRoleAdapter implements AgentAdapter {
+      readonly agent = 'codex';
+      readonly instanceId = constructedRoleInstanceIds.length + 1;
+
+      constructor() {
+        constructedRoleInstanceIds.push(this.instanceId);
+      }
+
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        roleInstanceIds.push(this.instanceId);
+        roleResumes.push(options?.resume);
+        roleRuns += 1;
+        yield doneEvent(
+          'codex',
+          `role ${roleRuns}`,
+          'success',
+          `role-token-${roleRuns}`,
+        );
+      }
+
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+    const imports = adapterImports({});
+    imports.codex = async () => ContinuityRoleAdapter;
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
       roles: [{ id: 'coder', adapter: 'codex' }],
-      adapterImports: adapterImports({
-        codex: {
-          agent: 'codex',
-          async *run(_prompt, options) {
-            roleResumes.push(options?.resume);
-            roleRuns += 1;
-            yield doneEvent('codex', `role ${roleRuns}`, 'success', 'role-token');
-          },
-        },
-        claude: {
-          agent: 'claude-code',
-          async *run(_prompt, options) {
-            captainResumes.push(options?.resume);
-            captainRuns += 1;
-            yield doneEvent(
-              'claude-code',
-              `captain ${captainRuns}`,
-              'success',
-              'captain-token',
-            );
-          },
-        },
-      }),
+      adapterImports: imports,
     });
 
     await runtime.runBossTurn('one');
     await runtime.runBossTurn('two');
 
-    expect(roleResumes).toEqual([undefined, 'role-token']);
-    expect(captainResumes).toEqual([undefined, 'captain-token']);
+    expect(constructedRoleInstanceIds).toEqual([1]);
+    expect(roleInstanceIds).toEqual([1, 1]);
+    expect(roleResumes).toEqual([undefined, 'role-token-1']);
   });
 
   it('drains fire-and-forget status before finishing a turn', async () => {

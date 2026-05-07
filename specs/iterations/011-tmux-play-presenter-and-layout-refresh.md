@@ -9,7 +9,7 @@ Implement [TMUX-027/028](../user/tmux-play.md#tmux-027) and [TMUX-035..042](../u
 
 ## Status
 
-In progress
+Done
 
 ## Scope
 
@@ -32,7 +32,7 @@ Out of scope: non-tmux UIs.
 - [x] `src/app/tmux-play/launcher.ts`.
 - [x] `src/app/tmux-play/presenter-tmux.ts`.
 - [x] `src/captains/fanout.ts`.
-- [ ] Tests for TTMUX-021..029; update TTMUX-014.
+- [x] Tests for TTMUX-021..029; update TTMUX-014.
 
 ## Tasks
 
@@ -41,7 +41,7 @@ Each task is one commit.
 1. [x] Layout and geometry — TMUX-027/028, TMUX-035, TMUX-036.
 2. [x] Presenter rewrite — TMUX-037..040.
 3. [x] Fanout role prompt — TMUX-042.
-4. Role continuity verification — TMUX-041.
+4. [x] Role continuity verification — TMUX-041.
 
 ## Verification
 
