@@ -127,6 +127,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   );
   const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
   setPaneTitles(options.sessionName, rolePanes);
+  disableRolePaneInput(options.sessionName, rolePanes);
   runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
   runTmux(
     'set',
@@ -247,6 +248,20 @@ function setPaneTitles(sessionName: string, rolePanes: readonly RolePane[]): voi
 
 function titleCaseRoleId(roleId: string): string {
   return roleId.charAt(0).toUpperCase() + roleId.slice(1);
+}
+
+function disableRolePaneInput(
+  sessionName: string,
+  rolePanes: readonly RolePane[],
+): void {
+  for (const pane of rolePanes) {
+    runTmux(
+      'select-pane',
+      '-t',
+      paneTarget(sessionName, pane.paneIndex),
+      '-d',
+    );
+  }
 }
 
 function tailCommand(workDir: string, role: RoleConfig | undefined): string {

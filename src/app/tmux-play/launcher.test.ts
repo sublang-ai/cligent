@@ -192,6 +192,30 @@ describe('launchTmuxPlay', () => {
       '-T',
       'Analyst',
     );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.1',
+      '-d',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.2',
+      '-d',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.3',
+      '-d',
+    );
+    expect(runTmuxMock).not.toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.0',
+      '-d',
+    );
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 

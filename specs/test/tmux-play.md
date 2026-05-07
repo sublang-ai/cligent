@@ -198,3 +198,31 @@ Given a tmux-play session and a role whose adapter supports `resumeToken`, when 
 Verifies: [TMUX-042](../user/tmux-play.md#tmux-042)
 
 Given the fanout Captain handling a Boss turn, the prompt string passed to `callRole` shall not contain the substring `You are the` and shall not repeat the role's `id` in an identity preamble. The role's `instruction`, configured at `Cligent` construction, shall be the sole source of role identity.
+
+## Real-tmux Acceptance
+
+Items in this section verify behavior end-to-end against a real `tmux` server (not a mock or argv log). They live under `*.acceptance.test.ts`, run via `npm run test:acceptance`, and shall self-skip only when `tmux -V` fails. They shall not gate on adapter API keys.
+
+### TTMUX-030
+
+Verifies: [TMUX-035](../user/tmux-play.md#tmux-035)
+
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` shall report `240x67`.
+
+### TTMUX-031
+
+Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028)
+
+Given a real tmux server with two configured roles, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes: a Boss/Captain pane at `pane_left=0` with effective width 60 columns (less tmux's 1-cell border), a first role column at `pane_left=60` with effective width 90 columns, and a second role column at `pane_left=150` with effective width 90 columns. Pane order in `list-panes` index space shall match config order.
+
+### TTMUX-032
+
+Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
+
+Given a real tmux server with role ids `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -p '#{pane_title}'` against each pane shall return `Captain` for the Boss/Captain pane, `Coder` for the first role pane, and `Reviewer` for the second role pane.
+
+### TTMUX-033
+
+Verifies: [TMUX-027](../user/tmux-play.md#tmux-027)
+
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, every role pane shall report `#{pane_input_off}=1` (input disabled) and the Boss/Captain pane shall report `#{pane_input_off}=0`. After `tmux send-keys -t <role-pane> '<probe>'` is invoked with a unique probe string, `tmux capture-pane -p` against that role pane shall not contain the probe.
