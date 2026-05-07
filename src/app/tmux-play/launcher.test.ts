@@ -276,6 +276,48 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).toHaveBeenCalledWith('tmux-play-def456');
   });
 
+  it('requests a 240x67 terminal resize before attach', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    const stdout = new MemoryOutput();
+    let stdoutAtAttach: string | undefined;
+    attachTmuxSessionMock.mockImplementation(() => {
+      stdoutAtAttach = stdout.text();
+    });
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'resize',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      stdout,
+    });
+
+    expect(attachTmuxSessionMock).toHaveBeenCalledWith('tmux-play-resize');
+    expect(stdout.text()).toContain('\x1b[8;67;240t');
+    expect(stdoutAtAttach).toContain('\x1b[8;67;240t');
+  });
+
+  it('does not request a terminal resize when attach is disabled', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    const stdout = new MemoryOutput();
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'noattach',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      stdout,
+      attach: false,
+    });
+
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+    expect(stdout.text()).not.toContain('\x1b[8;67;240t');
+  });
+
   it('prints a notice when creating the first-run home config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const cwd = join(tempDir, 'project');

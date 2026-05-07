@@ -169,6 +169,10 @@ The launcher shall convert the resolved YAML config into a JSON snapshot written
 
 When the launcher creates the tmux session, the session shall be created with a 16:9 cell grid sized for a 1920×1080 display, defaulting to 240 columns by 67 rows. When a client attaches with a different window size, tmux's normal size negotiation shall govern the displayed layout.
 
+### TMUX-043
+
+Before invoking `tmux attach-session`, the launcher shall write the xterm window-manipulation request `CSI 8 ; 67 ; 240 t` (`\x1b[8;67;240t`) to stdout, asking the user's terminal to resize its cell grid to 240×67 to match TMUX-035. Terminals that honor the sequence (xterm, Konsole, GNOME Terminal, iTerm2 with the "Allow programs to change/resize window" option enabled, others) shall adjust before the attach completes; terminals that ignore it (including macOS Terminal.app by default) shall be left unchanged, in which case TMUX-035's normal size negotiation governs.
+
 ## Pane Titles
 
 ### TMUX-036

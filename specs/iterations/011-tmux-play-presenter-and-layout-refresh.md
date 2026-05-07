@@ -26,6 +26,7 @@ In scope:
 - Fanout role prompts without identity preamble.
 - Read-only role panes (input disabled).
 - Real-tmux acceptance test that verifies geometry, layout, titles, and read-only role panes against an actual tmux server.
+- Pre-attach terminal resize request (xterm CSI 8 t) so honoring terminals expand to 240×67 to match TMUX-035.
 
 Out of scope: non-tmux UIs.
 
@@ -38,6 +39,7 @@ Out of scope: non-tmux UIs.
 - [x] Read-only role panes in `src/app/tmux-play/launcher.ts` and matching unit-test assertions.
 - [x] `src/app/tmux-play/launcher.acceptance.test.ts` covering TTMUX-030..033.
 - [x] TTMUX-030..033 in `specs/test/tmux-play.md`.
+- [x] Pre-attach `CSI 8 t` resize request in `src/app/tmux-play/launcher.ts`, TMUX-043 in `specs/user/tmux-play.md`, and TTMUX-034 in `specs/test/tmux-play.md`.
 
 ## Tasks
 
@@ -49,6 +51,7 @@ Each task is one commit.
 4. [x] Role continuity verification — TMUX-041.
 5. [x] Read-only role panes — TMUX-027 (`select-pane -d`) and unit-test coverage.
 6. [x] Real-tmux acceptance gate — TTMUX-030..033 against an actual tmux server.
+7. [x] Pre-attach terminal resize request — TMUX-043 (`CSI 8 ; 67 ; 240 t`) and TTMUX-034 unit-test coverage.
 
 ## Verification
 

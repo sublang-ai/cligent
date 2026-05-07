@@ -226,3 +226,9 @@ Given a real tmux server with role ids `coder` and `reviewer`, when `launchTmuxP
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027)
 
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, every role pane shall report `#{pane_input_off}=1` (input disabled) and the Boss/Captain pane shall report `#{pane_input_off}=0`. After `tmux send-keys -t <role-pane> '<probe>'` is invoked with a unique probe string, `tmux capture-pane -p` against that role pane shall not contain the probe.
+
+### TTMUX-034
+
+Verifies: [TMUX-043](../user/tmux-play.md#tmux-043)
+
+Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes, the writer's content shall contain the byte sequence `\x1b[8;67;240t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked.

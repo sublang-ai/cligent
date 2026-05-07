@@ -95,6 +95,7 @@ export async function launchTmuxPlay(
   });
 
   if (options.attach !== false) {
+    requestTerminalResize(options.stdout ?? process.stdout);
     attachTmuxSession(sessionName);
   }
 
@@ -262,6 +263,10 @@ function disableRolePaneInput(
       '-d',
     );
   }
+}
+
+function requestTerminalResize(stream: Output): void {
+  stream.write(`\x1b[8;${INITIAL_TMUX_ROWS};${INITIAL_TMUX_COLUMNS}t`);
 }
 
 function tailCommand(workDir: string, role: RoleConfig | undefined): string {
