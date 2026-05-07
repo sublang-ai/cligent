@@ -173,6 +173,10 @@ When the launcher creates the tmux session, the session shall be created with a 
 
 Before invoking `tmux attach-session`, the launcher shall write the xterm window-manipulation request `CSI 8 ; 67 ; 240 t` (`\x1b[8;67;240t`) to stdout, asking the user's terminal to resize its cell grid to 240×67 to match TMUX-035. Terminals that honor the sequence (xterm, Konsole, GNOME Terminal, iTerm2 with the "Allow programs to change/resize window" option enabled, others) shall adjust before the attach completes; terminals that ignore it (including macOS Terminal.app by default) shall be left unchanged, in which case TMUX-035's normal size negotiation governs.
 
+### TMUX-044
+
+The 4/6/6 region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, the Boss/Captain region is `W × 4/16` cells, the first role column region is `W × 6/16` cells, and the second role column region (if present) absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region. With a single role, only the Boss/Captain pane is re-sized and the role pane absorbs the remainder.
+
 ## Pane Titles
 
 ### TMUX-036

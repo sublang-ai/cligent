@@ -216,7 +216,58 @@ describe('launchTmuxPlay', () => {
       'tmux-play-abc123:0.0',
       '-d',
     );
+    const expectedHookCmd =
+      `run-shell -b "W=$(tmux display-message -t tmux-play-abc123 -p '#{window_width}')` +
+      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W * 4 / 16 - 1))` +
+      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W * 6 / 16 - 1))"`;
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-abc123',
+      'client-resized',
+      expectedHookCmd,
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-abc123',
+      'after-resize-window',
+      expectedHookCmd,
+    );
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('configures the resize hook for a single-role session', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['solo']);
+    const workDir = join(tempDir, 'work');
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'one',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    const expectedHookCmd =
+      `run-shell -b "W=$(tmux display-message -t tmux-play-one -p '#{window_width}')` +
+      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W * 4 / 16 - 1))"`;
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-one',
+      'client-resized',
+      expectedHookCmd,
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-one',
+      'after-resize-window',
+      expectedHookCmd,
+    );
   });
 
   it.each([

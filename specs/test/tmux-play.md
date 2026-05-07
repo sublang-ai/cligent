@@ -232,3 +232,9 @@ Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, ever
 Verifies: [TMUX-043](../user/tmux-play.md#tmux-043)
 
 Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes, the writer's content shall contain the byte sequence `\x1b[8;67;240t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked.
+
+### TTMUX-035
+
+Verifies: [TMUX-044](../user/tmux-play.md#tmux-044)
+
+Given a real tmux server with two configured roles, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W × 4/16)` and the first role column region width equal to `floor(W × 6/16)`, where region width = `pane_width + 1` for each pane with a right-side border separator. The reviewer pane's region width shall equal the remainder. The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).

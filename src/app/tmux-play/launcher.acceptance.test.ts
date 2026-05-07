@@ -55,6 +55,79 @@ describe('tmux-play real-tmux acceptance', () => {
   });
 
   acceptanceIt(
+    'preserves the 4/6/6 region split across forced window resizes',
+    async () => {
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // Lock the size so resize-window calls are honored end-to-end.
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+
+      for (const [width, height] of [
+        [240, 67],
+        [80, 24],
+        [160, 40],
+        [200, 50],
+      ] as const) {
+        runOrThrow('tmux', [
+          'resize-window',
+          '-t',
+          sessionName,
+          '-x',
+          String(width),
+          '-y',
+          String(height),
+        ]);
+        const panes = await waitForRegions(
+          sessionName,
+          [
+            Math.floor((width * 4) / 16),
+            Math.floor((width * 6) / 16),
+            width - Math.floor((width * 4) / 16) - Math.floor((width * 6) / 16),
+          ],
+          2_000,
+        );
+        const captain = paneByTitle(panes, 'Captain');
+        const coder = paneByTitle(panes, 'Coder');
+        const reviewer = paneByTitle(panes, 'Reviewer');
+        const captainRegion = coder.left - captain.left;
+        const coderRegion = reviewer.left - coder.left;
+        const reviewerRegion = width - reviewer.left;
+        expect(
+          { width, captainRegion, coderRegion, reviewerRegion },
+        ).toEqual({
+          width,
+          captainRegion: Math.floor((width * 4) / 16),
+          coderRegion: Math.floor((width * 6) / 16),
+          reviewerRegion:
+            width -
+            Math.floor((width * 4) / 16) -
+            Math.floor((width * 6) / 16),
+        });
+      }
+    },
+    60_000,
+  );
+
+  acceptanceIt(
     'creates a 240x67 session with 60/90/90 panes, titled, role panes read-only',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
@@ -228,4 +301,51 @@ function capturePane(session: string, paneIndex: number): string {
     throw new Error(`tmux capture-pane failed: ${result.stderr.trim()}`);
   }
   return result.stdout;
+}
+
+function runOrThrow(cmd: string, args: readonly string[]): void {
+  const result = spawnSync(cmd, args, { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(
+      `${cmd} ${args.join(' ')} failed: ${result.stderr.trim()}`,
+    );
+  }
+}
+
+async function waitForRegions(
+  session: string,
+  expectedRegions: readonly number[],
+  timeoutMs: number,
+): Promise<readonly PaneRow[]> {
+  const start = Date.now();
+  let lastSeen: readonly PaneRow[] = [];
+  while (Date.now() - start < timeoutMs) {
+    const panes = listPanes(session);
+    lastSeen = panes;
+    if (
+      panes.length === expectedRegions.length &&
+      panes.every((pane, idx) => regionWidthFor(pane, panes, idx) === expectedRegions[idx])
+    ) {
+      return panes;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `Layout did not reach expected regions [${expectedRegions.join(',')}] within ${timeoutMs}ms; last seen: ${JSON.stringify(lastSeen)}`,
+  );
+}
+
+function regionWidthFor(
+  pane: PaneRow,
+  panes: readonly PaneRow[],
+  index: number,
+): number {
+  if (index === panes.length - 1) {
+    return pane.width;
+  }
+  const next = panes[index + 1];
+  if (!next) {
+    return pane.width;
+  }
+  return next.left - pane.left;
 }

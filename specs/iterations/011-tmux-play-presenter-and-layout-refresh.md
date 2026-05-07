@@ -27,6 +27,7 @@ In scope:
 - Read-only role panes (input disabled).
 - Real-tmux acceptance test that verifies geometry, layout, titles, and read-only role panes against an actual tmux server.
 - Pre-attach terminal resize request (xterm CSI 8 t) so honoring terminals expand to 240×67 to match TMUX-035.
+- Resize-invariant 4/6/6 layout via session-scoped tmux hooks, so the spec's region split holds at any window size, not only at creation.
 
 Out of scope: non-tmux UIs.
 
@@ -40,6 +41,7 @@ Out of scope: non-tmux UIs.
 - [x] `src/app/tmux-play/launcher.acceptance.test.ts` covering TTMUX-030..033.
 - [x] TTMUX-030..033 in `specs/test/tmux-play.md`.
 - [x] Pre-attach `CSI 8 t` resize request in `src/app/tmux-play/launcher.ts`, TMUX-043 in `specs/user/tmux-play.md`, and TTMUX-034 in `specs/test/tmux-play.md`.
+- [x] Session-scoped `client-resized` / `after-resize-window` hooks in `src/app/tmux-play/launcher.ts` (TMUX-044), unit-test coverage of the `set-hook` calls, and TTMUX-035 acceptance verification of the invariant at multiple window sizes.
 
 ## Tasks
 
@@ -52,6 +54,7 @@ Each task is one commit.
 5. [x] Read-only role panes — TMUX-027 (`select-pane -d`) and unit-test coverage.
 6. [x] Real-tmux acceptance gate — TTMUX-030..033 against an actual tmux server.
 7. [x] Pre-attach terminal resize request — TMUX-043 (`CSI 8 ; 67 ; 240 t`) and TTMUX-034 unit-test coverage.
+8. [x] Resize-invariant 4/6/6 layout — TMUX-044 (session-scoped `client-resized` and `after-resize-window` hooks), unit-test of `set-hook` invocations, and TTMUX-035 real-tmux verification at multiple window sizes.
 
 ## Verification
 

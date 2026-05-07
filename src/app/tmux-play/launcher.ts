@@ -129,6 +129,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
   setPaneTitles(options.sessionName, rolePanes);
   disableRolePaneInput(options.sessionName, rolePanes);
+  configureLayoutHooks(options.sessionName, roles.length);
   runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
   runTmux(
     'set',
@@ -267,6 +268,30 @@ function disableRolePaneInput(
 
 function requestTerminalResize(stream: Output): void {
   stream.write(`\x1b[8;${INITIAL_TMUX_ROWS};${INITIAL_TMUX_COLUMNS}t`);
+}
+
+// TMUX-044: keep the 4/6/6 region split invariant under any window resize.
+// resize-pane -x does not accept tmux format expansion, so we compute via
+// shell. The -1 corrections give region widths exactly W*4/16 and W*6/16 by
+// accounting for the 1-cell tmux border on each non-rightmost pane.
+function configureLayoutHooks(
+  sessionName: string,
+  roleCount: number,
+): void {
+  const widthCmd =
+    `tmux display-message -t ${sessionName} -p '#{window_width}'`;
+  const resizeBoss =
+    `tmux resize-pane -t ${sessionName}:0.0 -x $((W * 4 / 16 - 1))`;
+  const resizeFirstRoleColumn =
+    `tmux resize-pane -t ${sessionName}:0.1 -x $((W * 6 / 16 - 1))`;
+  const shell =
+    roleCount >= 2
+      ? `W=$(${widthCmd}) && ${resizeBoss} && ${resizeFirstRoleColumn}`
+      : `W=$(${widthCmd}) && ${resizeBoss}`;
+  const hookCommand = `run-shell -b "${shell}"`;
+  for (const hook of ['client-resized', 'after-resize-window']) {
+    runTmux('set-hook', '-t', sessionName, hook, hookCommand);
+  }
 }
 
 function tailCommand(workDir: string, role: RoleConfig | undefined): string {
