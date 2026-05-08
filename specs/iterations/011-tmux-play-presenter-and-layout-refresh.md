@@ -19,7 +19,7 @@ In scope:
 - 4/6/6 column split; Boss/Captain on the left.
 - Pane titles `Captain` plus title-cased role ids.
 - Single Boss-input echo.
-- `<who>> ` first-line prefix with two-space hanging continuation indent.
+- `<who>> ` first-nonblank-line prefix with two-space hanging continuation indent.
 - Failure as `<who>> [error: <message>]` or `<who>> [aborted]`.
 - Boss pane omits per-role outputs and Captain prompt body.
 - Persistent role Cligents with auto-resume.

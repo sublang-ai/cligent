@@ -116,6 +116,91 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('');
   });
 
+  it('prefixes first content after leading blank streaming deltas', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('\nhello\n')));
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 1,
+      timestamp: 102,
+      roleId: 'coder',
+      result: {
+        status: 'ok',
+        roleId: 'coder',
+        turnId: 1,
+        finalText: '\nhello',
+      },
+    });
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('\n')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('again\n')));
+
+    expect(coder.text()).toBe('\ncoder> hello\n\ncoder> again\n');
+    expect(boss.text()).toBe('');
+  });
+
+  it('indents across text delta chunks split before newline', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('first')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('\nsecond\n')));
+
+    expect(coder.text()).toBe('coder> first\n  second\n');
+    expect(boss.text()).toBe('');
+  });
+
+  it('starts a new block after ok runs with unterminated text', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('first')));
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 1,
+      timestamp: 102,
+      roleId: 'coder',
+      result: {
+        status: 'ok',
+        roleId: 'coder',
+        turnId: 1,
+        finalText: 'first',
+      },
+    });
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('second\n')));
+
+    expect(coder.text()).toBe('coder> first\ncoder> second\n');
+    expect(boss.text()).toBe('');
+  });
+
+  it('breaks before a new prefixed block after unterminated text', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('first')));
+    presenter.onRecord(rolePrompt('coder', 'next prompt'));
+
+    expect(coder.text()).toBe('coder> first\ncaptain> next prompt\n');
+    expect(boss.text()).toBe('');
+  });
+
   it('routes Boss and Captain records to the Boss pane', () => {
     const boss = new MemoryWriter();
     const coder = new MemoryWriter();

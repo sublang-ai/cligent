@@ -171,7 +171,7 @@ Given session mode is running, when the user enters a Boss prompt, the captured 
 
 Verifies: [TMUX-038](../user/tmux-play.md#tmux-038)
 
-Given session mode handling a Boss turn, the captured Boss/Captain pane shall contain a line beginning with `boss> ` for the Boss input and a line beginning with `captain> ` for the Captain's reply; the captured role pane shall contain a line beginning with `captain> ` for the Captain's prompt and a line beginning with `<roleId>> ` for the role's reply. Multi-line presenter output blocks shall render continuation lines with a two-space hanging indent and no repeated speaker prefix. The strings `[from captain]` and `[captain llm prompt]` shall not appear in any pane.
+Given session mode handling a Boss turn, the captured Boss/Captain pane shall contain a line beginning with `boss> ` for the Boss input and a nonblank line beginning with `captain> ` for the Captain's reply; the captured role pane shall contain a nonblank line beginning with `captain> ` for the Captain's prompt and a nonblank line beginning with `<roleId>> ` for the role's reply. Multi-line presenter output blocks shall render continuation lines with a two-space hanging indent and no repeated speaker prefix; leading blank lines shall remain blank and shall not consume the first speaker prefix. The strings `[from captain]` and `[captain llm prompt]` shall not appear in any pane.
 
 ### TTMUX-026
 

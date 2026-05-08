@@ -119,6 +119,7 @@ export class TmuxPresenter implements RecordObserver {
     result: RoleRunResult | CaptainRunResult,
   ): void {
     if (result.status === 'ok') {
+      this.breakLineIfNeeded(writer);
       this.resetLineOffset(writer);
       return;
     }
@@ -156,6 +157,7 @@ export class TmuxPresenter implements RecordObserver {
     who: string,
     value: string,
   ): void {
+    this.breakLineIfNeeded(writer);
     this.resetLineOffset(writer);
     this.writePrefixed(writer, who, ensureTrailingNewline(value));
     this.resetLineOffset(writer);
@@ -185,13 +187,13 @@ export class TmuxPresenter implements RecordObserver {
       if (atLineStart) {
         if (char !== '\n') {
           output += lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
+          lineOffset++;
         }
         atLineStart = false;
       }
       output += char;
       if (char === '\n') {
         atLineStart = true;
-        lineOffset++;
       }
     }
 

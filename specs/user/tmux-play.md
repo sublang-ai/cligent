@@ -195,7 +195,7 @@ While in session mode, the Boss readline shall echo the user's input line as the
 
 ### TMUX-038
 
-The presenter shall tag the first textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix, and blank continuation lines shall remain blank. The Boss readline prompt shall be `boss> `; the first line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first line of the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the first line of the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
+The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the first nonblank line of the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
 
 ### TMUX-039
 
