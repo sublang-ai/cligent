@@ -238,3 +238,9 @@ Given a launcher invocation with `attach: true` and stdout routed to an in-memor
 Verifies: [TMUX-044](../user/tmux-play.md#tmux-044)
 
 Given a real tmux server with two configured roles, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W × 4/16)` and the first role column region width equal to `floor(W × 6/16)`, where region width = `pane_width + 1` for each pane with a right-side border separator. The reviewer pane's region width shall equal the remainder. The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).
+
+### TTMUX-036
+
+Verifies: [TMUX-045](../user/tmux-play.md#tmux-045)
+
+Given a real tmux server with configured roles, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report `#{pane_active}=1` for the Boss/Captain pane and `#{pane_active}=0` for every role pane.

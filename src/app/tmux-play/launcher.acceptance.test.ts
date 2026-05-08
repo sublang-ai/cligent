@@ -23,6 +23,7 @@ interface PaneRow {
   readonly height: number;
   readonly title: string;
   readonly inputOff: string;
+  readonly active: string;
 }
 
 const TMUX_AVAILABLE = isTmuxAvailable();
@@ -128,7 +129,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'creates a 240x67 session with 60/90/90 panes, titled, role panes read-only',
+    'creates a 240x67 session with 60/90/90 panes, titled, role panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -182,6 +183,11 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(captain.inputOff).toBe('0');
       expect(coder.inputOff).toBe('1');
       expect(reviewer.inputOff).toBe('1');
+
+      // TTMUX-036: startup focus
+      expect(captain.active).toBe('1');
+      expect(coder.active).toBe('0');
+      expect(reviewer.active).toBe('0');
 
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
@@ -247,6 +253,7 @@ function listPanes(session: string): readonly PaneRow[] {
     '#{pane_height}',
     '#{pane_title}',
     '#{pane_input_off}',
+    '#{pane_active}',
   ].join(FIELD_SEP);
   const result = spawnSync(
     'tmux',
@@ -269,6 +276,7 @@ function listPanes(session: string): readonly PaneRow[] {
         height,
         title,
         inputOff,
+        active,
       ] = line.split(FIELD_SEP);
       return {
         index: Number(index),
@@ -278,6 +286,7 @@ function listPanes(session: string): readonly PaneRow[] {
         height: Number(height),
         title: title ?? '',
         inputOff: inputOff ?? '',
+        active: active ?? '',
       };
     });
 }

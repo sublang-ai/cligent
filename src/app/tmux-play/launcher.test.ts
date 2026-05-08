@@ -234,6 +234,11 @@ describe('launchTmuxPlay', () => {
       'after-resize-window',
       expectedHookCmd,
     );
+    expect(runTmuxMock.mock.calls.at(-1)).toEqual([
+      'select-pane',
+      '-t',
+      'tmux-play-abc123:0.0',
+    ]);
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 

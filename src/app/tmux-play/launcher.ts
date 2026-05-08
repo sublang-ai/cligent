@@ -138,6 +138,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'pane-border-format',
     '#{?pane_active,#[reverse],}#{pane_title}#[default]',
   );
+  selectBossPane(options.sessionName);
 }
 
 function buildSessionCommand(options: BuildTmuxSessionOptions): string {
@@ -264,6 +265,10 @@ function disableRolePaneInput(
       '-d',
     );
   }
+}
+
+function selectBossPane(sessionName: string): void {
+  runTmux('select-pane', '-t', paneTarget(sessionName, 0));
 }
 
 function requestTerminalResize(stream: Output): void {

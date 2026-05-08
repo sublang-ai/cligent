@@ -177,6 +177,10 @@ Before invoking `tmux attach-session`, the launcher shall write the xterm window
 
 The 4/6/6 region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, the Boss/Captain region is `W × 4/16` cells, the first role column region is `W × 6/16` cells, and the second role column region (if present) absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region. With a single role, only the Boss/Captain pane is re-sized and the role pane absorbs the remainder.
 
+### TMUX-045
+
+After the launcher constructs the tmux session and before it attaches a client, the active pane shall be the Boss/Captain pane so startup cursor focus lands at the `boss> ` readline prompt.
+
 ## Pane Titles
 
 ### TMUX-036
