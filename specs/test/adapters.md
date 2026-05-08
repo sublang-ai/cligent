@@ -35,6 +35,10 @@ Given `PermissionPolicy` combinations, the Claude Code adapter shall produce the
 
 The Codex adapter shall emit `codex:file_change` extension events for file changes.
 
+### TADAPT-017
+
+Given Codex emits an error whose message is a JSON-encoded object string, the Codex adapter shall expose the human-readable detail/message content in the normalized `error.message`, may unwrap nested error envelopes to reach that content, and shall not pass the raw JSON string through to pane-facing consumers.
+
 ## Gemini
 
 ### TADAPT-007

@@ -35,6 +35,8 @@ The adapter shall normalize Codex events to `AgentEvent` types:
 
 When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream. This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
 
+When Codex supplies an error message as a JSON-encoded object string, the adapter shall present the human-readable `detail`, `message`, or `error_description` content as the `error.message` while preserving a structured `code` when available. The adapter may further unwrap nested `error` envelopes to reach those human-readable fields.
+
 ## Permission Mapping
 
 ### CODEX-004

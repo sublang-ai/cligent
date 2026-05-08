@@ -106,6 +106,52 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function asErrorRecord(value: unknown): Record<string, unknown> {
+  const record = asRecord(value);
+  if (Object.keys(record).length > 0) {
+    return record;
+  }
+
+  const text = asString(value)?.trim();
+  if (!text?.startsWith('{')) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return asRecord(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function codexErrorMessage(value: unknown, depth = 0): string | undefined {
+  const text = asString(value);
+  if (text) {
+    if (depth >= 3) {
+      return text;
+    }
+
+    const parsed = asErrorRecord(text);
+    if (Object.keys(parsed).length > 0) {
+      return codexErrorMessage(parsed, depth + 1) ?? text;
+    }
+    return text;
+  }
+
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) {
+    return undefined;
+  }
+
+  return (
+    codexErrorMessage(record.detail, depth + 1) ??
+    codexErrorMessage(record.message, depth + 1) ??
+    codexErrorMessage(record.error_description, depth + 1) ??
+    codexErrorMessage(record.error, depth + 1)
+  );
+}
+
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -475,29 +521,44 @@ function toErrorPayload(message: unknown): {
   recoverable: boolean;
 } {
   const top = asRecord(message);
-  const nested = asRecord(top.error);
+  const nested = asErrorRecord(top.error);
+  const messageRecord = asErrorRecord(top.message);
+  const records = [top, nested, messageRecord];
 
   const code =
-    asString(top.code) ??
-    asString(nested.code) ??
-    asString(nested.type);
+    firstString(records, ['code', 'error_code']) ??
+    firstString([nested, messageRecord], ['type']);
 
   const text =
-    asString(top.message) ??
-    asString(nested.message) ??
+    codexErrorMessage(top.message) ??
+    codexErrorMessage(top.detail) ??
+    codexErrorMessage(top.error) ??
     'Codex SDK error';
 
-  const recoverable =
-    top.recoverable === true ||
-    top.retryable === true ||
-    nested.recoverable === true ||
-    nested.retryable === true;
+  const recoverable = records.some(
+    (record) => record.recoverable === true || record.retryable === true,
+  );
 
   return {
     ...(code ? { code } : {}),
     message: text,
     recoverable,
   };
+}
+
+function firstString(
+  records: readonly Record<string, unknown>[],
+  keys: readonly string[],
+): string | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = asString(record[key]);
+      if (value) {
+        return value;
+      }
+    }
+  }
+  return undefined;
 }
 
 export async function loadCodexSdk(): Promise<CodexSdk> {
@@ -819,7 +880,7 @@ export class CodexAdapter implements AgentAdapter {
           code: 'SDK_STREAM_ERROR',
           message:
             error instanceof Error
-              ? error.message
+              ? (codexErrorMessage(error.message) ?? error.message)
               : 'Codex adapter failed during stream',
           recoverable: false,
         },

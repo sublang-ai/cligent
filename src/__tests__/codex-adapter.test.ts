@@ -477,6 +477,39 @@ describe('CodexAdapter', () => {
     expect(eventsConsumed).toBe(3);
   });
 
+  it('unwraps JSON-encoded Codex error details', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.failed',
+            message: JSON.stringify({
+              detail:
+                "The 'gpt-5.5' model requires a newer version of Codex.",
+              code: 'model_not_found',
+            }),
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+
+    const error = events[1] as AgentEvent & {
+      payload: { code?: string; message: string; recoverable: boolean };
+    };
+    expect(error.payload.message).toBe(
+      "The 'gpt-5.5' model requires a newer version of Codex.",
+    );
+    expect(error.payload.message).not.toContain('{"detail"');
+    expect(error.payload.code).toBe('model_not_found');
+  });
+
   it('returns false from isAvailable when SDK load fails', async () => {
     const adapter = new CodexAdapter({
       loadSdk: async () => {
