@@ -138,6 +138,14 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'pane-border-format',
     '#{?pane_active,#[reverse],}#{pane_title}#[default]',
   );
+  runTmux(
+    'set',
+    '-t',
+    options.sessionName,
+    'status-right',
+    'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)',
+  );
+  runTmux('set', '-t', options.sessionName, 'status-right-length', '80');
   selectBossPane(options.sessionName);
 }
 
