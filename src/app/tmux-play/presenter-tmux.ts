@@ -14,6 +14,8 @@ import type {
   TmuxPlayRecord,
 } from './records.js';
 
+const CONTINUATION_INDENT = '  ';
+
 export interface TmuxPresenterWriter {
   write(value: string): unknown;
 }
@@ -27,6 +29,7 @@ export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
   private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
+  private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
@@ -116,6 +119,7 @@ export class TmuxPresenter implements RecordObserver {
     result: RoleRunResult | CaptainRunResult,
   ): void {
     if (result.status === 'ok') {
+      this.resetLineOffset(writer);
       return;
     }
 
@@ -139,7 +143,11 @@ export class TmuxPresenter implements RecordObserver {
 
     const formatted = formatCligentEvent(event);
     if (formatted !== null) {
-      this.writePrefixed(writer, who, formatted);
+      if (event.type === 'text_delta') {
+        this.writePrefixed(writer, who, formatted);
+      } else {
+        this.writePrefixedBlock(writer, who, formatted);
+      }
     }
   }
 
@@ -148,7 +156,9 @@ export class TmuxPresenter implements RecordObserver {
     who: string,
     value: string,
   ): void {
+    this.resetLineOffset(writer);
     this.writePrefixed(writer, who, ensureTrailingNewline(value));
+    this.resetLineOffset(writer);
   }
 
   private writePrefixedLine(
@@ -157,7 +167,9 @@ export class TmuxPresenter implements RecordObserver {
     line: string,
   ): void {
     this.breakLineIfNeeded(writer);
+    this.resetLineOffset(writer);
     this.writePrefixed(writer, who, `${line}\n`);
+    this.resetLineOffset(writer);
   }
 
   private writePrefixed(
@@ -166,20 +178,25 @@ export class TmuxPresenter implements RecordObserver {
     value: string,
   ): void {
     let atLineStart = this.lineStarts.get(writer) ?? true;
+    let lineOffset = this.lineOffsets.get(writer) ?? 0;
     let output = '';
 
     for (const char of value) {
       if (atLineStart) {
-        output += `${who}> `;
+        if (char !== '\n') {
+          output += lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
+        }
         atLineStart = false;
       }
       output += char;
       if (char === '\n') {
         atLineStart = true;
+        lineOffset++;
       }
     }
 
     this.lineStarts.set(writer, atLineStart);
+    this.lineOffsets.set(writer, lineOffset);
     if (output) {
       writer.write(output);
     }
@@ -189,7 +206,12 @@ export class TmuxPresenter implements RecordObserver {
     if (this.lineStarts.get(writer) === false) {
       writer.write('\n');
       this.lineStarts.set(writer, true);
+      this.resetLineOffset(writer);
     }
+  }
+
+  private resetLineOffset(writer: TmuxPresenterWriter): void {
+    this.lineOffsets.set(writer, 0);
   }
 
   private roleWriter(roleId: string): TmuxPresenterWriter {

@@ -23,6 +23,10 @@ function textEvent(content: string): CligentEvent {
   return createEvent('text', 'codex', { content }, 'sid');
 }
 
+function textDeltaEvent(delta: string): CligentEvent {
+  return createEvent('text_delta', 'codex', { delta }, 'sid');
+}
+
 function errorEvent(message: string): CligentEvent {
   return createEvent('error', 'codex', { message, recoverable: false }, 'sid');
 }
@@ -70,11 +74,45 @@ describe('TmuxPresenter', () => {
 
     expect(coder.text()).toBe(
       'captain> implement\n' +
-        'captain> feature\n' +
+        '  feature\n' +
         'coder> done\n' +
-        'coder> again\n',
+        '  again\n',
     );
     expect(reviewer.text()).toBe('');
+    expect(boss.text()).toBe('');
+  });
+
+  it('indents continuation lines across streaming text deltas', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('first\n')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('second\n\nthird\n')));
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 1,
+      timestamp: 102,
+      roleId: 'coder',
+      result: {
+        status: 'ok',
+        roleId: 'coder',
+        turnId: 1,
+        finalText: 'first\nsecond\nthird',
+      },
+    });
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('next')));
+
+    expect(coder.text()).toBe(
+      'coder> first\n' +
+        '  second\n' +
+        '\n' +
+        '  third\n' +
+        'coder> next',
+    );
     expect(boss.text()).toBe('');
   });
 
