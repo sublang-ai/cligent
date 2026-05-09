@@ -3,6 +3,8 @@
 
 # GEMINI: Gemini CLI Adapter
 
+## Intent
+
 This component defines the Gemini CLI adapter via child process spawn and NDJSON parsing per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
 
 ## Adapter Identity

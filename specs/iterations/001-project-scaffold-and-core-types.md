@@ -57,7 +57,7 @@ Set up the project scaffold (package.json, TypeScript, linting, testing) and def
    - Add `test` script to package.json
    - Write type-level tests verifying discriminated union narrowing and interface assignability
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes with no errors
 - `vitest run` passes all type-level tests

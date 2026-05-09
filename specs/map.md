@@ -55,11 +55,55 @@ meta.md     The spec of specs
 
 ## Packages
 
+### CLAUDE
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization, UPM mapping, options mapping, resume token |
+
+### CODEX
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption |
+
+### ENG
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics, usage reporting |
+| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity, protocol hardening verification |
+
+### GEMINI
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token |
+
 ### GIT
 
 | Group | File | Summary |
 | --- | --- | --- |
 | dev | [git.md](dev/git.md) | Commit message format and AI co-authorship trailers |
+
+### LIC
+
+| Group | File | Summary |
+| --- | --- | --- |
+| dev | [licensing.md](dev/licensing.md) | SPDX header requirements and file-scope rules |
+| test | [licensing.md](test/licensing.md) | Copyright and license header presence checks |
+
+### NDJSON
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [ndjson.md](user/ndjson.md) | parseNDJSON() behavioral contract |
+
+### OPENCODE
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token |
 
 ### PKG
 
@@ -73,65 +117,15 @@ meta.md     The spec of specs
 | --- | --- | --- |
 | dev | [release.md](dev/release.md) | SemVer, changelog, tag-driven release workflow, npm provenance |
 
-### STYLE
-
-| Group | File | Summary |
-| --- | --- | --- |
-| dev | [style.md](dev/style.md) | Project-specific authoring rules not covered by `meta.md` |
-
-### LIC
-
-| Group | File | Summary |
-| --- | --- | --- |
-| dev | [licensing.md](dev/licensing.md) | SPDX header requirements and file-scope rules |
-| test | [licensing.md](test/licensing.md) | Copyright and license header presence checks |
-
-### ENG / TENG
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user (ENG) | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics, usage reporting |
-| test (TENG) | [engine.md](test/engine.md) | Cligent lifecycle, session continuity, protocol hardening verification |
-
-### NDJSON
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user | [ndjson.md](user/ndjson.md) | parseNDJSON() behavioral contract |
-
-### CLAUDE
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization, UPM mapping, options mapping, resume token |
-
-### CODEX
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption |
-
-### GEMINI
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token |
-
-### OPENCODE
-
-| Group | File | Summary |
-| --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token |
-
 ### TADAPT
 
 | Group | File | Summary |
 | --- | --- | --- |
 | test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter) |
 
-### TMUX / TTMUX
+### TMUX
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user (TMUX) | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config, discovery and auto-create, Captain contract, records, observers, topology, runtime API, fanout |
-| test (TTMUX) | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, real-tmux acceptance |
+| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config, discovery and auto-create, Captain contract, records, observers, topology, runtime API, fanout |
+| test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, real-tmux acceptance |

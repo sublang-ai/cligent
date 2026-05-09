@@ -3,6 +3,8 @@
 
 # ENG: Core Engine
 
+## Intent
+
 This component defines the `Cligent` class, `Cligent.parallel()`, and event helpers per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) and [DR-003](../decisions/003-role-scoped-session-management.md).
 
 ## Cligent Class

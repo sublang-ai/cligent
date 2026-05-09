@@ -58,7 +58,7 @@ Done
    - Verify `isAvailable()` returns `false` when SDK not installed
    - Verify AbortSignal propagation
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes
 - `vitest run` passes all unit tests

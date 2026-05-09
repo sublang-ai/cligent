@@ -70,7 +70,7 @@ Done
    - Verify AbortSignal sends SIGTERM and yields appropriate done event
    - Verify `isAvailable()` behavior
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes
 - `vitest run` passes all unit tests

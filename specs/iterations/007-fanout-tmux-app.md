@@ -160,7 +160,7 @@ This iteration targets the simplest useful version:
    - Event formatting: verify each event type produces expected log output
    - No integration tests requiring tmux (tmux tests are manual)
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes
 - `vitest run` passes unit tests (including `src/app/*.test.ts`)

@@ -10,7 +10,7 @@ Add SPDX headers (license and copyright info) to applicable files.
 ## Deliverables
 
 - [x] Add SPDX headers to applicable files missing them
-- [x] Document header format in [dev/style.md](../dev/style.md)
+- [x] Document header format in [dev/licensing.md](../dev/licensing.md)
 
 ## Tasks
 
@@ -28,7 +28,7 @@ Add SPDX headers (license and copyright info) to applicable files.
 
 3. **Add headers** in the first comment block (after shebang if present), using appropriate comment syntax per file type
 
-4. **Document format** in [dev/style.md](../dev/style.md) according to the license(s). E.g.:
+4. **Document format** in [dev/licensing.md](../dev/licensing.md) according to the license(s). E.g.:
 
    > **Source code** (including specs):
    >
@@ -49,7 +49,7 @@ Add SPDX headers (license and copyright info) to applicable files.
    > <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
    > ```
 
-## Verification
+## Acceptance criteria
 
 - All source files have SPDX-FileCopyrightText header ([LIC-3](../test/licensing.md#lic-3))
 - Files have SPDX-License-Identifier if a license file exists ([LIC-4](../test/licensing.md#lic-4))

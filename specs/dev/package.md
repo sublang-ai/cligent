@@ -3,6 +3,8 @@
 
 # PKG: Package Configuration
 
+## Intent
+
 This component defines packaging, TypeScript configuration, and dependency constraints per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md) and [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md).
 
 ## Module System

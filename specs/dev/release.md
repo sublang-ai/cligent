@@ -3,6 +3,8 @@
 
 # RELEASE: Release Workflow
 
+## Intent
+
 This component defines release workflow rules for the project.
 
 ## Versioning

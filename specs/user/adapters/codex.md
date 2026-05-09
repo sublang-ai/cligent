@@ -3,6 +3,8 @@
 
 # CODEX: Codex Adapter
 
+## Intent
+
 This component defines the Codex adapter using `@openai/codex-sdk` per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
 
 ## Adapter Identity

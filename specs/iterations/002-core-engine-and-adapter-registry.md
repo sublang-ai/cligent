@@ -65,7 +65,7 @@ Implement the core engine: an adapter registry for managing agent adapters, the 
    - Test done-cardinality: abort fires concurrently with adapter's own `done` — verify exactly one `done` yielded
    - Test MISSING_DONE for both `runAgent()` and `runParallel()`: adapter generator exhausts without emitting `done` — verify engine emits `error` event with `code: 'MISSING_DONE'` followed by `done` with `status: 'error'`; in parallel, verify other adapters continue unaffected
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes
 - `vitest run` passes all unit tests

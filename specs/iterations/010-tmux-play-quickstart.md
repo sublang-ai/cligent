@@ -38,7 +38,7 @@ Each task is one commit.
 1. [x] Replace JS/JSON config discovery with the YAML loader (cwd + home fallback + first-run auto-create); add `yaml` dep; drop the JS/JSON loader code and `defineConfig`; preserve the snapshot writer's `captain.from` rewriting; tests included.
 2. [x] Update README and `docs/tmux-play.md` for the YAML/auto-create flow.
 
-## Verification
+## Acceptance criteria
 
 - `npm run build` and `npm test` pass.
 - `tmux-play` from a fresh `$HOME` writes `~/.config/tmux-play/config.yaml`, prints a one-line notice, and runs.

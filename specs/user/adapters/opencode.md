@@ -3,6 +3,8 @@
 
 # OPENCODE: OpenCode Adapter
 
+## Intent
+
 This component defines the OpenCode adapter using `@opencode-ai/sdk` with managed and external server modes per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
 
 ## Adapter Identity

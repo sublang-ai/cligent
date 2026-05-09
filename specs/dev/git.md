@@ -3,6 +3,8 @@
 
 # GIT: Git Workflow
 
+## Intent
+
 This component defines git workflow rules for the project.
 
 ## Commits

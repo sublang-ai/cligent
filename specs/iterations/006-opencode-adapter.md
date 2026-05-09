@@ -74,7 +74,7 @@ Done
    - Verify `isAvailable()` behavior for both modes
    - Verify AbortSignal triggers server shutdown in managed mode
 
-## Verification
+## Acceptance criteria
 
 - `tsc --noEmit` passes
 - `vitest run` passes all unit tests

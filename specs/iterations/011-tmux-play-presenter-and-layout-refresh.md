@@ -56,7 +56,7 @@ Each task is one commit.
 7. [x] Pre-attach terminal resize request — TMUX-043 (`CSI 8 ; 67 ; 240 t`) and TTMUX-034 unit-test coverage.
 8. [x] Resize-invariant 4/6/6 layout — TMUX-044 (session-scoped `client-resized` and `after-resize-window` hooks), unit-test of `set-hook` invocations, and TTMUX-035 real-tmux verification at multiple window sizes.
 
-## Verification
+## Acceptance criteria
 
 - `npm run build`, `npm test`, and `npm run test:smoke` pass.
 - `npm run test:acceptance` passes locally with `tmux` available; the new real-tmux acceptance suite verifies actual session geometry (`240x67`), pane layout (60/90/90 column placement), pane titles read back via `#{pane_title}`, and `pane_input_off=on` plus `send-keys` rejection on every role pane.

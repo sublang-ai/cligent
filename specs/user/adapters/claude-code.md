@@ -3,6 +3,8 @@
 
 # CLAUDE: Claude Code Adapter
 
+## Intent
+
 This component defines the Claude Code adapter using `@anthropic-ai/claude-agent-sdk` per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
 
 ## Adapter Identity

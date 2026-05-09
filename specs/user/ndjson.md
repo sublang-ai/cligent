@@ -3,7 +3,11 @@
 
 # NDJSON: NDJSON Parser
 
+## Intent
+
 This component defines the reusable `parseNDJSON()` async generator utility.
+
+## Parser Behavior
 
 ### NDJSON-001
 

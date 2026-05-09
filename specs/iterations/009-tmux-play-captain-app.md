@@ -58,7 +58,7 @@ Out of scope: see DR-004 §Out of Scope.
 12. Replace `src/app/fanout.acceptance.test.ts` with a tmux-play acceptance test driving the fanout Captain through the runtime API.
 13. Document run examples, config formats, the snapshot mechanism, layout, and a sample custom Captain.
 
-## Verification
+## Acceptance criteria
 
 - `npm run build` and `npm test` pass.
 - `npm run test:acceptance` drives the fanout Captain end-to-end via the runtime API when credentials are present; the old `fanout.acceptance.test.ts` is removed.

@@ -72,7 +72,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
    - Set API keys from secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
    - Run `npm run test:acceptance`
 
-## Verification
+## Acceptance criteria
 
 - `npm test` still passes (unit tests only, no acceptance tests included)
 - `npm run test:acceptance` passes with API keys and SDKs present
