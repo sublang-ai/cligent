@@ -3,7 +3,7 @@
 
 # STYLE: Authoring Conventions
 
-This component defines authoring conventions, per [DR-000](../decisions/000-initial-specs-structure.md#dr-000-initial-specs-structure).
+This component defines authoring conventions, per [DR-000](../decisions/000-spec-structure-format.md).
 
 ## Spec Format
 
@@ -17,7 +17,7 @@ Each item ID shall follow `<COMP>-NNN` format (e.g., AUTH-001, SPDX-003) as a ma
 
 ### STYLE-003
 
-Each item shall use GEARS syntax per [META-001](../user/meta.md#meta-001) and be self-contained:
+Each item shall use GEARS syntax per [META-6](../meta.md#meta-6) and be self-contained:
 
 - No implicit dependency on sibling or containing sections;
 - May rely on its own subsections for details;
