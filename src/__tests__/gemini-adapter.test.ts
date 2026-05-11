@@ -682,6 +682,20 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).not.toContain('--prompt');
   });
 
+  it('does not forward reasoningEffort to the Gemini CLI per GEMINI-011', () => {
+    const baseline = mapAgentOptionsToGeminiCommand('prompt', {});
+    const withEffort = mapAgentOptionsToGeminiCommand('prompt', {
+      reasoningEffort: 'high',
+    });
+
+    // Args must be identical: Gemini CLI has no per-call reasoning flag,
+    // so the field is silently ignored at the unified surface.
+    expect(withEffort.args).toEqual(baseline.args);
+    expect(withEffort.args).not.toContain('--reasoning-effort');
+    expect(withEffort.args).not.toContain('--thinking-budget');
+    expect(withEffort.args).not.toContain('--thinking-level');
+  });
+
   it('passes leading-dash prompt as positional without -- separator', () => {
     // Gemini CLI does not support -- as end-of-options marker.
     // Prompts starting with - are passed as-is; single-word flag-like

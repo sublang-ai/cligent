@@ -402,6 +402,43 @@ describe('OpenCodeAdapter', () => {
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
+  it('does not forward reasoningEffort to the OpenCode SDK per OPENCODE-012', async () => {
+    let capturedRunOptions: Record<string, unknown> | undefined;
+
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'effort-session' },
+          events: [
+            {
+              type: 'session.idle',
+              sessionId: 'effort-session',
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          ],
+          onRun(options) {
+            capturedRunOptions = options;
+          },
+        }),
+      },
+    );
+
+    await collect(adapter.run('prompt', { reasoningEffort: 'high' }));
+
+    // The OpenCode SDK session prompt body has no per-call reasoning slot;
+    // reasoning is configured per-model in opencode.jsonc, so the adapter
+    // shall not forward this field to the SDK call.
+    expect(capturedRunOptions).toBeDefined();
+    expect(capturedRunOptions).not.toHaveProperty('reasoningEffort');
+    expect(capturedRunOptions).not.toHaveProperty('reasoning_effort');
+    expect(capturedRunOptions).not.toHaveProperty('thinking');
+  });
+
   it('uses external mode without spawning a server', async () => {
     let createClientBaseUrl: string | undefined;
     let spawnCalled = false;
