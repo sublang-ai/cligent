@@ -51,5 +51,5 @@ Add SPDX headers (license and copyright info) to applicable files.
 
 ## Verification
 
-- All source files have SPDX-FileCopyrightText header ([SPDX-001](../test/spdx-headers.md#spdx-001-copyright-header-presence))
-- Files have SPDX-License-Identifier if a license file exists ([SPDX-002](../test/spdx-headers.md#spdx-002-license-header-presence))
+- All source files have SPDX-FileCopyrightText header ([LIC-3](../test/licensing.md#lic-3))
+- Files have SPDX-License-Identifier if a license file exists ([LIC-4](../test/licensing.md#lic-4))

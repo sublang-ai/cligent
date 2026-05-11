@@ -35,11 +35,11 @@ Decision records shall follow [ADR](https://github.com/npryce/adr-tools) format 
 
 ### STYLE-006
 
-When references are appropriate, decision records shall cite authoritative sources (e.g., official docs) with footnote markers (e.g., `[^1]`) linked to specific URLs in a `## References` section that has no uncited entries.
+External-reference format is defined in [META-19](../meta.md#meta-19); STYLE adds no project-specific override.
 
 ### STYLE-007
 
-Iteration records shall include Goal, Deliverables, Tasks, and Verification sections.
+Iteration record sections are defined in [META-5](../meta.md#meta-5); STYLE adds no project-specific override.
 
 ## Cross-References
 
