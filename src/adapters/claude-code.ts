@@ -16,7 +16,7 @@ type ClaudePermissionMode = 'bypassPermissions' | 'acceptEdits' | 'default';
 
 type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
 
-type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type ClaudeEffort = 'low' | 'medium' | 'high' | 'max';
 
 interface ClaudeToolUseContext {
   name?: string;
@@ -499,8 +499,14 @@ export function mapReasoningEffortToClaudeEffort(
   effort: ReasoningEffort | undefined,
 ): ClaudeEffort | undefined {
   if (effort === undefined) return undefined;
-  // Claude has no 'minimal' tier; collapse to the closest neighbour.
+  // The pinned Claude SDK declares effort as 'low' | 'medium' | 'high' | 'max'.
+  // 'minimal' collapses to 'low' (the SDK's lowest tier). 'xhigh' collapses to
+  // 'high' (the SDK default) rather than 'max', because Anthropic's own docs
+  // describe 'max' as cost-heavy with diminishing returns — silently
+  // promoting an 'xhigh' request to 'max' would be a worse surprise than
+  // falling back to the default.
   if (effort === 'minimal') return 'low';
+  if (effort === 'xhigh') return 'high';
   return effort;
 }
 

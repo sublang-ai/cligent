@@ -61,6 +61,7 @@ interface CligentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
+  reasoningEffort?: ReasoningEffort;  // adapter-mapped per ENG-020
   allowedTools?: string[];
   disallowedTools?: string[];
 }

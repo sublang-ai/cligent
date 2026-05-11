@@ -167,6 +167,16 @@ interface PermissionPolicy {
   shellExecute?: PermissionLevel;  // default: 'ask'
   networkAccess?: PermissionLevel; // default: 'ask'
 }
+
+/** Reasoning depth, ordered least → greatest. Adapters whose SDK lacks a tier
+    collapse lossy per their own spec (see ENG-020). */
+type ReasoningEffort =
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max';
 ```
 
 Adapters translate these primitives to vendor-specific controls where supported (e.g., Claude Code `permissions.allow/ask/deny` [^8], Codex `sandbox_mode` + `approval_policy` with optional `network_access` [^9], Gemini `coreTools`/`excludeTools` [^10], OpenCode `permission` map [^11]). Omitted capabilities default to `'ask'`.
@@ -195,6 +205,7 @@ interface AgentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
+  reasoningEffort?: ReasoningEffort;  // adapter-mapped per ENG-020
   resume?: string;             // backend session token for resumption
   abortSignal?: AbortSignal;
   allowedTools?: string[];     // whitelist: only these tools can be used

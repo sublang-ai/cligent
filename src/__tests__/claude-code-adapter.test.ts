@@ -769,7 +769,7 @@ describe('ClaudeCodeAdapter', () => {
       ['low', 'low'],
       ['medium', 'medium'],
       ['high', 'high'],
-      ['xhigh', 'xhigh'],
+      ['xhigh', 'high'],
       ['max', 'max'],
     ];
 
@@ -811,9 +811,9 @@ describe('ClaudeCodeAdapter', () => {
       ),
     });
 
-    await collect(adapter.run('prompt', { reasoningEffort: 'xhigh' }));
+    await collect(adapter.run('prompt', { reasoningEffort: 'max' }));
 
-    expect(captured?.effort).toBe('xhigh');
+    expect(captured?.effort).toBe('max');
   });
 
   it('sums cache tokens into inputTokens (camelCase)', async () => {
