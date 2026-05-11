@@ -9,10 +9,18 @@ import type {
   DonePayload,
   PermissionLevel,
   PermissionPolicy,
+  ReasoningEffort,
 } from '../types.js';
 
 type CodexSandboxMode = 'danger-full-access' | 'workspace-write' | 'read-only';
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
+
+type CodexModelReasoningEffort =
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
 
 interface CodexItem {
   type?: unknown;
@@ -42,6 +50,7 @@ interface CodexItem {
 interface CodexThreadOptions {
   workingDirectory?: string;
   model?: string;
+  modelReasoningEffort?: CodexModelReasoningEffort;
   sandboxMode?: CodexSandboxMode;
   approvalPolicy?: CodexApprovalPolicy;
   networkAccessEnabled?: boolean;
@@ -278,6 +287,15 @@ interface MappedCodexOptions {
   cleanupAbort: () => void;
 }
 
+export function mapReasoningEffortToCodexEffort(
+  effort: ReasoningEffort | undefined,
+): CodexModelReasoningEffort | undefined {
+  if (effort === undefined) return undefined;
+  // Codex tops out at 'xhigh'; collapse Claude's 'max' to the nearest value.
+  if (effort === 'max') return 'xhigh';
+  return effort;
+}
+
 export function mapAgentOptionsToCodexOptions(
   options: AgentOptions | undefined,
 ): MappedCodexOptions {
@@ -304,6 +322,7 @@ export function mapAgentOptionsToCodexOptions(
     threadOptions: {
       workingDirectory: options?.cwd,
       model: options?.model,
+      modelReasoningEffort: mapReasoningEffortToCodexEffort(options?.reasoningEffort),
       sandboxMode: permissions.sandboxMode,
       approvalPolicy: permissions.approvalPolicy,
       networkAccessEnabled: permissions.networkAccessEnabled,

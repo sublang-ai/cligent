@@ -107,6 +107,14 @@ export interface PermissionPolicy {
   networkAccess?: PermissionLevel;
 }
 
+export type ReasoningEffort =
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max';
+
 export interface AgentAdapter {
   readonly agent: AgentType;
 
@@ -124,6 +132,7 @@ export interface AgentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
+  reasoningEffort?: ReasoningEffort;
   resume?: string;
   abortSignal?: AbortSignal;
   allowedTools?: string[];
@@ -139,6 +148,7 @@ export interface CligentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
+  reasoningEffort?: ReasoningEffort;
   allowedTools?: string[];
   disallowedTools?: string[];
 }

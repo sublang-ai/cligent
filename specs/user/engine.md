@@ -11,7 +11,7 @@ This component defines the `Cligent` class, `Cligent.parallel()`, and event help
 
 ### ENG-001
 
-The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOptions` per [DR-003](../decisions/003-role-scoped-session-management.md). `CligentOptions` contains instance-level defaults (`role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `allowedTools`, `disallowedTools`). Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
+The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOptions` per [DR-003](../decisions/003-role-scoped-session-management.md). `CligentOptions` contains instance-level defaults (`role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `reasoningEffort`, `allowedTools`, `disallowedTools`). Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
 
 ### ENG-002
 
@@ -98,3 +98,11 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 ### ENG-019
 
 Adapter-reported `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation). Adapters shall sum provider-specific cache fields (e.g. `cacheReadInputTokens`, `cacheCreationInputTokens`) into the single `inputTokens` value.
+
+## Reasoning Effort
+
+### ENG-020
+
+`AgentOptions.reasoningEffort` shall accept the closed set `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth, with `undefined` reserved to defer to the adapter or model default.
+The unified set is a strict superset of the per-adapter SDK enums; adapters that lack a 1:1 value shall map to the nearest supported neighbour per their own item.
+Adapters whose backend exposes no per-call reasoning surface shall ignore this field and document the rationale.

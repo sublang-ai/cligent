@@ -58,3 +58,24 @@ When `resume` is provided in options, the adapter shall continue the previous th
 ### CODEX-006
 
 The adapter shall set `DonePayload.resumeToken` to the thread identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
+
+## Options Mapping
+
+### CODEX-007
+
+The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the Codex SDK `modelReasoningEffort` thread option per [[1]]:
+
+| `reasoningEffort` | SDK `modelReasoningEffort` |
+| --- | --- |
+| `minimal` | `minimal` |
+| `low` | `low` |
+| `medium` | `medium` |
+| `high` | `high` |
+| `xhigh` | `xhigh` |
+| `max` | `xhigh` |
+
+When `reasoningEffort` is omitted, the adapter shall not set `modelReasoningEffort` and shall defer to the Codex default.
+
+## References
+
+[1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"

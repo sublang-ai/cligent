@@ -9,11 +9,14 @@ import type {
   DonePayload,
   PermissionLevel,
   PermissionPolicy,
+  ReasoningEffort,
 } from '../types.js';
 
 type ClaudePermissionMode = 'bypassPermissions' | 'acceptEdits' | 'default';
 
 type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
+
+type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 interface ClaudeToolUseContext {
   name?: string;
@@ -34,6 +37,7 @@ interface ClaudeQueryOptions {
   canUseTool?: (tool: ClaudeToolUseContext) => boolean | undefined;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
+  effort?: ClaudeEffort;
 }
 
 interface ClaudeAgentSdk {
@@ -491,6 +495,15 @@ interface MappedClaudeOptions {
   cleanupAbort: () => void;
 }
 
+export function mapReasoningEffortToClaudeEffort(
+  effort: ReasoningEffort | undefined,
+): ClaudeEffort | undefined {
+  if (effort === undefined) return undefined;
+  // Claude has no 'minimal' tier; collapse to the closest neighbour.
+  if (effort === 'minimal') return 'low';
+  return effort;
+}
+
 export function mapAgentOptionsToClaudeQueryOptions(
   options: AgentOptions | undefined,
 ): MappedClaudeOptions {
@@ -528,6 +541,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       canUseTool: permissionOptions.canUseTool,
       abortController,
       env,
+      effort: mapReasoningEffortToClaudeEffort(options?.reasoningEffort),
     },
     cleanupAbort,
   };

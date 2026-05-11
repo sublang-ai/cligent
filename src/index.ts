@@ -17,6 +17,7 @@ export type {
   AgentEvent,
   PermissionLevel,
   PermissionPolicy,
+  ReasoningEffort,
   AgentAdapter,
   AgentOptions,
   CligentEvent,

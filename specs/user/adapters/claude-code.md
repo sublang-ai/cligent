@@ -55,8 +55,27 @@ The `canUseTool` callback shall match tool categories to UPM capabilities: `Writ
 
 The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, `resume` → SDK `resume`.
 
+### CLAUDE-008
+
+The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the Claude Agent SDK `effort` query option per [[1]]:
+
+| `reasoningEffort` | SDK `effort` |
+| --- | --- |
+| `minimal` | `low` |
+| `low` | `low` |
+| `medium` | `medium` |
+| `high` | `high` |
+| `xhigh` | `xhigh` |
+| `max` | `max` |
+
+When `reasoningEffort` is omitted, the adapter shall not set `effort` and shall defer to the SDK default.
+
 ## Resume Token
 
 ### CLAUDE-007
 
 The adapter shall set `DonePayload.resumeToken` to the session identifier from the SDK result, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
+
+## References
+
+[1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"

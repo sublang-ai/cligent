@@ -65,13 +65,13 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption |
+| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption, options mapping |
 
 ### ENG
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics, usage reporting |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics, usage reporting, reasoning effort |
 | test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity, protocol hardening verification |
 
 ### GEMINI
@@ -103,7 +103,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token, options mapping |
 
 ### PKG
 

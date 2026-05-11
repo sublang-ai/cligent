@@ -7,8 +7,14 @@ import {
   ClaudeCodeAdapter,
   mapAgentOptionsToClaudeQueryOptions,
   mapPermissionsToClaudeOptions,
+  mapReasoningEffortToClaudeEffort,
 } from '../adapters/claude-code.js';
-import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
+import type {
+  AgentEvent,
+  PermissionLevel,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../types.js';
 
 interface MockSdkInnerOptions {
   cwd?: string;
@@ -23,6 +29,7 @@ interface MockSdkInnerOptions {
   canUseTool?: (tool: { name?: string; toolName?: string }) => boolean | undefined;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
+  effort?: string;
 }
 
 interface MockSdkOptions {
@@ -753,6 +760,60 @@ describe('ClaudeCodeAdapter', () => {
     const done = events.find((e) => e.type === 'done')!;
     const usage = (done.payload as { usage: { inputTokens: number } }).usage;
     expect(usage.inputTokens).toBe(155);
+  });
+
+  it('maps reasoningEffort to SDK effort per CLAUDE-008', () => {
+    const cases: Array<[ReasoningEffort | undefined, string | undefined]> = [
+      [undefined, undefined],
+      ['minimal', 'low'],
+      ['low', 'low'],
+      ['medium', 'medium'],
+      ['high', 'high'],
+      ['xhigh', 'xhigh'],
+      ['max', 'max'],
+    ];
+
+    for (const [input, expected] of cases) {
+      expect(mapReasoningEffortToClaudeEffort(input)).toBe(expected);
+
+      const mapped = mapAgentOptionsToClaudeQueryOptions(
+        input === undefined ? {} : { reasoningEffort: input },
+      );
+      expect(mapped.queryOptions.effort).toBe(expected);
+    }
+  });
+
+  it('forwards reasoningEffort through to the SDK query() invocation', async () => {
+    let captured: MockSdkInnerOptions | undefined;
+
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader(
+        [
+          {
+            type: 'system',
+            model: 'claude-opus-4-7',
+            cwd: '/repo',
+            tools: [],
+            sessionId: 'session-effort',
+          },
+          {
+            type: 'result',
+            status: 'success',
+            result: 'ok',
+            usage: { input_tokens: 1, output_tokens: 1, tool_uses: 0 },
+            duration_ms: 1,
+            sessionId: 'session-effort',
+          },
+        ],
+        (options) => {
+          captured = options;
+        },
+      ),
+    });
+
+    await collect(adapter.run('prompt', { reasoningEffort: 'xhigh' }));
+
+    expect(captured?.effort).toBe('xhigh');
   });
 
   it('sums cache tokens into inputTokens (camelCase)', async () => {

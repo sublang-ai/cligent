@@ -7,8 +7,14 @@ import {
   CodexAdapter,
   mapAgentOptionsToCodexOptions,
   mapPermissionsToCodexOptions,
+  mapReasoningEffortToCodexEffort,
 } from '../adapters/codex.js';
-import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
+import type {
+  AgentEvent,
+  PermissionLevel,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../types.js';
 
 interface MockRunOptions {
   signal?: AbortSignal;
@@ -17,7 +23,9 @@ interface MockRunOptions {
 
 interface MockThreadOptions {
   cwd?: string;
+  workingDirectory?: string;
   model?: string;
+  modelReasoningEffort?: string;
   maxTurns?: number;
   sandboxMode?: string;
   approvalPolicy?: string;
@@ -776,6 +784,52 @@ describe('CodexAdapter', () => {
     expect(mapped.runOptions.signal?.aborted).toBe(true);
 
     mapped.cleanupAbort();
+  });
+
+  it('maps reasoningEffort to SDK modelReasoningEffort per CODEX-007', () => {
+    const cases: Array<[ReasoningEffort | undefined, string | undefined]> = [
+      [undefined, undefined],
+      ['minimal', 'minimal'],
+      ['low', 'low'],
+      ['medium', 'medium'],
+      ['high', 'high'],
+      ['xhigh', 'xhigh'],
+      ['max', 'xhigh'],
+    ];
+
+    for (const [input, expected] of cases) {
+      expect(mapReasoningEffortToCodexEffort(input)).toBe(expected);
+
+      const mapped = mapAgentOptionsToCodexOptions(
+        input === undefined ? {} : { reasoningEffort: input },
+      );
+      expect(mapped.threadOptions.modelReasoningEffort).toBe(expected);
+    }
+  });
+
+  it('forwards reasoningEffort to startThread()', async () => {
+    let captured: MockThreadOptions | undefined;
+
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 1, output_tokens: 1, tool_uses: 0 },
+            },
+          },
+        ],
+        onStartThread: (options) => {
+          captured = options;
+        },
+      }),
+    });
+
+    await collect(adapter.run('prompt', { reasoningEffort: 'high' }));
+
+    expect(captured?.modelReasoningEffort).toBe('high');
   });
 
   it('throws descriptive error when Codex constructor fails', async () => {

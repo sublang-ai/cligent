@@ -79,3 +79,15 @@ When the managed server crashes, the adapter shall yield an `error` event (`code
 ### OPENCODE-011
 
 The adapter shall set `DonePayload.resumeToken` to the session identifier from the run result, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
+
+## Options Mapping
+
+### OPENCODE-012
+
+The adapter shall not forward `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the OpenCode SDK, because the session prompt body exposes no per-call reasoning-effort slot.
+Reasoning effort and thinking shall be configured per provider/model in `opencode.jsonc` (`reasoningEffort` for OpenAI providers; `thinking` for Anthropic providers) per [[1]].
+The field shall be accepted at the unified interface and silently ignored by this adapter.
+
+## References
+
+[1]: https://opencode.ai/docs/models/ "OpenCode model configuration"

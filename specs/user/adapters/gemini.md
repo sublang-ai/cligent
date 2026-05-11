@@ -71,6 +71,10 @@ The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002
 
 The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`, `resume` → `--resume`.
 
+### GEMINI-011
+
+The adapter shall not forward `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the Gemini CLI, because the CLI exposes no per-call reasoning-effort flag at this time per [[1]], [[2]]. The field shall be accepted at the unified interface and silently ignored by this adapter.
+
 ## Abort Handling
 
 ### GEMINI-008
@@ -82,3 +86,8 @@ When `AbortSignal` fires, the adapter shall send `SIGTERM` to the spawned proces
 ### GEMINI-009
 
 When the Gemini CLI stream provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value, enabling `Cligent` auto-resume via `--resume` per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token). When no session identifier is received, the adapter shall omit `resumeToken`.
+
+## References
+
+[1]: https://github.com/google-gemini/gemini-cli/issues/25122 "Interactive Thinking Budget / Reasoning Effort Control"
+[2]: https://github.com/google-gemini/gemini-cli/issues/6693 "Configurable Thinking Level"
