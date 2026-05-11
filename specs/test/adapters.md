@@ -69,6 +69,13 @@ Verifies: [ENG-017](../user/engine.md#eng-017)
 
 Given `allowedTools` and `disallowedTools` options, each adapter shall restrict tools according to whitelist and precedence semantics per [ENG-017](../user/engine.md#eng-017).
 
+## Reasoning Effort
+
+### TADAPT-018
+Verifies: [ENG-020](../user/engine.md#eng-020), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
+
+Given each `ReasoningEffort` value in `AgentOptions.reasoningEffort`, the Claude Code adapter shall forward the SDK `effort` value from the [CLAUDE-008](../user/adapters/claude-code.md#claude-008) table and the Codex adapter shall forward the SDK `modelReasoningEffort` value from the [CODEX-007](../user/adapters/codex.md#codex-007) table. Given the same input, the Gemini and OpenCode adapters shall not forward the field to their CLI/SDK per [GEMINI-011](../user/adapters/gemini.md#gemini-011) and [OPENCODE-012](../user/adapters/opencode.md#opencode-012). Given `reasoningEffort` is omitted, no adapter shall set the corresponding SDK/CLI field.
+
 ## Resume Token
 
 ### TADAPT-010
