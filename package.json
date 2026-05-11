@@ -77,9 +77,9 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": ">=0.2.69",
-    "@openai/codex-sdk": ">=0.128.0",
-    "@opencode-ai/sdk": ">=1.2.17"
+    "@anthropic-ai/claude-agent-sdk": ">=0.2.133",
+    "@openai/codex-sdk": ">=0.129.0",
+    "@opencode-ai/sdk": ">=1.14.41"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {
@@ -93,9 +93,9 @@
     }
   },
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.69",
-    "@openai/codex-sdk": "^0.128.0",
-    "@opencode-ai/sdk": "^1.2.17",
+    "@anthropic-ai/claude-agent-sdk": "0.2.133",
+    "@openai/codex-sdk": "0.129.0",
+    "@opencode-ai/sdk": "1.14.41",
     "@types/node": "^25.3.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
