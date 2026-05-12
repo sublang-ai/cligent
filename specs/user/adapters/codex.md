@@ -63,7 +63,7 @@ The adapter shall set `DonePayload.resumeToken` to the thread identifier, enabli
 
 ### CODEX-009
 
-The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` so the CLI's interactive-user git-repo gate does not refuse programmatic invocations. The `workingDirectory` is selected deliberately by the caller (per [TMUX-034](tmux-play.md#tmux-034) the tmux-play launcher targets a snapshotted work dir, and library consumers pass `AgentOptions.cwd` explicitly); the gate was designed to catch surprise CLI use, not these paths.
+The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` so the CLI's interactive-user git-repo gate does not refuse programmatic invocations. The `workingDirectory` is selected deliberately by the caller (per [TMUX-034](../tmux-play.md#tmux-034) the tmux-play launcher targets a snapshotted work dir, and library consumers pass `AgentOptions.cwd` explicitly); the gate was designed to catch surprise CLI use, not these paths.
 
 ## Options Mapping
 
