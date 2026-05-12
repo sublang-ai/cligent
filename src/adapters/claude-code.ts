@@ -103,6 +103,10 @@ interface ClaudeAssistantMessage {
 
 interface ClaudeResultMessage {
   type?: unknown;
+  subtype?: unknown;
+  is_error?: unknown;
+  isError?: unknown;
+  errors?: unknown;
   status?: unknown;
   stopReason?: unknown;
   stop_reason?: unknown;
@@ -234,6 +238,55 @@ export function mapPermissionsToClaudeOptions(
   return {
     permissionMode: 'default',
     canUseTool,
+  };
+}
+
+interface ClassifiedResult {
+  readonly status: DonePayload['status'];
+  readonly errorText?: string;
+}
+
+// Preserve Cligent's protocol statuses for known SDK error subtypes (max-turns,
+// max-budget) rather than collapsing them into a generic 'error' that would
+// hide the protocol-level cause from DonePayload consumers.
+function classifyResultMessage(result: ClaudeResultMessage): ClassifiedResult {
+  const subtype = asString(result.subtype);
+  const errors = Array.isArray(result.errors)
+    ? result.errors.filter(
+        (entry): entry is string =>
+          typeof entry === 'string' && entry.length > 0,
+      )
+    : [];
+  const errorText = errors.length > 0 ? errors.join('\n') : undefined;
+
+  if (subtype === 'error_max_turns') {
+    return { status: 'max_turns', errorText };
+  }
+  if (subtype === 'error_max_budget_usd') {
+    return { status: 'max_budget', errorText };
+  }
+
+  const flaggedError =
+    result.is_error === true ||
+    result.isError === true ||
+    (subtype !== undefined && subtype.startsWith('error_'));
+  if (flaggedError) {
+    return {
+      status: 'error',
+      errorText:
+        errorText ??
+        asString(result.result) ??
+        subtype ??
+        'Claude Code SDK error',
+    };
+  }
+
+  return {
+    status: mapDoneStatus(
+      asString(result.status) ??
+        asString(result.stopReason) ??
+        asString(result.stop_reason),
+    ),
   };
 }
 
@@ -708,11 +761,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
         if (message.type === 'result') {
           const result = message as ClaudeResultMessage;
-          const status = mapDoneStatus(
-            asString(result.status) ??
-              asString(result.stopReason) ??
-              asString(result.stop_reason),
-          );
+          const { status, errorText } = classifyResultMessage(result);
 
           const durationMs =
             typeof result.durationMs === 'number'
@@ -721,12 +770,25 @@ export class ClaudeCodeAdapter implements AgentAdapter {
                 ? result.duration_ms
                 : Date.now() - startTime;
 
+          if (status === 'error' && errorText) {
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: asString(result.subtype) ?? 'CLAUDE_CODE_RESULT_ERROR',
+                message: errorText,
+                recoverable: false,
+              },
+              sessionId,
+            );
+          }
+
           yield createEvent(
             'done',
             AGENT,
             {
               status,
-              result: asString(result.result),
+              result: asString(result.result) ?? errorText,
               ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
               usage: mapUsage(result.usage),
               durationMs,

@@ -588,6 +588,101 @@ describe('ClaudeCodeAdapter', () => {
     expect(done.payload.status).toBe('error');
   });
 
+  it('maps SDK error_during_execution result to error done with API error text', async () => {
+    const apiError =
+      'API Error: Repeated 529 Overloaded errors. The API is at capacity, this is usually temporary. Try again in a moment. If it persists, check status.claude.com';
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'session-overload',
+        },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: apiError }] },
+          sessionId: 'session-overload',
+        },
+        {
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          stop_reason: null,
+          errors: [apiError],
+          usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          duration_ms: 123,
+          sessionId: 'session-overload',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'error',
+      'done',
+    ]);
+
+    const error = events[2] as AgentEvent & {
+      payload: { code?: string; message: string; recoverable: boolean };
+    };
+    expect(error.payload.code).toBe('error_during_execution');
+    expect(error.payload.message).toBe(apiError);
+    expect(error.payload.recoverable).toBe(false);
+
+    const done = events[3] as AgentEvent & {
+      payload: { status: string; result?: string };
+    };
+    expect(done.payload.status).toBe('error');
+    expect(done.payload.result).toBe(apiError);
+  });
+
+  it('preserves max_turns status (not error) when SDK signals error_max_turns', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'session-maxturns',
+        },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'partial work' }] },
+          sessionId: 'session-maxturns',
+        },
+        {
+          type: 'result',
+          subtype: 'error_max_turns',
+          is_error: true,
+          stop_reason: null,
+          errors: ['Maximum turns reached'],
+          usage: { input_tokens: 5, output_tokens: 10, tool_uses: 0 },
+          duration_ms: 90,
+          sessionId: 'session-maxturns',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    // No 'error' event — max_turns is a protocol terminal state, not a failure.
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+
+    const done = events[2] as AgentEvent & {
+      payload: { status: string; result?: string };
+    };
+    expect(done.payload.status).toBe('max_turns');
+    expect(done.payload.result).toBe('Maximum turns reached');
+  });
+
   it('emits error + done when SDK stream throws', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: async () => ({
