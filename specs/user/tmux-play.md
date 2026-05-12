@@ -224,7 +224,7 @@ Width sources: the Boss/Captain pane width shall track the captain's stdout `col
 
 ### TMUX-047
 
-The launcher shall apply the **Catppuccin Mocha** palette ([catppuccin.com/palette](https://catppuccin.com/palette/)) to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-right strings remain authoritative for any option a future theme might also claim.
+The launcher shall apply the **Catppuccin Mocha** palette per [[1]] to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-right strings remain authoritative for any option a future theme might also claim.
 
 The theme shall set exactly these tmux options and no others:
 
@@ -252,3 +252,7 @@ Within a single tmux-play session, each role's `Cligent` instance shall be creat
 ### TMUX-042
 
 The built-in fanout Captain shall convey each role's identity once, via the role's `instruction` configured at `Cligent` construction. Per Boss turn, the per-role prompt the fanout Captain passes to `callRole` shall be the Boss prompt verbatim, with no static framing label such as `The Boss asked:`, no role identity preamble such as `You are the "<role>" role`, and no trailing instructions that reference inter-role behavior (e.g., "Respond independently", "Do not wait for other roles") — roles cannot see other roles, so such instructions are unactionable. Static framing labels and inter-role instructions are permitted only in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they describe context for the synthesizer rather than instruct a role.
+
+## References
+
+[1]: https://catppuccin.com/palette/ "Catppuccin Palette"
