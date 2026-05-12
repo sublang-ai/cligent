@@ -54,6 +54,7 @@ interface CodexThreadOptions {
   sandboxMode?: CodexSandboxMode;
   approvalPolicy?: CodexApprovalPolicy;
   networkAccessEnabled?: boolean;
+  skipGitRepoCheck?: boolean;
 }
 
 interface CodexRunOptions {
@@ -326,6 +327,10 @@ export function mapAgentOptionsToCodexOptions(
       sandboxMode: permissions.sandboxMode,
       approvalPolicy: permissions.approvalPolicy,
       networkAccessEnabled: permissions.networkAccessEnabled,
+      // The CLI's git-repo gate is an interactive-user safety net; programmatic
+      // callers (tmux-play, scripts, tests) choose workingDirectory deliberately
+      // and frequently target tmpdirs that are not git repos.
+      skipGitRepoCheck: true,
     },
     runOptions: {
       signal,

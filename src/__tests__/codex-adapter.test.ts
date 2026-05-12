@@ -30,6 +30,7 @@ interface MockThreadOptions {
   sandboxMode?: string;
   approvalPolicy?: string;
   networkAccessEnabled?: boolean;
+  skipGitRepoCheck?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
   abortSignal?: AbortSignal;
@@ -633,6 +634,7 @@ describe('CodexAdapter', () => {
       sandboxMode: 'workspace-write',
       approvalPolicy: 'untrusted',
       networkAccessEnabled: false,
+      skipGitRepoCheck: true,
     });
 
     expect(capturedRunPrompt).toBe('implement feature');
@@ -784,6 +786,17 @@ describe('CodexAdapter', () => {
     expect(mapped.runOptions.signal?.aborted).toBe(true);
 
     mapped.cleanupAbort();
+  });
+
+  it('sets skipGitRepoCheck so the SDK accepts non-git working directories', () => {
+    // Asserted even with no cwd: programmatic callers (tmux-play) choose
+    // workingDirectory deliberately and frequently target tmpdirs.
+    const mapped = mapAgentOptionsToCodexOptions({});
+    expect(mapped.threadOptions.skipGitRepoCheck).toBe(true);
+
+    const mappedWithCwd = mapAgentOptionsToCodexOptions({ cwd: '/tmp/elsewhere' });
+    expect(mappedWithCwd.threadOptions.workingDirectory).toBe('/tmp/elsewhere');
+    expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
   });
 
   it('maps reasoningEffort to SDK modelReasoningEffort per CODEX-007', () => {
