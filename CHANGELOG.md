@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-dev/cligent/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/sublang-dev/cligent/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/sublang-dev/cligent/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/sublang-dev/cligent/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sublang-ai/cligent/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/sublang-ai/cligent/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/sublang-ai/cligent/releases/tag/v0.1.0

@@ -6,10 +6,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sublang-dev/cligent.git"
+    "url": "https://github.com/sublang-ai/cligent.git"
   },
-  "homepage": "https://github.com/sublang-dev/cligent#readme",
-  "bugs": "https://github.com/sublang-dev/cligent/issues",
+  "homepage": "https://github.com/sublang-ai/cligent#readme",
+  "bugs": "https://github.com/sublang-ai/cligent/issues",
   "keywords": [
     "ai",
     "agent",
