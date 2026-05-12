@@ -34,3 +34,38 @@ export function attachTmuxSession(sessionName: string): void {
 export function killTmuxSession(sessionName: string): void {
   spawnSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
 }
+
+// Maps pane title (e.g., `Captain`, `Claude`) to current pane width. Returns
+// an empty map when tmux is unreachable or the session has no panes — callers
+// fall back to Infinity (no soft-wrap) for missing entries.
+export function queryPaneWidthsByTitle(
+  sessionName: string,
+): Map<string, number> {
+  const widths = new Map<string, number>();
+  const result = spawnSync(
+    'tmux',
+    [
+      'list-panes',
+      '-t',
+      `${sessionName}:0`,
+      '-F',
+      '#{pane_title}\t#{pane_width}',
+    ],
+    { stdio: 'pipe' },
+  );
+  if (result.error || result.status !== 0) {
+    return widths;
+  }
+  const lines = result.stdout.toString().split('\n');
+  for (const line of lines) {
+    if (!line) continue;
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const title = line.slice(0, tab);
+    const width = Number.parseInt(line.slice(tab + 1), 10);
+    if (Number.isFinite(width) && width > 0) {
+      widths.set(title, width);
+    }
+  }
+  return widths;
+}

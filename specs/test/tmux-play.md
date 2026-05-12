@@ -208,3 +208,8 @@ Given a real tmux server with two configured roles, when `launchTmuxPlay({ attac
 Verifies: [TMUX-045](../user/tmux-play.md#tmux-045)
 
 Given a real tmux server with configured roles, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report `#{pane_active}=1` for the Boss/Captain pane and `#{pane_active}=0` for every role pane.
+
+### TTMUX-037
+Verifies: [TMUX-046](../user/tmux-play.md#tmux-046)
+
+Given a `TmuxPresenter` whose Boss writer has display width `W_b` and whose role writer has display width `W_r`, when the presenter writes a single-logical-line role event of length greater than `W_r`, the role writer's captured text shall contain `\n  ` (newline + two spaces) at the boundary that keeps every emitted row no wider than `W_r` cells, with the first row prefixed by `<roleId>> ` and every subsequent row prefixed by exactly two spaces. The same invariant shall hold for the Boss writer at width `W_b` for a Captain reply, including across `text_delta` events split before, at, and after the wrap boundary. When a writer's width source returns `Infinity`, the writer's output shall be identical to the pre-TMUX-046 behavior (no soft-wrap), and explicit `\n` continuations shall continue to be indented per [TMUX-038](../user/tmux-play.md#tmux-038).

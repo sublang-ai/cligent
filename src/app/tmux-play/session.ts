@@ -10,7 +10,7 @@ import {
   closeLogStreams,
   openAppendLogStreams,
 } from '../shared/logs.js';
-import { killTmuxSession } from '../shared/tmux.js';
+import { killTmuxSession, queryPaneWidthsByTitle } from '../shared/tmux.js';
 import type {
   Captain,
   RuntimeRoleConfig,
@@ -20,7 +20,7 @@ import {
   TMUX_PLAY_CONFIG_SNAPSHOT,
   type TmuxPlayConfig,
 } from './config.js';
-import { createTmuxPresenter } from './presenter-tmux.js';
+import { createTmuxPresenter, type WidthSource } from './presenter-tmux.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
@@ -72,6 +72,10 @@ export interface TmuxPlaySessionOptions {
   readonly killSession?: (sessionName: string) => void;
   readonly removeWorkDir?: (workDir: string) => void;
   readonly signalTarget?: SignalTarget;
+  // Width query for role panes (keyed by title-cased role id). Defaults to a
+  // tmux query that returns an empty map outside tmux; tests can stub this to
+  // pin widths without spawning tmux.
+  readonly queryPaneWidths?: (sessionName: string) => Map<string, number>;
 }
 
 export class TmuxPlaySession {
@@ -86,6 +90,7 @@ export class TmuxPlaySession {
   private logStreams: Map<string, LogCloser> | undefined;
   private pending = Promise.resolve();
   private shuttingDown = false;
+  private rolePaneWidths: Map<string, number> = new Map();
 
   readonly done: Promise<void> = this.doneDeferred.promise;
 
@@ -111,9 +116,19 @@ export class TmuxPlaySession {
     );
     this.logStreams = logStreams;
 
+    this.refreshRolePaneWidths();
+    const roleWidths = new Map<string, WidthSource>();
+    for (const role of config.roles) {
+      const title = titleCaseRoleId(role.id);
+      roleWidths.set(role.id, () =>
+        this.rolePaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
+      );
+    }
     const presenter = createTmuxPresenter({
       boss: output,
       roles: logStreams,
+      bossWidth: () => outputWidth(output),
+      roleWidths,
     });
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
@@ -162,6 +177,7 @@ export class TmuxPlaySession {
         if (this.shuttingDown) {
           return;
         }
+        this.refreshRolePaneWidths();
         try {
           await this.runtime?.runBossTurn(prompt);
         } catch (error) {
@@ -246,6 +262,32 @@ export class TmuxPlaySession {
   private writeOutput(value: string): void {
     (this.options.output ?? process.stdout).write(value);
   }
+
+  // tmux is only reachable when this process runs inside a pane; outside tmux
+  // (e.g., unit tests) the query is skipped and roles fall back to no soft-wrap.
+  private refreshRolePaneWidths(): void {
+    const query = this.options.queryPaneWidths ?? defaultQueryPaneWidths;
+    this.rolePaneWidths = query(this.sessionName());
+  }
+}
+
+function defaultQueryPaneWidths(sessionName: string): Map<string, number> {
+  if (!process.env.TMUX) {
+    return new Map();
+  }
+  return queryPaneWidthsByTitle(sessionName);
+}
+
+function outputWidth(output: Writable): number {
+  const columns = (output as { columns?: unknown }).columns;
+  if (typeof columns === 'number' && Number.isFinite(columns) && columns > 0) {
+    return columns;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function titleCaseRoleId(roleId: string): string {
+  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
 }
 
 export async function runTmuxPlaySession(

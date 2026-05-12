@@ -205,6 +205,10 @@ When a role or Captain run finishes with `status: 'ok'`, the presenter shall not
 
 The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), and operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`). Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane.
 
+### TMUX-046
+
+The two-space hanging indent required by [TMUX-038](#tmux-038) shall apply to every visible continuation line in a pane, whether the line break is an explicit `\n` in the source text or a soft wrap inserted by the presenter when content would otherwise exceed the pane's current display width. The presenter shall soft-wrap each prefixed block at the per-pane display width by emitting `\n` followed by the two-space indent in place of the character that would have overflowed, so terminal-level rewrap is unnecessary and every wrapped row visibly carries the indent. The Boss/Captain pane width shall track `process.stdout.columns` (refreshed on the Node `'resize'` event); each role pane width shall be queried from tmux at session start and refreshed when a tmux resize hook fires, with `Infinity` (i.e., no soft wrap) used as the fallback when a width is unavailable.
+
 ## Role Session Continuity
 
 ### TMUX-041

@@ -16,6 +16,8 @@ import type {
 
 const CONTINUATION_INDENT = '  ';
 
+export type WidthSource = () => number;
+
 export interface TmuxPresenterWriter {
   write(value: string): unknown;
 }
@@ -23,17 +25,32 @@ export interface TmuxPresenterWriter {
 export interface TmuxPresenterOptions {
   readonly boss: TmuxPresenterWriter;
   readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
+  readonly bossWidth?: WidthSource;
+  readonly roleWidths?: ReadonlyMap<string, WidthSource>;
 }
 
 export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
+  private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
   private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
   private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
+  private readonly lineColumns = new WeakMap<TmuxPresenterWriter, number>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
     this.roles = options.roles;
+    if (options.bossWidth) {
+      this.widths.set(this.boss, options.bossWidth);
+    }
+    if (options.roleWidths) {
+      for (const [roleId, source] of options.roleWidths) {
+        const writer = this.roles.get(roleId);
+        if (writer) {
+          this.widths.set(writer, source);
+        }
+      }
+    }
   }
 
   onRecord(record: TmuxPlayRecord): void {
@@ -181,27 +198,54 @@ export class TmuxPresenter implements RecordObserver {
   ): void {
     let atLineStart = this.lineStarts.get(writer) ?? true;
     let lineOffset = this.lineOffsets.get(writer) ?? 0;
+    let column = this.lineColumns.get(writer) ?? 0;
+    const width = this.effectiveWrapWidth(writer);
     let output = '';
 
     for (const char of value) {
       if (atLineStart) {
         if (char !== '\n') {
-          output += lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
+          const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
+          output += intro;
+          column = intro.length;
           lineOffset++;
         }
         atLineStart = false;
       }
+      if (char !== '\n' && column >= width) {
+        output += `\n${CONTINUATION_INDENT}`;
+        column = CONTINUATION_INDENT.length;
+        lineOffset++;
+      }
       output += char;
       if (char === '\n') {
         atLineStart = true;
+        column = 0;
+      } else {
+        column++;
       }
     }
 
     this.lineStarts.set(writer, atLineStart);
     this.lineOffsets.set(writer, lineOffset);
+    this.lineColumns.set(writer, column);
     if (output) {
       writer.write(output);
     }
+  }
+
+  // Returns the configured width if a wrap can actually fit indent + content;
+  // otherwise Infinity so the writer falls back to no soft-wrap.
+  private effectiveWrapWidth(writer: TmuxPresenterWriter): number {
+    const source = this.widths.get(writer);
+    if (!source) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const width = source();
+    if (!Number.isFinite(width) || width <= CONTINUATION_INDENT.length) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return width;
   }
 
   private breakLineIfNeeded(writer: TmuxPresenterWriter): void {
@@ -214,6 +258,7 @@ export class TmuxPresenter implements RecordObserver {
 
   private resetLineOffset(writer: TmuxPresenterWriter): void {
     this.lineOffsets.set(writer, 0);
+    this.lineColumns.set(writer, 0);
   }
 
   private roleWriter(roleId: string): TmuxPresenterWriter {

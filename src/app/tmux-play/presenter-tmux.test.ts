@@ -410,6 +410,109 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('captain> [status] ready [unserializable data]\n');
   });
 
+  it('soft-wraps long lines at the role pane width with hanging indent', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    // First row: `coder> abcdef` is 13 chars, exceeds width 12.
+    // Wrap so first row is `coder> abcde` (12 chars), continuation gets two-space indent.
+    presenter.onRecord(roleEvent('coder', textEvent('abcdefghij')));
+
+    expect(coder.text()).toBe(
+      'coder> abcde\n' +
+        '  fghij\n',
+    );
+    expect(boss.text()).toBe('');
+  });
+
+  it('soft-wraps streaming deltas split across the wrap boundary', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => 10]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('abcd')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('efgh')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('ijklm')));
+
+    // Width 10. Row 1 = `coder> ` (7) + 3 chars = `coder> abc`. Continuation
+    // rows are `  ` + up to 8 chars (10 - indent). Total content 13 chars
+    // splits 3 / 8 / 2 across three rows; no trailing newline since the deltas
+    // don't carry one.
+    expect(coder.text()).toBe(
+      'coder> abc\n' +
+        '  defghijk\n' +
+        '  lm',
+    );
+  });
+
+  it('soft-wraps the Boss pane via the configured boss width source', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map(),
+      bossWidth: () => 15,
+    });
+
+    presenter.onRecord({
+      type: 'captain_event',
+      turnId: 1,
+      timestamp: 100,
+      event: textEvent('the quick brown fox'),
+    });
+
+    // Width 15. Row 1 = `captain> ` (9) + 6 chars = `captain> the qu`. Row 2 =
+    // `  ` + 13 chars = `  ick brown fox`. Trailing `\n` comes from the `text`
+    // event formatter.
+    expect(boss.text()).toBe(
+      'captain> the qu\n' +
+        '  ick brown fox\n',
+    );
+  });
+
+  it('honors width changes between writes', () => {
+    const coder = new MemoryWriter();
+    let width = 100;
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => width]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textEvent('aaaaaaaaaa')));
+    width = 8;
+    presenter.onRecord(roleEvent('coder', textEvent('bbbbbbbbbb')));
+
+    // First write at width 100 fits on one prefixed row.
+    // Second write begins a fresh block (new `coder> ` prefix) and wraps at 8.
+    expect(coder.text()).toBe(
+      'coder> aaaaaaaaaa\n' +
+        'coder> b\n' +
+        '  bbbbbb\n' +
+        '  bbb\n',
+    );
+  });
+
+  it('falls back to no soft-wrap when width source returns Infinity', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => Number.POSITIVE_INFINITY]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textEvent('one two three four five')));
+
+    expect(coder.text()).toBe('coder> one two three four five\n');
+  });
+
   it('fails when a role log writer is missing', () => {
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
