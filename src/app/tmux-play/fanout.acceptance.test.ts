@@ -45,50 +45,20 @@ describe('tmux-play fanout acceptance', () => {
       const workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-'));
       execFileSync('git', ['init'], { cwd: workDir, stdio: 'ignore' });
       const sentinel = `SENTINEL_${randomUUID().slice(0, 8)}`;
-      const records: TmuxPlayRecord[] = [];
-      let runtime: TmuxPlayRuntime | undefined;
-      let primaryError: unknown;
+      const maxAttempts = 2;
+      let records: TmuxPlayRecord[] = [];
 
       try {
-        runtime = await createTmuxPlayRuntime({
-          captain: createFanoutCaptain({ maxRoleOutputChars: 2_000 }),
-          captainConfig: {
-            adapter: 'gemini',
-            instruction:
-              'You are the Captain. Include required acceptance tokens exactly.',
-            ...(GEMINI_MODEL ? { model: GEMINI_MODEL } : {}),
-          },
-          // This acceptance test intentionally uses role id == adapter name
-          // so each role proves one canonical adapter path.
-          roles: ROLE_ADAPTERS.map((adapter) => ({
-            id: adapter,
-            adapter,
-            instruction:
-              `You are role ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
-            ...adapterModel(adapter),
-          })),
-          cwd: workDir,
-          observers: [
-            {
-              onRecord(record) {
-                records.push(record);
-              },
-            },
-          ],
-        });
-
-        await runtime.runBossTurn(
-          [
-            'Acceptance test.',
-            `Every role response and the final Captain answer must include exactly this token: ${sentinel}`,
-            'No file edits are needed.',
-          ].join('\n'),
-        );
-      } catch (error) {
-        primaryError = error;
-        throw error;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          records = await runFanoutTurn({ workDir, sentinel });
+          const transient = findTransientUpstreamFailure(records);
+          if (!transient || attempt === maxAttempts) break;
+          process.stderr.write(
+            `tmux-play acceptance attempt ${attempt} hit transient upstream error: ${transient}\n`,
+          );
+        }
       } finally {
-        await cleanup(runtime, workDir, primaryError);
+        rmSync(workDir, { recursive: true, force: true });
       }
 
       const types = records.map((record) => record.type);
@@ -131,6 +101,100 @@ describe('tmux-play fanout acceptance', () => {
     240_000,
   );
 });
+
+interface RunFanoutTurnOptions {
+  readonly workDir: string;
+  readonly sentinel: string;
+}
+
+async function runFanoutTurn(
+  options: RunFanoutTurnOptions,
+): Promise<TmuxPlayRecord[]> {
+  const records: TmuxPlayRecord[] = [];
+  let runtime: TmuxPlayRuntime | undefined;
+  let primaryError: unknown;
+
+  try {
+    runtime = await createTmuxPlayRuntime({
+      captain: createFanoutCaptain({ maxRoleOutputChars: 2_000 }),
+      captainConfig: {
+        adapter: 'gemini',
+        instruction:
+          'You are the Captain. Include required acceptance tokens exactly.',
+        ...(GEMINI_MODEL ? { model: GEMINI_MODEL } : {}),
+      },
+      // This acceptance test intentionally uses role id == adapter name
+      // so each role proves one canonical adapter path.
+      roles: ROLE_ADAPTERS.map((adapter) => ({
+        id: adapter,
+        adapter,
+        instruction:
+          `You are role ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
+        ...adapterModel(adapter),
+      })),
+      cwd: options.workDir,
+      observers: [
+        {
+          onRecord(record) {
+            records.push(record);
+          },
+        },
+      ],
+    });
+
+    await runtime.runBossTurn(
+      [
+        'Acceptance test.',
+        `Every role response and the final Captain answer must include exactly this token: ${options.sentinel}`,
+        'No file edits are needed.',
+      ].join('\n'),
+    );
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    await disposeRuntime(runtime, primaryError);
+  }
+
+  return records;
+}
+
+const TRANSIENT_UPSTREAM_MARKERS = [
+  /\bAPI Error: Repeated \d{3}/i,
+  /529 Overloaded/i,
+  /\b(?:overload(?:ed)?|over_capacity)\b/i,
+  /\bservice unavailable\b/i,
+  /\brate.?limit/i,
+];
+
+function findTransientUpstreamFailure(
+  records: readonly TmuxPlayRecord[],
+): string | undefined {
+  for (const record of records) {
+    if (record.type === 'role_finished') {
+      const transient = matchTransient(record.result);
+      if (transient) return `${record.roleId}: ${transient}`;
+      continue;
+    }
+    if (record.type === 'captain_finished') {
+      const transient = matchTransient(record.result);
+      if (transient) return `captain: ${transient}`;
+    }
+  }
+  return undefined;
+}
+
+function matchTransient(result: {
+  readonly status: string;
+  readonly error?: string;
+  readonly finalText?: string;
+}): string | undefined {
+  if (result.status !== 'error') return undefined;
+  const text = result.error ?? result.finalText ?? '';
+  return TRANSIENT_UPSTREAM_MARKERS.some((pattern) => pattern.test(text))
+    ? text
+    : undefined;
+}
 
 function isRoleFinished(
   record: TmuxPlayRecord,
@@ -203,35 +267,22 @@ function requireCommand(command: string, missing: string[]): void {
   }
 }
 
-async function cleanup(
+async function disposeRuntime(
   runtime: TmuxPlayRuntime | undefined,
-  workDir: string,
   primaryError: unknown,
 ): Promise<void> {
-  const errors: unknown[] = [];
-
+  if (!runtime) return;
   try {
-    await runtime?.dispose();
+    await runtime.dispose();
   } catch (error) {
-    errors.push(error);
+    if (primaryError) {
+      process.stderr.write(
+        `tmux-play acceptance runtime dispose failed after test failure: ${errorMessage(error)}\n`,
+      );
+      return;
+    }
+    throw error;
   }
-
-  try {
-    rmSync(workDir, { recursive: true, force: true });
-  } catch (error) {
-    errors.push(error);
-  }
-
-  if (errors.length === 0) {
-    return;
-  }
-  if (primaryError) {
-    process.stderr.write(
-      `tmux-play acceptance cleanup failed after test failure: ${errors.map(errorMessage).join('; ')}\n`,
-    );
-    return;
-  }
-  throw errors[0];
 }
 
 function errorMessage(error: unknown): string {
