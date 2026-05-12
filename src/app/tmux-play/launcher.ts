@@ -130,6 +130,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   setPaneTitles(options.sessionName, rolePanes);
   disableRolePaneInput(options.sessionName, rolePanes);
   configureLayoutHooks(options.sessionName, roles.length);
+  applyCatppuccinMochaTheme(options.sessionName);
   runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
   runTmux(
     'set',
@@ -147,6 +148,69 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   );
   runTmux('set', '-t', options.sessionName, 'status-right-length', '80');
   selectBossPane(options.sessionName);
+}
+
+// Catppuccin Mocha palette: https://catppuccin.com/palette/
+// Only the colors we actually wire up are listed.
+const CATPPUCCIN_MOCHA = {
+  base: '#1e1e2e',
+  mantle: '#181825',
+  surface1: '#45475a',
+  overlay0: '#6c7086',
+  subtext0: '#a6adc8',
+  text: '#cdd6f4',
+  blue: '#89b4fa',
+  mauve: '#cba6f7',
+  peach: '#fab387',
+  green: '#a6e3a1',
+} as const;
+
+// TMUX-047: claim the visual options we color from Catppuccin Mocha.
+// pane-border-format, status-right, and the 4:6:6 layout are NOT touched here —
+// they remain owned by their existing clauses, so the order in buildTmuxSession
+// (theme first, content second) keeps our format strings authoritative.
+function applyCatppuccinMochaTheme(sessionName: string): void {
+  const c = CATPPUCCIN_MOCHA;
+  runTmux('set', '-t', sessionName, 'status-style', `fg=${c.text},bg=${c.mantle}`);
+  runTmux(
+    'set',
+    '-t',
+    sessionName,
+    'window-status-style',
+    `fg=${c.subtext0},bg=${c.mantle}`,
+  );
+  runTmux(
+    'set',
+    '-t',
+    sessionName,
+    'window-status-current-style',
+    `fg=${c.mauve},bg=${c.mantle}`,
+  );
+  runTmux('set', '-t', sessionName, 'pane-border-style', `fg=${c.surface1}`);
+  runTmux(
+    'set',
+    '-t',
+    sessionName,
+    'pane-active-border-style',
+    `fg=${c.blue}`,
+  );
+  runTmux(
+    'set',
+    '-t',
+    sessionName,
+    'message-style',
+    `fg=${c.base},bg=${c.peach}`,
+  );
+  runTmux(
+    'set',
+    '-t',
+    sessionName,
+    'message-command-style',
+    `fg=${c.base},bg=${c.green}`,
+  );
+  runTmux('set', '-t', sessionName, 'display-panes-colour', c.overlay0);
+  runTmux('set', '-t', sessionName, 'display-panes-active-colour', c.mauve);
+  runTmux('set', '-t', sessionName, 'clock-mode-colour', c.mauve);
 }
 
 function buildSessionCommand(options: BuildTmuxSessionOptions): string {

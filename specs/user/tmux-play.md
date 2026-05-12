@@ -220,6 +220,29 @@ Unicode combining marks (`\p{M}`) and zero-width formatting codepoints (ZWSP, ZW
 
 Width sources: the Boss/Captain pane width shall track the captain's stdout `columns` property, which Node refreshes via SIGWINCH on terminal resize. Each role pane width shall be queried from tmux at session start; the session shall refresh role widths when its stdout emits `'resize'` (the in-pane SIGWINCH that follows the tmux resize hooks set per [TMUX-044](#tmux-044)) and again before each Boss turn as a safety net. When a width source is unavailable or the value would not leave room for the two-space indent, the writer shall fall back to no soft wrap.
 
+## Theme
+
+### TMUX-047
+
+The launcher shall apply the **Catppuccin Mocha** palette ([catppuccin.com/palette](https://catppuccin.com/palette/)) to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-right strings remain authoritative for any option a future theme might also claim.
+
+The theme shall set exactly these tmux options and no others:
+
+| Option | Mocha role | Hex |
+| --- | --- | --- |
+| `status-style` | `fg=text,bg=mantle` | `fg=#cdd6f4,bg=#181825` |
+| `window-status-style` | `fg=subtext0,bg=mantle` | `fg=#a6adc8,bg=#181825` |
+| `window-status-current-style` | `fg=mauve,bg=mantle` | `fg=#cba6f7,bg=#181825` |
+| `pane-border-style` | `fg=surface1` | `fg=#45475a` |
+| `pane-active-border-style` | `fg=blue` | `fg=#89b4fa` |
+| `message-style` | `fg=base,bg=peach` | `fg=#1e1e2e,bg=#fab387` |
+| `message-command-style` | `fg=base,bg=green` | `fg=#1e1e2e,bg=#a6e3a1` |
+| `display-panes-colour` | `overlay0` | `#6c7086` |
+| `display-panes-active-colour` | `mauve` | `#cba6f7` |
+| `clock-mode-colour` | `mauve` | `#cba6f7` |
+
+`pane-border-format`, `pane-border-status`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above and shall be set after the theme so a future swap is a one-place change.
+
 ## Role Session Continuity
 
 ### TMUX-041

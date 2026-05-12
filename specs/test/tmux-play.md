@@ -136,6 +136,13 @@ Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
 
 Given roles with ids `coder` and `reviewer`, when the launcher sets pane titles, the Boss/Captain pane title shall be `Captain` and the role pane titles shall be `Coder` and `Reviewer` respectively. No pane title shall contain the substring `Role:`.
 
+## Theme
+
+### TTMUX-038
+Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
+
+Given the launcher building a tmux session, the `tmux set` calls issued shall include the ten Catppuccin Mocha theme options exactly per [TMUX-047](../user/tmux-play.md#tmux-047) — anchored by `status-style=fg=#cdd6f4,bg=#181825` and `pane-active-border-style=fg=#89b4fa` — and every theme `set` shall appear before the launcher's own `pane-border-format` and `status-right` `set` calls so the launcher's content strings remain authoritative on options the theme does not claim.
+
 ## Presenter Output
 
 ### TTMUX-024

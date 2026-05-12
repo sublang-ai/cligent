@@ -242,6 +242,76 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    const workDir = join(tempDir, 'work');
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'theme',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    const setCalls = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'set' && call[2] === 'tmux-play-theme',
+    );
+    const optionAt = (n: number): string | undefined => setCalls[n]?.[3];
+    const indexOf = (option: string): number =>
+      setCalls.findIndex((call) => call[3] === option);
+
+    // TMUX-047: theme options the launcher claims, each with a Mocha hex anchor.
+    expect(setCalls).toContainEqual([
+      'set',
+      '-t',
+      'tmux-play-theme',
+      'status-style',
+      'fg=#cdd6f4,bg=#181825',
+    ]);
+    expect(setCalls).toContainEqual([
+      'set',
+      '-t',
+      'tmux-play-theme',
+      'pane-active-border-style',
+      'fg=#89b4fa',
+    ]);
+    expect(indexOf('window-status-style')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('window-status-current-style')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('pane-border-style')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('message-style')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('message-command-style')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('display-panes-colour')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('display-panes-active-colour')).toBeGreaterThanOrEqual(0);
+    expect(indexOf('clock-mode-colour')).toBeGreaterThanOrEqual(0);
+
+    // Ordering invariant: every theme option precedes the content-bearing
+    // options it does NOT touch, so our pane-border-format and status-right
+    // strings remain authoritative if a future theme tries to set them.
+    const themeOptions = [
+      'status-style',
+      'window-status-style',
+      'window-status-current-style',
+      'pane-border-style',
+      'pane-active-border-style',
+      'message-style',
+      'message-command-style',
+      'display-panes-colour',
+      'display-panes-active-colour',
+      'clock-mode-colour',
+    ];
+    const lastThemeIndex = Math.max(
+      ...themeOptions.map((o) => indexOf(o)),
+    );
+    expect(indexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
+    expect(indexOf('status-right')).toBeGreaterThan(lastThemeIndex);
+
+    // First theme set still comes after the layout has been built.
+    expect(optionAt(0)).toBe('status-style');
+  });
+
   it('configures the resize hook for a single-role session', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['solo']);
