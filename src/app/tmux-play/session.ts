@@ -91,6 +91,8 @@ export class TmuxPlaySession {
   private pending = Promise.resolve();
   private shuttingDown = false;
   private rolePaneWidths: Map<string, number> = new Map();
+  private resizeTarget: Writable | undefined;
+  private resizeListener: (() => void) | undefined;
 
   readonly done: Promise<void> = this.doneDeferred.promise;
 
@@ -117,6 +119,7 @@ export class TmuxPlaySession {
     this.logStreams = logStreams;
 
     this.refreshRolePaneWidths();
+    this.subscribeToResize(output);
     const roleWidths = new Map<string, WidthSource>();
     for (const role of config.roles) {
       const title = titleCaseRoleId(role.id);
@@ -217,6 +220,7 @@ export class TmuxPlaySession {
     }
     this.shuttingDown = true;
     this.unregisterSignals();
+    this.unsubscribeFromResize();
     this.runtime?.abortActiveTurn(reason);
 
     const errors: unknown[] = [];
@@ -268,6 +272,37 @@ export class TmuxPlaySession {
   private refreshRolePaneWidths(): void {
     const query = this.options.queryPaneWidths ?? defaultQueryPaneWidths;
     this.rolePaneWidths = query(this.sessionName());
+  }
+
+  // tmux's client-resized / after-resize-window hooks resize every pane in the
+  // session, which causes Node to surface a 'resize' event on the captain
+  // pane's stdout. Re-query role widths then so mid-turn streaming wraps at
+  // the current pane size instead of the size captured at turn start.
+  private subscribeToResize(output: Writable): void {
+    if (typeof output.on !== 'function') {
+      return;
+    }
+    const listener = (): void => {
+      this.refreshRolePaneWidths();
+    };
+    output.on('resize', listener);
+    this.resizeTarget = output;
+    this.resizeListener = listener;
+  }
+
+  private unsubscribeFromResize(): void {
+    if (!this.resizeTarget || !this.resizeListener) {
+      return;
+    }
+    const target = this.resizeTarget;
+    const listener = this.resizeListener;
+    if (typeof target.off === 'function') {
+      target.off('resize', listener);
+    } else if (typeof target.removeListener === 'function') {
+      target.removeListener('resize', listener);
+    }
+    this.resizeTarget = undefined;
+    this.resizeListener = undefined;
   }
 }
 

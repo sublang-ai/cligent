@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { formatCligentEvent } from '../shared/events.js';
+import { DisplayParser } from '../shared/display-width.js';
 import type {
   CaptainRunResult,
   RoleRunResult,
@@ -36,6 +37,7 @@ export class TmuxPresenter implements RecordObserver {
   private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
   private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
   private readonly lineColumns = new WeakMap<TmuxPresenterWriter, number>();
+  private readonly parsers = new WeakMap<TmuxPresenterWriter, DisplayParser>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
@@ -136,6 +138,7 @@ export class TmuxPresenter implements RecordObserver {
     result: RoleRunResult | CaptainRunResult,
   ): void {
     if (result.status === 'ok') {
+      this.flushPendingEscape(writer);
       this.breakLineIfNeeded(writer);
       this.resetLineOffset(writer);
       return;
@@ -169,11 +172,30 @@ export class TmuxPresenter implements RecordObserver {
     }
   }
 
+  // Drains any escape that the writer's parser is still holding from a prior
+  // streaming sequence so its bytes belong to that block (emitted before the
+  // closing `\n`), and the next block parses from a clean state instead of
+  // misclassifying its leading byte as the missing CSI/OSC terminator.
+  private flushPendingEscape(writer: TmuxPresenterWriter): void {
+    const parser = this.parsers.get(writer);
+    if (!parser) return;
+    let drained = '';
+    for (const token of parser.flush()) {
+      if (token.type === 'escape') {
+        drained += token.sequence;
+      }
+    }
+    if (drained) {
+      writer.write(drained);
+    }
+  }
+
   private writePrefixedBlock(
     writer: TmuxPresenterWriter,
     who: string,
     value: string,
   ): void {
+    this.flushPendingEscape(writer);
     this.breakLineIfNeeded(writer);
     this.resetLineOffset(writer);
     this.writePrefixed(writer, who, ensureTrailingNewline(value));
@@ -185,6 +207,7 @@ export class TmuxPresenter implements RecordObserver {
     who: string,
     line: string,
   ): void {
+    this.flushPendingEscape(writer);
     this.breakLineIfNeeded(writer);
     this.resetLineOffset(writer);
     this.writePrefixed(writer, who, `${line}\n`);
@@ -202,28 +225,50 @@ export class TmuxPresenter implements RecordObserver {
     const width = this.effectiveWrapWidth(writer);
     let output = '';
 
-    for (const char of value) {
-      if (atLineStart) {
-        if (char !== '\n') {
-          const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
-          output += intro;
-          column = intro.length;
-          lineOffset++;
-        }
-        atLineStart = false;
-      }
-      if (char !== '\n' && column >= width) {
-        output += `\n${CONTINUATION_INDENT}`;
-        column = CONTINUATION_INDENT.length;
-        lineOffset++;
-      }
-      output += char;
-      if (char === '\n') {
+    const emitIntro = (): void => {
+      const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
+      output += intro;
+      column = intro.length;
+      lineOffset += 1;
+      atLineStart = false;
+    };
+
+    let parser = this.parsers.get(writer);
+    if (!parser) {
+      parser = new DisplayParser();
+      this.parsers.set(writer, parser);
+    }
+
+    for (const token of parser.consume(value)) {
+      if (token.type === 'newline') {
+        // Newlines that arrive before any visible content still emit so leading
+        // blank lines render blank without consuming the speaker prefix.
+        output += '\n';
         atLineStart = true;
         column = 0;
-      } else {
-        column++;
+        continue;
       }
+      if (atLineStart) {
+        emitIntro();
+      }
+      if (token.type === 'escape') {
+        output += token.sequence;
+        continue;
+      }
+      // Soft-wrap before placing a visible char that would overflow the pane;
+      // skip the wrap when we are already on a fresh continuation row so we
+      // never loop forever on a char that cannot fit even after wrapping.
+      if (
+        token.cells > 0 &&
+        column + token.cells > width &&
+        column > CONTINUATION_INDENT.length
+      ) {
+        output += `\n${CONTINUATION_INDENT}`;
+        column = CONTINUATION_INDENT.length;
+        lineOffset += 1;
+      }
+      output += token.char;
+      column += token.cells;
     }
 
     this.lineStarts.set(writer, atLineStart);

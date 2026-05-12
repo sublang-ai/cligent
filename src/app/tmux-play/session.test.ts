@@ -282,6 +282,39 @@ describe('TmuxPlaySession', () => {
     );
   });
 
+  it('refreshes role pane widths on terminal resize and unsubscribes on shutdown', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const output = new MemoryOutput();
+    const queryPaneWidths = vi.fn(
+      () => new Map<string, number>([['Coder', 40]]),
+    );
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: async () => undefined,
+        runBossTurn: async () => undefined,
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+      output,
+      queryPaneWidths,
+    });
+
+    await session.start();
+    expect(queryPaneWidths).toHaveBeenCalledTimes(1);
+
+    output.emit('resize');
+    expect(queryPaneWidths).toHaveBeenCalledTimes(2);
+
+    readline.close();
+    await session.done;
+
+    output.emit('resize');
+    expect(queryPaneWidths).toHaveBeenCalledTimes(2);
+  });
+
   it('handles SIGINT by closing the readline session', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();

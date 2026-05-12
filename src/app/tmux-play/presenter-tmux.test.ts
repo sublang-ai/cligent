@@ -513,6 +513,99 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('coder> one two three four five\n');
   });
 
+  it('soft-wraps East Asian Wide characters at the correct cell column', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      // Width 12: row 1 = `coder> ` (7 cells) + 2 CJK chars (4 cells) = 11 cells.
+      // A third CJK char would land at column 13 and wrap; continuation rows
+      // hold 5 CJK chars (10 cells) before the next wrap.
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textEvent('一二三四五六七')));
+
+    expect(coder.text()).toBe(
+      'coder> 一二\n' +
+        '  三四五六七\n',
+    );
+  });
+
+  it('flushes a pending escape at a block boundary so the next block parses cleanly', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // First role event ends with an incomplete CSI; the run then finishes ok
+    // and a fresh role event arrives. Without a flush, the next chunk's 'n'
+    // (0x6E, a valid CSI final byte) would be eaten by the lingering parser
+    // state and produce `coder> \x1b[31next`.
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('hello\x1b[31')));
+    presenter.onRecord({
+      type: 'role_finished',
+      turnId: 1,
+      timestamp: 100,
+      roleId: 'coder',
+      result: {
+        status: 'ok',
+        roleId: 'coder',
+        turnId: 1,
+        finalText: 'hello',
+      },
+    });
+    presenter.onRecord(roleEvent('coder', textEvent('next')));
+
+    expect(coder.text()).toBe(
+      'coder> hello\x1b[31\n' +
+        'coder> next\n',
+    );
+  });
+
+  it('keeps an ANSI sequence intact when split across streaming deltas', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      // Width 12: `coder> hello` is exactly 12 cells, so the next visible char
+      // must wrap. The CSI lives across the second delta boundary; the wrap
+      // must land between the (now-complete) escape and the next space, never
+      // inside the CSI's parameter bytes.
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('hello')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('\x1b[31')));
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('m world')));
+
+    expect(coder.text()).toBe(
+      'coder> hello\x1b[31m\n' +
+        '   world',
+    );
+  });
+
+  it('passes ANSI escape sequences through without splitting at wrap', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    // The CSI sequences carry no visible cells, so the wrap point depends on
+    // the visible chars only ('hello world!' = 12 cells).
+    presenter.onRecord(
+      roleEvent('coder', textEvent('\x1b[31mhello\x1b[0m world!')),
+    );
+
+    expect(coder.text()).toBe(
+      'coder> \x1b[31mhello\x1b[0m\n' +
+        '   world!\n',
+    );
+  });
+
   it('fails when a role log writer is missing', () => {
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
