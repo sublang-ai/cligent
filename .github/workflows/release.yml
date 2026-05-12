@@ -29,7 +29,8 @@ jobs:
             exit 1
           fi
 
-      - run: npm install -g npm@latest
+      - name: Upgrade npm for trusted-publisher OIDC support
+        run: npm install -g npm@11.8.0
 
       - run: npm ci
 
