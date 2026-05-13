@@ -951,6 +951,35 @@ describe('TmuxPresenter', () => {
     );
   });
 
+  it('truncates wide-character input summaries by cells, not code units', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // Each CJK char is 2 cells; 40 of them = 80 cells. After truncation
+    // we should fit ≤ 60 cells total including the `…` (so 29 CJK chars
+    // = 58 cells + `…` = 59 cells).
+    presenter.onRecord(
+      roleEvent('coder', toolUseEvent('X', { prompt: '一二三四五六七八九十'.repeat(4) })),
+    );
+    // Each 🚀 is 2 cells and a UTF-16 surrogate pair; previous code-unit
+    // truncation could land between the high and low surrogate. The
+    // display-token path keeps codepoints whole.
+    presenter.onRecord(
+      roleEvent('coder', toolUseEvent('Y', { prompt: '🚀'.repeat(40) })),
+    );
+
+    const text = coder.text();
+    expect(text).toBe(
+      'tool> X 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…\n' +
+        'tool> Y 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀…\n',
+    );
+    // No lone UTF-16 surrogate from a mid-codepoint split.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(coder.raw())).toBe(false);
+  });
+
   it('falls back to JSON when no priority key is a string', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({

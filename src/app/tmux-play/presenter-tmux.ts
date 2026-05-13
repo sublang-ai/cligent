@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { formatCligentEvent } from '../shared/events.js';
-import { DisplayParser } from '../shared/display-width.js';
+import { DisplayParser, iterateDisplay } from '../shared/display-width.js';
 import type {
   CaptainRunResult,
   RoleRunResult,
@@ -524,13 +524,13 @@ function summarizeToolInput(input: Record<string, unknown>): string {
   ]) {
     const value = input[key];
     if (typeof value === 'string' && value.length > 0) {
-      return truncate(value.replace(/\s+/g, ' '), 60);
+      return truncateCells(value.replace(/\s+/g, ' '), 60);
     }
   }
   try {
     const dump = JSON.stringify(input);
     if (dump === undefined || dump === '{}') return '';
-    return truncate(dump.replace(/\s+/g, ' '), 60);
+    return truncateCells(dump.replace(/\s+/g, ' '), 60);
   } catch {
     return '';
   }
@@ -559,8 +559,25 @@ function formatDuration(ms: number | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+// Truncate `value` to at most `maxCells` terminal cells (TMUX-049). Iterates
+// the display-token stream so CJK / emoji are measured by cells (1 or 2)
+// rather than by UTF-16 code units, and the per-token `char` carries the
+// whole codepoint so surrogate pairs are never split.
+function truncateCells(value: string, maxCells: number): string {
+  let total = 0;
+  for (const token of iterateDisplay(value)) {
+    if (token.type === 'char') total += token.cells;
+  }
+  if (total <= maxCells) return value;
+  let cells = 0;
+  let prefix = '';
+  for (const token of iterateDisplay(value)) {
+    if (token.type !== 'char') continue;
+    if (cells + token.cells > maxCells - 1) break;
+    cells += token.cells;
+    prefix += token.char;
+  }
+  return `${prefix}…`;
 }
 
 // Distinguishes SGR (Select Graphic Rendition) escapes — CSI parameters
