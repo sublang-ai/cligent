@@ -185,6 +185,21 @@ Verifies: [TMUX-040](../user/tmux-play.md#tmux-040)
 
 Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane shall not contain any line beginning with `=== role:<id>` and shall not contain a `=== /role:<id> ===` line — i.e., the open/close sentinel framing of the Captain's prompt body shall not leak through. Synthesized references to role content within the Captain's reply shall be permitted.
 
+### TTMUX-043
+Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
+
+Given a role `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a role pane writer, the captured bytes shall be `\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n`. Given a `tool_result` event with `status: 'success'`, `toolName: 'Bash'`, `output: { stdout: 'npm test passed\n2 tests run' }`, and `durationMs: 1234`, the captured bytes shall be `\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n  \x1b[38;2;108;112;134mnpm test passed\x1b[0m\n  \x1b[38;2;108;112;134m2 tests run\x1b[0m\n`. Status symbol shall be `✓` for `success`, `✗` for `error`, `·` for `denied`; the corresponding prefix SGR shall use green / red / yellow per the TMUX-049 table. The duration segment shall be `<n>ms` for `durationMs < 1000`, `<n.n>s` otherwise, and absent when `durationMs` is undefined.
+
+### TTMUX-044
+Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
+
+Given a `tool_use` event whose `input` lacks the priority keys but contains `{ count: 3, flag: true }`, the input summary shall be the compact JSON `{"count":3,"flag":true}`. Given an `input` whose first priority-key string exceeds 60 cells, the summary shall be the value's first 59 cells followed by `…`. Given an empty `input` object, the rendered header shall be `tool> <toolName>` with no trailing space.
+
+### TTMUX-045
+Verifies: [TMUX-040](../user/tmux-play.md#tmux-040), [TMUX-049](../user/tmux-play.md#tmux-049)
+
+Given a `captain_event` carrying a `tool_use` record, the Boss/Captain pane writer (not any role writer) shall receive the `tool> ` header per [TMUX-049](../user/tmux-play.md#tmux-049). Given a role-id `coder` `role_event` carrying the same `tool_use`, only the `coder` role pane writer shall receive the header; the Boss/Captain pane writer shall not.
+
 ## Role Session Continuity
 
 ### TTMUX-028

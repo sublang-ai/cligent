@@ -44,6 +44,43 @@ function textDeltaEvent(delta: string): CligentEvent {
   return createEvent('text_delta', 'codex', { delta }, 'sid');
 }
 
+function toolUseEvent(
+  toolName: string,
+  input: Record<string, unknown>,
+): CligentEvent {
+  return createEvent(
+    'tool_use',
+    'codex',
+    { toolName, toolUseId: 'tu1', input },
+    'sid',
+  );
+}
+
+function toolResultEvent(
+  toolName: string,
+  status: 'success' | 'error' | 'denied',
+  output: unknown,
+  durationMs?: number,
+): CligentEvent {
+  return createEvent(
+    'tool_result',
+    'codex',
+    durationMs === undefined
+      ? { toolName, toolUseId: 'tu1', status, output }
+      : { toolName, toolUseId: 'tu1', status, output, durationMs },
+    'sid',
+  );
+}
+
+function captainEvent(event: CligentEvent): TmuxPlayRecord {
+  return {
+    type: 'captain_event',
+    turnId: 1,
+    timestamp: 1,
+    event,
+  };
+}
+
 function errorEvent(message: string): CligentEvent {
   return createEvent('error', 'codex', { message, recoverable: false }, 'sid');
 }
@@ -869,6 +906,188 @@ describe('TmuxPresenter', () => {
       cursor = idx + 3;
     }
     expect(boundaries).toBeGreaterThanOrEqual(3);
+  });
+
+  // TMUX-049 tool lifecycle assertions.
+
+  it('renders a role tool_use as a peach `tool>` line in the role pane', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
+    );
+
+    // Peach #fab387 → fg 250;179;135.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n',
+    );
+  });
+
+  it('summarises tool input keys in priority order and truncates long values', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // file_path beats arbitrary `description` because `command`/`file_path`/
+    // `path`/`pattern`/`prompt`/`description` is the priority order.
+    presenter.onRecord(
+      roleEvent(
+        'coder',
+        toolUseEvent('Read', {
+          description: 'long-form',
+          file_path: '/very/long/path/that/will/be/truncated/because/it/exceeds/sixty/characters/eventually.ts',
+        }),
+      ),
+    );
+
+    expect(coder.text()).toBe(
+      'tool> Read /very/long/path/that/will/be/truncated/because/it/exceeds/s…\n',
+    );
+  });
+
+  it('falls back to JSON when no priority key is a string', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolUseEvent('Custom', { count: 3, flag: true })),
+    );
+
+    expect(coder.text()).toBe('tool> Custom {"count":3,"flag":true}\n');
+  });
+
+  it('omits the input summary when the tool has no input keys', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', toolUseEvent('Status', {})));
+
+    expect(coder.text()).toBe('tool> Status\n');
+  });
+
+  it('renders a success tool_result as green `tool< ✓` with dim body', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent(
+        'coder',
+        toolResultEvent(
+          'Bash',
+          'success',
+          { stdout: 'npm test passed\n2 tests run' },
+          1234,
+        ),
+      ),
+    );
+
+    // Green #a6e3a1 → bold fg 166;227;161. Dim body uses plain (no-bold)
+    // overlay0 #6c7086 → fg 108;112;134. Continuation indent uncolored,
+    // reopens dim per the TMUX-046 close/reopen rule.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n' +
+        '  \x1b[38;2;108;112;134mnpm test passed\x1b[0m\n' +
+        '  \x1b[38;2;108;112;134m2 tests run\x1b[0m\n',
+    );
+  });
+
+  it('renders an error tool_result as red `tool< ✗` with dim error body', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent(
+        'coder',
+        toolResultEvent('Edit', 'error', 'permission denied', 50),
+      ),
+    );
+
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;243;139;168mtool< ✗ \x1b[0mEdit 50ms\n' +
+        '  \x1b[38;2;108;112;134mpermission denied\x1b[0m\n',
+    );
+  });
+
+  it('renders a denied tool_result as yellow `tool< ·` with no body when output is empty', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
+    );
+
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;249;226;175mtool< · \x1b[0mWebFetch\n',
+    );
+  });
+
+  it('routes captain-emitted tool events to the Boss/Captain pane per TMUX-040', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map(),
+    });
+
+    presenter.onRecord(
+      captainEvent(toolUseEvent('Read', { file_path: 'src/main.ts' })),
+    );
+    presenter.onRecord(
+      captainEvent(toolResultEvent('Read', 'success', '42 lines', 80)),
+    );
+
+    expect(boss.text()).toBe(
+      'tool> Read src/main.ts\n' +
+        'tool< ✓ Read 80ms\n' +
+        '  42 lines\n',
+    );
+  });
+
+  it('formats tool durations as ms under 1s and seconds otherwise', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', toolResultEvent('A', 'success', '', 7)));
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('B', 'success', '', 1500)),
+    );
+
+    expect(coder.text()).toBe('tool< ✓ A 7ms\ntool< ✓ B 1.5s\n');
+  });
+
+  it('omits the duration when durationMs is undefined', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(roleEvent('coder', toolResultEvent('A', 'success', '')));
+
+    expect(coder.text()).toBe('tool< ✓ A\n');
   });
 });
 

@@ -14,7 +14,7 @@ pane identity > speaker identity > tool lifecycle > message body.
 
 ## Status
 
-Planned
+Done
 
 ## Scope
 
@@ -41,13 +41,13 @@ Out of scope:
 ## Deliverables
 
 - [x] `src/app/tmux-play/launcher.ts` — truecolor options and adapter-column pane-border format.
-- [x] `src/app/tmux-play/role-colors.ts` — adapter-name → Mocha-accent map with a deterministic hash fallback (Task 1) plus SGR helpers and speaker/status constants (Task 2).
-- [/] `src/app/tmux-play/presenter-tmux.ts` — ANSI-colored speaker prefixes and error/aborted recolor (Task 2); tool lifecycle rendering pending Task 3.
+- [x] `src/app/tmux-play/role-colors.ts` — adapter-name → Mocha-accent map with deterministic hash fallback, SGR helpers, speaker/status constants, tool palette, and `fg24bit` (no-bold) for the dim body.
+- [x] `src/app/tmux-play/presenter-tmux.ts` — ANSI-colored speaker prefixes, error/aborted recolor, and `tool>` / `tool<` lifecycle with dim output body.
 - [x] `src/app/tmux-play/launcher.test.ts` — assertions for truecolor `set` calls and the enriched pane-border format.
-- [/] `src/app/tmux-play/presenter-tmux.test.ts` — assertions for prefix ANSI by speaker and error/aborted body recoloring (Task 2); tool lifecycle formatting tests pending Task 3.
-- [/] `specs/user/tmux-play.md` — TMUX-047 expansion + new TMUX-048 (Task 1); TMUX-038/039 amendments (Task 2); TMUX-040 amendment, new TMUX-049 pending Task 3.
-- [/] `specs/test/tmux-play.md` — TTMUX-038/039/040 (Task 1); TTMUX-041/042 (Task 2); presenter TTMUX items for tool lifecycle pending Task 3.
-- [ ] `specs/map.md` — TMUX user-row summary mentions "speaker colors" and "tool lifecycle".
+- [x] `src/app/tmux-play/presenter-tmux.test.ts` — speaker prefix ANSI, error/aborted recolor, tool lifecycle (header colors, dim body, captain-pane routing, duration formatting, input summarization).
+- [x] `specs/user/tmux-play.md` — TMUX-047 expansion + new TMUX-048; TMUX-038/039 amendments; TMUX-040 amendment + new TMUX-049.
+- [x] `specs/test/tmux-play.md` — TTMUX-038/039/040, TTMUX-041/042, TTMUX-043/044/045.
+- [x] `specs/map.md` — TMUX user-row summary mentions "speaker colors" and "tool lifecycle".
 
 ## Tasks
 
@@ -60,7 +60,7 @@ Each task is one commit.
    Presenter writes SGR-color the prefix bytes only; body stays unstyled.
    Consumes `role-colors.ts` for the per-role accent.
    Presenter tests cover boss/captain/role prefixes and the recolored error/aborted lines.
-3. [ ] **Tool lifecycle rendering** — new TMUX-049 for `tool>` / `tool<` two-line grammar with peach/green/red/yellow prefix colors and `overlay0`-dimmed body; narrow TMUX-040 amendment so captain-emitted tool events render in the captain pane.
+3. [x] **Tool lifecycle rendering** — new TMUX-049 for `tool>` / `tool<` two-line grammar with peach/green/red/yellow prefix colors and `overlay0`-dimmed body; narrow TMUX-040 amendment so captain-emitted tool events render in the captain pane.
    Presenter emits one `tool>` line on each `tool_use` event and one `tool<` line on each `tool_result` event, both routed to the calling entity's pane.
    Presenter tests cover the format and the destination pane for both role-emitted and captain-emitted tools.
 

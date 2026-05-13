@@ -20,9 +20,19 @@ import {
   SPEAKER_CAPTAIN,
   STATUS_ABORTED,
   STATUS_ERROR,
+  TOOL_DENIED,
+  TOOL_FAIL,
+  TOOL_INVOKE,
+  TOOL_OK,
+  TOOL_OUTPUT_DIM,
   bold24bitFg,
+  fg24bit,
   roleAccent,
 } from './role-colors.js';
+import type {
+  ToolResultPayload,
+  ToolUsePayload,
+} from '../../types.js';
 
 const CONTINUATION_INDENT = '  ';
 
@@ -32,10 +42,24 @@ const PREFIX_CAPTAIN_SGR = bold24bitFg(SPEAKER_CAPTAIN);
 const STATUS_ERROR_SGR = bold24bitFg(STATUS_ERROR);
 const STATUS_ABORTED_SGR = bold24bitFg(STATUS_ABORTED);
 
+// TMUX-049 tool lifecycle SGR anchors.
+const TOOL_INVOKE_SGR = bold24bitFg(TOOL_INVOKE);
+const TOOL_OK_SGR = bold24bitFg(TOOL_OK);
+const TOOL_FAIL_SGR = bold24bitFg(TOOL_FAIL);
+const TOOL_DENIED_SGR = bold24bitFg(TOOL_DENIED);
+const TOOL_OUTPUT_DIM_SGR = fg24bit(TOOL_OUTPUT_DIM);
+
 export type WidthSource = () => number;
 
 export interface TmuxPresenterWriter {
   write(value: string): unknown;
+}
+
+// First-line intro override for writePrefixed. Used by the tool lifecycle
+// path (TMUX-049) which replaces `<who>> ` with `tool> ` or `tool< <sym> `.
+interface PrefixOverride {
+  readonly intro: string;
+  readonly sgr: string | undefined;
 }
 
 export interface TmuxPresenterOptions {
@@ -198,6 +222,17 @@ export class TmuxPresenter implements RecordObserver {
       return;
     }
 
+    // TMUX-049: tool lifecycle has its own prefix grammar (`tool>` / `tool<`)
+    // instead of the speaker prefix; rendered on the calling entity's pane.
+    if (event.type === 'tool_use') {
+      this.writeToolInvoke(writer, event.payload as ToolUsePayload);
+      return;
+    }
+    if (event.type === 'tool_result') {
+      this.writeToolResult(writer, event.payload as ToolResultPayload);
+      return;
+    }
+
     const formatted = formatCligentEvent(event);
     if (formatted !== null) {
       if (event.type === 'text_delta') {
@@ -206,6 +241,43 @@ export class TmuxPresenter implements RecordObserver {
         this.writePrefixedBlock(writer, who, formatted);
       }
     }
+  }
+
+  private writeToolInvoke(
+    writer: TmuxPresenterWriter,
+    payload: ToolUsePayload,
+  ): void {
+    const inputSummary = summarizeToolInput(payload.input);
+    const header = inputSummary
+      ? `${payload.toolName} ${inputSummary}`
+      : payload.toolName;
+    this.writePrefixedBlock(writer, 'tool', `${header}\n`, {
+      intro: 'tool> ',
+      sgr: TOOL_INVOKE_SGR,
+    });
+  }
+
+  private writeToolResult(
+    writer: TmuxPresenterWriter,
+    payload: ToolResultPayload,
+  ): void {
+    const { symbol, sgr } = toolResultStyle(payload.status);
+    const intro = `tool< ${symbol} `;
+    const durationText = formatDuration(payload.durationMs);
+    const headLine = durationText
+      ? `${payload.toolName} ${durationText}`
+      : payload.toolName;
+    const outputText = stringifyToolOutput(payload.output).trimEnd();
+    // Tool output body is dimmed via overlay0 (plain — not bold). The
+    // wrapper SGR runs through the parser, so the activeBodySgr machinery
+    // from TMUX-046 keeps every continuation indent uncolored.
+    const dimmedBody = outputText
+      ? `\n${TOOL_OUTPUT_DIM_SGR}${outputText}${SGR_RESET}`
+      : '';
+    this.writePrefixedBlock(writer, 'tool', `${headLine}${dimmedBody}\n`, {
+      intro,
+      sgr,
+    });
   }
 
   // Drains any escape that the writer's parser is still holding from a prior
@@ -230,11 +302,12 @@ export class TmuxPresenter implements RecordObserver {
     writer: TmuxPresenterWriter,
     who: string,
     value: string,
+    override?: PrefixOverride,
   ): void {
     this.flushPendingEscape(writer);
     this.breakLineIfNeeded(writer);
     this.resetLineOffset(writer);
-    this.writePrefixed(writer, who, ensureTrailingNewline(value));
+    this.writePrefixed(writer, who, ensureTrailingNewline(value), override);
     this.resetLineOffset(writer);
   }
 
@@ -254,6 +327,7 @@ export class TmuxPresenter implements RecordObserver {
     writer: TmuxPresenterWriter,
     who: string,
     value: string,
+    override?: PrefixOverride,
   ): void {
     let atLineStart = this.lineStarts.get(writer) ?? true;
     let lineOffset = this.lineOffsets.get(writer) ?? 0;
@@ -261,7 +335,9 @@ export class TmuxPresenter implements RecordObserver {
     const width = this.effectiveWrapWidth(writer);
     let output = '';
 
-    const prefixSgr = this.prefixSgr(who);
+    const introText = override?.intro ?? `${who}> `;
+    const introSgr =
+      override !== undefined ? override.sgr : this.prefixSgr(who);
     // The last SGR opener the body emitted (i.e., a CSI ending in `m` that is
     // not a reset). TMUX-038 requires continuation indents to stay uncolored;
     // at every continuation boundary we close this span before the `\n`,
@@ -275,9 +351,9 @@ export class TmuxPresenter implements RecordObserver {
     const emitIntro = (): void => {
       // TMUX-038: only the first-line prefix carries color; continuation
       // indents on wrapped/multi-line blocks stay uncolored.
-      const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
-      if (lineOffset === 0 && prefixSgr) {
-        output += `${prefixSgr}${intro}${SGR_RESET}`;
+      const intro = lineOffset === 0 ? introText : CONTINUATION_INDENT;
+      if (lineOffset === 0 && introSgr) {
+        output += `${introSgr}${intro}${SGR_RESET}`;
       } else {
         output += intro;
       }
@@ -422,6 +498,69 @@ function ensureTrailingNewline(value: string): string {
 function paintStatus(kind: 'error' | 'aborted', text: string): string {
   const sgr = kind === 'error' ? STATUS_ERROR_SGR : STATUS_ABORTED_SGR;
   return `${sgr}${text}${SGR_RESET}`;
+}
+
+// TMUX-049 tool-result outcome → status symbol + prefix SGR. Mirrors the
+// outcome palette: success/green, error/red, denied/yellow.
+function toolResultStyle(
+  status: ToolResultPayload['status'],
+): { symbol: string; sgr: string } {
+  if (status === 'success') return { symbol: '✓', sgr: TOOL_OK_SGR };
+  if (status === 'error') return { symbol: '✗', sgr: TOOL_FAIL_SGR };
+  return { symbol: '·', sgr: TOOL_DENIED_SGR };
+}
+
+// Pick the most useful single-string description of a tool's input for the
+// `tool>` header. Known keys come first (matching the most common tools the
+// adapters expose); fall back to a truncated JSON dump.
+function summarizeToolInput(input: Record<string, unknown>): string {
+  for (const key of [
+    'command',
+    'file_path',
+    'path',
+    'pattern',
+    'prompt',
+    'description',
+  ]) {
+    const value = input[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return truncate(value.replace(/\s+/g, ' '), 60);
+    }
+  }
+  try {
+    const dump = JSON.stringify(input);
+    if (dump === undefined || dump === '{}') return '';
+    return truncate(dump.replace(/\s+/g, ' '), 60);
+  } catch {
+    return '';
+  }
+}
+
+// Tool result output payloads vary: string, `{ stdout }`, or JSON-shaped
+// structured data. Pick the human-readable form when one exists; otherwise
+// pretty-print JSON.
+function stringifyToolOutput(output: unknown): string {
+  if (output === undefined || output === null) return '';
+  if (typeof output === 'string') return output;
+  if (typeof output === 'object' && 'stdout' in output) {
+    const stdout = (output as { stdout: unknown }).stdout;
+    if (typeof stdout === 'string') return stdout;
+  }
+  try {
+    return JSON.stringify(output, null, 2);
+  } catch {
+    return '';
+  }
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined) return '';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 // Distinguishes SGR (Select Graphic Rendition) escapes — CSI parameters

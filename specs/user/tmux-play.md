@@ -224,7 +224,23 @@ The result is a status line whose prefix carries the speaker color and whose bod
 
 ### TMUX-040
 
-The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), and operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`). Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane.
+The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane; role-emitted tool events remain in their respective role panes.
+
+### TMUX-049
+
+`tool_use` and `tool_result` events shall render with a dedicated `tool>` / `tool<` prefix grammar in the calling entity's pane (the role pane for role-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)), replacing the `<who>> ` speaker prefix for those events.
+
+A `tool_use` event shall render as a single line `tool> <toolName> <inputSummary>` where the prefix bytes `tool> ` are wrapped in the bold 24-bit-foreground peach `#fab387` SGR pair and the body remains unstyled. `<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `tool> <toolName>` with no trailing space.
+
+A `tool_result` event shall render as a header line followed by the tool's output as a continuation block. The header is `tool< <symbol> <toolName>[ <duration>]` where `<symbol>` and the prefix SGR derive from `status`:
+
+| `status` | Symbol | Mocha role | Hex |
+| --- | --- | --- | --- |
+| `success` | `✓` | `green` | `#a6e3a1` |
+| `error` | `✗` | `red` | `#f38ba8` |
+| `denied` | `·` | `yellow` | `#f9e2af` |
+
+`<duration>` is `<n>ms` when `durationMs < 1000`, `<n.n>s` otherwise; the duration segment is omitted when `durationMs` is undefined. The tool's output body (extracted as the string itself, or `output.stdout` when present, or the pretty-printed JSON of `output` otherwise) follows on continuation lines wrapped in the plain 24-bit-foreground `overlay0` `#6c7086` SGR pair (no bold), so large stdout reads as a dim aside rather than competing with agent prose. When the extracted output is empty or undefined, the header line stands alone with no body.
 
 ### TMUX-046
 
