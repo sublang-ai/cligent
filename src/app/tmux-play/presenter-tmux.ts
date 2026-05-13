@@ -58,6 +58,10 @@ export class TmuxPresenter implements RecordObserver {
   private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
   private readonly lineColumns = new WeakMap<TmuxPresenterWriter, number>();
   private readonly parsers = new WeakMap<TmuxPresenterWriter, DisplayParser>();
+  // TMUX-046: per-writer carry of the last body-emitted SGR opener so the
+  // close/reopen continuation invariant survives across `text_delta` events
+  // that split the opener and the wrap/newline boundary into separate calls.
+  private readonly activeBodySgrs = new WeakMap<TmuxPresenterWriter, string>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
@@ -258,11 +262,19 @@ export class TmuxPresenter implements RecordObserver {
     let output = '';
 
     const prefixSgr = this.prefixSgr(who);
+    // The last SGR opener the body emitted (i.e., a CSI ending in `m` that is
+    // not a reset). TMUX-038 requires continuation indents to stay uncolored;
+    // at every continuation boundary we close this span before the `\n`,
+    // emit the (uncolored) indent, and reopen it so the body resumes its
+    // color on the new row. Per TMUX-046 this state is carried on the
+    // writer, not on a single writePrefixed() call, so a streaming sequence
+    // that splits the opener and the wrap across separate `text_delta`
+    // events still honors the close/reopen rule.
+    let activeBodySgr = this.activeBodySgrs.get(writer);
 
     const emitIntro = (): void => {
       // TMUX-038: only the first-line prefix carries color; continuation
-      // indents on wrapped/multi-line blocks stay uncolored so the body's
-      // own ANSI state (the empty default) governs them.
+      // indents on wrapped/multi-line blocks stay uncolored.
       const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
       if (lineOffset === 0 && prefixSgr) {
         output += `${prefixSgr}${intro}${SGR_RESET}`;
@@ -284,16 +296,30 @@ export class TmuxPresenter implements RecordObserver {
       if (token.type === 'newline') {
         // Newlines that arrive before any visible content still emit so leading
         // blank lines render blank without consuming the speaker prefix.
-        output += '\n';
+        // Close any active body SGR before the newline so the continuation
+        // indent that follows stays uncolored.
+        output += activeBodySgr ? `${SGR_RESET}\n` : '\n';
         atLineStart = true;
         column = 0;
         continue;
       }
       if (atLineStart) {
         emitIntro();
+        // On a continuation line (lineOffset > 1 after emitIntro), reopen
+        // the body SGR after the uncolored indent so the body's color
+        // continues. First-line prefixes have their own SGR pair emitted
+        // inside emitIntro and don't need this re-emit.
+        if (lineOffset > 1 && activeBodySgr) {
+          output += activeBodySgr;
+        }
       }
       if (token.type === 'escape') {
         output += token.sequence;
+        if (isSgrEscape(token.sequence)) {
+          activeBodySgr = isSgrReset(token.sequence)
+            ? undefined
+            : token.sequence;
+        }
         continue;
       }
       // Soft-wrap before placing a visible char that would overflow the pane;
@@ -304,7 +330,11 @@ export class TmuxPresenter implements RecordObserver {
         column + token.cells > width &&
         column > CONTINUATION_INDENT.length
       ) {
-        output += `\n${CONTINUATION_INDENT}`;
+        if (activeBodySgr) {
+          output += `${SGR_RESET}\n${CONTINUATION_INDENT}${activeBodySgr}`;
+        } else {
+          output += `\n${CONTINUATION_INDENT}`;
+        }
         column = CONTINUATION_INDENT.length;
         lineOffset += 1;
       }
@@ -315,6 +345,11 @@ export class TmuxPresenter implements RecordObserver {
     this.lineStarts.set(writer, atLineStart);
     this.lineOffsets.set(writer, lineOffset);
     this.lineColumns.set(writer, column);
+    if (activeBodySgr === undefined) {
+      this.activeBodySgrs.delete(writer);
+    } else {
+      this.activeBodySgrs.set(writer, activeBodySgr);
+    }
     if (output) {
       writer.write(output);
     }
@@ -387,4 +422,18 @@ function ensureTrailingNewline(value: string): string {
 function paintStatus(kind: 'error' | 'aborted', text: string): string {
   const sgr = kind === 'error' ? STATUS_ERROR_SGR : STATUS_ABORTED_SGR;
   return `${sgr}${text}${SGR_RESET}`;
+}
+
+// Distinguishes SGR (Select Graphic Rendition) escapes — CSI parameters
+// terminated by `m` — from other CSI commands (cursor movement, erase,
+// etc.) which don't affect text color/style and so don't need the
+// continuation-indent uncoloring treatment.
+function isSgrEscape(seq: string): boolean {
+  return /^\x1b\[[\d;]*m$/.test(seq);
+}
+
+// `\x1b[m` (no params) is the canonical "reset all attributes" form, as is
+// `\x1b[0m`. Both close any active SGR span.
+function isSgrReset(seq: string): boolean {
+  return seq === '\x1b[0m' || seq === '\x1b[m';
 }

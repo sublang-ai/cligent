@@ -597,11 +597,15 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(roleEvent('coder', textDeltaEvent('\x1b[31')));
     presenter.onRecord(roleEvent('coder', textDeltaEvent('m world')));
 
-    // Use raw() — the test wants the body's own \x1b[31m preserved through
-    // soft-wrap, which text() would strip together with the prefix SGR.
+    // The original intent: the body's `\x1b[31m` survives the streaming
+    // split and is emitted as a single atomic escape (never broken across
+    // the wrap boundary). That property still holds. Per the TMUX-038
+    // continuation-indent-uncoloring invariant, the body SGR is now also
+    // closed before `\n  ` and reopened after the indent so the indent
+    // stays outside the red span.
     expect(stripPrefixSgr(coder.raw())).toBe(
-      'coder> hello\x1b[31m\n' +
-        '   world',
+      'coder> hello\x1b[31m\x1b[0m\n' +
+        '  \x1b[31m world',
     );
   });
 
@@ -794,6 +798,77 @@ describe('TmuxPresenter', () => {
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0mhello\n   world\n',
     );
+  });
+
+  it('carries the body SGR across text_delta events for the indent-uncoloring rule', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      // No roleAdapters → uncolored prefix; the test is about the BODY's
+      // SGR persisting across deltas, not about the prefix.
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    // Delta 1: opens red SGR, emits no visible content. activeBodySgr lives
+    // on the writer (TMUX-046 per-writer state) so delta 2's call still
+    // knows the span is open.
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('\x1b[31m')));
+    // Delta 2: 9 visible chars; with prefix `coder> ` (7 cells) and width
+    // 12, the wrap fires after the 5th char at column 12 — entirely
+    // inside delta 2.
+    presenter.onRecord(roleEvent('coder', textDeltaEvent('abcdefghi')));
+
+    // The wrap closes the red opened in delta 1, emits the uncolored
+    // indent, then reopens red. Without the per-writer carry, delta 2's
+    // local activeBodySgr would be undefined and the indent would render
+    // colored.
+    expect(coder.raw()).toBe(
+      'coder> \x1b[31mabcde\x1b[0m\n  \x1b[31mfghi',
+    );
+  });
+
+  it('closes and reopens the body SGR around continuation indents when wrapping a colored status', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleAdapters: new Map([['coder', 'claude']]),
+      // Width 20: `coder> ` is 7 cells, body width is 13, the error body
+      // wraps three times.
+      roleWidths: new Map([['coder', () => 20]]),
+    });
+
+    presenter.onRecord(
+      roleFinished('coder', 'error', 'this is a long error message that will need to wrap'),
+    );
+
+    // Each continuation boundary closes the red body span before \n and
+    // reopens it after the (uncolored) 2-space indent. The TMUX-038
+    // continuation-indent-uncolored invariant.
+    expect(coder.raw()).toBe(
+      // First row: claude prefix, body red opens, body, body red closes.
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0m' +
+        '\x1b[1;38;2;243;139;168m[error: this \x1b[0m\n' +
+        // Continuation row: uncolored indent, body red reopens, body, body red closes.
+        '  \x1b[1;38;2;243;139;168mis a long error me\x1b[0m\n' +
+        '  \x1b[1;38;2;243;139;168mssage that will ne\x1b[0m\n' +
+        '  \x1b[1;38;2;243;139;168med to wrap]\x1b[0m\n',
+    );
+
+    // Structural invariant: every `\n  ` continuation boundary is preceded
+    // by an SGR reset, so the indent itself sits outside any active span.
+    const raw = coder.raw();
+    let cursor = 0;
+    let boundaries = 0;
+    while (true) {
+      const idx = raw.indexOf('\n  ', cursor);
+      if (idx < 0) break;
+      expect(raw.slice(0, idx).endsWith('\x1b[0m')).toBe(true);
+      boundaries += 1;
+      cursor = idx + 3;
+    }
+    expect(boundaries).toBeGreaterThanOrEqual(3);
   });
 });
 
