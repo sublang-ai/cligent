@@ -14,8 +14,23 @@ import type {
   RolePromptRecord,
   TmuxPlayRecord,
 } from './records.js';
+import {
+  SGR_RESET,
+  SPEAKER_BOSS,
+  SPEAKER_CAPTAIN,
+  STATUS_ABORTED,
+  STATUS_ERROR,
+  bold24bitFg,
+  roleAccent,
+} from './role-colors.js';
 
 const CONTINUATION_INDENT = '  ';
+
+// TMUX-038/039 prefix and status SGR anchors. Built once at module load.
+const PREFIX_BOSS_SGR = bold24bitFg(SPEAKER_BOSS);
+const PREFIX_CAPTAIN_SGR = bold24bitFg(SPEAKER_CAPTAIN);
+const STATUS_ERROR_SGR = bold24bitFg(STATUS_ERROR);
+const STATUS_ABORTED_SGR = bold24bitFg(STATUS_ABORTED);
 
 export type WidthSource = () => number;
 
@@ -28,11 +43,16 @@ export interface TmuxPresenterOptions {
   readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
   readonly bossWidth?: WidthSource;
   readonly roleWidths?: ReadonlyMap<string, WidthSource>;
+  // role-id → adapter-name. Used to pick the role's prefix SGR color from
+  // the adapter map per TMUX-048. When absent the role prefix stays uncolored
+  // (graceful fallback for callers / older tests that don't supply it).
+  readonly roleAdapters?: ReadonlyMap<string, string>;
 }
 
 export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
+  private readonly roleAdapters: ReadonlyMap<string, string>;
   private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
   private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
   private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
@@ -42,6 +62,7 @@ export class TmuxPresenter implements RecordObserver {
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
     this.roles = options.roles;
+    this.roleAdapters = options.roleAdapters ?? new Map();
     if (options.bossWidth) {
       this.widths.set(this.boss, options.bossWidth);
     }
@@ -55,6 +76,17 @@ export class TmuxPresenter implements RecordObserver {
     }
   }
 
+  // Returns the SGR opener (`\x1b[1;38;2;…m`) for a speaker's prefix, or
+  // undefined when there's no defined color (fallback: emit the prefix in
+  // the writer's default foreground).
+  private prefixSgr(who: string): string | undefined {
+    if (who === 'boss') return PREFIX_BOSS_SGR;
+    if (who === 'captain') return PREFIX_CAPTAIN_SGR;
+    const adapter = this.roleAdapters.get(who);
+    if (adapter) return bold24bitFg(roleAccent(adapter));
+    return undefined;
+  }
+
   onRecord(record: TmuxPlayRecord): void {
     switch (record.type) {
       case 'turn_started':
@@ -65,7 +97,7 @@ export class TmuxPresenter implements RecordObserver {
         this.writePrefixedLine(
           this.boss,
           'captain',
-          `[turn aborted: ${record.reason ?? 'aborted'}]`,
+          paintStatus('aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
         );
         break;
       case 'role_prompt':
@@ -94,7 +126,7 @@ export class TmuxPresenter implements RecordObserver {
         this.writePrefixedLine(
           this.boss,
           'captain',
-          `[runtime error: ${record.message}]`,
+          paintStatus('error', `[runtime error: ${record.message}]`),
         );
         break;
     }
@@ -146,8 +178,8 @@ export class TmuxPresenter implements RecordObserver {
 
     const line =
       result.status === 'error'
-        ? `[error: ${result.error ?? 'Agent run failed'}]`
-        : '[aborted]';
+        ? paintStatus('error', `[error: ${result.error ?? 'Agent run failed'}]`)
+        : paintStatus('aborted', '[aborted]');
     this.writePrefixedLine(writer, who, line);
   }
 
@@ -225,9 +257,18 @@ export class TmuxPresenter implements RecordObserver {
     const width = this.effectiveWrapWidth(writer);
     let output = '';
 
+    const prefixSgr = this.prefixSgr(who);
+
     const emitIntro = (): void => {
+      // TMUX-038: only the first-line prefix carries color; continuation
+      // indents on wrapped/multi-line blocks stay uncolored so the body's
+      // own ANSI state (the empty default) governs them.
       const intro = lineOffset === 0 ? `${who}> ` : CONTINUATION_INDENT;
-      output += intro;
+      if (lineOffset === 0 && prefixSgr) {
+        output += `${prefixSgr}${intro}${SGR_RESET}`;
+      } else {
+        output += intro;
+      }
       column = intro.length;
       lineOffset += 1;
       atLineStart = false;
@@ -337,4 +378,13 @@ function formatStatusData(
 
 function ensureTrailingNewline(value: string): string {
   return value.endsWith('\n') ? value : `${value}\n`;
+}
+
+// TMUX-039 status coloring. The bracketed status body gets a red (error) or
+// yellow (aborted) bold span; the surrounding speaker prefix keeps its own
+// SGR colors. Wrapping is opaque to the DisplayParser — it sees the SGR
+// bytes as zero-width escape tokens and preserves them through soft-wrap.
+function paintStatus(kind: 'error' | 'aborted', text: string): string {
+  const sgr = kind === 'error' ? STATUS_ERROR_SGR : STATUS_ABORTED_SGR;
+  return `${sgr}${text}${SGR_RESET}`;
 }

@@ -125,7 +125,8 @@ describe('TmuxPlaySession', () => {
 
     await session.start();
 
-    expect(readline.promptValue).toBe('boss> ');
+    // TMUX-038: boss> prefix wrapped in blue SGR (#89b4fa) and reset.
+    expect(readline.promptValue).toBe('\x1b[1;38;2;137;180;250mboss> \x1b[0m');
     expect(readline.promptCount).toBe(1);
     expect(factory).toHaveBeenCalledTimes(1);
     expect(createRuntime).toHaveBeenCalledWith(

@@ -7,6 +7,19 @@ import type { CligentEvent } from '../../types.js';
 import { createTmuxPresenter } from './presenter-tmux.js';
 import type { TmuxPlayRecord } from './records.js';
 
+// Per TMUX-038/039 the presenter emits SGR escapes around speaker prefixes
+// and status bodies. Pre-existing routing / wrapping / content tests assert
+// the plain visible text — call `text()` (ANSI stripped) for those. The new
+// color-aware tests query `raw()` for byte-exact comparison.
+const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
+
+// For tests that intentionally pass an ANSI sequence through the body but
+// don't care about the prefix's color: strip the SGR pair around the
+// `<who>> ` first-line prefix and keep everything else intact.
+function stripPrefixSgr(value: string): string {
+  return value.replace(/\x1B\[1;38;2;\d+;\d+;\d+m([^\x1B]*?> )\x1B\[0m/g, '$1');
+}
+
 class MemoryWriter {
   readonly chunks: string[] = [];
 
@@ -14,8 +27,12 @@ class MemoryWriter {
     this.chunks.push(value);
   }
 
-  text(): string {
+  raw(): string {
     return this.chunks.join('');
+  }
+
+  text(): string {
+    return this.raw().replace(ANSI_PATTERN, '');
   }
 }
 
@@ -580,7 +597,9 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(roleEvent('coder', textDeltaEvent('\x1b[31')));
     presenter.onRecord(roleEvent('coder', textDeltaEvent('m world')));
 
-    expect(coder.text()).toBe(
+    // Use raw() — the test wants the body's own \x1b[31m preserved through
+    // soft-wrap, which text() would strip together with the prefix SGR.
+    expect(stripPrefixSgr(coder.raw())).toBe(
       'coder> hello\x1b[31m\n' +
         '   world',
     );
@@ -600,7 +619,9 @@ describe('TmuxPresenter', () => {
       roleEvent('coder', textEvent('\x1b[31mhello\x1b[0m world!')),
     );
 
-    expect(coder.text()).toBe(
+    // Use raw() — preserving the body's own SGR through soft-wrap is the
+    // point. The leading prefix SGR (if any) is stripped by stripPrefixSgr.
+    expect(stripPrefixSgr(coder.raw())).toBe(
       'coder> \x1b[31mhello\x1b[0m\n' +
         '   world!\n',
     );
@@ -615,6 +636,164 @@ describe('TmuxPresenter', () => {
     expect(() =>
       presenter.onRecord(rolePrompt('coder', 'implement feature')),
     ).toThrow('Missing tmux presenter writer for role: coder');
+  });
+
+  // TMUX-038/039 color-aware assertions.
+
+  it('wraps the captain prefix in mauve SGR and leaves body uncolored', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(rolePrompt('coder', 'implement feature'));
+
+    // Mauve = #cba6f7 → SGR fg 203;166;247.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0mimplement feature\n',
+    );
+  });
+
+  it('keys the role prefix color off the adapter map per TMUX-048', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const reviewer = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([
+        ['coder', coder],
+        ['reviewer', reviewer],
+      ]),
+      roleAdapters: new Map([
+        ['coder', 'claude'],
+        ['reviewer', 'codex'],
+      ]),
+    });
+
+    presenter.onRecord(roleEvent('coder', textEvent('done')));
+    presenter.onRecord(roleEvent('reviewer', textEvent('lgtm')));
+
+    // claude → green #a6e3a1 → fg 166;227;161.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0mdone\n',
+    );
+    // codex → teal #94e2d5 → fg 148;226;213.
+    expect(reviewer.raw()).toBe(
+      '\x1b[1;38;2;148;226;213mreviewer> \x1b[0mlgtm\n',
+    );
+  });
+
+  it('falls back to uncolored prefix when no adapter is mapped for a role', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+      // roleAdapters intentionally omitted.
+    });
+
+    presenter.onRecord(roleEvent('coder', textEvent('hello')));
+
+    expect(coder.raw()).toBe('coder> hello\n');
+  });
+
+  it('paints role-error body red while preserving the role prefix color', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+      roleAdapters: new Map([['coder', 'claude']]),
+    });
+
+    presenter.onRecord(roleFinished('coder', 'error', 'role failed'));
+
+    // Prefix carries claude green (166;227;161); body carries error red
+    // (#f38ba8 → 243;139;168). Two distinct SGR spans on one line.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0m' +
+        '\x1b[1;38;2;243;139;168m[error: role failed]\x1b[0m\n',
+    );
+  });
+
+  it('paints role-aborted body yellow while preserving the role prefix color', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map([['coder', coder]]),
+      roleAdapters: new Map([['coder', 'codex']]),
+    });
+
+    presenter.onRecord(roleFinished('coder', 'aborted'));
+
+    // Aborted yellow = #f9e2af → fg 249;226;175.
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;148;226;213mcoder> \x1b[0m' +
+        '\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n',
+    );
+  });
+
+  it('paints captain-pane turn_aborted body yellow under captain prefix', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map(),
+    });
+
+    presenter.onRecord({
+      type: 'turn_aborted',
+      turnId: 1,
+      timestamp: 0,
+      reason: 'sigint',
+    });
+
+    expect(boss.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
+        '\x1b[1;38;2;249;226;175m[turn aborted: sigint]\x1b[0m\n',
+    );
+  });
+
+  it('paints runtime_error body red under captain prefix', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map(),
+    });
+
+    presenter.onRecord({
+      type: 'runtime_error',
+      turnId: null,
+      timestamp: 0,
+      message: 'boom',
+    });
+
+    expect(boss.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
+        '\x1b[1;38;2;243;139;168m[runtime error: boom]\x1b[0m\n',
+    );
+  });
+
+  it('does not color continuation indent on wrapped blocks', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleAdapters: new Map([['coder', 'claude']]),
+      roleWidths: new Map([['coder', () => 12]]),
+    });
+
+    // 'coder> hello world' wraps at width 12: first line carries SGR prefix,
+    // continuation line carries only two-space indent with no SGR. The space
+    // between `hello` and `world` ends up on the continuation row, giving
+    // `  ` (indent) + ` world` (carried-over space + word).
+    presenter.onRecord(roleEvent('coder', textEvent('hello world')));
+
+    expect(coder.raw()).toBe(
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0mhello\n   world\n',
+    );
   });
 });
 
@@ -635,5 +814,24 @@ function roleEvent(roleId: string, event: CligentEvent): TmuxPlayRecord {
     timestamp: 101,
     roleId,
     event,
+  };
+}
+
+function roleFinished(
+  roleId: string,
+  status: 'error' | 'aborted',
+  error?: string,
+): TmuxPlayRecord {
+  return {
+    type: 'role_finished',
+    turnId: 1,
+    timestamp: 102,
+    roleId,
+    result: {
+      roleId,
+      turnId: 1,
+      status,
+      ...(error !== undefined ? { error } : {}),
+    },
   };
 }

@@ -170,6 +170,16 @@ Verifies: [TMUX-039](../user/tmux-play.md#tmux-039)
 
 Given a role and Captain that finish with `status: 'ok'`, the captured pane content shall not contain `[role <id> ok]` or `[captain ok]`. Given a role that finishes with `status: 'error'`, the role pane shall contain a single `<roleId>> [error: <message>]` line where `<message>` matches `result.error`; given a Captain run that finishes with `status: 'error'`, the Boss/Captain pane shall contain a single `captain> [error: <message>]` line where `<message>` matches `result.error`. Given a role that finishes with `status: 'aborted'`, the role pane shall contain a single `<roleId>> [aborted]` line; given a Captain run that finishes with `status: 'aborted'`, the Boss/Captain pane shall contain a single `captain> [aborted]` line.
 
+### TTMUX-041
+Verifies: [TMUX-038](../user/tmux-play.md#tmux-038)
+
+Given the presenter receives a `captain` block, the writer shall capture bytes `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m` immediately before the body's first nonblank line. Given a `coder` role whose adapter is `claude`, the same writer shall capture `\x1b[1;38;2;166;227;161mcoder> \x1b[0m` before the body. Given an unmapped role (no `roleAdapters` entry), the prefix shall fall back to the uncolored `<roleId>> ` form. Continuation indents in wrapped or multi-line blocks shall NOT carry any SGR escape.
+
+### TTMUX-042
+Verifies: [TMUX-039](../user/tmux-play.md#tmux-039)
+
+Given a role error finished record on `coder` (adapter `claude`), the role pane shall capture `\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1;38;2;243;139;168m[error: <message>]\x1b[0m\n`. Given a role aborted record on the same role, the pane shall capture the captain or role prefix span followed by `\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n`. Given a `turn_aborted` record on the Boss/Captain pane, the captured bytes shall include the captain mauve prefix span followed by `\x1b[1;38;2;249;226;175m[turn aborted: <reason>]\x1b[0m\n`. Given a `runtime_error` record on the Boss/Captain pane, the captured bytes shall include the captain mauve prefix span followed by `\x1b[1;38;2;243;139;168m[runtime error: <message>]\x1b[0m\n`.
+
 ### TTMUX-027
 Verifies: [TMUX-040](../user/tmux-play.md#tmux-040)
 

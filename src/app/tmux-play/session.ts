@@ -21,6 +21,7 @@ import {
   type TmuxPlayConfig,
 } from './config.js';
 import { createTmuxPresenter, type WidthSource } from './presenter-tmux.js';
+import { SGR_RESET, SPEAKER_BOSS, bold24bitFg } from './role-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
@@ -127,11 +128,15 @@ export class TmuxPlaySession {
         this.rolePaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
       );
     }
+    const roleAdapters = new Map(
+      config.roles.map((role) => [role.id, role.adapter]),
+    );
     const presenter = createTmuxPresenter({
       boss: output,
       roles: logStreams,
       bossWidth: () => outputWidth(output),
       roleWidths,
+      roleAdapters,
     });
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
@@ -151,7 +156,12 @@ export class TmuxPlaySession {
       input: this.options.input ?? process.stdin,
       output,
     });
-    this.readline.setPrompt('boss> ');
+    // TMUX-038: color the `boss> ` prefix blue. Node ≥18's readline strips
+    // ANSI escapes when computing prompt visible width (via getStringWidth),
+    // so cursor positioning still treats the prompt as 6 cells wide.
+    this.readline.setPrompt(
+      `${bold24bitFg(SPEAKER_BOSS)}boss> ${SGR_RESET}`,
+    );
     this.readline.on('line', (line) => {
       this.enqueueLine(line);
     });

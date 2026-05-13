@@ -197,9 +197,30 @@ While in session mode, the Boss readline shall echo the user's input line as the
 
 The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the first nonblank line of the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
 
+The presenter shall color the speaker prefix by wrapping its bytes — including the trailing space — in a bold 24-bit-foreground SGR pair: `\x1b[1;38;2;<r>;<g>;<b>m<who>> \x1b[0m`. Body text following the prefix shall remain unstyled by the presenter, so any ANSI bytes inside the body come from the body itself. Continuation indents shall stay uncolored. The speaker → color mapping is:
+
+| Speaker | Mocha role | Hex |
+| --- | --- | --- |
+| `boss` | `blue` | `#89b4fa` |
+| `captain` | `mauve` | `#cba6f7` |
+| `<roleId>` | adapter-keyed via [TMUX-048](#tmux-048) `roleAccent(role.adapter)` | varies (e.g., `claude` → `#a6e3a1`) |
+
+The Boss readline prompt set by session mode shall carry the same colored form (`\x1b[1;38;2;137;180;250mboss> \x1b[0m`); Node's readline strips ANSI from prompts when computing the visible width, so cursor positioning still treats the prompt as 6 cells wide.
+
 ### TMUX-039
 
 When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
+
+The bracketed status body on these lines shall additionally be wrapped in its own bold 24-bit-foreground SGR pair, distinct from the surrounding speaker prefix span:
+
+| Status kind | Mocha role | Hex |
+| --- | --- | --- |
+| `[error: …]` (role or Captain) | `red` | `#f38ba8` |
+| `[runtime error: …]` (Boss/Captain pane) | `red` | `#f38ba8` |
+| `[aborted]` (role or Captain) | `yellow` | `#f9e2af` |
+| `[turn aborted: …]` (Boss/Captain pane) | `yellow` | `#f9e2af` |
+
+The result is a status line whose prefix carries the speaker color and whose body carries the status color, e.g., `<captain-mauve>captain> </reset><red>[runtime error: boom]</reset>`.
 
 ### TMUX-040
 

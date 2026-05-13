@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { roleAccent } from './role-colors.js';
+import {
+  SGR_RESET,
+  SPEAKER_BOSS,
+  SPEAKER_CAPTAIN,
+  STATUS_ABORTED,
+  STATUS_ERROR,
+  bold24bitFg,
+  roleAccent,
+} from './role-colors.js';
 
 describe('roleAccent', () => {
   it('returns the canonical Mocha accent for each known adapter', () => {
@@ -46,14 +54,35 @@ describe('roleAccent', () => {
     // Sanity guard that the published map avoids the colors already claimed
     // by boss=blue, captain=mauve, tool/peach, error/red, aborted/yellow.
     const reserved = new Set([
-      '#89b4fa', // blue (boss / pane active border)
-      '#cba6f7', // mauve (captain / display-panes active)
+      SPEAKER_BOSS,
+      SPEAKER_CAPTAIN,
       '#fab387', // peach (tool>)
-      '#f38ba8', // red (error)
-      '#f9e2af', // yellow (aborted)
+      STATUS_ERROR,
+      STATUS_ABORTED,
     ]);
     for (const adapter of ['claude', 'codex', 'gemini', 'opencode']) {
       expect(reserved.has(roleAccent(adapter))).toBe(false);
     }
+  });
+});
+
+describe('SGR helpers', () => {
+  it('emits bold + 24-bit foreground for the speaker palette anchors', () => {
+    // Anchors per TMUX-038/039 — changes here are normative.
+    expect(SPEAKER_BOSS).toBe('#89b4fa');
+    expect(SPEAKER_CAPTAIN).toBe('#cba6f7');
+    expect(STATUS_ERROR).toBe('#f38ba8');
+    expect(STATUS_ABORTED).toBe('#f9e2af');
+  });
+
+  it('builds bold24bitFg from the hex byte pairs', () => {
+    expect(bold24bitFg('#89b4fa')).toBe('\x1b[1;38;2;137;180;250m');
+    expect(bold24bitFg('#a6e3a1')).toBe('\x1b[1;38;2;166;227;161m');
+    expect(bold24bitFg('#000000')).toBe('\x1b[1;38;2;0;0;0m');
+    expect(bold24bitFg('#ffffff')).toBe('\x1b[1;38;2;255;255;255m');
+  });
+
+  it('exposes a reset escape that closes the SGR span', () => {
+    expect(SGR_RESET).toBe('\x1b[0m');
   });
 });

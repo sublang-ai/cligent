@@ -30,6 +30,27 @@ export function roleAccent(adapter: string): string {
   return FALLBACK_POOL[hash(adapter) % FALLBACK_POOL.length] ?? FALLBACK_POOL[0]!;
 }
 
+// SGR helpers — single source of styling so the presenter doesn't hand-craft
+// ANSI byte sequences.
+export const SGR_RESET = '\x1b[0m';
+
+// Bold + 24-bit foreground. The terminal must advertise RGB (which TMUX-047
+// enables via terminal-overrides). Hex is `#RRGGBB`.
+export function bold24bitFg(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `\x1b[1;38;2;${r};${g};${b}m`;
+}
+
+// TMUX-038/039: fixed accents for the non-role speakers and status kinds.
+// Kept here next to the role-color map so a future palette swap is a
+// single-file change.
+export const SPEAKER_BOSS = '#89b4fa'; // blue
+export const SPEAKER_CAPTAIN = '#cba6f7'; // mauve
+export const STATUS_ERROR = '#f38ba8'; // red
+export const STATUS_ABORTED = '#f9e2af'; // yellow
+
 // djb2 — deterministic, fast, no dependencies. Stability across runs is the
 // only property we need; cryptographic strength is irrelevant.
 function hash(input: string): number {
