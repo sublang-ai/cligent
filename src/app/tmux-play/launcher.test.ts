@@ -169,28 +169,28 @@ describe('launchTmuxPlay', () => {
       '-t',
       'tmux-play-abc123:0.0',
       '-T',
-      'Captain',
+      'Captain · claude',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.1',
       '-T',
-      'Coder',
+      'Coder · codex',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.3',
       '-T',
-      'Reviewer',
+      'Reviewer · codex',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
       '-t',
       'tmux-play-abc123:0.2',
       '-T',
-      'Analyst',
+      'Analyst · codex',
     );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
@@ -263,6 +263,22 @@ describe('launchTmuxPlay', () => {
     const indexOf = (option: string): number =>
       setCalls.findIndex((call) => call[3] === option);
 
+    // TMUX-047 (truecolor): default-terminal scoped to this session, and
+    // terminal-overrides appended on the server with the leading-comma idiom.
+    expect(setCalls).toContainEqual([
+      'set',
+      '-t',
+      'tmux-play-theme',
+      'default-terminal',
+      'tmux-256color',
+    ]);
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set',
+      '-as',
+      'terminal-overrides',
+      ',*:RGB',
+    );
+
     // TMUX-047: theme options the launcher claims, each with a Mocha hex anchor.
     expect(setCalls).toContainEqual([
       'set',
@@ -278,9 +294,17 @@ describe('launchTmuxPlay', () => {
       'pane-active-border-style',
       'fg=#89b4fa',
     ]);
+    // TMUX-048: inactive pane border dimmed to overlay0 for stronger contrast
+    // with the active blue border.
+    expect(setCalls).toContainEqual([
+      'set',
+      '-t',
+      'tmux-play-theme',
+      'pane-border-style',
+      'fg=#6c7086',
+    ]);
     expect(indexOf('window-status-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('window-status-current-style')).toBeGreaterThanOrEqual(0);
-    expect(indexOf('pane-border-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('message-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('message-command-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('display-panes-colour')).toBeGreaterThanOrEqual(0);
@@ -291,6 +315,7 @@ describe('launchTmuxPlay', () => {
     // options it does NOT touch, so our pane-border-format and status-right
     // strings remain authoritative if a future theme tries to set them.
     const themeOptions = [
+      'default-terminal',
       'status-style',
       'window-status-style',
       'window-status-current-style',
@@ -309,7 +334,7 @@ describe('launchTmuxPlay', () => {
     expect(indexOf('status-right')).toBeGreaterThan(lastThemeIndex);
 
     // First theme set still comes after the layout has been built.
-    expect(optionAt(0)).toBe('status-style');
+    expect(optionAt(0)).toBe('default-terminal');
   });
 
   it('configures the resize hook for a single-role session', async () => {

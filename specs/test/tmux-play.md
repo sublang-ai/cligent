@@ -141,7 +141,17 @@ Given roles with ids `coder` and `reviewer`, when the launcher sets pane titles,
 ### TTMUX-038
 Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
 
-Given the launcher building a tmux session, the `tmux set` calls issued shall include the ten Catppuccin Mocha theme options exactly per [TMUX-047](../user/tmux-play.md#tmux-047) — anchored by `status-style=fg=#cdd6f4,bg=#181825` and `pane-active-border-style=fg=#89b4fa` — and every theme `set` shall appear before the launcher's own `pane-border-format` and `status-right` `set` calls so the launcher's content strings remain authoritative on options the theme does not claim.
+Given the launcher building a tmux session, the `tmux set` calls issued shall include the twelve Catppuccin Mocha theme entries exactly per [TMUX-047](../user/tmux-play.md#tmux-047) — anchored by `default-terminal=tmux-256color`, `terminal-overrides` appended with `,*:RGB`, `status-style=fg=#cdd6f4,bg=#181825`, `pane-active-border-style=fg=#89b4fa`, and `pane-border-style=fg=#6c7086` — and every theme `set` shall appear before the launcher's own `pane-border-format` and `status-right` `set` calls so the launcher's content strings remain authoritative on options the theme does not claim.
+
+### TTMUX-039
+Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
+
+Given a launched session, an attached real-tmux client's `#{client_termfeatures}` shall include `RGB` in its comma-separated feature list, confirming that the `terminal-overrides` append from TTMUX-038 negotiated through to the client. The probe shall run against an actual tmux server (no mocks) and shall self-skip only when `tmux -V` fails.
+
+### TTMUX-040
+Verifies: [TMUX-048](../user/tmux-play.md#tmux-048)
+
+Given a config with captain adapter `claude` and roles `coder` (adapter `codex`) and `reviewer` (adapter `gemini`), when the launcher sets pane titles, the captain pane title shall be `Captain · claude` and the role pane titles shall be `Coder · codex` and `Reviewer · gemini` respectively. The separator shall be ` · ` (space, middle dot, space). The per-adapter accent lookup shall return `#a6e3a1` for `claude`, `#94e2d5` for `codex`, `#b4befe` for `gemini`, `#f5c2e7` for `opencode`, and for any other adapter name shall return a value drawn from the documented fallback pool, identical on repeated calls with the same input.
 
 ## Presenter Output
 

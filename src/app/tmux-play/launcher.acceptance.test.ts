@@ -106,9 +106,9 @@ describe('tmux-play real-tmux acceptance', () => {
           ],
           2_000,
         );
-        const captain = paneByTitle(panes, 'Captain');
-        const coder = paneByTitle(panes, 'Coder');
-        const reviewer = paneByTitle(panes, 'Reviewer');
+        const captain = paneByTitle(panes, 'Captain · claude');
+        const coder = paneByTitle(panes, 'Coder · codex');
+        const reviewer = paneByTitle(panes, 'Reviewer · claude');
         const captainRegion = coder.left - captain.left;
         const coderRegion = reviewer.left - coder.left;
         const reviewerRegion = width - reviewer.left;
@@ -159,9 +159,9 @@ describe('tmux-play real-tmux acceptance', () => {
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
 
-      const captain = paneByTitle(panes, 'Captain');
-      const coder = paneByTitle(panes, 'Coder');
-      const reviewer = paneByTitle(panes, 'Reviewer');
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
 
       // TTMUX-031: layout — 60/90/90 columns within tmux's border accounting.
       // Two 1-cell separators eat 1 col from coder (border with captain) and
@@ -174,10 +174,10 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(reviewer.left).toBe(150);
       expect(reviewer.width).toBe(90);
 
-      // TTMUX-032: pane titles
-      expect(captain.title).toBe('Captain');
-      expect(coder.title).toBe('Coder');
-      expect(reviewer.title).toBe('Reviewer');
+      // TTMUX-032 + TTMUX-040: pane titles carry `· <adapter>`.
+      expect(captain.title).toBe('Captain · claude');
+      expect(coder.title).toBe('Coder · codex');
+      expect(reviewer.title).toBe('Reviewer · claude');
 
       // TTMUX-033: role panes read-only, captain pane writable
       expect(captain.inputOff).toBe('0');
@@ -204,6 +204,48 @@ describe('tmux-play real-tmux acceptance', () => {
 
       const capture = capturePane(sessionName, coder.index);
       expect(capture).not.toContain(probe);
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'enables 24-bit color on the launched session (TTMUX-039)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // Option probe: the launcher's set calls have been applied to a real
+      // tmux server. terminal-overrides is a server option; tmux normalizes
+      // the leading-comma append to the stored entry `*:RGB`.
+      const defaultTerminal = showOption(sessionName, 'default-terminal');
+      expect(defaultTerminal).toBe('tmux-256color');
+
+      const overrides = showOption(sessionName, 'terminal-overrides');
+      expect(overrides.split('\n')).toContain('*:RGB');
+
+      // Feature-negotiation probe: the wildcard `*:RGB` entry causes tmux to
+      // expose the RGB feature in client_termfeatures even before any client
+      // attaches (the server-side feature register reflects the override).
+      const features = displayMessage(sessionName, '#{client_termfeatures}');
+      expect(features.split(',')).toContain('RGB');
     },
     60_000,
   );
@@ -237,6 +279,18 @@ function displayMessage(session: string, format: string): string {
     );
   }
   return result.stdout.trim();
+}
+
+function showOption(session: string, option: string): string {
+  const result = spawnSync(
+    'tmux',
+    ['show-options', '-gv', '-t', session, option],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(`tmux show-options failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trimEnd();
 }
 
 // tmux 3.6 substitutes tab with `_` in -F output, so use `|` as the field

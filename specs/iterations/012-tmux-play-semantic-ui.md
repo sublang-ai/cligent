@@ -40,20 +40,20 @@ Out of scope:
 
 ## Deliverables
 
-- [ ] `src/app/tmux-play/launcher.ts` — truecolor options and adapter-column pane-border format.
-- [ ] `src/app/tmux-play/role-colors.ts` — adapter-name → Mocha-accent map with a deterministic hash fallback.
+- [x] `src/app/tmux-play/launcher.ts` — truecolor options and adapter-column pane-border format.
+- [x] `src/app/tmux-play/role-colors.ts` — adapter-name → Mocha-accent map with a deterministic hash fallback.
 - [ ] `src/app/tmux-play/presenter-tmux.ts` — ANSI-colored speaker prefixes, error/aborted recolor, and tool lifecycle rendering.
-- [ ] `src/app/tmux-play/launcher.test.ts` — assertions for truecolor `set` calls and the enriched pane-border format.
+- [x] `src/app/tmux-play/launcher.test.ts` — assertions for truecolor `set` calls and the enriched pane-border format.
 - [ ] `src/app/tmux-play/presenter-tmux.test.ts` — assertions for prefix ANSI by speaker, tool lifecycle formatting, and dim body for tool stdout.
-- [ ] `specs/user/tmux-play.md` — TMUX-038 amendment, TMUX-040 amendment, TMUX-047 expansion, new TMUX-048, new TMUX-049.
-- [ ] `specs/test/tmux-play.md` — new TTMUX items verifying each above.
+- [/] `specs/user/tmux-play.md` — TMUX-047 expansion + new TMUX-048 (Task 1); TMUX-038 amendment, TMUX-040 amendment, new TMUX-049 pending Tasks 2–3.
+- [/] `specs/test/tmux-play.md` — TTMUX-038/039/040 (Task 1); presenter TTMUX items pending.
 - [ ] `specs/map.md` — TMUX user-row summary mentions "speaker colors" and "tool lifecycle".
 
 ## Tasks
 
 Each task is one commit.
 
-1. [ ] **Truecolor + enriched pane border** — TMUX-047 expansion to claim `default-terminal` and `terminal-overrides`, new TMUX-048 for `<title> · <adapter>` format with active/inactive differentiation and the adapter color map.
+1. [x] **Truecolor + enriched pane border** — TMUX-047 expansion to claim `default-terminal` and `terminal-overrides`, new TMUX-048 for `<title> · <adapter>` format with active/inactive differentiation and the adapter color map.
    Add `role-colors.ts` (the map is exported and unit-tested but unused by presenter in this task).
    Launcher test asserts both new `set` calls plus the new format string.
 2. [ ] **Speaker-prefix coloring** — TMUX-038 amendment permitting ANSI on speaker prefixes; TMUX-039 prose recolored for error/aborted.

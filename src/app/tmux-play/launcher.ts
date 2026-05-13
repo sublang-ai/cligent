@@ -127,7 +127,11 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     bossCommand,
   );
   const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
-  setPaneTitles(options.sessionName, rolePanes);
+  setPaneTitles(
+    options.sessionName,
+    rolePanes,
+    options.loaded.config.captain.adapter,
+  );
   disableRolePaneInput(options.sessionName, rolePanes);
   configureLayoutHooks(options.sessionName, roles.length);
   applyCatppuccinMochaTheme(options.sessionName);
@@ -155,7 +159,6 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
 const CATPPUCCIN_MOCHA = {
   base: '#1e1e2e',
   mantle: '#181825',
-  surface1: '#45475a',
   overlay0: '#6c7086',
   subtext0: '#a6adc8',
   text: '#cdd6f4',
@@ -171,6 +174,11 @@ const CATPPUCCIN_MOCHA = {
 // (theme first, content second) keeps our format strings authoritative.
 function applyCatppuccinMochaTheme(sessionName: string): void {
   const c = CATPPUCCIN_MOCHA;
+  // 24-bit color enablement so the hex values below actually render. tmux
+  // applies terminal-overrides at client attach, and the launcher attaches
+  // strictly after this function runs, so the override negotiates correctly.
+  runTmux('set', '-t', sessionName, 'default-terminal', 'tmux-256color');
+  runTmux('set', '-as', 'terminal-overrides', ',*:RGB');
   runTmux('set', '-t', sessionName, 'status-style', `fg=${c.text},bg=${c.mantle}`);
   runTmux(
     'set',
@@ -186,7 +194,9 @@ function applyCatppuccinMochaTheme(sessionName: string): void {
     'window-status-current-style',
     `fg=${c.mauve},bg=${c.mantle}`,
   );
-  runTmux('set', '-t', sessionName, 'pane-border-style', `fg=${c.surface1}`);
+  // TMUX-048: dim inactive borders to overlay0 (was surface1) so the active
+  // blue border stands out more strongly.
+  runTmux('set', '-t', sessionName, 'pane-border-style', `fg=${c.overlay0}`);
   runTmux(
     'set',
     '-t',
@@ -308,15 +318,27 @@ interface RolePane {
   readonly paneIndex: number;
 }
 
-function setPaneTitles(sessionName: string, rolePanes: readonly RolePane[]): void {
-  runTmux('select-pane', '-t', paneTarget(sessionName, 0), '-T', 'Captain');
+// TMUX-048: pane titles carry `<role> · <adapter>` so each pane reveals which
+// model is in it at a glance, even when the role id is generic (e.g. "Coder").
+function setPaneTitles(
+  sessionName: string,
+  rolePanes: readonly RolePane[],
+  captainAdapter: string,
+): void {
+  runTmux(
+    'select-pane',
+    '-t',
+    paneTarget(sessionName, 0),
+    '-T',
+    `Captain · ${captainAdapter}`,
+  );
   for (const pane of rolePanes) {
     runTmux(
       'select-pane',
       '-t',
       paneTarget(sessionName, pane.paneIndex),
       '-T',
-      titleCaseRoleId(pane.role.id),
+      `${titleCaseRoleId(pane.role.id)} · ${pane.role.adapter}`,
     );
   }
 }

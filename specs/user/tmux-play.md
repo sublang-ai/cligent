@@ -228,20 +228,37 @@ The launcher shall apply the **Catppuccin Mocha** palette per [[1]] to the sessi
 
 The theme shall set exactly these tmux options and no others:
 
-| Option | Mocha role | Hex |
+| Option | Value | Note |
 | --- | --- | --- |
-| `status-style` | `fg=text,bg=mantle` | `fg=#cdd6f4,bg=#181825` |
-| `window-status-style` | `fg=subtext0,bg=mantle` | `fg=#a6adc8,bg=#181825` |
-| `window-status-current-style` | `fg=mauve,bg=mantle` | `fg=#cba6f7,bg=#181825` |
-| `pane-border-style` | `fg=surface1` | `fg=#45475a` |
-| `pane-active-border-style` | `fg=blue` | `fg=#89b4fa` |
-| `message-style` | `fg=base,bg=peach` | `fg=#1e1e2e,bg=#fab387` |
-| `message-command-style` | `fg=base,bg=green` | `fg=#1e1e2e,bg=#a6e3a1` |
-| `display-panes-colour` | `overlay0` | `#6c7086` |
-| `display-panes-active-colour` | `mauve` | `#cba6f7` |
-| `clock-mode-colour` | `mauve` | `#cba6f7` |
+| `default-terminal` | `tmux-256color` | Truecolor enablement so the hex values below render rather than quantizing to the nearest 256-color index. Set on the session. |
+| `terminal-overrides` | append `,*:RGB` | Server option; the leading-comma list-separator idiom prepends `*:RGB` without clobbering existing entries. tmux normalizes the stored value, so `show-options -gv terminal-overrides` reports the entry as `*:RGB`. |
+| `status-style` | `fg=text,bg=mantle` (`fg=#cdd6f4,bg=#181825`) | |
+| `window-status-style` | `fg=subtext0,bg=mantle` (`fg=#a6adc8,bg=#181825`) | |
+| `window-status-current-style` | `fg=mauve,bg=mantle` (`fg=#cba6f7,bg=#181825`) | |
+| `pane-border-style` | `fg=overlay0` (`fg=#6c7086`) | Inactive border; dimmer than the active border for at-a-glance contrast per [TMUX-048](#tmux-048). |
+| `pane-active-border-style` | `fg=blue` (`fg=#89b4fa`) | |
+| `message-style` | `fg=base,bg=peach` (`fg=#1e1e2e,bg=#fab387`) | |
+| `message-command-style` | `fg=base,bg=green` (`fg=#1e1e2e,bg=#a6e3a1`) | |
+| `display-panes-colour` | `overlay0` (`#6c7086`) | |
+| `display-panes-active-colour` | `mauve` (`#cba6f7`) | |
+| `clock-mode-colour` | `mauve` (`#cba6f7`) | |
 
-`pane-border-format`, `pane-border-status`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above and shall be set after the theme so a future swap is a one-place change.
+`pane-border-format`, `pane-border-status`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
+
+### TMUX-048
+
+The launcher shall set each pane's title to `<Display> · <adapter>` where `<Display>` is `Captain` for the Boss/Captain pane and the title-cased role id (per [TMUX-036](#tmux-036)) for each role pane, and `<adapter>` is the adapter name configured in the YAML config for the captain or the role respectively. The middle separator shall be ` · ` (space + U+00B7 middle dot + space).
+
+The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and future role-keyed coloring) as a single lookup keyed by adapter name. Known adapter accents:
+
+| Adapter | Mocha role | Hex |
+| --- | --- | --- |
+| `claude` | `green` | `#a6e3a1` |
+| `codex` | `teal` | `#94e2d5` |
+| `gemini` | `lavender` | `#b4befe` |
+| `opencode` | `pink` | `#f5c2e7` |
+
+For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
 
 ## Role Session Continuity
 
