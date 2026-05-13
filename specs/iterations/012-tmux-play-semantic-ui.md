@@ -67,7 +67,9 @@ Each task is one commit.
 ## Acceptance criteria
 
 - `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` pass at every task boundary.
-- After Task 1, `tmux info | grep -i Tc` inside a launched session reports a non-empty truecolor flag (verifiable via a real-tmux acceptance test added in the same task).
+- After Task 1, two probes pass against a launched session:
+  - Option probe (no client needed): `tmux show-options -gv -t <session> default-terminal` returns `tmux-256color`, and `tmux show-options -gv -t <session> terminal-overrides` contains an entry of `*:RGB` (the modern RGB capability, not the legacy `Tc`). The assertion shall match the entry as printed — tmux normalizes a leading-comma `set-option` argument like `,*:RGB` and emits the stored value without it, so an assertion on the literal `,*:RGB` substring is wrong.
+  - Attached-client probe (real-tmux acceptance test): after a client attaches, `tmux display-message -p -t <session> '#{client_termfeatures}'` includes `RGB` in the comma-separated list. `#{client_termfeatures}` was added in tmux 3.2 and is the authoritative signal that the override negotiated through to the client's terminfo.
 - After Task 2, the presenter snapshot for a Boss → Captain → Role turn shows SGR-colored prefixes per the TMUX-038 table and uncolored body text.
 - After Task 3, the presenter snapshot for a tool-using role shows a `tool>` / `tool<` pair with the correct outcome color and a dim continuation body, and a tool-using captain renders the same pair in the Captain pane per the TMUX-040 amendment.
 - `specs/map.md` TMUX user-row summary reflects the new content.
