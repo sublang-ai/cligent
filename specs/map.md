@@ -52,6 +52,7 @@ meta.md     The spec of specs
 | IR-009 | [009-tmux-play-captain-app.md](iterations/009-tmux-play-captain-app.md) | Implement tmux-play Captain/role app from DR-004 |
 | IR-010 | [010-tmux-play-quickstart.md](iterations/010-tmux-play-quickstart.md) | YAML configs, home fallback, first-run auto-create per DR-004 |
 | IR-011 | [011-tmux-play-presenter-and-layout-refresh.md](iterations/011-tmux-play-presenter-and-layout-refresh.md) | tmux geometry, 4/6/6 split, prefix-style presenter, role continuity |
+| IR-012 | [012-tmux-play-semantic-ui.md](iterations/012-tmux-play-semantic-ui.md) | Truecolor, adapter-aware pane borders, speaker-prefix colors, tool lifecycle rendering |
 
 ## Packages
 
