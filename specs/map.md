@@ -53,6 +53,7 @@ meta.md     The spec of specs
 | IR-010 | [010-tmux-play-quickstart.md](iterations/010-tmux-play-quickstart.md) | YAML configs, home fallback, first-run auto-create per DR-004 |
 | IR-011 | [011-tmux-play-presenter-and-layout-refresh.md](iterations/011-tmux-play-presenter-and-layout-refresh.md) | tmux geometry, 4/6/6 split, prefix-style presenter, role continuity |
 | IR-012 | [012-tmux-play-semantic-ui.md](iterations/012-tmux-play-semantic-ui.md) | Truecolor, adapter-aware pane borders, speaker-prefix colors, tool lifecycle rendering |
+| IR-013 | [013-tmux-play-markdown-rendering.md](iterations/013-tmux-play-markdown-rendering.md) | Markdown-rendered pane output via glow, replacing character-level soft-wrap |
 
 ## Packages
 
