@@ -188,7 +188,15 @@ Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane sh
 ### TTMUX-043
 Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
 
-Given a role `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a role pane writer, the captured bytes shall be `\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n`. Given a `tool_result` event with `status: 'success'`, `toolName: 'Bash'`, `output: { stdout: 'npm test passed\n2 tests run' }`, and `durationMs: 1234`, the captured bytes shall be `\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n  \x1b[38;2;108;112;134mnpm test passed\x1b[0m\n  \x1b[38;2;108;112;134m2 tests run\x1b[0m\n`. Status symbol shall be `✓` for `success`, `✗` for `error`, `·` for `denied`; the corresponding prefix SGR shall use green / red / yellow per the TMUX-049 table. The duration segment shall be `<n>ms` for `durationMs < 1000`, `<n.n>s` otherwise, and absent when `durationMs` is undefined.
+Given a role `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a role pane writer, the captured bytes shall be `\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n`.
+
+Given a `tool_result` event with `status: 'success'`, `toolName: 'Bash'`, and `durationMs: 1234`, the captured bytes shall begin with the colored header line `\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n`. Status symbol shall be `✓` for `success`, `✗` for `error`, `·` for `denied`; the corresponding prefix SGR shall use green / red / yellow per the [TMUX-049](../user/tmux-play.md#tmux-049) table. The duration segment shall be `<n>ms` for `durationMs < 1000`, `<n.n>s` otherwise, and absent when `durationMs` is undefined.
+
+Given a `tool_result` event whose extracted output is non-empty, the body following the header line shall be enclosed in a fenced code block whose fence is a run of backticks one longer than the longest backtick run in the payload, with a minimum of three; the fenced payload shall be passed to `renderMarkdown` per [TMUX-050](../user/tmux-play.md#tmux-050) at the width specified in [TMUX-049](../user/tmux-play.md#tmux-049), and every line of the rendered output shall be prefixed with two spaces before reaching the writer. The retired `overlay0` `#6c7086` SGR pair shall not wrap any byte of the body — `glow`'s code-block rendering supersedes it per the [TMUX-049](../user/tmux-play.md#tmux-049) amendment.
+
+Given a `tool_result` payload that itself contains a ```` ``` ```` line, the selected wrapper fence shall be at least four backticks long so the embedded fence remains inert as literal content of the outer fence and no part of the payload escapes into Markdown rendering at the writer.
+
+Given a `tool_result` event whose extracted output is empty or undefined, the header line shall stand alone with no body.
 
 ### TTMUX-044
 Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
