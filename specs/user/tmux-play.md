@@ -213,6 +213,8 @@ The presenter shall color the speaker prefix by wrapping its bytes — including
 
 The Boss readline prompt set by session mode shall carry the same colored form (`\x1b[1;38;2;137;180;250mboss> \x1b[0m`); Node's readline strips ANSI from prompts when computing the visible width, so cursor positioning still treats the prompt as 6 cells wide.
 
+Per [TMUX-050](#tmux-050), text bodies pass through `glow` before reaching the writer; the presenter applies the prefix and two-space hanging indent to `glow`'s rendered output, and budgets the visible prefix's cell width into the render width passed to `glow` so the prefixed first line and the indented continuation lines both fit the pane. Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass `glow` — they are single-line operational text — and apply the prefix directly.
+
 ### TMUX-039
 
 When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
@@ -248,7 +250,23 @@ A `tool_result` event shall render as a header line followed by the tool's outpu
 
 `<duration>` is `<n>ms` when `durationMs < 1000`, `<n.n>s` otherwise; the duration segment is omitted when `durationMs` is undefined. The tool's output body (extracted as the string itself, or `output.stdout` when present, or the pretty-printed JSON of `output` otherwise) follows on continuation lines wrapped in the plain 24-bit-foreground `overlay0` `#6c7086` SGR pair (no bold), so large stdout reads as a dim aside rather than competing with agent prose. When the extracted output is empty or undefined, the header line stands alone with no body.
 
+### TMUX-050
+
+While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `role_finished` or `captain_finished` record; a `text` event (always a complete block); a `tool_use` or `tool_result` event on the same writer; a `role_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
+
+The render width shall be `max(1, paneWidth - prefixWidth)` where `prefixWidth` is the cell width of the speaker's `<who>> ` first-line prefix. This budget keeps the prefixed first line and the two-space-indented continuations within the pane's display width without triggering a terminal-level rewrap. When no pane-width source is configured for the writer, the render width shall default to `80 - prefixWidth`.
+
+After rendering, the presenter shall apply the [TMUX-038](#tmux-038) prefix grammar to `glow`'s output: the first nonblank line carries the colored `<who>> ` prefix; every nonblank continuation line carries the two-space hanging indent; blank lines stay blank. An all-blank rendered block shall pass through without a synthesized prefix so empty content does not surface as a bare `<who>> ` line.
+
+`glow` owns word-boundary wrapping, fenced-code preservation, table layout, and inline-style rendering inside the block; the presenter shall not reflow `glow`'s output. When `renderMarkdown` raises (a rare mid-session failure given the [TMUX-051](#tmux-051) launcher gate), the presenter shall emit the buffered raw text under the same prefix grammar rather than crash the session.
+
+`text_delta` events accumulate until a boundary fires. Token-by-token streaming is the deliberate tradeoff: Markdown is not a streamable format — a renderer cannot tell whether subsequent bytes belong to an open fence until the closing fence arrives — so partial rendering would corrupt fenced code, tables, and lists.
+
+Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass the buffer-then-render pipeline: each is a single line of operational text, not Markdown, and writes directly with the speaker or tool prefix grammar applied.
+
 ### TMUX-046
+
+_Superseded for text-body wrapping by [TMUX-050](#tmux-050): `glow` owns word-boundary wrapping inside rendered blocks. The cell-measurement rules below remain authoritative for tool-input truncation per [TMUX-049](#tmux-049). The character-level soft-wrap algorithm, the escape-parser carry, and the SGR close/reopen invariant described in the remainder of this item no longer apply to text bodies and are not implemented by the presenter post-IR-013; they are retained here for spec history and to keep the cell-measurement table addressable from one item._
 
 The two-space hanging indent required by [TMUX-038](#tmux-038) shall apply to every visible continuation line in a pane, whether the line break is an explicit `\n` in the source text or a soft wrap inserted by the presenter when content would otherwise exceed the pane's current display width. The presenter shall soft-wrap each prefixed block at the per-pane display width by emitting `\n` followed by the two-space indent in place of the character that would have overflowed, so terminal-level rewrap is unnecessary and every wrapped row visibly carries the indent.
 

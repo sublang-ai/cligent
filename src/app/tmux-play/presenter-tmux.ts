@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { iterateDisplay } from '../shared/display-width.js';
 import { formatCligentEvent } from '../shared/events.js';
-import { DisplayParser, iterateDisplay } from '../shared/display-width.js';
+import { renderMarkdown } from '../shared/glow.js';
 import type {
   CaptainRunResult,
   RoleRunResult,
@@ -35,6 +36,12 @@ import type {
 } from '../../types.js';
 
 const CONTINUATION_INDENT = '  ';
+const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
+
+// Fallback render width when a writer has no width source or its source
+// returns a non-finite value. 80 columns is the conventional terminal width
+// and keeps glow output sane until a real pane width is available.
+const DEFAULT_PANE_WIDTH = 80;
 
 // TMUX-038/039 prefix and status SGR anchors. Built once at module load.
 const PREFIX_BOSS_SGR = bold24bitFg(SPEAKER_BOSS);
@@ -55,13 +62,6 @@ export interface TmuxPresenterWriter {
   write(value: string): unknown;
 }
 
-// First-line intro override for writePrefixed. Used by the tool lifecycle
-// path (TMUX-049) which replaces `<who>> ` with `tool> ` or `tool< <sym> `.
-interface PrefixOverride {
-  readonly intro: string;
-  readonly sgr: string | undefined;
-}
-
 export interface TmuxPresenterOptions {
   readonly boss: TmuxPresenterWriter;
   readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
@@ -73,19 +73,22 @@ export interface TmuxPresenterOptions {
   readonly roleAdapters?: ReadonlyMap<string, string>;
 }
 
+interface OpenBlock {
+  who: string;
+  text: string;
+}
+
 export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
   private readonly roleAdapters: ReadonlyMap<string, string>;
   private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
-  private readonly lineStarts = new WeakMap<TmuxPresenterWriter, boolean>();
-  private readonly lineOffsets = new WeakMap<TmuxPresenterWriter, number>();
-  private readonly lineColumns = new WeakMap<TmuxPresenterWriter, number>();
-  private readonly parsers = new WeakMap<TmuxPresenterWriter, DisplayParser>();
-  // TMUX-046: per-writer carry of the last body-emitted SGR opener so the
-  // close/reopen continuation invariant survives across `text_delta` events
-  // that split the opener and the wrap/newline boundary into separate calls.
-  private readonly activeBodySgrs = new WeakMap<TmuxPresenterWriter, string>();
+  // TMUX-050: per-writer accumulator for the open text block. A block opens
+  // on the first text / text_delta event for a writer and flushes through
+  // glow at the next boundary (run result, prompt, tool event, status,
+  // runtime error, turn abort). Markdown is not streamable — glow needs the
+  // complete block before it can render fenced code, lists, etc. correctly.
+  private readonly blocks = new WeakMap<TmuxPresenterWriter, OpenBlock>();
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
@@ -104,25 +107,16 @@ export class TmuxPresenter implements RecordObserver {
     }
   }
 
-  // Returns the SGR opener (`\x1b[1;38;2;…m`) for a speaker's prefix, or
-  // undefined when there's no defined color (fallback: emit the prefix in
-  // the writer's default foreground).
-  private prefixSgr(who: string): string | undefined {
-    if (who === 'boss') return PREFIX_BOSS_SGR;
-    if (who === 'captain') return PREFIX_CAPTAIN_SGR;
-    const adapter = this.roleAdapters.get(who);
-    if (adapter) return bold24bitFg(roleAccent(adapter));
-    return undefined;
-  }
-
   onRecord(record: TmuxPlayRecord): void {
     switch (record.type) {
       case 'turn_started':
-        break;
       case 'turn_finished':
+      case 'captain_prompt':
+      case 'captain_telemetry':
         break;
       case 'turn_aborted':
-        this.writePrefixedLine(
+        this.flushBlock(this.boss);
+        this.writeStatusLine(
           this.boss,
           'captain',
           paintStatus('aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
@@ -137,8 +131,6 @@ export class TmuxPresenter implements RecordObserver {
       case 'role_finished':
         this.writeRoleFinished(record);
         break;
-      case 'captain_prompt':
-        break;
       case 'captain_event':
         this.writeFormatted(this.boss, 'captain', record.event);
         break;
@@ -146,12 +138,16 @@ export class TmuxPresenter implements RecordObserver {
         this.writeRunResult(this.boss, 'captain', record.result);
         break;
       case 'captain_status':
-        this.writeStatus(record.message, record.data);
-        break;
-      case 'captain_telemetry':
+        this.flushBlock(this.boss);
+        this.writeStatusLine(
+          this.boss,
+          'captain',
+          `[status] ${record.message}${formatStatusData(record.data)}`,
+        );
         break;
       case 'runtime_error':
-        this.writePrefixedLine(
+        this.flushBlock(this.boss);
+        this.writeStatusLine(
           this.boss,
           'captain',
           paintStatus('error', `[runtime error: ${record.message}]`),
@@ -162,7 +158,7 @@ export class TmuxPresenter implements RecordObserver {
 
   private writeRolePrompt(record: RolePromptRecord): void {
     const writer = this.roleWriter(record.roleId);
-    this.writePrefixedBlock(writer, 'captain', record.prompt);
+    this.writeBlock(writer, 'captain', record.prompt);
   }
 
   private writeRoleEvent(record: RoleEventRecord): void {
@@ -181,34 +177,18 @@ export class TmuxPresenter implements RecordObserver {
     );
   }
 
-  private writeStatus(
-    message: string,
-    data: Record<string, unknown> | undefined,
-  ): void {
-    this.writePrefixedLine(
-      this.boss,
-      'captain',
-      `[status] ${message}${formatStatusData(data)}`,
-    );
-  }
-
   private writeRunResult(
     writer: TmuxPresenterWriter,
     who: string,
     result: RoleRunResult | CaptainRunResult,
   ): void {
-    if (result.status === 'ok') {
-      this.flushPendingEscape(writer);
-      this.breakLineIfNeeded(writer);
-      this.resetLineOffset(writer);
-      return;
-    }
-
+    this.flushBlock(writer);
+    if (result.status === 'ok') return;
     const line =
       result.status === 'error'
         ? paintStatus('error', `[error: ${result.error ?? 'Agent run failed'}]`)
         : paintStatus('aborted', '[aborted]');
-    this.writePrefixedLine(writer, who, line);
+    this.writeStatusLine(writer, who, line);
   }
 
   private writeFormatted(
@@ -216,14 +196,12 @@ export class TmuxPresenter implements RecordObserver {
     who: string,
     event: Parameters<typeof formatCligentEvent>[0],
   ): void {
-    // Final result records own visible status; raw terminal protocol events would
-    // duplicate failures and reintroduce noisy ok/usage footers.
-    if (event.type === 'done' || event.type === 'error') {
-      return;
-    }
+    // Final result records own visible status; raw terminal protocol events
+    // would duplicate failures and reintroduce noisy ok/usage footers.
+    if (event.type === 'done' || event.type === 'error') return;
 
-    // TMUX-049: tool lifecycle has its own prefix grammar (`tool>` / `tool<`)
-    // instead of the speaker prefix; rendered on the calling entity's pane.
+    // TMUX-049: tool lifecycle has its own prefix grammar instead of the
+    // speaker prefix, so it bypasses the markdown pipeline.
     if (event.type === 'tool_use') {
       this.writeToolInvoke(writer, event.payload as ToolUsePayload);
       return;
@@ -234,228 +212,144 @@ export class TmuxPresenter implements RecordObserver {
     }
 
     const formatted = formatCligentEvent(event);
-    if (formatted !== null) {
-      if (event.type === 'text_delta') {
-        this.writePrefixed(writer, who, formatted);
-      } else {
-        this.writePrefixedBlock(writer, who, formatted);
-      }
+    if (formatted === null) return;
+    if (event.type === 'text_delta') {
+      this.accumulateText(writer, who, formatted);
+    } else {
+      this.writeBlock(writer, who, formatted);
     }
+  }
+
+  // Append a streaming fragment to the open block on `writer` under speaker
+  // `who`. Opens a new block if none exists. If the speaker changed mid-flight
+  // (defensive — the runtime serializes turns, so this should not happen in
+  // normal flow), flushes the prior block first so the prefix grammar still
+  // matches whoever opened that block.
+  private accumulateText(
+    writer: TmuxPresenterWriter,
+    who: string,
+    text: string,
+  ): void {
+    const block = this.blocks.get(writer);
+    if (block && block.who !== who) {
+      this.flushBlock(writer);
+    }
+    const open = this.blocks.get(writer);
+    if (open) {
+      open.text += text;
+    } else {
+      this.blocks.set(writer, { who, text });
+    }
+  }
+
+  // Render a complete text block immediately: flush any open block on this
+  // writer first, then push the new block and flush it. Used for non-streaming
+  // `text` events and for role/captain prompts that arrive complete.
+  private writeBlock(
+    writer: TmuxPresenterWriter,
+    who: string,
+    text: string,
+  ): void {
+    this.flushBlock(writer);
+    this.blocks.set(writer, { who, text });
+    this.flushBlock(writer);
+  }
+
+  // Render the open block on `writer` through glow and emit the result with
+  // the TMUX-038 prefix/indent grammar applied. No-op when no block is open
+  // or the buffered text is empty.
+  private flushBlock(writer: TmuxPresenterWriter): void {
+    const block = this.blocks.get(writer);
+    if (!block) return;
+    this.blocks.delete(writer);
+    if (block.text.length === 0) return;
+
+    const prefixWidth = block.who.length + 2; // `<who>` + `> `
+    const paneWidth = this.paneWidth(writer);
+    const effective = Number.isFinite(paneWidth)
+      ? paneWidth
+      : DEFAULT_PANE_WIDTH;
+    // Reserve at least one cell so glow has somewhere to render even when the
+    // pane is implausibly narrow; visual fit then depends on glow's behavior
+    // for over-wide content (code/tables overflow by design per the IR).
+    const renderWidth = Math.max(1, effective - prefixWidth);
+
+    let rendered: string;
+    try {
+      rendered = renderMarkdown(block.text, renderWidth);
+    } catch {
+      // The launcher gate guarantees glow is healthy at startup, so a
+      // mid-session render failure is rare. Surface the raw text rather than
+      // crashing the session so the user still sees the content.
+      rendered = block.text.endsWith('\n')
+        ? block.text
+        : `${block.text}\n`;
+    }
+
+    writer.write(this.applyPrefix(block.who, rendered));
+  }
+
+  private writeStatusLine(
+    writer: TmuxPresenterWriter,
+    who: string,
+    body: string,
+  ): void {
+    const sgr = this.prefixSgr(who);
+    const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
+    writer.write(`${intro}${body}\n`);
   }
 
   private writeToolInvoke(
     writer: TmuxPresenterWriter,
     payload: ToolUsePayload,
   ): void {
+    this.flushBlock(writer);
     const inputSummary = summarizeToolInput(payload.input);
     const header = inputSummary
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
-    this.writePrefixedBlock(writer, 'tool', `${header}\n`, {
-      intro: 'tool> ',
-      sgr: TOOL_INVOKE_SGR,
-    });
+    writer.write(`${TOOL_INVOKE_SGR}tool> ${SGR_RESET}${header}\n`);
   }
 
   private writeToolResult(
     writer: TmuxPresenterWriter,
     payload: ToolResultPayload,
   ): void {
+    this.flushBlock(writer);
     const { symbol, sgr } = toolResultStyle(payload.status);
-    const intro = `tool< ${symbol} `;
+    const intro = `${sgr}tool< ${symbol} ${SGR_RESET}`;
     const durationText = formatDuration(payload.durationMs);
     const headLine = durationText
       ? `${payload.toolName} ${durationText}`
       : payload.toolName;
-    const outputText = stringifyToolOutput(payload.output).trimEnd();
-    // Tool output body is dimmed via overlay0 (plain — not bold). The
-    // wrapper SGR runs through the parser, so the activeBodySgr machinery
-    // from TMUX-046 keeps every continuation indent uncolored.
-    const dimmedBody = outputText
-      ? `\n${TOOL_OUTPUT_DIM_SGR}${outputText}${SGR_RESET}`
-      : '';
-    this.writePrefixedBlock(writer, 'tool', `${headLine}${dimmedBody}\n`, {
-      intro,
-      sgr,
-    });
+    let output = `${intro}${headLine}\n`;
+    const body = stringifyToolOutput(payload.output).trimEnd();
+    if (body) {
+      for (const line of body.split('\n')) {
+        output += `${CONTINUATION_INDENT}${TOOL_OUTPUT_DIM_SGR}${line}${SGR_RESET}\n`;
+      }
+    }
+    writer.write(output);
   }
 
-  // Drains any escape that the writer's parser is still holding from a prior
-  // streaming sequence so its bytes belong to that block (emitted before the
-  // closing `\n`), and the next block parses from a clean state instead of
-  // misclassifying its leading byte as the missing CSI/OSC terminator.
-  private flushPendingEscape(writer: TmuxPresenterWriter): void {
-    const parser = this.parsers.get(writer);
-    if (!parser) return;
-    let drained = '';
-    for (const token of parser.flush()) {
-      if (token.type === 'escape') {
-        drained += token.sequence;
-      }
-    }
-    if (drained) {
-      writer.write(drained);
-    }
+  // Returns the SGR opener (`\x1b[1;38;2;…m`) for a speaker's prefix, or
+  // undefined when there's no defined color (fallback: emit the prefix in
+  // the writer's default foreground).
+  private prefixSgr(who: string): string | undefined {
+    if (who === 'boss') return PREFIX_BOSS_SGR;
+    if (who === 'captain') return PREFIX_CAPTAIN_SGR;
+    const adapter = this.roleAdapters.get(who);
+    if (adapter) return bold24bitFg(roleAccent(adapter));
+    return undefined;
   }
 
-  private writePrefixedBlock(
-    writer: TmuxPresenterWriter,
-    who: string,
-    value: string,
-    override?: PrefixOverride,
-  ): void {
-    this.flushPendingEscape(writer);
-    this.breakLineIfNeeded(writer);
-    this.resetLineOffset(writer);
-    this.writePrefixed(writer, who, ensureTrailingNewline(value), override);
-    this.resetLineOffset(writer);
-  }
-
-  private writePrefixedLine(
-    writer: TmuxPresenterWriter,
-    who: string,
-    line: string,
-  ): void {
-    this.flushPendingEscape(writer);
-    this.breakLineIfNeeded(writer);
-    this.resetLineOffset(writer);
-    this.writePrefixed(writer, who, `${line}\n`);
-    this.resetLineOffset(writer);
-  }
-
-  private writePrefixed(
-    writer: TmuxPresenterWriter,
-    who: string,
-    value: string,
-    override?: PrefixOverride,
-  ): void {
-    let atLineStart = this.lineStarts.get(writer) ?? true;
-    let lineOffset = this.lineOffsets.get(writer) ?? 0;
-    let column = this.lineColumns.get(writer) ?? 0;
-    const width = this.effectiveWrapWidth(writer);
-    let output = '';
-
-    const introText = override?.intro ?? `${who}> `;
-    const introSgr =
-      override !== undefined ? override.sgr : this.prefixSgr(who);
-    // The last SGR opener the body emitted (i.e., a CSI ending in `m` that is
-    // not a reset). TMUX-038 requires continuation indents to stay uncolored;
-    // at every continuation boundary we close this span before the `\n`,
-    // emit the (uncolored) indent, and reopen it so the body resumes its
-    // color on the new row. Per TMUX-046 this state is carried on the
-    // writer, not on a single writePrefixed() call, so a streaming sequence
-    // that splits the opener and the wrap across separate `text_delta`
-    // events still honors the close/reopen rule.
-    let activeBodySgr = this.activeBodySgrs.get(writer);
-
-    const emitIntro = (): void => {
-      // TMUX-038: only the first-line prefix carries color; continuation
-      // indents on wrapped/multi-line blocks stay uncolored.
-      const intro = lineOffset === 0 ? introText : CONTINUATION_INDENT;
-      if (lineOffset === 0 && introSgr) {
-        output += `${introSgr}${intro}${SGR_RESET}`;
-      } else {
-        output += intro;
-      }
-      column = intro.length;
-      lineOffset += 1;
-      atLineStart = false;
-    };
-
-    let parser = this.parsers.get(writer);
-    if (!parser) {
-      parser = new DisplayParser();
-      this.parsers.set(writer, parser);
-    }
-
-    for (const token of parser.consume(value)) {
-      if (token.type === 'newline') {
-        // Newlines that arrive before any visible content still emit so leading
-        // blank lines render blank without consuming the speaker prefix.
-        // Close any active body SGR before the newline so the continuation
-        // indent that follows stays uncolored.
-        output += activeBodySgr ? `${SGR_RESET}\n` : '\n';
-        atLineStart = true;
-        column = 0;
-        continue;
-      }
-      if (atLineStart) {
-        emitIntro();
-        // On a continuation line (lineOffset > 1 after emitIntro), reopen
-        // the body SGR after the uncolored indent so the body's color
-        // continues. First-line prefixes have their own SGR pair emitted
-        // inside emitIntro and don't need this re-emit.
-        if (lineOffset > 1 && activeBodySgr) {
-          output += activeBodySgr;
-        }
-      }
-      if (token.type === 'escape') {
-        output += token.sequence;
-        if (isSgrEscape(token.sequence)) {
-          activeBodySgr = isSgrReset(token.sequence)
-            ? undefined
-            : token.sequence;
-        }
-        continue;
-      }
-      // Soft-wrap before placing a visible char that would overflow the pane;
-      // skip the wrap when we are already on a fresh continuation row so we
-      // never loop forever on a char that cannot fit even after wrapping.
-      if (
-        token.cells > 0 &&
-        column + token.cells > width &&
-        column > CONTINUATION_INDENT.length
-      ) {
-        if (activeBodySgr) {
-          output += `${SGR_RESET}\n${CONTINUATION_INDENT}${activeBodySgr}`;
-        } else {
-          output += `\n${CONTINUATION_INDENT}`;
-        }
-        column = CONTINUATION_INDENT.length;
-        lineOffset += 1;
-      }
-      output += token.char;
-      column += token.cells;
-    }
-
-    this.lineStarts.set(writer, atLineStart);
-    this.lineOffsets.set(writer, lineOffset);
-    this.lineColumns.set(writer, column);
-    if (activeBodySgr === undefined) {
-      this.activeBodySgrs.delete(writer);
-    } else {
-      this.activeBodySgrs.set(writer, activeBodySgr);
-    }
-    if (output) {
-      writer.write(output);
-    }
-  }
-
-  // Returns the configured width if a wrap can actually fit indent + content;
-  // otherwise Infinity so the writer falls back to no soft-wrap.
-  private effectiveWrapWidth(writer: TmuxPresenterWriter): number {
+  private paneWidth(writer: TmuxPresenterWriter): number {
     const source = this.widths.get(writer);
-    if (!source) {
-      return Number.POSITIVE_INFINITY;
-    }
+    if (!source) return Number.POSITIVE_INFINITY;
     const width = source();
-    if (!Number.isFinite(width) || width <= CONTINUATION_INDENT.length) {
-      return Number.POSITIVE_INFINITY;
-    }
-    return width;
-  }
-
-  private breakLineIfNeeded(writer: TmuxPresenterWriter): void {
-    if (this.lineStarts.get(writer) === false) {
-      writer.write('\n');
-      this.lineStarts.set(writer, true);
-      this.resetLineOffset(writer);
-    }
-  }
-
-  private resetLineOffset(writer: TmuxPresenterWriter): void {
-    this.lineOffsets.set(writer, 0);
-    this.lineColumns.set(writer, 0);
+    return Number.isFinite(width) && width > 0
+      ? width
+      : Number.POSITIVE_INFINITY;
   }
 
   private roleWriter(roleId: string): TmuxPresenterWriter {
@@ -465,6 +359,48 @@ export class TmuxPresenter implements RecordObserver {
     }
     return writer;
   }
+
+  // Apply the TMUX-038 prefix/indent grammar to glow's rendered output:
+  // the first nonblank line carries the colored `<who>> ` prefix; every
+  // nonblank continuation line carries the two-space hanging indent; blank
+  // lines stay blank. The cell-width budget passed to glow (see flushBlock)
+  // already reserves prefixWidth so prefixed first line and indented
+  // continuations fit the pane without re-wrap.
+  private applyPrefix(who: string, rendered: string): string {
+    const sgr = this.prefixSgr(who);
+    const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
+    const trimmed = rendered.endsWith('\n')
+      ? rendered.slice(0, -1)
+      : rendered;
+    const lines = trimmed.split('\n');
+    let firstNonblankIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (visibleNonblank(lines[i] ?? '')) {
+        firstNonblankIdx = i;
+        break;
+      }
+    }
+    if (firstNonblankIdx === -1) {
+      // All-blank rendered output: pass through without applying a prefix
+      // because there's no nonblank line to tag; synthesizing a prefix on
+      // empty content would be visual noise.
+      return rendered.endsWith('\n') ? rendered : `${rendered}\n`;
+    }
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      if (i < firstNonblankIdx) {
+        out.push(line);
+      } else if (i === firstNonblankIdx) {
+        out.push(`${intro}${line}`);
+      } else if (line.length === 0) {
+        out.push('');
+      } else {
+        out.push(`${CONTINUATION_INDENT}${line}`);
+      }
+    }
+    return `${out.join('\n')}\n`;
+  }
 }
 
 export function createTmuxPresenter(
@@ -473,35 +409,20 @@ export function createTmuxPresenter(
   return new TmuxPresenter(options);
 }
 
-function formatStatusData(
-  data: Record<string, unknown> | undefined,
-): string {
-  if (data === undefined) {
-    return '';
-  }
-
-  try {
-    return ` ${JSON.stringify(data)}`;
-  } catch {
-    return ' [unserializable data]';
-  }
-}
-
-function ensureTrailingNewline(value: string): string {
-  return value.endsWith('\n') ? value : `${value}\n`;
+// True when `line` has visible content after ANSI SGR escapes are stripped.
+function visibleNonblank(line: string): boolean {
+  return line.replace(ANSI_PATTERN, '').trim().length > 0;
 }
 
 // TMUX-039 status coloring. The bracketed status body gets a red (error) or
 // yellow (aborted) bold span; the surrounding speaker prefix keeps its own
-// SGR colors. Wrapping is opaque to the DisplayParser — it sees the SGR
-// bytes as zero-width escape tokens and preserves them through soft-wrap.
+// SGR colors.
 function paintStatus(kind: 'error' | 'aborted', text: string): string {
   const sgr = kind === 'error' ? STATUS_ERROR_SGR : STATUS_ABORTED_SGR;
   return `${sgr}${text}${SGR_RESET}`;
 }
 
-// TMUX-049 tool-result outcome → status symbol + prefix SGR. Mirrors the
-// outcome palette: success/green, error/red, denied/yellow.
+// TMUX-049 tool-result outcome → status symbol + prefix SGR.
 function toolResultStyle(
   status: ToolResultPayload['status'],
 ): { symbol: string; sgr: string } {
@@ -511,8 +432,7 @@ function toolResultStyle(
 }
 
 // Pick the most useful single-string description of a tool's input for the
-// `tool>` header. Known keys come first (matching the most common tools the
-// adapters expose); fall back to a truncated JSON dump.
+// `tool>` header. Known keys come first; fall back to a truncated JSON dump.
 function summarizeToolInput(input: Record<string, unknown>): string {
   for (const key of [
     'command',
@@ -536,9 +456,6 @@ function summarizeToolInput(input: Record<string, unknown>): string {
   }
 }
 
-// Tool result output payloads vary: string, `{ stdout }`, or JSON-shaped
-// structured data. Pick the human-readable form when one exists; otherwise
-// pretty-print JSON.
 function stringifyToolOutput(output: unknown): string {
   if (output === undefined || output === null) return '';
   if (typeof output === 'string') return output;
@@ -561,8 +478,7 @@ function formatDuration(ms: number | undefined): string {
 
 // Truncate `value` to at most `maxCells` terminal cells (TMUX-049). Iterates
 // the display-token stream so CJK / emoji are measured by cells (1 or 2)
-// rather than by UTF-16 code units, and the per-token `char` carries the
-// whole codepoint so surrogate pairs are never split.
+// rather than UTF-16 code units, and surrogate pairs are never split.
 function truncateCells(value: string, maxCells: number): string {
   let total = 0;
   for (const token of iterateDisplay(value)) {
@@ -580,16 +496,13 @@ function truncateCells(value: string, maxCells: number): string {
   return `${prefix}…`;
 }
 
-// Distinguishes SGR (Select Graphic Rendition) escapes — CSI parameters
-// terminated by `m` — from other CSI commands (cursor movement, erase,
-// etc.) which don't affect text color/style and so don't need the
-// continuation-indent uncoloring treatment.
-function isSgrEscape(seq: string): boolean {
-  return /^\x1b\[[\d;]*m$/.test(seq);
-}
-
-// `\x1b[m` (no params) is the canonical "reset all attributes" form, as is
-// `\x1b[0m`. Both close any active SGR span.
-function isSgrReset(seq: string): boolean {
-  return seq === '\x1b[0m' || seq === '\x1b[m';
+function formatStatusData(
+  data: Record<string, unknown> | undefined,
+): string {
+  if (data === undefined) return '';
+  try {
+    return ` ${JSON.stringify(data)}`;
+  } catch {
+    return ' [unserializable data]';
+  }
 }
