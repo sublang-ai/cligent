@@ -21,7 +21,7 @@ Key design choices:
 
 ## Status
 
-In progress — all four tasks' code and spec land in this change set. Task 4's "shall not be marked Done unless the real-`glow` acceptance test was executed end-to-end with `glow` available within the same change set" gate is unmet on the implementation runner (`glow` is not installed there and the harness denied the install); the `glow.acceptance.test.ts` probe is in place and self-skips per TTMUX-050, and it shall be exercised on a runner with `glow` before flipping this Status to Done.
+Done — all four tasks' code and spec landed across commits `6d31655`, `bd91ca3`, `488eab2`, `073956b` (with review-driven fixes in `0f6426b`, `4a56834`, `531aa37`). The Task 4 acceptance gate ("real-`glow` acceptance test executed end-to-end with `glow` available within the same change set") closed against `glow version 2.1.2` on macOS: `npm run test:acceptance` reported 7 / 7 passing — 3 from `glow.acceptance.test.ts` (TTMUX-050), 3 from `launcher.acceptance.test.ts` (TTMUX-030..036, now actually exercised rather than skipped because both `tmux` and `glow` are available), and 1 from `fanout.acceptance.test.ts`.
 
 ## Scope
 
