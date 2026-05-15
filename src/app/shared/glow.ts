@@ -6,12 +6,14 @@ import { spawnSync } from 'node:child_process';
 export const GLOW_INSTALL_URL =
   'https://github.com/charmbracelet/glow#installation';
 
-// Probes `glow --version` to confirm the binary is on PATH. Mirrors
-// `isTmuxAvailable` in shared/tmux.ts so the launcher can fail fast on
-// missing glow with the same shape of preflight check (per TMUX-051).
+// Probes `glow --version` to confirm the binary is on PATH and actually
+// runs. The TMUX-051 gate exists to fail fast — checking spawn-success
+// alone would let a broken or incompatible `glow` (one that spawns but
+// exits nonzero on `--version`) pass the gate and surface later inside
+// the presenter's render call. Status check is required.
 export function isGlowAvailable(): boolean {
   const probe = spawnSync('glow', ['--version'], { stdio: 'pipe' });
-  return probe.error === undefined;
+  return probe.error === undefined && probe.status === 0;
 }
 
 // Renders `text` as Markdown via glow at the requested cell width and

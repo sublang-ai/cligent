@@ -21,7 +21,7 @@ Key design choices:
 
 ## Status
 
-In progress — Task 1 done, Tasks 2–4 pending
+In progress — Task 1 done; the acceptance-skip broadening (the `Real-tmux Acceptance` preamble in `specs/test/tmux-play.md` and TTMUX-039's standalone clause) was pulled forward from Task 4 into Task 1's review follow-up so acceptance does not break between Task 1 and Task 4 on `tmux`-available / `glow`-absent runners. Tasks 2–3 and the remaining Task 4 work (docs/README Requirements, real-`glow` acceptance test, `specs/map.md` summary) pending.
 
 ## Scope
 
@@ -72,7 +72,8 @@ Each task is one commit.
 3. [ ] **Tool-result body through the pipeline** — render `tool_result` output as a fenced code block so `glow` leaves it unwrapped, selecting the fence as a backtick run one longer than the longest backtick run in the payload (minimum three) so an embedded fence cannot terminate the wrapper early; `tool_use` unchanged.
    Amend TMUX-049.
    Presenter tests cover an unwrapped code body, a long-line body that is not mid-token broken, and a payload that itself contains a ```` ``` ```` fence rendering fully inside the wrapper.
-4. [ ] **Docs and acceptance** — `glow` added to the `docs/tmux-play.md` and top-level `README.md` Requirements lists; the `Real-tmux Acceptance` section preamble in `specs/test/tmux-play.md` amended so existing TTMUX-030..036 tests also self-skip when `glow -v` fails (each calls `launchTmuxPlay`, which now hard-fails without `glow`); TTMUX-039's standalone self-skip clause amended the same way (it lives under `Theme`, drives a launched session in `launcher.acceptance.test.ts`, and was missed by the preamble change); the real-`glow` acceptance test that self-skips when `glow` is unavailable; and the `specs/map.md` TMUX summary update.
+4. [ ] **Docs and acceptance** — `glow` added to the `docs/tmux-play.md` and top-level `README.md` Requirements lists; the real-`glow` acceptance test that self-skips when `glow` is unavailable; and the `specs/map.md` TMUX summary update.
+   The acceptance-skip broadening (preamble + TTMUX-039 standalone clause + `launcher.acceptance.test.ts` gate) was pulled forward into Task 1's review follow-up so this sub-item is already done.
 
 ## Acceptance criteria
 

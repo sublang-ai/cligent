@@ -19,7 +19,7 @@ describe('glow helpers', () => {
   });
 
   it('checks glow availability through glow --version', () => {
-    spawnSyncMock.mockReturnValue({});
+    spawnSyncMock.mockReturnValue({ status: 0 });
 
     expect(isGlowAvailable()).toBe(true);
     expect(spawnSyncMock).toHaveBeenCalledWith('glow', ['--version'], {
@@ -29,6 +29,15 @@ describe('glow helpers', () => {
 
   it('returns false when glow probe cannot spawn', () => {
     spawnSyncMock.mockReturnValue({ error: new Error('spawn ENOENT') });
+
+    expect(isGlowAvailable()).toBe(false);
+  });
+
+  it('returns false when glow probe spawns but exits nonzero', () => {
+    spawnSyncMock.mockReturnValue({
+      status: 1,
+      stderr: Buffer.from('unknown flag: --version\n'),
+    });
 
     expect(isGlowAvailable()).toBe(false);
   });

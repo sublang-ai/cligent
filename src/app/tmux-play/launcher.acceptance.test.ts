@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { isGlowAvailable } from '../shared/glow.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
 
@@ -26,8 +27,13 @@ interface PaneRow {
   readonly active: string;
 }
 
+// TTMUX-030..036 and TTMUX-039 all drive `launchTmuxPlay`, which gates on
+// `glow` per TMUX-051 in addition to `tmux`. Skip both ways so a runner
+// with one tool but not the other reports a clean skip, not a launcher
+// throw masquerading as a test failure.
 const TMUX_AVAILABLE = isTmuxAvailable();
-const acceptanceIt = TMUX_AVAILABLE ? it : it.skip;
+const GLOW_AVAILABLE = isGlowAvailable();
+const acceptanceIt = TMUX_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
 
 const BUILT_CLI_PATH = join(
   process.cwd(),

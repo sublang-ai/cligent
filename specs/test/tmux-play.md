@@ -146,7 +146,7 @@ Given the launcher building a tmux session, the `tmux set` calls issued shall in
 ### TTMUX-039
 Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
 
-Given a launched session, an attached real-tmux client's `#{client_termfeatures}` shall include `RGB` in its comma-separated feature list, confirming that the `terminal-overrides` append from TTMUX-038 negotiated through to the client. The probe shall run against an actual tmux server (no mocks) and shall self-skip only when `tmux -V` fails.
+Given a launched session, an attached real-tmux client's `#{client_termfeatures}` shall include `RGB` in its comma-separated feature list, confirming that the `terminal-overrides` append from TTMUX-038 negotiated through to the client. The probe shall run against an actual tmux server (no mocks) and shall self-skip when either `tmux -V` or `glow -v` fails, since the launcher gates on both per [TMUX-051](../user/tmux-play.md#tmux-051).
 
 ### TTMUX-040
 Verifies: [TMUX-048](../user/tmux-play.md#tmux-048)
@@ -214,7 +214,7 @@ Given the fanout Captain handling a Boss turn, the prompt string passed to `call
 
 ## Real-tmux Acceptance
 
-Items in this section verify behavior end-to-end against a real `tmux` server (not a mock or argv log). They live under `*.acceptance.test.ts`, run via `npm run test:acceptance`, and shall self-skip only when `tmux -V` fails. They shall not gate on adapter API keys.
+Items in this section verify behavior end-to-end against a real `tmux` server (not a mock or argv log). They live under `*.acceptance.test.ts`, run via `npm run test:acceptance`, and shall self-skip when either `tmux -V` or `glow -v` fails — the launcher gates on both per [TMUX-051](../user/tmux-play.md#tmux-051), so a missing binary surfaces as a clean skip rather than a launcher throw. They shall not gate on adapter API keys.
 
 ### TTMUX-030
 Verifies: [TMUX-035](../user/tmux-play.md#tmux-035)
