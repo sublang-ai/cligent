@@ -21,7 +21,7 @@ Key design choices:
 
 ## Status
 
-In progress — Tasks 1, 2, and 3 done; the acceptance-skip broadening (the `Real-tmux Acceptance` preamble in `specs/test/tmux-play.md` and TTMUX-039's standalone clause) was pulled forward from Task 4 into Task 1's review follow-up so acceptance does not break between Task 1 and Task 4 on `tmux`-available / `glow`-absent runners. The remaining Task 4 work (docs/README Requirements, real-`glow` acceptance test, `specs/map.md` summary) is pending.
+In progress — all four tasks' code and spec land in this change set. Task 4's "shall not be marked Done unless the real-`glow` acceptance test was executed end-to-end with `glow` available within the same change set" gate is unmet on the implementation runner (`glow` is not installed there and the harness denied the install); the `glow.acceptance.test.ts` probe is in place and self-skips per TTMUX-050, and it shall be exercised on a runner with `glow` before flipping this Status to Done.
 
 ## Scope
 
@@ -51,12 +51,12 @@ Out of scope:
 - [x] `src/app/tmux-play/launcher.test.ts` — assertion that launch aborts with the install-pointing error when `glow` is reported absent.
 - [x] `src/app/tmux-play/presenter-tmux.ts` — buffer-then-render write path, prefix-budgeted render width, prefix post-indent, and removal of the superseded TMUX-046 soft-wrap machinery.
 - [x] `src/app/tmux-play/presenter-tmux.test.ts` — block buffering and flush boundaries, prefix post-indent, prefix-budgeted render width (prefixed prose rows fit the pane width), and code-fence-not-wrapped.
-- [ ] `src/app/shared/glow.acceptance.test.ts` — real-`glow` rendering check, self-skipping when `glow -v` fails.
-- [ ] `specs/user/tmux-play.md` — new TMUX-050 and TMUX-051; amendments to TMUX-038, TMUX-046, TMUX-049.
-- [ ] `specs/test/tmux-play.md` — new TTMUX items for the pipeline, prefix preservation, prefix-budgeted render width, safe fenced-code wrapping, the launcher `glow` gate, and the real-`glow` acceptance probe; the `Real-tmux Acceptance` section preamble amended so existing TTMUX-030..036 also self-skip when `glow -v` fails, and TTMUX-039's standalone self-skip clause amended the same way.
-- [ ] `docs/tmux-play.md` — `glow` added to Requirements with its install link.
-- [ ] `README.md` — top-level Requirements list updated to include `glow` with the same install link.
-- [ ] `specs/map.md` — TMUX user-row summary mentions Markdown-rendered output.
+- [x] `src/app/shared/glow.acceptance.test.ts` — real-`glow` rendering check, self-skipping when `glow -v` fails.
+- [x] `specs/user/tmux-play.md` — new TMUX-050 and TMUX-051; amendments to TMUX-038, TMUX-046, TMUX-049.
+- [x] `specs/test/tmux-play.md` — new TTMUX items for the pipeline, prefix preservation, prefix-budgeted render width, safe fenced-code wrapping, the launcher `glow` gate, and the real-`glow` acceptance probe; the `Real-tmux Acceptance` section preamble amended so existing TTMUX-030..036 also self-skip when `glow -v` fails, and TTMUX-039's standalone self-skip clause amended the same way.
+- [x] `docs/tmux-play.md` — `glow` added to Requirements with its install link.
+- [x] `README.md` — top-level Requirements list updated to include `glow` with the same install link.
+- [x] `specs/map.md` — TMUX user-row summary mentions Markdown-rendered output.
 
 ## Tasks
 
@@ -72,7 +72,7 @@ Each task is one commit.
 3. [x] **Tool-result body through the pipeline** — render `tool_result` output as a fenced code block so `glow` leaves it unwrapped, selecting the fence as a backtick run one longer than the longest backtick run in the payload (minimum three) so an embedded fence cannot terminate the wrapper early; `tool_use` unchanged.
    Amend TMUX-049.
    Presenter tests cover an unwrapped code body, a long-line body that is not mid-token broken, and a payload that itself contains a ```` ``` ```` fence rendering fully inside the wrapper.
-4. [ ] **Docs and acceptance** — `glow` added to the `docs/tmux-play.md` and top-level `README.md` Requirements lists; the real-`glow` acceptance test that self-skips when `glow` is unavailable; and the `specs/map.md` TMUX summary update.
+4. [x] **Docs and acceptance** — `glow` added to the `docs/tmux-play.md` and top-level `README.md` Requirements lists; the real-`glow` acceptance test that self-skips when `glow` is unavailable; and the `specs/map.md` TMUX summary update.
    The acceptance-skip broadening (preamble + TTMUX-039 standalone clause + `launcher.acceptance.test.ts` gate) was pulled forward into Task 1's review follow-up so this sub-item is already done.
 
 ## Acceptance criteria

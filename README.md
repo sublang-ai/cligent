@@ -69,6 +69,7 @@ with the built-in `fanout` Captain plus a `claude` and a `codex` role.
 Requirements:
 
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+- [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
 - Credentials and any out-of-process CLIs for the adapters you use:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
