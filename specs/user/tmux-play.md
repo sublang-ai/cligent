@@ -248,7 +248,11 @@ A `tool_result` event shall render as a header line followed by the tool's outpu
 | `error` | `✗` | `red` | `#f38ba8` |
 | `denied` | `·` | `yellow` | `#f9e2af` |
 
-`<duration>` is `<n>ms` when `durationMs < 1000`, `<n.n>s` otherwise; the duration segment is omitted when `durationMs` is undefined. The tool's output body (extracted as the string itself, or `output.stdout` when present, or the pretty-printed JSON of `output` otherwise) follows on continuation lines wrapped in the plain 24-bit-foreground `overlay0` `#6c7086` SGR pair (no bold), so large stdout reads as a dim aside rather than competing with agent prose. When the extracted output is empty or undefined, the header line stands alone with no body.
+`<duration>` is `<n>ms` when `durationMs < 1000`, `<n.n>s` otherwise; the duration segment is omitted when `durationMs` is undefined. When the extracted output (the string itself, or `output.stdout` when present, or the pretty-printed JSON of `output` otherwise) is empty or undefined, the header line stands alone with no body.
+
+When the extracted output is non-empty, the presenter shall wrap it in a fenced code block and render it through `renderMarkdown` per [TMUX-050](#tmux-050), then indent every line of the rendered output by two spaces and emit it after the header. The fence shall be a run of backticks one longer than the longest backtick run anywhere in the payload, with a minimum of three, so any embedded ```` ``` ```` in the payload stays inert as literal content instead of terminating the wrapper early and leaking the tail into Markdown rendering. The render width shall be `max(1, paneWidth - 2)`, matching the two-space continuation indent.
+
+`glow`'s code-block rendering owns the body's styling and leaves long code lines unwrapped by design; the prior `overlay0` `#6c7086` dim SGR around the body is no longer applied because `glow`'s styling supersedes it. When `renderMarkdown` raises a mid-session failure (rare given the [TMUX-051](#tmux-051) launcher gate), the presenter shall emit the raw body text under the same two-space continuation indent rather than crash the session.
 
 ### TMUX-050
 

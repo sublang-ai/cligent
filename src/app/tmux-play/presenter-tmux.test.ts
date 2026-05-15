@@ -781,7 +781,7 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('tool> Status\n');
   });
 
-  it('renders a success tool_result as green `tool< ✓` with dim multi-line body', () => {
+  it('renders a success tool_result as green `tool< ✓` with a fenced + indented body', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -800,14 +800,20 @@ describe('TmuxPresenter', () => {
       ),
     );
 
+    // The body is wrapped in a triple-backtick fence (longest backtick run
+    // in the payload is 0, so the minimum fence of three applies) and
+    // passed through glow; the identity mock returns it verbatim. The
+    // result is then indented two spaces under the header.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n' +
-        '  \x1b[38;2;108;112;134mnpm test passed\x1b[0m\n' +
-        '  \x1b[38;2;108;112;134m2 tests run\x1b[0m\n',
+        '  ```\n' +
+        '  npm test passed\n' +
+        '  2 tests run\n' +
+        '  ```\n',
     );
   });
 
-  it('renders an error tool_result as red `tool< ✗` with dim error body', () => {
+  it('renders an error tool_result as red `tool< ✗` with a fenced + indented body', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -823,7 +829,9 @@ describe('TmuxPresenter', () => {
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;243;139;168mtool< ✗ \x1b[0mEdit 50ms\n' +
-        '  \x1b[38;2;108;112;134mpermission denied\x1b[0m\n',
+        '  ```\n' +
+        '  permission denied\n' +
+        '  ```\n',
     );
   });
 
@@ -860,7 +868,161 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe(
       'tool> Read src/main.ts\n' +
         'tool< ✓ Read 80ms\n' +
-        '  42 lines\n',
+        '  ```\n' +
+        '  42 lines\n' +
+        '  ```\n',
+    );
+  });
+
+  // Tool-body fencing (TMUX-049 / TMUX-050).
+
+  it('does not call renderMarkdown when the tool_result body is empty', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
+    );
+
+    expect(renderMarkdownMock).not.toHaveBeenCalled();
+  });
+
+  it('renders the tool_result body at paneWidth minus the continuation indent', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => 80]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Bash', 'success', 'hi')),
+    );
+
+    // Two-space continuation indent → render at 80 - 2 = 78.
+    expect(renderMarkdownMock).toHaveBeenCalledWith(
+      '```\nhi\n```\n',
+      78,
+    );
+  });
+
+  it('selects a fence one longer than the longest backtick run in the payload', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // Payload contains a triple-backtick fence inside — a naive ``` wrapper
+    // would terminate early. The fence must be at least four backticks long.
+    const payload = 'before\n```\ninner code\n```\nafter';
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', payload)),
+    );
+
+    expect(renderMarkdownMock).toHaveBeenCalledWith(
+      '````\nbefore\n```\ninner code\n```\nafter\n````\n',
+      expect.any(Number),
+    );
+  });
+
+  it('keeps an embedded fence fully inside the wrapper at output time', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    const payload = 'pre\n```\ncode\n```\npost';
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', payload)),
+    );
+
+    // Identity glow returns the fenced payload verbatim; every line —
+    // including the embedded ``` — sits under the outer ```` wrapper with
+    // the two-space indent applied.
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '  ````\n' +
+        '  pre\n' +
+        '  ```\n' +
+        '  code\n' +
+        '  ```\n' +
+        '  post\n' +
+        '  ````\n',
+    );
+  });
+
+  it('grows the fence to one longer than a 5-backtick run in the payload', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent(
+        'coder',
+        toolResultEvent('Cat', 'success', 'edges `````` here'),
+      ),
+    );
+
+    // The payload's longest backtick run is six, so the wrapper is seven.
+    expect(renderMarkdownMock).toHaveBeenCalledWith(
+      '```````\nedges `````` here\n```````\n',
+      expect.any(Number),
+    );
+  });
+
+  it('passes a long single-line body to glow untouched (glow leaves code unwrapped)', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      roleWidths: new Map([['coder', () => 40]]),
+    });
+
+    const long = 'x'.repeat(120);
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', long)),
+    );
+
+    // The presenter never inserts a mid-token break — the long token reaches
+    // glow whole inside the fence, and the (mocked-identity) output lands
+    // intact under the two-space indent. Real glow likewise leaves long code
+    // lines unwrapped by design.
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '  ```\n' +
+        `  ${long}\n` +
+        '  ```\n',
+    );
+  });
+
+  it('falls back to raw indented body when glow render fails for a tool_result', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementationOnce(() => {
+      throw new Error('glow render failed: broken pipe');
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Bash', 'success', 'first\nsecond')),
+    );
+
+    // Header still emits with prefix coloring; body falls through as the raw
+    // payload (no fences) with the two-space continuation indent applied.
+    expect(coder.text()).toBe(
+      'tool< ✓ Bash\n' +
+        '  first\n' +
+        '  second\n',
     );
   });
 

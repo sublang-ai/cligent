@@ -21,7 +21,7 @@ Key design choices:
 
 ## Status
 
-In progress — Tasks 1 and 2 done; the acceptance-skip broadening (the `Real-tmux Acceptance` preamble in `specs/test/tmux-play.md` and TTMUX-039's standalone clause) was pulled forward from Task 4 into Task 1's review follow-up so acceptance does not break between Task 1 and Task 4 on `tmux`-available / `glow`-absent runners. Task 3 (tool-result body through the pipeline) and the remaining Task 4 work (docs/README Requirements, real-`glow` acceptance test, `specs/map.md` summary) pending.
+In progress — Tasks 1, 2, and 3 done; the acceptance-skip broadening (the `Real-tmux Acceptance` preamble in `specs/test/tmux-play.md` and TTMUX-039's standalone clause) was pulled forward from Task 4 into Task 1's review follow-up so acceptance does not break between Task 1 and Task 4 on `tmux`-available / `glow`-absent runners. The remaining Task 4 work (docs/README Requirements, real-`glow` acceptance test, `specs/map.md` summary) is pending.
 
 ## Scope
 
@@ -69,7 +69,7 @@ Each task is one commit.
    Remove the character-level soft-wrap, escape-carry, and SGR close/reopen machinery superseded by delegating wrapping to `glow`.
    New TMUX-050; amend TMUX-038 and TMUX-046.
    Presenter tests cover buffering, every flush boundary, prefix post-indent, and render-width budgeting (prefixed prose rows fit the pane width).
-3. [ ] **Tool-result body through the pipeline** — render `tool_result` output as a fenced code block so `glow` leaves it unwrapped, selecting the fence as a backtick run one longer than the longest backtick run in the payload (minimum three) so an embedded fence cannot terminate the wrapper early; `tool_use` unchanged.
+3. [x] **Tool-result body through the pipeline** — render `tool_result` output as a fenced code block so `glow` leaves it unwrapped, selecting the fence as a backtick run one longer than the longest backtick run in the payload (minimum three) so an embedded fence cannot terminate the wrapper early; `tool_use` unchanged.
    Amend TMUX-049.
    Presenter tests cover an unwrapped code body, a long-line body that is not mid-token broken, and a payload that itself contains a ```` ``` ```` fence rendering fully inside the wrapper.
 4. [ ] **Docs and acceptance** — `glow` added to the `docs/tmux-play.md` and top-level `README.md` Requirements lists; the real-`glow` acceptance test that self-skips when `glow` is unavailable; and the `specs/map.md` TMUX summary update.

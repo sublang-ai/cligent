@@ -25,9 +25,7 @@ import {
   TOOL_FAIL,
   TOOL_INVOKE,
   TOOL_OK,
-  TOOL_OUTPUT_DIM,
   bold24bitFg,
-  fg24bit,
   roleAccent,
 } from './role-colors.js';
 import type {
@@ -49,12 +47,14 @@ const PREFIX_CAPTAIN_SGR = bold24bitFg(SPEAKER_CAPTAIN);
 const STATUS_ERROR_SGR = bold24bitFg(STATUS_ERROR);
 const STATUS_ABORTED_SGR = bold24bitFg(STATUS_ABORTED);
 
-// TMUX-049 tool lifecycle SGR anchors.
+// TMUX-049 tool lifecycle SGR anchors. The tool-result body is now rendered
+// through the TMUX-050 glow pipeline as a fenced code block, so the prior
+// `overlay0` dim wrap (which kept the body visually subordinate to the
+// header) is no longer applied — glow's code-block styling supersedes it.
 const TOOL_INVOKE_SGR = bold24bitFg(TOOL_INVOKE);
 const TOOL_OK_SGR = bold24bitFg(TOOL_OK);
 const TOOL_FAIL_SGR = bold24bitFg(TOOL_FAIL);
 const TOOL_DENIED_SGR = bold24bitFg(TOOL_DENIED);
-const TOOL_OUTPUT_DIM_SGR = fg24bit(TOOL_OUTPUT_DIM);
 
 export type WidthSource = () => number;
 
@@ -325,11 +325,36 @@ export class TmuxPresenter implements RecordObserver {
     let output = `${intro}${headLine}\n`;
     const body = stringifyToolOutput(payload.output).trimEnd();
     if (body) {
-      for (const line of body.split('\n')) {
-        output += `${CONTINUATION_INDENT}${TOOL_OUTPUT_DIM_SGR}${line}${SGR_RESET}\n`;
-      }
+      output += this.renderToolBody(writer, body);
     }
     writer.write(output);
+  }
+
+  // Render a tool-result body through glow as a fenced code block (per
+  // TMUX-049) so glow leaves the content unwrapped, then indent every line
+  // by two spaces so the body trails its `tool< …` header line under the
+  // standard continuation-indent grammar. The fence is selected to be safe
+  // against an embedded triple-backtick block in the payload (see
+  // `selectCodeFence`). On rare mid-session glow failure, the raw body is
+  // emitted indented so the session keeps moving.
+  private renderToolBody(
+    writer: TmuxPresenterWriter,
+    body: string,
+  ): string {
+    const fence = selectCodeFence(body);
+    const fenced = `${fence}\n${body}\n${fence}\n`;
+    const paneWidth = this.paneWidth(writer);
+    const effective = Number.isFinite(paneWidth)
+      ? paneWidth
+      : DEFAULT_PANE_WIDTH;
+    const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
+    let rendered: string;
+    try {
+      rendered = renderMarkdown(fenced, renderWidth);
+    } catch {
+      rendered = body.endsWith('\n') ? body : `${body}\n`;
+    }
+    return indentLines(rendered, CONTINUATION_INDENT);
   }
 
   // Returns the SGR opener (`\x1b[1;38;2;…m`) for a speaker's prefix, or
@@ -412,6 +437,43 @@ export function createTmuxPresenter(
 // True when `line` has visible content after ANSI SGR escapes are stripped.
 function visibleNonblank(line: string): boolean {
   return line.replace(ANSI_PATTERN, '').trim().length > 0;
+}
+
+// Pick a backtick fence safe to wrap `body` for TMUX-049's fenced-code
+// pipeline. Per CommonMark, a fenced code block opened with N backticks is
+// closed by a line beginning with ≥ N backticks, so the wrapper must be at
+// least one longer than the longest backtick run anywhere in the payload;
+// the minimum is three (the standard fence width). This keeps any embedded
+// ```` ``` ```` in the tool output inert as literal content instead of
+// terminating the wrapper early and leaking the tail into Markdown
+// rendering.
+function selectCodeFence(body: string): string {
+  let longest = 0;
+  let current = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '`') {
+      current += 1;
+      if (current > longest) longest = current;
+    } else {
+      current = 0;
+    }
+  }
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+
+// Indent every nonblank line of `rendered` with `indent`, leaving blank
+// lines blank, and ensure exactly one trailing newline. Used to drop a
+// glow-rendered tool body under the `tool< …` header line so it carries
+// the same two-space continuation indent as text-body continuations.
+function indentLines(rendered: string, indent: string): string {
+  const trimmed = rendered.endsWith('\n')
+    ? rendered.slice(0, -1)
+    : rendered;
+  const lines = trimmed.split('\n');
+  const out = lines.map((line) =>
+    line.length === 0 ? '' : `${indent}${line}`,
+  );
+  return `${out.join('\n')}\n`;
 }
 
 // TMUX-039 status coloring. The bracketed status body gets a red (error) or
