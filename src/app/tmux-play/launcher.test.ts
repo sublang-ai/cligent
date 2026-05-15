@@ -13,17 +13,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { attachTmuxSessionMock, isTmuxAvailableMock, runTmuxMock } =
-  vi.hoisted(() => ({
-    attachTmuxSessionMock: vi.fn(),
-    isTmuxAvailableMock: vi.fn(),
-    runTmuxMock: vi.fn(),
-  }));
+const {
+  attachTmuxSessionMock,
+  isTmuxAvailableMock,
+  runTmuxMock,
+  isGlowAvailableMock,
+} = vi.hoisted(() => ({
+  attachTmuxSessionMock: vi.fn(),
+  isTmuxAvailableMock: vi.fn(),
+  runTmuxMock: vi.fn(),
+  isGlowAvailableMock: vi.fn(),
+}));
 
 vi.mock('../shared/tmux.js', () => ({
   attachTmuxSession: attachTmuxSessionMock,
   isTmuxAvailable: isTmuxAvailableMock,
   runTmux: runTmuxMock,
+}));
+
+vi.mock('../shared/glow.js', () => ({
+  GLOW_INSTALL_URL: 'https://github.com/charmbracelet/glow#installation',
+  isGlowAvailable: isGlowAvailableMock,
 }));
 
 import {
@@ -51,6 +61,7 @@ describe('launchTmuxPlay', () => {
 
   beforeEach(() => {
     isTmuxAvailableMock.mockReturnValue(true);
+    isGlowAvailableMock.mockReturnValue(true);
     runTmuxMock.mockReset();
     attachTmuxSessionMock.mockReset();
   });
@@ -526,6 +537,17 @@ describe('launchTmuxPlay', () => {
     await expect(
       launchTmuxPlay({ configPath: '/missing/config.yaml' }),
     ).rejects.toThrow('tmux is not installed');
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
+  it('fails before config loading when glow is unavailable', async () => {
+    isGlowAvailableMock.mockReturnValue(false);
+
+    await expect(
+      launchTmuxPlay({ configPath: '/missing/config.yaml' }),
+    ).rejects.toThrow(
+      'glow is not installed — see https://github.com/charmbracelet/glow#installation',
+    );
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 });

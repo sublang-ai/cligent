@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto';
 import type { Writable } from 'node:stream';
 import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
+import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
 import {
   attachTmuxSession,
   isTmuxAvailable,
@@ -55,6 +56,13 @@ export async function launchTmuxPlay(
     throw new Error(
       'tmux is not installed — see https://github.com/tmux/tmux#installation',
     );
+  }
+  // TMUX-051: glow is the Markdown renderer the presenter delegates wrapping
+  // and styling to. Gate launch on its availability before any other work so
+  // a missing binary surfaces as an install pointer rather than a runtime
+  // render failure deep inside session mode.
+  if (!isGlowAvailable()) {
+    throw new Error(`glow is not installed — see ${GLOW_INSTALL_URL}`);
   }
 
   const loaded = await loadTmuxPlayConfig({

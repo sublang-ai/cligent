@@ -21,7 +21,7 @@ Key design choices:
 
 ## Status
 
-Proposed
+In progress — Task 1 done, Tasks 2–4 pending
 
 ## Scope
 
@@ -45,9 +45,10 @@ Out of scope:
 
 ## Deliverables
 
-- [ ] `src/app/shared/glow.ts` — `isGlowAvailable` (mirroring `shared/tmux.ts`'s `isTmuxAvailable`) and `renderMarkdown(text, width)` that spawns `glow` and captures rendered output.
-- [ ] `src/app/tmux-play/launcher.ts` — fail-fast `glow` availability check alongside the existing `tmux` check, with an install-pointing error message.
-- [ ] `src/app/tmux-play/launcher.test.ts` — assertion that launch aborts with the install-pointing error when `glow` is reported absent.
+- [x] `src/app/shared/glow.ts` — `isGlowAvailable` (mirroring `shared/tmux.ts`'s `isTmuxAvailable`) and `renderMarkdown(text, width)` that spawns `glow` and captures rendered output.
+- [x] `src/app/shared/glow.test.ts` — unit coverage for `isGlowAvailable` (true/false against a mocked binary) and `renderMarkdown` (correct argv, stdin-fed input, error mapping).
+- [x] `src/app/tmux-play/launcher.ts` — fail-fast `glow` availability check alongside the existing `tmux` check, with an install-pointing error message.
+- [x] `src/app/tmux-play/launcher.test.ts` — assertion that launch aborts with the install-pointing error when `glow` is reported absent.
 - [ ] `src/app/tmux-play/presenter-tmux.ts` — buffer-then-render write path, prefix-budgeted render width, prefix post-indent, and removal of the superseded TMUX-046 soft-wrap machinery.
 - [ ] `src/app/tmux-play/presenter-tmux.test.ts` — block buffering and flush boundaries, prefix post-indent, prefix-budgeted render width (prefixed prose rows fit the pane width), and code-fence-not-wrapped.
 - [ ] `src/app/shared/glow.acceptance.test.ts` — real-`glow` rendering check, self-skipping when `glow -v` fails.
@@ -61,7 +62,7 @@ Out of scope:
 
 Each task is one commit.
 
-1. [ ] **Render module and launch gate** — `isGlowAvailable` and `renderMarkdown(text, width)` in `src/app/shared/glow.ts`, spawning `glow` with width pinned and Markdown fed on stdin, capturing stdout; plus a fail-fast `glow` check in `src/app/tmux-play/launcher.ts` alongside the existing `tmux` check.
+1. [x] **Render module and launch gate** — `isGlowAvailable` and `renderMarkdown(text, width)` in `src/app/shared/glow.ts`, spawning `glow` with width pinned and Markdown fed on stdin, capturing stdout; plus a fail-fast `glow` check in `src/app/tmux-play/launcher.ts` alongside the existing `tmux` check.
    New TMUX-051.
    Unit tests cover a rendered sample, `isGlowAvailable` true/false against a mocked binary, and the launcher aborting with an install-pointing error when `glow` is absent.
 2. [ ] **Buffer-then-render presenter** — accumulate text deltas per block, flush on the boundaries named in Scope through the render module at width `paneWidth - prefixWidth`, and post-indent the rendered output so the TMUX-038 prefix/indent grammar holds.

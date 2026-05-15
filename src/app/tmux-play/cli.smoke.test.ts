@@ -213,6 +213,21 @@ function createHarness(): SmokeHarness {
   );
   chmodSync(fakeTmux, 0o755);
 
+  // TMUX-051 launcher gate now probes glow before loading config. Stub it
+  // alongside the fake tmux so launcher-mode smoke flows don't depend on a
+  // real glow on the runner; session-mode rendering isn't exercised here.
+  const fakeGlow = join(binDir, 'glow');
+  writeFileSync(
+    fakeGlow,
+    [
+      '#!/usr/bin/env node',
+      "console.log('glow stub');",
+      'process.exit(0);',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(fakeGlow, 0o755);
+
   return {
     root,
     tmuxLog,

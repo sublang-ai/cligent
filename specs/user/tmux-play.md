@@ -163,6 +163,12 @@ A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, a
 
 The launcher shall convert the resolved YAML config into a JSON snapshot written to the session's work directory, with local `captain.from` paths normalized to absolute `file://` URLs and package specifiers passed through unchanged. Session mode shall read the snapshot rather than reloading the YAML, so config changes made between launch and session start shall not affect the running session.
 
+## External Dependencies
+
+### TMUX-051
+
+When `tmux-play` is invoked in launcher mode (per [TMUX-002](#tmux-002)), the launcher shall verify that the `glow` binary [[2]] is available on `PATH` before loading any config, and when it is not, shall fail with an error message that names `glow` and points to its installation page. The presenter's pane output pipeline delegates Markdown wrapping and styling to `glow`; running without it would silently degrade word-boundary wrapping, styled bodies, and fenced-code passthrough, so the launcher fails fast rather than letting that surface mid-session. The gate mirrors the existing `tmux` availability check and shall run after the `tmux` check so a host missing both binaries reports `tmux` first.
+
 ## Initial Window Geometry
 
 ### TMUX-035
@@ -315,3 +321,4 @@ The built-in fanout Captain shall convey each role's identity once, via the role
 ## References
 
 [1]: https://catppuccin.com/palette/ "Catppuccin Palette"
+[2]: https://github.com/charmbracelet/glow "glow — Render Markdown on the CLI"
