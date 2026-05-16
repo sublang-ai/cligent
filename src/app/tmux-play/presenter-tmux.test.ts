@@ -231,6 +231,36 @@ describe('TmuxPresenter', () => {
     );
   });
 
+  it('preserves ANSI-wrapped blank rows from glow (background SGRs around whitespace)', () => {
+    // Glow code-block padding sometimes ships as `\x1b[<bg>m   \x1b[0m`
+    // — a span of background color around spaces, no visible characters.
+    // visibleNonblank strips ANSI before checking content, so the indent
+    // decision must agree: the row passes through verbatim instead of
+    // getting `  ` prepended (which would break the background span by
+    // pushing styled bytes inside an indent prefix).
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    const ansiPad = '\x1b[48;5;235m   \x1b[0m';
+    renderMarkdownMock.mockImplementation(
+      () => `${ansiPad}\nfirst\n${ansiPad}\nsecond\n${ansiPad}\n`,
+    );
+
+    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+
+    // Outer-margin trim drops one padded blank per edge. The middle
+    // ANSI-wrapped pad sits between `first` and `second` and reaches the
+    // writer with its background span intact, NOT prefixed with `  `.
+    expect(coder.raw()).toBe(
+      'coder> first\n' +
+        `${ansiPad}\n` +
+        '  second\n',
+    );
+  });
+
   it('passes through space-padded blank rows from glow without indenting them', () => {
     // Real glow emits "blank" structural rows as space-padded lines (often
     // with a background-color SGR), not as truly empty strings. A blanket
@@ -453,6 +483,36 @@ describe('TmuxPresenter', () => {
     // surface as a stranded `coder> ` line or a parade of blank lines.
     expect(coder.text()).toBe('');
   });
+
+  // Table-driven: vary glow's leading/trailing blank-line counts across the
+  // [0, 3] grid to catch off-by-one regressions in the trim-1 contract. The
+  // invariant is "strip at most one blank per edge, never more, never less"
+  // — easy to silently get wrong on any future refactor of trimOuterMargin.
+  for (let leading = 0; leading <= 3; leading++) {
+    for (let trailing = 0; trailing <= 3; trailing++) {
+      it(`text-body trim leaves ${Math.max(0, leading - 1)} leading + ${Math.max(0, trailing - 1)} trailing blanks given ${leading} + ${trailing} from glow`, () => {
+        const coder = new MemoryWriter();
+        const presenter = createTmuxPresenter({
+          boss: new MemoryWriter(),
+          roles: new Map([['coder', coder]]),
+        });
+
+        renderMarkdownMock.mockImplementation(
+          () => '\n'.repeat(leading) + 'content\n' + '\n'.repeat(trailing),
+        );
+
+        presenter.onRecord(roleEvent('coder', textEvent('input')));
+
+        const expectedLeading = Math.max(0, leading - 1);
+        const expectedTrailing = Math.max(0, trailing - 1);
+        const expected =
+          '\n'.repeat(expectedLeading) +
+          'coder> content\n' +
+          '\n'.repeat(expectedTrailing);
+        expect(coder.text()).toBe(expected);
+      });
+    }
+  }
 
   // Mid-session glow failure.
 
