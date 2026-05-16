@@ -231,6 +231,65 @@ describe('TmuxPresenter', () => {
     );
   });
 
+  it('passes through space-padded blank rows from glow without indenting them', () => {
+    // Real glow emits "blank" structural rows as space-padded lines (often
+    // with a background-color SGR), not as truly empty strings. A blanket
+    // `line.length === 0` indent decision treats those as non-blank and
+    // prepends two spaces, contradicting TMUX-050's "blank lines remain
+    // blank (unindented)" invariant. visibleNonblank() — the same check
+    // trimOuterMargin uses — keeps the indent decision consistent with
+    // the trim decision.
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementation(
+      () => '   \nhello\n   \nworld\n   \n',
+    );
+
+    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+
+    // Outer-margin trim drops one padded blank per edge (it already uses
+    // visibleNonblank). The remaining middle padded row passes through
+    // verbatim — no `  ` prepended — while `hello` and `world` carry the
+    // prefix and the continuation indent respectively.
+    expect(coder.text()).toBe(
+      'coder> hello\n' +
+        '   \n' +
+        '  world\n',
+    );
+  });
+
+  it('trims only the outermost one leading and one trailing blank per edge', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // Simulate glow's actual fenced-code-with-payload-blank rendering shape:
+    // outer margin + frame-top + payload leading blank + content + payload
+    // trailing blank + frame-bottom + outer margin. Without an outer-only
+    // trim, a blanket multi-line trim collapses the frame rows together
+    // with the payload edges and the structure visible in real glow output
+    // disappears — the bug the reviewer flagged for fenced code.
+    renderMarkdownMock.mockImplementation(
+      () => '\n\n\ncontent\n\n\n',
+    );
+
+    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+
+    // After trim-1: leading blank count goes from 3 to 2; trailing from 2
+    // to 1. The kept blanks ride between the prefix and the content,
+    // preserving glow's structural padding so a real-glow fenced block
+    // does not lose its frame.
+    expect(coder.text()).toBe(
+      '\n\ncoder> content\n\n',
+    );
+  });
+
   it('flushes the open block before a tool event arrives on the same writer', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
@@ -1082,6 +1141,128 @@ describe('TmuxPresenter', () => {
         '  ```\n' +
         `  ${long}\n` +
         '  ```\n',
+    );
+  });
+
+  it('passes through space-padded blank rows from a tool body without indenting them', () => {
+    // Same invariant as the text-body version, exercised through the
+    // tool-result indentLines path. Real glow's fenced-code rendering emits
+    // its frame rows as space-padded (sometimes background-styled) lines;
+    // they must reach the writer as-is so the body's structure reads as
+    // the user would see it in a glow pane outside this presenter.
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementation(
+      () => '   \n   \nfoo\n   \n   \n',
+    );
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', 'payload')),
+    );
+
+    // Outer-margin trim removes one padded blank per edge; the remaining
+    // padded rows on either side of `foo` pass through unmodified, only
+    // `foo` itself picks up the two-space indent.
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '   \n' +
+        '  foo\n' +
+        '   \n',
+    );
+  });
+
+  it('preserves a payload trailing blank line through the fence and indent', () => {
+    // Real tools sometimes emit a final blank row (e.g., a file whose last
+    // line is empty, or `printf 'foo\n\n'`). The old blanket .trimEnd() on
+    // the body stripped both the terminator and the trailing blank before
+    // anything reached the fence; the new strip-one-trailing-newline rule
+    // drops only the terminator so the blank survives the outer-margin
+    // trim, matching TMUX-049's promise that payload blank rows survive.
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
+    );
+
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '  ```\n' +
+        '  foo\n' +
+        '\n' +
+        '  ```\n',
+    );
+  });
+
+  it('preserves the fenced-code frame and payload blank lines under the two-space indent', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    // Mirror real glow's rendering shape for a fenced block whose payload
+    // starts with a blank line: outer margin + frame top + payload leading
+    // blank + content + payload trailing blank + frame bottom + outer
+    // margin. The outer-margin-only trim removes exactly the first and
+    // last blank — `glow`'s paragraph pad — and leaves the structural
+    // blanks the user can actually see in glow's fenced rendering.
+    renderMarkdownMock.mockImplementation(
+      () => '\n\n\nfoo\n\n\n',
+    );
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', '\nfoo')),
+    );
+
+    // After trim-1: from 3 leading + 2 trailing → 2 leading + 1 trailing.
+    // Each non-blank line picks up the two-space indent; blanks stay
+    // unindented so the frame reads as the user would see it in a glow
+    // pane outside this presenter.
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '\n' +
+        '\n' +
+        '  foo\n' +
+        '\n',
+    );
+  });
+
+  it('preserves a payload trailing blank line in the fallback path when glow fails', () => {
+    // The previous fallback ran the raw body through indentLines, which
+    // calls trimOuterMargin and would mistake a payload trailing blank
+    // for a glow margin (the raw body never passed through glow, so it
+    // has no glow margin to strip). The new indentLinesRaw helper skips
+    // the outer-margin trim so the spec's twin promises hold on the
+    // failure path: emit the raw body, AND preserve trailing payload
+    // blank rows.
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementationOnce(() => {
+      throw new Error('glow render failed: broken pipe');
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
+    );
+
+    // raw 'foo\n\n' → body 'foo\n' after strip-one-terminator. The blank
+    // line beyond that terminator survives into the indented output.
+    expect(coder.text()).toBe(
+      'tool< ✓ Cat\n' +
+        '  foo\n' +
+        '\n',
     );
   });
 

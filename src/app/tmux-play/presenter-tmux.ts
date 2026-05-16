@@ -329,7 +329,14 @@ export class TmuxPresenter implements RecordObserver {
       ? `${payload.toolName} ${durationText}`
       : payload.toolName;
     let output = `${intro}${headLine}\n`;
-    const body = stringifyToolOutput(payload.output).trimEnd();
+    // Strip exactly one trailing newline — the line terminator on the
+    // payload's last line — so a plain `foo\n` does not surface as
+    // `foo` + a phantom blank inside the fence. A blanket `.trimEnd()`
+    // would also strip payload-intended trailing blank lines, which the
+    // TMUX-049 amendment promises to preserve through the outer-margin
+    // trim in renderToolBody.
+    const raw = stringifyToolOutput(payload.output);
+    const body = raw.endsWith('\n') ? raw.slice(0, -1) : raw;
     if (body) {
       output += this.renderToolBody(writer, body);
     }
@@ -354,13 +361,19 @@ export class TmuxPresenter implements RecordObserver {
       ? paneWidth
       : DEFAULT_PANE_WIDTH;
     const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
-    let rendered: string;
     try {
-      rendered = renderMarkdown(fenced, renderWidth);
+      const rendered = renderMarkdown(fenced, renderWidth);
+      return indentLines(rendered, CONTINUATION_INDENT);
     } catch {
-      rendered = body.endsWith('\n') ? body : `${body}\n`;
+      // The raw body never passed through glow, so it carries no outer
+      // paragraph margin to trim. Routing it through indentLines would
+      // call trimOuterMargin, which would mistake a payload trailing blank
+      // line for a glow margin and silently lose it — directly violating
+      // the TMUX-049 promise to preserve payload trailing blanks AND to
+      // emit raw body text on render failure. Indent the body directly
+      // without the outer-margin trim.
+      return indentLinesRaw(body, CONTINUATION_INDENT);
     }
-    return indentLines(rendered, CONTINUATION_INDENT);
   }
 
   // Returns the SGR opener (`\x1b[1;38;2;…m`) for a speaker's prefix, or
@@ -394,28 +407,47 @@ export class TmuxPresenter implements RecordObserver {
   // Apply the TMUX-038 prefix/indent grammar to glow's rendered output:
   // the first nonblank line carries the colored `<who>> ` prefix; every
   // nonblank continuation line carries the two-space hanging indent; blank
-  // lines inside the rendered block stay blank. Glow's leading and trailing
-  // blank lines (its default paragraph margin) are trimmed before the
-  // prefix is applied — otherwise short blocks render as
-  // `<blank>\n<who>>     content\n<blank>` and consecutive blocks end up
-  // with stacked margins. The cell-width budget passed to glow already
-  // reserves prefixWidth so the prefixed first line and indented
-  // continuations fit the pane without re-wrap.
+  // lines inside the rendered block stay blank. Only `glow`'s outermost
+  // one-line paragraph margin is trimmed from each edge — never all edge
+  // blanks — so structural blanks `glow` emits for fenced-code frames,
+  // table rows, or other multi-line constructs survive. The cell-width
+  // budget passed to glow already reserves prefixWidth so the prefixed
+  // first line and indented continuations fit the pane without re-wrap.
   private applyPrefix(who: string, rendered: string): string {
-    const trimmed = trimBlankLines(rendered);
+    const trimmed = trimOuterMargin(rendered);
     if (trimmed.length === 0) {
       // All-blank rendered output (the source was empty or pure whitespace,
       // or glow returned only its margin lines): emit nothing so empty
       // content never surfaces as a bare `<who>> ` line or a stranded blank.
       return '';
     }
+    const lines = trimmed.split('\n');
+    let firstIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (visibleNonblank(lines[i] ?? '')) {
+        firstIdx = i;
+        break;
+      }
+    }
+    if (firstIdx === -1) return '';
     const sgr = this.prefixSgr(who);
     const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
-    const lines = trimmed.split('\n');
-    const out: string[] = [`${intro}${lines[0] ?? ''}`];
-    for (let i = 1; i < lines.length; i++) {
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      out.push(line.length === 0 ? '' : `${CONTINUATION_INDENT}${line}`);
+      if (i < firstIdx) {
+        out.push(line);
+      } else if (i === firstIdx) {
+        out.push(`${intro}${line}`);
+      } else if (!visibleNonblank(line)) {
+        // Glow emits structural blank rows as space-padded (and sometimes
+        // ANSI-styled) lines, not empty strings. Pass them through verbatim
+        // so the spec's "blank lines remain blank (unindented)" invariant
+        // holds for real-glow output, not just for `length === 0` mocks.
+        out.push(line);
+      } else {
+        out.push(`${CONTINUATION_INDENT}${line}`);
+      }
     }
     return `${out.join('\n')}\n`;
   }
@@ -458,30 +490,50 @@ function selectCodeFence(body: string): string {
 // lines blank, and ensure exactly one trailing newline. Used to drop a
 // glow-rendered tool body under the `tool< …` header line so it carries
 // the same two-space continuation indent as text-body continuations.
-// Mirrors `applyPrefix`'s edge-trim so glow's leading/trailing margin
-// blanks don't stack between the header and the body.
+// Mirrors `applyPrefix`'s outer-margin trim so glow's outermost paragraph
+// margin doesn't stack between the header and the body; any further blank
+// lines (the fenced-code frame, payload edge blanks, etc.) are preserved.
 function indentLines(rendered: string, indent: string): string {
-  const trimmed = trimBlankLines(rendered);
-  if (trimmed.length === 0) return '';
-  const lines = trimmed.split('\n');
+  return indentLinesRaw(trimOuterMargin(rendered), indent);
+}
+
+// Indent without any outer-margin trim. Used by the renderMarkdown fallback
+// path where the input is the raw payload — never passed through glow — so
+// there is no glow margin to strip. Using `indentLines` here would let
+// `trimOuterMargin` mistake a payload trailing blank line for a glow
+// margin and silently lose it, violating TMUX-049's promise to preserve
+// trailing payload blanks on the failure path.
+//
+// `visibleNonblank` (not `length === 0`) is the blank check: glow's
+// structural blank rows are space-padded — sometimes with ANSI background
+// SGRs — so checking length alone would silently indent them, breaking
+// the TMUX-049 promise that the body's "frame and payload edge blanks
+// read as the user would see them in a glow pane outside this presenter".
+function indentLinesRaw(text: string, indent: string): string {
+  if (text.length === 0) return '';
+  const lines = text.split('\n');
   const out = lines.map((line) =>
-    line.length === 0 ? '' : `${indent}${line}`,
+    visibleNonblank(line) ? `${indent}${line}` : line,
   );
   return `${out.join('\n')}\n`;
 }
 
-// Drop leading and trailing blank lines (visible whitespace only — ANSI
-// escapes don't count as content), returning the result without a trailing
-// newline. Internal blank lines between content lines are preserved.
-function trimBlankLines(text: string): string {
+// Drop at most one leading and one trailing blank line (visible whitespace
+// only — ANSI escapes don't count as content), returning the result without
+// a trailing newline. This strips `glow`'s outermost paragraph-margin pad
+// while preserving any structural blanks `glow` emits inside the block:
+// fenced-code frame rows, payload edge blanks, table padding, etc. A
+// blanket multi-line trim would damage those, so the limit is fixed at one
+// per edge regardless of how many edge blanks are present.
+function trimOuterMargin(text: string): string {
   const normalized = text.endsWith('\n') ? text.slice(0, -1) : text;
   const lines = normalized.split('\n');
   let start = 0;
-  while (start < lines.length && !visibleNonblank(lines[start] ?? '')) {
+  let end = lines.length;
+  if (start < end && !visibleNonblank(lines[start] ?? '')) {
     start += 1;
   }
-  let end = lines.length;
-  while (end > start && !visibleNonblank(lines[end - 1] ?? '')) {
+  if (end > start && !visibleNonblank(lines[end - 1] ?? '')) {
     end -= 1;
   }
   return lines.slice(start, end).join('\n');
