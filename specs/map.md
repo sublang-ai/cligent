@@ -35,7 +35,7 @@ meta.md     The spec of specs
 | DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/role architecture, records, presenter boundary |
-| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | Per-adapter permission options passthrough via YAML; opaque schema, no project-wide default |
+| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode; no project-wide default |
 
 ## Iterations
 

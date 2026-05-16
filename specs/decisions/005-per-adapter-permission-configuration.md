@@ -9,78 +9,94 @@ Accepted
 
 ## Context
 
-[DR-002](002-unified-event-stream-and-adapter-interface.md) defines the unified event stream and adapter contract.
-[DR-003](003-role-scoped-session-management.md) defines `Cligent`'s constructor option merge.
-[DR-004](004-tmux-play-captain-architecture.md) defines tmux-play role and captain configuration shapes.
+[DR-002](002-unified-event-stream-and-adapter-interface.md) defines `run(prompt, options?: AgentOptions)` as the option boundary into adapters and pins `AgentOptions.permissions: PermissionPolicy` as the typed channel for permission intent.
+[DR-003](003-role-scoped-session-management.md) makes adapter constructors stateless (DI deps only) and routes instance-level defaults through `CligentOptions`, merged with per-call `RunOptions` at `Cligent.run()`.
+[DR-004](004-tmux-play-captain-architecture.md) defines the tmux-play YAML role and captain configs.
 
-Each coding-agent SDK ships its own permission/approval model that the cligent adapter constructor accepts as options:
+Each coding-agent SDK ships its own permission/approval model:
 
-| Adapter | Permission knob | "Eliminate prompts" value |
+| Adapter | SDK knob | "Eliminate prompts" value |
 | --- | --- | --- |
 | `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed), `'bypassPermissions'` (no checks) |
 | `codex` | `sandboxMode`, `approvalPolicy` [[2]] | `--full-auto` = `on-request` + `workspace-write` |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules [[4]] | `-p` flag or explicit rules |
 
-Today's gap: `RoleConfig` in `src/app/tmux-play/roles.ts` is `{ id, adapter, model?, instruction? }` — no `options` field.
-`captain.options` exists but is forwarded to the Captain factory per DR-004, not to the adapter.
-So a YAML user has no way to set `permissionMode: auto` on a role; programmatic `runTmuxPlay` users can construct `Cligent`s directly but bypass the YAML entirely.
+Cligent already provides a typed abstraction surface, `PermissionPolicy = { fileWrite, shellExecute, networkAccess }` of `'allow' | 'ask' | 'deny'`.
+Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolicy` to its SDK knobs inside the adapter (see e.g., `src/adapters/codex.ts` `mapPermissionsToCodexOptions`, `src/adapters/claude-code.ts` `mapPermissionsToClaudeOptions`).
 
-Cligent's claude adapter additionally caps `ClaudePermissionMode` at `'bypassPermissions' | 'acceptEdits' | 'default'` — the safe `'auto'` mode is not in the union.
-The gemini adapter exposes only `allowedTools` / `disallowedTools` (whitelist / blacklist), not the `yolo` / `approval-mode` toggle.
-The opencode adapter exposes no permission knobs at all.
+Today's gap is two-layered:
+
+- **YAML reachability**: tmux-play's `RoleConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
+- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's `--full-auto` (sandbox-protected) versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
-### Per-adapter options passthrough
+### Channel — through CligentOptions, not adapter constructors
 
-`RoleConfig` shall gain an opaque `options: Record<string, unknown>` field forwarded verbatim to the adapter constructor.
-The captain config shall gain a parallel `adapterOptions: Record<string, unknown>` field with the same semantics.
-The existing `captain.options` field shall continue to forward to the Captain factory per [DR-004](004-tmux-play-captain-architecture.md), preserving the Captain extension contract.
+YAML carries permissions through fields that forward to `CligentOptions`, never to adapter constructors.
+This preserves DR-003's "constructor = DI deps only" and DR-002's `run(prompt, options)` boundary; the runtime path is unchanged.
 
-### Schema shape
+Specifically:
 
-`options` is `Record<string, unknown>` (opaque, untyped).
-Validation happens at the adapter constructor; invalid options surface as construction errors at session-mode startup, routed through the existing `runtime_error` path per [DR-004](004-tmux-play-captain-architecture.md).
+- `RoleConfig` gains `permissions?: PermissionPolicy`, forwarded to the role's `Cligent` constructor as `CligentOptions.permissions`.
+- The captain config gains `permissions?: PermissionPolicy`, forwarded to the captain's `Cligent` constructor as `CligentOptions.permissions`.
+- The existing `captain.options` field continues to forward to the Captain factory per [DR-004](004-tmux-play-captain-architecture.md); it is *not* repurposed.
+- `Cligent.run()` merges instance defaults with per-call `RunOptions` per DR-003's option-merge contract; adapters receive the merged `AgentOptions` at `run()` and map via their existing `mapPermissionsToXxxOptions`.
 
-Rationale:
+### Schema — typed, not opaque
 
-- Adapter SDKs evolve their option shapes independently of cligent; a typed-per-adapter union would couple cligent's release cadence to N upstream SDKs.
-- Forward-compatible: SDK upgrades expose new options without a spec change.
-- Consistent with the existing `captain.options` precedent (already opaque).
+YAML uses the existing typed `PermissionPolicy` shape.
+No `Record<string, unknown>` escape hatch; no adapter-specific knob is directly settable from YAML.
+Adapter-specific knobs (`permissionMode`, `sandboxMode`, `approvalPolicy`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
+
+Rationale: a typed surface preserves cross-adapter substitutability — a user who switches a role from `claude` to `codex` gets the same `permissions` semantics, mapped to each SDK's knobs by the adapter.
+
+### Auto-mode — expand PermissionPolicy
+
+`PermissionPolicy` shall be extended to express auto-mode intent: classifier- or sandbox-protected automation distinct from unchecked bypass.
+The exact field name and shape is IR-level work; the DR's constraint is that the addition is a typed PermissionPolicy field, not a new top-level YAML escape hatch.
+
+Each adapter's mapping function shall translate the new vocabulary to its SDK's auto-mode value:
+
+| Adapter | Auto-mode mapping | Bypass mapping (already present where applicable) |
+| --- | --- | --- |
+| `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
+| `codex` | `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` | `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` |
+| `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
+| `opencode` | per-tool rules, or `-p` mode (after adding permission options to the adapter) | — |
 
 ### Default policy
 
-Cligent shall NOT impose a project-wide default permission posture.
-Each adapter's SDK default applies unless `options` is provided.
-Permission-mode opt-in is per-config; cligent never silently widens permissions for the user.
+Cligent shall not impose a project-wide default permission posture.
+SDK defaults apply unless `permissions` is provided.
+Documentation and example configs may recommend classifier- or sandbox-protected modes (`claude`'s `auto`, `codex`'s `--full-auto`-equivalent) over unchecked bypass; that guidance is editorial, not enforcement.
 
-Documentation and example configs SHOULD recommend the classifier- or sandbox-protected modes (`claude`'s `auto`, `codex`'s `--full-auto`) over the unchecked bypass modes (`claude`'s `bypassPermissions`, `codex`'s `--dangerously-bypass-approvals-and-sandbox`).
-That guidance is editorial, not enforcement.
+### Failure surfacing
 
-### Per-adapter coverage gaps
+Invalid permission options surface at two distinct phases, neither of which is the runtime's `runtime_error` record path:
 
-Adapters shall expose every permission knob their SDK supports through the adapter's TypeScript constructor options.
-Current gaps that block YAML auto-mode configuration:
+- **At launcher startup**, before the runtime exists: `createTmuxPlayRuntime` constructs every role and captain `Cligent` before instantiating `TmuxPlayRuntime`. Adapter-construction or `Cligent`-construction failures at this phase propagate as thrown Promise rejections from `createRuntime`, caught at the launcher session-mode entrypoint, and exit with a stderr error and nonzero status. There are no observers to dispatch records to at this phase.
+- **At first `run()` call**, after the runtime exists: an invalid `AgentOptions.permissions` value (e.g., a mapping function that cannot translate the requested mode) surfaces as a `role_finished` or `captain_finished` record with `status: 'error'` per the existing runtime contract, and is rendered through the presenter per [TMUX-039](../user/tmux-play.md#tmux-039).
 
-- `claude`: add `'auto'` to `ClaudePermissionMode` (matching the SDK's enum).
-- `gemini`: add an `approvalMode` / `yolo` constructor option distinct from `allowedTools` / `disallowedTools`.
-- `opencode`: add per-tool permission options matching the SDK's permission schema.
-- `codex`: already exposes `sandboxMode` and `approvalPolicy`; no gap.
+The DR does not introduce new error machinery; it constrains where errors should appear so future implementations don't assume the wrong path.
 
 ### Out of scope
 
-- Per-tool ACL rules in YAML (e.g., a `permissions.allow` / `deny` map distinct from the adapter's native knobs). Future DR if needed.
-- Runtime per-call permission overrides above the YAML default.
+- Per-adapter knob escape hatches in YAML (e.g., setting `sandboxMode` directly bypassing `PermissionPolicy`).
+- Per-tool ACL rules in YAML distinct from `PermissionPolicy`.
+- Runtime per-call permission overrides above the YAML default; per-call overrides remain a programmatic-API capability via `RunOptions.permissions`.
 - Automatic permission-mode escalation or down-shift based on context.
 
 ## Consequences
 
-- `captain.options` (Captain factory) and `captain.adapterOptions` (adapter constructor) are distinct YAML fields with disjoint forwarding paths; this preserves [DR-004](004-tmux-play-captain-architecture.md)'s Captain extension contract while enabling adapter options on the captain.
-- `RoleConfig.options` is opaque; the YAML loader does not validate it. Adapter constructors are the validation boundary.
-- Adapter SDK upgrades that add new options work without a spec or adapter change, provided the YAML passes them through.
-- Cligent ships no default permission posture. Users who want auto-mode opt in via config; users who don't get the SDK default.
-- Subsequent IRs implement the schema extension, the per-adapter additions named above, and per-adapter tests that an `options` value reaches the SDK constructor.
+- DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
+- `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
+- All four adapters move from inconsistent coverage to a uniform abstraction: each adapter's mapping function gains an auto-mode case (claude and gemini also need their constructor option types extended; opencode needs the mapping wired at all).
+- A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
+- Cligent ships no default permission posture; user choice is explicit per config.
+- Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `role_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.
+- Subsequent IRs implement: the `PermissionPolicy` extension, the YAML `permissions` fields, each adapter's mapping update, and per-adapter tests that an `AgentOptions.permissions` value reaches the SDK's chosen knob.
 
 ## References
 
