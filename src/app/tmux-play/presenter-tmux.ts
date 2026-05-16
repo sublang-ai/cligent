@@ -23,7 +23,6 @@ import {
   STATUS_ERROR,
   TOOL_DENIED,
   TOOL_FAIL,
-  TOOL_INVOKE,
   TOOL_OK,
   bold24bitFg,
   roleAccent,
@@ -47,11 +46,10 @@ const PREFIX_CAPTAIN_SGR = bold24bitFg(SPEAKER_CAPTAIN);
 const STATUS_ERROR_SGR = bold24bitFg(STATUS_ERROR);
 const STATUS_ABORTED_SGR = bold24bitFg(STATUS_ABORTED);
 
-// TMUX-049 tool lifecycle SGR anchors. The tool-result body is now rendered
-// through the TMUX-050 glow pipeline as a fenced code block, so the prior
-// `overlay0` dim wrap (which kept the body visually subordinate to the
-// header) is no longer applied — glow's code-block styling supersedes it.
-const TOOL_INVOKE_SGR = bold24bitFg(TOOL_INVOKE);
+// TMUX-049 tool-result outcome SGR anchors. The `tool>` invocation prefix
+// now carries the caller's speaker color rather than a fixed peach anchor
+// (see writeToolInvoke); only `tool<` keeps an outcome-driven palette so a
+// success/failure scan stays at-a-glance.
 const TOOL_OK_SGR = bold24bitFg(TOOL_OK);
 const TOOL_FAIL_SGR = bold24bitFg(TOOL_FAIL);
 const TOOL_DENIED_SGR = bold24bitFg(TOOL_DENIED);
@@ -203,7 +201,7 @@ export class TmuxPresenter implements RecordObserver {
     // TMUX-049: tool lifecycle has its own prefix grammar instead of the
     // speaker prefix, so it bypasses the markdown pipeline.
     if (event.type === 'tool_use') {
-      this.writeToolInvoke(writer, event.payload as ToolUsePayload);
+      this.writeToolInvoke(writer, who, event.payload as ToolUsePayload);
       return;
     }
     if (event.type === 'tool_result') {
@@ -301,6 +299,7 @@ export class TmuxPresenter implements RecordObserver {
 
   private writeToolInvoke(
     writer: TmuxPresenterWriter,
+    who: string,
     payload: ToolUsePayload,
   ): void {
     this.flushBlock(writer);
@@ -308,7 +307,14 @@ export class TmuxPresenter implements RecordObserver {
     const header = inputSummary
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
-    writer.write(`${TOOL_INVOKE_SGR}tool> ${SGR_RESET}${header}\n`);
+    // The `tool>` prefix carries the caller's speaker color (mauve for
+    // captain, the adapter accent for a role) instead of a fixed peach
+    // anchor, so at-a-glance the invocation is attributable to its caller
+    // alongside text bodies. Falls back to uncolored when the speaker has
+    // no defined color, matching the TMUX-038 prefix fallback.
+    const sgr = this.prefixSgr(who);
+    const intro = sgr ? `${sgr}tool> ${SGR_RESET}` : 'tool> ';
+    writer.write(`${intro}${header}\n`);
   }
 
   private writeToolResult(
@@ -388,41 +394,28 @@ export class TmuxPresenter implements RecordObserver {
   // Apply the TMUX-038 prefix/indent grammar to glow's rendered output:
   // the first nonblank line carries the colored `<who>> ` prefix; every
   // nonblank continuation line carries the two-space hanging indent; blank
-  // lines stay blank. The cell-width budget passed to glow (see flushBlock)
-  // already reserves prefixWidth so prefixed first line and indented
+  // lines inside the rendered block stay blank. Glow's leading and trailing
+  // blank lines (its default paragraph margin) are trimmed before the
+  // prefix is applied — otherwise short blocks render as
+  // `<blank>\n<who>>     content\n<blank>` and consecutive blocks end up
+  // with stacked margins. The cell-width budget passed to glow already
+  // reserves prefixWidth so the prefixed first line and indented
   // continuations fit the pane without re-wrap.
   private applyPrefix(who: string, rendered: string): string {
+    const trimmed = trimBlankLines(rendered);
+    if (trimmed.length === 0) {
+      // All-blank rendered output (the source was empty or pure whitespace,
+      // or glow returned only its margin lines): emit nothing so empty
+      // content never surfaces as a bare `<who>> ` line or a stranded blank.
+      return '';
+    }
     const sgr = this.prefixSgr(who);
     const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
-    const trimmed = rendered.endsWith('\n')
-      ? rendered.slice(0, -1)
-      : rendered;
     const lines = trimmed.split('\n');
-    let firstNonblankIdx = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (visibleNonblank(lines[i] ?? '')) {
-        firstNonblankIdx = i;
-        break;
-      }
-    }
-    if (firstNonblankIdx === -1) {
-      // All-blank rendered output: pass through without applying a prefix
-      // because there's no nonblank line to tag; synthesizing a prefix on
-      // empty content would be visual noise.
-      return rendered.endsWith('\n') ? rendered : `${rendered}\n`;
-    }
-    const out: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
+    const out: string[] = [`${intro}${lines[0] ?? ''}`];
+    for (let i = 1; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      if (i < firstNonblankIdx) {
-        out.push(line);
-      } else if (i === firstNonblankIdx) {
-        out.push(`${intro}${line}`);
-      } else if (line.length === 0) {
-        out.push('');
-      } else {
-        out.push(`${CONTINUATION_INDENT}${line}`);
-      }
+      out.push(line.length === 0 ? '' : `${CONTINUATION_INDENT}${line}`);
     }
     return `${out.join('\n')}\n`;
   }
@@ -465,15 +458,33 @@ function selectCodeFence(body: string): string {
 // lines blank, and ensure exactly one trailing newline. Used to drop a
 // glow-rendered tool body under the `tool< …` header line so it carries
 // the same two-space continuation indent as text-body continuations.
+// Mirrors `applyPrefix`'s edge-trim so glow's leading/trailing margin
+// blanks don't stack between the header and the body.
 function indentLines(rendered: string, indent: string): string {
-  const trimmed = rendered.endsWith('\n')
-    ? rendered.slice(0, -1)
-    : rendered;
+  const trimmed = trimBlankLines(rendered);
+  if (trimmed.length === 0) return '';
   const lines = trimmed.split('\n');
   const out = lines.map((line) =>
     line.length === 0 ? '' : `${indent}${line}`,
   );
   return `${out.join('\n')}\n`;
+}
+
+// Drop leading and trailing blank lines (visible whitespace only — ANSI
+// escapes don't count as content), returning the result without a trailing
+// newline. Internal blank lines between content lines are preserved.
+function trimBlankLines(text: string): string {
+  const normalized = text.endsWith('\n') ? text.slice(0, -1) : text;
+  const lines = normalized.split('\n');
+  let start = 0;
+  while (start < lines.length && !visibleNonblank(lines[start] ?? '')) {
+    start += 1;
+  }
+  let end = lines.length;
+  while (end > start && !visibleNonblank(lines[end - 1] ?? '')) {
+    end -= 1;
+  }
+  return lines.slice(start, end).join('\n');
 }
 
 // TMUX-039 status coloring. The bracketed status body gets a red (error) or
@@ -496,11 +507,17 @@ function toolResultStyle(
 // Pick the most useful single-string description of a tool's input for the
 // `tool>` header. Known keys come first; fall back to a truncated JSON dump.
 function summarizeToolInput(input: Record<string, unknown>): string {
+  // Ordered priority: filesystem/shell keys first, then search/fetch
+  // (`query`, common to tools like ToolSearch / WebFetch wrappers), then
+  // free-form prose. `query` lifts the common search-tool case out of the
+  // compact-JSON fallback so the `tool>` header surfaces the actual query
+  // text instead of `{"query":"…","max_results":N}`.
   for (const key of [
     'command',
     'file_path',
     'path',
     'pattern',
+    'query',
     'prompt',
     'description',
   ]) {

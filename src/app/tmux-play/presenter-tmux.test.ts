@@ -189,21 +189,45 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('coder> first\ncoder> second\n');
   });
 
-  it('preserves leading blank lines before applying the speaker prefix', () => {
+  it('trims leading and trailing blank lines from rendered output before prefixing', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
       roles: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('\nhello\n')));
-    presenter.onRecord(roleFinishedOk('coder'));
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('\nagain\n')));
-    presenter.onRecord(roleFinishedOk('coder'));
+    // Simulate glow's default dark style which wraps every rendered block in
+    // a leading + trailing blank line as its paragraph margin. Without the
+    // trim, two consecutive blocks land as `\nA\n\n\nB\n` with stacked
+    // margins; with the trim they sit immediately after one another so the
+    // pane reads as a turn log rather than a sparsely-padded one.
+    renderMarkdownMock.mockImplementation(
+      (text: string) => `\n${text.trimEnd()}\n\n`,
+    );
 
+    presenter.onRecord(roleEvent('coder', textEvent('hello')));
+    presenter.onRecord(roleEvent('coder', textEvent('again')));
+
+    expect(coder.text()).toBe('coder> hello\ncoder> again\n');
+  });
+
+  it('keeps internal blank lines between paragraphs even when the edges are trimmed', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementation(
+      () => '\nfirst paragraph\n\nsecond paragraph\n\n',
+    );
+
+    presenter.onRecord(roleEvent('coder', textEvent('hello')));
+
+    // The leading and trailing glow blanks are gone, but the inter-paragraph
+    // blank between `first` and `second` survives untouched.
     expect(coder.text()).toBe(
-      '\ncoder> hello\n' +
-        '\ncoder> again\n',
+      'coder> first paragraph\n\n  second paragraph\n',
     );
   });
 
@@ -356,7 +380,7 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('coder> one\n\n  two\n');
   });
 
-  it('passes through all-blank rendered output without synthesizing a prefix', () => {
+  it('emits nothing for all-blank rendered output, never a bare prefix line', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -365,10 +389,10 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(roleEvent('coder', textEvent('   \n\n')));
 
-    // Source had no nonblank content; output stays content-free (just the
-    // original blank lines plus the formatter's trailing newline) instead
-    // of emitting a bare `coder> ` line with no body.
-    expect(coder.text()).toBe('   \n\n\n');
+    // Source had no nonblank content. After the edge trim there is no line
+    // to tag, so the writer receives no bytes — empty content does not
+    // surface as a stranded `coder> ` line or a parade of blank lines.
+    expect(coder.text()).toBe('');
   });
 
   // Mid-session glow failure.
@@ -692,19 +716,54 @@ describe('TmuxPresenter', () => {
 
   // Tool lifecycle (TMUX-049).
 
-  it('renders a role tool_use as a peach `tool>` line in the role pane', () => {
+  it('colors the `tool>` prefix by the caller\'s adapter accent', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
       roles: new Map([['coder', coder]]),
+      roleAdapters: new Map([['coder', 'claude']]),
     });
 
     presenter.onRecord(
       roleEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
+    // claude → green #a6e3a1 → fg 166;227;161. Same SGR the role's `<who>>`
+    // prefix carries; tool invocations are attributed to their caller.
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n',
+      '\x1b[1;38;2;166;227;161mtool> \x1b[0mBash npm test\n',
+    );
+  });
+
+  it('leaves the `tool>` prefix uncolored when the caller has no adapter mapping', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+      // No roleAdapters entry — matches the TMUX-038 prefix fallback.
+    });
+
+    presenter.onRecord(
+      roleEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
+    );
+
+    expect(coder.raw()).toBe('tool> Bash npm test\n');
+  });
+
+  it('colors the `tool>` prefix mauve when the caller is the captain', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      roles: new Map(),
+    });
+
+    presenter.onRecord(
+      captainEvent(toolUseEvent('Read', { file_path: 'src/main.ts' })),
+    );
+
+    // captain → mauve #cba6f7 → fg 203;166;247.
+    expect(boss.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mtool> \x1b[0mRead src/main.ts\n',
     );
   });
 
@@ -767,6 +826,30 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe('tool> Custom {"count":3,"flag":true}\n');
+  });
+
+  it('uses `query` as a priority key so search-tool calls do not fall through to JSON', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      roles: new Map([['coder', coder]]),
+    });
+
+    presenter.onRecord(
+      roleEvent(
+        'coder',
+        toolUseEvent('ToolSearch', {
+          query: 'select:WebFetch',
+          max_results: 1,
+        }),
+      ),
+    );
+
+    // Without `query` in the priority list this would render as
+    // `tool> ToolSearch {"query":"select:WebFetch","max_results":1}` —
+    // technically correct but visually noisy and the same pattern the user
+    // flagged in IR-013's post-implementation review.
+    expect(coder.text()).toBe('tool> ToolSearch select:WebFetch\n');
   });
 
   it('omits the input summary when the tool has no input keys', () => {

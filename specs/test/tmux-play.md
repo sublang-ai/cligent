@@ -188,7 +188,7 @@ Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane sh
 ### TTMUX-043
 Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
 
-Given a role `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a role pane writer, the captured bytes shall be `\x1b[1;38;2;250;179;135mtool> \x1b[0mBash npm test\n`.
+Given a role `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a role pane writer whose adapter is `claude`, the captured bytes shall be `\x1b[1;38;2;166;227;161mtool> \x1b[0mBash npm test\n` — the `tool>` prefix carries the caller's adapter accent per [TMUX-038](../user/tmux-play.md#tmux-038) (`claude` → green `#a6e3a1`), not the retired peach `#fab387` anchor. When the caller has no adapter mapping, the prefix shall be uncolored `tool> `; when the caller is the captain (a `captain_event` carrying a `tool_use`), the prefix shall be `\x1b[1;38;2;203;166;247mtool> \x1b[0m` (captain mauve `#cba6f7`).
 
 Given a `tool_result` event with `status: 'success'`, `toolName: 'Bash'`, and `durationMs: 1234`, the captured bytes shall begin with the colored header line `\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n`. Status symbol shall be `✓` for `success`, `✗` for `error`, `·` for `denied`; the corresponding prefix SGR shall use green / red / yellow per the [TMUX-049](../user/tmux-play.md#tmux-049) table. The duration segment shall be `<n>ms` for `durationMs < 1000`, `<n.n>s` otherwise, and absent when `durationMs` is undefined.
 
@@ -201,7 +201,7 @@ Given a `tool_result` event whose extracted output is empty or undefined, the he
 ### TTMUX-044
 Verifies: [TMUX-049](../user/tmux-play.md#tmux-049)
 
-Given a `tool_use` event whose `input` lacks the priority keys but contains `{ count: 3, flag: true }`, the input summary shall be the compact JSON `{"count":3,"flag":true}`. Given an `input` whose first priority-key string exceeds 60 cells, the summary shall be the value's first 59 cells followed by `…`. Given an empty `input` object, the rendered header shall be `tool> <toolName>` with no trailing space.
+Given a `tool_use` event whose `input` lacks the priority keys but contains `{ count: 3, flag: true }`, the input summary shall be the compact JSON `{"count":3,"flag":true}`. Given an `input` whose first priority-key string exceeds 60 cells, the summary shall be the value's first 59 cells followed by `…`. Given an empty `input` object, the rendered header shall be `tool> <toolName>` with no trailing space. Given an `input` whose only matching priority-key string is `query` (e.g., `{ query: 'select:WebFetch', max_results: 1 }`), the input summary shall be the `query` value — `query` sits in the priority list between `pattern` and `prompt` so search/fetch tools surface their query text rather than falling through to compact JSON.
 
 ### TTMUX-045
 Verifies: [TMUX-040](../user/tmux-play.md#tmux-040), [TMUX-049](../user/tmux-play.md#tmux-049)
@@ -280,7 +280,7 @@ Verifies: [TMUX-050](../user/tmux-play.md#tmux-050), [TMUX-038](../user/tmux-pla
 
 Given the rendered output of a text block, the captured bytes shall apply the [TMUX-038](../user/tmux-play.md#tmux-038) grammar to the rendered lines: the first nonblank line shall carry the colored `<who>> ` SGR prefix; every nonblank continuation line shall carry the two-space hanging indent; blank lines in the rendered output shall remain blank without the indent. The indent shall be uncolored — no SGR sequence shall span the two-space prefix bytes.
 
-Given a rendered block whose content is entirely whitespace (the source produced no nonblank line), the captured bytes shall pass through without a synthesized `<who>> ` prefix, so empty content does not surface as a bare prefix line.
+Given leading or trailing blank lines in the rendered output (introduced by `glow`'s default paragraph-margin styling), the captured bytes shall not include them — only the meaningful content reaches the writer, and internal blank lines between paragraphs are preserved verbatim. Given a rendered block whose content is entirely whitespace after the edge trim, the writer shall receive zero bytes — no synthesized `<who>> ` prefix and no stranded blanks — so empty content cannot surface as a bare prefix line or as padding between turns.
 
 Given a `text_delta` sequence that ends without a trailing newline followed by a `role_prompt` or other boundary event on the same writer, the open block shall flush before the new block opens; the writer shall not interleave the two speakers' content on a single line.
 
