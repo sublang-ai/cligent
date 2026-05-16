@@ -10,6 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-17
+
+### Added
+
+- Markdown-rendered pane output via [`glow`](https://github.com/charmbracelet/glow) (IR-013) — text replies, captain summaries, and tool-result bodies render through the `glow` terminal Markdown renderer, so bold, code blocks, tables, lists, and word-boundary wrapping reach the pane intact
+- Catppuccin Mocha theme on the tmux-play session (IR-012) — truecolor pane borders carry the adapter accent (claude/codex/gemini/opencode), speaker prefixes carry per-speaker colors (boss blue, captain mauve, role adapter accent), error/aborted status bodies carry red/yellow, and a dedicated tool lifecycle prefix grammar replaces inline tool noise: `tool>` (caller-colored) for invocations, `tool<` for results with outcome-keyed `✓` / `✗` / `·` markers
+- Real-glow acceptance suite — integration tests exercise the presenter against the actual `glow` binary, covering well-formed prefixed output, payload trailing-blank preservation, and no-stacked-blanks between turns
+- `query` priority key in the `tool_use` input summary — search/fetch tools (ToolSearch wrappers and similar) surface the query text rather than falling through to compact JSON
+- DR-005 design record for per-adapter permission configuration (typed `PermissionPolicy` through `CligentOptions`; no implementation in this release)
+
+### Changed
+
+- **Breaking:** `tmux-play` requires [`glow`](https://github.com/charmbracelet/glow#installation) on `PATH` in addition to `tmux`; the launcher fails fast with an install-pointing error when it is missing
+- **Breaking:** the `tool>` invocation prefix is colored by the caller's adapter accent (mauve for captain, the adapter accent for a role) instead of a fixed peach; `tool<` keeps the outcome palette (green / red / yellow)
+- **Breaking:** the `overlay0` dim SGR around tool-result bodies is removed; styling is owned by `glow`'s code-block rendering inside a payload-safe code fence (fence width chosen as `max(3, longest_backtick_run + 1)` so embedded fences cannot terminate it early)
+- Text bodies now appear on block completion rather than streaming token-by-token. Markdown is not a streamable format (a renderer cannot tell whether subsequent bytes belong to an open code fence until the closing fence arrives); this is the deliberate tradeoff for word-boundary wrapping and inline-style rendering
+- Pane width budget reserves the visible `<who>> ` prefix when invoking `glow`, so prefixed first lines and indented continuations fit the pane without terminal-level rewrap
+- Tool input summary truncation measures cells (CJK / emoji) rather than UTF-16 code units, so wide characters and surrogate-pair emoji never get split mid-codepoint
+- README and `docs/tmux-play.md` Requirements lists updated to include `glow`
+- CI acceptance job installs `glow` v2.1.2 before running acceptance tests
+- Initial window geometry switches the captain pane to focus on startup so the cursor lands at the `boss> ` readline prompt
+
+### Fixed
+
+- TTMUX-039 truecolor probe scoped to the server-side option probe; the attached-client `#{client_termfeatures}` check required a PTY harness not yet in place
+- IR-013 review-flagged rendering edges: outer-margin trim bounded to at most one leading + one trailing blank (fenced-code frames and payload edge blanks survive); tool body strips exactly one trailing line terminator (intentional trailing blank rows survive); blank-line detection uses visible content (real `glow` emits space-padded structural rows); fallback path skips the outer-margin trim when `glow` render fails
+- Speaker-prefix coloring keeps the continuation indent uncolored across streamed text-delta chunks that split an SGR opener across the wrap boundary
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
@@ -78,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sublang-ai/cligent/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sublang-ai/cligent/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sublang-ai/cligent/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sublang-ai/cligent/releases/tag/v0.1.0
