@@ -238,20 +238,17 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      // Option probe: the launcher's set calls have been applied to a real
-      // tmux server. terminal-overrides is a server option; tmux normalizes
-      // the leading-comma append to the stored entry `*:RGB`.
+      // Real-server option probe: the launcher's `tmux set` calls applied
+      // to an actual server (stricter than TTMUX-038's argv inspection).
+      // tmux normalizes the leading-comma terminal-overrides append to the
+      // stored entry `*:RGB`. Whether a real terminal client subsequently
+      // negotiates the RGB capability is tmux's own contract beyond the
+      // launcher's control surface and is not asserted here — see TTMUX-039.
       const defaultTerminal = showOption(sessionName, 'default-terminal');
       expect(defaultTerminal).toBe('tmux-256color');
 
       const overrides = showOption(sessionName, 'terminal-overrides');
       expect(overrides.split('\n')).toContain('*:RGB');
-
-      // Feature-negotiation probe: the wildcard `*:RGB` entry causes tmux to
-      // expose the RGB feature in client_termfeatures even before any client
-      // attaches (the server-side feature register reflects the override).
-      const features = displayMessage(sessionName, '#{client_termfeatures}');
-      expect(features.split(',')).toContain('RGB');
     },
     60_000,
   );

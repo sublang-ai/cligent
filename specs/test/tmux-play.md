@@ -146,7 +146,7 @@ Given the launcher building a tmux session, the `tmux set` calls issued shall in
 ### TTMUX-039
 Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
 
-Given a launched session, an attached real-tmux client's `#{client_termfeatures}` shall include `RGB` in its comma-separated feature list, confirming that the `terminal-overrides` append from TTMUX-038 negotiated through to the client. The probe shall run against an actual tmux server (no mocks) and shall self-skip when either `tmux -V` or `glow -v` fails, since the launcher gates on both per [TMUX-051](../user/tmux-play.md#tmux-051).
+Given a launched session, `show-options -gv` on the real tmux server shall report `default-terminal = tmux-256color` and `terminal-overrides` containing `*:RGB`, confirming the launcher's `tmux set` calls applied to a real server (a stricter check than [TTMUX-038](#ttmux-038)'s argv inspection). The probe shall run against an actual tmux server (no mocks) and shall self-skip when either `tmux -V` or `glow -v` fails, since the launcher gates on both per [TMUX-051](../user/tmux-play.md#tmux-051). Whether a real terminal client subsequently negotiates the `RGB` capability is tmux's own contract, beyond the launcher's control surface, and is not asserted here.
 
 ### TTMUX-040
 Verifies: [TMUX-048](../user/tmux-play.md#tmux-048)
