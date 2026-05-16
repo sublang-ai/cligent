@@ -296,7 +296,7 @@ Given `tmux-play` invoked in launcher mode on a host where `isGlowAvailable()` r
 
 ## Real-glow Acceptance
 
-Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts`, run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.
+Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts` (glow-in-isolation checks) and `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (presenter + glow integration), run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.
 
 ### TTMUX-050
 Verifies: [TMUX-050](../user/tmux-play.md#tmux-050), [TMUX-051](../user/tmux-play.md#tmux-051)
@@ -306,3 +306,14 @@ Given a real `glow` binary on `PATH`, `renderMarkdown('hello **world** today\n',
 Given a fenced code block whose content is a single 200-character line rendered at width 40, the captured output shall contain the 200-character content intact after ANSI bytes are stripped — `glow` shall not insert a mid-token break inside the fenced block, matching [TMUX-049](../user/tmux-play.md#tmux-049)'s "glow leaves long code lines unwrapped by design".
 
 Given a plain paragraph rendered at width 80, the captured output shall be non-empty and shall contain each source word after ANSI bytes are stripped, guarding against silent `glow` misconfiguration (for example, a `glow` build that writes nothing under `spawnSync` because it gated its output on a TTY check).
+
+### TTMUX-051
+Verifies: [TMUX-038](../user/tmux-play.md#tmux-038), [TMUX-049](../user/tmux-play.md#tmux-049), [TMUX-050](../user/tmux-play.md#tmux-050)
+
+Given a real `glow` binary on `PATH` and a `TmuxPresenter` wired to in-memory writers, the integration of the presenter with `glow` shall hold the spec-promised structural invariants — not just `glow`'s isolated rendering — across these scenarios. These probes cover bugs that live at the seam where the presenter consumes real `glow` output, which neither glow-in-isolation acceptance ([TTMUX-050](#ttmux-050)) nor identity-mock unit tests can catch.
+
+Given a text-body block containing a heading and a bold span, the captured writer output shall carry exactly one `<who>> ` prefix line for the block; every nonblank line shall begin with either that prefix or the two-space hanging indent; ANSI styling shall be present and the literal `**` marker shall be absent. This pins the [TMUX-038](../user/tmux-play.md#tmux-038) prefix grammar and the [TMUX-050](../user/tmux-play.md#tmux-050) post-indent rule against real `glow` output rather than against a trivially-shaped mock.
+
+Given a `tool_result` event whose payload ends with an intentional blank row (e.g., `output: 'foo\n\n'`), the visible writer output (ANSI stripped) shall match `/foo\s*\n\s*\n/` — the blank survives the strip-one-terminator rule, the fence wrap, real `glow`'s fenced-code rendering, the outer-margin trim, and the two-space indent, in that order. This pins the [TMUX-049](../user/tmux-play.md#tmux-049) trailing-payload-blank-preservation rule end-to-end.
+
+Given two consecutive short text blocks emitted back-to-back on the same writer, the captured writer output shall contain no run of three or more consecutive newlines: `glow`'s per-block paragraph margins shall not stack into a parade of blank lines between turns. This directly pins the user-reported "excessive blank lines between player messages" defect that motivated the [TMUX-050](../user/tmux-play.md#tmux-050) outer-margin trim.
