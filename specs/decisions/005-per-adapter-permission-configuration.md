@@ -15,12 +15,12 @@ Accepted
 
 Each coding-agent SDK ships its own permission/approval model:
 
-| Adapter | SDK knob | "Eliminate prompts" value |
+| Adapter | SDK knob | Prompt-reduction mode |
 | --- | --- | --- |
-| `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed), `'bypassPermissions'` (no checks) |
-| `codex` | `sandboxMode`, `approvalPolicy` [[2]] | `--full-auto` = `on-request` + `workspace-write` |
-| `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` |
-| `opencode` | per-tool `allow` / `ask` / `deny` rules [[4]] | `-p` flag or explicit rules |
+| `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed, still blocks high-risk actions and falls back to prompts after consecutive/total denies); `'bypassPermissions'` (no checks) |
+| `codex` | `sandboxMode`, `approvalPolicy` [[2]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` (still prompts outside the sandbox or for network); `--full-auto` is a deprecated compatibility flag for the same config |
+| `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
+| `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
 Cligent already provides a typed abstraction surface, `PermissionPolicy = { fileWrite, shellExecute, networkAccess }` of `'allow' | 'ask' | 'deny'`.
 Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolicy` to its SDK knobs inside the adapter (see e.g., `src/adapters/codex.ts` `mapPermissionsToCodexOptions`, `src/adapters/claude-code.ts` `mapPermissionsToClaudeOptions`).
@@ -28,7 +28,7 @@ Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolic
 Today's gap is two-layered:
 
 - **YAML reachability**: tmux-play's `RoleConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
-- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's `--full-auto` (sandbox-protected) versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
+- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier- or sandbox-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's sandbox-protected `on-request + workspace-write` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
@@ -64,13 +64,13 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
 | `codex` | `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` | `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
-| `opencode` | per-tool rules, or `-p` mode (after adding permission options to the adapter) | — |
+| `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
 
 ### Default policy
 
 Cligent shall not impose a project-wide default permission posture.
 SDK defaults apply unless `permissions` is provided.
-Documentation and example configs may recommend classifier- or sandbox-protected modes (`claude`'s `auto`, `codex`'s `--full-auto`-equivalent) over unchecked bypass; that guidance is editorial, not enforcement.
+Documentation and example configs may recommend classifier- or sandbox-protected modes (`claude`'s `auto`, `codex`'s `on-request + workspace-write`) over unchecked bypass; that guidance is editorial, not enforcement.
 
 ### Failure surfacing
 
@@ -104,3 +104,4 @@ The DR does not introduce new error machinery; it constrains where errors should
 [2]: https://developers.openai.com/codex/agent-approvals-security "Codex: Agent approvals & security"
 [3]: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/settings.md "Gemini CLI configuration"
 [4]: https://opencode.ai/docs/permissions/ "OpenCode permissions"
+[5]: https://opencode.ai/docs/cli/ "OpenCode CLI reference"
