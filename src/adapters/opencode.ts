@@ -124,7 +124,7 @@ function normalizePermissionLevel(value: PermissionLevel | undefined): Permissio
 
 function normalizePermissions(
   policy: PermissionPolicy | undefined,
-): Required<PermissionPolicy> {
+): Required<Omit<PermissionPolicy, 'mode'>> {
   return {
     fileWrite: normalizePermissionLevel(policy?.fileWrite),
     shellExecute: normalizePermissionLevel(policy?.shellExecute),

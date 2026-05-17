@@ -102,6 +102,17 @@ export type AgentEvent =
 export type PermissionLevel = 'allow' | 'ask' | 'deny';
 
 export interface PermissionPolicy {
+  /**
+   * Session-wide automation posture per ENG-021. When set, takes precedence
+   * over the per-capability levels at the adapter's SDK-knob selection
+   * step: adapters map `'auto'` to their classifier- or sandbox-protected
+   * auto-mode, and `'bypass'` to their unchecked-bypass mode where the
+   * SDK supports one (adapters without a bypass equivalent reject
+   * `'bypass'` at mapping time). When `mode` is unset, the adapter derives
+   * an effective posture from `fileWrite` / `shellExecute` /
+   * `networkAccess` as before.
+   */
+  mode?: 'auto' | 'bypass';
   fileWrite?: PermissionLevel;
   shellExecute?: PermissionLevel;
   networkAccess?: PermissionLevel;

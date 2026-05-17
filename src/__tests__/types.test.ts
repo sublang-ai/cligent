@@ -41,6 +41,24 @@ describe('core types', () => {
     expectTypeOf(empty).toMatchTypeOf<PermissionPolicy>();
   });
 
+  it('PermissionPolicy.mode narrows to the auto / bypass union per ENG-021', () => {
+    const auto: PermissionPolicy = { mode: 'auto' };
+    const bypass: PermissionPolicy = { mode: 'bypass' };
+    expectTypeOf(auto.mode).toEqualTypeOf<'auto' | 'bypass' | undefined>();
+    expectTypeOf(bypass.mode).toEqualTypeOf<'auto' | 'bypass' | undefined>();
+    // mode coexists with per-capability levels; unset = today's behavior.
+    const combined: PermissionPolicy = {
+      mode: 'auto',
+      fileWrite: 'allow',
+      shellExecute: 'ask',
+    };
+    expectTypeOf(combined).toMatchTypeOf<PermissionPolicy>();
+    // Invalid mode values are rejected at compile time.
+    // @ts-expect-error - 'wat' is not in the mode union
+    const bad: PermissionPolicy = { mode: 'wat' };
+    void bad;
+  });
+
   it('BaseEvent.type accepts AgentEventType and arbitrary strings', () => {
     expectTypeOf<AgentEventType>().toMatchTypeOf<BaseEvent['type']>();
     expectTypeOf<string>().toMatchTypeOf<BaseEvent['type']>();

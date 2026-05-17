@@ -106,3 +106,12 @@ Adapter-reported `inputTokens` shall include all input tokens consumed by the re
 `AgentOptions.reasoningEffort` shall accept the closed set `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth, with `undefined` reserved to defer to the adapter or model default.
 The unified set is a strict superset of the per-adapter SDK enums; adapters that lack a 1:1 value shall map to the nearest supported neighbour per their own item.
 Adapters whose backend exposes no per-call reasoning surface shall ignore this field and document the rationale.
+
+## Permission Policy Mode
+
+### ENG-021
+
+`PermissionPolicy.mode` shall accept the closed set `'auto' | 'bypass' | undefined` per [DR-005](../decisions/005-per-adapter-permission-configuration.md).
+When `mode` is set, adapters shall use it as the session-wide automation posture at their SDK-knob selection step, taking precedence over `fileWrite` / `shellExecute` / `networkAccess`: `'auto'` shall map to the classifier- or sandbox-protected auto-mode each SDK exposes, and `'bypass'` shall map to the unchecked-bypass mode where the SDK supports one.
+Adapters whose architecture cannot reach a given mode shall reject it at mapping time with an error naming the constraint; the rejection surfaces per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
+When `mode` is `undefined`, adapters shall continue to derive their SDK options from `fileWrite` / `shellExecute` / `networkAccess` as before.
