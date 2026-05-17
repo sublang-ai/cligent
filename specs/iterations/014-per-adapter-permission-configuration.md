@@ -27,7 +27,7 @@ In scope:
   - `claude`: add `'auto'` to `ClaudePermissionMode`; emit `permissionMode: 'auto'` for `mode: 'auto'`, `permissionMode: 'bypassPermissions'` for `mode: 'bypass'`.
   - `codex`: emit `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` for `mode: 'auto'`, `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` for `mode: 'bypass'`.
   - `gemini`: add an `approvalMode` constructor option + CLI arg; emit `--approval-mode yolo` for `mode: 'auto'`.
-  - `opencode`: add SDK permission options to the adapter; emit `"permission": "allow"` for `mode: 'auto'`, `--dangerously-skip-permissions` for `mode: 'bypass'`.
+  - `opencode`: add an SDK permission body to the adapter's `runFn` call (the cligent opencode adapter spawns `opencode serve` and drives it via the SDK; it does not invoke the `opencode run` CLI, so the `--dangerously-skip-permissions` flag does not apply). Emit a SDK-permission body equivalent to `"permission": "allow"` for `mode: 'auto'`. `mode: 'bypass'` shall be unsupported on opencode — the mapping function rejects it with an error naming the SDK/server architecture. Because `mapPermissionsToOpenCodeOptions` runs inside `OpenCodeAdapter.run()` rather than at adapter construction, the throw surfaces at the first `Cligent.run()` call as a `role_finished` / `captain_finished` `status: 'error'` record per DR-005's first-run failure-surfacing rule, rendered through the presenter per [TMUX-039](../user/tmux-play.md#tmux-039) — not as a launcher-startup abort.
 - `RoleConfig.permissions?: PermissionPolicy` and captain `permissions?: PermissionPolicy` accepted by the YAML loader (typed, malformed fields rejected per [TMUX-008](../user/tmux-play.md#tmux-008)); forwarded into `CligentOptions.permissions` at role / captain construction in `session.ts`.
 - New TMUX items for the YAML `permissions` field on roles and captain.
 - TTMUX items covering YAML → `CligentOptions.permissions` reach, per-adapter SDK-knob emission for `mode`, and the launcher startup-error path for invalid `mode`.
@@ -46,7 +46,7 @@ Out of scope (per DR-005):
 - [ ] `src/types.ts` — `PermissionPolicy.mode?: 'auto' | 'bypass'`.
 - [ ] `src/__tests__/types.test.ts` — narrowing + assignability for the new field.
 - [ ] `src/adapters/claude-code.ts` — `'auto'` in `ClaudePermissionMode`; mapping branch for `mode`.
-- [ ] `src/__tests__/claude-adapter.test.ts` — mapping unit tests.
+- [ ] `src/__tests__/claude-code-adapter.test.ts` — mapping unit tests.
 - [ ] `src/adapters/codex.ts` — mapping branch for `mode`.
 - [ ] `src/__tests__/codex-adapter.test.ts` — mapping unit tests.
 - [ ] `src/adapters/gemini.ts` — `approvalMode` option, CLI arg, mapping branch.
@@ -69,7 +69,7 @@ Each task is one commit.
 
 1. [ ] **PermissionPolicy extension** — add `mode?: 'auto' | 'bypass'` to `PermissionPolicy` in `src/types.ts`; type tests cover narrowing. New ENG item documenting the field semantics (mode takes precedence over per-capability levels at SDK-knob selection; unset = today's behavior).
 2. [ ] **Adapter mappings — claude, codex, gemini** — each adapter's `mapPermissionsToXxxOptions` learns the new `mode` value; claude adds `'auto'` to `ClaudePermissionMode`; gemini adds an `approvalMode` constructor option and CLI arg. Per-adapter unit tests cover `mode: 'auto'` and `mode: 'bypass'` (where the SDK supports the latter).
-3. [ ] **Adapter mapping — opencode** — add SDK permission options to the opencode adapter (currently absent) and wire `mode` through the mapping. Per-adapter unit tests.
+3. [ ] **Adapter mapping — opencode** — add an SDK permission body to the opencode adapter's `runFn` call (currently absent); wire `mode: 'auto'` through the mapping. The cligent opencode adapter spawns `opencode serve` and drives it via the SDK, so the `--dangerously-skip-permissions` CLI flag does not apply; `mode: 'bypass'` is rejected by the mapping with an error naming the SDK/server architecture. Per-adapter unit tests.
 4. [ ] **YAML schema + loader + session wiring** — extend `RoleConfig` and the captain config with `permissions?: PermissionPolicy`; YAML loader accepts the typed shape and rejects malformed sub-fields per TMUX-008; `session.ts` forwards the value into `CligentOptions.permissions` at role / captain construction. New TMUX items for the YAML field; loader tests for accept + reject.
 5. [ ] **Docs and acceptance** — `docs/tmux-play.md` Config section documents `permissions` with a `mode: 'auto'` example; new TTMUX items; `launcher.acceptance.test.ts` end-to-end probes assert (a) YAML `mode: 'auto'` reaches the SDK call surface for the configured adapter (assertion at the adapter's SDK constructor seam, no live API call), and (b) an invalid `mode` value aborts the launcher with stderr + nonzero exit — not a `runtime_error` record. `specs/map.md` TMUX summary update.
 
@@ -78,6 +78,6 @@ Each task is one commit.
 - `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` pass at every task boundary.
 - After Task 1, `PermissionPolicy` includes `mode?: 'auto' | 'bypass'`; type tests assert narrowing.
 - After Task 2, claude / codex / gemini mapping unit tests show `mode: 'auto'` emits the spec-defined SDK option, and `mode: 'bypass'` emits the unchecked variant where the SDK supports it.
-- After Task 3, opencode mapping unit tests show `mode: 'auto'` produces the documented SDK permission shape.
+- After Task 3, opencode mapping unit tests show `mode: 'auto'` produces the documented SDK permission shape, and `mode: 'bypass'` is rejected with an error naming the SDK/server architecture.
 - After Task 4, the YAML loader accepts `permissions: { mode: 'auto' }` on roles and on the captain, rejects unknown sub-fields with an error naming the offending path, and the resulting `Cligent` carries the value as `CligentOptions.permissions`.
 - After Task 5, `npm run test:acceptance` passes including (a) a probe that a YAML `mode: 'auto'` config reaches the chosen adapter's SDK auto-mode knob and (b) a probe that an invalid `mode` value aborts the launcher with stderr + nonzero exit, without emitting a `runtime_error` record.
