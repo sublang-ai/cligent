@@ -30,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool input summary truncation measures cells (CJK / emoji) rather than UTF-16 code units, so wide characters and surrogate-pair emoji never get split mid-codepoint
 - README and `docs/tmux-play.md` Requirements lists updated to include `glow`
 - CI acceptance job installs `glow` v2.1.2 before running acceptance tests
-- Initial window geometry switches the captain pane to focus on startup so the cursor lands at the `boss> ` readline prompt
 
 ### Fixed
 
