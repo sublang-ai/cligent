@@ -53,7 +53,8 @@ describe('core types', () => {
       shellExecute: 'ask',
     };
     expectTypeOf(combined).toMatchTypeOf<PermissionPolicy>();
-    // Invalid mode values are rejected at compile time.
+    // Invalid mode values are rejected at compile time (verified by
+    // `npm run typecheck` against config/tsconfig.test.json).
     // @ts-expect-error - 'wat' is not in the mode union
     const bad: PermissionPolicy = { mode: 'wat' };
     void bad;

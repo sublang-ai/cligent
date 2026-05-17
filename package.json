@@ -71,6 +71,7 @@
     "postbuild": "node -e \"require('fs').chmodSync('dist/app/tmux-play/cli.js',0o755)\"",
     "lint": "eslint --config config/eslint.config.js .",
     "format": "prettier --config config/prettierrc.json --write .",
+    "typecheck": "tsc --noEmit -p config/tsconfig.test.json",
     "test": "vitest run --config config/vitest.config.ts",
     "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",

@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../src"
+  },
+  // Type-only tests (`*.test-d.ts`) are the typecheck surface. Regular
+  // `*.test.ts` files (including `*.acceptance.test.ts` and
+  // `*.smoke.test.ts`) are deliberately excluded; vitest transpiles them
+  // and they currently carry pre-existing TS errors that pre-date this
+  // config and are out of scope here.
+  "include": ["../src/**/*.ts"],
+  "exclude": ["../src/**/*.test.ts"]
+}
