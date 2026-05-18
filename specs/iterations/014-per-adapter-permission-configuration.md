@@ -11,7 +11,7 @@ Key design choices (DR-005 leaves these IR-level):
 
 - `PermissionPolicy` gains a `mode?: 'auto' | 'bypass'` field. Existing callers without `mode` map as today; with `mode` set, the field takes precedence over per-capability levels at the SDK-knob selection step.
 - YAML carries `permissions?: PermissionPolicy` as a typed `RoleConfig` / captain field; the loader forwards it to the role / captain `Cligent` constructor as `CligentOptions.permissions` per [DR-003](../decisions/003-role-scoped-session-management.md).
-- Each adapter's `mapPermissionsToXxxOptions` learns the new `mode` value; gemini and opencode gain SDK options they don't expose today.
+- Each adapter's `mapPermissionsToXxxOptions` learns the new `mode` value at a top-of-function early return so per-capability levels stay subordinate. claude widens its existing `ClaudePermissionMode` enum with `'auto'`. codex's existing `sandboxMode` / `approvalPolicy` derivation gains a mode branch. gemini gains a new `approvalMode` adapter option + `--approval-mode` CLI arg (no such surface existed). opencode keeps its existing `permission: { edit, bash, webfetch }` SDK body and gains a top-of-function mode branch (auto → all-`'allow'`, bypass → rejected because the cligent opencode adapter drives `opencode serve` via the SDK, not the `opencode run` CLI that the bypass flag attaches to).
 - Invalid `mode` values abort the launcher with stderr + nonzero exit before the runtime exists, per DR-005's failure-surfacing rule.
 
 ## Status
