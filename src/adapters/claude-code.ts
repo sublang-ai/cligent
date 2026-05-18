@@ -12,7 +12,11 @@ import type {
   ReasoningEffort,
 } from '../types.js';
 
-type ClaudePermissionMode = 'bypassPermissions' | 'acceptEdits' | 'default';
+type ClaudePermissionMode =
+  | 'auto'
+  | 'bypassPermissions'
+  | 'acceptEdits'
+  | 'default';
 
 type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
 
@@ -206,6 +210,21 @@ export interface ClaudePermissionOptions {
 export function mapPermissionsToClaudeOptions(
   policy: PermissionPolicy | undefined,
 ): ClaudePermissionOptions {
+  // ENG-021: session-wide auto-mode posture takes precedence over the
+  // per-capability levels. 'auto' maps to claude's classifier-backed
+  // auto-mode (still blocks high-risk actions, falls back to prompts
+  // after consecutive/total denies); 'bypass' maps to the unchecked
+  // bypassPermissions mode.
+  if (policy?.mode === 'auto') {
+    return { permissionMode: 'auto' };
+  }
+  if (policy?.mode === 'bypass') {
+    return {
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+    };
+  }
+
   const normalized = normalizePermissionPolicy(policy);
   const allAllow = Object.values(normalized).every((level) => level === 'allow');
 

@@ -262,10 +262,19 @@ async function defaultProbeAvailability(): Promise<boolean> {
   }
 }
 
+/**
+ * Gemini CLI `--approval-mode` value. `'yolo'` auto-approves all operations
+ * — used as the target for ENG-021 `mode: 'auto'` since gemini exposes no
+ * distinct "auto with safety" tier (its `auto_edit` only covers edits, not
+ * the full automation intent).
+ */
+export type GeminiApprovalMode = 'default' | 'auto_edit' | 'yolo';
+
 export interface GeminiToolConfig {
   allowedTools: string[];
   disallowedTools: string[];
   args: string[];
+  approvalMode?: GeminiApprovalMode;
 }
 
 interface GeminiSettingsOverride {
@@ -354,6 +363,15 @@ export function mapPermissionsToGeminiToolConfig(
   const allowedTools = [...allowed].sort();
   const disallowedTools = [...disallowed].sort();
 
+  // ENG-021: `mode: 'auto'` maps to `--approval-mode yolo`. Gemini's
+  // `auto_edit` covers only edits, not the full automation intent, so
+  // `yolo` is the closest match. `mode: 'bypass'` falls through to the
+  // per-capability path because gemini doesn't expose a distinct bypass
+  // beyond yolo itself; users wanting bypass can set per-capability
+  // levels or use `mode: 'auto'`.
+  const approvalMode: GeminiApprovalMode | undefined =
+    policy?.mode === 'auto' ? 'yolo' : undefined;
+
   const args: string[] = [];
   if (allowedTools.length > 0) {
     args.push('--allowed-tools', allowedTools.join(','));
@@ -363,6 +381,7 @@ export function mapPermissionsToGeminiToolConfig(
     allowedTools,
     disallowedTools,
     args,
+    ...(approvalMode ? { approvalMode } : {}),
   };
 }
 
@@ -392,6 +411,10 @@ export function mapAgentOptionsToGeminiCommand(
   // options.maxTurns is intentionally not forwarded.
 
   args.push(...toolConfig.args);
+
+  if (toolConfig.approvalMode) {
+    args.push('--approval-mode', toolConfig.approvalMode);
+  }
 
   // Prompt as positional argument (--prompt is deprecated)
   args.push(prompt);

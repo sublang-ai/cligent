@@ -936,4 +936,26 @@ describe('ClaudeCodeAdapter', () => {
     const usage = (done.payload as { usage: { inputTokens: number } }).usage;
     expect(usage.inputTokens).toBe(208);
   });
+
+  it('maps PermissionPolicy.mode to claude permissionMode per ENG-021', () => {
+    const auto = mapPermissionsToClaudeOptions({ mode: 'auto' });
+    expect(auto.permissionMode).toBe('auto');
+    expect(auto.allowDangerouslySkipPermissions).toBeUndefined();
+    expect(auto.canUseTool).toBeUndefined();
+
+    const bypass = mapPermissionsToClaudeOptions({ mode: 'bypass' });
+    expect(bypass.permissionMode).toBe('bypassPermissions');
+    expect(bypass.allowDangerouslySkipPermissions).toBe(true);
+    expect(bypass.canUseTool).toBeUndefined();
+
+    // mode takes precedence over per-capability levels.
+    const autoOverridesLevels = mapPermissionsToClaudeOptions({
+      mode: 'auto',
+      fileWrite: 'deny',
+      shellExecute: 'deny',
+      networkAccess: 'deny',
+    });
+    expect(autoOverridesLevels.permissionMode).toBe('auto');
+    expect(autoOverridesLevels.canUseTool).toBeUndefined();
+  });
 });

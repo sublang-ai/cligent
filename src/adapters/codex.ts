@@ -189,6 +189,26 @@ export interface CodexPermissionOptions {
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
+  // ENG-021: session-wide auto-mode posture takes precedence over the
+  // per-capability levels. 'auto' maps to codex's sandbox-protected
+  // workspace-write + on-request approval (still prompts outside the
+  // sandbox or for network); 'bypass' maps to the unchecked danger-
+  // full-access + never-approve combination.
+  if (policy?.mode === 'auto') {
+    return {
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+      networkAccessEnabled: false,
+    };
+  }
+  if (policy?.mode === 'bypass') {
+    return {
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      networkAccessEnabled: true,
+    };
+  }
+
   const normalized = normalizePermissions(policy);
 
   const sandboxMode: CodexSandboxMode =

@@ -1013,4 +1013,26 @@ describe('GeminiAdapter', () => {
     const usage = (done.payload as { usage: { inputTokens: number } }).usage;
     expect(usage.inputTokens).toBe(92);
   });
+
+  it('maps PermissionPolicy.mode = "auto" to --approval-mode yolo per ENG-021', () => {
+    const config = mapPermissionsToGeminiToolConfig({ mode: 'auto' });
+    expect(config.approvalMode).toBe('yolo');
+
+    const cmd = mapAgentOptionsToGeminiCommand('hi', {
+      permissions: { mode: 'auto' },
+    });
+    expect(cmd.args).toContain('--approval-mode');
+    const idx = cmd.args.indexOf('--approval-mode');
+    expect(cmd.args[idx + 1]).toBe('yolo');
+
+    // mode: 'bypass' falls through — gemini exposes no distinct bypass
+    // beyond yolo itself, so no approvalMode is set; the per-capability
+    // path governs.
+    const bypassConfig = mapPermissionsToGeminiToolConfig({ mode: 'bypass' });
+    expect(bypassConfig.approvalMode).toBeUndefined();
+    const bypassCmd = mapAgentOptionsToGeminiCommand('hi', {
+      permissions: { mode: 'bypass' },
+    });
+    expect(bypassCmd.args).not.toContain('--approval-mode');
+  });
 });

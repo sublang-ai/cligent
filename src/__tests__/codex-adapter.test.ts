@@ -990,4 +990,27 @@ describe('CodexAdapter', () => {
     const usage = (done.payload as { usage: { inputTokens: number } }).usage;
     expect(usage.inputTokens).toBe(120);
   });
+
+  it('maps PermissionPolicy.mode to codex sandbox + approval per ENG-021', () => {
+    const auto = mapPermissionsToCodexOptions({ mode: 'auto' });
+    expect(auto.sandboxMode).toBe('workspace-write');
+    expect(auto.approvalPolicy).toBe('on-request');
+    expect(auto.networkAccessEnabled).toBe(false);
+
+    const bypass = mapPermissionsToCodexOptions({ mode: 'bypass' });
+    expect(bypass.sandboxMode).toBe('danger-full-access');
+    expect(bypass.approvalPolicy).toBe('never');
+    expect(bypass.networkAccessEnabled).toBe(true);
+
+    // mode takes precedence over per-capability levels.
+    const autoOverridesLevels = mapPermissionsToCodexOptions({
+      mode: 'auto',
+      fileWrite: 'deny',
+      shellExecute: 'deny',
+      networkAccess: 'allow',
+    });
+    expect(autoOverridesLevels.sandboxMode).toBe('workspace-write');
+    expect(autoOverridesLevels.approvalPolicy).toBe('on-request');
+    expect(autoOverridesLevels.networkAccessEnabled).toBe(false);
+  });
 });
