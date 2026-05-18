@@ -895,6 +895,56 @@ describe('OpenCodeAdapter', () => {
     // Id-less event passes through — not filtered
     expect(types).toEqual(['init', 'text', 'done']);
   });
+
+  it('maps PermissionPolicy.mode = "auto" to SDK permission: allow per ENG-021', () => {
+    const auto = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
+    expect(auto.permission).toEqual({
+      edit: 'allow',
+      bash: 'allow',
+      webfetch: 'allow',
+    });
+
+    // User-passed allowedTools / disallowedTools (independent from
+    // `permissions`) still flow through to `tools`.
+    const withUserTools = mapPermissionsToOpenCodeOptions(
+      { mode: 'auto' },
+      { allowedTools: ['custom-a'], disallowedTools: ['custom-b'] },
+    );
+    expect(withUserTools.permission).toEqual({
+      edit: 'allow',
+      bash: 'allow',
+      webfetch: 'allow',
+    });
+    expect(withUserTools.tools?.core).toEqual(['custom-a']);
+    expect(withUserTools.tools?.exclude).toEqual(['custom-b']);
+  });
+
+  it('rejects PermissionPolicy.mode = "bypass" with an SDK/server architecture error per IR-014', () => {
+    expect(() => mapPermissionsToOpenCodeOptions({ mode: 'bypass' })).toThrow(
+      /opencode adapter does not support PermissionPolicy.mode: 'bypass'/,
+    );
+    expect(() => mapPermissionsToOpenCodeOptions({ mode: 'bypass' })).toThrow(
+      /SDK\/server session/,
+    );
+  });
+
+  it('mode overrides per-capability levels in opencode per ENG-021', () => {
+    // mode: 'auto' set together with explicit per-capability denies: the
+    // per-capability path is short-circuited so the deny levels do not
+    // appear in the emitted SDK permission body. Only the session-wide
+    // `permission: allow` shape applies.
+    const config = mapPermissionsToOpenCodeOptions({
+      mode: 'auto',
+      fileWrite: 'deny',
+      shellExecute: 'deny',
+      networkAccess: 'deny',
+    });
+    expect(config.permission).toEqual({
+      edit: 'allow',
+      bash: 'allow',
+      webfetch: 'allow',
+    });
+  });
 });
 
 /**

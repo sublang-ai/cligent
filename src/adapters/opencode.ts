@@ -444,6 +444,47 @@ export function mapPermissionsToOpenCodeOptions(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
+  // ENG-021: session-wide mode takes precedence over per-capability levels.
+  if (policy?.mode === 'bypass') {
+    // The cligent opencode adapter spawns `opencode serve` and drives it
+    // via the SDK — it does not invoke the `opencode run` CLI, so
+    // `--dangerously-skip-permissions` has nowhere to attach. Reject
+    // rather than silently degrade; the throw surfaces at the first
+    // `Cligent.run()` call as a `role_finished` / `captain_finished`
+    // `status: 'error'` record per DR-005's first-run failure-surfacing
+    // rule. Users wanting unchecked execution can set all three
+    // per-capability levels to 'allow' explicitly, or run opencode via
+    // its CLI outside cligent.
+    throw new Error(
+      "opencode adapter does not support PermissionPolicy.mode: 'bypass': " +
+        'the cligent opencode adapter drives an `opencode serve` SDK/server ' +
+        'session, so the `--dangerously-skip-permissions` CLI flag has no ' +
+        "place to attach. Use mode: 'auto' (the SDK equivalent of " +
+        'opencode.json\'s "permission": "allow") or set the per-capability ' +
+        'fileWrite / shellExecute / networkAccess levels explicitly.',
+    );
+  }
+
+  if (policy?.mode === 'auto') {
+    // SDK equivalent of opencode.json's `"permission": "allow"` global
+    // setting: every per-tool permission set to 'allow'. The per-capability
+    // path is short-circuited; user-passed allowedTools / disallowedTools
+    // (independent from `permissions`) still apply.
+    const core = [...new Set(options?.allowedTools ?? [])];
+    const exclude = [...new Set(options?.disallowedTools ?? [])];
+    return {
+      permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+      ...(core.length > 0 || exclude.length > 0
+        ? {
+            tools: {
+              ...(core.length > 0 ? { core } : {}),
+              ...(exclude.length > 0 ? { exclude } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
   const normalized = normalizePermissions(policy);
 
   const core = [...new Set(options?.allowedTools ?? [])];

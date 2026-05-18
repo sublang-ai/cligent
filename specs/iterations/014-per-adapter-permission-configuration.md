@@ -16,7 +16,7 @@ Key design choices (DR-005 leaves these IR-level):
 
 ## Status
 
-In progress — Tasks 1 and 2 done; Tasks 3–5 pending
+In progress — Tasks 1, 2, and 3 done; Tasks 4 and 5 pending
 
 ## Scope
 
@@ -27,7 +27,7 @@ In scope:
   - `claude`: add `'auto'` to `ClaudePermissionMode`; emit `permissionMode: 'auto'` for `mode: 'auto'`, `permissionMode: 'bypassPermissions'` for `mode: 'bypass'`.
   - `codex`: emit `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` for `mode: 'auto'`, `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` for `mode: 'bypass'`.
   - `gemini`: add an `approvalMode` constructor option + CLI arg; emit `--approval-mode yolo` for both `mode: 'auto'` and `mode: 'bypass'` (gemini exposes no distinct bypass tier beyond yolo, so both map to the same SDK setting). The per-capability allow / deny path is short-circuited when `mode` is set so the precedence rule holds.
-  - `opencode`: add an SDK permission body to the adapter's `runFn` call (the cligent opencode adapter spawns `opencode serve` and drives it via the SDK; it does not invoke the `opencode run` CLI, so the `--dangerously-skip-permissions` flag does not apply). Emit a SDK-permission body equivalent to `"permission": "allow"` for `mode: 'auto'`. `mode: 'bypass'` shall be unsupported on opencode — the mapping function rejects it with an error naming the SDK/server architecture. Because `mapPermissionsToOpenCodeOptions` runs inside `OpenCodeAdapter.run()` rather than at adapter construction, the throw surfaces at the first `Cligent.run()` call as a `role_finished` / `captain_finished` `status: 'error'` record per DR-005's first-run failure-surfacing rule, rendered through the presenter per [TMUX-039](../user/tmux-play.md#tmux-039) — not as a launcher-startup abort.
+  - `opencode`: extend `mapPermissionsToOpenCodeOptions` with the same top-of-function mode handling pattern as claude / codex / gemini. The cligent opencode adapter spawns `opencode serve` and drives it via the SDK; it does not invoke the `opencode run` CLI, so `--dangerously-skip-permissions` has no place to attach. Emit `permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' }` for `mode: 'auto'` (the SDK equivalent of opencode.json's `"permission": "allow"`). `mode: 'bypass'` shall be rejected by the mapping with an error naming the SDK/server architecture. Because `mapPermissionsToOpenCodeOptions` runs inside `OpenCodeAdapter.run()` rather than at adapter construction, the throw surfaces at the first `Cligent.run()` call as a `role_finished` / `captain_finished` `status: 'error'` record per DR-005's first-run failure-surfacing rule, rendered through the presenter per [TMUX-039](../user/tmux-play.md#tmux-039) — not as a launcher-startup abort.
 - `RoleConfig.permissions?: PermissionPolicy` and captain `permissions?: PermissionPolicy` accepted by the YAML loader (typed, malformed fields rejected per [TMUX-008](../user/tmux-play.md#tmux-008)); forwarded into `CligentOptions.permissions` at role / captain construction in `session.ts`.
 - New TMUX items for the YAML `permissions` field on roles and captain.
 - TTMUX items covering YAML → `CligentOptions.permissions` reach, per-adapter SDK-knob emission for `mode`, and the launcher startup-error path for invalid `mode`.
@@ -50,8 +50,8 @@ Out of scope (per DR-005):
 - [x] `src/adapters/codex.ts` — mapping branch for `mode`.
 - [x] `src/__tests__/codex-adapter.test.ts` — mapping unit tests.
 - [x] `src/adapters/gemini.ts` — `approvalMode` option, CLI arg, mapping branch.
-- [ ] `src/adapters/opencode.ts` — SDK permission options, mapping branch.
-- [ ] `src/__tests__/opencode-adapter.test.ts` — mapping unit tests.
+- [x] `src/adapters/opencode.ts` — mapping branch for `mode` (auto / bypass-reject).
+- [x] `src/__tests__/opencode-adapter.test.ts` — mapping unit tests.
 - [ ] `src/app/tmux-play/roles.ts` — `RoleConfig.permissions?`.
 - [ ] `src/app/tmux-play/config.ts` — YAML loader accepts and validates `permissions`.
 - [ ] `src/app/tmux-play/config.test.ts` — loader accepts valid, rejects malformed.
@@ -69,7 +69,7 @@ Each task is one commit.
 
 1. [x] **PermissionPolicy extension** — add `mode?: 'auto' | 'bypass'` to `PermissionPolicy` in `src/types.ts`; type tests cover narrowing. New ENG item documenting the field semantics (mode takes precedence over per-capability levels at SDK-knob selection; unset = today's behavior).
 2. [x] **Adapter mappings — claude, codex, gemini** — each adapter's `mapPermissionsToXxxOptions` learns the new `mode` value; claude adds `'auto'` to `ClaudePermissionMode`; gemini adds an `approvalMode` constructor option and CLI arg. Per-adapter unit tests cover `mode: 'auto'` and `mode: 'bypass'` (where the SDK supports the latter).
-3. [ ] **Adapter mapping — opencode** — add an SDK permission body to the opencode adapter's `runFn` call (currently absent); wire `mode: 'auto'` through the mapping. The cligent opencode adapter spawns `opencode serve` and drives it via the SDK, so the `--dangerously-skip-permissions` CLI flag does not apply; `mode: 'bypass'` is rejected by the mapping with an error naming the SDK/server architecture. Per-adapter unit tests.
+3. [x] **Adapter mapping — opencode** — extend `mapPermissionsToOpenCodeOptions` with top-of-function mode handling matching claude / codex / gemini. `mode: 'auto'` emits `permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' }` (the SDK equivalent of opencode.json's `"permission": "allow"`). `mode: 'bypass'` is rejected by the mapping with an error naming the SDK/server architecture — the cligent opencode adapter drives an `opencode serve` SDK session, so the `--dangerously-skip-permissions` CLI flag has no place to attach. Per-adapter unit tests.
 4. [ ] **YAML schema + loader + session wiring** — extend `RoleConfig` and the captain config with `permissions?: PermissionPolicy`; YAML loader accepts the typed shape and rejects malformed sub-fields per TMUX-008; `session.ts` forwards the value into `CligentOptions.permissions` at role / captain construction. New TMUX items for the YAML field; loader tests for accept + reject.
 5. [ ] **Docs and acceptance** — `docs/tmux-play.md` Config section documents `permissions` with a `mode: 'auto'` example; new TTMUX items; `launcher.acceptance.test.ts` end-to-end probes assert (a) YAML `mode: 'auto'` reaches the SDK call surface for the configured adapter (assertion at the adapter's SDK constructor seam, no live API call), and (b) an invalid `mode` value aborts the launcher with stderr + nonzero exit — not a `runtime_error` record. `specs/map.md` TMUX summary update.
 
