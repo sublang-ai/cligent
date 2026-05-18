@@ -12,7 +12,7 @@ Verification criteria for the `tmux-play` CLI, configuration, Captain runtime, a
 ### TTMUX-001
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011)
 
-Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` roles with identity instructions, a one-line notice naming the path shall be printed to stdout, and a second invocation shall not overwrite the file.
+Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` roles with identity instructions, and both default roles and the default Captain shall carry `permissions: { mode: 'auto' }`. A one-line notice naming the path shall be printed to stdout, and a second invocation shall not overwrite the file.
 
 ### TTMUX-002
 Verifies: [TMUX-009](../user/tmux-play.md#tmux-009)

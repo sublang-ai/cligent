@@ -62,7 +62,7 @@ When neither location holds a config and `--config` is not supplied, the launche
 
 ### TMUX-011
 
-The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two roles whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). Each default role shall include an `instruction` that identifies that role for the runtime-created `Cligent` instance.
+The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two roles whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). Each default role shall include an `instruction` that identifies that role for the runtime-created `Cligent` instance. The default Captain and each default role shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052) so the shipped Claude Code and Codex CLI defaults run in each adapter's classifier- or sandbox-protected auto-mode (per [DR-005](../decisions/005-per-adapter-permission-configuration.md)) without interactive permission prompts mid-session. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
 
 ### TMUX-012
 

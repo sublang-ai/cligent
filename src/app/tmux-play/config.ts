@@ -65,6 +65,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     adapter: 'claude',
     model: 'claude-opus-4-7',
     instruction: 'Coordinate roles and answer the Boss.',
+    permissions: { mode: 'auto' },
     options: { maxRoleOutputChars: 4000 },
   },
   roles: [
@@ -73,12 +74,14 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
       adapter: 'claude',
       instruction:
         'You are the claude role in a fanout Captain session. Provide an independent answer.',
+      permissions: { mode: 'auto' },
     },
     {
       id: 'codex',
       adapter: 'codex',
       instruction:
         'You are the codex role in a fanout Captain session. Provide an independent answer.',
+      permissions: { mode: 'auto' },
     },
   ],
 };

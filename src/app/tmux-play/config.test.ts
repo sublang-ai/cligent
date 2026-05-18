@@ -175,6 +175,11 @@ describe('tmux-play config loading', () => {
       'You are the claude role in a fanout Captain session. Provide an independent answer.',
       'You are the codex role in a fanout Captain session. Provide an independent answer.',
     ]);
+    expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
+    expect(loaded.config.roles.map((role) => role.permissions)).toEqual([
+      { mode: 'auto' },
+      { mode: 'auto' },
+    ]);
   });
 
   it('preserves an existing home config across runs', async () => {

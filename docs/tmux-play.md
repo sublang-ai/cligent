@@ -49,14 +49,27 @@ captain:
   adapter: claude
   model: claude-opus-4-7
   instruction: Coordinate the roles and answer the Boss.
+  permissions:
+    mode: auto
   options:
     maxRoleOutputChars: 4000
 roles:
   - id: claude
     adapter: claude
+    permissions:
+      mode: auto
   - id: codex
     adapter: codex
+    permissions:
+      mode: auto
 ```
+
+The shipped default applies `permissions: { mode: 'auto' }` to the
+Captain and both roles so the Claude Code and Codex CLI defaults run in
+each adapter's classifier- or sandbox-protected auto-mode without
+interactive permission prompts mid-session. Remove the blocks to fall
+back to each adapter's SDK default; cligent itself ships no
+project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
 - Role IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple roles may share an adapter or model.
