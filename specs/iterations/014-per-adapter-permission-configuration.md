@@ -58,7 +58,7 @@ Out of scope (per DR-005):
 - [x] `src/app/tmux-play/contract.ts` + `src/app/tmux-play/runtime.ts` + `src/app/tmux-play/session.ts` — captain `permissions` reach the captain `Cligent` constructor; role `permissions` reach `resolveRoles` via `RuntimeRoleConfig`.
 - [ ] `src/app/tmux-play/launcher.acceptance.test.ts` — end-to-end: YAML `mode: 'auto'` reaches the SDK call surface; invalid `mode` aborts with stderr + nonzero exit.
 - [x] `specs/user/engine.md` — new ENG-021 for `PermissionPolicy.mode`.
-- [ ] `specs/user/tmux-play.md` — new TMUX items for YAML `permissions` on roles and captain.
+- [x] `specs/user/tmux-play.md` — new [TMUX-052](../user/tmux-play.md#tmux-052) for YAML `permissions` on roles and captain; TMUX-006, TMUX-007, and TMUX-029 updated to include the optional field.
 - [ ] `specs/test/tmux-play.md` — new TTMUX items.
 - [ ] `docs/tmux-play.md` — Config section documents `permissions` with `mode: 'auto'` example.
 - [ ] `specs/map.md` — TMUX summary updated.
