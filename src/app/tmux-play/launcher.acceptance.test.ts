@@ -15,6 +15,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isGlowAvailable } from '../shared/glow.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
+import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
+import { loadTmuxPlayConfig } from './config.js';
+import { createTmuxPlayRuntime } from './runtime.js';
+import type { Captain } from './contract.js';
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentOptions,
+} from '../../types.js';
+import type { RoleAdapterImports } from './roles.js';
 
 interface PaneRow {
   readonly index: number;
@@ -252,6 +262,102 @@ describe('tmux-play real-tmux acceptance', () => {
     },
     60_000,
   );
+});
+
+// TTMUX-053: YAML `permissions.mode` reaches the adapter's `run()` call as
+// `AgentOptions.permissions`, and the adapter's exported mapping function
+// translates the mode to the spec-defined SDK knob. The probe does not
+// spawn tmux (so it does not gate on tmux availability) and does not call
+// the real SDK (the role adapter is a capturing stub).
+describe('tmux-play YAML → adapter permission seam', () => {
+  let cwd: string | undefined;
+
+  afterEach(() => {
+    if (cwd) {
+      rmSync(cwd, { recursive: true, force: true });
+      cwd = undefined;
+    }
+  });
+
+  it('routes YAML permissions.mode through to the role adapter', async () => {
+    cwd = mkdtempSync(join(tmpdir(), 'tmux-play-perm-'));
+    const configPath = join(cwd, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions:',
+        '    mode: auto',
+        'roles:',
+        '  - id: coder',
+        '    adapter: claude',
+        '    permissions:',
+        '      mode: auto',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd, configPath });
+    const captured: AgentOptions[] = [];
+
+    class CapturingAdapter implements AgentAdapter {
+      readonly agent = 'claude-code';
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.push(options ?? {});
+      }
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    const adapterImports: RoleAdapterImports = {
+      claude: async () => CapturingAdapter,
+      codex: async () => CapturingAdapter,
+      gemini: async () => CapturingAdapter,
+      opencode: async () => CapturingAdapter,
+    };
+
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        await context.callRole('coder', turn.prompt);
+      },
+    };
+
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: {
+        adapter: loaded.config.captain.adapter,
+        model: loaded.config.captain.model,
+        instruction: loaded.config.captain.instruction,
+        permissions: loaded.config.captain.permissions,
+      },
+      roles: loaded.config.roles.map((role) => ({
+        id: role.id,
+        adapter: role.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        model: role.model,
+        instruction: role.instruction,
+        permissions: role.permissions,
+      })),
+      adapterImports,
+    });
+
+    try {
+      await runtime.runBossTurn('probe');
+    } finally {
+      await runtime.dispose();
+    }
+
+    expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(mapPermissionsToClaudeOptions(captured[0]?.permissions)).toEqual({
+      permissionMode: 'auto',
+    });
+  });
 });
 
 function defaultYamlConfig(): string {

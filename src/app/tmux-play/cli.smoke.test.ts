@@ -141,6 +141,46 @@ describe('tmux-play built CLI smoke', () => {
     );
   });
 
+  // TTMUX-054: invalid YAML permissions.mode aborts the launcher at the
+  // CLI boundary — stderr names the offending path, exit code is nonzero,
+  // and the runtime never starts, so no `runtime_error` record can be
+  // observable. Uses the fake tmux + glow harness so the test does not
+  // depend on real binaries.
+  it('rejects invalid permissions.mode with stderr and nonzero exit', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      join(cwd, 'tmux-play.config.yaml'),
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    permissions:',
+        '      mode: turbo',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runCli(['--cwd', cwd], harness);
+
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(
+      'roles[0].permissions.mode must be one of: auto, bypass',
+    );
+    expect(result.stderr.startsWith('Error: ')).toBe(true);
+    // The runtime never starts, so no tmux session is constructed and no
+    // runtime_error record is written to stdout.
+    expect(readTmuxCalls(harness).some((call) => call[0] === 'new-session')).toBe(
+      false,
+    );
+    expect(result.stdout).not.toContain('runtime_error');
+  });
+
   it('runs session mode from a package captain specifier', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');

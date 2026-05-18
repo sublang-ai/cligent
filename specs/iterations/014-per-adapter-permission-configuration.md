@@ -16,7 +16,7 @@ Key design choices (DR-005 leaves these IR-level):
 
 ## Status
 
-In progress — Tasks 1, 2, 3, and 4 done; Task 5 pending
+Completed
 
 ## Scope
 
@@ -56,12 +56,13 @@ Out of scope (per DR-005):
 - [x] `src/app/tmux-play/config.ts` — YAML loader accepts and validates `permissions` on captain and roles per [TMUX-052](../user/tmux-play.md#tmux-052).
 - [x] `src/app/tmux-play/config.test.ts` — loader accepts valid, rejects malformed.
 - [x] `src/app/tmux-play/contract.ts` + `src/app/tmux-play/runtime.ts` + `src/app/tmux-play/session.ts` — captain `permissions` reach the captain `Cligent` constructor; role `permissions` reach `resolveRoles` via `RuntimeRoleConfig`.
-- [ ] `src/app/tmux-play/launcher.acceptance.test.ts` — end-to-end: YAML `mode: 'auto'` reaches the SDK call surface; invalid `mode` aborts with stderr + nonzero exit.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — end-to-end probe (a): YAML `mode: 'auto'` reaches `AgentOptions.permissions` at the role adapter seam, and the adapter's exported mapping function emits the spec-defined SDK knob.
+- [x] `src/app/tmux-play/cli.smoke.test.ts` — end-to-end probe (b): invalid YAML `mode` exits the built CLI nonzero with stderr naming the offending path; no `runtime_error` record, no tmux session.
 - [x] `specs/user/engine.md` — new ENG-021 for `PermissionPolicy.mode`.
 - [x] `specs/user/tmux-play.md` — new [TMUX-052](../user/tmux-play.md#tmux-052) for YAML `permissions` on roles and captain; TMUX-006, TMUX-007, and TMUX-029 updated to include the optional field.
-- [ ] `specs/test/tmux-play.md` — new TTMUX items.
-- [ ] `docs/tmux-play.md` — Config section documents `permissions` with `mode: 'auto'` example.
-- [ ] `specs/map.md` — TMUX summary updated.
+- [x] `specs/test/tmux-play.md` — new TTMUX-052, TTMUX-053, TTMUX-054 for YAML acceptance/rejection, adapter seam, and CLI-abort behavior.
+- [x] `docs/tmux-play.md` — Config section documents `permissions` with `mode: 'auto'` example.
+- [x] `specs/map.md` — TMUX summary updated.
 
 ## Tasks
 
@@ -71,7 +72,7 @@ Each task is one commit.
 2. [x] **Adapter mappings — claude, codex, gemini** — each adapter's `mapPermissionsToXxxOptions` learns the new `mode` value; claude adds `'auto'` to `ClaudePermissionMode`; gemini adds an `approvalMode` constructor option and CLI arg. Per-adapter unit tests cover `mode: 'auto'` and `mode: 'bypass'` (where the SDK supports the latter).
 3. [x] **Adapter mapping — opencode** — extend `mapPermissionsToOpenCodeOptions` with top-of-function mode handling matching claude / codex / gemini. `mode: 'auto'` emits `permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' }` (the SDK equivalent of opencode.json's `"permission": "allow"`). `mode: 'bypass'` is rejected by the mapping with an error naming the SDK/server architecture — the cligent opencode adapter drives an `opencode serve` SDK session, so the `--dangerously-skip-permissions` CLI flag has no place to attach. Per-adapter unit tests.
 4. [x] **YAML schema + loader + session wiring** — extend `RoleConfig` and the captain config with `permissions?: PermissionPolicy`; YAML loader accepts the typed shape and rejects malformed sub-fields per TMUX-008; `session.ts` forwards the value into `CligentOptions.permissions` at role / captain construction. New TMUX items for the YAML field; loader tests for accept + reject.
-5. [ ] **Docs and acceptance** — `docs/tmux-play.md` Config section documents `permissions` with a `mode: 'auto'` example; new TTMUX items; `launcher.acceptance.test.ts` end-to-end probes assert (a) YAML `mode: 'auto'` reaches the SDK call surface for the configured adapter (assertion at the adapter's SDK constructor seam, no live API call), and (b) an invalid `mode` value aborts the launcher with stderr + nonzero exit — not a `runtime_error` record. `specs/map.md` TMUX summary update.
+5. [x] **Docs and acceptance** — `docs/tmux-play.md` Config section documents `permissions` with a `mode: 'auto'` example; new TTMUX-052/053/054 items; end-to-end probes in `launcher.acceptance.test.ts` and `cli.smoke.test.ts` assert (a) YAML `mode: 'auto'` reaches the role adapter's `AgentOptions.permissions` and the adapter's exported mapping function emits the spec-defined SDK knob (no live API call), and (b) an invalid `mode` value aborts the launcher with stderr + nonzero exit — not a `runtime_error` record. `specs/map.md` TMUX summary updated.
 
 ## Acceptance criteria
 

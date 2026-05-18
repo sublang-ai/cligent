@@ -294,6 +294,23 @@ Verifies: [TMUX-051](../user/tmux-play.md#tmux-051)
 
 Given `tmux-play` invoked in launcher mode on a host where `isGlowAvailable()` returns `false`, `launchTmuxPlay` shall reject with an error whose message names `glow` and contains the install URL `https://github.com/charmbracelet/glow#installation`. The launcher shall not invoke any subsequent launcher work — no config discovery, no work-directory creation, no `tmux` session construction — so the rejection surfaces before any side effects. The `glow` check shall run after the existing `tmux` availability check so a host missing both binaries reports `tmux` first.
 
+## Permission Configuration
+
+### TTMUX-052
+Verifies: [TMUX-052](../user/tmux-play.md#tmux-052)
+
+Given a YAML config that sets `permissions` on the captain and on a role, when `loadTmuxPlayConfig` returns, the loaded `captain.permissions` and `roles[i].permissions` shall be the typed [`PermissionPolicy`](../user/engine.md#eng-021) values from the YAML verbatim. Given a YAML with an unknown sub-field under `permissions`, with a `mode` value outside `'auto' | 'bypass'`, with a `fileWrite` / `shellExecute` / `networkAccess` value outside `'allow' | 'ask' | 'deny'`, or with `permissions` set to a non-object, the loader shall reject with an error that names the offending path per [TMUX-008](../user/tmux-play.md#tmux-008).
+
+### TTMUX-053
+Verifies: [TMUX-052](../user/tmux-play.md#tmux-052), [ENG-021](../user/engine.md#eng-021)
+
+Given a captain or role `PermissionPolicy` accepted by the loader, when the runtime constructs the corresponding `Cligent`, the value shall reach the adapter as `AgentOptions.permissions` at the next `run()` call, and the adapter's `mapPermissionsToXxxOptions` shall translate `mode: 'auto'` and `mode: 'bypass'` to the SDK knobs enumerated in [DR-005](../decisions/005-per-adapter-permission-configuration.md): claude → `permissionMode: 'auto'` / `'bypassPermissions'`; codex → `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` / `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'`; gemini → `approvalMode: 'yolo'` for either mode; opencode → `permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' }` for `'auto'`, and a thrown error naming the SDK/server architecture for `'bypass'`.
+
+### TTMUX-054
+Verifies: [TMUX-052](../user/tmux-play.md#tmux-052), [DR-005](../decisions/005-per-adapter-permission-configuration.md)
+
+Given a YAML config whose `permissions.mode` is outside the closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path (e.g., `captain.permissions.mode` or `roles[0].permissions.mode`). The runtime shall not start, and no `runtime_error` record shall be observable — the failure is a launcher-startup abort, not a session-mode runtime error, per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
+
 ## Real-glow Acceptance
 
 Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts` (glow-in-isolation checks) and `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (presenter + glow integration), run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.

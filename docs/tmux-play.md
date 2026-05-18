@@ -63,6 +63,45 @@ roles:
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory.
 
+### Permissions
+
+Captain and each role accept an optional `permissions` block that maps to
+`CligentOptions.permissions` and reaches the adapter's SDK knobs at run
+time. The field is typed; arbitrary adapter-specific knobs are not
+settable from YAML.
+
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  options: {}
+  permissions:
+    mode: auto                  # session-wide automation posture
+roles:
+  - id: coder
+    adapter: codex
+    permissions:
+      mode: auto
+  - id: reviewer
+    adapter: claude
+    permissions:
+      fileWrite: ask            # per-capability levels
+      shellExecute: deny
+      networkAccess: deny
+```
+
+- `mode: 'auto'` selects each adapter's classifier- or sandbox-protected
+  auto-mode (claude `permissionMode: auto`, codex `approval_policy:
+  on-request + sandbox_mode: workspace-write`, gemini `--approval-mode
+  yolo`, opencode `permission: allow` SDK body). `mode: 'bypass'` selects
+  each adapter's unchecked-bypass mode where the SDK supports one; the
+  opencode adapter rejects `bypass` because the cligent opencode path
+  drives `opencode serve` via the SDK rather than `opencode run`.
+- When `mode` is unset, the adapter derives an effective posture from
+  `fileWrite` / `shellExecute` / `networkAccess`.
+- Omitting `permissions` leaves the adapter on its SDK default; cligent
+  imposes no project-wide policy.
+
 ## Layout
 
 Boss/Captain occupies the left pane; roles fill the right in config

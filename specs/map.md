@@ -131,5 +131,5 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config, discovery and auto-create, Captain contract, records, observers, topology, theme, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
-| test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, real-tmux acceptance, real-glow acceptance |
+| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (including per-role/captain `permissions`), discovery and auto-create, Captain contract, records, observers, topology, theme, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
+| test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, permission configuration, real-tmux acceptance, real-glow acceptance |
