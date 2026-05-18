@@ -130,6 +130,48 @@ describe('resolveRoles', () => {
     expect(roles[1]?.cligent.agentType).toBe('claude-code');
   });
 
+  it('forwards permissions from RoleConfig into adapter run options', async () => {
+    const captured: (AgentOptions | undefined)[] = [];
+
+    class CapturingAdapter implements AgentAdapter {
+      readonly agent = 'codex';
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.push(options);
+      }
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    const adapterImports: RoleAdapterImports = {
+      claude: async () => adapterClass('claude-code'),
+      codex: async () => CapturingAdapter,
+      gemini: async () => adapterClass('gemini'),
+      opencode: async () => adapterClass('opencode'),
+    };
+
+    const roles = await resolveRoles(
+      [
+        {
+          id: 'coder',
+          adapter: 'codex',
+          permissions: { mode: 'auto' },
+        },
+      ],
+      { adapterImports },
+    );
+
+    const gen = roles[0]!.cligent.run('hello');
+    while (!(await gen.next()).done) {
+      // drain
+    }
+
+    expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
+  });
+
   it('allows multiple roles to use the same adapter and model', async () => {
     const configs: RoleConfig[] = [
       { id: 'coder', adapter: 'claude', model: 'same-model' },

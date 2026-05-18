@@ -326,6 +326,132 @@ describe('tmux-play config loading', () => {
     );
   });
 
+  it('accepts a typed permissions block on captain and roles', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions:',
+        '    mode: auto',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    permissions:',
+        '      mode: bypass',
+        '      fileWrite: allow',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd: workDir });
+
+    expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
+    expect(loaded.config.roles[0]?.permissions).toEqual({
+      mode: 'bypass',
+      fileWrite: 'allow',
+    });
+  });
+
+  it('rejects unknown sub-fields under permissions', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions:',
+        '    bogus: allow',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      'Unknown config field captain.permissions.bogus',
+    );
+  });
+
+  it('rejects invalid permission mode values', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    permissions:',
+        '      mode: turbo',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      'roles[0].permissions.mode must be one of: auto, bypass',
+    );
+  });
+
+  it('rejects invalid permission level values', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions:',
+        '    fileWrite: maybe',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      'captain.permissions.fileWrite must be one of: allow, ask, deny',
+    );
+  });
+
+  it('rejects non-object permissions', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions: auto',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      'captain.permissions must be an object',
+    );
+  });
+
   it('rewrites relative local captain modules against the config directory', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configDir = join(workDir, 'configs');

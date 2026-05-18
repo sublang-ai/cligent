@@ -408,6 +408,7 @@ export async function createTmuxPlayRuntime(
     cwd: options.cwd,
     model: options.captainConfig.model,
     role: 'captain',
+    permissions: options.captainConfig.permissions,
     adapterImports: options.adapterImports,
   });
   const runtime = new TmuxPlayRuntime(options, roles, captainCligent);

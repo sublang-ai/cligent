@@ -145,6 +145,7 @@ export class TmuxPlaySession {
         adapter: config.captain.adapter,
         model: config.captain.model,
         instruction: config.captain.instruction,
+        permissions: config.captain.permissions,
       },
       roles: runtimeRoles(config.roles),
       observers: [presenter, ...(this.options.observers ?? [])],
@@ -392,6 +393,7 @@ function runtimeRoles(roles: readonly RoleConfig[]): RuntimeRoleConfig[] {
       adapter: role.adapter,
       model: role.model,
       instruction: role.instruction,
+      permissions: role.permissions,
     };
   });
 }

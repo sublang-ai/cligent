@@ -13,6 +13,7 @@ import {
   type RoleAdapterName,
   type RoleConfig,
 } from './roles.js';
+import type { PermissionLevel, PermissionPolicy } from '../../types.js';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
@@ -25,6 +26,7 @@ export interface CaptainConfig {
   adapter: RoleAdapterName;
   model?: string;
   instruction?: string;
+  permissions?: PermissionPolicy;
   options: JsonValue;
 }
 
@@ -239,13 +241,24 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
 
 function normalizeCaptainConfig(value: unknown): CaptainConfig {
   const input = requireObject(value, 'captain');
-  const allowed = new Set(['from', 'adapter', 'model', 'instruction', 'options']);
+  const allowed = new Set([
+    'from',
+    'adapter',
+    'model',
+    'instruction',
+    'permissions',
+    'options',
+  ]);
   rejectUnknownKeys(input, allowed, 'captain');
 
   const from = requireString(input.from, 'captain.from');
   const adapter = requireAdapterName(input.adapter, 'captain.adapter');
   const model = optionalString(input.model, 'captain.model');
   const instruction = optionalString(input.instruction, 'captain.instruction');
+  const permissions = optionalPermissionPolicy(
+    input.permissions,
+    'captain.permissions',
+  );
   const options = input.options === undefined ? {} : input.options;
 
   const captain: CaptainConfig = {
@@ -255,6 +268,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   };
   if (model !== undefined) captain.model = model;
   if (instruction !== undefined) captain.instruction = instruction;
+  if (permissions !== undefined) captain.permissions = permissions;
   return captain;
 }
 
@@ -274,7 +288,13 @@ function normalizeRoleConfigs(value: unknown): RoleConfig[] {
 function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
   const path = `roles[${index}]`;
   const input = requireObject(value, path);
-  const allowed = new Set(['id', 'adapter', 'model', 'instruction']);
+  const allowed = new Set([
+    'id',
+    'adapter',
+    'model',
+    'instruction',
+    'permissions',
+  ]);
   rejectUnknownKeys(input, allowed, path);
 
   const role: RoleConfig = {
@@ -284,8 +304,13 @@ function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
 
   const model = optionalString(input.model, `${path}.model`);
   const instruction = optionalString(input.instruction, `${path}.instruction`);
+  const permissions = optionalPermissionPolicy(
+    input.permissions,
+    `${path}.permissions`,
+  );
   if (model !== undefined) role.model = model;
   if (instruction !== undefined) role.instruction = instruction;
+  if (permissions !== undefined) role.permissions = permissions;
   return role;
 }
 
@@ -316,6 +341,75 @@ function optionalString(value: unknown, path: string): string | undefined {
     throw new Error(`${path} must be a string`);
   }
   return value;
+}
+
+function optionalPermissionPolicy(
+  value: unknown,
+  path: string,
+): PermissionPolicy | undefined {
+  if (value === undefined) return undefined;
+  const input = requireObject(value, path);
+  const allowed = new Set([
+    'mode',
+    'fileWrite',
+    'shellExecute',
+    'networkAccess',
+  ]);
+  rejectUnknownKeys(input, allowed, path);
+
+  const policy: PermissionPolicy = {};
+  if (input.mode !== undefined) {
+    policy.mode = requirePermissionMode(input.mode, `${path}.mode`);
+  }
+  if (input.fileWrite !== undefined) {
+    policy.fileWrite = requirePermissionLevel(
+      input.fileWrite,
+      `${path}.fileWrite`,
+    );
+  }
+  if (input.shellExecute !== undefined) {
+    policy.shellExecute = requirePermissionLevel(
+      input.shellExecute,
+      `${path}.shellExecute`,
+    );
+  }
+  if (input.networkAccess !== undefined) {
+    policy.networkAccess = requirePermissionLevel(
+      input.networkAccess,
+      `${path}.networkAccess`,
+    );
+  }
+  return policy;
+}
+
+const PERMISSION_MODES: ReadonlySet<NonNullable<PermissionPolicy['mode']>> =
+  new Set(['auto', 'bypass']);
+const PERMISSION_LEVELS: ReadonlySet<PermissionLevel> = new Set([
+  'allow',
+  'ask',
+  'deny',
+]);
+
+function requirePermissionMode(
+  value: unknown,
+  path: string,
+): NonNullable<PermissionPolicy['mode']> {
+  if (typeof value !== 'string' || !PERMISSION_MODES.has(value as never)) {
+    throw new Error(
+      `${path} must be one of: auto, bypass`,
+    );
+  }
+  return value as NonNullable<PermissionPolicy['mode']>;
+}
+
+function requirePermissionLevel(
+  value: unknown,
+  path: string,
+): PermissionLevel {
+  if (typeof value !== 'string' || !PERMISSION_LEVELS.has(value as never)) {
+    throw new Error(`${path} must be one of: allow, ask, deny`);
+  }
+  return value as PermissionLevel;
 }
 
 function requireAdapterName(value: unknown, path: string): RoleAdapterName {
