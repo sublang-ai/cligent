@@ -1014,25 +1014,50 @@ describe('GeminiAdapter', () => {
     expect(usage.inputTokens).toBe(92);
   });
 
-  it('maps PermissionPolicy.mode = "auto" to --approval-mode yolo per ENG-021', () => {
-    const config = mapPermissionsToGeminiToolConfig({ mode: 'auto' });
+  it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per ENG-021', () => {
+    const auto = mapPermissionsToGeminiToolConfig({ mode: 'auto' });
+    expect(auto.approvalMode).toBe('yolo');
+
+    // gemini exposes no distinct bypass tier beyond yolo, so both modes
+    // map to the same SDK setting — recorded in adapter docs and DR-005.
+    const bypass = mapPermissionsToGeminiToolConfig({ mode: 'bypass' });
+    expect(bypass.approvalMode).toBe('yolo');
+
+    for (const mode of ['auto', 'bypass'] as const) {
+      const cmd = mapAgentOptionsToGeminiCommand('hi', {
+        permissions: { mode },
+      });
+      expect(cmd.args).toContain('--approval-mode');
+      const idx = cmd.args.indexOf('--approval-mode');
+      expect(cmd.args[idx + 1]).toBe('yolo');
+    }
+  });
+
+  it('mode overrides per-capability levels in gemini per ENG-021', () => {
+    // mode set together with explicit per-capability denies: the per-
+    // capability path is short-circuited so the deny levels do not push
+    // tools into disallowedTools / settings. Only the session-wide
+    // --approval-mode yolo applies.
+    const config = mapPermissionsToGeminiToolConfig({
+      mode: 'auto',
+      fileWrite: 'deny',
+      shellExecute: 'deny',
+      networkAccess: 'deny',
+    });
     expect(config.approvalMode).toBe('yolo');
+    expect(config.disallowedTools).toEqual([]);
+    expect(config.allowedTools).toEqual([]);
 
-    const cmd = mapAgentOptionsToGeminiCommand('hi', {
-      permissions: { mode: 'auto' },
-    });
-    expect(cmd.args).toContain('--approval-mode');
-    const idx = cmd.args.indexOf('--approval-mode');
-    expect(cmd.args[idx + 1]).toBe('yolo');
-
-    // mode: 'bypass' falls through — gemini exposes no distinct bypass
-    // beyond yolo itself, so no approvalMode is set; the per-capability
-    // path governs.
-    const bypassConfig = mapPermissionsToGeminiToolConfig({ mode: 'bypass' });
-    expect(bypassConfig.approvalMode).toBeUndefined();
-    const bypassCmd = mapAgentOptionsToGeminiCommand('hi', {
-      permissions: { mode: 'bypass' },
-    });
-    expect(bypassCmd.args).not.toContain('--approval-mode');
+    // User-passed allowedTools / disallowedTools (independent from
+    // `permissions`) still apply.
+    const withUserTools = mapPermissionsToGeminiToolConfig(
+      { mode: 'auto', fileWrite: 'deny' },
+      { allowedTools: ['mytool'], disallowedTools: ['othertool'] },
+    );
+    expect(withUserTools.allowedTools).toContain('mytool');
+    expect(withUserTools.disallowedTools).toContain('othertool');
+    // The fileWrite: 'deny' from the policy did NOT add 'edit' to
+    // disallowedTools — mode took precedence.
+    expect(withUserTools.disallowedTools).not.toContain('edit');
   });
 });

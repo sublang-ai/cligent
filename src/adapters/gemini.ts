@@ -332,6 +332,35 @@ export function mapPermissionsToGeminiToolConfig(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): GeminiToolConfig {
+  // ENG-021: session-wide mode takes precedence over per-capability levels.
+  // gemini exposes a single prompt-less SDK setting (`--approval-mode yolo`),
+  // so both 'auto' and 'bypass' map to it — gemini does not differentiate
+  // a sandbox-protected auto-mode from an unchecked bypass beyond yolo
+  // itself. The per-capability allow/deny derivation is skipped to honor
+  // the precedence rule; user-passed allowedTools / disallowedTools are
+  // independent from `permissions` and still apply.
+  if (policy?.mode === 'auto' || policy?.mode === 'bypass') {
+    const allowed = new Set(options?.allowedTools ?? []);
+    const disallowed = new Set(options?.disallowedTools ?? []);
+    if (allowed.size > 0) {
+      for (const tool of disallowed) {
+        allowed.delete(tool);
+      }
+    }
+    const allowedTools = [...allowed].sort();
+    const disallowedTools = [...disallowed].sort();
+    const args: string[] = [];
+    if (allowedTools.length > 0) {
+      args.push('--allowed-tools', allowedTools.join(','));
+    }
+    return {
+      allowedTools,
+      disallowedTools,
+      args,
+      approvalMode: 'yolo',
+    };
+  }
+
   const normalized = normalizePermissions(policy);
 
   const allowed = new Set(options?.allowedTools ?? []);
@@ -363,15 +392,6 @@ export function mapPermissionsToGeminiToolConfig(
   const allowedTools = [...allowed].sort();
   const disallowedTools = [...disallowed].sort();
 
-  // ENG-021: `mode: 'auto'` maps to `--approval-mode yolo`. Gemini's
-  // `auto_edit` covers only edits, not the full automation intent, so
-  // `yolo` is the closest match. `mode: 'bypass'` falls through to the
-  // per-capability path because gemini doesn't expose a distinct bypass
-  // beyond yolo itself; users wanting bypass can set per-capability
-  // levels or use `mode: 'auto'`.
-  const approvalMode: GeminiApprovalMode | undefined =
-    policy?.mode === 'auto' ? 'yolo' : undefined;
-
   const args: string[] = [];
   if (allowedTools.length > 0) {
     args.push('--allowed-tools', allowedTools.join(','));
@@ -381,7 +401,6 @@ export function mapPermissionsToGeminiToolConfig(
     allowedTools,
     disallowedTools,
     args,
-    ...(approvalMode ? { approvalMode } : {}),
   };
 }
 
