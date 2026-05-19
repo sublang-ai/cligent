@@ -66,10 +66,13 @@ roles:
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
 Captain and both roles so the Claude Code and Codex CLI defaults run in
-each adapter's classifier- or sandbox-protected auto-mode without
-interactive permission prompts mid-session. Remove the blocks to fall
-back to each adapter's SDK default; cligent itself ships no
-project-wide permission posture.
+each adapter's classifier- or sandbox-protected auto-mode, reducing
+routine permission prompts during a session. Prompts are not
+eliminated: Claude's `auto` still blocks high-risk actions and falls
+back to prompts after repeated denies, and Codex's `on-request +
+workspace-write` still prompts outside the sandbox or for network.
+Remove the blocks to fall back to each adapter's SDK default; cligent
+itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
 - Role IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple roles may share an adapter or model.
