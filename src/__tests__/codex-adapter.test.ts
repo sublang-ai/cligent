@@ -37,6 +37,10 @@ interface MockThreadOptions {
   signal?: AbortSignal;
 }
 
+interface MockCodexConstructorOptions {
+  config?: Record<string, unknown>;
+}
+
 interface MockCodexThread {
   runStreamed(
     prompt: string,
@@ -51,6 +55,7 @@ interface MockCodexClient {
 
 function makeLoader(config: {
   events: unknown[];
+  onConstruct?: (options: MockCodexConstructorOptions | undefined) => void;
   onStartThread?: (options: MockThreadOptions | undefined) => void;
   onResumeThread?: (
     threadId: string,
@@ -72,6 +77,10 @@ function makeLoader(config: {
 
   return async () => ({
     Codex: class {
+      constructor(options?: MockCodexConstructorOptions) {
+        config.onConstruct?.(options);
+      }
+
       startThread(options?: MockThreadOptions): MockCodexThread {
         config.onStartThread?.(options);
         return {
@@ -109,7 +118,7 @@ function makeLoader(config: {
         };
       }
     },
-  });
+  }) as unknown as { Codex: new (options?: unknown) => MockCodexClient };
 }
 
 async function collect(
@@ -588,6 +597,7 @@ describe('CodexAdapter', () => {
   });
 
   it('passes AgentOptions through to thread/run options', async () => {
+    let capturedCodexOptions: MockCodexConstructorOptions | undefined;
     let capturedThreadOptions: MockThreadOptions | undefined;
     let capturedRunPrompt: string | undefined;
     let capturedRunOptions: MockRunOptions | undefined;
@@ -603,6 +613,9 @@ describe('CodexAdapter', () => {
             },
           },
         ],
+        onConstruct(options) {
+          capturedCodexOptions = options;
+        },
         onStartThread(options) {
           capturedThreadOptions = options;
         },
@@ -628,6 +641,7 @@ describe('CodexAdapter', () => {
       }),
     );
 
+    expect(capturedCodexOptions).toBeUndefined();
     expect(capturedThreadOptions).toMatchObject({
       workingDirectory: '/tmp/repo',
       model: 'gpt-5-codex',
@@ -639,6 +653,86 @@ describe('CodexAdapter', () => {
 
     expect(capturedRunPrompt).toBe('implement feature');
     expect(capturedRunOptions?.signal).toBeUndefined();
+  });
+
+  it('passes auto-review config to the Codex SDK constructor for auto mode', async () => {
+    let capturedCodexOptions: MockCodexConstructorOptions | undefined;
+    let capturedThreadOptions: MockThreadOptions | undefined;
+
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          },
+        ],
+        onConstruct(options) {
+          capturedCodexOptions = options;
+        },
+        onStartThread(options) {
+          capturedThreadOptions = options;
+        },
+      }),
+    });
+
+    await collect(
+      adapter.run('implement feature', {
+        permissions: { mode: 'auto' },
+      }),
+    );
+
+    expect(capturedCodexOptions).toEqual({
+      config: {
+        approvals_reviewer: 'auto_review',
+      },
+    });
+    expect(capturedThreadOptions).toMatchObject({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+      networkAccessEnabled: false,
+    });
+  });
+
+  it('does not set auto-review config for bypass mode', async () => {
+    let capturedCodexOptions: MockCodexConstructorOptions | undefined;
+    let capturedThreadOptions: MockThreadOptions | undefined;
+
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          },
+        ],
+        onConstruct(options) {
+          capturedCodexOptions = options;
+        },
+        onStartThread(options) {
+          capturedThreadOptions = options;
+        },
+      }),
+    });
+
+    await collect(
+      adapter.run('implement feature', {
+        permissions: { mode: 'bypass' },
+      }),
+    );
+
+    expect(capturedCodexOptions).toBeUndefined();
+    expect(capturedThreadOptions).toMatchObject({
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      networkAccessEnabled: true,
+    });
   });
 
   it('resumes thread when resume option is provided', async () => {
@@ -996,11 +1090,17 @@ describe('CodexAdapter', () => {
     expect(auto.sandboxMode).toBe('workspace-write');
     expect(auto.approvalPolicy).toBe('on-request');
     expect(auto.networkAccessEnabled).toBe(false);
+    expect(auto.codexOptions).toEqual({
+      config: {
+        approvals_reviewer: 'auto_review',
+      },
+    });
 
     const bypass = mapPermissionsToCodexOptions({ mode: 'bypass' });
     expect(bypass.sandboxMode).toBe('danger-full-access');
     expect(bypass.approvalPolicy).toBe('never');
     expect(bypass.networkAccessEnabled).toBe(true);
+    expect(bypass.codexOptions).toBeUndefined();
 
     // mode takes precedence over per-capability levels.
     const autoOverridesLevels = mapPermissionsToCodexOptions({
@@ -1012,5 +1112,10 @@ describe('CodexAdapter', () => {
     expect(autoOverridesLevels.sandboxMode).toBe('workspace-write');
     expect(autoOverridesLevels.approvalPolicy).toBe('on-request');
     expect(autoOverridesLevels.networkAccessEnabled).toBe(false);
+    expect(autoOverridesLevels.codexOptions).toEqual({
+      config: {
+        approvals_reviewer: 'auto_review',
+      },
+    });
   });
 });
