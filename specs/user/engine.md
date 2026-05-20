@@ -112,6 +112,7 @@ Adapters whose backend exposes no per-call reasoning surface shall ignore this f
 ### ENG-021
 
 `PermissionPolicy.mode` shall accept the closed set `'auto' | 'bypass' | undefined` per [DR-005](../decisions/005-per-adapter-permission-configuration.md).
-When `mode` is set, adapters shall use it as the session-wide automation posture at their SDK-knob selection step, taking precedence over `fileWrite` / `shellExecute` / `networkAccess`: `'auto'` shall map to the classifier- or sandbox-protected auto-mode each SDK exposes, and `'bypass'` shall map to the unchecked-bypass mode where the SDK supports one.
+When `mode` is set, adapters shall use it as the session-wide automation posture at their SDK-knob selection step, taking precedence over `fileWrite` / `shellExecute` / `networkAccess`: `'auto'` shall map to the classifier-, sandbox-, or reviewer-protected auto-mode each SDK exposes, and `'bypass'` shall map to the unchecked-bypass mode where the SDK supports one.
+Where an SDK exposes an automatic reviewer for otherwise interactive approval prompts, the `'auto'` mapping shall select it when that reviewer is part of the SDK's protected auto posture; this shall not expand filesystem, network, or sandbox permissions.
 Adapters whose architecture cannot reach a given mode shall reject it at mapping time with an error naming the constraint; the rejection surfaces per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
 When `mode` is `undefined`, adapters shall continue to derive their SDK options from `fileWrite` / `shellExecute` / `networkAccess` as before.

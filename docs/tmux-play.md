@@ -66,13 +66,14 @@ roles:
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
 Captain and both roles so the Claude Code and Codex CLI defaults run in
-each adapter's classifier- or sandbox-protected auto-mode, reducing
-routine permission prompts during a session. Prompts are not
+each adapter's classifier-, sandbox-, or reviewer-protected auto-mode,
+reducing routine permission prompts during a session. Prompts are not
 eliminated: Claude's `auto` still blocks high-risk actions and falls
 back to prompts after repeated denies, and Codex's `on-request +
-workspace-write` still prompts outside the sandbox or for network.
-Remove the blocks to fall back to each adapter's SDK default; cligent
-itself ships no project-wide permission posture.
+workspace-write + auto_review` keeps the same sandbox and network
+limits while routing eligible sandbox-boundary approval requests to a
+reviewer agent. Remove the blocks to fall back to each adapter's SDK
+default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
 - Role IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple roles may share an adapter or model.
@@ -106,11 +107,12 @@ roles:
       networkAccess: deny
 ```
 
-- `mode: 'auto'` selects each adapter's classifier- or sandbox-protected
+- `mode: 'auto'` selects each adapter's classifier-, sandbox-, or reviewer-protected
   auto-mode (claude `permissionMode: auto`, codex `approval_policy:
-  on-request + sandbox_mode: workspace-write`, gemini `--approval-mode
-  yolo`, opencode `permission: allow` SDK body). `mode: 'bypass'` selects
-  each adapter's unchecked-bypass mode where the SDK supports one; the
+  on-request + sandbox_mode: workspace-write + approvals_reviewer:
+  auto_review`, gemini `--approval-mode yolo`, opencode `permission:
+  allow` SDK body). `mode: 'bypass'` selects each adapter's
+  unchecked-bypass mode where the SDK supports one; the
   opencode adapter rejects `bypass` because the cligent opencode path
   drives `opencode serve` via the SDK rather than `opencode run`.
 - When `mode` is unset, the adapter derives an effective posture from

@@ -43,7 +43,10 @@ When Codex supplies an error message as a JSON-encoded object string, the adapte
 
 ### CODEX-004
 
-The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm):
+The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm) and [ENG-021](../engine.md#eng-021):
+
+When `PermissionPolicy.mode` is set, the adapter shall map it before deriving per-capability controls: `'auto'` shall set `sandboxMode: 'workspace-write'`, `approvalPolicy: 'on-request'`, `approvalsReviewer: 'auto_review'`, and `networkAccessEnabled: false` per Codex auto-review semantics [[2]][[3]]; `'bypass'` shall set `sandboxMode: 'danger-full-access'`, `approvalPolicy: 'never'`, and `networkAccessEnabled: true`, and shall not set `approvalsReviewer`.
+When `PermissionPolicy.mode` is unset, the adapter shall derive Codex controls from the per-capability levels:
 
 - `fileWrite` + `shellExecute` → `sandboxMode`: all `'allow'` → `'danger-full-access'`; `fileWrite: 'allow'` only → `'workspace-write'`; any `'deny'` → `'read-only'`
 - Permission levels → `approvalPolicy`: all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; mixed → `'on-request'`
@@ -85,3 +88,5 @@ When `reasoningEffort` is omitted, the adapter shall not set `modelReasoningEffo
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"
+[2]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
+[3]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"

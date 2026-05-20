@@ -18,7 +18,7 @@ Each coding-agent SDK ships its own permission/approval model:
 | Adapter | SDK knob | Prompt-reduction mode |
 | --- | --- | --- |
 | `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed, still blocks high-risk actions and falls back to prompts after consecutive/total denies); `'bypassPermissions'` (no checks) |
-| `codex` | `sandboxMode`, `approvalPolicy` [[2]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` (still prompts outside the sandbox or for network); `--full-auto` is a deprecated compatibility flag for the same config |
+| `codex` | `sandboxMode`, `approvalPolicy`, `approvalsReviewer` [[2]][[6]][[7]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` + `approvals_reviewer = auto_review` (eligible sandbox-boundary approval requests route to a reviewer agent without changing sandbox or network limits); `--full-auto` is a deprecated compatibility flag for the sandbox/approval-policy part of this config |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
@@ -28,7 +28,7 @@ Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolic
 Today's gap is two-layered:
 
 - **YAML reachability**: tmux-play's `RoleConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
-- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier- or sandbox-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's sandbox-protected `on-request + workspace-write` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
+- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-, sandbox-, or reviewer-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's sandbox- and reviewer-protected `on-request + workspace-write + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
@@ -48,13 +48,13 @@ Specifically:
 
 YAML uses the existing typed `PermissionPolicy` shape.
 No `Record<string, unknown>` escape hatch; no adapter-specific knob is directly settable from YAML.
-Adapter-specific knobs (`permissionMode`, `sandboxMode`, `approvalPolicy`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
+Adapter-specific knobs (`permissionMode`, `sandboxMode`, `approvalPolicy`, `approvalsReviewer`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
 
 Rationale: a typed surface preserves cross-adapter substitutability — a user who switches a role from `claude` to `codex` gets the same `permissions` semantics, mapped to each SDK's knobs by the adapter.
 
 ### Auto-mode — expand PermissionPolicy
 
-`PermissionPolicy` shall be extended to express auto-mode intent: classifier- or sandbox-protected automation distinct from unchecked bypass.
+`PermissionPolicy` shall be extended to express auto-mode intent: classifier-, sandbox-, or reviewer-protected automation distinct from unchecked bypass.
 The exact field name and shape is IR-level work; the DR's constraint is that the addition is a typed PermissionPolicy field, not a new top-level YAML escape hatch.
 
 Each adapter's mapping function shall translate the new vocabulary to its SDK's auto-mode value:
@@ -62,7 +62,7 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | Adapter | Auto-mode mapping | Bypass mapping (already present where applicable) |
 | --- | --- | --- |
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
-| `codex` | `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write'` | `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` |
+| `codex` | `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write' + approvalsReviewer: 'auto_review'` | `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
 | `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
 
@@ -70,7 +70,7 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 
 Cligent shall not impose a project-wide default permission posture.
 SDK defaults apply unless `permissions` is provided.
-Documentation and example configs may recommend classifier- or sandbox-protected modes (`claude`'s `auto`, `codex`'s `on-request + workspace-write`) over unchecked bypass; that guidance is editorial, not enforcement.
+Documentation and example configs may recommend classifier-, sandbox-, or reviewer-protected modes (`claude`'s `auto`, `codex`'s `on-request + workspace-write + auto_review`) over unchecked bypass; that guidance is editorial, not enforcement.
 
 ### Failure surfacing
 
@@ -105,3 +105,5 @@ The DR does not introduce new error machinery; it constrains where errors should
 [3]: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/settings.md "Gemini CLI configuration"
 [4]: https://opencode.ai/docs/permissions/ "OpenCode permissions"
 [5]: https://opencode.ai/docs/cli/ "OpenCode CLI reference"
+[6]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
+[7]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
