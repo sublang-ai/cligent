@@ -56,6 +56,7 @@ meta.md     The spec of specs
 | IR-012 | [012-tmux-play-semantic-ui.md](iterations/012-tmux-play-semantic-ui.md) | Truecolor, adapter-aware pane borders, speaker-prefix colors, tool lifecycle rendering |
 | IR-013 | [013-tmux-play-markdown-rendering.md](iterations/013-tmux-play-markdown-rendering.md) | Markdown-rendered pane output via glow, replacing character-level soft-wrap |
 | IR-014 | [014-per-adapter-permission-configuration.md](iterations/014-per-adapter-permission-configuration.md) | Implement DR-005: YAML `permissions` field; `PermissionPolicy.mode` + per-adapter auto-mode mappings |
+| IR-015 | [015-codex-auto-review-permission-mode.md](iterations/015-codex-auto-review-permission-mode.md) | Add Codex `approvals_reviewer = auto_review` to `PermissionPolicy.mode: 'auto'` |
 
 ## Packages
 

@@ -167,7 +167,7 @@ import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
 // Adapters translate these to vendor-specific controls:
 //   Claude Code  → permissions.allow / ask / deny
 //   Codex        → sandbox_mode + approval_policy + network_access
-//                  (+ approvals_reviewer for mode: 'auto')
+//                  (+ SDK config.approvals_reviewer for mode: 'auto')
 //                  (lossy: networkAccess 'ask' maps to networkAccessEnabled: false — no prompt-based network control)
 //   Gemini       → coreTools / excludeTools
 //   OpenCode     → permission map

@@ -15,10 +15,10 @@ Accepted
 
 Each coding-agent SDK ships its own permission/approval model:
 
-| Adapter | SDK knob | Prompt-reduction mode |
+| Adapter | SDK / CLI surface | Prompt-reduction mode |
 | --- | --- | --- |
 | `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed, still blocks high-risk actions and falls back to prompts after consecutive/total denies); `'bypassPermissions'` (no checks) |
-| `codex` | `sandboxMode`, `approvalPolicy`, `approvalsReviewer` [[2]][[6]][[7]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` + `approvals_reviewer = auto_review` (eligible sandbox-boundary approval requests route to a reviewer agent without changing sandbox or network limits); `--full-auto` is a deprecated compatibility flag for the sandbox/approval-policy part of this config |
+| `codex` | `ThreadOptions.sandboxMode`, `ThreadOptions.approvalPolicy`, `ThreadOptions.networkAccessEnabled`; `CodexOptions.config.approvals_reviewer` [[2]][[6]][[7]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` + `approvals_reviewer = auto_review` (eligible sandbox-boundary approval requests route to a reviewer agent without changing sandbox or network limits); `--full-auto` is a deprecated compatibility flag for the sandbox/approval-policy part of this config |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
@@ -48,7 +48,7 @@ Specifically:
 
 YAML uses the existing typed `PermissionPolicy` shape.
 No `Record<string, unknown>` escape hatch; no adapter-specific knob is directly settable from YAML.
-Adapter-specific knobs (`permissionMode`, `sandboxMode`, `approvalPolicy`, `approvalsReviewer`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
+Adapter-specific knobs (`permissionMode`, Codex `ThreadOptions` fields, Codex `CodexOptions.config` overrides such as `approvals_reviewer`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
 
 Rationale: a typed surface preserves cross-adapter substitutability — a user who switches a role from `claude` to `codex` gets the same `permissions` semantics, mapped to each SDK's knobs by the adapter.
 
@@ -62,7 +62,7 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | Adapter | Auto-mode mapping | Bypass mapping (already present where applicable) |
 | --- | --- | --- |
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
-| `codex` | `approvalPolicy: 'on-request' + sandboxMode: 'workspace-write' + approvalsReviewer: 'auto_review'` | `approvalPolicy: 'never' + sandboxMode: 'danger-full-access'` |
+| `codex` | `ThreadOptions: { approvalPolicy: 'on-request', sandboxMode: 'workspace-write', networkAccessEnabled: false }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review' }` | `ThreadOptions: { approvalPolicy: 'never', sandboxMode: 'danger-full-access', networkAccessEnabled: true }` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
 | `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
 
@@ -92,7 +92,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 - DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
-- All four adapters move from inconsistent coverage to a uniform abstraction: each adapter's mapping function gains an auto-mode case (claude and gemini also need their constructor option types extended; opencode needs the mapping wired at all).
+- All four adapters move from inconsistent coverage to a uniform abstraction: each adapter's mapping function gains an auto-mode case (claude and gemini also need their constructor option types extended; codex needs its mapping result widened to carry SDK constructor `config` overrides for `approvals_reviewer`; opencode needs the mapping wired at all).
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
 - Cligent ships no default permission posture; user choice is explicit per config.
 - Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `role_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.

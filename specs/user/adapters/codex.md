@@ -45,7 +45,7 @@ When Codex supplies an error message as a JSON-encoded object string, the adapte
 
 The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm) and [ENG-021](../engine.md#eng-021):
 
-When `PermissionPolicy.mode` is set, the adapter shall map it before deriving per-capability controls: `'auto'` shall set `sandboxMode: 'workspace-write'`, `approvalPolicy: 'on-request'`, `approvalsReviewer: 'auto_review'`, and `networkAccessEnabled: false` per Codex auto-review semantics [[2]][[3]]; `'bypass'` shall set `sandboxMode: 'danger-full-access'`, `approvalPolicy: 'never'`, and `networkAccessEnabled: true`, and shall not set `approvalsReviewer`.
+When `PermissionPolicy.mode` is set, the adapter shall map it before deriving per-capability controls: `'auto'` shall set Codex `ThreadOptions` to `sandboxMode: 'workspace-write'`, `approvalPolicy: 'on-request'`, and `networkAccessEnabled: false`, and shall set the Codex SDK constructor `CodexOptions.config` override `{ approvals_reviewer: 'auto_review' }` per Codex auto-review semantics [[2]][[3]]; `'bypass'` shall set `ThreadOptions` to `sandboxMode: 'danger-full-access'`, `approvalPolicy: 'never'`, and `networkAccessEnabled: true`, and shall not set `approvals_reviewer`.
 When `PermissionPolicy.mode` is unset, the adapter shall derive Codex controls from the per-capability levels:
 
 - `fileWrite` + `shellExecute` → `sandboxMode`: all `'allow'` → `'danger-full-access'`; `fileWrite: 'allow'` only → `'workspace-write'`; any `'deny'` → `'read-only'`
