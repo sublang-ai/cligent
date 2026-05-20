@@ -22,6 +22,17 @@ type CodexModelReasoningEffort =
   | 'high'
   | 'xhigh';
 
+type CodexConfigValue =
+  | string
+  | number
+  | boolean
+  | CodexConfigValue[]
+  | { [key: string]: CodexConfigValue };
+
+interface CodexConstructorOptions {
+  config?: { [key: string]: CodexConfigValue };
+}
+
 interface CodexItem {
   type?: unknown;
   role?: unknown;
@@ -75,7 +86,7 @@ interface CodexClient {
 }
 
 interface CodexSdk {
-  Codex: new () => CodexClient;
+  Codex: new (options?: CodexConstructorOptions) => CodexClient;
 }
 
 interface CodexAdapterDeps {
@@ -184,21 +195,27 @@ export interface CodexPermissionOptions {
   sandboxMode: CodexSandboxMode;
   approvalPolicy: CodexApprovalPolicy;
   networkAccessEnabled: boolean;
+  codexOptions?: CodexConstructorOptions;
 }
 
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
   // ENG-021: session-wide auto-mode posture takes precedence over the
-  // per-capability levels. 'auto' maps to codex's sandbox-protected
-  // workspace-write + on-request approval (still prompts outside the
-  // sandbox or for network); 'bypass' maps to the unchecked danger-
-  // full-access + never-approve combination.
+  // per-capability levels. 'auto' maps to codex's workspace-write +
+  // on-request approval posture and enables the SDK constructor config
+  // passthrough for Codex auto-review. 'bypass' maps to the unchecked
+  // danger-full-access + never-approve combination.
   if (policy?.mode === 'auto') {
     return {
       sandboxMode: 'workspace-write',
       approvalPolicy: 'on-request',
       networkAccessEnabled: false,
+      codexOptions: {
+        config: {
+          approvals_reviewer: 'auto_review',
+        },
+      },
     };
   }
   if (policy?.mode === 'bypass') {
@@ -303,6 +320,7 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 }
 
 interface MappedCodexOptions {
+  codexOptions?: CodexConstructorOptions;
   threadOptions: CodexThreadOptions;
   runOptions: CodexRunOptions;
   cleanupAbort: () => void;
@@ -340,6 +358,7 @@ export function mapAgentOptionsToCodexOptions(
   const signal = abortController?.signal;
 
   return {
+    codexOptions: permissions.codexOptions,
     threadOptions: {
       workingDirectory: options?.cwd,
       model: options?.model,
@@ -650,12 +669,12 @@ export class CodexAdapter implements AgentAdapter {
       );
     }
 
-    const { threadOptions, runOptions, cleanupAbort } =
+    const { codexOptions, threadOptions, runOptions, cleanupAbort } =
       mapAgentOptionsToCodexOptions(options);
 
     let codex: CodexClient;
     try {
-      codex = new sdk.Codex();
+      codex = new sdk.Codex(codexOptions);
     } catch (err) {
       throw new Error(
         `CodexAdapter failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
