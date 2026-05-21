@@ -16,6 +16,7 @@ import { isGlowAvailable } from '../shared/glow.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
 import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
+import { mapPermissionsToCodexOptions } from '../../adapters/codex.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
 import type { Captain } from './contract.js';
@@ -279,7 +280,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
     }
   });
 
-  it('routes YAML permissions.mode through to the role adapter', async () => {
+  it('routes YAML permissions.mode through to Claude and Codex adapter mappings', async () => {
     cwd = mkdtempSync(join(tmpdir(), 'tmux-play-perm-'));
     const configPath = join(cwd, 'tmux-play.config.yaml');
     writeFileSync(
@@ -296,20 +297,43 @@ describe('tmux-play YAML → adapter permission seam', () => {
         '    adapter: claude',
         '    permissions:',
         '      mode: auto',
+        '  - id: reviewer',
+        '    adapter: codex',
+        '    permissions:',
+        '      mode: auto',
         '',
       ].join('\n'),
     );
 
     const loaded = await loadTmuxPlayConfig({ cwd, configPath });
-    const captured: AgentOptions[] = [];
+    const captured: {
+      claude: AgentOptions[];
+      codex: AgentOptions[];
+    } = {
+      claude: [],
+      codex: [],
+    };
 
-    class CapturingAdapter implements AgentAdapter {
+    class CapturingClaudeAdapter implements AgentAdapter {
       readonly agent = 'claude-code';
       async *run(
         _prompt: string,
         options?: AgentOptions,
       ): AsyncGenerator<AgentEvent, void, void> {
-        captured.push(options ?? {});
+        captured.claude.push(options ?? {});
+      }
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    class CapturingCodexAdapter implements AgentAdapter {
+      readonly agent = 'codex';
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.codex.push(options ?? {});
       }
       async isAvailable(): Promise<boolean> {
         return true;
@@ -317,15 +341,16 @@ describe('tmux-play YAML → adapter permission seam', () => {
     }
 
     const adapterImports: RoleAdapterImports = {
-      claude: async () => CapturingAdapter,
-      codex: async () => CapturingAdapter,
-      gemini: async () => CapturingAdapter,
-      opencode: async () => CapturingAdapter,
+      claude: async () => CapturingClaudeAdapter,
+      codex: async () => CapturingCodexAdapter,
+      gemini: async () => CapturingClaudeAdapter,
+      opencode: async () => CapturingClaudeAdapter,
     };
 
     const captain: Captain = {
       async handleBossTurn(turn, context) {
         await context.callRole('coder', turn.prompt);
+        await context.callRole('reviewer', turn.prompt);
       },
     };
 
@@ -353,10 +378,24 @@ describe('tmux-play YAML → adapter permission seam', () => {
       await runtime.dispose();
     }
 
-    expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
-    expect(mapPermissionsToClaudeOptions(captured[0]?.permissions)).toEqual({
+    expect(captured.claude[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(
+      mapPermissionsToClaudeOptions(captured.claude[0]?.permissions),
+    ).toEqual({
       permissionMode: 'auto',
     });
+    expect(captured.codex[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(mapPermissionsToCodexOptions(captured.codex[0]?.permissions))
+      .toEqual({
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'on-request',
+        networkAccessEnabled: false,
+        codexOptions: {
+          config: {
+            approvals_reviewer: 'auto_review',
+          },
+        },
+      });
   });
 });
 

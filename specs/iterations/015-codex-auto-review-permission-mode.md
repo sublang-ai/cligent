@@ -10,7 +10,7 @@ Complete the Codex portion of [DR-005](../decisions/005-per-adapter-permission-c
 
 ## Status
 
-Proposed
+Completed
 
 ## Scope
 
@@ -32,13 +32,13 @@ Out of scope:
 
 - [x] `src/adapters/codex.ts` — local Codex SDK constructor/config types are widened; `mapPermissionsToCodexOptions` / `mapAgentOptionsToCodexOptions` return Codex SDK constructor config overrides for `mode: 'auto'`; `run()` passes those overrides to `new sdk.Codex(...)`.
 - [x] `src/__tests__/codex-adapter.test.ts` — mapping and adapter tests assert `config: { approvals_reviewer: 'auto_review' }` reaches `new Codex(...)` and bypass mode does not set it.
-- [ ] `src/app/tmux-play/launcher.acceptance.test.ts` — TTMUX-053 probe includes a Codex role path that verifies the auto-review config surface.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — TTMUX-053 probe includes a Codex role path that verifies the auto-review config surface.
 
 ## Tasks
 
 1. [x] **Codex adapter mapping** — add local Codex constructor config types, widen `CodexSdk['Codex']` and `loadCodexSdk()`'s cast, extend mapped Codex options with `codexOptions.config.approvals_reviewer` for `mode: 'auto'`, pass it to `new sdk.Codex(...)`, and preserve the existing thread options and bypass mapping.
 2. [x] **Codex tests** — update unit tests so `mode: 'auto'` fails unless the constructor config includes `approvals_reviewer: 'auto_review'`, and so `mode: 'bypass'` keeps the reviewer unset.
-3. [ ] **tmux-play seam test** — add or extend an acceptance probe proving YAML `permissions.mode: auto` reaches the Codex adapter's reviewer config path through `AgentOptions.permissions`.
+3. [x] **tmux-play seam test** — add or extend an acceptance probe proving YAML `permissions.mode: auto` reaches the Codex adapter's reviewer config path through `AgentOptions.permissions`.
 
 ## Acceptance criteria
 
