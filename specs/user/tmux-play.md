@@ -349,12 +349,12 @@ The Boss/Captain pane's timer shall add `captain_finished.timestamp - captain_pr
 The session-total timer shall add `(turn_finished.timestamp | turn_aborted.timestamp) - turn_started.timestamp` for each Boss turn.
 While a role, Captain, or turn occurrence is open, the corresponding displayed timer shall equal its accumulated closed duration plus `now - <open-start>.timestamp`.
 The role and Captain timers shall not include gaps between that participant's runs, and the session-total timer shall not include gaps between Boss turns.
-These timers shall not add fields to the record contract or change the `createTmuxPlayRuntime` API.
 
 ### TMUX-054
 
 When the launcher constructs a tmux-play session, each pane border shall include that pane's cumulative active-time timer.
 The Boss/Captain pane border timer shall display the Captain timer from [TMUX-053](#tmux-053), and each role pane border timer shall display that role's timer from [TMUX-053](#tmux-053).
+The pane-border timer shall not replace or remove the pane title and adapter information required by [TMUX-048](#tmux-048).
 While a pane's current run is open, its timer shall refresh roughly once per second and render with the running glyph `⏳` plus the bright Catppuccin accent for that pane: `mauve` (`#cba6f7`) for Captain and [TMUX-048](#tmux-048)'s adapter accent for a role.
 When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus the dim neutral `overlay1` (`#7f849c`).
 The timer format shall budget two display cells for each emoji glyph because terminal emoji presentation is not uniformly reported by tmux.
@@ -367,7 +367,6 @@ The status-total timer shall refresh roughly once per second while a Boss turn i
 The status-total timer shall use the clock glyph `⏰` in both states.
 While a Boss turn is open, the duration text shall use Catppuccin `mauve` (`#cba6f7`); between turns, it shall use `overlay1` (`#7f849c`).
 The launcher shall set sufficient `status-left-length` and `status-right-length` values so the hints and total timer are not truncated under the 240-column initial window from [TMUX-035](#tmux-035).
-The status-total timer shall not replace or remove the pane title and adapter information required by [TMUX-048](#tmux-048).
 
 ## Role Session Continuity
 
