@@ -100,7 +100,7 @@ Verifies: [TMUX-030](../user/tmux-play.md#tmux-030)
 
 Given the fanout Captain and N configured roles, when handling a Boss turn, all N `role_prompt` records shall be emitted before any `role_finished` record (concurrent dispatch), and the `captain_prompt` record shall be emitted only after every `role_finished`.
 
-### TTMUX-046
+### TTMUX-055
 Verifies: [TMUX-030](../user/tmux-play.md#tmux-030), [TMUX-052](../user/tmux-play.md#tmux-052)
 
 Given the built-in fanout Captain and a `claude` role configured with `permissions: { mode: 'auto' }`, when the runtime (constructed per [TMUX-029](../user/tmux-play.md#tmux-029)) handles a Boss turn instructing the role to create a file in the working directory and a second turn instructing it to delete that file, the file shall exist on disk after the create turn and be absent after the delete turn, each turn's `claude` `role_finished` shall report `status: 'ok'`, and neither `runtime_error` nor `turn_aborted` shall appear. This is a real-run end-to-end probe — Boss turn → fanout Captain → role → Claude adapter → live SDK → filesystem — exercising the path a no-`permissions` role cannot complete (its headless `permissionMode: 'default'` blocks every file tool). It lives under `*.acceptance.test.ts`, runs via `npm run test:acceptance`, and self-skips when `ANTHROPIC_API_KEY` is absent, hard-failing under `CI`.

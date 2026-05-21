@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// TTMUX-046: real-run end-to-end probe that the Claude role can do file work
+// TTMUX-055: real-run end-to-end probe that the Claude role can do file work
 // through the tmux-play runtime. It reproduces and guards the user-reported
 // failure — "write a file to a temporary location and delete it" did nothing
 // — by driving a create turn and a delete turn through the fanout Captain and
@@ -48,7 +48,7 @@ interface ScenarioOutcome {
   readonly fileAfterDelete: boolean;
 }
 
-describe('tmux-play Claude role file write/delete (TTMUX-046)', () => {
+describe('tmux-play Claude role file write/delete (TTMUX-055)', () => {
   acceptanceIt(
     'writes then deletes a file via the fanout Captain runtime',
     async () => {
