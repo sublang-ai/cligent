@@ -42,12 +42,12 @@ The adapter shall map `PermissionPolicy` to Claude Code permission modes per [DR
 
 - All three capabilities `'allow'` → `permissionMode: 'bypassPermissions'`
 - Only `fileWrite: 'allow'` (others `'ask'`) → `permissionMode: 'acceptEdits'`
-- Any capability `'ask'` (none `'deny'`) → `permissionMode: 'default'` with `canUseTool` callback
-- Any capability `'deny'` → `permissionMode: 'default'` with `canUseTool` callback that denies matching categories
+- No capability set to `'allow'` or `'deny'` — every capability `'ask'`, which includes a missing `permissions` field — → `permissionMode: 'default'` with **no** `canUseTool` callback. Per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) a missing policy is no override, so the SDK's own `default`-mode handling governs and the adapter synthesizes nothing.
+- Any capability `'allow'` or `'deny'` present (mixed with `'ask'`) → `permissionMode: 'default'` with a `canUseTool` callback that enforces the explicit categories
 
 ### CLAUDE-005
 
-The `canUseTool` callback shall match tool categories to UPM capabilities: `Write`/`Edit` → `fileWrite`, `Bash` → `shellExecute`, `WebFetch` → `networkAccess`.
+The `canUseTool` callback shall conform to the Claude Agent SDK `CanUseTool` contract: the SDK invokes it as `(toolName, input, options)` and validates the resolved value against `PermissionResult`, so the callback shall resolve to `{ behavior: 'allow', updatedInput }` or `{ behavior: 'deny', message }` — a bare boolean or `undefined` fails the SDK's schema validation and raises a `ZodError` on every tool call. It shall match tool categories to UPM capabilities — `Write`/`Edit` → `fileWrite`, `Bash` → `shellExecute`, `WebFetch` → `networkAccess` — and resolve each call as: capability `'allow'` → `allow`; capability `'deny'` → `deny`; capability `'ask'` → `deny` (interactive approval is unavailable to a headless adapter run; the deny `message` shall name the capability); a tool matching no category → `allow`, since it is not a permission-gated capability.
 
 ## Options Mapping
 

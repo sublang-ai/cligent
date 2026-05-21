@@ -34,7 +34,7 @@ Given all `PermissionLevel` combinations, each adapter shall map `PermissionPoli
 ### TADAPT-005
 Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [CLAUDE-005](../user/adapters/claude-code.md#claude-005)
 
-Given `PermissionPolicy` combinations, the Claude Code adapter shall produce the correct `permissionMode` and `canUseTool` callback behavior for all permission-mode branches (bypass, acceptEdits, default with allow, default with deny).
+Given `PermissionPolicy` combinations, the Claude Code adapter shall produce the correct `permissionMode` and `canUseTool` behavior for every branch: `bypassPermissions` (all `'allow'`), `acceptEdits` (only `fileWrite: 'allow'`), bare `'default'` with no `canUseTool` (no `'allow'`/`'deny'` directive, including a missing policy per [DR-005](../decisions/005-per-adapter-permission-configuration.md)), and `'default'` with a `canUseTool` callback that resolves to a `PermissionResult` for the explicit `'allow'`/`'deny'`/`'ask'` cases per [CLAUDE-005](../user/adapters/claude-code.md#claude-005).
 
 ## Codex
 

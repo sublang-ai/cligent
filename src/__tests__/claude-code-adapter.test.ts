@@ -16,6 +16,13 @@ import type {
   ReasoningEffort,
 } from '../types.js';
 
+// Derived from the adapter so the mock SDK and the decision assertions cannot
+// drift from the adapter's actual `canUseTool` type / `PermissionResult`.
+type AdapterCanUseTool = NonNullable<
+  ReturnType<typeof mapPermissionsToClaudeOptions>['canUseTool']
+>;
+type ClaudeDecision = Awaited<ReturnType<AdapterCanUseTool>>;
+
 interface MockSdkInnerOptions {
   cwd?: string;
   model?: string;
@@ -26,7 +33,7 @@ interface MockSdkInnerOptions {
   disallowedTools?: string[];
   permissionMode?: string;
   allowDangerouslySkipPermissions?: boolean;
-  canUseTool?: (tool: { name?: string; toolName?: string }) => boolean | undefined;
+  canUseTool?: AdapterCanUseTool;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: string;
@@ -35,6 +42,23 @@ interface MockSdkInnerOptions {
 interface MockSdkOptions {
   prompt: string;
   options?: MockSdkInnerOptions;
+}
+
+// 'allow' resolves to a pass-through allow; 'ask' and 'deny' both resolve to a
+// headless deny with a message per CLAUDE-005.
+function expectClaudeDecision(
+  decision: ClaudeDecision,
+  level: PermissionLevel,
+  input: Record<string, unknown>,
+): void {
+  if (level === 'allow') {
+    expect(decision).toEqual({ behavior: 'allow', updatedInput: input });
+    return;
+  }
+  expect(decision.behavior).toBe('deny');
+  if (decision.behavior === 'deny') {
+    expect(decision.message.length).toBeGreaterThan(0);
+  }
 }
 
 function makeLoader(
@@ -267,8 +291,9 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
-  it('maps permission policy combinations correctly', () => {
+  it('maps permission policy combinations correctly', async () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
+    const input: Record<string, unknown> = { file_path: '/tmp/scratch.txt' };
 
     for (const fileWrite of levels) {
       for (const shellExecute of levels) {
@@ -304,39 +329,61 @@ describe('ClaudeCodeAdapter', () => {
             continue;
           }
 
+          const hasDirective = [fileWrite, shellExecute, networkAccess].some(
+            (level) => level === 'allow' || level === 'deny',
+          );
+          if (!hasDirective) {
+            // Every capability 'ask': no enforceable directive. Per DR-005
+            // cligent imposes no posture — bare 'default', no callback.
+            expect(mapped.permissionMode).toBe('default');
+            expect(mapped.canUseTool).toBeUndefined();
+            continue;
+          }
+
           expect(mapped.permissionMode).toBe('default');
           expect(mapped.canUseTool).toBeTypeOf('function');
 
-          const canUseWrite = mapped.canUseTool?.({ name: 'Write' });
-          const canUseEdit = mapped.canUseTool?.({ name: 'Edit' });
-          const canUseBash = mapped.canUseTool?.({ name: 'Bash' });
-          const canUseWebFetch = mapped.canUseTool?.({ name: 'WebFetch' });
-          const canUseWriteConfig = mapped.canUseTool?.({ name: 'WriteConfig' });
-
-          expect(canUseWrite).toBe(
-            fileWrite === 'allow' ? true : fileWrite === 'deny' ? false : undefined,
+          // The callback conforms to the SDK CanUseTool contract: invoked
+          // (toolName, input), it resolves to a PermissionResult.
+          expectClaudeDecision(
+            await mapped.canUseTool!('Write', input),
+            fileWrite,
+            input,
           );
-          expect(canUseEdit).toBe(
-            fileWrite === 'allow' ? true : fileWrite === 'deny' ? false : undefined,
+          expectClaudeDecision(
+            await mapped.canUseTool!('Edit', input),
+            fileWrite,
+            input,
           );
-          expect(canUseBash).toBe(
-            shellExecute === 'allow'
-              ? true
-              : shellExecute === 'deny'
-                ? false
-                : undefined,
+          expectClaudeDecision(
+            await mapped.canUseTool!('Bash', input),
+            shellExecute,
+            input,
           );
-          expect(canUseWebFetch).toBe(
-            networkAccess === 'allow'
-              ? true
-              : networkAccess === 'deny'
-                ? false
-                : undefined,
+          expectClaudeDecision(
+            await mapped.canUseTool!('WebFetch', input),
+            networkAccess,
+            input,
           );
-          expect(canUseWriteConfig).toBe(undefined);
+          // A tool matching no UPM capability is not permission-gated.
+          expect(await mapped.canUseTool!('WriteConfig', input)).toEqual({
+            behavior: 'allow',
+            updatedInput: input,
+          });
         }
       }
     }
+  });
+
+  it('treats a missing permissions policy as no override (DR-005)', () => {
+    // Regression: a tmux-play role with no `permissions` block reaches the
+    // adapter as `undefined`. It must yield bare 'default' with no
+    // `canUseTool` — synthesizing a callback here is the defect that made
+    // the real SDK ZodError on every Write/Bash call.
+    const mapped = mapPermissionsToClaudeOptions(undefined);
+    expect(mapped.permissionMode).toBe('default');
+    expect(mapped.canUseTool).toBeUndefined();
+    expect(mapped.allowDangerouslySkipPermissions).toBeUndefined();
   });
 
   it('passes agent options through to SDK query options', async () => {
@@ -383,9 +430,19 @@ describe('ClaudeCodeAdapter', () => {
       permissionMode: 'default',
     });
     expect(captured?.canUseTool).toBeTypeOf('function');
-    expect(captured?.canUseTool?.({ name: 'Write' })).toBe(false);
-    expect(captured?.canUseTool?.({ name: 'Bash' })).toBe(true);
-    expect(captured?.canUseTool?.({ name: 'WebFetch' })).toBe(undefined);
+    const toolInput: Record<string, unknown> = { file_path: '/tmp/x' };
+    // fileWrite 'deny' -> deny; shellExecute 'allow' -> allow;
+    // networkAccess 'ask' -> headless deny.
+    expect(await captured!.canUseTool!('Write', toolInput)).toMatchObject({
+      behavior: 'deny',
+    });
+    expect(await captured!.canUseTool!('Bash', toolInput)).toEqual({
+      behavior: 'allow',
+      updatedInput: toolInput,
+    });
+    expect(await captured!.canUseTool!('WebFetch', toolInput)).toMatchObject({
+      behavior: 'deny',
+    });
   });
 
   it('propagates abort signal to SDK abortController', async () => {

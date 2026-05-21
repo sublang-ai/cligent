@@ -22,10 +22,24 @@ type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
 
 type ClaudeEffort = 'low' | 'medium' | 'high' | 'max';
 
-interface ClaudeToolUseContext {
-  name?: string;
-  toolName?: string;
-}
+// The SDK's permission-callback contract, mirrored locally. It is deliberately
+// NOT imported from `@anthropic-ai/claude-agent-sdk`: that package is an
+// optional peer, and importing its types here would leak an unresolvable
+// import into the published `claude-code.d.ts`, breaking CLAUDE-002 (the
+// adapter module must typecheck for consumers without the SDK installed).
+// Typing the adapter's `canUseTool` against this local mirror still makes
+// `npm run typecheck` and `npm run build` reject a `boolean`/`undefined`
+// return — the defect that made the SDK raise a `ZodError` on every tool call.
+// Drift between this mirror and the real SDK is caught at runtime by the
+// TADAPT-019 acceptance probe.
+type ClaudePermissionResult =
+  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+  | { behavior: 'deny'; message: string };
+
+type ClaudeCanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>,
+) => Promise<ClaudePermissionResult>;
 
 interface ClaudeQueryOptions {
   prompt: string;
@@ -38,7 +52,7 @@ interface ClaudeQueryOptions {
   disallowedTools?: string[];
   permissionMode?: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
-  canUseTool?: (tool: ClaudeToolUseContext) => boolean | undefined;
+  canUseTool?: ClaudeCanUseTool;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: ClaudeEffort;
@@ -204,7 +218,7 @@ function identifyCapability(toolName: string | undefined): ClaudeCapability | un
 export interface ClaudePermissionOptions {
   permissionMode: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
-  canUseTool?: (tool: ClaudeToolUseContext) => boolean | undefined;
+  canUseTool?: ClaudeCanUseTool;
 }
 
 export function mapPermissionsToClaudeOptions(
@@ -245,13 +259,47 @@ export function mapPermissionsToClaudeOptions(
     };
   }
 
-  const canUseTool = (tool: ClaudeToolUseContext): boolean | undefined => {
-    const capability = identifyCapability(tool.toolName ?? tool.name);
-    if (!capability) return undefined;
+  // No capability carries an enforceable directive — every capability is
+  // 'ask', which includes the common case of a missing `permissions` field
+  // (it normalizes to all-'ask'). Per DR-005 a missing policy is no override:
+  // install no `canUseTool` and leave the SDK's own `default`-mode handling
+  // in charge rather than synthesizing a posture cligent was not asked for.
+  const hasDirective = Object.values(normalized).some(
+    (level) => level === 'allow' || level === 'deny',
+  );
+  if (!hasDirective) {
+    return { permissionMode: 'default' };
+  }
+
+  // Mixed policy: enforce the explicit 'allow'/'deny' capabilities through a
+  // callback conforming to the SDK's `CanUseTool` contract.
+  const canUseTool: ClaudeCanUseTool = async (toolName, input) => {
+    const capability = identifyCapability(toolName);
+    // Tools cligent does not classify (Read, Glob, Grep, ...) are not
+    // permission-gated capabilities — they must never be blocked here.
+    if (!capability) {
+      return { behavior: 'allow', updatedInput: input };
+    }
     const level = normalized[capability];
-    if (level === 'allow') return true;
-    if (level === 'deny') return false;
-    return undefined;
+    if (level === 'allow') {
+      return { behavior: 'allow', updatedInput: input };
+    }
+    if (level === 'deny') {
+      return {
+        behavior: 'deny',
+        message: `cligent permission policy denies ${capability} (tool '${toolName}').`,
+      };
+    }
+    // 'ask': the capability needs interactive approval, which an adapter run
+    // cannot obtain. Deny honestly rather than silently widening 'ask' to
+    // 'allow'; set the capability to 'allow' or use permissions.mode 'auto'.
+    return {
+      behavior: 'deny',
+      message:
+        `cligent permission policy sets ${capability} to 'ask' (tool ` +
+        `'${toolName}'), which needs interactive approval unavailable in a ` +
+        `headless run; set it to 'allow' or use permissions.mode 'auto'.`,
+    };
   };
 
   return {
