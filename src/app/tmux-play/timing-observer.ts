@@ -13,11 +13,20 @@ import {
   formatTimerDuration,
   type TimerValue,
 } from './timing.js';
+import {
+  TMUX_PANE_TIMER_RUNNING_OPTION,
+  TMUX_PANE_TIMER_TEXT_OPTION,
+  TMUX_STATUS_TIMER_RUNNING_OPTION,
+  TMUX_STATUS_TIMER_TEXT_OPTION,
+} from './timer-options.js';
 
-export const TMUX_PANE_TIMER_TEXT_OPTION = '@cligent_pane_timer_text';
-export const TMUX_PANE_TIMER_RUNNING_OPTION = '@cligent_pane_timer_running';
-export const TMUX_STATUS_TIMER_TEXT_OPTION = '@cligent_status_timer_text';
-export const TMUX_STATUS_TIMER_RUNNING_OPTION = '@cligent_status_timer_running';
+export {
+  TMUX_PANE_TIMER_ACCENT_OPTION,
+  TMUX_PANE_TIMER_RUNNING_OPTION,
+  TMUX_PANE_TIMER_TEXT_OPTION,
+  TMUX_STATUS_TIMER_RUNNING_OPTION,
+  TMUX_STATUS_TIMER_TEXT_OPTION,
+} from './timer-options.js';
 
 const REFRESH_INTERVAL_MS = 1000;
 const FROZEN_ZERO: TimerValue = { elapsedMs: 0, running: false };

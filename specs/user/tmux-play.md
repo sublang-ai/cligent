@@ -303,7 +303,7 @@ Width sources: the Boss/Captain pane width shall track the captain's stdout `col
 
 ### TMUX-047
 
-The launcher shall apply the **Catppuccin Mocha** palette per [[1]] to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-right strings remain authoritative for any option a future theme might also claim.
+The launcher shall apply the **Catppuccin Mocha** palette per [[1]] to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-left/status-right strings remain authoritative for any option a future theme might also claim.
 
 The theme shall set exactly these tmux options and no others:
 
@@ -322,7 +322,7 @@ The theme shall set exactly these tmux options and no others:
 | `display-panes-active-colour` | `mauve` (`#cba6f7`) | |
 | `clock-mode-colour` | `mauve` (`#cba6f7`) | |
 
-`pane-border-format`, `pane-border-status`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
+`pane-border-format`, `pane-border-status`, `status-left`, `status-left-length`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
 
 ### TMUX-048
 

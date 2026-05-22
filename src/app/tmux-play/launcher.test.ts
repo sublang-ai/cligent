@@ -41,6 +41,13 @@ import {
   TMUX_PLAY_SESSION_MARKER,
 } from './launcher.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
+import {
+  TMUX_PANE_TIMER_ACCENT_OPTION,
+  TMUX_PANE_TIMER_RUNNING_OPTION,
+  TMUX_PANE_TIMER_TEXT_OPTION,
+  TMUX_STATUS_TIMER_RUNNING_OPTION,
+  TMUX_STATUS_TIMER_TEXT_OPTION,
+} from './timer-options.js';
 import { shellQuote } from '../shared/shell.js';
 
 class MemoryOutput {
@@ -323,7 +330,7 @@ describe('launchTmuxPlay', () => {
     expect(indexOf('clock-mode-colour')).toBeGreaterThanOrEqual(0);
 
     // Ordering invariant: every theme option precedes the content-bearing
-    // options it does NOT touch, so our pane-border-format and status-right
+    // options it does NOT touch, so our pane-border-format and status-left/right
     // strings remain authoritative if a future theme tries to set them.
     const themeOptions = [
       'default-terminal',
@@ -342,10 +349,117 @@ describe('launchTmuxPlay', () => {
       ...themeOptions.map((o) => indexOf(o)),
     );
     expect(indexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
+    expect(indexOf('status-left')).toBeGreaterThan(lastThemeIndex);
     expect(indexOf('status-right')).toBeGreaterThan(lastThemeIndex);
 
     // First theme set still comes after the layout has been built.
     expect(optionAt(0)).toBe('default-terminal');
+  });
+
+  it('configures timer slots on the pane borders and tmux status bar', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder', 'reviewer']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'timers',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-option',
+      '-p',
+      '-t',
+      'tmux-play-timers:0.0',
+      TMUX_PANE_TIMER_ACCENT_OPTION,
+      '#cba6f7',
+    );
+    for (const pane of ['tmux-play-timers:0.1', 'tmux-play-timers:0.2']) {
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'set-option',
+        '-p',
+        '-t',
+        pane,
+        TMUX_PANE_TIMER_ACCENT_OPTION,
+        '#94e2d5',
+      );
+    }
+    for (const pane of [
+      'tmux-play-timers:0.0',
+      'tmux-play-timers:0.1',
+      'tmux-play-timers:0.2',
+    ]) {
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'set-option',
+        '-p',
+        '-t',
+        pane,
+        TMUX_PANE_TIMER_TEXT_OPTION,
+        '0s',
+      );
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'set-option',
+        '-p',
+        '-t',
+        pane,
+        TMUX_PANE_TIMER_RUNNING_OPTION,
+        '0',
+      );
+    }
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-option',
+      '-t',
+      'tmux-play-timers',
+      TMUX_STATUS_TIMER_TEXT_OPTION,
+      '0s',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-option',
+      '-t',
+      'tmux-play-timers',
+      TMUX_STATUS_TIMER_RUNNING_OPTION,
+      '0',
+    );
+
+    const paneBorderFormat = setValue('tmux-play-timers', 'pane-border-format');
+    expect(paneBorderFormat).toContain('#{pane_title}');
+    expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`);
+    expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_TEXT_OPTION}}`);
+    expect(paneBorderFormat).toContain(
+      `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
+    );
+    expect(paneBorderFormat).toContain('⏳');
+    expect(paneBorderFormat).toContain('⌛');
+    expect(paneBorderFormat).toContain('#7f849c');
+    expect(paneBorderFormat.indexOf('⏳')).toBeLessThan(
+      paneBorderFormat.indexOf(
+        `#[fg=#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
+      ),
+    );
+
+    const statusLeft = setValue('tmux-play-timers', 'status-left');
+    expect(statusLeft).toContain('tmux-play');
+    expect(statusLeft).toContain('Quit: Ctrl+C');
+    expect(statusLeft).toContain('d=detach');
+    expect(setValue('tmux-play-timers', 'status-left-length')).toBe('96');
+
+    const statusRight = setValue('tmux-play-timers', 'status-right');
+    expect(statusRight).toContain('⏰');
+    expect(statusRight).toContain(`#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`);
+    expect(statusRight).toContain(
+      `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
+    );
+    expect(statusRight).toContain('#cba6f7');
+    expect(statusRight).toContain('#7f849c');
+    expect(statusRight.indexOf('⏰')).toBeLessThan(
+      statusRight.indexOf(
+        `#[fg=#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
+      ),
+    );
+    expect(setValue('tmux-play-timers', 'status-right-length')).toBe('32');
   });
 
   it('configures the resize hook for a single-role session', async () => {
@@ -590,6 +704,17 @@ function splitWindowCalls(
         call.at(-1);
       return [...call.slice(0, -1), roleId];
     });
+}
+
+function setValue(sessionName: string, option: string): string {
+  const call = runTmuxMock.mock.calls.find(
+    (args) => args[0] === 'set' && args[2] === sessionName && args[3] === option,
+  );
+  const value = call?.[4];
+  if (typeof value !== 'string') {
+    throw new Error(`Missing ${option} set call for ${sessionName}`);
+  }
+  return value;
 }
 
 function valueAfter(args: readonly unknown[], flag: string): string {
