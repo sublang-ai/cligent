@@ -94,9 +94,9 @@
     }
   },
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.133",
-    "@openai/codex-sdk": "0.129.0",
-    "@opencode-ai/sdk": "1.14.41",
+    "@anthropic-ai/claude-agent-sdk": "0.3.148",
+    "@openai/codex-sdk": "0.133.0",
+    "@opencode-ai/sdk": "1.15.7",
     "@types/node": "^25.3.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
