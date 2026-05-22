@@ -25,10 +25,7 @@ import type {
   ToolResultPayload,
 } from '../index.js';
 import { ClaudeCodeAdapter } from './claude-code.js';
-import {
-  CodexAdapter,
-  mapPermissionsToCodexOptions,
-} from './codex.js';
+import { CodexAdapter } from './codex.js';
 import { GeminiAdapter } from './gemini.js';
 import { OpenCodeAdapter } from './opencode.js';
 
@@ -65,7 +62,6 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     'codex auto mode auto-approves a temp-file write + delete',
     async () => {
       assertReady('codex', codexMissing);
-      expectCodexAutoModeMapping();
       const outcome = await probeWithRetry(() => new CodexAdapter(), undefined);
       expectAutoMode('codex', outcome);
     },
@@ -210,22 +206,6 @@ function expectAutoMode(label: string, outcome: ProbeOutcome): void {
     outcome.fileDeleted,
     `${label}: file survived the delete run — auto mode did not let the delete through`,
   ).toBe(true);
-}
-
-function expectCodexAutoModeMapping(): void {
-  const mapped = mapPermissionsToCodexOptions({ mode: 'auto' });
-
-  expect(mapped).toEqual({
-    approvalPolicy: 'on-request',
-    codexOptions: {
-      config: {
-        default_permissions: ':workspace',
-        approvals_reviewer: 'auto_review',
-      },
-    },
-  });
-  expect(mapped).not.toHaveProperty('sandboxMode');
-  expect(mapped).not.toHaveProperty('networkAccessEnabled');
 }
 
 function expectPhaseUnblocked(

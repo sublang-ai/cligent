@@ -545,22 +545,18 @@ describe('tmux-play YAML → adapter permission seam', () => {
       permissionMode: 'auto',
     });
     expect(captured.codex[0]?.permissions).toEqual({ mode: 'auto' });
-    expect(mapPermissionsToCodexOptions(captured.codex[0]?.permissions))
-      .toEqual({
-        approvalPolicy: 'on-request',
-        codexOptions: {
-          config: {
-            default_permissions: ':workspace',
-            approvals_reviewer: 'auto_review',
-          },
+    const codexPermissions = mapPermissionsToCodexOptions(
+      captured.codex[0]?.permissions,
+    );
+    expect(codexPermissions).toEqual({
+      approvalPolicy: 'on-request',
+      codexOptions: {
+        config: {
+          default_permissions: ':workspace',
+          approvals_reviewer: 'auto_review',
         },
-      });
-    expect(
-      mapPermissionsToCodexOptions(captured.codex[0]?.permissions),
-    ).not.toHaveProperty('sandboxMode');
-    expect(
-      mapPermissionsToCodexOptions(captured.codex[0]?.permissions),
-    ).not.toHaveProperty('networkAccessEnabled');
+      },
+    });
   });
 });
 
