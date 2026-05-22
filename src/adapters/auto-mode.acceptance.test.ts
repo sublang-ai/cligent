@@ -117,25 +117,38 @@ async function runAutoModeProbe(
   });
 
   try {
-    const create = await collect(
-      cligent,
-      `Create a file named ${fileName} in the current working directory ` +
-        'containing the single line "scratch". Use your file-writing tool ' +
-        'directly. Do not ask for permission or confirmation.',
-    );
+    const create = await collect(cligent, createPrompt(fileName));
     const fileCreated = existsSync(filePath);
 
-    const del = await collect(
-      cligent,
-      `Delete the file named ${fileName} from the current working directory. ` +
-        'Use your tools directly. Do not ask for permission or confirmation.',
-    );
+    const del = await collect(cligent, deletePrompt(fileName));
     const fileDeleted = !existsSync(filePath);
 
     return { create, delete: del, fileCreated, fileDeleted };
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+function createPrompt(fileName: string): string {
+  const path = shellQuote(`./${fileName}`);
+  return (
+    `Run this exact shell command in the current working directory: ` +
+    `printf '%s\\n' scratch > ${path} && test -f ${path}. ` +
+    'Do not ask for permission or confirmation. After it succeeds, reply only "created".'
+  );
+}
+
+function deletePrompt(fileName: string): string {
+  const path = shellQuote(`./${fileName}`);
+  return (
+    `Run this exact shell command in the current working directory: ` +
+    `rm -f ${path} && test ! -e ${path}. ` +
+    'Do not ask for permission or confirmation. After it succeeds, reply only "deleted".'
+  );
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 async function collect(cligent: Cligent, prompt: string): Promise<PhaseResult> {
