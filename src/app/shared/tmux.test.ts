@@ -15,6 +15,7 @@ import {
   attachTmuxSession,
   isTmuxAvailable,
   killTmuxSession,
+  queryPaneTargetsByTitle,
   runTmux,
 } from './tmux.js';
 
@@ -107,5 +108,36 @@ describe('tmux helpers', () => {
       ['kill-session', '-t', 'fanout-123'],
       { stdio: 'ignore' },
     );
+  });
+
+  it('queries pane targets by title', () => {
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from('Captain · claude\t%0\nCoder · codex\t%1\n'),
+    });
+
+    expect(queryPaneTargetsByTitle('tmux-play-123')).toEqual(
+      new Map([
+        ['Captain · claude', '%0'],
+        ['Coder · codex', '%1'],
+      ]),
+    );
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'tmux',
+      [
+        'list-panes',
+        '-t',
+        'tmux-play-123:0',
+        '-F',
+        '#{pane_title}\t#{pane_id}',
+      ],
+      { stdio: 'pipe' },
+    );
+  });
+
+  it('returns no pane targets when tmux cannot list panes', () => {
+    spawnSyncMock.mockReturnValue({ status: 1 });
+
+    expect(queryPaneTargetsByTitle('missing')).toEqual(new Map());
   });
 });

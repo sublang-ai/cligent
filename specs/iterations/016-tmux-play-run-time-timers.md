@@ -49,7 +49,7 @@ Out of scope:
 - [x] `specs/user/tmux-play.md` — `TMUX-053`–`TMUX-055`: the timing model, the per-pane border timer, and the status-bar layout with Catppuccin styling.
 - [x] `specs/test/tmux-play.md` — `TTMUX-056`: real-tmux verification of the timer surfaces.
 - [x] `src/app/tmux-play/timing.ts` — pure accumulation, live-value, and duration-format module, with unit tests.
-- [ ] `src/app/tmux-play/` — `TimingObserver`, its session-mode registration, the ~1 Hz refresh loop, and shutdown teardown.
+- [x] `src/app/tmux-play/` — `TimingObserver`, its session-mode registration, the ~1 Hz refresh loop, and shutdown teardown.
 - [ ] `src/app/tmux-play/launcher.ts` — `status-left` hints, `status-right` total, `pane-border-format` timer slot, Catppuccin colors.
 - [ ] `src/app/tmux-play/*.acceptance.test.ts` — real-tmux test for `TTMUX-056`.
 - [x] `specs/map.md` — updated if it indexes IRs or item files.
@@ -58,7 +58,7 @@ Out of scope:
 
 1. [x] **Spec** — add `TMUX-053`–`TMUX-055` and `TTMUX-056` per the timing model and display above (IDs above the current maxima `TMUX-052` / `TTMUX-055`, each test item with a `Verifies:` line); update `map.md`.
 2. [x] **Timing module** — add `src/app/tmux-play/timing.ts`: accumulate per-role / Captain / turn active intervals from records, compute live values for a supplied `now`, and format durations (`1h02m` / `3m07s` / `12s`); unit tests cover idle-gap exclusion and an open (unfinished) run.
-3. [ ] **Observer + session wiring** — add the `TimingObserver` backed by the timing module, register it in `session.ts` beside the presenter, and add the ~1 Hz `setInterval` that recomputes and pushes `tmux set` / `set -p` — started on `turn_started`, settled with a final push on `turn_finished` / `turn_aborted`, and cleared on session shutdown.
+3. [x] **Observer + session wiring** — add the `TimingObserver` backed by the timing module, register it in `session.ts` beside the presenter, and add the ~1 Hz `setInterval` that recomputes and pushes `tmux set` / `set -p` — started on `turn_started`, settled with a final push on `turn_finished` / `turn_aborted`, and cleared on session shutdown.
 4. [ ] **Launcher + theme** — move the navigation hints to `status-left` (with `status-left-length`), set `status-right` to the total slot, extend `pane-border-format` with the per-pane `#{@…}` timer slot, and apply the running/frozen styling: per-pane timers show `⏳` while running and `⌛` while frozen, the status-bar total shows `⏰`. The duration text carries the Catppuccin cue — the bright accent while running (each role its [TMUX-048](../user/tmux-play.md#tmux-048) adapter accent, Captain and total `mauve`), `overlay1` while frozen. The format strings shall budget two display cells for each emoji glyph; the glyphs' own colors are left to the terminal's emoji presentation.
 5. [ ] **Acceptance test** — add the `TTMUX-056` real-tmux test: feed the `TimingObserver` synthetic timing records against a real tmux session and assert, via `tmux show-options` / `display-message`, that the per-pane timer options and `status-right` carry the accumulated durations and the hints sit on `status-left`; self-skip when `tmux` or `glow` is unavailable.
 

@@ -25,6 +25,11 @@ import { SGR_RESET, SPEAKER_BOSS, bold24bitFg } from './role-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
+  createTimingObserver,
+  type CreateTimingObserverOptions,
+  type TimingObserverHandle,
+} from './timing-observer.js';
+import {
   isKnownRoleAdapter,
   type RoleAdapterImports,
   type RoleConfig,
@@ -69,6 +74,9 @@ export interface TmuxPlaySessionOptions {
   readonly createRuntime?: (
     options: RunTmuxPlayOptions,
   ) => Promise<RuntimeHandle>;
+  readonly createTimingObserver?: (
+    options: CreateTimingObserverOptions,
+  ) => TimingObserverHandle;
   readonly importCaptain?: (specifier: string) => Promise<unknown>;
   readonly killSession?: (sessionName: string) => void;
   readonly removeWorkDir?: (workDir: string) => void;
@@ -89,6 +97,7 @@ export class TmuxPlaySession {
   private readline: ReadlineLike | undefined;
   private runtime: RuntimeHandle | undefined;
   private logStreams: Map<string, LogCloser> | undefined;
+  private timingObserver: TimingObserverHandle | undefined;
   private pending = Promise.resolve();
   private shuttingDown = false;
   private rolePaneWidths: Map<string, number> = new Map();
@@ -138,6 +147,16 @@ export class TmuxPlaySession {
       roleWidths,
       roleAdapters,
     });
+    const timingObserver = (
+      this.options.createTimingObserver ?? createTimingObserver
+    )({
+      sessionName: this.sessionName(),
+      captainAdapter: config.captain.adapter,
+      roles: config.roles,
+    });
+    this.timingObserver = timingObserver;
+    timingObserver.refresh();
+
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
       captain,
@@ -148,7 +167,7 @@ export class TmuxPlaySession {
         permissions: config.captain.permissions,
       },
       roles: runtimeRoles(config.roles),
-      observers: [presenter, ...(this.options.observers ?? [])],
+      observers: [presenter, timingObserver, ...(this.options.observers ?? [])],
       cwd: this.options.cwd,
       adapterImports: this.options.adapterImports,
     });
@@ -236,6 +255,7 @@ export class TmuxPlaySession {
 
     const errors: unknown[] = [];
     await runShutdownStep(errors, () => this.runtime?.dispose());
+    await runShutdownStep(errors, () => this.timingObserver?.dispose());
     await runShutdownStep(errors, () =>
       closeLogStreams(this.logStreams?.values() ?? []),
     );

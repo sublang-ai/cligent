@@ -16,6 +16,7 @@ import {
   TmuxPlaySession,
   type TmuxPlaySessionOptions,
 } from './session.js';
+import type { TimingObserverHandle } from './timing-observer.js';
 
 class FakeReadline extends EventEmitter {
   promptCount = 0;
@@ -100,6 +101,8 @@ describe('TmuxPlaySession', () => {
     const dispose = vi.fn(async () => undefined);
     const abortActiveTurn = vi.fn();
     const optInObserver = { onRecord: vi.fn() };
+    const timingObserver = noopTimingObserver();
+    const createTimingObserver = vi.fn(() => timingObserver);
     const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
       abortActiveTurn,
       dispose,
@@ -118,6 +121,7 @@ describe('TmuxPlaySession', () => {
       ...baseOptions(tempDir),
       createReadline: () => readline,
       createRuntime,
+      createTimingObserver,
       importCaptain: async () => ({ default: factory }),
       observers: [optInObserver],
       output,
@@ -129,6 +133,12 @@ describe('TmuxPlaySession', () => {
     expect(readline.promptValue).toBe('\x1b[1;38;2;137;180;250mboss> \x1b[0m');
     expect(readline.promptCount).toBe(1);
     expect(factory).toHaveBeenCalledTimes(1);
+    expect(createTimingObserver).toHaveBeenCalledWith({
+      sessionName: 'tmux-play-abc123',
+      captainAdapter: 'claude',
+      roles: [expect.objectContaining({ id: 'coder', adapter: 'codex' })],
+    });
+    expect(timingObserver.refresh).toHaveBeenCalledTimes(1);
     expect(createRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         captainConfig: expect.objectContaining({
@@ -136,12 +146,17 @@ describe('TmuxPlaySession', () => {
           instruction: 'Coordinate roles.',
         }),
         cwd: '/repo',
-        observers: expect.arrayContaining([expect.any(Object), optInObserver]),
+        observers: expect.arrayContaining([
+          expect.any(Object),
+          timingObserver,
+          optInObserver,
+        ]),
         roles: [expect.objectContaining({ id: 'coder' })],
       }),
     );
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
       expect.any(Object),
+      timingObserver,
       optInObserver,
     ]);
 
@@ -161,6 +176,7 @@ describe('TmuxPlaySession', () => {
     const readline = new FakeReadline();
     const dispose = vi.fn(async () => undefined);
     const abortActiveTurn = vi.fn();
+    const timingObserver = noopTimingObserver();
     const killSession = vi.fn();
     const removeWorkDir = vi.fn();
     const session = new TmuxPlaySession({
@@ -171,6 +187,7 @@ describe('TmuxPlaySession', () => {
         dispose,
         runBossTurn: async () => undefined,
       }),
+      createTimingObserver: () => timingObserver,
       importCaptain: async () => ({ default: () => captain() }),
       killSession,
       removeWorkDir,
@@ -182,6 +199,7 @@ describe('TmuxPlaySession', () => {
 
     expect(abortActiveTurn).toHaveBeenCalledWith('EOF');
     expect(dispose).toHaveBeenCalledTimes(1);
+    expect(timingObserver.dispose).toHaveBeenCalledTimes(1);
     expect(removeWorkDir).toHaveBeenCalledWith(tempDir);
     expect(killSession).toHaveBeenCalledWith('tmux-play-abc123');
   });
@@ -359,6 +377,15 @@ function baseOptions(workDir: string): TmuxPlaySessionOptions {
     killSession: vi.fn(),
     removeWorkDir: vi.fn(),
     signalTarget: new SignalHub(),
+    createTimingObserver: () => noopTimingObserver(),
+  };
+}
+
+function noopTimingObserver(): TimingObserverHandle {
+  return {
+    onRecord: vi.fn(),
+    refresh: vi.fn(),
+    dispose: vi.fn(),
   };
 }
 

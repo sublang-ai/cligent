@@ -69,3 +69,38 @@ export function queryPaneWidthsByTitle(
   }
   return widths;
 }
+
+// Maps pane title (e.g., `Captain · claude`, `Coder · codex`) to tmux's
+// stable pane id (e.g., `%3`). Returns an empty map when tmux is unreachable
+// so callers can treat status updates as best-effort UI.
+export function queryPaneTargetsByTitle(
+  sessionName: string,
+): Map<string, string> {
+  const targets = new Map<string, string>();
+  const result = spawnSync(
+    'tmux',
+    [
+      'list-panes',
+      '-t',
+      `${sessionName}:0`,
+      '-F',
+      '#{pane_title}\t#{pane_id}',
+    ],
+    { stdio: 'pipe' },
+  );
+  if (result.error || result.status !== 0) {
+    return targets;
+  }
+  const lines = result.stdout.toString().split('\n');
+  for (const line of lines) {
+    if (!line) continue;
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const title = line.slice(0, tab);
+    const target = line.slice(tab + 1);
+    if (target) {
+      targets.set(title, target);
+    }
+  }
+  return targets;
+}
