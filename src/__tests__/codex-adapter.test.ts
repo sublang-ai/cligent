@@ -551,7 +551,7 @@ describe('CodexAdapter', () => {
     );
   });
 
-  it('maps UPM permissions to codex controls for all combinations', () => {
+  it('maps UPM permissions to codex modern permission-profile controls for all combinations', () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
 
     for (const fileWrite of levels) {
@@ -565,17 +565,16 @@ describe('CodexAdapter', () => {
 
           const mapped = mapPermissionsToCodexOptions(policy);
 
-          const expectedSandbox =
-            fileWrite === 'deny' || shellExecute === 'deny'
-              ? 'read-only'
-              : fileWrite === 'allow' && shellExecute === 'allow'
-                ? 'danger-full-access'
-                : 'workspace-write';
-
           const allAllow =
             fileWrite === 'allow' &&
             shellExecute === 'allow' &&
             networkAccess === 'allow';
+
+          const expectedDefaultPermissions = allAllow
+            ? ':danger-full-access'
+            : fileWrite === 'deny' || shellExecute === 'deny'
+              ? ':read-only'
+              : ':workspace';
 
           const anyAsk =
             fileWrite === 'ask' ||
@@ -588,12 +587,58 @@ describe('CodexAdapter', () => {
               ? 'untrusted'
               : 'on-request';
 
-          expect(mapped.sandboxMode).toBe(expectedSandbox);
+          expect(mapped.codexOptions).toEqual({
+            config: {
+              default_permissions: expectedDefaultPermissions,
+            },
+          });
           expect(mapped.approvalPolicy).toBe(expectedApproval);
-          expect(mapped.networkAccessEnabled).toBe(networkAccess === 'allow');
+          expect(mapped).not.toHaveProperty('sandboxMode');
+          expect(mapped).not.toHaveProperty('networkAccessEnabled');
         }
       }
     }
+  });
+
+  it('leaves Codex permission knobs unset when no policy is provided', () => {
+    const mapped = mapPermissionsToCodexOptions(undefined);
+    expect(mapped).toEqual({});
+
+    const agentMapped = mapAgentOptionsToCodexOptions({});
+    expect(agentMapped.codexOptions).toBeUndefined();
+    expect(agentMapped.threadOptions).not.toHaveProperty('approvalPolicy');
+    expect(agentMapped.threadOptions).not.toHaveProperty('sandboxMode');
+    expect(agentMapped.threadOptions).not.toHaveProperty('networkAccessEnabled');
+  });
+
+  it('keeps network-only deny on the workspace default_permissions profile', () => {
+    const mapped = mapPermissionsToCodexOptions({
+      fileWrite: 'allow',
+      shellExecute: 'allow',
+      networkAccess: 'deny',
+    });
+
+    expect(mapped.codexOptions).toEqual({
+      config: {
+        default_permissions: ':workspace',
+      },
+    });
+    expect(mapped.approvalPolicy).toBe('on-request');
+    expect(mapped).not.toHaveProperty('sandboxMode');
+    expect(mapped).not.toHaveProperty('networkAccessEnabled');
+  });
+
+  it('treats omitted capability fields as unset within a provided Codex policy', () => {
+    const mapped = mapPermissionsToCodexOptions({});
+
+    expect(mapped.codexOptions).toEqual({
+      config: {
+        default_permissions: ':workspace',
+      },
+    });
+    expect(mapped.approvalPolicy).toBe('on-request');
+    expect(mapped).not.toHaveProperty('sandboxMode');
+    expect(mapped).not.toHaveProperty('networkAccessEnabled');
   });
 
   it('passes AgentOptions through to thread/run options', async () => {
@@ -641,15 +686,19 @@ describe('CodexAdapter', () => {
       }),
     );
 
-    expect(capturedCodexOptions).toBeUndefined();
+    expect(capturedCodexOptions).toEqual({
+      config: {
+        default_permissions: ':workspace',
+      },
+    });
     expect(capturedThreadOptions).toMatchObject({
       workingDirectory: '/tmp/repo',
       model: 'gpt-5-codex',
-      sandboxMode: 'workspace-write',
       approvalPolicy: 'untrusted',
-      networkAccessEnabled: false,
       skipGitRepoCheck: true,
     });
+    expect(capturedThreadOptions).not.toHaveProperty('sandboxMode');
+    expect(capturedThreadOptions).not.toHaveProperty('networkAccessEnabled');
 
     expect(capturedRunPrompt).toBe('implement feature');
     expect(capturedRunOptions?.signal).toBeUndefined();
@@ -687,17 +736,18 @@ describe('CodexAdapter', () => {
 
     expect(capturedCodexOptions).toEqual({
       config: {
+        default_permissions: ':workspace',
         approvals_reviewer: 'auto_review',
       },
     });
     expect(capturedThreadOptions).toMatchObject({
-      sandboxMode: 'workspace-write',
       approvalPolicy: 'on-request',
-      networkAccessEnabled: false,
     });
+    expect(capturedThreadOptions).not.toHaveProperty('sandboxMode');
+    expect(capturedThreadOptions).not.toHaveProperty('networkAccessEnabled');
   });
 
-  it('does not set auto-review config for bypass mode', async () => {
+  it('sets danger-full-access default_permissions without auto-review for bypass mode', async () => {
     let capturedCodexOptions: MockCodexConstructorOptions | undefined;
     let capturedThreadOptions: MockThreadOptions | undefined;
 
@@ -727,12 +777,16 @@ describe('CodexAdapter', () => {
       }),
     );
 
-    expect(capturedCodexOptions).toBeUndefined();
-    expect(capturedThreadOptions).toMatchObject({
-      sandboxMode: 'danger-full-access',
-      approvalPolicy: 'never',
-      networkAccessEnabled: true,
+    expect(capturedCodexOptions).toEqual({
+      config: {
+        default_permissions: ':danger-full-access',
+      },
     });
+    expect(capturedThreadOptions).toMatchObject({
+      approvalPolicy: 'never',
+    });
+    expect(capturedThreadOptions).not.toHaveProperty('sandboxMode');
+    expect(capturedThreadOptions).not.toHaveProperty('networkAccessEnabled');
   });
 
   it('resumes thread when resume option is provided', async () => {
@@ -869,9 +923,14 @@ describe('CodexAdapter', () => {
       },
     });
 
-    expect(mapped.threadOptions.sandboxMode).toBe('danger-full-access');
+    expect(mapped.codexOptions).toEqual({
+      config: {
+        default_permissions: ':danger-full-access',
+      },
+    });
     expect(mapped.threadOptions.approvalPolicy).toBe('never');
-    expect(mapped.threadOptions.networkAccessEnabled).toBe(true);
+    expect(mapped.threadOptions).not.toHaveProperty('sandboxMode');
+    expect(mapped.threadOptions).not.toHaveProperty('networkAccessEnabled');
 
     expect(mapped.runOptions.signal).toBeDefined();
 
@@ -1085,37 +1144,58 @@ describe('CodexAdapter', () => {
     expect(usage.inputTokens).toBe(120);
   });
 
-  it('maps PermissionPolicy.mode to codex sandbox + approval per ENG-021', () => {
+  it('maps PermissionPolicy.mode to Codex approval axis and default_permissions per ENG-021', () => {
     const auto = mapPermissionsToCodexOptions({ mode: 'auto' });
-    expect(auto.sandboxMode).toBe('workspace-write');
     expect(auto.approvalPolicy).toBe('on-request');
-    expect(auto.networkAccessEnabled).toBe(false);
     expect(auto.codexOptions).toEqual({
       config: {
+        default_permissions: ':workspace',
+        approvals_reviewer: 'auto_review',
+      },
+    });
+    expect(auto).not.toHaveProperty('sandboxMode');
+    expect(auto).not.toHaveProperty('networkAccessEnabled');
+
+    const autoAllAllow = mapPermissionsToCodexOptions({
+      mode: 'auto',
+      fileWrite: 'allow',
+      shellExecute: 'allow',
+      networkAccess: 'allow',
+    });
+    expect(autoAllAllow.approvalPolicy).toBe('on-request');
+    expect(autoAllAllow.codexOptions).toEqual({
+      config: {
+        default_permissions: ':danger-full-access',
         approvals_reviewer: 'auto_review',
       },
     });
 
     const bypass = mapPermissionsToCodexOptions({ mode: 'bypass' });
-    expect(bypass.sandboxMode).toBe('danger-full-access');
     expect(bypass.approvalPolicy).toBe('never');
-    expect(bypass.networkAccessEnabled).toBe(true);
-    expect(bypass.codexOptions).toBeUndefined();
+    expect(bypass.codexOptions).toEqual({
+      config: {
+        default_permissions: ':danger-full-access',
+      },
+    });
+    expect(bypass).not.toHaveProperty('sandboxMode');
+    expect(bypass).not.toHaveProperty('networkAccessEnabled');
 
-    // mode takes precedence over per-capability levels.
-    const autoOverridesLevels = mapPermissionsToCodexOptions({
+    // Codex models automation and local access independently: auto still
+    // selects auto-review, while denied file/shell access narrows the profile.
+    const autoNarrowsLocalAccess = mapPermissionsToCodexOptions({
       mode: 'auto',
       fileWrite: 'deny',
       shellExecute: 'deny',
       networkAccess: 'allow',
     });
-    expect(autoOverridesLevels.sandboxMode).toBe('workspace-write');
-    expect(autoOverridesLevels.approvalPolicy).toBe('on-request');
-    expect(autoOverridesLevels.networkAccessEnabled).toBe(false);
-    expect(autoOverridesLevels.codexOptions).toEqual({
+    expect(autoNarrowsLocalAccess.approvalPolicy).toBe('on-request');
+    expect(autoNarrowsLocalAccess.codexOptions).toEqual({
       config: {
+        default_permissions: ':read-only',
         approvals_reviewer: 'auto_review',
       },
     });
+    expect(autoNarrowsLocalAccess).not.toHaveProperty('sandboxMode');
+    expect(autoNarrowsLocalAccess).not.toHaveProperty('networkAccessEnabled');
   });
 });

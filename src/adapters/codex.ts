@@ -7,13 +7,16 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
-  PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
 } from '../types.js';
 
-type CodexSandboxMode = 'danger-full-access' | 'workspace-write' | 'read-only';
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
+type CodexDefaultPermissions =
+  | ':danger-full-access'
+  | ':workspace'
+  | ':read-only';
+type CodexApprovalsReviewer = 'auto_review';
 
 type CodexModelReasoningEffort =
   | 'minimal'
@@ -30,7 +33,11 @@ type CodexConfigValue =
   | { [key: string]: CodexConfigValue };
 
 interface CodexConstructorOptions {
-  config?: { [key: string]: CodexConfigValue };
+  config?: {
+    [key: string]: CodexConfigValue | undefined;
+    default_permissions?: CodexDefaultPermissions;
+    approvals_reviewer?: CodexApprovalsReviewer;
+  };
 }
 
 interface CodexItem {
@@ -62,9 +69,7 @@ interface CodexThreadOptions {
   workingDirectory?: string;
   model?: string;
   modelReasoningEffort?: CodexModelReasoningEffort;
-  sandboxMode?: CodexSandboxMode;
   approvalPolicy?: CodexApprovalPolicy;
-  networkAccessEnabled?: boolean;
   skipGitRepoCheck?: boolean;
 }
 
@@ -177,86 +182,77 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function normalizePermissionLevel(value: PermissionLevel | undefined): PermissionLevel {
-  return value ?? 'ask';
-}
-
-function normalizePermissions(
-  policy: PermissionPolicy | undefined,
-): Required<Omit<PermissionPolicy, 'mode'>> {
-  return {
-    fileWrite: normalizePermissionLevel(policy?.fileWrite),
-    shellExecute: normalizePermissionLevel(policy?.shellExecute),
-    networkAccess: normalizePermissionLevel(policy?.networkAccess),
-  };
-}
-
 export interface CodexPermissionOptions {
-  sandboxMode: CodexSandboxMode;
-  approvalPolicy: CodexApprovalPolicy;
-  networkAccessEnabled: boolean;
+  approvalPolicy?: CodexApprovalPolicy;
   codexOptions?: CodexConstructorOptions;
+}
+
+function codexDefaultPermissions(
+  policy: PermissionPolicy,
+): CodexDefaultPermissions {
+  if (policy.mode === 'bypass') {
+    return ':danger-full-access';
+  }
+
+  if (
+    policy.fileWrite === 'allow' &&
+    policy.shellExecute === 'allow' &&
+    policy.networkAccess === 'allow'
+  ) {
+    return ':danger-full-access';
+  }
+
+  if (policy.fileWrite === 'deny' || policy.shellExecute === 'deny') {
+    return ':read-only';
+  }
+
+  return ':workspace';
+}
+
+function codexApprovalPolicy(
+  policy: PermissionPolicy,
+): CodexApprovalPolicy {
+  if (policy.mode === 'auto') {
+    return 'on-request';
+  }
+  if (policy.mode === 'bypass') {
+    return 'never';
+  }
+
+  if (
+    policy.fileWrite === 'allow' &&
+    policy.shellExecute === 'allow' &&
+    policy.networkAccess === 'allow'
+  ) {
+    return 'never';
+  }
+
+  if (
+    policy.fileWrite === 'ask' ||
+    policy.shellExecute === 'ask' ||
+    policy.networkAccess === 'ask'
+  ) {
+    return 'untrusted';
+  }
+
+  return 'on-request';
 }
 
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
-  // ENG-021: session-wide auto-mode posture takes precedence over the
-  // per-capability levels. 'auto' maps to codex's workspace-write +
-  // on-request approval posture and enables the SDK constructor config
-  // passthrough for Codex auto-review. 'bypass' maps to the unchecked
-  // danger-full-access + never-approve combination.
-  if (policy?.mode === 'auto') {
-    return {
-      sandboxMode: 'workspace-write',
-      approvalPolicy: 'on-request',
-      networkAccessEnabled: false,
-      codexOptions: {
-        config: {
-          approvals_reviewer: 'auto_review',
-        },
-      },
-    };
-  }
-  if (policy?.mode === 'bypass') {
-    return {
-      sandboxMode: 'danger-full-access',
-      approvalPolicy: 'never',
-      networkAccessEnabled: true,
-    };
+  if (!policy) {
+    return {};
   }
 
-  const normalized = normalizePermissions(policy);
-
-  const sandboxMode: CodexSandboxMode =
-    normalized.fileWrite === 'deny' || normalized.shellExecute === 'deny'
-      ? 'read-only'
-      : normalized.fileWrite === 'allow' && normalized.shellExecute === 'allow'
-        ? 'danger-full-access'
-        : 'workspace-write';
-
-  const allAllow =
-    normalized.fileWrite === 'allow' &&
-    normalized.shellExecute === 'allow' &&
-    normalized.networkAccess === 'allow';
-
-  const anyAsk =
-    normalized.fileWrite === 'ask' ||
-    normalized.shellExecute === 'ask' ||
-    normalized.networkAccess === 'ask';
-
-  const approvalPolicy: CodexApprovalPolicy = allAllow
-    ? 'never'
-    : anyAsk
-      ? 'untrusted'
-      : 'on-request';
-
-  const networkAccessEnabled = normalized.networkAccess === 'allow';
+  const config: NonNullable<CodexConstructorOptions['config']> = {
+    default_permissions: codexDefaultPermissions(policy),
+    ...(policy.mode === 'auto' ? { approvals_reviewer: 'auto_review' } : {}),
+  };
 
   return {
-    sandboxMode,
-    approvalPolicy,
-    networkAccessEnabled,
+    approvalPolicy: codexApprovalPolicy(policy),
+    codexOptions: { config },
   };
 }
 
@@ -357,20 +353,23 @@ export function mapAgentOptionsToCodexOptions(
 
   const signal = abortController?.signal;
 
+  const threadOptions: CodexThreadOptions = {
+    workingDirectory: options?.cwd,
+    model: options?.model,
+    modelReasoningEffort: mapReasoningEffortToCodexEffort(options?.reasoningEffort),
+    // The CLI's git-repo gate is an interactive-user safety net; programmatic
+    // callers (tmux-play, scripts, tests) choose workingDirectory deliberately
+    // and frequently target tmpdirs that are not git repos.
+    skipGitRepoCheck: true,
+  };
+
+  if (permissions.approvalPolicy) {
+    threadOptions.approvalPolicy = permissions.approvalPolicy;
+  }
+
   return {
     codexOptions: permissions.codexOptions,
-    threadOptions: {
-      workingDirectory: options?.cwd,
-      model: options?.model,
-      modelReasoningEffort: mapReasoningEffortToCodexEffort(options?.reasoningEffort),
-      sandboxMode: permissions.sandboxMode,
-      approvalPolicy: permissions.approvalPolicy,
-      networkAccessEnabled: permissions.networkAccessEnabled,
-      // The CLI's git-repo gate is an interactive-user safety net; programmatic
-      // callers (tmux-play, scripts, tests) choose workingDirectory deliberately
-      // and frequently target tmpdirs that are not git repos.
-      skipGitRepoCheck: true,
-    },
+    threadOptions,
     runOptions: {
       signal,
     },
