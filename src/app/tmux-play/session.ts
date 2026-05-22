@@ -11,6 +11,7 @@ import {
   openAppendLogStreams,
 } from '../shared/logs.js';
 import { killTmuxSession, queryPaneWidthsByTitle } from '../shared/tmux.js';
+import { rolePaneTitle } from './pane-title.js';
 import type {
   Captain,
   RuntimeRoleConfig,
@@ -132,7 +133,7 @@ export class TmuxPlaySession {
     this.subscribeToResize(output);
     const roleWidths = new Map<string, WidthSource>();
     for (const role of config.roles) {
-      const title = titleCaseRoleId(role.id);
+      const title = rolePaneTitle(role.id, role.adapter);
       roleWidths.set(role.id, () =>
         this.rolePaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
       );
@@ -350,10 +351,6 @@ function outputWidth(output: Writable): number {
     return columns;
   }
   return Number.POSITIVE_INFINITY;
-}
-
-function titleCaseRoleId(roleId: string): string {
-  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
 }
 
 export async function runTmuxPlaySession(

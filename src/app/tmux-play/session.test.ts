@@ -306,7 +306,7 @@ describe('TmuxPlaySession', () => {
     const readline = new FakeReadline();
     const output = new MemoryOutput();
     const queryPaneWidths = vi.fn(
-      () => new Map<string, number>([['Coder', 40]]),
+      () => new Map<string, number>([['Coder · codex', 40]]),
     );
     const session = new TmuxPlaySession({
       ...baseOptions(tempDir),

@@ -14,6 +14,7 @@ import {
   isTmuxAvailable,
   runTmux,
 } from '../shared/tmux.js';
+import { captainPaneTitle, rolePaneTitle } from './pane-title.js';
 import {
   TMUX_PLAY_CONFIG_FILE,
   loadTmuxPlayConfig,
@@ -338,7 +339,7 @@ function setPaneTitles(
     '-t',
     paneTarget(sessionName, 0),
     '-T',
-    `Captain · ${captainAdapter}`,
+    captainPaneTitle(captainAdapter),
   );
   for (const pane of rolePanes) {
     runTmux(
@@ -346,13 +347,9 @@ function setPaneTitles(
       '-t',
       paneTarget(sessionName, pane.paneIndex),
       '-T',
-      `${titleCaseRoleId(pane.role.id)} · ${pane.role.adapter}`,
+      rolePaneTitle(pane.role.id, pane.role.adapter),
     );
   }
-}
-
-function titleCaseRoleId(roleId: string): string {
-  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
 }
 
 function disableRolePaneInput(

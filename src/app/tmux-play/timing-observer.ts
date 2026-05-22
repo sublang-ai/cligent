@@ -5,6 +5,7 @@ import {
   queryPaneTargetsByTitle,
   runTmux,
 } from '../shared/tmux.js';
+import { captainPaneTitle, rolePaneTitle } from './pane-title.js';
 import type { TmuxPlayRecord, RecordObserver } from './records.js';
 import type { RoleConfig } from './roles.js';
 import {
@@ -63,10 +64,10 @@ export class TimingObserver implements TimingObserverHandle {
 
   constructor(options: CreateTimingObserverOptions) {
     this.sessionName = options.sessionName;
-    this.captainTitle = `Captain · ${options.captainAdapter}`;
+    this.captainTitle = captainPaneTitle(options.captainAdapter);
     this.roles = options.roles.map((role) => ({
       roleId: role.id,
-      title: `${titleCaseRoleId(role.id)} · ${role.adapter}`,
+      title: rolePaneTitle(role.id, role.adapter),
     }));
     this.now = options.now ?? Date.now;
     this.tmux = options.tmux ?? spawnTmuxClient;
@@ -195,8 +196,4 @@ const globalTimingScheduler: TimingScheduler = {
 
 function runningValue(timer: TimerValue): string {
   return timer.running ? '1' : '0';
-}
-
-function titleCaseRoleId(roleId: string): string {
-  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
 }
