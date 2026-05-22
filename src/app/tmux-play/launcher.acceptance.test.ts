@@ -19,12 +19,21 @@ import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
 import { mapPermissionsToCodexOptions } from '../../adapters/codex.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
+import { TimingObserver, type TimingScheduler } from './timing-observer.js';
+import {
+  TMUX_PANE_TIMER_ACCENT_OPTION,
+  TMUX_PANE_TIMER_RUNNING_OPTION,
+  TMUX_PANE_TIMER_TEXT_OPTION,
+  TMUX_STATUS_TIMER_RUNNING_OPTION,
+  TMUX_STATUS_TIMER_TEXT_OPTION,
+} from './timer-options.js';
 import type { Captain } from './contract.js';
 import type {
   AgentAdapter,
   AgentEvent,
   AgentOptions,
 } from '../../types.js';
+import type { TmuxPlayRecord } from './records.js';
 import type { RoleAdapterImports } from './roles.js';
 
 interface PaneRow {
@@ -263,6 +272,157 @@ describe('tmux-play real-tmux acceptance', () => {
     },
     60_000,
   );
+
+  acceptanceIt(
+    'renders run-time timers on pane borders and the tmux status bar (TTMUX-056)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      const panes = listPanes(sessionName);
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
+
+      const paneBorderFormat = showWindowOption(
+        sessionName,
+        'pane-border-format',
+      );
+      expect(paneBorderFormat).toContain('#{pane_title}');
+      expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_TEXT_OPTION}}`);
+      expect(paneBorderFormat).toContain(
+        `#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`,
+      );
+      expect(paneBorderFormat).toContain(
+        `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
+      );
+      expect(paneBorderFormat).toContain('⏳');
+      expect(paneBorderFormat).toContain('⌛');
+
+      const statusLeft = showSessionOption(sessionName, 'status-left');
+      expect(statusLeft).toContain('Quit: Ctrl+C');
+      expect(statusLeft).toContain('d=detach');
+      expect(statusLeft).toContain('o=switch pane');
+
+      const statusRight = showSessionOption(sessionName, 'status-right');
+      expect(statusRight).toContain('⏰');
+      expect(statusRight).toContain(`#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`);
+      expect(statusRight).toContain(
+        `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
+      );
+
+      const observer = new TimingObserver({
+        sessionName,
+        captainAdapter: 'claude',
+        roles: [
+          { id: 'coder', adapter: 'codex' },
+          { id: 'reviewer', adapter: 'claude' },
+        ],
+        scheduler: inertScheduler,
+      });
+
+      try {
+        observer.onRecord(turnStarted(1_000));
+        observer.onRecord(rolePrompt('coder', 2_000));
+        observer.onRecord(roleFinished('coder', 5_000));
+        observer.onRecord(rolePrompt('reviewer', 6_000));
+        observer.onRecord(captainPrompt(7_000));
+        observer.refresh(10_000);
+
+        expectPaneTimer(sessionName, captain.index, {
+          text: '3s',
+          running: '1',
+          accent: '#cba6f7',
+        });
+        expectPaneTimer(sessionName, coder.index, {
+          text: '3s',
+          running: '0',
+          accent: '#94e2d5',
+        });
+        expectPaneTimer(sessionName, reviewer.index, {
+          text: '4s',
+          running: '1',
+          accent: '#a6e3a1',
+        });
+        expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
+          '9s',
+        );
+        expect(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
+        ).toBe('1');
+
+        expect(expandedPaneBorder(sessionName, captain.index)).toContain(
+          '⏳ #[fg=#cba6f7]3s',
+        );
+        expect(expandedPaneBorder(sessionName, coder.index)).toContain(
+          '⌛ #[fg=#7f849c]3s',
+        );
+        expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
+          '⏳ #[fg=#a6e3a1]4s',
+        );
+        expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
+          '⏰ #[fg=#cba6f7]9s',
+        );
+
+        observer.onRecord(roleFinished('reviewer', 11_000));
+        observer.onRecord(captainFinished(12_000));
+        observer.onRecord(turnFinished(13_000));
+
+        expectPaneTimer(sessionName, captain.index, {
+          text: '5s',
+          running: '0',
+          accent: '#cba6f7',
+        });
+        expectPaneTimer(sessionName, coder.index, {
+          text: '3s',
+          running: '0',
+          accent: '#94e2d5',
+        });
+        expectPaneTimer(sessionName, reviewer.index, {
+          text: '5s',
+          running: '0',
+          accent: '#a6e3a1',
+        });
+        expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
+          '12s',
+        );
+        expect(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
+        ).toBe('0');
+
+        expect(expandedPaneBorder(sessionName, captain.index)).toContain(
+          '⌛ #[fg=#7f849c]5s',
+        );
+        expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
+          '⌛ #[fg=#7f849c]5s',
+        );
+        expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
+          '⏰ #[fg=#7f849c]12s',
+        );
+      } finally {
+        observer.dispose();
+      }
+    },
+    60_000,
+  );
 });
 
 // TTMUX-053: YAML `permissions.mode` reaches the adapter's `run()` call as
@@ -441,6 +601,30 @@ function showOption(session: string, option: string): string {
   return result.stdout.trimEnd();
 }
 
+function showSessionOption(session: string, option: string): string {
+  const result = spawnSync(
+    'tmux',
+    ['show-options', '-v', '-t', session, option],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(`tmux show-options failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trimEnd();
+}
+
+function showWindowOption(session: string, option: string): string {
+  const result = spawnSync(
+    'tmux',
+    ['show-options', '-wv', '-t', `${session}:0`, option],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(`tmux show-options -w failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trimEnd();
+}
+
 // tmux 3.6 substitutes tab with `_` in -F output, so use `|` as the field
 // separator. Pane titles cannot contain `|` because tmux-play sets them from
 // `Captain` and config role ids (validated by the schema).
@@ -514,6 +698,46 @@ function capturePane(session: string, paneIndex: number): string {
   return result.stdout;
 }
 
+function showPaneOption(
+  session: string,
+  paneIndex: number,
+  option: string,
+): string {
+  const result = spawnSync(
+    'tmux',
+    ['show-options', '-vp', '-t', `${session}:0.${paneIndex}`, option],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(`tmux show-options -p failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trimEnd();
+}
+
+function expandedPaneBorder(session: string, paneIndex: number): string {
+  return displayMessage(`${session}:0.${paneIndex}`, '#{E:pane-border-format}');
+}
+
+function expectPaneTimer(
+  session: string,
+  paneIndex: number,
+  expected: {
+    readonly text: string;
+    readonly running: string;
+    readonly accent: string;
+  },
+): void {
+  expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_TEXT_OPTION)).toBe(
+    expected.text,
+  );
+  expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_RUNNING_OPTION)).toBe(
+    expected.running,
+  );
+  expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_ACCENT_OPTION)).toBe(
+    expected.accent,
+  );
+}
+
 function runOrThrow(cmd: string, args: readonly string[]): void {
   const result = spawnSync(cmd, args, { encoding: 'utf8' });
   if (result.status !== 0) {
@@ -559,4 +783,62 @@ function regionWidthFor(
     return pane.width;
   }
   return next.left - pane.left;
+}
+
+const inertScheduler: TimingScheduler = {
+  setInterval() {
+    return 'inert-timing-observer-interval';
+  },
+  clearInterval() {},
+};
+
+function turnStarted(timestamp: number): TmuxPlayRecord {
+  return {
+    type: 'turn_started',
+    turnId: 1,
+    timestamp,
+    turn: { id: 1, prompt: 'work', timestamp },
+  };
+}
+
+function turnFinished(timestamp: number): TmuxPlayRecord {
+  return { type: 'turn_finished', turnId: 1, timestamp };
+}
+
+function rolePrompt(roleId: string, timestamp: number): TmuxPlayRecord {
+  return {
+    type: 'role_prompt',
+    turnId: 1,
+    timestamp,
+    roleId,
+    prompt: 'work',
+  };
+}
+
+function roleFinished(roleId: string, timestamp: number): TmuxPlayRecord {
+  return {
+    type: 'role_finished',
+    turnId: 1,
+    timestamp,
+    roleId,
+    result: { roleId, turnId: 1, status: 'ok' },
+  };
+}
+
+function captainPrompt(timestamp: number): TmuxPlayRecord {
+  return {
+    type: 'captain_prompt',
+    turnId: 1,
+    timestamp,
+    prompt: 'summarize',
+  };
+}
+
+function captainFinished(timestamp: number): TmuxPlayRecord {
+  return {
+    type: 'captain_finished',
+    turnId: 1,
+    timestamp,
+    result: { turnId: 1, status: 'ok' },
+  };
 }

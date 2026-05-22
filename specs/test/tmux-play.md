@@ -146,7 +146,7 @@ Given roles with ids `coder` and `reviewer`, when the launcher sets pane titles,
 ### TTMUX-038
 Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)
 
-Given the launcher building a tmux session, the `tmux set` calls issued shall include the twelve Catppuccin Mocha theme entries exactly per [TMUX-047](../user/tmux-play.md#tmux-047) — anchored by `default-terminal=tmux-256color`, `terminal-overrides` appended with `,*:RGB`, `status-style=fg=#cdd6f4,bg=#181825`, `pane-active-border-style=fg=#89b4fa`, and `pane-border-style=fg=#6c7086` — and every theme `set` shall appear before the launcher's own `pane-border-format`, `status-left`, and `status-right` `set` calls so the launcher's content strings remain authoritative on options the theme does not claim.
+Given the launcher building a tmux session, the `tmux set` calls issued shall include the twelve Catppuccin Mocha theme entries exactly per [TMUX-047](../user/tmux-play.md#tmux-047) — anchored by `default-terminal=tmux-256color`, `terminal-overrides` appended with `,*:RGB`, `status-style=fg=#cdd6f4,bg=#181825`, `pane-active-border-style=fg=#89b4fa`, and `pane-border-style=fg=#6c7086` — and every theme `set` shall appear before the launcher's own `pane-border-format`, `status-left`, and `status-right` option calls so the launcher's content strings remain authoritative on options the theme does not claim.
 
 ### TTMUX-039
 Verifies: [TMUX-047](../user/tmux-play.md#tmux-047)

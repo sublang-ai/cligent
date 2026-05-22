@@ -157,11 +157,17 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   disableRolePaneInput(options.sessionName, rolePanes);
   configureLayoutHooks(options.sessionName, roles.length);
   applyCatppuccinMochaTheme(options.sessionName);
-  runTmux('set', '-t', options.sessionName, 'pane-border-status', 'top');
   runTmux(
-    'set',
+    'set-window-option',
     '-t',
-    options.sessionName,
+    windowTarget(options.sessionName),
+    'pane-border-status',
+    'top',
+  );
+  runTmux(
+    'set-window-option',
+    '-t',
+    windowTarget(options.sessionName),
     'pane-border-format',
     paneBorderFormat(),
   );
@@ -525,4 +531,8 @@ function requireRole(role: RoleConfig | undefined): RoleConfig {
 
 function paneTarget(sessionName: string, paneIndex: number): string {
   return `${sessionName}:0.${paneIndex}`;
+}
+
+function windowTarget(sessionName: string): string {
+  return `${sessionName}:0`;
 }

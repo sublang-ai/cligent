@@ -280,6 +280,8 @@ describe('launchTmuxPlay', () => {
     const optionAt = (n: number): string | undefined => setCalls[n]?.[3];
     const indexOf = (option: string): number =>
       setCalls.findIndex((call) => call[3] === option);
+    const commandIndexOf = (option: string): number =>
+      runTmuxMock.mock.calls.findIndex((call) => call.includes(option));
 
     // TMUX-047 (truecolor): default-terminal scoped to this session, and
     // terminal-overrides appended on the server with the leading-comma idiom.
@@ -346,11 +348,11 @@ describe('launchTmuxPlay', () => {
       'clock-mode-colour',
     ];
     const lastThemeIndex = Math.max(
-      ...themeOptions.map((o) => indexOf(o)),
+      ...themeOptions.map((o) => commandIndexOf(o)),
     );
-    expect(indexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
-    expect(indexOf('status-left')).toBeGreaterThan(lastThemeIndex);
-    expect(indexOf('status-right')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('status-left')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('status-right')).toBeGreaterThan(lastThemeIndex);
 
     // First theme set still comes after the layout has been built.
     expect(optionAt(0)).toBe('default-terminal');
@@ -424,7 +426,17 @@ describe('launchTmuxPlay', () => {
       '0',
     );
 
-    const paneBorderFormat = setValue('tmux-play-timers', 'pane-border-format');
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-window-option',
+      '-t',
+      'tmux-play-timers:0',
+      'pane-border-status',
+      'top',
+    );
+    const paneBorderFormat = windowSetValue(
+      'tmux-play-timers:0',
+      'pane-border-format',
+    );
     expect(paneBorderFormat).toContain('#{pane_title}');
     expect(paneBorderFormat).toContain(
       '#{?pane_active,#[fg=#1e1e2e]#[bg=#89b4fa]#[bold],#[fg=#cdd6f4]#[bg=#181825]}',
@@ -722,6 +734,20 @@ function setValue(sessionName: string, option: string): string {
   const value = call?.[4];
   if (typeof value !== 'string') {
     throw new Error(`Missing ${option} set call for ${sessionName}`);
+  }
+  return value;
+}
+
+function windowSetValue(window: string, option: string): string {
+  const call = runTmuxMock.mock.calls.find(
+    (args) =>
+      args[0] === 'set-window-option' &&
+      args[2] === window &&
+      args[3] === option,
+  );
+  const value = call?.[4];
+  if (typeof value !== 'string') {
+    throw new Error(`Missing ${option} window set call for ${window}`);
   }
   return value;
 }
