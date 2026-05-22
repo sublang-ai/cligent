@@ -43,14 +43,20 @@ When Codex supplies an error message as a JSON-encoded object string, the adapte
 
 ### CODEX-004
 
-The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm) and [ENG-021](../engine.md#eng-021):
+The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm) and [ENG-021](../engine.md#eng-021), using Codex's modern permission-profile model [[3]][[4]]. The adapter shall express the local-access surface through the `CodexOptions.config` override `default_permissions` and shall not set `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`, because a present legacy `sandbox_mode` makes Codex ignore `default_permissions` [[4]].
 
-When `PermissionPolicy.mode` is set, the adapter shall map it before deriving per-capability controls: `'auto'` shall set Codex `ThreadOptions` to `sandboxMode: 'workspace-write'`, `approvalPolicy: 'on-request'`, and `networkAccessEnabled: false`, and shall set the Codex SDK constructor `CodexOptions.config` override `{ approvals_reviewer: 'auto_review' }` per Codex auto-review semantics [[2]][[3]]; `'bypass'` shall set `ThreadOptions` to `sandboxMode: 'danger-full-access'`, `approvalPolicy: 'never'`, and `networkAccessEnabled: true`, and shall not set `approvals_reviewer`.
-When `PermissionPolicy.mode` is unset, the adapter shall derive Codex controls from the per-capability levels:
+When the resolved `AgentOptions` carries no `permissions` policy, the adapter shall set none of `default_permissions`, `approvals_reviewer`, or `ThreadOptions.approvalPolicy`, leaving Codex's own default posture in effect per [DR-005](../../decisions/005-per-adapter-permission-configuration.md)'s no-project-wide-default rule. The mappings below apply only to a provided `PermissionPolicy`; within a provided policy an omitted capability field is treated as unset, which is distinct from an absent policy.
 
-- `fileWrite` + `shellExecute` → `sandboxMode`: all `'allow'` → `'danger-full-access'`; `fileWrite: 'allow'` only → `'workspace-write'`; any `'deny'` → `'read-only'`
-- Permission levels → `approvalPolicy`: all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; mixed → `'on-request'`
-- `networkAccess` → `networkAccessEnabled`: `'allow'` → `true`; `'deny'` or `'ask'` → `false` (lossy: `'ask'` maps to `false` because the SDK has no prompt-based network control)
+The `default_permissions` profile shall be selected as follows:
+
+- `PermissionPolicy.mode: 'bypass'` → `:danger-full-access`.
+- Otherwise, derived from the per-capability levels: all of `fileWrite` / `shellExecute` / `networkAccess` set to `'allow'` → `:danger-full-access`; `fileWrite` or `shellExecute` set to `'deny'` → `:read-only`; otherwise, including all unset → `:workspace`. `networkAccess` alone shall never select `:read-only`: both `:workspace` and `:read-only` grant no network, so denying network shall not remove workspace write access. This is lossy for network: a `networkAccess: 'allow'` not accompanied by `fileWrite` and `shellExecute` both `'allow'` rounds to `:workspace`, which grants no network, because no built-in profile expresses workspace-write with network.
+
+`ThreadOptions.approvalPolicy` and the reviewer shall be selected as follows:
+
+- `PermissionPolicy.mode: 'auto'` → `approvalPolicy: 'on-request'` and the `CodexOptions.config` override `approvals_reviewer: 'auto_review'` per Codex auto-review semantics [[2]].
+- `PermissionPolicy.mode: 'bypass'` → `approvalPolicy: 'never'` and no `approvals_reviewer`.
+- `PermissionPolicy.mode` unset → `approvalPolicy` from the per-capability levels (all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; otherwise → `'on-request'`) and no `approvals_reviewer`.
 
 ## Thread Resumption
 
@@ -90,3 +96,4 @@ When `reasoningEffort` is omitted, the adapter shall not set `modelReasoningEffo
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"
 [2]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
 [3]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
+[4]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"

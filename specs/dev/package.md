@@ -27,6 +27,10 @@ The package's runtime `dependencies` shall be limited to single-purpose, zero-tr
 
 Agent SDKs (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`) shall be listed as optional peer dependencies.
 
+### PKG-009
+
+The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter code supports at runtime. This floor may be lower than the exact `devDependencies` version pinned for local development and CI, and shall be raised only when adapter code begins to depend on a newer SDK surface.
+
 ## TypeScript
 
 ### PKG-005

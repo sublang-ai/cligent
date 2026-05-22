@@ -35,7 +35,7 @@ meta.md     The spec of specs
 | DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/role architecture, records, presenter boundary |
-| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review; no project-wide default |
+| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; no project-wide default |
 
 ## Iterations
 
@@ -58,6 +58,7 @@ meta.md     The spec of specs
 | IR-014 | [014-per-adapter-permission-configuration.md](iterations/014-per-adapter-permission-configuration.md) | Implement DR-005: YAML `permissions` field; `PermissionPolicy.mode` + per-adapter auto-mode mappings |
 | IR-015 | [015-codex-auto-review-permission-mode.md](iterations/015-codex-auto-review-permission-mode.md) | Add Codex `approvals_reviewer = auto_review` to `PermissionPolicy.mode: 'auto'` |
 | IR-016 | [016-tmux-play-run-time-timers.md](iterations/016-tmux-play-run-time-timers.md) | Per-pane and session-total run-time timers on the tmux panes and status bar |
+| IR-017 | [017-codex-modern-permission-profiles.md](iterations/017-codex-modern-permission-profiles.md) | Codex adapter: modern `default_permissions` profile model, automation/local-access axis composition |
 
 ## Packages
 

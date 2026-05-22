@@ -18,7 +18,7 @@ Each coding-agent SDK ships its own permission/approval model:
 | Adapter | SDK / CLI surface | Prompt-reduction mode |
 | --- | --- | --- |
 | `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed, still blocks high-risk actions and falls back to prompts after consecutive/total denies); `'bypassPermissions'` (no checks) |
-| `codex` | `ThreadOptions.sandboxMode`, `ThreadOptions.approvalPolicy`, `ThreadOptions.networkAccessEnabled`; `CodexOptions.config.approvals_reviewer` [[2]][[6]][[7]] | `approval_policy = on-request` + `sandbox_mode = workspace-write` + `approvals_reviewer = auto_review` (eligible sandbox-boundary approval requests route to a reviewer agent without changing sandbox or network limits); `--full-auto` is a deprecated compatibility flag for the sandbox/approval-policy part of this config |
+| `codex` | `ThreadOptions.approvalPolicy`; `CodexOptions.config.default_permissions` (modern permission profile) and `CodexOptions.config.approvals_reviewer` [[2]][[6]][[7]][[8]] | `approval_policy = on-request` + `approvals_reviewer = auto_review` + a `default_permissions` profile (eligible approval requests route to a reviewer agent without broadening the profile's filesystem/network limits). The legacy `sandbox_mode` knob is not used: per [[8]] a present `sandbox_mode` makes Codex ignore `default_permissions`. |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
@@ -28,7 +28,7 @@ Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolic
 Today's gap is two-layered:
 
 - **YAML reachability**: tmux-play's `RoleConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
-- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-, sandbox-, or reviewer-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's sandbox- and reviewer-protected `on-request + workspace-write + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
+- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-, sandbox-, or reviewer-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's reviewer-protected `on-request + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
@@ -48,7 +48,7 @@ Specifically:
 
 YAML uses the existing typed `PermissionPolicy` shape.
 No `Record<string, unknown>` escape hatch; no adapter-specific knob is directly settable from YAML.
-Adapter-specific knobs (`permissionMode`, Codex `ThreadOptions` fields, Codex `CodexOptions.config` overrides such as `approvals_reviewer`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
+Adapter-specific knobs (`permissionMode`, Codex `ThreadOptions` fields, Codex `CodexOptions.config` overrides such as `default_permissions` and `approvals_reviewer`, `--yolo`) are derived inside the adapter's mapping function from the abstract `PermissionPolicy`.
 
 Rationale: a typed surface preserves cross-adapter substitutability — a user who switches a role from `claude` to `codex` gets the same `permissions` semantics, mapped to each SDK's knobs by the adapter.
 
@@ -62,15 +62,39 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | Adapter | Auto-mode mapping | Bypass mapping (already present where applicable) |
 | --- | --- | --- |
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
-| `codex` | `ThreadOptions: { approvalPolicy: 'on-request', sandboxMode: 'workspace-write', networkAccessEnabled: false }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review' }` | `ThreadOptions: { approvalPolicy: 'never', sandboxMode: 'danger-full-access', networkAccessEnabled: true }` |
+| `codex` | `ThreadOptions: { approvalPolicy: 'on-request' }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review', default_permissions: <profile> }` — see *Codex — modern permission-profile model* below | `ThreadOptions: { approvalPolicy: 'never' }` plus `CodexOptions.config: { default_permissions: ':danger-full-access' }` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
 | `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
+
+### Codex — modern permission-profile model
+
+Codex exposes two non-composing permission models [[8]]: the modern `default_permissions` / `[permissions]` profiles, and the legacy `sandbox_mode` / `sandbox_workspace_write` knobs.
+If `sandbox_mode` (or `--sandbox`, or a config profile that sets it) is present in any active config layer, Codex ignores `default_permissions` and uses the legacy settings instead.
+
+The Codex adapter shall express the local-access surface only through the modern model.
+It shall not set `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`, because both select the legacy model and suppress `default_permissions`.
+The approval/reviewer posture and the local-access surface are independent Codex axes:
+
+- **Approval/reviewer axis** — `ThreadOptions.approvalPolicy` plus `CodexOptions.config.approvals_reviewer`. `mode: 'auto'` selects `approvalPolicy: 'on-request'` + `approvals_reviewer: 'auto_review'` (auto-review applies only under interactive approvals [[6]]); `mode: 'bypass'` selects `approvalPolicy: 'never'` and no reviewer.
+- **Local-access axis** — `CodexOptions.config.default_permissions`, a built-in profile (`:read-only` / `:workspace` / `:danger-full-access`).
+
+`mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [ENG-021](../user/engine.md#eng-021) orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
+The exact per-capability → profile mapping is [CODEX-004](../user/adapters/codex.md#codex-004).
+Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
+
+**Determinism caveat.** `default_permissions` is authoritative only when no legacy `sandbox_mode` exists in any of the user's Codex config layers, and cligent cannot un-set such a key through the `--config` passthrough.
+On a machine carrying a legacy `sandbox_mode`, cligent's `default_permissions` is silently overridden.
+A default Codex install carries none, so this affects only users who set it manually; tests asserting auto-mode behavior assume a clean Codex config.
+
+**Inheriting the user's Codex config** — letting Codex's own `default_permissions` / CLI/Desktop config be authoritative instead of cligent picking a profile — is deliberately out of scope.
+It is non-deterministic and would make `mode: 'auto'` machine-dependent.
+If added later it shall be an explicit opt-in, never the default for `mode: 'auto'`.
 
 ### Default policy
 
 Cligent shall not impose a project-wide default permission posture.
 SDK defaults apply unless `permissions` is provided.
-Documentation and example configs may recommend classifier-, sandbox-, or reviewer-protected modes (`claude`'s `auto`, `codex`'s `on-request + workspace-write + auto_review`) over unchecked bypass; that guidance is editorial, not enforcement.
+Documentation and example configs may recommend classifier-, sandbox-, or reviewer-protected modes (`claude`'s `auto`, `codex`'s `on-request + auto_review`) over unchecked bypass; that guidance is editorial, not enforcement.
 
 ### Failure surfacing
 
@@ -83,7 +107,8 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 ### Out of scope
 
-- Per-adapter knob escape hatches in YAML (e.g., setting `sandboxMode` directly bypassing `PermissionPolicy`).
+- Per-adapter knob escape hatches in YAML (e.g., setting `default_permissions` directly bypassing `PermissionPolicy`).
+- Inheriting the user's machine-level Codex permission config; a `mode: 'auto'` Codex posture is always a cligent-selected profile, never a deferral to `~/.codex/config.toml`.
 - Per-tool ACL rules in YAML distinct from `PermissionPolicy`.
 - Runtime per-call permission overrides above the YAML default; per-call overrides remain a programmatic-API capability via `RunOptions.permissions`.
 - Automatic permission-mode escalation or down-shift based on context.
@@ -97,6 +122,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 - Cligent ships no default permission posture; user choice is explicit per config.
 - Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `role_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.
 - Subsequent IRs implement: the `PermissionPolicy` extension, the YAML `permissions` fields, each adapter's mapping update, and per-adapter tests that an `AgentOptions.permissions` value reaches the SDK's chosen knob.
+- The Codex adapter abandons the legacy `ThreadOptions.sandboxMode` / `networkAccessEnabled` knobs for the modern `default_permissions` profile model; a subsequent IR implements this mapping, superseding the earlier sandbox-based Codex posture.
 
 ## References
 
@@ -107,3 +133,4 @@ The DR does not introduce new error machinery; it constrains where errors should
 [5]: https://opencode.ai/docs/cli/ "OpenCode CLI reference"
 [6]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
 [7]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
+[8]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
