@@ -257,7 +257,7 @@ function applyCatppuccinMochaTheme(sessionName: string): void {
 function paneBorderFormat(): string {
   const c = CATPPUCCIN_MOCHA;
   return [
-    `#{?pane_active,#[fg=${c.base},bg=${c.blue},bold],#[fg=${c.text},bg=${c.mantle}]}`,
+    `#{?pane_active,#[fg=${c.base}]#[bg=${c.blue}]#[bold],#[fg=${c.text}]#[bg=${c.mantle}]}`,
     ' #{pane_title} ',
     '#[default]',
     ' ',
@@ -286,7 +286,7 @@ function statusRightFormat(): string {
 }
 
 function timerColorFormat(runningOption: string, runningColor: string): string {
-  return `#[fg=#{?#{==:#{${runningOption}},1},${runningColor},${CATPPUCCIN_MOCHA.overlay1}}]`;
+  return `#{?#{==:#{${runningOption}},1},#[fg=${runningColor}],#[fg=${CATPPUCCIN_MOCHA.overlay1}]}`;
 }
 
 function buildSessionCommand(options: BuildTmuxSessionOptions): string {

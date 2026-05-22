@@ -426,17 +426,23 @@ describe('launchTmuxPlay', () => {
 
     const paneBorderFormat = setValue('tmux-play-timers', 'pane-border-format');
     expect(paneBorderFormat).toContain('#{pane_title}');
+    expect(paneBorderFormat).toContain(
+      '#{?pane_active,#[fg=#1e1e2e]#[bg=#89b4fa]#[bold],#[fg=#cdd6f4]#[bg=#181825]}',
+    );
     expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`);
     expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_TEXT_OPTION}}`);
     expect(paneBorderFormat).toContain(
       `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
+    );
+    expect(paneBorderFormat).toContain(
+      `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#7f849c]}`,
     );
     expect(paneBorderFormat).toContain('⏳');
     expect(paneBorderFormat).toContain('⌛');
     expect(paneBorderFormat).toContain('#7f849c');
     expect(paneBorderFormat.indexOf('⏳')).toBeLessThan(
       paneBorderFormat.indexOf(
-        `#[fg=#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
+        `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=`,
       ),
     );
 
@@ -452,11 +458,14 @@ describe('launchTmuxPlay', () => {
     expect(statusRight).toContain(
       `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
     );
+    expect(statusRight).toContain(
+      `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},#[fg=#cba6f7],#[fg=#7f849c]}`,
+    );
     expect(statusRight).toContain('#cba6f7');
     expect(statusRight).toContain('#7f849c');
     expect(statusRight.indexOf('⏰')).toBeLessThan(
       statusRight.indexOf(
-        `#[fg=#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
+        `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},#[fg=`,
       ),
     );
     expect(setValue('tmux-play-timers', 'status-right-length')).toBe('32');
