@@ -147,3 +147,4 @@ vite.config.ts.timestamp-*
 
 # Acceptance test temp dirs
 .test-accept/
+cligent-automode-*/

@@ -13,7 +13,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Cligent } from '../index.js';
@@ -106,7 +105,7 @@ async function runAutoModeProbe(
   makeAdapter: () => AgentAdapter,
   model: string | undefined,
 ): Promise<ProbeOutcome> {
-  const cwd = mkdtempSync(join(tmpdir(), 'cligent-automode-'));
+  const cwd = mkdtempSync(join(process.cwd(), 'cligent-automode-'));
   execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
   const fileName = `scratch_${randomUUID().slice(0, 8)}.txt`;
   const filePath = join(cwd, fileName);
@@ -200,12 +199,23 @@ function expectAutoMode(label: string, outcome: ProbeOutcome): void {
   expectPhaseUnblocked(`${label} delete`, outcome.delete.events);
   expect(
     outcome.fileCreated,
-    `${label}: file was not on disk after the create run — auto mode did not let the write through`,
+    `${label}: file was not on disk after the create run — auto mode did not let the write through\n${formatEvents(outcome.create.events)}`,
   ).toBe(true);
   expect(
     outcome.fileDeleted,
-    `${label}: file survived the delete run — auto mode did not let the delete through`,
+    `${label}: file survived the delete run — auto mode did not let the delete through\n${formatEvents(outcome.delete.events)}`,
   ).toBe(true);
+}
+
+function formatEvents(events: readonly CligentEvent[]): string {
+  return JSON.stringify(
+    events.map((event) => ({
+      type: event.type,
+      payload: event.payload,
+    })),
+    null,
+    2,
+  );
 }
 
 function expectPhaseUnblocked(
