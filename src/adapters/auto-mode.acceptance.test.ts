@@ -13,6 +13,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Cligent } from '../index.js';
@@ -44,6 +45,25 @@ const TRANSIENT_UPSTREAM_MARKERS = [
   /\brate.?limit/i,
 ];
 
+// Codex executes shell commands inside an OS sandbox (bubblewrap on Linux);
+// some CI runners cannot start it. A sandbox that fails to initialize is an
+// environment limitation, not an auto-mode regression — the codex leg skips.
+// Markers are narrowed to the actual error-message shape so an unrelated
+// mention of "bwrap" in model text cannot mask a real failure.
+const SANDBOX_INIT_MARKERS = [/bwrap:\s*\S+:\s*Failed/i, /RTM_NEWADDR/];
+
+// Codex resolves its native sandbox binary via @openai/codex's bin launcher,
+// which selects the right platform package and prepends its codex-path dirs;
+// invoking that launcher's credential-free `sandbox` subcommand preflights
+// the exact same sandbox the SDK will use, rather than a different bwrap from
+// the parent process's PATH. Only failures whose output matches
+// SANDBOX_INIT_MARKERS classify as `sandbox-init` (skip per the TADAPT-019
+// spec exception); any other preflight failure classifies as `unknown` and
+// fails the codex test, so a broken codex install or drifted CLI surface
+// cannot silently hide TADAPT-019.
+const codexCliPath = resolveCodexCliPath();
+const codexSandboxPreflight = preflightCodexSandbox();
+
 describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
   const claudeMissing = missingDeps(['ANTHROPIC_API_KEY']);
   gatedIt(claudeMissing)(
@@ -59,9 +79,33 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
   const codexMissing = missingDeps(['CODEX_API_KEY']);
   gatedIt(codexMissing)(
     'codex auto mode auto-approves a temp-file write + delete',
-    async () => {
+    async (ctx) => {
       assertReady('codex', codexMissing);
+      if (codexSandboxPreflight.kind === 'sandbox-init') {
+        process.stderr.write(
+          `codex auto-mode acceptance: skipping — Codex's workspace sandbox ` +
+            `cannot initialize on this host: ${codexSandboxPreflight.summary}\n`,
+        );
+        ctx.skip();
+      }
+      if (codexSandboxPreflight.kind === 'unknown') {
+        throw new Error(
+          `codex auto-mode acceptance: refusing to skip — Codex sandbox ` +
+            `preflight failed for a non-sandbox-init reason: ` +
+            codexSandboxPreflight.summary,
+        );
+      }
       const outcome = await probeWithRetry(() => new CodexAdapter(), undefined);
+      // Backstop: catch sandbox-init failures the preflight didn't (e.g. when
+      // codex's bundled helper is used because `bwrap` is not on PATH).
+      const sandboxFailure = sandboxInitFailure(outcome);
+      if (sandboxFailure) {
+        process.stderr.write(
+          `codex auto-mode acceptance: skipping — sandbox failure surfaced ` +
+            `in probe events: ${sandboxFailure}\n`,
+        );
+        ctx.skip();
+      }
       expectAutoMode('codex', outcome);
     },
     PROBE_TIMEOUT_MS,
@@ -105,6 +149,9 @@ async function runAutoModeProbe(
   makeAdapter: () => AgentAdapter,
   model: string | undefined,
 ): Promise<ProbeOutcome> {
+  // Use a repo-local workspace so Codex's `:workspace` profile, on Linux hosts
+  // where its sandbox can initialize, is not subject to /tmp-related quirks
+  // (`sandbox_workspace_write.exclude_slash_tmp` exists for a reason).
   const cwd = mkdtempSync(join(process.cwd(), 'cligent-automode-'));
   execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
   const fileName = `scratch_${randomUUID().slice(0, 8)}.txt`;
@@ -189,6 +236,80 @@ function transientFailure(events: readonly CligentEvent[]): string | undefined {
     }
     if (text && TRANSIENT_UPSTREAM_MARKERS.some((pattern) => pattern.test(text))) {
       return text;
+    }
+  }
+  return undefined;
+}
+
+function resolveCodexCliPath(): string | undefined {
+  try {
+    return createRequire(import.meta.url).resolve('@openai/codex/bin/codex.js');
+  } catch {
+    return undefined;
+  }
+}
+
+type CodexSandboxPreflight =
+  | { kind: 'ok' }
+  | { kind: 'sandbox-init'; summary: string }
+  | { kind: 'unknown'; summary: string };
+
+// Credential-free preflight via Codex's own sandbox subcommand. Classifies
+// the outcome so only OS-sandbox-init failures (matching SANDBOX_INIT_MARKERS)
+// produce a skip; non-Linux hosts and an unresolvable codex CLI bin classify
+// as `ok` (let the test run; the post-flight backstop catches anything the
+// preflight missed). Any other preflight failure — CLI surface drift, missing
+// platform helper, config parse error, launcher panic, timeout — classifies
+// as `unknown`, so it surfaces as a test failure instead of a silent skip.
+function preflightCodexSandbox(): CodexSandboxPreflight {
+  if (process.platform !== 'linux') return { kind: 'ok' };
+  if (!codexCliPath) return { kind: 'ok' };
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        codexCliPath,
+        'sandbox',
+        'linux',
+        '--permissions-profile',
+        ':workspace',
+        '-C',
+        process.cwd(),
+        'true',
+      ],
+      { stdio: 'pipe', timeout: 10_000 },
+    );
+    return { kind: 'ok' };
+  } catch (error) {
+    const summary = summarizeExecFailure(error);
+    if (SANDBOX_INIT_MARKERS.some((marker) => marker.test(summary))) {
+      return { kind: 'sandbox-init', summary };
+    }
+    return { kind: 'unknown', summary };
+  }
+}
+
+function summarizeExecFailure(error: unknown): string {
+  const stderr = (error as { stderr?: Buffer | string } | null)?.stderr;
+  const stderrText = Buffer.isBuffer(stderr)
+    ? stderr.toString('utf8')
+    : (stderr ?? '');
+  const message = (error as { message?: string } | null)?.message ?? '';
+  return (stderrText || message || String(error))
+    .replace(/\s+/g, ' ')
+    .slice(0, 300);
+}
+
+// A non-functional Codex OS sandbox (e.g. bubblewrap failing to set up its
+// network namespace on a restricted CI runner) surfaces in the event stream
+// rather than as an `error` event, so it is detected from the probe outcome.
+function sandboxInitFailure(outcome: ProbeOutcome): string | undefined {
+  for (const phase of [outcome.create, outcome.delete]) {
+    for (const event of phase.events) {
+      const text = JSON.stringify(event.payload);
+      if (SANDBOX_INIT_MARKERS.some((marker) => marker.test(text))) {
+        return text.replace(/\s+/g, ' ').slice(0, 300);
+      }
     }
   }
   return undefined;
