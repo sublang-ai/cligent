@@ -59,6 +59,7 @@ meta.md     The spec of specs
 | IR-015 | [015-codex-auto-review-permission-mode.md](iterations/015-codex-auto-review-permission-mode.md) | Add Codex `approvals_reviewer = auto_review` to `PermissionPolicy.mode: 'auto'` |
 | IR-016 | [016-tmux-play-run-time-timers.md](iterations/016-tmux-play-run-time-timers.md) | Per-pane and session-total run-time timers on the tmux panes and status bar |
 | IR-017 | [017-codex-modern-permission-profiles.md](iterations/017-codex-modern-permission-profiles.md) | Codex adapter: modern `default_permissions` profile model, automation/local-access axis composition |
+| IR-018 | [018-reasoning-effort-yaml-and-per-adapter-mappings.md](iterations/018-reasoning-effort-yaml-and-per-adapter-mappings.md) | tmux-play YAML `reasoningEffort` per role/captain; Claude `xhigh` mapping refresh; Gemini settings-file + OpenCode variant wiring |
 
 ## Packages
 
