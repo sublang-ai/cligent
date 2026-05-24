@@ -9,7 +9,10 @@ import type {
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
-import type { SessionPromptAsyncData } from '@opencode-ai/sdk/v2';
+import type {
+  PermissionRuleset,
+  SessionPromptAsyncData,
+} from '@opencode-ai/sdk/v2';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -33,6 +36,7 @@ type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
+type OpenCodeV2Tools = NonNullable<OpenCodeV2PromptBody['tools']>;
 
 type SpawnProcessFn = (
   command: string,
@@ -562,6 +566,53 @@ function toOpenCodePromptModel(model: unknown): unknown {
   return model;
 }
 
+function asPermissionAction(value: unknown): PermissionLevel | undefined {
+  return value === 'allow' || value === 'ask' || value === 'deny'
+    ? value
+    : undefined;
+}
+
+function toOpenCodeV2PermissionRuleset(
+  permission: unknown,
+): PermissionRuleset | undefined {
+  const record = asRecord(permission);
+  const rules: PermissionRuleset = [];
+
+  for (const key of ['edit', 'bash', 'webfetch'] as const) {
+    const action = asPermissionAction(record[key]);
+    if (action) {
+      rules.push({ permission: key, pattern: '*', action });
+    }
+  }
+
+  return rules.length > 0 ? rules : undefined;
+}
+
+function toOpenCodeV2Tools(tools: unknown): OpenCodeV2Tools | undefined {
+  const record = asRecord(tools);
+  const core = asStringArray(record.core);
+  const exclude = asStringArray(record.exclude);
+  const mapped: OpenCodeV2Tools = {};
+
+  for (const tool of core) {
+    mapped[tool] = true;
+  }
+  for (const tool of exclude) {
+    mapped[tool] = false;
+  }
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function throwIfSdkResultError(result: unknown, operation: string): void {
+  const record = asRecord(result);
+  const error = record.error;
+  if (error === undefined || error === null) return;
+
+  const payload = toErrorPayload(error);
+  throw new Error(`${operation}: ${payload.message}`);
+}
+
 export function wrapOpencodeClient(
   real: Record<string, unknown>,
   options: WrapOpencodeClientOptions = {},
@@ -587,6 +638,9 @@ export function wrapOpencodeClient(
 
   // Bind methods to their owning service objects to preserve `this`.
   const sessionCreate = session.create.bind(session) as (body?: unknown) => Promise<unknown>;
+  const sessionUpdate = typeof session.update === 'function'
+    ? (session.update.bind(session) as (args: unknown) => Promise<unknown>)
+    : undefined;
   const sessionPromptAsync = typeof session.promptAsync === 'function'
     ? (session.promptAsync.bind(session) as (args: unknown) => Promise<unknown>)
     : undefined;
@@ -601,21 +655,49 @@ export function wrapOpencodeClient(
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
       const resumeId = asString(options.sessionId);
+      const cwdVal = asString(options.cwd);
+      const permissionObj = options.permission;
+      const toolsObj = options.tools;
+      const variantVal = asString(options.variant);
+      const modelVal = toOpenCodePromptModel(options.model);
+      const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
+      const v2Tools = toOpenCodeV2Tools(toolsObj);
 
       let sessionId: string | undefined;
 
       if (resumeId) {
         // Resume an existing session instead of creating a new one.
         sessionId = resumeId;
+        if (apiVersion === 'v2' && v2PermissionRuleset) {
+          if (!sessionUpdate) {
+            throw new Error(
+              'OpenCode SDK client.session.update() not available for v2 permission updates',
+            );
+          }
+          const updated = await sessionUpdate({
+            sessionID: resumeId,
+            ...(cwdVal ? { directory: cwdVal } : {}),
+            permission: v2PermissionRuleset,
+          });
+          throwIfSdkResultError(updated, 'OpenCode session.update failed');
+        }
       } else {
-        const created = asRecord(await sessionCreate());
+        const created = asRecord(
+          await sessionCreate(
+            apiVersion === 'v2'
+              ? {
+                  ...(cwdVal ? { directory: cwdVal } : {}),
+                  ...(v2PermissionRuleset
+                    ? { permission: v2PermissionRuleset }
+                    : {}),
+                }
+              : undefined,
+          ),
+        );
+        throwIfSdkResultError(created, 'OpenCode session.create failed');
         sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
       }
 
-      const permissionObj = options.permission;
-      const toolsObj = options.tools;
-      const variantVal = asString(options.variant);
-      const modelVal = toOpenCodePromptModel(options.model);
       if (!sessionId) {
         sessionId = generateSessionId();
       }
@@ -638,7 +720,8 @@ export function wrapOpencodeClient(
         parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
         ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
         ...(variantVal ? { variant: variantVal } : {}),
-        ...(asString(options.cwd) ? { directory: asString(options.cwd) } : {}),
+        ...(cwdVal ? { directory: cwdVal } : {}),
+        ...(v2Tools ? { tools: v2Tools } : {}),
       };
 
       // The SDK's event stream is a lazy async generator — the HTTP
@@ -646,7 +729,11 @@ export function wrapOpencodeClient(
       // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
       // the SSE connection BEFORE sending the prompt so fast early
       // events are not lost on the live-only (no replay) endpoint.
-      const subResult = asRecord(await eventSubscribe());
+      const subResult = asRecord(
+        await eventSubscribe(
+          apiVersion === 'v2' && cwdVal ? { directory: cwdVal } : undefined,
+        ),
+      );
       const rawStream = subResult.stream ?? subResult.events ?? subResult;
       let events: AsyncIterable<unknown> | undefined;
       let eagerFirst: Promise<IteratorResult<unknown>> | undefined;
@@ -659,7 +746,7 @@ export function wrapOpencodeClient(
 
       if (sessionPromptAsync) {
         // Fire-and-forget: promptAsync returns 204 immediately.
-        await sessionPromptAsync(
+        const promptResult = await sessionPromptAsync(
           apiVersion === 'v2'
             ? v2PromptParameters
             : {
@@ -667,8 +754,9 @@ export function wrapOpencodeClient(
                 body: promptBody,
               },
         );
+        throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
       } else if (sessionPromptSync) {
-        await sessionPromptSync(
+        const promptResult = await sessionPromptSync(
           apiVersion === 'v2'
             ? v2PromptParameters
             : {
@@ -676,6 +764,7 @@ export function wrapOpencodeClient(
                 body: promptBody,
               },
         );
+        throwIfSdkResultError(promptResult, 'OpenCode session.prompt failed');
       }
 
       // Wrap the iterator so the eagerly-fetched first result is not lost.
@@ -1182,24 +1271,30 @@ export class OpenCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        if (eventType === 'permission.updated') {
-          const permission = asRecord(event.permission);
+        if (eventType === 'permission.updated' || eventType === 'permission.asked') {
+          const permission =
+            eventType === 'permission.asked' ? event : asRecord(event.permission);
           const reason = asString(permission.reason) ?? asString(event.reason);
           yield createEvent(
             'permission_request',
             AGENT,
             {
               toolName:
+                asString(permission.permission) ??
                 asString(permission.toolName) ??
                 asString(permission.name) ??
                 asString(event.toolName) ??
                 'unknown_tool',
               toolUseId:
-                asString(permission.toolUseId) ??
+                asString(permission.requestID) ??
                 asString(permission.id) ??
+                asString(asRecord(permission.tool).callID) ??
+                asString(permission.toolUseId) ??
                 asString(event.toolUseId) ??
                 generateSessionId(),
-              input: parseToolInput(permission.input ?? event.input ?? {}),
+              input: parseToolInput(
+                permission.input ?? permission.metadata ?? event.input ?? {},
+              ),
               ...(reason ? { reason } : {}),
             },
             sessionId,
@@ -1214,10 +1309,15 @@ export class OpenCodeAdapter implements AgentAdapter {
             asString(event.decision) ??
             asString(permission.status) ??
             asString(event.status) ??
+            asString(event.reply) ??
             ''
           ).toLowerCase();
 
-          if (decision === 'denied' || decision === 'rejected') {
+          if (
+            decision === 'denied' ||
+            decision === 'rejected' ||
+            decision === 'reject'
+          ) {
             yield createEvent(
               'tool_result',
               AGENT,

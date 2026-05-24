@@ -43,7 +43,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` | `permission_request` |
+| `permission.updated` / `permission.asked` | `permission_request` |
 | `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
@@ -59,6 +59,7 @@ While the SSE stream carries events for all sessions, the adapter shall emit onl
 ### OPENCODE-007
 
 The adapter shall map `PermissionPolicy` to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
+On the OpenCode v2 SDK path, the adapter shall apply the equivalent `PermissionRuleset` at `session.create` for fresh sessions and at `session.update` before prompting resumed sessions, because the v2 prompt body no longer accepts the legacy `permission` map.
 
 ## Server Lifecycle
 

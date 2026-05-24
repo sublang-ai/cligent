@@ -531,6 +531,57 @@ describe('OpenCodeAdapter', () => {
     expect(capturedRunOptions).not.toHaveProperty('variant');
   });
 
+  it('normalizes OpenCode v2 permission.asked events', async () => {
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'v2-permission-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'permission-1',
+                sessionID: 'v2-permission-session',
+                permission: 'bash',
+                patterns: ['*'],
+                metadata: { command: 'npm test' },
+                always: [],
+                tool: { messageID: 'message-1', callID: 'tool-call-1' },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: {
+                sessionID: 'v2-permission-session',
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const permission = events.find((event) => event.type === 'permission_request') as
+      | (AgentEvent & {
+          payload: {
+            toolName: string;
+            toolUseId: string;
+            input: Record<string, unknown>;
+          };
+        })
+      | undefined;
+
+    expect(permission?.payload).toEqual({
+      toolName: 'bash',
+      toolUseId: 'permission-1',
+      input: { command: 'npm test' },
+    });
+  });
+
   it('uses external mode without spawning a server', async () => {
     let createClientBaseUrl: string | undefined;
     let spawnCalled = false;
@@ -1049,15 +1100,15 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     createResult?: Record<string, unknown>;
     promptResult?: unknown;
     subscribeResult?: { stream?: AsyncIterable<unknown>; events?: AsyncIterable<unknown> };
-    onCreateSession?: () => void;
+    onCreateSession?: (args: unknown) => void;
     onPrompt?: (args: unknown) => void;
     onSubscribe?: (args: unknown) => void;
     onDispose?: () => void;
   }): Record<string, unknown> {
     return {
       session: {
-        async create(): Promise<Record<string, unknown>> {
-          config.onCreateSession?.();
+        async create(args?: unknown): Promise<Record<string, unknown>> {
+          config.onCreateSession?.(args);
           return config.createResult ?? { id: 'v1-session-1' };
         },
         async prompt(args: unknown): Promise<unknown> {
@@ -1231,6 +1282,154 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptCalls[0]).not.toHaveProperty('body');
     expect(promptCalls[1]).not.toHaveProperty('path');
     expect(promptCalls[1]).not.toHaveProperty('body');
+  });
+
+  it('maps v1 permission and tools options onto the v2 session and prompt surfaces', async () => {
+    let capturedCreateArgs: unknown;
+    let capturedPromptArgs: unknown;
+    const real = {
+      session: {
+        async create(args?: unknown) {
+          capturedCreateArgs = args;
+          return { data: { id: 'v2-session-permissions' } };
+        },
+        async promptAsync(args: unknown) {
+          capturedPromptArgs = args;
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+    };
+
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await client.run?.({
+      prompt: 'test options',
+      cwd: '/workspace',
+      permission: {
+        edit: 'allow',
+        bash: 'ask',
+        webfetch: 'deny',
+      },
+      tools: {
+        core: ['edit', 'bash'],
+        exclude: ['webfetch'],
+      },
+    });
+
+    expect(capturedCreateArgs).toEqual({
+      directory: '/workspace',
+      permission: [
+        { permission: 'edit', pattern: '*', action: 'allow' },
+        { permission: 'bash', pattern: '*', action: 'ask' },
+        { permission: 'webfetch', pattern: '*', action: 'deny' },
+      ],
+    });
+    expect(capturedPromptArgs).toEqual(
+      expect.objectContaining({
+        sessionID: 'v2-session-permissions',
+        directory: '/workspace',
+        tools: {
+          edit: true,
+          bash: true,
+          webfetch: false,
+        },
+        parts: [{ type: 'text', text: 'test options' }],
+      }),
+    );
+    expect(capturedPromptArgs).not.toHaveProperty('permission');
+  });
+
+  it('updates v2 resumed sessions with the mapped permission ruleset before prompting', async () => {
+    let createCalled = false;
+    const updateCalls: unknown[] = [];
+    const promptCalls: unknown[] = [];
+    const real = {
+      session: {
+        async create() {
+          createCalled = true;
+          return { data: { id: 'new-session' } };
+        },
+        async update(args: unknown) {
+          updateCalls.push(args);
+          return {};
+        },
+        async promptAsync(args: unknown) {
+          promptCalls.push(args);
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+    };
+
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await client.run?.({
+      prompt: 'continue',
+      sessionId: 'existing-session',
+      cwd: '/workspace',
+      permission: {
+        edit: 'allow',
+        bash: 'allow',
+        webfetch: 'allow',
+      },
+    });
+
+    expect(createCalled).toBe(false);
+    expect(updateCalls).toEqual([
+      {
+        sessionID: 'existing-session',
+        directory: '/workspace',
+        permission: [
+          { permission: 'edit', pattern: '*', action: 'allow' },
+          { permission: 'bash', pattern: '*', action: 'allow' },
+          { permission: 'webfetch', pattern: '*', action: 'allow' },
+        ],
+      },
+    ]);
+    expect(promptCalls).toEqual([
+      expect.objectContaining({
+        sessionID: 'existing-session',
+        directory: '/workspace',
+        parts: [{ type: 'text', text: 'continue' }],
+      }),
+    ]);
+  });
+
+  it('surfaces v2 SDK result errors instead of waiting on an unreachable stream', async () => {
+    const real = {
+      session: {
+        async create() {
+          return {
+            error: {
+              data: { message: 'bad permission ruleset' },
+            },
+          };
+        },
+        async promptAsync() {
+          throw new Error('prompt should not be called');
+        },
+      },
+      event: {
+        async subscribe() {
+          throw new Error('subscribe should not be called');
+        },
+      },
+    };
+
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await expect(client.run?.({ prompt: 'test' })).rejects.toThrow(
+      'OpenCode session.create failed: bad permission ruleset',
+    );
   });
 
   it('forwards steps, permission, and tools to session.prompt body', async () => {
