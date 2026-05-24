@@ -20,7 +20,7 @@ type ClaudePermissionMode =
 
 type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
 
-type ClaudeEffort = 'low' | 'medium' | 'high' | 'max';
+type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 // The SDK's permission-callback contract, mirrored locally. It is deliberately
 // NOT imported from `@anthropic-ai/claude-agent-sdk`: that package is an
@@ -619,14 +619,8 @@ export function mapReasoningEffortToClaudeEffort(
   effort: ReasoningEffort | undefined,
 ): ClaudeEffort | undefined {
   if (effort === undefined) return undefined;
-  // The pinned Claude SDK declares effort as 'low' | 'medium' | 'high' | 'max'.
-  // 'minimal' collapses to 'low' (the SDK's lowest tier). 'xhigh' collapses to
-  // 'high' (the SDK default) rather than 'max', because Anthropic's own docs
-  // describe 'max' as cost-heavy with diminishing returns — silently
-  // promoting an 'xhigh' request to 'max' would be a worse surprise than
-  // falling back to the default.
+  // Claude has no 'minimal' tier; use the SDK's lowest effort instead.
   if (effort === 'minimal') return 'low';
-  if (effort === 'xhigh') return 'high';
   return effort;
 }
 

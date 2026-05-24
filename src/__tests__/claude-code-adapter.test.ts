@@ -921,7 +921,7 @@ describe('ClaudeCodeAdapter', () => {
       ['low', 'low'],
       ['medium', 'medium'],
       ['high', 'high'],
-      ['xhigh', 'high'],
+      ['xhigh', 'xhigh'],
       ['max', 'max'],
     ];
 
