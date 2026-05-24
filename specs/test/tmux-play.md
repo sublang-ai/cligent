@@ -321,6 +321,18 @@ Verifies: [TMUX-052](../user/tmux-play.md#tmux-052), [TMUX-008](../user/tmux-pla
 
 Given a YAML config whose `permissions.mode` is outside the closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path (e.g., `captain.permissions.mode` or `roles[0].permissions.mode`). The runtime shall not start, and no `runtime_error` record shall be observable — the failure is a launcher-startup abort that falls outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope, per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
 
+## Reasoning Effort Configuration
+
+### TTMUX-057
+Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [ENG-020](../user/engine.md#eng-020), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
+
+Given a YAML config that sets `captain.reasoningEffort` and `roles[].reasoningEffort` across roles covering the supported adapters, when the launcher/session seam constructs the corresponding `Cligent` instances and invokes adapter seams, the accepted values shall reach the adapter-specific mapped surfaces: Claude SDK `effort`, Codex SDK `modelReasoningEffort`, Gemini per-run settings aliases for concrete `^gemini-3` and `^gemini-2\.5` model IDs, and OpenCode v2 prompt-body top-level `variant`. The Gemini assertion shall also cover the skip cases from [GEMINI-011](../user/adapters/gemini.md#gemini-011): a CLI alias or non-matching concrete model writes no custom alias and preserves `--model <model>`, and an unset model writes no custom alias and passes no `--model` flag.
+
+### TTMUX-058
+Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [TMUX-008](../user/tmux-play.md#tmux-008), [TMUX-025](../user/tmux-play.md#tmux-025)
+
+Given a YAML config whose `captain.reasoningEffort` or `roles[0].reasoningEffort` is outside [ENG-020](../user/engine.md#eng-020)'s closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path. The runtime shall not start, and no `runtime_error` record shall be observable because the failure is a launcher-startup abort outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope.
+
 ## Real-glow Acceptance
 
 Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts` (glow-in-isolation checks) and `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (presenter + glow integration), run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.

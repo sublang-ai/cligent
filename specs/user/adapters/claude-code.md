@@ -65,12 +65,11 @@ The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md
 | `low` | `low` |
 | `medium` | `medium` |
 | `high` | `high` |
-| `xhigh` | `high` |
+| `xhigh` | `xhigh` |
 | `max` | `max` |
 
-The pinned Claude Agent SDK declares `effort` as the closed set `'low' | 'medium' | 'high' | 'max'`.
+The pinned Claude Agent SDK declares `effort` as the closed set `'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
 `minimal` collapses to `low` (the SDK's lowest tier).
-`xhigh` collapses to `high` (the SDK default) rather than `max`, since `max` is documented to add significant cost for diminishing returns; callers wanting Claude's top tier shall request `max` explicitly.
 When `reasoningEffort` is omitted, the adapter shall not set `effort` and shall defer to the SDK default.
 
 ## Resume Token

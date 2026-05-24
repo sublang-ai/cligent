@@ -33,11 +33,11 @@ A `tmux-play` config shall be YAML with a `captain` object and a non-empty `role
 
 ### TMUX-006
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `reasoningEffort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### TMUX-007
 
-Each entry in `roles` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, and a `permissions` object per [TMUX-052](#tmux-052). Role `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple roles may share an adapter and model.
+Each entry in `roles` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `reasoningEffort` per [TMUX-056](#tmux-056). Role `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple roles may share an adapter and model.
 
 ### TMUX-052
 
@@ -45,6 +45,13 @@ The `captain` object and each `roles` entry may include a `permissions` object w
 The loader shall forward an accepted `permissions` value verbatim to the captain / role `Cligent` constructor as `CligentOptions.permissions` per [DR-005](../decisions/005-per-adapter-permission-configuration.md); the adapter performs the SDK-knob mapping at `run()` time per ENG-021.
 The loader shall reject unknown sub-fields under `permissions` and values outside the closed sets above with an error that names the offending path per [TMUX-008](#tmux-008).
 A missing `permissions` field shall be treated as no policy override; the adapter retains its SDK default.
+
+### TMUX-056
+
+The `captain` object and each `roles` entry may include `reasoningEffort`, whose value shall be [ENG-020](engine.md#eng-020)'s closed set: `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
+The loader shall forward an accepted `reasoningEffort` value to the corresponding captain or role `Cligent` constructor as `CligentOptions.reasoningEffort` per [ENG-001](engine.md#eng-001).
+The loader shall reject values outside the closed set with an error that names the offending path (`captain.reasoningEffort` or `roles[N].reasoningEffort`) per [TMUX-008](#tmux-008).
+A missing `reasoningEffort` field shall be treated as no reasoning-effort override; the adapter retains its default for that role or captain.
 
 ### TMUX-008
 
@@ -142,7 +149,7 @@ With two or more roles, `tmux-play` shall use two role columns. The Boss/Captain
 
 ### TMUX-029
 
-The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, a `captainConfig` with `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), optional `model`, optional `instruction`, and an optional `permissions` per [TMUX-052](#tmux-052), a non-empty `roles` array (each entry with `id`, `adapter`, optional `model`, optional `instruction`, and optional `permissions`, conforming to [TMUX-007](#tmux-007)), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
+The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, a `captainConfig` with `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), optional `model`, optional `instruction`, optional `permissions` per [TMUX-052](#tmux-052), and optional `reasoningEffort` per [TMUX-056](#tmux-056), a non-empty `roles` array (each entry with `id`, `adapter`, optional `model`, optional `instruction`, optional `permissions`, and optional `reasoningEffort`, conforming to [TMUX-007](#tmux-007)), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
 
 ## Built-in Fanout Captain
 

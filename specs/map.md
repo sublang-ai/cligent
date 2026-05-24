@@ -86,7 +86,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token |
+| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token, reasoning-effort thinking settings |
 
 ### GIT
 
@@ -111,7 +111,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token, options mapping |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, two modes, session filtering, server lifecycle, resume token, options mapping, reasoning-effort variants |
 
 ### PKG
 
@@ -135,5 +135,5 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (including per-role/captain `permissions`), discovery and auto-create, Captain contract, records, observers, topology, theme, run-time timers, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
-| test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, permission configuration, run-time timers, real-tmux acceptance, real-glow acceptance |
+| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (including per-role/captain `permissions` and `reasoningEffort`), discovery and auto-create, Captain contract, records, observers, topology, theme, run-time timers, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
+| test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, permission and reasoning-effort configuration, run-time timers, real-tmux acceptance, real-glow acceptance |

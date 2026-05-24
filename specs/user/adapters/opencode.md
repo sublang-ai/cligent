@@ -84,9 +84,22 @@ The adapter shall set `DonePayload.resumeToken` to the session identifier from t
 
 ### OPENCODE-012
 
-The adapter shall not forward `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the OpenCode SDK, because the session prompt body exposes no per-call reasoning-effort slot.
-Reasoning effort and thinking shall be configured per provider/model in `opencode.jsonc` (`reasoningEffort` for OpenAI providers; `thinking` for Anthropic providers) per [[1]].
-The field shall be accepted at the unified interface and silently ignored by this adapter.
+The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
+The prompt-body surface, rather than session creation, shall be used so the value applies to both fresh and resumed sessions.
+Provider dispatch shall use the `provider/model` prefix in `AgentOptions.model`.
+When the provider has no documented built-in variant set, the adapter shall leave `variant` unset and defer to the user's `opencode.jsonc`.
+When `reasoningEffort` is omitted, the adapter shall not set `variant`.
+
+| `reasoningEffort` | Anthropic | OpenAI | Google | Other |
+| --- | --- | --- | --- | --- |
+| `minimal` | `high` | `minimal` | `low` | unset |
+| `low` | `high` | `low` | `low` | unset |
+| `medium` | `high` | `medium` | `low` | unset |
+| `high` | `high` | `high` | `high` | unset |
+| `xhigh` | `max` | `xhigh` | `high` | unset |
+| `max` | `max` | `xhigh` | `high` | unset |
+
+Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [ENG-020](../engine.md#eng-020).
 
 ## References
 
