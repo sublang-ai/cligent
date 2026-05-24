@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-24
+
+### Added
+
+- `PermissionPolicy.mode` (`'auto' | 'bypass'`) on `CligentOptions.permissions` selects each adapter's classifier-, sandbox-, or reviewer-protected auto posture (or unchecked bypass): Claude `permissionMode: 'auto'` / `'bypassPermissions'`; Codex on-request approval + `approvals_reviewer: 'auto_review'` + workspace profile / never approval + danger-full-access profile; Gemini `--yolo`; OpenCode `permission: 'allow'` (bypass rejected because the cligent OpenCode adapter drives the SDK, not the CLI flag that owns bypass) — IR-014, IR-015, ENG-021
+- Codex adapter maps `PermissionPolicy` onto Codex's modern permission-profile model: local access via `CodexOptions.config.default_permissions` (`:workspace` / `:danger-full-access` / `:read-only`) derived from the per-capability levels, independent of the approval/reviewer axis. `mode: 'auto'` composes Codex auto-review with the modern profile rather than pinning the legacy sandbox model — IR-017, amended DR-005, CODEX-004
+- tmux-play YAML carries `permissions` per role and per captain, forwarded to each `Cligent` instance. The default home config ships `permissions: { mode: 'auto' }` so Claude and Codex roles run in their classifier-/sandbox-/reviewer-protected auto modes out of the box — IR-014
+- Run-time timers on the tmux-play session: each role and Boss/Captain pane border shows a live cumulative active-time hourglass (`⏳` running, `⌛` frozen); the tmux status bar carries the session-total clock (`⏰`) on the right and the navigation hints on the left. Catppuccin-styled, ticking at roughly 1 Hz, excludes time spent waiting between rounds — IR-016
+- PKG-009: optional peer-dependency floors for the agent SDKs track the lowest SDK version the adapter code supports, not the pinned `devDependencies` version, so consumers on older compatible SDKs are not pressured to upgrade
+
+### Changed
+
+- Codex adapter no longer sets `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`. Codex documents that a present `sandbox_mode` in any active config layer makes Codex ignore `default_permissions`, so cligent now expresses the local-access surface only through the modern model. A user carrying a legacy `sandbox_mode` in their own `~/.codex/config.toml` will see that config win over cligent's `default_permissions` — the documented non-composition rule
+- Agent SDK devDependencies bumped to current releases: `@anthropic-ai/claude-agent-sdk` 0.2.133 → 0.3.148, `@openai/codex-sdk` 0.129.0 → 0.133.0, `@opencode-ai/sdk` 1.14.41 → 1.15.7. Optional peer-dependency floors stay at the prior versions per PKG-009
+
+### Fixed
+
+- Claude Code adapter's `canUseTool` callback now conforms to the SDK contract — it returns `Promise<{ behavior: 'allow', updatedInput? } | { behavior: 'deny', message }>` instead of `boolean | undefined`, so the SDK no longer rejects every Write/Bash invocation with a Zod validation error when `permissions` is configured
+- tmux-play timer pane-border format strings use the correct `#{?cond,#[fg=A],#[fg=B]}` conditional shape (the previous `#[fg=#{?…}]` shape was rejected by tmux), and pane-title-keyed width computation uses the full `role · adapter` pane title so role panes get the right width budget for `glow` rendering
+
 ## [0.4.0] - 2026-05-17
 
 ### Added
@@ -105,7 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sublang-ai/cligent/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/sublang-ai/cligent/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sublang-ai/cligent/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sublang-ai/cligent/compare/v0.1.0...v0.2.0
