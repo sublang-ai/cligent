@@ -11,12 +11,20 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildGeminiSettings,
   buildGeminiToolSettings,
+  GEMINI_REASONING_EFFORT_ALIAS,
   GeminiAdapter,
   mapAgentOptionsToGeminiCommand,
   mapPermissionsToGeminiToolConfig,
 } from '../adapters/gemini.js';
-import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
+import type {
+  AgentEvent,
+  AgentOptions,
+  PermissionLevel,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../types.js';
 
 class MockGeminiProcess extends EventEmitter {
   readonly stdout = new PassThrough();
@@ -97,6 +105,33 @@ async function collect(
     events.push(event);
   }
   return events;
+}
+
+function modelArg(args: readonly string[]): string | undefined {
+  const index = args.indexOf('--model');
+  return index === -1 ? undefined : args[index + 1];
+}
+
+function expectReasoningAlias(
+  mapped: ReturnType<typeof mapAgentOptionsToGeminiCommand>,
+  model: string,
+  thinkingConfig: Record<string, unknown>,
+): void {
+  expect(modelArg(mapped.args)).toBe(GEMINI_REASONING_EFFORT_ALIAS);
+  expect(buildGeminiSettings(mapped.settingsConfig)).toEqual({
+    modelConfigs: {
+      customAliases: {
+        [GEMINI_REASONING_EFFORT_ALIAS]: {
+          modelConfig: {
+            model,
+            generateContentConfig: {
+              thinkingConfig,
+            },
+          },
+        },
+      },
+    },
+  });
 }
 
 describe('GeminiAdapter', () => {
@@ -682,18 +717,121 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).not.toContain('--prompt');
   });
 
-  it('does not forward reasoningEffort to the Gemini CLI per GEMINI-011', () => {
-    const baseline = mapAgentOptionsToGeminiCommand('prompt', {});
-    const withEffort = mapAgentOptionsToGeminiCommand('prompt', {
-      reasoningEffort: 'high',
+  it.each([
+    ['minimal', 'MINIMAL'],
+    ['low', 'LOW'],
+    ['medium', 'MEDIUM'],
+    ['high', 'HIGH'],
+    ['xhigh', 'HIGH'],
+    ['max', 'HIGH'],
+  ] satisfies Array<[ReasoningEffort, string]>)(
+    'maps Gemini 3 reasoningEffort %s to thinkingLevel %s',
+    (reasoningEffort, thinkingLevel) => {
+      const mapped = mapAgentOptionsToGeminiCommand('prompt', {
+        model: 'gemini-3-flash',
+        reasoningEffort,
+      });
+
+      expectReasoningAlias(mapped, 'gemini-3-flash', { thinkingLevel });
+      expect(mapped.args).not.toContain('gemini-3-flash');
+      expect(mapped.args).not.toContain('--thinking-level');
+    },
+  );
+
+  it.each([
+    ['minimal', 1024],
+    ['low', 4096],
+    ['medium', 8192],
+    ['high', 16384],
+    ['xhigh', 24576],
+    ['max', 24576],
+  ] satisfies Array<[ReasoningEffort, number]>)(
+    'maps Gemini 2.5 Flash reasoningEffort %s to thinkingBudget %s',
+    (reasoningEffort, thinkingBudget) => {
+      const mapped = mapAgentOptionsToGeminiCommand('prompt', {
+        model: 'gemini-2.5-flash',
+        reasoningEffort,
+      });
+
+      expectReasoningAlias(mapped, 'gemini-2.5-flash', { thinkingBudget });
+      expect(mapped.args).not.toContain('gemini-2.5-flash');
+      expect(mapped.args).not.toContain('--thinking-budget');
+    },
+  );
+
+  it('maps Gemini 2.5 max to the model-family upper bound', () => {
+    const pro = mapAgentOptionsToGeminiCommand('prompt', {
+      model: 'gemini-2.5-pro',
+      reasoningEffort: 'max',
+    });
+    const flash = mapAgentOptionsToGeminiCommand('prompt', {
+      model: 'gemini-2.5-flash-preview',
+      reasoningEffort: 'max',
+    });
+    const flashLite = mapAgentOptionsToGeminiCommand('prompt', {
+      model: 'gemini-2.5-flash-lite',
+      reasoningEffort: 'max',
     });
 
-    // Args must be identical: Gemini CLI has no per-call reasoning flag,
-    // so the field is silently ignored at the unified surface.
-    expect(withEffort.args).toEqual(baseline.args);
-    expect(withEffort.args).not.toContain('--reasoning-effort');
-    expect(withEffort.args).not.toContain('--thinking-budget');
-    expect(withEffort.args).not.toContain('--thinking-level');
+    expectReasoningAlias(pro, 'gemini-2.5-pro', { thinkingBudget: 32768 });
+    expectReasoningAlias(flash, 'gemini-2.5-flash-preview', {
+      thinkingBudget: 24576,
+    });
+    expectReasoningAlias(flashLite, 'gemini-2.5-flash-lite', {
+      thinkingBudget: 24576,
+    });
+  });
+
+  it.each([
+    ['unset model', { reasoningEffort: 'high' }, undefined],
+    ['CLI alias', { model: 'flash', reasoningEffort: 'high' }, 'flash'],
+    [
+      'non-matching concrete model',
+      { model: 'gemini-4-pro', reasoningEffort: 'high' },
+      'gemini-4-pro',
+    ],
+  ] satisfies Array<[string, AgentOptions, string | undefined]>)(
+    'skips Gemini reasoning alias for %s',
+    (_name, options, expectedModel) => {
+      const mapped = mapAgentOptionsToGeminiCommand('prompt', options);
+
+      expect(buildGeminiSettings(mapped.settingsConfig)).toBeUndefined();
+      expect(modelArg(mapped.args)).toBe(expectedModel);
+      expect(mapped.args).not.toContain(GEMINI_REASONING_EFFORT_ALIAS);
+      expect(mapped.args).not.toContain('--thinking-budget');
+      expect(mapped.args).not.toContain('--thinking-level');
+    },
+  );
+
+  it('combines reasoning aliases with existing tool settings', () => {
+    const mapped = mapAgentOptionsToGeminiCommand('prompt', {
+      model: 'gemini-3-pro',
+      reasoningEffort: 'low',
+      permissions: {
+        fileWrite: 'deny',
+        shellExecute: 'allow',
+        networkAccess: 'ask',
+      },
+    });
+
+    expect(buildGeminiSettings(mapped.settingsConfig)).toEqual({
+      tools: {
+        core: ['ShellTool'],
+        exclude: ['edit'],
+      },
+      modelConfigs: {
+        customAliases: {
+          [GEMINI_REASONING_EFFORT_ALIAS]: {
+            modelConfig: {
+              model: 'gemini-3-pro',
+              generateContentConfig: {
+                thinkingConfig: { thinkingLevel: 'LOW' },
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   it('passes leading-dash prompt as positional without -- separator', () => {

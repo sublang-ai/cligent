@@ -19,6 +19,7 @@ import type {
   DonePayload,
   PermissionLevel,
   PermissionPolicy,
+  ReasoningEffort,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
 
@@ -47,7 +48,7 @@ interface GeminiAdapterDeps {
   spawnProcess?: SpawnProcessFn;
   probeAvailability?: () => Promise<boolean>;
   createSettingsOverride?: (
-    toolConfig: GeminiToolConfig,
+    settingsConfig: GeminiSettingsConfig,
   ) => Promise<GeminiSettingsOverride>;
 }
 
@@ -277,10 +278,30 @@ export interface GeminiToolConfig {
   approvalMode?: GeminiApprovalMode;
 }
 
+export type GeminiThinkingLevel = 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface GeminiThinkingConfig {
+  thinkingLevel?: GeminiThinkingLevel;
+  thinkingBudget?: number;
+}
+
+export interface GeminiModelAliasConfig {
+  alias: string;
+  model: string;
+  thinkingConfig: GeminiThinkingConfig;
+}
+
+export interface GeminiSettingsConfig {
+  toolConfig: GeminiToolConfig;
+  modelAlias?: GeminiModelAliasConfig;
+}
+
 interface GeminiSettingsOverride {
   env: NodeJS.ProcessEnv;
   cleanup: () => Promise<void>;
 }
+
+export const GEMINI_REASONING_EFFORT_ALIAS = 'cligent-reasoning-effort';
 
 const NOOP_SETTINGS_OVERRIDE: GeminiSettingsOverride = {
   env: {},
@@ -306,10 +327,119 @@ export function buildGeminiToolSettings(
   return { tools };
 }
 
+export function mapReasoningEffortToGeminiModelAlias(
+  model: string | undefined,
+  effort: ReasoningEffort | undefined,
+): GeminiModelAliasConfig | undefined {
+  if (!model || !effort) return undefined;
+
+  if (/^gemini-3/.test(model)) {
+    return {
+      alias: GEMINI_REASONING_EFFORT_ALIAS,
+      model,
+      thinkingConfig: {
+        thinkingLevel: mapReasoningEffortToGemini3ThinkingLevel(effort),
+      },
+    };
+  }
+
+  if (/^gemini-2\.5/.test(model)) {
+    return {
+      alias: GEMINI_REASONING_EFFORT_ALIAS,
+      model,
+      thinkingConfig: {
+        thinkingBudget: mapReasoningEffortToGemini25ThinkingBudget(model, effort),
+      },
+    };
+  }
+
+  return undefined;
+}
+
+function mapReasoningEffortToGemini3ThinkingLevel(
+  effort: ReasoningEffort,
+): GeminiThinkingLevel {
+  switch (effort) {
+    case 'minimal':
+      return 'MINIMAL';
+    case 'low':
+      return 'LOW';
+    case 'medium':
+      return 'MEDIUM';
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return 'HIGH';
+  }
+}
+
+function mapReasoningEffortToGemini25ThinkingBudget(
+  model: string,
+  effort: ReasoningEffort,
+): number {
+  switch (effort) {
+    case 'minimal':
+      return 1024;
+    case 'low':
+      return 4096;
+    case 'medium':
+      return 8192;
+    case 'high':
+      return 16384;
+    case 'xhigh':
+      return 24576;
+    case 'max':
+      return /^gemini-2\.5-pro/.test(model) ? 32768 : 24576;
+  }
+}
+
+export function buildGeminiSettings(
+  settingsConfig: GeminiSettingsConfig,
+): {
+  tools?: { core?: string[]; exclude?: string[] };
+  modelConfigs?: {
+    customAliases: Record<string, {
+      modelConfig: {
+        model: string;
+        generateContentConfig: {
+          thinkingConfig: GeminiThinkingConfig;
+        };
+      };
+    }>;
+  };
+} | undefined {
+  const toolSettings = buildGeminiToolSettings(settingsConfig.toolConfig);
+  const alias = settingsConfig.modelAlias;
+
+  if (!toolSettings && !alias) {
+    return undefined;
+  }
+
+  return {
+    ...(toolSettings ?? {}),
+    ...(alias
+      ? {
+          modelConfigs: {
+            customAliases: {
+              [alias.alias]: {
+                modelConfig: {
+                  model: alias.model,
+                  generateContentConfig: {
+                    thinkingConfig: alias.thinkingConfig,
+                  },
+                },
+              },
+            },
+          },
+        }
+      : {}),
+  };
+}
+
 async function defaultCreateSettingsOverride(
-  toolConfig: GeminiToolConfig,
+  settingsConfig: GeminiSettingsConfig,
 ): Promise<GeminiSettingsOverride> {
-  const settings = buildGeminiToolSettings(toolConfig);
+  const settings = buildGeminiSettings(settingsConfig);
   if (!settings) {
     return NOOP_SETTINGS_OVERRIDE;
   }
@@ -409,6 +539,7 @@ export interface GeminiCommandConfig {
   args: string[];
   spawnOptions: SpawnOptionsWithoutStdio;
   toolConfig: GeminiToolConfig;
+  settingsConfig: GeminiSettingsConfig;
 }
 
 export function mapAgentOptionsToGeminiCommand(
@@ -421,8 +552,14 @@ export function mapAgentOptionsToGeminiCommand(
   });
 
   const args = ['--output-format', 'stream-json'] as string[];
+  const modelAlias = mapReasoningEffortToGeminiModelAlias(
+    options?.model,
+    options?.reasoningEffort,
+  );
 
-  if (options?.model) {
+  if (modelAlias) {
+    args.push('--model', modelAlias.alias);
+  } else if (options?.model) {
     args.push('--model', options.model);
   }
 
@@ -446,6 +583,10 @@ export function mapAgentOptionsToGeminiCommand(
       stdio: 'pipe',
     },
     toolConfig,
+    settingsConfig: {
+      toolConfig,
+      ...(modelAlias ? { modelAlias } : {}),
+    },
   };
 }
 
@@ -493,7 +634,7 @@ export class GeminiAdapter implements AgentAdapter {
   private readonly probeAvailability: () => Promise<boolean>;
 
   private readonly createSettingsOverride: (
-    toolConfig: GeminiToolConfig,
+    settingsConfig: GeminiSettingsConfig,
   ) => Promise<GeminiSettingsOverride>;
 
   constructor(deps: GeminiAdapterDeps = {}) {
@@ -541,7 +682,7 @@ export class GeminiAdapter implements AgentAdapter {
     }
 
     try {
-      settingsOverride = await this.createSettingsOverride(mapped.toolConfig);
+      settingsOverride = await this.createSettingsOverride(mapped.settingsConfig);
       const spawnOptions: SpawnOptionsWithoutStdio = {
         ...mapped.spawnOptions,
         env: {
