@@ -9,6 +9,7 @@ import type {
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import type { SessionPromptAsyncData } from '@opencode-ai/sdk/v2';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -16,6 +17,7 @@ import type {
   DonePayload,
   PermissionLevel,
   PermissionPolicy,
+  ReasoningEffort,
 } from '../types.js';
 
 const AGENT = 'opencode' as const;
@@ -28,6 +30,9 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
 };
 
 type OpenCodeMode = 'managed' | 'external';
+type OpenCodeSdkApiVersion = 'v1' | 'v2';
+type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
 
 type SpawnProcessFn = (
   command: string,
@@ -79,6 +84,10 @@ interface OpenCodePermissionOptions {
     core?: string[];
     exclude?: string[];
   };
+}
+
+interface WrapOpencodeClientOptions {
+  apiVersion?: OpenCodeSdkApiVersion;
 }
 
 const execFileAsync = promisify(execFile);
@@ -507,7 +516,58 @@ export function mapPermissionsToOpenCodeOptions(
   };
 }
 
-export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClient {
+export function mapReasoningEffortToOpenCodeVariant(
+  model: string | undefined,
+  reasoningEffort: ReasoningEffort | undefined,
+): OpenCodeVariant | undefined {
+  if (!model || !reasoningEffort) return undefined;
+
+  const slashIdx = model.indexOf('/');
+  if (slashIdx <= 0) return undefined;
+
+  const provider = model.slice(0, slashIdx);
+
+  if (provider === 'anthropic') {
+    return reasoningEffort === 'xhigh' || reasoningEffort === 'max'
+      ? 'max'
+      : 'high';
+  }
+
+  if (provider === 'openai') {
+    return reasoningEffort === 'max' ? 'xhigh' : reasoningEffort;
+  }
+
+  if (provider === 'google') {
+    return reasoningEffort === 'high' ||
+      reasoningEffort === 'xhigh' ||
+      reasoningEffort === 'max'
+      ? 'high'
+      : 'low';
+  }
+
+  return undefined;
+}
+
+function toOpenCodePromptModel(model: unknown): unknown {
+  // OpenCode expects model as { providerID, modelID }. Parse
+  // "provider/model" strings into that format; pass other values as-is.
+  if (typeof model === 'string' && model.includes('/')) {
+    const slashIdx = model.indexOf('/');
+    return {
+      providerID: model.slice(0, slashIdx),
+      modelID: model.slice(slashIdx + 1),
+    };
+  }
+
+  return model;
+}
+
+export function wrapOpencodeClient(
+  real: Record<string, unknown>,
+  options: WrapOpencodeClientOptions = {},
+): OpenCodeClient {
+  const apiVersion = options.apiVersion ?? 'v1';
+
   // Keep references to the real SDK service objects so that method calls
   // retain `this` binding (the generated SDK stores `_client` on each
   // service instance and accesses it via `this._client`).
@@ -554,27 +614,31 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
 
       const permissionObj = options.permission;
       const toolsObj = options.tools;
-
-      // OpenCode v1 expects model as { providerID, modelID }.  Parse
-      // "provider/model" strings into that format; pass other values as-is.
-      let modelVal: unknown;
-      if (typeof options.model === 'string' && options.model.includes('/')) {
-        const slashIdx = options.model.indexOf('/');
-        modelVal = {
-          providerID: options.model.slice(0, slashIdx),
-          modelID: options.model.slice(slashIdx + 1),
-        };
-      } else {
-        modelVal = options.model;
+      const variantVal = asString(options.variant);
+      const modelVal = toOpenCodePromptModel(options.model);
+      if (!sessionId) {
+        sessionId = generateSessionId();
       }
+      const promptSessionId = sessionId;
 
       const promptBody = {
         parts: [{ type: 'text', text: options.prompt }],
         ...(modelVal ? { model: modelVal } : {}),
+        ...(variantVal ? { variant: variantVal } : {}),
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.steps !== undefined ? { steps: options.steps } : {}),
         ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
         ...(toolsObj !== undefined ? { tools: toolsObj } : {}),
+      };
+
+      const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
+        directory?: string;
+      } = {
+        sessionID: promptSessionId,
+        parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
+        ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
+        ...(variantVal ? { variant: variantVal } : {}),
+        ...(asString(options.cwd) ? { directory: asString(options.cwd) } : {}),
       };
 
       // The SDK's event stream is a lazy async generator — the HTTP
@@ -595,15 +659,23 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
 
       if (sessionPromptAsync) {
         // Fire-and-forget: promptAsync returns 204 immediately.
-        await sessionPromptAsync({
-          path: { id: sessionId },
-          body: promptBody,
-        });
+        await sessionPromptAsync(
+          apiVersion === 'v2'
+            ? v2PromptParameters
+            : {
+                path: { id: promptSessionId },
+                body: promptBody,
+              },
+        );
       } else if (sessionPromptSync) {
-        await sessionPromptSync({
-          path: { id: sessionId },
-          body: promptBody,
-        });
+        await sessionPromptSync(
+          apiVersion === 'v2'
+            ? v2PromptParameters
+            : {
+                path: { id: promptSessionId },
+                body: promptBody,
+              },
+        );
       }
 
       // Wrap the iterator so the eagerly-fetched first result is not lost.
@@ -673,14 +745,14 @@ export function wrapOpencodeClient(real: Record<string, unknown>): OpenCodeClien
 }
 
 export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
-  const mod = (await import('@opencode-ai/sdk')) as {
+  const mod = (await import('@opencode-ai/sdk/v2')) as {
     createOpencodeClient?: unknown;
     createClient?: unknown;
     OpenCodeClient?: unknown;
     OpenCode?: unknown;
   };
 
-  // v1.x SDK: createOpencodeClient with nested API
+  // v2 SDK: createOpencodeClient with nested API and a typed prompt variant field.
   if (typeof mod.createOpencodeClient === 'function') {
     const factory = mod.createOpencodeClient as (
       config?: { baseUrl?: string; directory?: string },
@@ -689,7 +761,7 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
     return {
       createClient: (options?: { baseUrl?: string }) => {
         const real = factory({ baseUrl: options?.baseUrl });
-        return wrapOpencodeClient(real);
+        return wrapOpencodeClient(real, { apiVersion: 'v2' });
       },
     };
   }
@@ -717,7 +789,7 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
     };
   }
 
-  throw new Error('@opencode-ai/sdk does not export a recognized client factory');
+  throw new Error('@opencode-ai/sdk/v2 does not export a recognized client factory');
 }
 
 export class OpenCodeAdapter implements AgentAdapter {
@@ -787,6 +859,10 @@ export class OpenCodeAdapter implements AgentAdapter {
         allowedTools: options?.allowedTools,
         disallowedTools: options?.disallowedTools,
       },
+    );
+    const variant = mapReasoningEffortToOpenCodeVariant(
+      options?.model,
+      options?.reasoningEffort,
     );
 
     const startTime = Date.now();
@@ -861,6 +937,7 @@ export class OpenCodeAdapter implements AgentAdapter {
         prompt,
         cwd: options?.cwd,
         model: options?.model,
+        ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(options?.resume ? { sessionId: options.resume } : {}),
         ...mappedPermissions,

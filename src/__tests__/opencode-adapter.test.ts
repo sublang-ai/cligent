@@ -13,9 +13,15 @@ import { describe, expect, it } from 'vitest';
 import {
   OpenCodeAdapter,
   mapPermissionsToOpenCodeOptions,
+  mapReasoningEffortToOpenCodeVariant,
   wrapOpencodeClient,
 } from '../adapters/opencode.js';
-import type { AgentEvent, PermissionLevel, PermissionPolicy } from '../types.js';
+import type {
+  AgentEvent,
+  PermissionLevel,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../types.js';
 
 interface MockOpenCodeClient {
   run(options: Record<string, unknown>): Promise<unknown>;
@@ -402,7 +408,50 @@ describe('OpenCodeAdapter', () => {
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
-  it('does not forward reasoningEffort to the OpenCode SDK per OPENCODE-012', async () => {
+  it.each([
+    ['anthropic/claude-sonnet-4-5', 'minimal', 'high'],
+    ['anthropic/claude-sonnet-4-5', 'low', 'high'],
+    ['anthropic/claude-sonnet-4-5', 'medium', 'high'],
+    ['anthropic/claude-sonnet-4-5', 'high', 'high'],
+    ['anthropic/claude-sonnet-4-5', 'xhigh', 'max'],
+    ['anthropic/claude-sonnet-4-5', 'max', 'max'],
+    ['openai/gpt-5', 'minimal', 'minimal'],
+    ['openai/gpt-5', 'low', 'low'],
+    ['openai/gpt-5', 'medium', 'medium'],
+    ['openai/gpt-5', 'high', 'high'],
+    ['openai/gpt-5', 'xhigh', 'xhigh'],
+    ['openai/gpt-5', 'max', 'xhigh'],
+    ['google/gemini-3-pro', 'minimal', 'low'],
+    ['google/gemini-3-pro', 'low', 'low'],
+    ['google/gemini-3-pro', 'medium', 'low'],
+    ['google/gemini-3-pro', 'high', 'high'],
+    ['google/gemini-3-pro', 'xhigh', 'high'],
+    ['google/gemini-3-pro', 'max', 'high'],
+  ] satisfies Array<[string, ReasoningEffort, string]>)(
+    'maps OpenCode %s reasoningEffort %s to variant %s per OPENCODE-012',
+    (model, reasoningEffort, variant) => {
+      expect(mapReasoningEffortToOpenCodeVariant(model, reasoningEffort)).toBe(
+        variant,
+      );
+    },
+  );
+
+  it('leaves OpenCode variant unset for omitted effort and unrecognised providers', () => {
+    expect(
+      mapReasoningEffortToOpenCodeVariant('openai/gpt-5', undefined),
+    ).toBeUndefined();
+    expect(
+      mapReasoningEffortToOpenCodeVariant(undefined, 'high'),
+    ).toBeUndefined();
+    expect(
+      mapReasoningEffortToOpenCodeVariant('gpt-5', 'high'),
+    ).toBeUndefined();
+    expect(
+      mapReasoningEffortToOpenCodeVariant('someprovider/somemodel', 'max'),
+    ).toBeUndefined();
+  });
+
+  it('forwards reasoningEffort to the OpenCode prompt variant per OPENCODE-012', async () => {
     let capturedRunOptions: Record<string, unknown> | undefined;
 
     const adapter = new OpenCodeAdapter(
@@ -428,15 +477,58 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    await collect(adapter.run('prompt', { reasoningEffort: 'high' }));
+    await collect(
+      adapter.run('prompt', {
+        model: 'openai/gpt-5',
+        reasoningEffort: 'medium',
+      }),
+    );
 
-    // The OpenCode SDK session prompt body has no per-call reasoning slot;
-    // reasoning is configured per-model in opencode.jsonc, so the adapter
-    // shall not forward this field to the SDK call.
     expect(capturedRunOptions).toBeDefined();
+    expect(capturedRunOptions).toMatchObject({
+      model: 'openai/gpt-5',
+      variant: 'medium',
+    });
     expect(capturedRunOptions).not.toHaveProperty('reasoningEffort');
     expect(capturedRunOptions).not.toHaveProperty('reasoning_effort');
     expect(capturedRunOptions).not.toHaveProperty('thinking');
+  });
+
+  it('does not forward OpenCode variant for unrecognised provider prefixes', async () => {
+    let capturedRunOptions: Record<string, unknown> | undefined;
+
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'unknown-provider-session' },
+          events: [
+            {
+              type: 'session.idle',
+              sessionId: 'unknown-provider-session',
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          ],
+          onRun(options) {
+            capturedRunOptions = options;
+          },
+        }),
+      },
+    );
+
+    await collect(
+      adapter.run('prompt', {
+        model: 'someprovider/somemodel',
+        reasoningEffort: 'max',
+      }),
+    );
+
+    expect(capturedRunOptions).toBeDefined();
+    expect(capturedRunOptions).not.toHaveProperty('variant');
   });
 
   it('uses external mode without spawning a server', async () => {
@@ -1077,6 +1169,68 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     // session.prompt must target the resumed session ID
     const promptArgs = capturedPromptArgs as { path: { id: string } };
     expect(promptArgs.path.id).toBe('resumed-session');
+  });
+
+  it('uses the v2 prompt surface so variant reaches fresh and resumed sessions', async () => {
+    let createCalls = 0;
+    const promptCalls: unknown[] = [];
+    const real = {
+      session: {
+        async create() {
+          createCalls++;
+          return { id: `v2-session-${createCalls}` };
+        },
+        async promptAsync(args: unknown) {
+          promptCalls.push(args);
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+    };
+
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await client.run?.({
+      prompt: 'fresh',
+      model: 'anthropic/claude-sonnet-4-5',
+      variant: 'max',
+    });
+    await client.run?.({
+      prompt: 'resumed',
+      sessionId: 'existing-session',
+      model: 'openai/gpt-5',
+      variant: 'medium',
+    });
+
+    expect(createCalls).toBe(1);
+    expect(promptCalls).toEqual([
+      expect.objectContaining({
+        sessionID: 'v2-session-1',
+        variant: 'max',
+        model: {
+          providerID: 'anthropic',
+          modelID: 'claude-sonnet-4-5',
+        },
+        parts: [{ type: 'text', text: 'fresh' }],
+      }),
+      expect.objectContaining({
+        sessionID: 'existing-session',
+        variant: 'medium',
+        model: {
+          providerID: 'openai',
+          modelID: 'gpt-5',
+        },
+        parts: [{ type: 'text', text: 'resumed' }],
+      }),
+    ]);
+    expect(promptCalls[0]).not.toHaveProperty('path');
+    expect(promptCalls[0]).not.toHaveProperty('body');
+    expect(promptCalls[1]).not.toHaveProperty('path');
+    expect(promptCalls[1]).not.toHaveProperty('body');
   });
 
   it('forwards steps, permission, and tools to session.prompt body', async () => {
