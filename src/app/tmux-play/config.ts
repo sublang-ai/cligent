@@ -69,6 +69,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
     model: 'claude-opus-4-7',
+    reasoningEffort: 'xhigh',
     instruction: 'Coordinate roles and answer the Boss.',
     permissions: { mode: 'auto' },
     options: { maxRoleOutputChars: 4000 },
@@ -77,6 +78,8 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     {
       id: 'claude',
       adapter: 'claude',
+      model: 'claude-opus-4-7',
+      reasoningEffort: 'xhigh',
       instruction:
         'You are the claude role in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },
@@ -84,6 +87,8 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     {
       id: 'codex',
       adapter: 'codex',
+      model: 'gpt-5.5',
+      reasoningEffort: 'xhigh',
       instruction:
         'You are the codex role in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },

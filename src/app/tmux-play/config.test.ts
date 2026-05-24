@@ -177,6 +177,16 @@ describe('tmux-play config loading', () => {
       'claude',
       'codex',
     ]);
+    expect(loaded.config.captain.model).toBe('claude-opus-4-7');
+    expect(loaded.config.captain.reasoningEffort).toBe('xhigh');
+    expect(loaded.config.roles.map((role) => role.model)).toEqual([
+      'claude-opus-4-7',
+      'gpt-5.5',
+    ]);
+    expect(loaded.config.roles.map((role) => role.reasoningEffort)).toEqual([
+      'xhigh',
+      'xhigh',
+    ]);
     expect(loaded.config.roles.map((role) => role.instruction)).toEqual([
       'You are the claude role in a fanout Captain session. Provide an independent answer.',
       'You are the codex role in a fanout Captain session. Provide an independent answer.',
