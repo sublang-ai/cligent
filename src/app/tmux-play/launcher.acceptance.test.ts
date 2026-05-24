@@ -12,11 +12,24 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createEvent } from '../../events.js';
 import { isGlowAvailable } from '../shared/glow.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
-import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
-import { mapPermissionsToCodexOptions } from '../../adapters/codex.js';
+import {
+  mapAgentOptionsToClaudeQueryOptions,
+  mapPermissionsToClaudeOptions,
+} from '../../adapters/claude-code.js';
+import {
+  mapAgentOptionsToCodexOptions,
+  mapPermissionsToCodexOptions,
+} from '../../adapters/codex.js';
+import {
+  buildGeminiSettings,
+  GEMINI_REASONING_EFFORT_ALIAS,
+  mapAgentOptionsToGeminiCommand,
+} from '../../adapters/gemini.js';
+import { mapReasoningEffortToOpenCodeVariant } from '../../adapters/opencode.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
 import { TimingObserver, type TimingScheduler } from './timing-observer.js';
@@ -32,6 +45,7 @@ import type {
   AgentAdapter,
   AgentEvent,
   AgentOptions,
+  AgentType,
 } from '../../types.js';
 import type { TmuxPlayRecord } from './records.js';
 import type { RoleAdapterImports } from './roles.js';
@@ -559,6 +573,305 @@ describe('tmux-play YAML → adapter permission seam', () => {
     });
   });
 });
+
+// TTMUX-057: YAML `reasoningEffort` reaches the adapter's `run()` call as
+// `AgentOptions.reasoningEffort`, and each adapter's exported mapping seam
+// translates it to that adapter's native control surface.
+describe('tmux-play YAML → adapter reasoning-effort seam', () => {
+  let cwd: string | undefined;
+
+  afterEach(() => {
+    if (cwd) {
+      rmSync(cwd, { recursive: true, force: true });
+      cwd = undefined;
+    }
+  });
+
+  it('routes YAML reasoningEffort through all adapter mappings (TTMUX-057)', async () => {
+    cwd = mkdtempSync(join(tmpdir(), 'tmux-play-effort-'));
+    const configPath = join(cwd, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  model: claude-opus-4-7',
+        '  reasoningEffort: xhigh',
+        '  options: {}',
+        'roles:',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '    model: claude-sonnet-4-5',
+        '    reasoningEffort: max',
+        '  - id: coder',
+        '    adapter: codex',
+        '    model: gpt-5',
+        '    reasoningEffort: max',
+        '  - id: gemini3',
+        '    adapter: gemini',
+        '    model: gemini-3-flash',
+        '    reasoningEffort: high',
+        '  - id: gemini25',
+        '    adapter: gemini',
+        '    model: gemini-2.5-flash',
+        '    reasoningEffort: medium',
+        '  - id: geminialias',
+        '    adapter: gemini',
+        '    model: flash',
+        '    reasoningEffort: high',
+        '  - id: geminiunknown',
+        '    adapter: gemini',
+        '    model: gemini-4-pro',
+        '    reasoningEffort: high',
+        '  - id: geminiunset',
+        '    adapter: gemini',
+        '    reasoningEffort: high',
+        '  - id: opener',
+        '    adapter: opencode',
+        '    model: anthropic/claude-sonnet-4-5',
+        '    reasoningEffort: max',
+        '  - id: openai',
+        '    adapter: opencode',
+        '    model: openai/gpt-5',
+        '    reasoningEffort: medium',
+        '  - id: openunknown',
+        '    adapter: opencode',
+        '    model: someprovider/somemodel',
+        '    reasoningEffort: max',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd, configPath });
+    const captured: Record<'claude' | 'codex' | 'gemini' | 'opencode', AgentOptions[]> = {
+      claude: [],
+      codex: [],
+      gemini: [],
+      opencode: [],
+    };
+
+    const adapterImports: RoleAdapterImports = {
+      claude: async () => makeCapturingAdapter('claude-code', captured.claude),
+      codex: async () => makeCapturingAdapter('codex', captured.codex),
+      gemini: async () => makeCapturingAdapter('gemini', captured.gemini),
+      opencode: async () => makeCapturingAdapter('opencode', captured.opencode),
+    };
+
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        await context.callCaptain(`captain: ${turn.prompt}`);
+        for (const role of context.roles) {
+          await context.callRole(role.id, turn.prompt);
+        }
+      },
+    };
+
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: {
+        adapter: loaded.config.captain.adapter,
+        model: loaded.config.captain.model,
+        instruction: loaded.config.captain.instruction,
+        permissions: loaded.config.captain.permissions,
+        reasoningEffort: loaded.config.captain.reasoningEffort,
+      },
+      roles: loaded.config.roles.map((role) => ({
+        id: role.id,
+        adapter: role.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        model: role.model,
+        instruction: role.instruction,
+        permissions: role.permissions,
+        reasoningEffort: role.reasoningEffort,
+      })),
+      adapterImports,
+    });
+
+    try {
+      await runtime.runBossTurn('probe');
+    } finally {
+      await runtime.dispose();
+    }
+
+    const captainOptions = capturedByModel(captured.claude, 'claude-opus-4-7');
+    expect(captainOptions.reasoningEffort).toBe('xhigh');
+    expect(
+      mapAgentOptionsToClaudeQueryOptions({
+        model: captainOptions.model,
+        reasoningEffort: captainOptions.reasoningEffort,
+      }).queryOptions.effort,
+    ).toBe('xhigh');
+
+    const claudeRoleOptions = capturedByModel(
+      captured.claude,
+      'claude-sonnet-4-5',
+    );
+    expect(claudeRoleOptions.reasoningEffort).toBe('max');
+    expect(
+      mapAgentOptionsToClaudeQueryOptions({
+        model: claudeRoleOptions.model,
+        reasoningEffort: claudeRoleOptions.reasoningEffort,
+      }).queryOptions.effort,
+    ).toBe('max');
+
+    const codexOptions = capturedByModel(captured.codex, 'gpt-5');
+    expect(codexOptions.reasoningEffort).toBe('max');
+    expect(
+      mapAgentOptionsToCodexOptions({
+        model: codexOptions.model,
+        reasoningEffort: codexOptions.reasoningEffort,
+      }).threadOptions.modelReasoningEffort,
+    ).toBe('xhigh');
+
+    expectGeminiReasoningAlias(
+      capturedByModel(captured.gemini, 'gemini-3-flash'),
+      'gemini-3-flash',
+      { thinkingLevel: 'HIGH' },
+    );
+    expectGeminiReasoningAlias(
+      capturedByModel(captured.gemini, 'gemini-2.5-flash'),
+      'gemini-2.5-flash',
+      { thinkingBudget: 8192 },
+    );
+    expectGeminiReasoningSkipped(
+      capturedByModel(captured.gemini, 'flash'),
+      'flash',
+    );
+    expectGeminiReasoningSkipped(
+      capturedByModel(captured.gemini, 'gemini-4-pro'),
+      'gemini-4-pro',
+    );
+    expectGeminiReasoningSkipped(
+      captured.gemini.find((entry) => entry.model === undefined),
+      undefined,
+    );
+
+    const openAnthropic = capturedByModel(
+      captured.opencode,
+      'anthropic/claude-sonnet-4-5',
+    );
+    expect(openAnthropic.reasoningEffort).toBe('max');
+    expect(
+      mapReasoningEffortToOpenCodeVariant(
+        openAnthropic.model,
+        openAnthropic.reasoningEffort,
+      ),
+    ).toBe('max');
+
+    const openAi = capturedByModel(captured.opencode, 'openai/gpt-5');
+    expect(openAi.reasoningEffort).toBe('medium');
+    expect(
+      mapReasoningEffortToOpenCodeVariant(
+        openAi.model,
+        openAi.reasoningEffort,
+      ),
+    ).toBe('medium');
+
+    const openUnknown = capturedByModel(
+      captured.opencode,
+      'someprovider/somemodel',
+    );
+    expect(openUnknown.reasoningEffort).toBe('max');
+    expect(
+      mapReasoningEffortToOpenCodeVariant(
+        openUnknown.model,
+        openUnknown.reasoningEffort,
+      ),
+    ).toBeUndefined();
+  });
+});
+
+function makeCapturingAdapter(
+  agent: AgentType,
+  bucket: AgentOptions[],
+): new () => AgentAdapter {
+  return class CapturingAdapter implements AgentAdapter {
+    readonly agent = agent;
+
+    async *run(
+      _prompt: string,
+      options?: AgentOptions,
+    ): AsyncGenerator<AgentEvent, void, void> {
+      bucket.push(options ?? {});
+      yield createEvent(
+        'done',
+        agent,
+        {
+          status: 'success',
+          usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+          durationMs: 0,
+        },
+        `${agent}-capture`,
+      );
+    }
+
+    async isAvailable(): Promise<boolean> {
+      return true;
+    }
+  };
+}
+
+function capturedByModel(
+  captured: readonly AgentOptions[],
+  model: string,
+): AgentOptions {
+  const found = captured.find((entry) => entry.model === model);
+  if (!found) {
+    throw new Error(`No captured adapter options for model ${model}`);
+  }
+  return found;
+}
+
+function modelArg(args: readonly string[]): string | undefined {
+  const index = args.indexOf('--model');
+  return index === -1 ? undefined : args[index + 1];
+}
+
+function expectGeminiReasoningAlias(
+  options: AgentOptions,
+  model: string,
+  thinkingConfig: Record<string, unknown>,
+): void {
+  const mapped = mapAgentOptionsToGeminiCommand('prompt', {
+    model: options.model,
+    reasoningEffort: options.reasoningEffort,
+  });
+
+  expect(options.reasoningEffort).toBeDefined();
+  expect(modelArg(mapped.args)).toBe(GEMINI_REASONING_EFFORT_ALIAS);
+  expect(buildGeminiSettings(mapped.settingsConfig)).toEqual({
+    modelConfigs: {
+      customAliases: {
+        [GEMINI_REASONING_EFFORT_ALIAS]: {
+          modelConfig: {
+            model,
+            generateContentConfig: {
+              thinkingConfig,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function expectGeminiReasoningSkipped(
+  options: AgentOptions | undefined,
+  expectedModel: string | undefined,
+): void {
+  expect(options).toBeDefined();
+  const mapped = mapAgentOptionsToGeminiCommand('prompt', {
+    model: options?.model,
+    reasoningEffort: options?.reasoningEffort,
+  });
+
+  expect(options?.reasoningEffort).toBe('high');
+  expect(buildGeminiSettings(mapped.settingsConfig)).toBeUndefined();
+  expect(modelArg(mapped.args)).toBe(expectedModel);
+  expect(mapped.args).not.toContain(GEMINI_REASONING_EFFORT_ALIAS);
+  expect(mapped.args).not.toContain('--thinking-budget');
+  expect(mapped.args).not.toContain('--thinking-level');
+}
 
 function defaultYamlConfig(): string {
   return [
