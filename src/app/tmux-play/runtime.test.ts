@@ -122,12 +122,14 @@ describe('TmuxPlayRuntime', () => {
       captainConfig: {
         adapter: 'claude',
         instruction: 'Captain instruction.',
+        reasoningEffort: 'high',
       },
       roles: [
         {
           id: 'coder',
           adapter: 'codex',
           instruction: 'Role instruction.',
+          reasoningEffort: 'low',
         },
       ],
       observers: [
@@ -138,16 +140,18 @@ describe('TmuxPlayRuntime', () => {
       adapterImports: adapterImports({
         codex: {
           agent: 'codex',
-          async *run(prompt) {
+          async *run(prompt, options) {
             prompts.push(prompt);
+            expect(options?.reasoningEffort).toBe('low');
             yield textEvent('codex', 'role text');
             yield doneEvent('codex', 'role done');
           },
         },
         claude: {
           agent: 'claude-code',
-          async *run(prompt) {
+          async *run(prompt, options) {
             prompts.push(prompt);
+            expect(options?.reasoningEffort).toBe('high');
             yield textEvent('claude-code', 'captain text');
             yield doneEvent('claude-code', 'captain done');
           },

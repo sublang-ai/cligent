@@ -3,7 +3,7 @@
 
 import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
 import type { RecordObserver } from './records.js';
-import type { PermissionPolicy } from '../../types.js';
+import type { PermissionPolicy, ReasoningEffort } from '../../types.js';
 
 export interface Captain {
   init?(session: CaptainSession): Promise<void>;
@@ -68,6 +68,7 @@ export interface RuntimeRoleConfig {
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly reasoningEffort?: ReasoningEffort;
 }
 
 export interface RuntimeCaptainConfig {
@@ -75,6 +76,7 @@ export interface RuntimeCaptainConfig {
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly reasoningEffort?: ReasoningEffort;
 }
 
 export interface RunTmuxPlayOptions {

@@ -13,7 +13,11 @@ import {
   type RoleAdapterName,
   type RoleConfig,
 } from './roles.js';
-import type { PermissionLevel, PermissionPolicy } from '../../types.js';
+import type {
+  PermissionLevel,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../../types.js';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
@@ -27,6 +31,7 @@ export interface CaptainConfig {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
+  reasoningEffort?: ReasoningEffort;
   options: JsonValue;
 }
 
@@ -250,6 +255,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'model',
     'instruction',
     'permissions',
+    'reasoningEffort',
     'options',
   ]);
   rejectUnknownKeys(input, allowed, 'captain');
@@ -262,6 +268,10 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     input.permissions,
     'captain.permissions',
   );
+  const reasoningEffort = optionalReasoningEffort(
+    input.reasoningEffort,
+    'captain.reasoningEffort',
+  );
   const options = input.options === undefined ? {} : input.options;
 
   const captain: CaptainConfig = {
@@ -272,6 +282,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   if (model !== undefined) captain.model = model;
   if (instruction !== undefined) captain.instruction = instruction;
   if (permissions !== undefined) captain.permissions = permissions;
+  if (reasoningEffort !== undefined) captain.reasoningEffort = reasoningEffort;
   return captain;
 }
 
@@ -297,6 +308,7 @@ function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
     'model',
     'instruction',
     'permissions',
+    'reasoningEffort',
   ]);
   rejectUnknownKeys(input, allowed, path);
 
@@ -311,9 +323,14 @@ function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
     input.permissions,
     `${path}.permissions`,
   );
+  const reasoningEffort = optionalReasoningEffort(
+    input.reasoningEffort,
+    `${path}.reasoningEffort`,
+  );
   if (model !== undefined) role.model = model;
   if (instruction !== undefined) role.instruction = instruction;
   if (permissions !== undefined) role.permissions = permissions;
+  if (reasoningEffort !== undefined) role.reasoningEffort = reasoningEffort;
   return role;
 }
 
@@ -392,6 +409,14 @@ const PERMISSION_LEVELS: ReadonlySet<PermissionLevel> = new Set([
   'ask',
   'deny',
 ]);
+const REASONING_EFFORTS: ReadonlySet<ReasoningEffort> = new Set([
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
 
 function requirePermissionMode(
   value: unknown,
@@ -413,6 +438,19 @@ function requirePermissionLevel(
     throw new Error(`${path} must be one of: allow, ask, deny`);
   }
   return value as PermissionLevel;
+}
+
+function optionalReasoningEffort(
+  value: unknown,
+  path: string,
+): ReasoningEffort | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !REASONING_EFFORTS.has(value as never)) {
+    throw new Error(
+      `${path} must be one of: minimal, low, medium, high, xhigh, max`,
+    );
+  }
+  return value as ReasoningEffort;
 }
 
 function requireAdapterName(value: unknown, path: string): RoleAdapterName {

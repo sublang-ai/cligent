@@ -130,7 +130,7 @@ describe('resolveRoles', () => {
     expect(roles[1]?.cligent.agentType).toBe('claude-code');
   });
 
-  it('forwards permissions from RoleConfig into adapter run options', async () => {
+  it('forwards RoleConfig defaults into adapter run options', async () => {
     const captured: (AgentOptions | undefined)[] = [];
 
     class CapturingAdapter implements AgentAdapter {
@@ -159,6 +159,7 @@ describe('resolveRoles', () => {
           id: 'coder',
           adapter: 'codex',
           permissions: { mode: 'auto' },
+          reasoningEffort: 'xhigh',
         },
       ],
       { adapterImports },
@@ -170,6 +171,7 @@ describe('resolveRoles', () => {
     }
 
     expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(captured[0]?.reasoningEffort).toBe('xhigh');
   });
 
   it('allows multiple roles to use the same adapter and model', async () => {

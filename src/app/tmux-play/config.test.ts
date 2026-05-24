@@ -62,6 +62,9 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       config.captain.instruction
         ? `  instruction: ${config.captain.instruction}`
         : undefined,
+      config.captain.reasoningEffort
+        ? `  reasoningEffort: ${config.captain.reasoningEffort}`
+        : undefined,
       '  options:',
       ...Object.entries(config.captain.options as Record<string, unknown>).map(
         ([key, value]) => `    ${key}: ${JSON.stringify(value)}`,
@@ -72,6 +75,9 @@ function writeYamlConfig(path: string, config = validConfig()): void {
         `    adapter: ${role.adapter}`,
         role.model ? `    model: ${role.model}` : undefined,
         role.instruction ? `    instruction: ${role.instruction}` : undefined,
+        role.reasoningEffort
+          ? `    reasoningEffort: ${role.reasoningEffort}`
+          : undefined,
       ]),
       '',
     ]
@@ -454,6 +460,81 @@ describe('tmux-play config loading', () => {
 
     await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
       'captain.permissions must be an object',
+    );
+  });
+
+  it('accepts reasoningEffort closed-set values on captain and roles', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const values = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  reasoningEffort: minimal',
+        '  options: {}',
+        'roles:',
+        ...values.flatMap((value, index) => [
+          `  - id: role-${index}`,
+          '    adapter: codex',
+          `    reasoningEffort: ${value}`,
+        ]),
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd: workDir });
+
+    expect(loaded.config.captain.reasoningEffort).toBe('minimal');
+    expect(loaded.config.roles.map((role) => role.reasoningEffort)).toEqual(
+      values,
+    );
+  });
+
+  it('rejects invalid reasoningEffort values with the offending path', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const badCaptain = join(workDir, 'bad-captain-effort.yaml');
+    const badRole = join(workDir, 'bad-role-effort.yaml');
+    writeFileSync(
+      badCaptain,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  reasoningEffort: turbo',
+        '  options: {}',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      badRole,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'roles:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    reasoningEffort: turbo',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      loadTmuxPlayConfig({ cwd: workDir, configPath: badCaptain }),
+    ).rejects.toThrow(
+      'captain.reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+    );
+    await expect(
+      loadTmuxPlayConfig({ cwd: workDir, configPath: badRole }),
+    ).rejects.toThrow(
+      'roles[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
     );
   });
 

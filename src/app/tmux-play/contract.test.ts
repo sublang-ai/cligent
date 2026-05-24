@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { ReasoningEffort } from '../../types.js';
 import {
   KNOWN_ROLE_ADAPTERS,
   createTmuxPlayRuntime,
@@ -14,6 +15,7 @@ import {
   type CaptainTelemetry,
   type RecordObserver,
   type RuntimeCaptainConfig,
+  type RuntimeRoleConfig,
   type RoleHandle,
   type RoleRunResult,
   type RunStatus,
@@ -52,6 +54,14 @@ describe('tmux-play public contract', () => {
       adapter: RoleHandle['adapter'];
       model?: string;
       instruction?: string;
+      reasoningEffort?: ReasoningEffort;
+    }>();
+    expectTypeOf<RuntimeRoleConfig>().toMatchTypeOf<{
+      id: string;
+      adapter: RoleHandle['adapter'];
+      model?: string;
+      instruction?: string;
+      reasoningEffort?: ReasoningEffort;
     }>();
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;

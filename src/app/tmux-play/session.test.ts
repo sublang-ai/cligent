@@ -144,6 +144,7 @@ describe('TmuxPlaySession', () => {
         captainConfig: expect.objectContaining({
           adapter: 'claude',
           instruction: 'Coordinate roles.',
+          reasoningEffort: 'high',
         }),
         cwd: '/repo',
         observers: expect.arrayContaining([
@@ -151,7 +152,7 @@ describe('TmuxPlaySession', () => {
           timingObserver,
           optInObserver,
         ]),
-        roles: [expect.objectContaining({ id: 'coder' })],
+        roles: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
       }),
     );
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
@@ -399,12 +400,14 @@ function makeWorkDir(): string {
         from: '@sublang/cligent/captains/fanout',
         adapter: 'claude',
         instruction: 'Coordinate roles.',
+        reasoningEffort: 'high',
         options: { tone: 'direct' },
       },
       roles: [
         {
           id: 'coder',
           adapter: 'codex',
+          reasoningEffort: 'low',
         },
       ],
     }),

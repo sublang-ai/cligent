@@ -166,6 +166,7 @@ export class TmuxPlaySession {
         model: config.captain.model,
         instruction: config.captain.instruction,
         permissions: config.captain.permissions,
+        reasoningEffort: config.captain.reasoningEffort,
       },
       roles: runtimeRoles(config.roles),
       observers: [presenter, timingObserver, ...(this.options.observers ?? [])],
@@ -411,6 +412,7 @@ function runtimeRoles(roles: readonly RoleConfig[]): RuntimeRoleConfig[] {
       model: role.model,
       instruction: role.instruction,
       permissions: role.permissions,
+      reasoningEffort: role.reasoningEffort,
     };
   });
 }

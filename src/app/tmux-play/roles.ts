@@ -2,7 +2,11 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { Cligent } from '../../cligent.js';
-import type { AgentAdapter, PermissionPolicy } from '../../types.js';
+import type {
+  AgentAdapter,
+  PermissionPolicy,
+  ReasoningEffort,
+} from '../../types.js';
 
 export const KNOWN_ROLE_ADAPTERS = [
   'claude',
@@ -19,6 +23,7 @@ export interface RoleConfig {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ResolvedRole {
@@ -34,6 +39,7 @@ export interface CreateRoleCligentOptions {
   model?: string;
   role?: string;
   permissions?: PermissionPolicy;
+  reasoningEffort?: ReasoningEffort;
   adapterImports?: RoleAdapterImports;
 }
 
@@ -105,6 +111,7 @@ export async function createRoleCligent(
     model: options.model,
     role: options.role,
     permissions: options.permissions,
+    reasoningEffort: options.reasoningEffort,
   });
 }
 
@@ -125,6 +132,7 @@ export async function resolveRoles(
       model: config.model,
       role: config.id,
       permissions: config.permissions,
+      reasoningEffort: config.reasoningEffort,
     });
 
     roles.push({
