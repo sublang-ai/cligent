@@ -64,14 +64,15 @@ Cleanup: `\x1b[?2004l` must run on every exit path; otherwise the user's shell s
 - [x] `specs/user/tmux-play.md` — add TMUX-057 (ESC interrupt) and TMUX-058 (bracketed paste).
 - [x] `specs/test/tmux-play.md` — add TTMUX-059 (ESC verification) and TTMUX-060 (paste verification).
 - [x] `specs/map.md` — index IR-019; extend the TMUX user-summary line to mention Boss input keybindings.
-- [ ] `src/app/tmux-play/session.ts` — wire `escapeCodeTimeout`, install `keypress` listener for ESC, call `runtime.abortActiveTurn('ESC')` on bare ESC, remove listener in `shutdown()`.
+- [x] `src/app/tmux-play/session.ts` — wire `escapeCodeTimeout`, install `keypress` listener for ESC, call `runtime.abortActiveTurn('ESC')` on bare ESC, remove listener in `shutdown()`.
 - [ ] `src/app/tmux-play/session.ts` — write `\x1b[?2004h` on start and `\x1b[?2004l` on every shutdown path; track `inPaste` via `keypress` events; intercept `line` events to accumulate-then-flush the pasted block.
-- [ ] `src/__tests__/tmux-play-session.test.ts` — session-level tests covering both behaviors against a programmable input/output pair, with `escapeCodeTimeout: 100` driving deterministic timing via Vitest fake timers.
+- [x] `src/app/tmux-play/session.test.ts` — session-level test covering TTMUX-059 against a programmable TTY-like input/output pair.
+- [ ] `src/app/tmux-play/session.test.ts` — session-level test covering TTMUX-060 against a programmable TTY-like input/output pair.
 
 ## Tasks
 
 1. [x] **Spec items + map.** Add TMUX-057, TMUX-058, TTMUX-059, TTMUX-060; index IR-019 in `specs/map.md`; extend the TMUX user-summary line. Single docs-only commit.
-2. **ESC interrupt implementation.** `session.ts` changes for ESC: `escapeCodeTimeout`, `emitKeypressEvents`, bare-ESC guard, `abortActiveTurn('ESC')`, listener cleanup in `shutdown()`. Session-level integration test verifying [TTMUX-059](../test/tmux-play.md#ttmux-059). Per-task-boundary green.
+2. [x] **ESC interrupt implementation.** `session.ts` changes for ESC: `escapeCodeTimeout`, `emitKeypressEvents`, bare-ESC guard, `abortActiveTurn('ESC')`, listener cleanup in `shutdown()`. Session-level integration test verifying [TTMUX-059](../test/tmux-play.md#ttmux-059). Per-task-boundary green.
 3. **Bracketed paste implementation.** `session.ts` changes for paste: bracketed-paste toggle (with all-exit-paths disable), `inPaste` state from `keypress`, `line` interception with accumulate-and-flush. Session-level integration test verifying [TTMUX-060](../test/tmux-play.md#ttmux-060). Per-task-boundary green.
 
 ## Acceptance

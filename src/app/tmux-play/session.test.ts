@@ -5,12 +5,12 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Writable } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
-import { ObserverDispatchError } from './records.js';
+import { ObserverDispatchError, type TmuxPlayRecord } from './records.js';
 import {
   readConfigSnapshot,
   TmuxPlaySession,
@@ -56,6 +56,21 @@ class MemoryOutput extends Writable {
   }
 }
 
+class TtyInput extends PassThrough {
+  isTTY = true;
+  isRaw = false;
+
+  setRawMode(value: boolean): this {
+    this.isRaw = value;
+    return this;
+  }
+}
+
+class TtyOutput extends MemoryOutput {
+  isTTY = true;
+  columns = 80;
+}
+
 class SignalHub extends EventEmitter {
   override on(
     event: 'SIGINT' | 'SIGTERM',
@@ -76,6 +91,7 @@ describe('TmuxPlaySession', () => {
   let tempDir: string | undefined;
 
   afterEach(() => {
+    vi.useRealTimers();
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = undefined;
@@ -366,7 +382,82 @@ describe('TmuxPlaySession', () => {
     expect(signals.listenerCount('SIGINT')).toBe(0);
     expect(signals.listenerCount('SIGTERM')).toBe(0);
   });
+
+  it('aborts an active turn on bare ESC without treating arrow keys as aborts', async () => {
+    tempDir = makeWorkDir();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const records: TmuxPlayRecord[] = [];
+    const firstAbort = deferred<void>();
+    const abortActiveTurn = vi.fn((reason?: string) => {
+      if (reason === 'ESC') {
+        firstAbort.resolve();
+      }
+    });
+    const runBossTurn = vi.fn(async (prompt: string) => {
+      if (prompt !== 'first') {
+        return;
+      }
+
+      await firstAbort.promise;
+      const record: TmuxPlayRecord = {
+        type: 'turn_aborted',
+        turnId: 1,
+        timestamp: 100,
+        reason: 'ESC',
+      };
+      records.push(record);
+      const runtimeOptions = createRuntime.mock.calls[0]?.[0];
+      for (const observer of runtimeOptions?.observers ?? []) {
+        await observer.onRecord(record);
+      }
+    });
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn,
+      dispose: vi.fn(async () => undefined),
+      runBossTurn,
+    }));
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      input,
+      output,
+      createRuntime,
+      importCaptain: async () => ({ default: () => captain() }),
+    });
+
+    await session.start();
+    input.write('\x1b[A');
+    await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
+    expect(abortActiveTurn).not.toHaveBeenCalled();
+
+    input.write('first\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 1);
+    input.write('retained');
+    input.write('\x1b');
+    await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
+    await waitUntil(() => records.some((record) => record.type === 'turn_aborted'));
+
+    expect(abortActiveTurn).toHaveBeenCalledTimes(1);
+    expect(abortActiveTurn).toHaveBeenCalledWith('ESC');
+    expect(records).toEqual([
+      expect.objectContaining({ type: 'turn_aborted', reason: 'ESC' }),
+    ]);
+    expect(output.text()).toContain('[turn aborted: ESC]');
+    expect(output.text()).not.toContain('[runtime error:');
+
+    input.write('\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 2);
+    expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'first',
+      'retained',
+    ]);
+
+    input.end();
+    await session.done;
+  });
 });
+
+const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
 
 function baseOptions(workDir: string): TmuxPlaySessionOptions {
   return {
@@ -413,6 +504,39 @@ function makeWorkDir(): string {
     }),
   );
   return workDir;
+}
+
+async function waitUntil(
+  predicate: () => boolean,
+  attempts = 20,
+): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    if (predicate()) {
+      return;
+    }
+    await Promise.resolve();
+  }
+  throw new Error('condition was not met');
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 function captain(): Captain {

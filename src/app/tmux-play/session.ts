@@ -3,7 +3,7 @@
 
 import { existsSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
+import { createInterface, emitKeypressEvents } from 'node:readline';
 import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import {
@@ -42,6 +42,13 @@ type RuntimeHandle = Pick<
   'abortActiveTurn' | 'dispose' | 'runBossTurn'
 >;
 
+const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
+
+interface Keypress {
+  readonly name?: string;
+  readonly sequence?: string;
+}
+
 interface ReadlineLike {
   setPrompt(prompt: string): void;
   prompt(): void;
@@ -71,6 +78,7 @@ export interface TmuxPlaySessionOptions {
   readonly createReadline?: (options: {
     input: Readable;
     output: Writable;
+    escapeCodeTimeout: number;
   }) => ReadlineLike;
   readonly createRuntime?: (
     options: RunTmuxPlayOptions,
@@ -104,6 +112,12 @@ export class TmuxPlaySession {
   private rolePaneWidths: Map<string, number> = new Map();
   private resizeTarget: Writable | undefined;
   private resizeListener: (() => void) | undefined;
+  private keypressTarget: Readable | undefined;
+  private keypressListener: ((
+    str: string | undefined,
+    key: Keypress,
+  ) => void) | undefined;
+  private activeBossTurn = false;
 
   readonly done: Promise<void> = this.doneDeferred.promise;
 
@@ -174,9 +188,11 @@ export class TmuxPlaySession {
       adapterImports: this.options.adapterImports,
     });
 
+    const input = this.options.input ?? process.stdin;
     this.readline = (this.options.createReadline ?? createInterface)({
-      input: this.options.input ?? process.stdin,
+      input,
       output,
+      escapeCodeTimeout: READLINE_ESCAPE_CODE_TIMEOUT_MS,
     });
     // TMUX-038: color the `boss> ` prefix blue. Node ≥18's readline strips
     // ANSI escapes when computing prompt visible width (via getStringWidth),
@@ -190,6 +206,7 @@ export class TmuxPlaySession {
     this.readline.on('close', () => {
       void this.shutdown('EOF');
     });
+    this.installKeypressListener(input);
     this.registerSignal('SIGINT');
     this.registerSignal('SIGTERM');
     this.readline.prompt();
@@ -213,6 +230,7 @@ export class TmuxPlaySession {
           return;
         }
         this.refreshRolePaneWidths();
+        this.activeBossTurn = true;
         try {
           await this.runtime?.runBossTurn(prompt);
         } catch (error) {
@@ -224,6 +242,7 @@ export class TmuxPlaySession {
             );
           }
         } finally {
+          this.activeBossTurn = false;
           if (!this.shuttingDown) {
             this.readline?.prompt();
           }
@@ -253,6 +272,7 @@ export class TmuxPlaySession {
     this.shuttingDown = true;
     this.unregisterSignals();
     this.unsubscribeFromResize();
+    this.removeKeypressListener();
     this.runtime?.abortActiveTurn(reason);
 
     const errors: unknown[] = [];
@@ -298,6 +318,44 @@ export class TmuxPlaySession {
 
   private writeOutput(value: string): void {
     (this.options.output ?? process.stdout).write(value);
+  }
+
+  private installKeypressListener(input: Readable): void {
+    if (!isTty(input)) {
+      return;
+    }
+
+    emitKeypressEvents(
+      input,
+      this.readline as unknown as Parameters<typeof emitKeypressEvents>[1],
+    );
+    const listener = (_str: string | undefined, key: Keypress): void => {
+      if (key.name !== 'escape' || key.sequence !== '\x1b') {
+        return;
+      }
+      if (!this.activeBossTurn || this.shuttingDown) {
+        return;
+      }
+      this.runtime?.abortActiveTurn('ESC');
+    };
+    input.on('keypress', listener);
+    this.keypressTarget = input;
+    this.keypressListener = listener;
+  }
+
+  private removeKeypressListener(): void {
+    if (!this.keypressTarget || !this.keypressListener) {
+      return;
+    }
+    const target = this.keypressTarget;
+    const listener = this.keypressListener;
+    if (typeof target.off === 'function') {
+      target.off('keypress', listener);
+    } else if (typeof target.removeListener === 'function') {
+      target.removeListener('keypress', listener);
+    }
+    this.keypressTarget = undefined;
+    this.keypressListener = undefined;
   }
 
   // tmux is only reachable when this process runs inside a pane; outside tmux
@@ -352,6 +410,10 @@ function outputWidth(output: Writable): number {
     return columns;
   }
   return Number.POSITIVE_INFINITY;
+}
+
+function isTty(stream: Readable): boolean {
+  return (stream as { isTTY?: unknown }).isTTY === true;
 }
 
 export async function runTmuxPlaySession(
