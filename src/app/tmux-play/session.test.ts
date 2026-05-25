@@ -455,9 +455,81 @@ describe('TmuxPlaySession', () => {
     input.end();
     await session.done;
   });
+
+  it('submits bracketed multi-line paste as one prompt and toggles paste mode only for TTY output', async () => {
+    tempDir = makeWorkDir();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const runBossTurn = vi.fn(async () => undefined);
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      input,
+      output,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        runBossTurn,
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+    });
+
+    await session.start();
+    expect(output.text()).toContain(BRACKETED_PASTE_ENABLE);
+
+    input.write('\x1b[200~Alpha\nBravo\nCharlie\x1b[201~\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 1);
+    input.write('\x1b[200~Alpha\nBravo\n\x1b[201~\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 2);
+    input.write('\x1b[200~Alpha\nBravo\x1b[201~-extra\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 3);
+
+    expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'Alpha\nBravo\nCharlie',
+      'Alpha\nBravo',
+      'Alpha\nBravo-extra',
+    ]);
+
+    input.end();
+    await session.done;
+    expect(output.text()).toContain(BRACKETED_PASTE_DISABLE);
+    rmSync(tempDir, { recursive: true, force: true });
+    tempDir = undefined;
+
+    tempDir = makeWorkDir();
+    const nonTtyInput = new TtyInput();
+    const nonTtyOutput = new MemoryOutput();
+    const nonTtyRunBossTurn = vi.fn(async () => undefined);
+    const nonTtySession = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      input: nonTtyInput,
+      output: nonTtyOutput,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        runBossTurn: nonTtyRunBossTurn,
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+    });
+
+    await nonTtySession.start();
+    nonTtyInput.write('Alpha\nBravo\n');
+    await waitUntil(() => nonTtyRunBossTurn.mock.calls.length === 2);
+
+    expect(nonTtyOutput.text()).not.toContain(BRACKETED_PASTE_ENABLE);
+    expect(nonTtyRunBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'Alpha',
+      'Bravo',
+    ]);
+
+    nonTtyInput.end();
+    await nonTtySession.done;
+    expect(nonTtyOutput.text()).not.toContain(BRACKETED_PASTE_DISABLE);
+  });
 });
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
+const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
+const BRACKETED_PASTE_DISABLE = '\x1b[?2004l';
 
 function baseOptions(workDir: string): TmuxPlaySessionOptions {
   return {

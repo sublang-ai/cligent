@@ -43,6 +43,8 @@ type RuntimeHandle = Pick<
 >;
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
+const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
+const BRACKETED_PASTE_DISABLE = '\x1b[?2004l';
 
 interface Keypress {
   readonly name?: string;
@@ -118,6 +120,11 @@ export class TmuxPlaySession {
     key: Keypress,
   ) => void) | undefined;
   private activeBossTurn = false;
+  private bracketedPasteEnabled = false;
+  private inPaste = false;
+  private pasteAwaitingSubmit = false;
+  private pasteBuffer: string[] = [];
+  private exitPasteCleanup: (() => void) | undefined;
 
   readonly done: Promise<void> = this.doneDeferred.promise;
 
@@ -201,12 +208,12 @@ export class TmuxPlaySession {
       `${bold24bitFg(SPEAKER_BOSS)}boss> ${SGR_RESET}`,
     );
     this.readline.on('line', (line) => {
-      this.enqueueLine(line);
+      this.handleLine(line);
     });
     this.readline.on('close', () => {
       void this.shutdown('EOF');
     });
-    this.installKeypressListener(input);
+    this.installInputKeypressHandling(input, output);
     this.registerSignal('SIGINT');
     this.registerSignal('SIGTERM');
     this.readline.prompt();
@@ -273,6 +280,7 @@ export class TmuxPlaySession {
     this.unregisterSignals();
     this.unsubscribeFromResize();
     this.removeKeypressListener();
+    this.disableBracketedPaste();
     this.runtime?.abortActiveTurn(reason);
 
     const errors: unknown[] = [];
@@ -320,7 +328,29 @@ export class TmuxPlaySession {
     (this.options.output ?? process.stdout).write(value);
   }
 
-  private installKeypressListener(input: Readable): void {
+  private handleLine(line: string): void {
+    if (this.inPaste) {
+      this.pasteBuffer.push(line);
+      return;
+    }
+    if (this.pasteAwaitingSubmit) {
+      this.enqueueLine(this.flushPastedPrompt(line));
+      return;
+    }
+    this.enqueueLine(line);
+  }
+
+  private flushPastedPrompt(line: string): string {
+    const prompt =
+      line.length > 0
+        ? [...this.pasteBuffer, line].join('\n')
+        : this.pasteBuffer.join('\n');
+    this.pasteBuffer = [];
+    this.pasteAwaitingSubmit = false;
+    return prompt;
+  }
+
+  private installInputKeypressHandling(input: Readable, output: Writable): void {
     if (!isTty(input)) {
       return;
     }
@@ -330,6 +360,17 @@ export class TmuxPlaySession {
       this.readline as unknown as Parameters<typeof emitKeypressEvents>[1],
     );
     const listener = (_str: string | undefined, key: Keypress): void => {
+      if (this.bracketedPasteEnabled && key.name === 'paste-start') {
+        this.inPaste = true;
+        this.pasteAwaitingSubmit = false;
+        this.pasteBuffer = [];
+        return;
+      }
+      if (this.bracketedPasteEnabled && key.name === 'paste-end') {
+        this.inPaste = false;
+        this.pasteAwaitingSubmit = true;
+        return;
+      }
       if (key.name !== 'escape' || key.sequence !== '\x1b') {
         return;
       }
@@ -341,6 +382,15 @@ export class TmuxPlaySession {
     input.on('keypress', listener);
     this.keypressTarget = input;
     this.keypressListener = listener;
+
+    if (isTty(output)) {
+      output.write(BRACKETED_PASTE_ENABLE);
+      this.bracketedPasteEnabled = true;
+      this.exitPasteCleanup = () => {
+        this.writeBracketedPasteDisable();
+      };
+      process.on('exit', this.exitPasteCleanup);
+    }
   }
 
   private removeKeypressListener(): void {
@@ -356,6 +406,25 @@ export class TmuxPlaySession {
     }
     this.keypressTarget = undefined;
     this.keypressListener = undefined;
+    this.inPaste = false;
+    this.pasteAwaitingSubmit = false;
+    this.pasteBuffer = [];
+  }
+
+  private disableBracketedPaste(): void {
+    if (this.exitPasteCleanup) {
+      process.off('exit', this.exitPasteCleanup);
+      this.exitPasteCleanup = undefined;
+    }
+    this.writeBracketedPasteDisable();
+  }
+
+  private writeBracketedPasteDisable(): void {
+    if (!this.bracketedPasteEnabled) {
+      return;
+    }
+    (this.options.output ?? process.stdout).write(BRACKETED_PASTE_DISABLE);
+    this.bracketedPasteEnabled = false;
   }
 
   // tmux is only reachable when this process runs inside a pane; outside tmux
@@ -412,7 +481,7 @@ function outputWidth(output: Writable): number {
   return Number.POSITIVE_INFINITY;
 }
 
-function isTty(stream: Readable): boolean {
+function isTty(stream: Readable | Writable): boolean {
   return (stream as { isTTY?: unknown }).isTTY === true;
 }
 
