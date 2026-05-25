@@ -213,6 +213,21 @@ The Boss/Captain pane title shall be `Captain`. Each role pane title shall be th
 
 While in session mode, the Boss readline shall echo the user's input line as the user types it (standard readline behavior). When the runtime emits `turn_started`, the presenter shall not write the Boss prompt to the Boss/Captain pane, so the user's input shall appear exactly once in the pane.
 
+### TMUX-057
+
+Where session mode is running with TTY stdin, while a Boss turn is active, when the Boss presses a bare ESC key in the Boss/Captain pane, the session shall abort the active turn without shutting down, preserve the Boss readline's current edit-buffer contents, and return to a ready `boss> ` prompt for the next Boss turn.
+The Boss/Captain pane shall render the existing `[turn aborted: ESC]` status line per [TMUX-040](#tmux-040).
+While no Boss turn is active, a bare ESC keypress shall have no observable effect.
+Terminal escape sequences that are not a bare ESC keypress (for example arrow-key sequences) shall not trigger a turn abort.
+Where stdin is not a TTY, the ESC keybinding shall not be installed, and the SIGINT/SIGTERM/EOF lifecycle per [TMUX-026](#tmux-026) shall remain unchanged.
+
+### TMUX-058
+
+Where session mode is running with TTY stdin and TTY stdout, when the Boss pastes multi-line text into the Boss/Captain pane and then presses Enter, the session shall submit exactly one Boss turn whose `BossTurn.prompt` preserves the pasted text's embedded newlines as `\n` characters inside that single prompt string.
+Bytes typed by the Boss after the paste and before that Enter shall be included in the same submission.
+Where either stdin or stdout is not a TTY, the multi-line paste behavior shall be omitted and embedded newlines in pasted text shall behave as in the underlying readline.
+The session shall enable bracketed paste only for its own duration and shall emit the bracketed-paste-disable sequence on every shutdown path so tmux-play does not leave bracketed-paste mode enabled in the terminal after exit.
+
 ### TMUX-038
 
 The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the first nonblank line of the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.

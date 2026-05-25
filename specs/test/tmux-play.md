@@ -333,6 +333,25 @@ Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [TMUX-008](../user/tmux-pla
 
 Given a YAML config whose `captain.reasoningEffort` or `roles[0].reasoningEffort` is outside [ENG-020](../user/engine.md#eng-020)'s closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path. The runtime shall not start, and no `runtime_error` record shall be observable because the failure is a launcher-startup abort outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope.
 
+## Boss Input Keybindings
+
+### TTMUX-059
+Verifies: [TMUX-057](../user/tmux-play.md#tmux-057), [TMUX-026](../user/tmux-play.md#tmux-026), [TMUX-040](../user/tmux-play.md#tmux-040)
+
+Given a `TmuxPlaySession` running against TTY-like input with an active Boss turn in flight, when the input delivers a bare ESC byte and the readline escape timeout elapses, observers shall capture one `turn_aborted` record with reason `ESC`, the Boss/Captain pane shall capture the `[turn aborted: ESC]` status line, no `runtime_error` record shall be emitted, and the session shall remain open.
+Given the same session, when the input delivers the arrow-up sequence `\x1b[A`, no `turn_aborted` record shall be emitted.
+Given the Boss readline edit buffer contained user-typed bytes when the bare ESC arrived, when the Boss presses Enter after the abort, the next Boss turn shall receive those retained bytes as its prompt.
+Given non-TTY input, the ESC keybinding shall not be installed and SIGINT/SIGTERM/EOF shutdown behavior shall remain governed by [TMUX-026](../user/tmux-play.md#tmux-026).
+
+### TTMUX-060
+Verifies: [TMUX-058](../user/tmux-play.md#tmux-058)
+
+Given a `TmuxPlaySession` running against TTY-like input and output, when the input delivers `\x1b[200~Alpha\nBravo\nCharlie\x1b[201~` followed by Enter, exactly one Boss turn shall start with prompt `Alpha\nBravo\nCharlie`.
+Given the input delivers `\x1b[200~Alpha\nBravo\n\x1b[201~` followed by Enter, exactly one Boss turn shall start with prompt `Alpha\nBravo`.
+Given the input delivers `\x1b[200~Alpha\nBravo\x1b[201~` followed by `-extra` and Enter, exactly one Boss turn shall start with prompt `Alpha\nBravo-extra`.
+The output shall capture the bracketed-paste-enable sequence when the session starts and the bracketed-paste-disable sequence on shutdown.
+Given non-TTY output, neither bracketed-paste control sequence shall be written to output.
+
 ## Real-glow Acceptance
 
 Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts` (glow-in-isolation checks) and `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (presenter + glow integration), run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.
