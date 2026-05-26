@@ -234,7 +234,7 @@ The presenter shall tag the first nonblank textual line of each tmux-play pane o
 
 The presenter shall color the speaker prefix by wrapping its bytes — including the trailing space — in a bold 24-bit-foreground SGR pair: `\x1b[1;38;2;<r>;<g>;<b>m<who>> \x1b[0m`. Body text following the prefix shall remain unstyled by the presenter, so any ANSI bytes inside the body come from the body itself. Continuation indents shall stay uncolored. The speaker → color mapping is:
 
-| Speaker | Mocha player | Hex |
+| Speaker | Mocha role | Hex |
 | --- | --- | --- |
 | `boss` | `blue` | `#89b4fa` |
 | `captain` | `mauve` | `#cba6f7` |
@@ -250,7 +250,7 @@ When a player or Captain run finishes with `status: 'ok'`, the presenter shall n
 
 The bracketed status body on these lines shall additionally be wrapped in its own bold 24-bit-foreground SGR pair, distinct from the surrounding speaker prefix span:
 
-| Status kind | Mocha player | Hex |
+| Status kind | Mocha role | Hex |
 | --- | --- | --- |
 | `[error: …]` (player or Captain) | `red` | `#f38ba8` |
 | `[runtime error: …]` (Boss/Captain pane) | `red` | `#f38ba8` |
@@ -273,7 +273,7 @@ A `tool_use` event shall render as a single line `tool> <toolName> <inputSummary
 
 A `tool_result` event shall render as a header line followed by the tool's output as a continuation block. The header is `tool< <symbol> <toolName>[ <duration>]` where `<symbol>` and the prefix SGR derive from `status`:
 
-| `status` | Symbol | Mocha player | Hex |
+| `status` | Symbol | Mocha role | Hex |
 | --- | --- | --- | --- |
 | `success` | `✓` | `green` | `#a6e3a1` |
 | `error` | `✗` | `red` | `#f38ba8` |
@@ -352,14 +352,14 @@ The launcher shall set each pane's title to `<Display> · <adapter>` where `<Dis
 
 The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and future player-keyed coloring) as a single lookup keyed by adapter name. Known adapter accents:
 
-| Adapter | Mocha player | Hex |
+| Adapter | Mocha role | Hex |
 | --- | --- | --- |
 | `claude` | `green` | `#a6e3a1` |
 | `codex` | `teal` | `#94e2d5` |
 | `gemini` | `lavender` | `#b4befe` |
 | `opencode` | `pink` | `#f5c2e7` |
 
-For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status players (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
+For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
 
 When the launcher sets `pane-border-format`, the format shall keep the full pane-border row on an explicit Catppuccin Mocha surface background after the pane title rather than resetting to terminal default styling before the timer segment.
 The active pane title segment shall remain accented with the active border color, but the separator, timer glyph, and timer duration text shall render on the same explicit surface row instead of a default-background gap.

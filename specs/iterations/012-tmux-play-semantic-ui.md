@@ -36,7 +36,7 @@ Out of scope:
   Requires runtime → tmux push plumbing (per-pane user options written from the runtime after every event); defer to a follow-up IR.
 - Configurable themes via a YAML `theme:` field; the palette remains hardcoded in the launcher.
 - Light-mode (Catppuccin Latte) variant.
-- Coloring of any message body — only prefixes and tool lifecycle headers carry color; body text stays in the `text` Mocha player to keep dense LLM output readable.
+- Coloring of any message body — only prefixes and tool lifecycle headers carry color; body text stays in the `text` Mocha role to keep dense LLM output readable.
 
 ## Deliverables
 

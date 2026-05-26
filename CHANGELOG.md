@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** tmux-play renames its domain concept "role" to "player." YAML config key `roles:` → `players:`, record types `role_prompt` / `role_event` / `role_finished` → `player_prompt` / `player_event` / `player_finished`, fanout captain option `maxRoleOutputChars` → `maxPlayerOutputChars`, fanout summary protocol markers `=== role:NAME ===` → `=== player:NAME ===`, runtime API `RoleConfig` / `RoleHandle` / `RoleRunResult` / `callRole(...)` / `roles[]` → `PlayerConfig` / `PlayerHandle` / `PlayerRunResult` / `callPlayer(...)` / `players[]`. The engine layer (DR-003) keeps its `Cligent.role` / `CligentEvent.role` attribution tag — that's an opaque per-instance label the app populates with the player id. No backwards-compat shim; pre-existing `roles:` configs must be renamed to `players:`
 
-
+## [0.5.0] - 2026-05-24
 
 ### Added
 

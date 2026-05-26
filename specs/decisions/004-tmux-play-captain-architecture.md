@@ -11,7 +11,7 @@ Accepted
 
 [DR-001](001-unified-cli-agent-interface-architecture.md) established the TypeScript async-generator adapter architecture.
 [DR-002](002-unified-event-stream-and-adapter-interface.md) defined the unified event stream and adapter interface.
-[DR-003](003-role-scoped-session-management.md) defined `Cligent` instances for player identity, session continuity, option merging, and single-flight execution.
+[DR-003](003-role-scoped-session-management.md) defined `Cligent` instances for role identity, session continuity, option merging, and single-flight execution.
 
 The prior fanout app proved multiple `Cligent` instances render across tmux panes.
 The next layer needs a Captain that drives player cligents and answers a Boss, without coupling the runtime to tmux pane scraping or terminal layout.
