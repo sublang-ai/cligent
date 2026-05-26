@@ -22,6 +22,7 @@ import type {
   ReasoningEffort,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
+import { doneResumeTokenPayload } from './resume-token.js';
 
 const AGENT = 'gemini' as const;
 
@@ -973,7 +974,12 @@ export class GeminiAdapter implements AgentAdapter {
             {
               status: doneStatus,
               result: resultText,
-              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
+              ...doneResumeTokenPayload(
+                doneStatus,
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: mapUsage(message.stats),
               durationMs:
                 asNumber(message.durationMs) ??
@@ -1024,6 +1030,12 @@ export class GeminiAdapter implements AgentAdapter {
           AGENT,
           {
             status,
+            ...doneResumeTokenPayload(
+              status,
+              backendProvidedSessionId,
+              sessionId,
+              options?.resume,
+            ),
             ...(fallbackMsg ? { result: fallbackMsg } : {}),
             usage: { ...DEFAULT_DONE_USAGE },
             durationMs: Date.now() - startTime,
@@ -1049,6 +1061,12 @@ export class GeminiAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
             },

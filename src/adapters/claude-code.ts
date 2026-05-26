@@ -11,6 +11,7 @@ import type {
   PermissionPolicy,
   ReasoningEffort,
 } from '../types.js';
+import { doneResumeTokenPayload } from './resume-token.js';
 
 type ClaudePermissionMode =
   | 'auto'
@@ -850,7 +851,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             {
               status,
               result: asString(result.result) ?? errorText,
-              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
+              ...doneResumeTokenPayload(
+                status,
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: mapUsage(result.usage),
               durationMs,
             },
@@ -873,6 +879,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
             },
@@ -910,6 +922,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           AGENT,
           {
             status: 'interrupted',
+            ...doneResumeTokenPayload(
+              'interrupted',
+              backendProvidedSessionId,
+              sessionId,
+              options?.resume,
+            ),
             usage: { ...DEFAULT_DONE_USAGE },
             durationMs: Date.now() - startTime,
           },

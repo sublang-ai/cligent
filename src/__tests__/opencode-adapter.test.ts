@@ -728,6 +728,65 @@ describe('OpenCodeAdapter', () => {
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
+  it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
+    async function interruptedResumeToken(options: {
+      backendSessionId?: string;
+      resume?: string;
+    }): Promise<string | undefined> {
+      const controller = new AbortController();
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: options.backendSessionId
+              ? { sessionId: options.backendSessionId }
+              : {},
+            eventStreamFactory: (streamOptions) => ({
+              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                const signal = streamOptions?.signal as AbortSignal | undefined;
+                await new Promise<void>((resolve) => {
+                  if (signal?.aborted) {
+                    resolve();
+                    return;
+                  }
+                  signal?.addEventListener('abort', () => resolve(), { once: true });
+                });
+              },
+            }),
+          }),
+        },
+      );
+
+      const events: AgentEvent[] = [];
+      for await (const event of adapter.run('prompt', {
+        abortSignal: controller.signal,
+        ...(options.resume ? { resume: options.resume } : {}),
+      })) {
+        events.push(event);
+        if (event.type === 'init') {
+          controller.abort();
+        }
+      }
+
+      const done = events.find((event) => event.type === 'done') as AgentEvent & {
+        payload: { status: string; resumeToken?: string };
+      };
+      expect(done.payload.status).toBe('interrupted');
+      return done.payload.resumeToken;
+    }
+
+    await expect(
+      interruptedResumeToken({ backendSessionId: 'opencode-abort-new' }),
+    ).resolves.toBe('opencode-abort-new');
+    await expect(
+      interruptedResumeToken({ resume: 'opencode-abort-resume' }),
+    ).resolves.toBe('opencode-abort-resume');
+    await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+  });
+
   it('isAvailable checks SDK + CLI in managed mode and only SDK in external mode', async () => {
     const managedMissingCli = new OpenCodeAdapter(
       { mode: 'managed' },

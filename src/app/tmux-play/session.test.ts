@@ -93,7 +93,7 @@ describe('TmuxPlaySession', () => {
   afterEach(() => {
     vi.useRealTimers();
     if (tempDir) {
-      rmSync(tempDir, { recursive: true, force: true });
+      removeTempDir(tempDir);
       tempDir = undefined;
     }
   });
@@ -492,7 +492,7 @@ describe('TmuxPlaySession', () => {
     input.end();
     await session.done;
     expect(output.text()).toContain(BRACKETED_PASTE_DISABLE);
-    rmSync(tempDir, { recursive: true, force: true });
+    removeTempDir(tempDir);
     tempDir = undefined;
 
     tempDir = makeWorkDir();
@@ -543,6 +543,15 @@ function baseOptions(workDir: string): TmuxPlaySessionOptions {
     signalTarget: new SignalHub(),
     createTimingObserver: () => noopTimingObserver(),
   };
+}
+
+function removeTempDir(path: string): void {
+  rmSync(path, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 20,
+  });
 }
 
 function noopTimingObserver(): TimingObserverHandle {

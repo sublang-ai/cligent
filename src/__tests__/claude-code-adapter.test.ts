@@ -595,6 +595,71 @@ describe('ClaudeCodeAdapter', () => {
     expect(done.payload.status).toBe('interrupted');
   });
 
+  it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
+    async function interruptedResumeToken(options: {
+      backendSessionId?: string;
+      resume?: string;
+    }): Promise<string | undefined> {
+      const externalAbort = new AbortController();
+      const adapter = new ClaudeCodeAdapter({
+        loadSdk: async () => ({
+          query(opts: MockSdkOptions): AsyncIterable<unknown> {
+            return {
+              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                yield {
+                  type: 'system',
+                  model: 'claude',
+                  cwd: '/repo',
+                  tools: [],
+                  ...(options.backendSessionId
+                    ? { sessionId: options.backendSessionId }
+                    : {}),
+                };
+
+                await new Promise<void>((resolve) => {
+                  if (opts.options?.abortController?.signal.aborted) {
+                    resolve();
+                    return;
+                  }
+                  opts.options?.abortController?.signal.addEventListener(
+                    'abort',
+                    () => resolve(),
+                    { once: true },
+                  );
+                });
+              },
+            };
+          },
+        }),
+      });
+
+      const stream = adapter.run('prompt', {
+        abortSignal: externalAbort.signal,
+        ...(options.resume ? { resume: options.resume } : {}),
+      });
+      const first = await stream.next();
+      expect(first.done).toBe(false);
+      expect(first.value?.type).toBe('init');
+
+      externalAbort.abort();
+
+      const rest = await collect(stream);
+      const done = rest.find((event) => event.type === 'done') as AgentEvent & {
+        payload: { status: string; resumeToken?: string };
+      };
+      expect(done.payload.status).toBe('interrupted');
+      return done.payload.resumeToken;
+    }
+
+    await expect(
+      interruptedResumeToken({ backendSessionId: 'session-abort-new' }),
+    ).resolves.toBe('session-abort-new');
+    await expect(
+      interruptedResumeToken({ resume: 'session-abort-resume' }),
+    ).resolves.toBe('session-abort-resume');
+    await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+  });
+
   it('builds query options with mapped permissions helper', () => {
     const mapped = mapAgentOptionsToClaudeQueryOptions({
       permissions: {

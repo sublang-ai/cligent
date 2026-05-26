@@ -58,14 +58,14 @@ Bumping to `subtext1` (`#bac2de`) keeps the timer subdued relative to the active
 - [x] `specs/test/adapters.md` — add a new TADAPT item verifying the interrupt-with-token contract across all four adapters.
 - [x] `specs/user/tmux-play.md` — amend TMUX-048 (pane-border row surface continuity) and TMUX-054 (timer color contrast).
 - [x] `specs/map.md` — index IR-020.
-- [ ] `src/adapters/{claude-code,codex,gemini,opencode}.ts` — apply the three-stage `resumeToken` rule (via a shared helper) at every interrupt-path `done` emission (8 touch points).
-- [ ] `src/__tests__/{claude-code,codex,gemini,opencode}-adapter.test.ts` — per-adapter abort-with-token unit tests.
+- [x] `src/adapters/{claude-code,codex,gemini,opencode}.ts` — apply the three-stage `resumeToken` rule (via a shared helper) at every interrupt-path `done` emission (8 touch points).
+- [x] `src/__tests__/{claude-code,codex,gemini,opencode}-adapter.test.ts` — per-adapter abort-with-token unit tests.
 - [ ] `src/app/tmux-play/launcher.ts` — `paneBorderFormat` post-title bg continuity; `timerColorFormat` not-running color bump.
 
 ## Tasks
 
 1. [x] **Spec items + map.** Amend the four adapter user items and TMUX-048 / TMUX-054; add the new TADAPT item; index IR-020 in `specs/map.md`. Single docs-only commit.
-2. **Adapter abort-token fix.** Factor the three-stage resume-token rule into a shared helper and apply it at all eight interrupt-path `done` emissions across the four adapters; add per-adapter unit tests covering all three branches of the rule. Per-task-boundary green.
+2. [x] **Adapter abort-token fix.** Factor the three-stage resume-token rule into a shared helper and apply it at all eight interrupt-path `done` emissions across the four adapters; add per-adapter unit tests covering all three branches of the rule. Per-task-boundary green.
 3. **Pane-border row contrast.** Update `paneBorderFormat` to carry a single surface tone across the full row and `timerColorFormat`'s not-running color; update or add launcher tests asserting the new format string. Per-task-boundary green.
 
 ## Acceptance

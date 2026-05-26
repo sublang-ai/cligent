@@ -22,6 +22,7 @@ import type {
   PermissionPolicy,
   ReasoningEffort,
 } from '../types.js';
+import { doneResumeTokenPayload } from './resume-token.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
@@ -1101,6 +1102,12 @@ export class OpenCodeAdapter implements AgentAdapter {
               AGENT,
               {
                 status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
                 usage: { ...DEFAULT_DONE_USAGE },
                 durationMs: Date.now() - startTime,
               },
@@ -1361,6 +1368,7 @@ export class OpenCodeAdapter implements AgentAdapter {
           (eventType === 'session.status' &&
             asString(asRecord(event.status).type) === 'idle')
         ) {
+          const status = mapDoneStatus(asString(event.status));
           // Use event-provided usage if available, otherwise fall back to
           // values accumulated from step-finish parts.
           const eventUsage = mapUsage(event.usage);
@@ -1381,9 +1389,14 @@ export class OpenCodeAdapter implements AgentAdapter {
             'done',
             AGENT,
             {
-              status: mapDoneStatus(asString(event.status)),
+              status,
               result: asString(event.result),
-              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
+              ...doneResumeTokenPayload(
+                status,
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage,
               durationMs:
                 asNumber(event.durationMs) ??
@@ -1404,6 +1417,12 @@ export class OpenCodeAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
             },
@@ -1467,6 +1486,12 @@ export class OpenCodeAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
             },

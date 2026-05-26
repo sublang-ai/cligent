@@ -1011,6 +1011,67 @@ describe('GeminiAdapter', () => {
     expect(spawned?.killSignals).toContain('SIGTERM');
   });
 
+  it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
+    async function interruptedResumeToken(options: {
+      backendSessionId?: string;
+      resume?: string;
+    }): Promise<string | undefined> {
+      const controller = new AbortController();
+      const { spawnProcess } = makeSpawn((process) => {
+        process.kill = (signal?: NodeJS.Signals | number): boolean => {
+          process.killed = true;
+          process.killSignals.push(signal);
+          queueMicrotask(() => {
+            process.stdout.end();
+            process.stderr.end();
+            process.emit('close', null, 'SIGTERM');
+          });
+          return true;
+        };
+
+        process.stdout.write(
+          `${JSON.stringify({
+            type: 'init',
+            model: 'gem',
+            cwd: '/repo',
+            ...(options.backendSessionId
+              ? { sessionId: options.backendSessionId }
+              : {}),
+          })}\n`,
+        );
+      });
+      const adapter = new GeminiAdapter({
+        spawnProcess,
+        probeAvailability: async () => true,
+      });
+
+      const events: AgentEvent[] = [];
+      for await (const event of adapter.run('prompt', {
+        abortSignal: controller.signal,
+        ...(options.resume ? { resume: options.resume } : {}),
+      })) {
+        events.push(event);
+        if (event.type === 'init') {
+          controller.abort();
+        }
+      }
+
+      const done = events.find((event) => event.type === 'done') as AgentEvent & {
+        payload: { status: string; resumeToken?: string };
+      };
+      expect(done.payload.status).toBe('interrupted');
+      return done.payload.resumeToken;
+    }
+
+    await expect(
+      interruptedResumeToken({ backendSessionId: 'gemini-abort-new' }),
+    ).resolves.toBe('gemini-abort-new');
+    await expect(
+      interruptedResumeToken({ resume: 'gemini-abort-resume' }),
+    ).resolves.toBe('gemini-abort-resume');
+    await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+  });
+
   it('returns false from isAvailable when probe fails', async () => {
     const adapter = new GeminiAdapter({
       probeAvailability: async () => false,

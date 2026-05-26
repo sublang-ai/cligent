@@ -10,6 +10,7 @@ import type {
   PermissionPolicy,
   ReasoningEffort,
 } from '../types.js';
+import { doneResumeTokenPayload } from './resume-token.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexDefaultPermissions =
@@ -832,9 +833,12 @@ export class CodexAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'error',
-              ...(backendProvidedSessionId
-                ? { resumeToken: sessionId }
-                : {}),
+              ...doneResumeTokenPayload(
+                'error',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: mapUsage(event.usage),
               durationMs: Date.now() - startTime,
             },
@@ -863,7 +867,12 @@ export class CodexAdapter implements AgentAdapter {
             {
               status,
               result: asString(turn.result) ?? asString(event.result),
-              ...(backendProvidedSessionId ? { resumeToken: sessionId } : {}),
+              ...doneResumeTokenPayload(
+                status,
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: mapUsage(turn.usage ?? event.usage),
               durationMs,
             },
@@ -886,6 +895,12 @@ export class CodexAdapter implements AgentAdapter {
             AGENT,
             {
               status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
             },
@@ -927,6 +942,12 @@ export class CodexAdapter implements AgentAdapter {
           AGENT,
           {
             status: 'interrupted',
+            ...doneResumeTokenPayload(
+              'interrupted',
+              backendProvidedSessionId,
+              sessionId,
+              options?.resume,
+            ),
             usage: { ...DEFAULT_DONE_USAGE },
             durationMs: Date.now() - startTime,
           },

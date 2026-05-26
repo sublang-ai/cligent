@@ -912,6 +912,88 @@ describe('CodexAdapter', () => {
     expect(done.payload.status).toBe('interrupted');
   });
 
+  it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
+    async function interruptedResumeToken(options: {
+      backendThreadId?: string;
+      resume?: string;
+    }): Promise<string | undefined> {
+      const externalAbort = new AbortController();
+      const makeThread = (): MockCodexThread => ({
+        async runStreamed(
+          _prompt: string,
+          runOptions?: MockRunOptions,
+        ): Promise<{ events: AsyncIterable<unknown> }> {
+          return {
+            events: {
+              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                yield {
+                  type: 'item.completed',
+                  item: { type: 'message', text: 'started' },
+                  ...(options.backendThreadId
+                    ? { threadId: options.backendThreadId }
+                    : {}),
+                };
+
+                await new Promise<void>((resolve) => {
+                  if (runOptions?.signal?.aborted) {
+                    resolve();
+                    return;
+                  }
+                  runOptions?.signal?.addEventListener('abort', () => resolve(), {
+                    once: true,
+                  });
+                });
+              },
+            },
+          };
+        },
+      });
+
+      const adapter = new CodexAdapter({
+        loadSdk: async () => ({
+          Codex: class {
+            startThread(_options?: MockThreadOptions): MockCodexThread {
+              return makeThread();
+            }
+
+            resumeThread(
+              threadId: string,
+              _options?: MockThreadOptions,
+            ): MockCodexThread {
+              expect(threadId).toBe(options.resume);
+              return makeThread();
+            }
+          },
+        }),
+      });
+
+      const stream = adapter.run('prompt', {
+        abortSignal: externalAbort.signal,
+        ...(options.resume ? { resume: options.resume } : {}),
+      });
+      const first = await stream.next();
+      expect(first.done).toBe(false);
+      expect(first.value?.type).toBe('init');
+
+      externalAbort.abort();
+
+      const rest = await collect(stream);
+      const done = rest.find((event) => event.type === 'done') as AgentEvent & {
+        payload: { status: string; resumeToken?: string };
+      };
+      expect(done.payload.status).toBe('interrupted');
+      return done.payload.resumeToken;
+    }
+
+    await expect(
+      interruptedResumeToken({ backendThreadId: 'thread-abort-new' }),
+    ).resolves.toBe('thread-abort-new');
+    await expect(
+      interruptedResumeToken({ resume: 'thread-abort-resume' }),
+    ).resolves.toBe('thread-abort-resume');
+    await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+  });
+
   it('builds mapped options helper with synced abort signal wiring', () => {
     const externalAbort = new AbortController();
     const mapped = mapAgentOptionsToCodexOptions({
