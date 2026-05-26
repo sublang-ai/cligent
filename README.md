@@ -52,7 +52,7 @@ for await (const event of agent.run('Now add tests for it')) {
 
 `tmux-play` is a reference application built on `Cligent` — a working
 showcase of what you can compose with the SDK. You chat with a **Captain**
-on the left pane; the Captain dispatches work to **roles**, each a
+on the left pane; the Captain dispatches work to **players**, each a
 `Cligent` on its own adapter and model, streaming live into its own pane
 on the right.
 
@@ -64,7 +64,7 @@ tmux-play --config ./tmux-play.config.yaml
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`
 creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` and starts
-with the built-in `fanout` Captain plus a `claude` and a `codex` role.
+with the built-in `fanout` Captain plus a `claude` and a `codex` player.
 
 Requirements:
 
@@ -76,10 +76,10 @@ Requirements:
   [Gemini CLI](https://github.com/google-gemini/gemini-cli),
   [OpenCode](https://opencode.ai).
 
-**The Captain is the extension point.** `tmux-play` owns role
+**The Captain is the extension point.** `tmux-play` owns player
 orchestration, panes, and event streaming; you write a Captain to decide
-*how* roles collaborate — fanout, planner/router, debate protocol, an
-XState graph, anything. The built-in `fanout` Captain runs every role in
+*how* players collaborate — fanout, planner/router, debate protocol, an
+XState graph, anything. The built-in `fanout` Captain runs every player in
 parallel and synthesizes their answers; swap it for your own using the
 same contract.
 

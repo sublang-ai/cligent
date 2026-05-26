@@ -116,21 +116,21 @@ describe('TmuxPresenter', () => {
 
   // Buffer-then-render core (TMUX-050).
 
-  it('routes role records to the matching role log and renders each block', () => {
+  it('routes player records to the matching player log and renders each block', () => {
     const boss = new MemoryWriter();
     const coder = new MemoryWriter();
     const reviewer = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map([
+      players: new Map([
         ['coder', coder],
         ['reviewer', reviewer],
       ]),
     });
 
-    presenter.onRecord(rolePrompt('coder', 'implement\nfeature'));
-    presenter.onRecord(roleEvent('coder', textEvent('done\nagain')));
-    presenter.onRecord(roleFinishedOk('coder'));
+    presenter.onRecord(playerPrompt('coder', 'implement\nfeature'));
+    presenter.onRecord(playerEvent('coder', textEvent('done\nagain')));
+    presenter.onRecord(playerFinishedOk('coder'));
 
     // Identity-mocked glow plus the TMUX-038 prefix/indent grammar yields the
     // same shape as the pre-IR-013 character-wrap path for short prose.
@@ -144,22 +144,22 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('');
   });
 
-  it('buffers streaming text_delta events and flushes on role_finished', () => {
+  it('buffers streaming text_delta events and flushes on player_finished', () => {
     const boss = new MemoryWriter();
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('first\n')));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('first\n')));
     // Nothing should reach the writer mid-stream — the block is still open.
     expect(coder.text()).toBe('');
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('second\n\nthird\n')));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('second\n\nthird\n')));
     expect(coder.text()).toBe('');
 
-    presenter.onRecord(roleFinishedOk('coder'));
+    presenter.onRecord(playerFinishedOk('coder'));
 
     expect(coder.text()).toBe(
       'coder> first\n' +
@@ -178,13 +178,13 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('first')));
-    presenter.onRecord(roleFinishedOk('coder'));
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('second\n')));
-    presenter.onRecord(roleFinishedOk('coder'));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('first')));
+    presenter.onRecord(playerFinishedOk('coder'));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('second\n')));
+    presenter.onRecord(playerFinishedOk('coder'));
 
     expect(coder.text()).toBe('coder> first\ncoder> second\n');
   });
@@ -193,7 +193,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     // Simulate glow's default dark style which wraps every rendered block in
@@ -205,8 +205,8 @@ describe('TmuxPresenter', () => {
       (text: string) => `\n${text.trimEnd()}\n\n`,
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('hello')));
-    presenter.onRecord(roleEvent('coder', textEvent('again')));
+    presenter.onRecord(playerEvent('coder', textEvent('hello')));
+    presenter.onRecord(playerEvent('coder', textEvent('again')));
 
     expect(coder.text()).toBe('coder> hello\ncoder> again\n');
   });
@@ -215,14 +215,14 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementation(
       () => '\nfirst paragraph\n\nsecond paragraph\n\n',
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('hello')));
+    presenter.onRecord(playerEvent('coder', textEvent('hello')));
 
     // The leading and trailing glow blanks are gone, but the inter-paragraph
     // blank between `first` and `second` survives untouched.
@@ -241,7 +241,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     const ansiPad = '\x1b[48;5;235m   \x1b[0m';
@@ -249,7 +249,7 @@ describe('TmuxPresenter', () => {
       () => `${ansiPad}\nfirst\n${ansiPad}\nsecond\n${ansiPad}\n`,
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+    presenter.onRecord(playerEvent('coder', textEvent('payload')));
 
     // Outer-margin trim drops one padded blank per edge. The middle
     // ANSI-wrapped pad sits between `first` and `second` and reaches the
@@ -272,14 +272,14 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementation(
       () => '   \nhello\n   \nworld\n   \n',
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+    presenter.onRecord(playerEvent('coder', textEvent('payload')));
 
     // Outer-margin trim drops one padded blank per edge (it already uses
     // visibleNonblank). The remaining middle padded row passes through
@@ -296,7 +296,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     // Simulate glow's actual fenced-code-with-payload-blank rendering shape:
@@ -309,7 +309,7 @@ describe('TmuxPresenter', () => {
       () => '\n\n\ncontent\n\n\n',
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('payload')));
+    presenter.onRecord(playerEvent('coder', textEvent('payload')));
 
     // After trim-1: leading blank count goes from 3 to 2; trailing from 2
     // to 1. The kept blanks ride between the prefix and the content,
@@ -324,12 +324,12 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('partial\n')));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('partial\n')));
     presenter.onRecord(
-      roleEvent('coder', toolUseEvent('Bash', { command: 'ls' })),
+      playerEvent('coder', toolUseEvent('Bash', { command: 'ls' })),
     );
 
     // The text deltas flushed before the tool> header so the order on the
@@ -337,15 +337,15 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('coder> partial\ntool> Bash ls\n');
   });
 
-  it('flushes the open block before a new role_prompt on the same writer', () => {
+  it('flushes the open block before a new player_prompt on the same writer', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textDeltaEvent('first')));
-    presenter.onRecord(rolePrompt('coder', 'next prompt'));
+    presenter.onRecord(playerEvent('coder', textDeltaEvent('first')));
+    presenter.onRecord(playerPrompt('coder', 'next prompt'));
 
     expect(coder.text()).toBe('coder> first\ncaptain> next prompt\n');
   });
@@ -354,7 +354,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord(captainEvent(textDeltaEvent('partial')));
@@ -376,22 +376,22 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleWidths: new Map([['coder', () => 80]]),
+      players: new Map([['coder', coder]]),
+      playerWidths: new Map([['coder', () => 80]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('hello world')));
+    presenter.onRecord(playerEvent('coder', textEvent('hello world')));
 
     // `coder> ` is 7 cells, so glow renders into 73. The prefixed line then
     // fits 73 + 7 = 80 cells, matching the pane width without re-wrap.
     expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 73);
   });
 
-  it('budgets prefixWidth from the speaker length, not the role id length', () => {
+  it('budgets prefixWidth from the speaker length, not the player id length', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
       bossWidth: () => 80,
     });
 
@@ -405,11 +405,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      // No roleWidths entry, so the writer has no width source.
+      players: new Map([['coder', coder]]),
+      // No playerWidths entry, so the writer has no width source.
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('hi')));
+    presenter.onRecord(playerEvent('coder', textEvent('hi')));
 
     expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 73); // 80 - 7
   });
@@ -420,8 +420,8 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleAdapters: new Map([['coder', 'claude']]),
+      players: new Map([['coder', coder]]),
+      playerAdapters: new Map([['coder', 'claude']]),
     });
 
     // Simulate glow returning a bolded heading so we can check that the
@@ -430,7 +430,7 @@ describe('TmuxPresenter', () => {
       () => '\x1b[1mHeading\x1b[0m\nbody line\n',
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('# Heading\nbody line')));
+    presenter.onRecord(playerEvent('coder', textEvent('# Heading\nbody line')));
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1mHeading\x1b[0m\n' +
@@ -442,14 +442,14 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementation(
       () => 'value is \x1b[1m57°F\x1b[0m today\n',
     );
 
-    presenter.onRecord(roleEvent('coder', textEvent('value is **57°F** today')));
+    presenter.onRecord(playerEvent('coder', textEvent('value is **57°F** today')));
 
     // The visible content has no literal `**` markers — they were consumed
     // by glow and rendered as a bold SGR span around `57°F`.
@@ -461,10 +461,10 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('one\n\ntwo')));
+    presenter.onRecord(playerEvent('coder', textEvent('one\n\ntwo')));
 
     expect(coder.text()).toBe('coder> one\n\n  two\n');
   });
@@ -473,10 +473,10 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('   \n\n')));
+    presenter.onRecord(playerEvent('coder', textEvent('   \n\n')));
 
     // Source had no nonblank content. After the edge trim there is no line
     // to tag, so the writer receives no bytes — empty content does not
@@ -494,14 +494,14 @@ describe('TmuxPresenter', () => {
         const coder = new MemoryWriter();
         const presenter = createTmuxPresenter({
           boss: new MemoryWriter(),
-          roles: new Map([['coder', coder]]),
+          players: new Map([['coder', coder]]),
         });
 
         renderMarkdownMock.mockImplementation(
           () => '\n'.repeat(leading) + 'content\n' + '\n'.repeat(trailing),
         );
 
-        presenter.onRecord(roleEvent('coder', textEvent('input')));
+        presenter.onRecord(playerEvent('coder', textEvent('input')));
 
         const expectedLeading = Math.max(0, leading - 1);
         const expectedTrailing = Math.max(0, trailing - 1);
@@ -520,14 +520,14 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementationOnce(() => {
       throw new Error('glow render failed: broken pipe');
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('emergency message')));
+    presenter.onRecord(playerEvent('coder', textEvent('emergency message')));
 
     // Content reaches the pane (under the prefix) even though glow blew up;
     // the launcher gate handles the startup case, so this guards rare
@@ -535,14 +535,14 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('coder> emergency message\n');
   });
 
-  // Routing (Boss vs. role panes).
+  // Routing (Boss vs. player panes).
 
   it('routes Boss and Captain records to the Boss pane', () => {
     const boss = new MemoryWriter();
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord({
@@ -560,13 +560,13 @@ describe('TmuxPresenter', () => {
       turnId: 1,
       timestamp: 101,
       message: 'reviewing',
-      data: { roleCount: 1 },
+      data: { playerCount: 1 },
     });
     presenter.onRecord({
       type: 'captain_prompt',
       turnId: 1,
       timestamp: 102,
-      prompt: 'summarize role output',
+      prompt: 'summarize player output',
     });
     presenter.onRecord(captainEvent(textEvent('answer')));
     presenter.onRecord({
@@ -592,7 +592,7 @@ describe('TmuxPresenter', () => {
     });
 
     expect(boss.text()).toBe(
-      'captain> [status] reviewing {"roleCount":1}\n' +
+      'captain> [status] reviewing {"playerCount":1}\n' +
         'captain> answer\n' +
         'captain> [runtime error: observer failed]\n',
     );
@@ -603,7 +603,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord({
@@ -616,7 +616,7 @@ describe('TmuxPresenter', () => {
       type: 'captain_prompt',
       turnId: 1,
       timestamp: 101,
-      prompt: '=== role:coder status:ok ===\nraw role text\n=== /role:coder ===',
+      prompt: '=== player:coder status:ok ===\nraw player text\n=== /player:coder ===',
     });
 
     expect(boss.text()).toBe('');
@@ -626,7 +626,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord({
@@ -644,7 +644,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
     const circular: Record<string, unknown> = {};
     circular.self = circular;
@@ -660,15 +660,15 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('captain> [status] ready [unserializable data]\n');
   });
 
-  it('fails when a role log writer is missing', () => {
+  it('fails when a player log writer is missing', () => {
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map(),
+      players: new Map(),
     });
 
     expect(() =>
-      presenter.onRecord(rolePrompt('coder', 'implement feature')),
-    ).toThrow('Missing tmux presenter writer for role: coder');
+      presenter.onRecord(playerPrompt('coder', 'implement feature')),
+    ).toThrow('Missing tmux presenter writer for player: coder');
   });
 
   // Status line coloring (TMUX-038/039).
@@ -678,11 +678,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', errorEvent('role failed')));
-    presenter.onRecord(roleFinished('coder', 'error', 'role failed'));
+    presenter.onRecord(playerEvent('coder', errorEvent('player failed')));
+    presenter.onRecord(playerFinished('coder', 'error', 'player failed'));
     presenter.onRecord(captainEvent(errorEvent('captain failed')));
     presenter.onRecord({
       type: 'captain_finished',
@@ -690,7 +690,7 @@ describe('TmuxPresenter', () => {
       timestamp: 102,
       result: { status: 'error', turnId: 1, error: 'captain failed' },
     });
-    presenter.onRecord(roleFinished('coder', 'aborted'));
+    presenter.onRecord(playerFinished('coder', 'aborted'));
     presenter.onRecord(captainEvent(doneEvent()));
     presenter.onRecord({
       type: 'captain_finished',
@@ -700,7 +700,7 @@ describe('TmuxPresenter', () => {
     });
 
     expect(coder.text()).toBe(
-      'coder> [error: role failed]\n' +
+      'coder> [error: player failed]\n' +
         'coder> [aborted]\n',
     );
     expect(boss.text()).toBe(
@@ -709,37 +709,37 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('wraps the captain prefix in mauve SGR for a role_prompt', () => {
+  it('wraps the captain prefix in mauve SGR for a player_prompt', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(rolePrompt('coder', 'implement feature'));
+    presenter.onRecord(playerPrompt('coder', 'implement feature'));
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0mimplement feature\n',
     );
   });
 
-  it('keys the role prefix color off the adapter map per TMUX-048', () => {
+  it('keys the player prefix color off the adapter map per TMUX-048', () => {
     const coder = new MemoryWriter();
     const reviewer = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([
+      players: new Map([
         ['coder', coder],
         ['reviewer', reviewer],
       ]),
-      roleAdapters: new Map([
+      playerAdapters: new Map([
         ['coder', 'claude'],
         ['reviewer', 'codex'],
       ]),
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('done')));
-    presenter.onRecord(roleEvent('reviewer', textEvent('lgtm')));
+    presenter.onRecord(playerEvent('coder', textEvent('done')));
+    presenter.onRecord(playerEvent('reviewer', textEvent('lgtm')));
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0mdone\n',
@@ -749,43 +749,43 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('falls back to uncolored prefix when no adapter is mapped for a role', () => {
+  it('falls back to uncolored prefix when no adapter is mapped for a player', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', textEvent('hello')));
+    presenter.onRecord(playerEvent('coder', textEvent('hello')));
 
     expect(coder.raw()).toBe('coder> hello\n');
   });
 
-  it('paints role-error body red while preserving the role prefix color', () => {
+  it('paints player-error body red while preserving the player prefix color', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleAdapters: new Map([['coder', 'claude']]),
+      players: new Map([['coder', coder]]),
+      playerAdapters: new Map([['coder', 'claude']]),
     });
 
-    presenter.onRecord(roleFinished('coder', 'error', 'role failed'));
+    presenter.onRecord(playerFinished('coder', 'error', 'player failed'));
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0m' +
-        '\x1b[1;38;2;243;139;168m[error: role failed]\x1b[0m\n',
+        '\x1b[1;38;2;243;139;168m[error: player failed]\x1b[0m\n',
     );
   });
 
-  it('paints role-aborted body yellow while preserving the role prefix color', () => {
+  it('paints player-aborted body yellow while preserving the player prefix color', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleAdapters: new Map([['coder', 'codex']]),
+      players: new Map([['coder', coder]]),
+      playerAdapters: new Map([['coder', 'codex']]),
     });
 
-    presenter.onRecord(roleFinished('coder', 'aborted'));
+    presenter.onRecord(playerFinished('coder', 'aborted'));
 
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;148;226;213mcoder> \x1b[0m' +
@@ -797,7 +797,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord({
@@ -817,7 +817,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord({
@@ -839,15 +839,15 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleAdapters: new Map([['coder', 'claude']]),
+      players: new Map([['coder', coder]]),
+      playerAdapters: new Map([['coder', 'claude']]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
+      playerEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
-    // claude → green #a6e3a1 → fg 166;227;161. Same SGR the role's `<who>>`
+    // claude → green #a6e3a1 → fg 166;227;161. Same SGR the player's `<who>>`
     // prefix carries; tool invocations are attributed to their caller.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mtool> \x1b[0mBash npm test\n',
@@ -858,12 +858,12 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      // No roleAdapters entry — matches the TMUX-038 prefix fallback.
+      players: new Map([['coder', coder]]),
+      // No playerAdapters entry — matches the TMUX-038 prefix fallback.
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
+      playerEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
     expect(coder.raw()).toBe('tool> Bash npm test\n');
@@ -873,7 +873,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord(
@@ -890,11 +890,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolUseEvent('Read', {
           description: 'long-form',
@@ -913,17 +913,17 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolUseEvent('X', { prompt: '一二三四五六七八九十'.repeat(4) }),
       ),
     );
     presenter.onRecord(
-      roleEvent('coder', toolUseEvent('Y', { prompt: '🚀'.repeat(40) })),
+      playerEvent('coder', toolUseEvent('Y', { prompt: '🚀'.repeat(40) })),
     );
 
     expect(coder.text()).toBe(
@@ -937,11 +937,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolUseEvent('Custom', { count: 3, flag: true })),
+      playerEvent('coder', toolUseEvent('Custom', { count: 3, flag: true })),
     );
 
     expect(coder.text()).toBe('tool> Custom {"count":3,"flag":true}\n');
@@ -951,11 +951,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolUseEvent('ToolSearch', {
           query: 'select:WebFetch',
@@ -975,10 +975,10 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', toolUseEvent('Status', {})));
+    presenter.onRecord(playerEvent('coder', toolUseEvent('Status', {})));
 
     expect(coder.text()).toBe('tool> Status\n');
   });
@@ -987,11 +987,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolResultEvent(
           'Bash',
@@ -1019,11 +1019,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolResultEvent('Edit', 'error', 'permission denied', 50),
       ),
@@ -1041,11 +1041,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
+      playerEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
     );
 
     expect(coder.raw()).toBe(
@@ -1057,7 +1057,7 @@ describe('TmuxPresenter', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
-      roles: new Map(),
+      players: new Map(),
     });
 
     presenter.onRecord(
@@ -1082,11 +1082,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
+      playerEvent('coder', toolResultEvent('WebFetch', 'denied', null)),
     );
 
     expect(renderMarkdownMock).not.toHaveBeenCalled();
@@ -1096,12 +1096,12 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleWidths: new Map([['coder', () => 80]]),
+      players: new Map([['coder', coder]]),
+      playerWidths: new Map([['coder', () => 80]]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Bash', 'success', 'hi')),
+      playerEvent('coder', toolResultEvent('Bash', 'success', 'hi')),
     );
 
     // Two-space continuation indent → render at 80 - 2 = 78.
@@ -1115,14 +1115,14 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     // Payload contains a triple-backtick fence inside — a naive ``` wrapper
     // would terminate early. The fence must be at least four backticks long.
     const payload = 'before\n```\ninner code\n```\nafter';
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', payload)),
+      playerEvent('coder', toolResultEvent('Cat', 'success', payload)),
     );
 
     expect(renderMarkdownMock).toHaveBeenCalledWith(
@@ -1135,12 +1135,12 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     const payload = 'pre\n```\ncode\n```\npost';
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', payload)),
+      playerEvent('coder', toolResultEvent('Cat', 'success', payload)),
     );
 
     // Identity glow returns the fenced payload verbatim; every line —
@@ -1162,11 +1162,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent(
+      playerEvent(
         'coder',
         toolResultEvent('Cat', 'success', 'edges `````` here'),
       ),
@@ -1183,13 +1183,13 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
-      roleWidths: new Map([['coder', () => 40]]),
+      players: new Map([['coder', coder]]),
+      playerWidths: new Map([['coder', () => 40]]),
     });
 
     const long = 'x'.repeat(120);
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', long)),
+      playerEvent('coder', toolResultEvent('Cat', 'success', long)),
     );
 
     // The presenter never inserts a mid-token break — the long token reaches
@@ -1213,7 +1213,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementation(
@@ -1221,7 +1221,7 @@ describe('TmuxPresenter', () => {
     );
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', 'payload')),
+      playerEvent('coder', toolResultEvent('Cat', 'success', 'payload')),
     );
 
     // Outer-margin trim removes one padded blank per edge; the remaining
@@ -1245,11 +1245,11 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
+      playerEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
     );
 
     expect(coder.text()).toBe(
@@ -1265,7 +1265,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     // Mirror real glow's rendering shape for a fenced block whose payload
@@ -1279,7 +1279,7 @@ describe('TmuxPresenter', () => {
     );
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', '\nfoo')),
+      playerEvent('coder', toolResultEvent('Cat', 'success', '\nfoo')),
     );
 
     // After trim-1: from 3 leading + 2 trailing → 2 leading + 1 trailing.
@@ -1306,7 +1306,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementationOnce(() => {
@@ -1314,7 +1314,7 @@ describe('TmuxPresenter', () => {
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
+      playerEvent('coder', toolResultEvent('Cat', 'success', 'foo\n\n')),
     );
 
     // raw 'foo\n\n' → body 'foo\n' after strip-one-terminator. The blank
@@ -1330,7 +1330,7 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
     renderMarkdownMock.mockImplementationOnce(() => {
@@ -1338,7 +1338,7 @@ describe('TmuxPresenter', () => {
     });
 
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('Bash', 'success', 'first\nsecond')),
+      playerEvent('coder', toolResultEvent('Bash', 'success', 'first\nsecond')),
     );
 
     // Header still emits with prefix coloring; body falls through as the raw
@@ -1354,12 +1354,12 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', toolResultEvent('A', 'success', '', 7)));
+    presenter.onRecord(playerEvent('coder', toolResultEvent('A', 'success', '', 7)));
     presenter.onRecord(
-      roleEvent('coder', toolResultEvent('B', 'success', '', 1500)),
+      playerEvent('coder', toolResultEvent('B', 'success', '', 1500)),
     );
 
     expect(coder.text()).toBe('tool< ✓ A 7ms\ntool< ✓ B 1.5s\n');
@@ -1369,47 +1369,47 @@ describe('TmuxPresenter', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
-      roles: new Map([['coder', coder]]),
+      players: new Map([['coder', coder]]),
     });
 
-    presenter.onRecord(roleEvent('coder', toolResultEvent('A', 'success', '')));
+    presenter.onRecord(playerEvent('coder', toolResultEvent('A', 'success', '')));
 
     expect(coder.text()).toBe('tool< ✓ A\n');
   });
 });
 
-function rolePrompt(roleId: string, prompt: string): TmuxPlayRecord {
+function playerPrompt(playerId: string, prompt: string): TmuxPlayRecord {
   return {
-    type: 'role_prompt',
+    type: 'player_prompt',
     turnId: 1,
     timestamp: 100,
-    roleId,
+    playerId,
     prompt,
   };
 }
 
-function roleEvent(roleId: string, event: CligentEvent): TmuxPlayRecord {
+function playerEvent(playerId: string, event: CligentEvent): TmuxPlayRecord {
   return {
-    type: 'role_event',
+    type: 'player_event',
     turnId: 1,
     timestamp: 101,
-    roleId,
+    playerId,
     event,
   };
 }
 
-function roleFinished(
-  roleId: string,
+function playerFinished(
+  playerId: string,
   status: 'error' | 'aborted',
   error?: string,
 ): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp: 102,
-    roleId,
+    playerId,
     result: {
-      roleId,
+      playerId,
       turnId: 1,
       status,
       ...(error !== undefined ? { error } : {}),
@@ -1417,12 +1417,12 @@ function roleFinished(
   };
 }
 
-function roleFinishedOk(roleId: string): TmuxPlayRecord {
+function playerFinishedOk(playerId: string): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp: 102,
-    roleId,
-    result: { roleId, turnId: 1, status: 'ok' },
+    playerId,
+    result: { playerId, turnId: 1, status: 'ok' },
   };
 }

@@ -464,7 +464,7 @@ export function mapPermissionsToOpenCodeOptions(
     // via the SDK — it does not invoke the `opencode run` CLI, so
     // `--dangerously-skip-permissions` has nowhere to attach. Reject
     // rather than silently degrade; the throw surfaces at the first
-    // `Cligent.run()` call as a `role_finished` / `captain_finished`
+    // `Cligent.run()` call as a `player_finished` / `captain_finished`
     // `status: 'error'` record per DR-005's first-run failure-surfacing
     // rule. Users wanting unchecked execution can set all three
     // per-capability levels to 'allow' explicitly, or run opencode via

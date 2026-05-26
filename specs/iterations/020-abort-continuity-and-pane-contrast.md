@@ -5,8 +5,8 @@
 
 ## Goal
 
-Preserve role and Captain session continuity across ESC-aborted Boss turns.
-Today every adapter's `interrupted` branch omits `resumeToken` from the `done` payload even when the backend session identifier is already in scope, so the next Boss turn for that role starts a fresh adapter session and the role loses its prior context — the symptom is "after ESC, Claude/Codex come back with 'I have no prior context.'"
+Preserve player and Captain session continuity across ESC-aborted Boss turns.
+Today every adapter's `interrupted` branch omits `resumeToken` from the `done` payload even when the backend session identifier is already in scope, so the next Boss turn for that player starts a fresh adapter session and the player loses its prior context — the symptom is "after ESC, Claude/Codex come back with 'I have no prior context.'"
 The fix is a three-stage rule applied uniformly at every `interrupted`-status `done` emission — prefer a backend-emitted session id, otherwise echo the call's `options.resume`, otherwise omit `resumeToken` — captured behind a single helper called from each of the eight interrupt-path touch points across the four adapters.
 
 Improve the tmux-play pane-border row contrast.
@@ -21,7 +21,7 @@ Done
 
 In scope:
 
-- [CLAUDE-007](../user/adapters/claude-code.md#claude-007), [CODEX-006](../user/adapters/codex.md#codex-006), [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011): amend each so that on `done` with `status: 'interrupted'` the adapter shall set `DonePayload.resumeToken` per a three-stage rule: (a) if the backend emitted a session identifier before the abort, use that identifier; (b) otherwise, if the call's `options.resume` was non-empty (a resumed turn aborted before the backend echoed a replacement id), echo `options.resume` back; (c) otherwise (no id ever known for this run), omit `resumeToken`. The success-path behavior is unchanged. The (b) branch is required because cligent's role-scoped session clears its stored continuity whenever a `done` omits `resumeToken` (`src/cligent.ts:218,312`); without (b) the common ESC-during-resumed-turn case would silently make the next turn fresh.
+- [CLAUDE-007](../user/adapters/claude-code.md#claude-007), [CODEX-006](../user/adapters/codex.md#codex-006), [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011): amend each so that on `done` with `status: 'interrupted'` the adapter shall set `DonePayload.resumeToken` per a three-stage rule: (a) if the backend emitted a session identifier before the abort, use that identifier; (b) otherwise, if the call's `options.resume` was non-empty (a resumed turn aborted before the backend echoed a replacement id), echo `options.resume` back; (c) otherwise (no id ever known for this run), omit `resumeToken`. The success-path behavior is unchanged. The (b) branch is required because cligent's player-scoped session clears its stored continuity whenever a `done` omits `resumeToken` (`src/cligent.ts:218,312`); without (b) the common ESC-during-resumed-turn case would silently make the next turn fresh.
 - New [TADAPT-020](../test/adapters.md#tadapt-020): given each adapter (Claude, Codex, Gemini, OpenCode), the adapter's `done` event with `status: 'interrupted'` shall carry `resumeToken` per the three-stage rule above. Given a mock SDK that emitted a session identifier and was then aborted, `resumeToken` shall equal that identifier. Given a mock SDK that did not emit a session identifier but the call's `options.resume` was non-empty, `resumeToken` shall equal `options.resume`. Given a mock SDK that emitted no identifier and an empty/absent `options.resume`, `resumeToken` shall be omitted.
 - [TMUX-048](../user/tmux-play.md#tmux-048): amend the `pane-border-format` clause to carry an explicit Catppuccin Mocha [[1]] surface background across the full pane-border row, not `#[default]`, so the post-title segment (separator, timer hourglass, timer text) renders on the same surface as the title rather than on the terminal default.
 - [TMUX-054](../user/tmux-play.md#tmux-054): amend to pin the not-running pane-border timer text to a Catppuccin Mocha text-level tone (e.g., `subtext1` `#bac2de`) instead of `overlay1` (`#7f849c`), for legible contrast against the pane-border surface; the running-state per-pane accent color remains unchanged.
@@ -32,10 +32,10 @@ In scope:
 Out of scope:
 
 - The runtime-level wiring from a `done.resumeToken` into the next adapter `run({ resume })` call.
-  That path already exists in cligent's role-scoped session ([DR-003](../decisions/003-role-scoped-session-management.md)); the bug is purely that adapters stopped feeding it on the abort path.
+  That path already exists in cligent's player-scoped session ([DR-003](../decisions/003-role-scoped-session-management.md)); the bug is purely that adapters stopped feeding it on the abort path.
 - [TTMUX-059](../test/tmux-play.md#ttmux-059) is not amended.
   The session-level ESC test verifies abort behavior; resume-after-abort is verified at the adapter contract level by the new TADAPT item, since it depends on adapter-specific session-ID emission timing.
-- Status bar (`status-style`, `status-left`, `status-right`), pane border line styling outside the title row, role color palette, and adapter color accents are not changed.
+- Status bar (`status-style`, `status-left`, `status-right`), pane border line styling outside the title row, player color palette, and adapter color accents are not changed.
 
 ## Mechanism notes (pinned by this IR)
 
@@ -71,7 +71,7 @@ Bumping to `subtext1` (`#bac2de`) keeps the timer subdued relative to the active
 ## Acceptance
 
 - For each of the four adapters, the `done` event with `status: 'interrupted'` honors the three-stage rule: (a) backend emitted id before abort → `resumeToken` equals that id; (b) no emitted id, but `options.resume` was non-empty → `resumeToken` equals `options.resume`; (c) no emitted id and empty/absent `options.resume` → `resumeToken` omitted.
-- After an ESC-aborted Boss turn, a follow-up Boss turn for the same role results in `adapter.run` being called with the `resume` option set to the prior session's identifier (no fresh adapter session is started).
+- After an ESC-aborted Boss turn, a follow-up Boss turn for the same player results in `adapter.run` being called with the `resume` option set to the prior session's identifier (no fresh adapter session is started).
 - The tmux pane-border row reads as a single Catppuccin surface tone from left edge to right edge of the title segment — no hard black gap between the pane title and the per-pane timer.
 - The not-running pane-border timer text is legible against the pane-border surface (concrete contract: not `overlay1`; a Catppuccin text-level tone such as `subtext1`).
 - All per-task-boundary checks (build, typecheck, lint, unit, smoke) pass at each task boundary.

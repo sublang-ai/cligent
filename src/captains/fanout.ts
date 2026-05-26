@@ -5,18 +5,18 @@ import type {
   BossTurn,
   Captain,
   CaptainContext,
-  RoleHandle,
-  RoleRunResult,
+  PlayerHandle,
+  PlayerRunResult,
 } from '../app/tmux-play/contract.js';
 
-const DEFAULT_MAX_ROLE_OUTPUT_CHARS = 4_000;
+const DEFAULT_MAX_PLAYER_OUTPUT_CHARS = 4_000;
 
 export interface FanoutCaptainOptions {
-  readonly maxRoleOutputChars?: number;
+  readonly maxPlayerOutputChars?: number;
 }
 
 interface ResolvedFanoutOptions {
-  readonly maxRoleOutputChars: number;
+  readonly maxPlayerOutputChars: number;
 }
 
 export default function createFanoutCaptain(
@@ -36,55 +36,55 @@ export class FanoutCaptain implements Captain {
     turn: BossTurn,
     context: CaptainContext,
   ): Promise<void> {
-    const roleResults = await Promise.all(
-      context.roles.map((role) =>
-        context.callRole(role.id, rolePrompt(turn.prompt, role)),
+    const playerResults = await Promise.all(
+      context.players.map((player) =>
+        context.callPlayer(player.id, playerPrompt(turn.prompt, player)),
       ),
     );
 
     await context.callCaptain(
-      summaryPrompt(turn.prompt, roleResults, this.options),
+      summaryPrompt(turn.prompt, playerResults, this.options),
     );
   }
 }
 
-export function rolePrompt(
+export function playerPrompt(
   bossPrompt: string,
-  _role: RoleHandle,
+  _player: PlayerHandle,
 ): string {
   return bossPrompt;
 }
 
 export function summaryPrompt(
   bossPrompt: string,
-  roleResults: readonly RoleRunResult[],
+  playerResults: readonly PlayerRunResult[],
   options: FanoutCaptainOptions = {},
 ): string {
   const resolved = resolveOptions(options);
-  const sections = roleResults.map((result) =>
-    roleResultSection(result, resolved.maxRoleOutputChars),
+  const sections = playerResults.map((result) =>
+    playerResultSection(result, resolved.maxPlayerOutputChars),
   );
 
   return [
     'The Boss asked:',
     bossPrompt,
     '',
-    'Roles answered independently. Synthesize a final answer for the Boss.',
-    'Preserve useful disagreements, call out failed or aborted roles, and do',
-    'not copy raw role logs wholesale.',
+    'Players answered independently. Synthesize a final answer for the Boss.',
+    'Preserve useful disagreements, call out failed or aborted players, and do',
+    'not copy raw player logs wholesale.',
     '',
-    'Role results:',
-    sections.length > 0 ? sections.join('\n\n') : '(no roles configured)',
+    'Player results:',
+    sections.length > 0 ? sections.join('\n\n') : '(no players configured)',
   ].join('\n');
 }
 
-function roleResultSection(
-  result: RoleRunResult,
+function playerResultSection(
+  result: PlayerRunResult,
   maxChars: number,
 ): string {
   const body = result.finalText ?? result.error ?? '(no final text)';
   const lines = [
-    `=== role:${result.roleId} status:${result.status} ===`,
+    `=== player:${result.playerId} status:${result.status} ===`,
     truncate(body, maxChars),
   ];
 
@@ -92,25 +92,25 @@ function roleResultSection(
     lines.push('', `Error: ${result.error}`);
   }
 
-  lines.push(`=== /role:${result.roleId} ===`);
+  lines.push(`=== /player:${result.playerId} ===`);
   return lines.join('\n');
 }
 
 function resolveOptions(options: unknown): ResolvedFanoutOptions {
   if (!isRecord(options)) {
-    return { maxRoleOutputChars: DEFAULT_MAX_ROLE_OUTPUT_CHARS };
+    return { maxPlayerOutputChars: DEFAULT_MAX_PLAYER_OUTPUT_CHARS };
   }
 
-  const value = options.maxRoleOutputChars;
+  const value = options.maxPlayerOutputChars;
   if (
     typeof value === 'number' &&
     Number.isInteger(value) &&
     value > 0
   ) {
-    return { maxRoleOutputChars: value };
+    return { maxPlayerOutputChars: value };
   }
 
-  return { maxRoleOutputChars: DEFAULT_MAX_ROLE_OUTPUT_CHARS };
+  return { maxPlayerOutputChars: DEFAULT_MAX_PLAYER_OUTPUT_CHARS };
 }
 
 function truncate(value: string, maxChars: number): string {

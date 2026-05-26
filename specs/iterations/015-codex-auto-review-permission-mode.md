@@ -32,7 +32,7 @@ Out of scope:
 
 - [x] `src/adapters/codex.ts` — local Codex SDK constructor/config types are widened; `mapPermissionsToCodexOptions` / `mapAgentOptionsToCodexOptions` return Codex SDK constructor config overrides for `mode: 'auto'`; `run()` passes those overrides to `new sdk.Codex(...)`.
 - [x] `src/__tests__/codex-adapter.test.ts` — mapping and adapter tests assert `config: { approvals_reviewer: 'auto_review' }` reaches `new Codex(...)` and bypass mode does not set it.
-- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — TTMUX-053 probe includes a Codex role path that verifies the auto-review config surface.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — TTMUX-053 probe includes a Codex player path that verifies the auto-review config surface.
 
 ## Tasks
 

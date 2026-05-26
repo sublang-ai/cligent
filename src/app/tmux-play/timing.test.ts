@@ -11,12 +11,12 @@ describe('TmuxPlayTiming', () => {
 
     applyAll(timing, [
       turnStarted(1, 0),
-      rolePrompt('coder', 100),
-      roleFinished('coder', 1100),
-      rolePrompt('reviewer', 2000),
-      roleFinished('reviewer', 3500),
-      rolePrompt('coder', 5000),
-      roleFinished('coder', 8000),
+      playerPrompt('coder', 100),
+      playerFinished('coder', 1100),
+      playerPrompt('reviewer', 2000),
+      playerFinished('reviewer', 3500),
+      playerPrompt('coder', 5000),
+      playerFinished('coder', 8000),
       captainPrompt(9000),
       captainFinished(12000),
       turnFinished(1, 15000),
@@ -26,11 +26,11 @@ describe('TmuxPlayTiming', () => {
 
     const snapshot = timing.snapshot(60000);
 
-    expect(snapshot.roles.get('coder')).toEqual({
+    expect(snapshot.players.get('coder')).toEqual({
       elapsedMs: 4000,
       running: false,
     });
-    expect(snapshot.roles.get('reviewer')).toEqual({
+    expect(snapshot.players.get('reviewer')).toEqual({
       elapsedMs: 1500,
       running: false,
     });
@@ -43,20 +43,20 @@ describe('TmuxPlayTiming', () => {
 
     applyAll(timing, [
       turnStarted(1, 1000),
-      rolePrompt('coder', 2000),
+      playerPrompt('coder', 2000),
       captainPrompt(4000),
     ]);
 
     expect(timing.snapshot(7000)).toEqual({
-      roles: new Map([['coder', { elapsedMs: 5000, running: true }]]),
+      players: new Map([['coder', { elapsedMs: 5000, running: true }]]),
       captain: { elapsedMs: 3000, running: true },
       total: { elapsedMs: 6000, running: true },
     });
 
-    applyAll(timing, [roleFinished('coder', 8000), captainFinished(9000)]);
+    applyAll(timing, [playerFinished('coder', 8000), captainFinished(9000)]);
 
     const snapshot = timing.snapshot(10000);
-    expect(snapshot.roles.get('coder')).toEqual({
+    expect(snapshot.players.get('coder')).toEqual({
       elapsedMs: 6000,
       running: false,
     });
@@ -95,23 +95,23 @@ function turnFinished(turnId: number, timestamp: number): TmuxPlayRecord {
   return { type: 'turn_finished', turnId, timestamp };
 }
 
-function rolePrompt(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerPrompt(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_prompt',
+    type: 'player_prompt',
     turnId: 1,
     timestamp,
-    roleId,
+    playerId,
     prompt: 'work',
   };
 }
 
-function roleFinished(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerFinished(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp,
-    roleId,
-    result: { roleId, turnId: 1, status: 'ok' },
+    playerId,
+    result: { playerId, turnId: 1, status: 'ok' },
   };
 }
 

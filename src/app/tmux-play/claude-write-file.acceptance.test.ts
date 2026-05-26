@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// TTMUX-055: real-run end-to-end probe that the Claude role can do file work
+// TTMUX-055: real-run end-to-end probe that the Claude player can do file work
 // through the tmux-play runtime. It reproduces and guards the user-reported
 // failure — "write a file to a temporary location and delete it" did nothing
 // — by driving a create turn and a delete turn through the fanout Captain and
-// verifying the result on disk. A role whose permissions resolve to a headless
+// verifying the result on disk. A player whose permissions resolve to a headless
 // `permissionMode: 'default'` (a config with no `permissions` block) cannot
 // complete the create turn; `permissions: { mode: 'auto' }` can.
 //
@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import createFanoutCaptain from '../../captains/fanout.js';
-import type { RoleFinishedRecord, TmuxPlayRecord } from './records.js';
+import type { PlayerFinishedRecord, TmuxPlayRecord } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 
 const MAX_ATTEMPTS = 2;
@@ -48,7 +48,7 @@ interface ScenarioOutcome {
   readonly fileAfterDelete: boolean;
 }
 
-describe('tmux-play Claude role file write/delete (TTMUX-055)', () => {
+describe('tmux-play Claude player file write/delete (TTMUX-055)', () => {
   acceptanceIt(
     'writes then deletes a file via the fanout Captain runtime',
     async () => {
@@ -70,11 +70,11 @@ describe('tmux-play Claude role file write/delete (TTMUX-055)', () => {
       }
 
       const result = outcome!;
-      const roleFinished = result.records.filter(
-        (record): record is RoleFinishedRecord =>
-          record.type === 'role_finished',
+      const playerFinished = result.records.filter(
+        (record): record is PlayerFinishedRecord =>
+          record.type === 'player_finished',
       );
-      const finishedSummary = roleFinished
+      const finishedSummary = playerFinished
         .map((record) => `${record.result.status}:${record.result.error ?? '-'}`)
         .join(' | ');
 
@@ -82,20 +82,20 @@ describe('tmux-play Claude role file write/delete (TTMUX-055)', () => {
       const types = result.records.map((record) => record.type);
       expect(types, finishedSummary).not.toContain('runtime_error');
       expect(types, finishedSummary).not.toContain('turn_aborted');
-      expect(roleFinished.length, finishedSummary).toBe(2);
-      for (const record of roleFinished) {
+      expect(playerFinished.length, finishedSummary).toBe(2);
+      for (const record of playerFinished) {
         expect(record.result.status, finishedSummary).toBe('ok');
       }
 
-      // Ground truth: the role actually created, then deleted, the file.
+      // Ground truth: the player actually created, then deleted, the file.
       expect(
         result.fileAfterCreate,
-        'file missing after the create turn — the Claude role could not write',
+        'file missing after the create turn — the Claude player could not write',
       ).toBe(true);
       expect(result.contentAfterCreate).toContain('SENTINEL_');
       expect(
         result.fileAfterDelete,
-        'file still present after the delete turn — the role could not delete',
+        'file still present after the delete turn — the player could not delete',
       ).toBe(false);
     },
     300_000,
@@ -113,9 +113,9 @@ async function runScenario(): Promise<ScenarioOutcome> {
   let runtime: TmuxPlayRuntime | undefined;
   try {
     runtime = await createTmuxPlayRuntime({
-      captain: createFanoutCaptain({ maxRoleOutputChars: 2_000 }),
+      captain: createFanoutCaptain({ maxPlayerOutputChars: 2_000 }),
       captainConfig: { adapter: 'claude', permissions: { mode: 'auto' } },
-      roles: [
+      players: [
         { id: 'claude', adapter: 'claude', permissions: { mode: 'auto' } },
       ],
       cwd,
@@ -128,7 +128,7 @@ async function runScenario(): Promise<ScenarioOutcome> {
       ],
     });
 
-    // Turn 1 only creates — it must not forbid deletion, since the role's
+    // Turn 1 only creates — it must not forbid deletion, since the player's
     // session resumes on turn 2 (TMUX-041) and Claude would treat a turn-1
     // "do not delete" against a turn-2 "delete" as a contradiction to refuse.
     await runtime.runBossTurn(
@@ -156,7 +156,7 @@ function transientFailure(
   records: readonly TmuxPlayRecord[],
 ): string | undefined {
   for (const record of records) {
-    if (record.type !== 'role_finished' && record.type !== 'captain_finished') {
+    if (record.type !== 'player_finished' && record.type !== 'captain_finished') {
       continue;
     }
     if (record.result.status !== 'error') continue;

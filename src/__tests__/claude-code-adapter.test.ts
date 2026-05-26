@@ -376,7 +376,7 @@ describe('ClaudeCodeAdapter', () => {
   });
 
   it('treats a missing permissions policy as no override (DR-005)', () => {
-    // Regression: a tmux-play role with no `permissions` block reaches the
+    // Regression: a tmux-play player with no `permissions` block reaches the
     // adapter as `undefined`. It must yield bare 'default' with no
     // `canUseTool` — synthesizing a callback here is the defect that made
     // the real SDK ZodError on every Write/Bash call.

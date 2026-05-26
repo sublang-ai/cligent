@@ -34,7 +34,7 @@ meta.md     The spec of specs
 | DR-001 | [001-unified-cli-agent-interface-architecture.md](decisions/001-unified-cli-agent-interface-architecture.md) | TypeScript library with async generator interface across CLI agents |
 | DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
-| DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/role architecture, records, presenter boundary |
+| DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; no project-wide default |
 
 ## Iterations
@@ -50,18 +50,18 @@ meta.md     The spec of specs
 | IR-006 | [006-opencode-adapter.md](iterations/006-opencode-adapter.md) | OpenCode adapter via @opencode-ai/sdk with SSE |
 | IR-007 | [007-fanout-tmux-app.md](iterations/007-fanout-tmux-app.md) | Fanout multi-agent tmux chat app using cligent |
 | IR-008 | [008-fanout-acceptance-tests.md](iterations/008-fanout-acceptance-tests.md) | Fanout end-to-end acceptance tests with real API keys |
-| IR-009 | [009-tmux-play-captain-app.md](iterations/009-tmux-play-captain-app.md) | Implement tmux-play Captain/role app from DR-004 |
+| IR-009 | [009-tmux-play-captain-app.md](iterations/009-tmux-play-captain-app.md) | Implement tmux-play Captain/player app from DR-004 |
 | IR-010 | [010-tmux-play-quickstart.md](iterations/010-tmux-play-quickstart.md) | YAML configs, home fallback, first-run auto-create per DR-004 |
-| IR-011 | [011-tmux-play-presenter-and-layout-refresh.md](iterations/011-tmux-play-presenter-and-layout-refresh.md) | tmux geometry, 4/6/6 split, prefix-style presenter, role continuity |
+| IR-011 | [011-tmux-play-presenter-and-layout-refresh.md](iterations/011-tmux-play-presenter-and-layout-refresh.md) | tmux geometry, 4/6/6 split, prefix-style presenter, player continuity |
 | IR-012 | [012-tmux-play-semantic-ui.md](iterations/012-tmux-play-semantic-ui.md) | Truecolor, adapter-aware pane borders, speaker-prefix colors, tool lifecycle rendering |
 | IR-013 | [013-tmux-play-markdown-rendering.md](iterations/013-tmux-play-markdown-rendering.md) | Markdown-rendered pane output via glow, replacing character-level soft-wrap |
 | IR-014 | [014-per-adapter-permission-configuration.md](iterations/014-per-adapter-permission-configuration.md) | Implement DR-005: YAML `permissions` field; `PermissionPolicy.mode` + per-adapter auto-mode mappings |
 | IR-015 | [015-codex-auto-review-permission-mode.md](iterations/015-codex-auto-review-permission-mode.md) | Add Codex `approvals_reviewer = auto_review` to `PermissionPolicy.mode: 'auto'` |
 | IR-016 | [016-tmux-play-run-time-timers.md](iterations/016-tmux-play-run-time-timers.md) | Per-pane and session-total run-time timers on the tmux panes and status bar |
 | IR-017 | [017-codex-modern-permission-profiles.md](iterations/017-codex-modern-permission-profiles.md) | Codex adapter: modern `default_permissions` profile model, automation/local-access axis composition |
-| IR-018 | [018-reasoning-effort-yaml-and-per-adapter-mappings.md](iterations/018-reasoning-effort-yaml-and-per-adapter-mappings.md) | tmux-play YAML `reasoningEffort` per role/captain; Claude `xhigh` mapping refresh; Gemini settings-file + OpenCode variant wiring |
+| IR-018 | [018-reasoning-effort-yaml-and-per-adapter-mappings.md](iterations/018-reasoning-effort-yaml-and-per-adapter-mappings.md) | tmux-play YAML `reasoningEffort` per player/captain; Claude `xhigh` mapping refresh; Gemini settings-file + OpenCode variant wiring |
 | IR-019 | [019-boss-esc-interrupt-and-bracketed-paste.md](iterations/019-boss-esc-interrupt-and-bracketed-paste.md) | tmux-play Boss input: ESC interrupts active turn without ending the session; bracketed paste submits multi-line as one Boss turn |
-| IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters preserve `resumeToken` on `interrupted` `done` from backend id or inbound `resume`, so role context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
+| IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters preserve `resumeToken` on `interrupted` `done` from backend id or inbound `resume`, so player context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
 
 ## Packages
 
@@ -137,5 +137,5 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (including per-role/captain `permissions` and `reasoningEffort`), discovery and auto-create, Captain contract, records, observers, topology, theme, run-time timers, Boss input keybindings, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
+| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (including per-player/captain `permissions` and `reasoningEffort`), discovery and auto-create, Captain contract, records, observers, topology, theme, run-time timers, Boss input keybindings, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
 | test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, permission and reasoning-effort configuration, run-time timers, Boss input keybindings, real-tmux acceptance, real-glow acceptance |

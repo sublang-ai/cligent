@@ -31,10 +31,10 @@ function validConfig(
       from: '@sublang/cligent/captains/fanout',
       adapter: 'claude',
       model: 'claude-opus-4-7',
-      instruction: 'Coordinate roles.',
-      options: { maxRoleOutputChars: 4000 },
+      instruction: 'Coordinate players.',
+      options: { maxPlayerOutputChars: 4000 },
     },
-    roles: [
+    players: [
       {
         id: 'coder',
         adapter: 'codex',
@@ -69,14 +69,14 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       ...Object.entries(config.captain.options as Record<string, unknown>).map(
         ([key, value]) => `    ${key}: ${JSON.stringify(value)}`,
       ),
-      'roles:',
-      ...config.roles.flatMap((role) => [
-        `  - id: ${role.id}`,
-        `    adapter: ${role.adapter}`,
-        role.model ? `    model: ${role.model}` : undefined,
-        role.instruction ? `    instruction: ${role.instruction}` : undefined,
-        role.reasoningEffort
-          ? `    reasoningEffort: ${role.reasoningEffort}`
+      'players:',
+      ...config.players.flatMap((player) => [
+        `  - id: ${player.id}`,
+        `    adapter: ${player.adapter}`,
+        player.model ? `    model: ${player.model}` : undefined,
+        player.instruction ? `    instruction: ${player.instruction}` : undefined,
+        player.reasoningEffort
+          ? `    reasoningEffort: ${player.reasoningEffort}`
           : undefined,
       ]),
       '',
@@ -173,26 +173,26 @@ describe('tmux-play config loading', () => {
     expect(readFileSync(homeConfig, 'utf8')).toContain(
       "@sublang/cligent/captains/fanout",
     );
-    expect(loaded.config.roles.map((role) => role.id)).toEqual([
+    expect(loaded.config.players.map((player) => player.id)).toEqual([
       'claude',
       'codex',
     ]);
     expect(loaded.config.captain.model).toBe('claude-opus-4-7');
     expect(loaded.config.captain.reasoningEffort).toBe('xhigh');
-    expect(loaded.config.roles.map((role) => role.model)).toEqual([
+    expect(loaded.config.players.map((player) => player.model)).toEqual([
       'claude-opus-4-7',
       'gpt-5.5',
     ]);
-    expect(loaded.config.roles.map((role) => role.reasoningEffort)).toEqual([
+    expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual([
       'xhigh',
       'xhigh',
     ]);
-    expect(loaded.config.roles.map((role) => role.instruction)).toEqual([
-      'You are the claude role in a fanout Captain session. Provide an independent answer.',
-      'You are the codex role in a fanout Captain session. Provide an independent answer.',
+    expect(loaded.config.players.map((player) => player.instruction)).toEqual([
+      'You are the claude player in a fanout Captain session. Provide an independent answer.',
+      'You are the codex player in a fanout Captain session. Provide an independent answer.',
     ]);
     expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
-    expect(loaded.config.roles.map((role) => role.permissions)).toEqual([
+    expect(loaded.config.players.map((player) => player.permissions)).toEqual([
       { mode: 'auto' },
       { mode: 'auto' },
     ]);
@@ -286,10 +286,10 @@ describe('tmux-play config loading', () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const missingCaptain = join(workDir, 'missing-captain.yaml');
     const missingFrom = join(workDir, 'missing-from.yaml');
-    writeFileSync(missingCaptain, 'roles:\n  - id: coder\n    adapter: codex\n');
+    writeFileSync(missingCaptain, 'players:\n  - id: coder\n    adapter: codex\n');
     writeFileSync(
       missingFrom,
-      'captain:\n  adapter: claude\n  options: {}\nroles:\n  - id: coder\n    adapter: codex\n',
+      'captain:\n  adapter: claude\n  options: {}\nplayers:\n  - id: coder\n    adapter: codex\n',
     );
 
     await expect(
@@ -300,33 +300,33 @@ describe('tmux-play config loading', () => {
     ).rejects.toThrow('captain.from must be a non-empty string');
   });
 
-  it('rejects unknown adapters for Captain and roles', async () => {
+  it('rejects unknown adapters for Captain and players', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const badCaptain = join(workDir, 'bad-captain.yaml');
-    const badRole = join(workDir, 'bad-role.yaml');
+    const badPlayer = join(workDir, 'bad-player.yaml');
     writeFileSync(
       badCaptain,
-      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: unknown\n  options: {}\nroles:\n  - id: coder\n    adapter: codex\n",
+      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: unknown\n  options: {}\nplayers:\n  - id: coder\n    adapter: codex\n",
     );
     writeFileSync(
-      badRole,
-      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options: {}\nroles:\n  - id: coder\n    adapter: unknown\n",
+      badPlayer,
+      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options: {}\nplayers:\n  - id: coder\n    adapter: unknown\n",
     );
 
     await expect(
       loadTmuxPlayConfig({ cwd: workDir, configPath: badCaptain }),
     ).rejects.toThrow('Unknown adapter "unknown" at captain.adapter');
     await expect(
-      loadTmuxPlayConfig({ cwd: workDir, configPath: badRole }),
-    ).rejects.toThrow('Unknown adapter "unknown" at roles[0].adapter');
+      loadTmuxPlayConfig({ cwd: workDir, configPath: badPlayer }),
+    ).rejects.toThrow('Unknown adapter "unknown" at players[0].adapter');
   });
 
-  it('rejects invalid role ids', async () => {
+  it('rejects invalid player ids', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
-    const configPath = join(workDir, 'bad-role-id.yaml');
+    const configPath = join(workDir, 'bad-player-id.yaml');
     writeFileSync(
       configPath,
-      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options: {}\nroles:\n  - id: captain\n    adapter: codex\n",
+      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options: {}\nplayers:\n  - id: captain\n    adapter: codex\n",
     );
 
     await expect(
@@ -339,7 +339,7 @@ describe('tmux-play config loading', () => {
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
     writeFileSync(
       configPath,
-      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options:\n    bad: .nan\nroles:\n  - id: coder\n    adapter: codex\n",
+      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options:\n    bad: .nan\nplayers:\n  - id: coder\n    adapter: codex\n",
     );
 
     await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
@@ -347,7 +347,7 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('accepts a typed permissions block on captain and roles', async () => {
+  it('accepts a typed permissions block on captain and players', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
     writeFileSync(
@@ -359,7 +359,7 @@ describe('tmux-play config loading', () => {
         '  options: {}',
         '  permissions:',
         '    mode: auto',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '    permissions:',
@@ -372,7 +372,7 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ cwd: workDir });
 
     expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
-    expect(loaded.config.roles[0]?.permissions).toEqual({
+    expect(loaded.config.players[0]?.permissions).toEqual({
       mode: 'bypass',
       fileWrite: 'allow',
     });
@@ -390,7 +390,7 @@ describe('tmux-play config loading', () => {
         '  options: {}',
         '  permissions:',
         '    bogus: allow',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '',
@@ -412,7 +412,7 @@ describe('tmux-play config loading', () => {
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '    permissions:',
@@ -422,7 +422,7 @@ describe('tmux-play config loading', () => {
     );
 
     await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
-      'roles[0].permissions.mode must be one of: auto, bypass',
+      'players[0].permissions.mode must be one of: auto, bypass',
     );
   });
 
@@ -438,7 +438,7 @@ describe('tmux-play config loading', () => {
         '  options: {}',
         '  permissions:',
         '    fileWrite: maybe',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '',
@@ -461,7 +461,7 @@ describe('tmux-play config loading', () => {
         '  adapter: claude',
         '  options: {}',
         '  permissions: auto',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '',
@@ -473,7 +473,7 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('accepts reasoningEffort closed-set values on captain and roles', async () => {
+  it('accepts reasoningEffort closed-set values on captain and players', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
     const values = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -485,9 +485,9 @@ describe('tmux-play config loading', () => {
         '  adapter: claude',
         '  reasoningEffort: minimal',
         '  options: {}',
-        'roles:',
+        'players:',
         ...values.flatMap((value, index) => [
-          `  - id: role-${index}`,
+          `  - id: player-${index}`,
           '    adapter: codex',
           `    reasoningEffort: ${value}`,
         ]),
@@ -498,7 +498,7 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ cwd: workDir });
 
     expect(loaded.config.captain.reasoningEffort).toBe('minimal');
-    expect(loaded.config.roles.map((role) => role.reasoningEffort)).toEqual(
+    expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual(
       values,
     );
   });
@@ -506,7 +506,7 @@ describe('tmux-play config loading', () => {
   it('rejects invalid reasoningEffort values with the offending path', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const badCaptain = join(workDir, 'bad-captain-effort.yaml');
-    const badRole = join(workDir, 'bad-role-effort.yaml');
+    const badPlayer = join(workDir, 'bad-player-effort.yaml');
     writeFileSync(
       badCaptain,
       [
@@ -515,20 +515,20 @@ describe('tmux-play config loading', () => {
         '  adapter: claude',
         '  reasoningEffort: turbo',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '',
       ].join('\n'),
     );
     writeFileSync(
-      badRole,
+      badPlayer,
       [
         'captain:',
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '    reasoningEffort: turbo',
@@ -542,9 +542,9 @@ describe('tmux-play config loading', () => {
       'captain.reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
     );
     await expect(
-      loadTmuxPlayConfig({ cwd: workDir, configPath: badRole }),
+      loadTmuxPlayConfig({ cwd: workDir, configPath: badPlayer }),
     ).rejects.toThrow(
-      'roles[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+      'players[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
     );
   });
 
@@ -613,7 +613,7 @@ describe('tmux-play config loading', () => {
       captain: {
         from: './captains/fanout.js',
         adapter: 'claude',
-        options: { maxRoleOutputChars: 5000 },
+        options: { maxPlayerOutputChars: 5000 },
       },
     }));
 

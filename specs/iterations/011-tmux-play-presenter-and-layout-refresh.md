@@ -17,15 +17,15 @@ In scope:
 
 - 240x67 tmux session at start.
 - 4/6/6 column split; Boss/Captain on the left.
-- Pane titles `Captain` plus title-cased role ids.
+- Pane titles `Captain` plus title-cased player ids.
 - Single Boss-input echo.
 - `<who>> ` first-nonblank-line prefix with two-space hanging continuation indent.
 - Failure as `<who>> [error: <message>]` or `<who>> [aborted]`.
-- Boss pane omits per-role outputs and Captain prompt body.
-- Persistent role Cligents with auto-resume.
-- Fanout role prompts without identity preamble.
-- Read-only role panes (input disabled).
-- Real-tmux acceptance test that verifies geometry, layout, titles, and read-only role panes against an actual tmux server.
+- Boss pane omits per-player outputs and Captain prompt body.
+- Persistent player Cligents with auto-resume.
+- Fanout player prompts without identity preamble.
+- Read-only player panes (input disabled).
+- Real-tmux acceptance test that verifies geometry, layout, titles, and read-only player panes against an actual tmux server.
 - Pre-attach terminal resize request (xterm CSI 8 t) so honoring terminals expand to 240×67 to match TMUX-035.
 - Resize-invariant 4/6/6 layout via session-scoped tmux hooks, so the spec's region split holds at any window size, not only at creation.
 
@@ -37,7 +37,7 @@ Out of scope: non-tmux UIs.
 - [x] `src/app/tmux-play/presenter-tmux.ts`.
 - [x] `src/captains/fanout.ts`.
 - [x] Tests for TTMUX-021..029; update TTMUX-014.
-- [x] Read-only role panes in `src/app/tmux-play/launcher.ts` and matching unit-test assertions.
+- [x] Read-only player panes in `src/app/tmux-play/launcher.ts` and matching unit-test assertions.
 - [x] `src/app/tmux-play/launcher.acceptance.test.ts` covering TTMUX-030..033.
 - [x] TTMUX-030..033 in `specs/test/tmux-play.md`.
 - [x] Pre-attach `CSI 8 t` resize request in `src/app/tmux-play/launcher.ts`, TMUX-043 in `specs/user/tmux-play.md`, and TTMUX-034 in `specs/test/tmux-play.md`.
@@ -49,9 +49,9 @@ Each task is one commit.
 
 1. [x] Layout and geometry — TMUX-027/028, TMUX-035, TMUX-036.
 2. [x] Presenter rewrite — TMUX-037..040.
-3. [x] Fanout role prompt — TMUX-042.
-4. [x] Role continuity verification — TMUX-041.
-5. [x] Read-only role panes — TMUX-027 (`select-pane -d`) and unit-test coverage.
+3. [x] Fanout player prompt — TMUX-042.
+4. [x] Player continuity verification — TMUX-041.
+5. [x] Read-only player panes — TMUX-027 (`select-pane -d`) and unit-test coverage.
 6. [x] Real-tmux acceptance gate — TTMUX-030..033 against an actual tmux server.
 7. [x] Pre-attach terminal resize request — TMUX-043 (`CSI 8 ; 67 ; 240 t`) and TTMUX-034 unit-test coverage.
 8. [x] Resize-invariant 4/6/6 layout — TMUX-044 (session-scoped `client-resized` and `after-resize-window` hooks), unit-test of `set-hook` invocations, and TTMUX-035 real-tmux verification at multiple window sizes.
@@ -59,5 +59,5 @@ Each task is one commit.
 ## Acceptance criteria
 
 - `npm run build`, `npm test`, and `npm run test:smoke` pass.
-- `npm run test:acceptance` passes locally with `tmux` available; the new real-tmux acceptance suite verifies actual session geometry (`240x67`), pane layout (60/90/90 column placement), pane titles read back via `#{pane_title}`, and `pane_input_off=on` plus `send-keys` rejection on every role pane.
+- `npm run test:acceptance` passes locally with `tmux` available; the new real-tmux acceptance suite verifies actual session geometry (`240x67`), pane layout (60/90/90 column placement), pane titles read back via `#{pane_title}`, and `pane_input_off=on` plus `send-keys` rejection on every player pane.
 - IR shall not be marked Done unless the acceptance suite was executed end-to-end against a real tmux server within the same change set.

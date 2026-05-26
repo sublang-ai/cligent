@@ -5,9 +5,9 @@ import {
   queryPaneTargetsByTitle,
   runTmux,
 } from '../shared/tmux.js';
-import { captainPaneTitle, rolePaneTitle } from './pane-title.js';
+import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
 import type { TmuxPlayRecord, RecordObserver } from './records.js';
-import type { RoleConfig } from './roles.js';
+import type { PlayerConfig } from './players.js';
 import {
   TmuxPlayTiming,
   formatTimerDuration,
@@ -45,7 +45,7 @@ export interface TimingScheduler {
 export interface CreateTimingObserverOptions {
   readonly sessionName: string;
   readonly captainAdapter: string;
-  readonly roles: readonly Pick<RoleConfig, 'id' | 'adapter'>[];
+  readonly players: readonly Pick<PlayerConfig, 'id' | 'adapter'>[];
   readonly now?: () => number;
   readonly tmux?: TimingTmuxClient;
   readonly scheduler?: TimingScheduler;
@@ -56,8 +56,8 @@ export interface TimingObserverHandle extends RecordObserver {
   dispose(): void;
 }
 
-interface RolePaneTimer {
-  readonly roleId: string;
+interface PlayerPaneTimer {
+  readonly playerId: string;
   readonly title: string;
 }
 
@@ -65,7 +65,7 @@ export class TimingObserver implements TimingObserverHandle {
   private readonly timing = new TmuxPlayTiming();
   private readonly sessionName: string;
   private readonly captainTitle: string;
-  private readonly roles: readonly RolePaneTimer[];
+  private readonly players: readonly PlayerPaneTimer[];
   private readonly now: () => number;
   private readonly tmux: TimingTmuxClient;
   private readonly scheduler: TimingScheduler;
@@ -74,9 +74,9 @@ export class TimingObserver implements TimingObserverHandle {
   constructor(options: CreateTimingObserverOptions) {
     this.sessionName = options.sessionName;
     this.captainTitle = captainPaneTitle(options.captainAdapter);
-    this.roles = options.roles.map((role) => ({
-      roleId: role.id,
-      title: rolePaneTitle(role.id, role.adapter),
+    this.players = options.players.map((player) => ({
+      playerId: player.id,
+      title: playerPaneTitle(player.id, player.adapter),
     }));
     this.now = options.now ?? Date.now;
     this.tmux = options.tmux ?? spawnTmuxClient;
@@ -96,8 +96,8 @@ export class TimingObserver implements TimingObserverHandle {
         this.refresh(record.timestamp);
         this.stopInterval();
         break;
-      case 'role_prompt':
-      case 'role_finished':
+      case 'player_prompt':
+      case 'player_finished':
       case 'captain_prompt':
       case 'captain_finished':
         this.refresh(record.timestamp);
@@ -142,10 +142,10 @@ export class TimingObserver implements TimingObserverHandle {
     const paneTargets = this.tmux.queryPaneTargetsByTitle(this.sessionName);
     this.pushPane(paneTargets.get(this.captainTitle), snapshot.captain);
 
-    for (const role of this.roles) {
+    for (const player of this.players) {
       this.pushPane(
-        paneTargets.get(role.title),
-        snapshot.roles.get(role.roleId) ?? FROZEN_ZERO,
+        paneTargets.get(player.title),
+        snapshot.players.get(player.playerId) ?? FROZEN_ZERO,
       );
     }
 

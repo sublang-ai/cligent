@@ -5,7 +5,7 @@
 
 `tmux-play` is a reference application built on the `@sublang/cligent`
 SDK. The Boss chats with a Captain in the left pane; the Captain
-coordinates per-role `Cligent` instances whose output streams into
+coordinates per-player `Cligent` instances whose output streams into
 read-only panes on the right.
 
 ```bash
@@ -34,7 +34,7 @@ Discovery order:
 2. `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml`.
 
 If neither file exists and `--config` is not set, `tmux-play` creates the
-home config with the default `fanout` Captain and two stub roles, prints a
+home config with the default `fanout` Captain and two stub players, prints a
 one-line notice, and continues. Existing home configs are preserved, and a
 cwd config takes precedence over the home file. `--config <path>` points at
 a specific YAML file and disables discovery and auto-create behavior.
@@ -48,12 +48,12 @@ captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
   model: claude-opus-4-7
-  instruction: Coordinate the roles and answer the Boss.
+  instruction: Coordinate the players and answer the Boss.
   permissions:
     mode: auto
   options:
-    maxRoleOutputChars: 4000
-roles:
+    maxPlayerOutputChars: 4000
+players:
   - id: claude
     adapter: claude
     permissions:
@@ -65,7 +65,7 @@ roles:
 ```
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
-Captain and both roles so the Claude Code and Codex CLI defaults run in
+Captain and both players so the Claude Code and Codex CLI defaults run in
 each adapter's classifier-, sandbox-, or reviewer-protected auto-mode,
 reducing routine permission prompts during a session. Prompts are not
 eliminated: Claude's `auto` still blocks high-risk actions and falls
@@ -76,13 +76,13 @@ reviewer agent. Remove the blocks to fall back to each adapter's SDK
 default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
-- Role IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple roles may share an adapter or model.
+- Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory.
 
 ### Permissions
 
-Captain and each role accept an optional `permissions` block that maps to
+Captain and each player accept an optional `permissions` block that maps to
 `CligentOptions.permissions` and reaches the adapter's SDK knobs at run
 time. The field is typed; arbitrary adapter-specific knobs are not
 settable from YAML.
@@ -94,7 +94,7 @@ captain:
   options: {}
   permissions:
     mode: auto                  # session-wide automation posture
-roles:
+players:
   - id: coder
     adapter: codex
     permissions:
@@ -122,9 +122,9 @@ roles:
 
 ## Layout
 
-Boss/Captain occupies the left pane; roles fill the right in config
-order. Sessions start on a 240x67 grid. With ≥2 roles `tmux-play` uses a
-4/6/6 column split, putting `ceil(roleCount / 2)` roles in the first role
+Boss/Captain occupies the left pane; players fill the right in config
+order. Sessions start on a 240x67 grid. With ≥2 players `tmux-play` uses a
+4/6/6 column split, putting `ceil(playerCount / 2)` players in the first player
 column from top to bottom.
 
 ## Snapshot and work directory
@@ -139,7 +139,7 @@ tmux.
 
 ## Custom Captains
 
-A Captain module default-exports a factory. Captains call roles via
+A Captain module default-exports a factory. Captains call players via
 `context`, and may retain the `CaptainSession` from `init()` to
 `emitStatus`/`emitTelemetry` from `init`, during turns, or between turns.
 
@@ -147,19 +147,19 @@ A Captain module default-exports a factory. Captains call roles via
 export default function createCaptain(options = {}) {
   return {
     async init(session) {
-      await session.emitStatus('Captain ready', { roles: session.roles.length });
+      await session.emitStatus('Captain ready', { players: session.players.length });
       await session.emitTelemetry({ topic: 'captain.ready', payload: { options } });
     },
 
-    // Minimal example: real Captains usually frame prompts per role.
+    // Minimal example: real Captains usually frame prompts per player.
     async handleBossTurn(turn, context) {
       const results = await Promise.all(
-        context.roles.map((r) => context.callRole(r.id, turn.prompt)),
+        context.players.map((r) => context.callPlayer(r.id, turn.prompt)),
       );
       const summary = results
-        .map((r) => `${r.roleId}: ${r.finalText ?? r.error ?? '(no final text)'}`)
+        .map((r) => `${r.playerId}: ${r.finalText ?? r.error ?? '(no final text)'}`)
         .join('\n\n');
-      await context.callCaptain(`Boss:\n${turn.prompt}\n\nRoles:\n${summary}`);
+      await context.callCaptain(`Boss:\n${turn.prompt}\n\nPlayers:\n${summary}`);
     },
 
     async dispose() {},

@@ -14,8 +14,8 @@ import {
   isTmuxAvailable,
   runTmux,
 } from '../shared/tmux.js';
-import { captainPaneTitle, rolePaneTitle } from './pane-title.js';
-import { roleAccent, SPEAKER_CAPTAIN } from './role-colors.js';
+import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
+import { playerAccent, SPEAKER_CAPTAIN } from './player-colors.js';
 import {
   TMUX_PANE_TIMER_ACCENT_OPTION,
   TMUX_PANE_TIMER_RUNNING_OPTION,
@@ -29,13 +29,13 @@ import {
   writeTmuxPlayConfigSnapshot,
   type LoadedTmuxPlayConfig,
 } from './config.js';
-import type { RoleConfig } from './roles.js';
+import type { PlayerConfig } from './players.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 const INITIAL_TMUX_COLUMNS = '240';
 const INITIAL_TMUX_ROWS = '67';
-const ROLE_AREA_SIZE = '75%';
-const SECOND_ROLE_COLUMN_SIZE = '50%';
+const PLAYER_AREA_SIZE = '75%';
+const SECOND_PLAYER_COLUMN_SIZE = '50%';
 const NAVIGATION_HINTS =
   'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)';
 const INITIAL_TIMER_TEXT = '0s';
@@ -96,11 +96,11 @@ export async function launchTmuxPlay(
   const sessionId = options.sessionId ?? randomBytes(4).toString('hex');
   const sessionName = `tmux-play-${sessionId}`;
   const workDir = options.workDir ?? mkdtempSync(join(tmpdir(), 'tmux-play-'));
-  const roleIds = loaded.config.roles.map((role) => role.id);
+  const playerIds = loaded.config.players.map((player) => player.id);
 
   prepareLogDirectory(
     workDir,
-    roleIds,
+    playerIds,
     TMUX_PLAY_SESSION_MARKER,
     sessionId,
   );
@@ -133,7 +133,7 @@ interface BuildTmuxSessionOptions {
 }
 
 function buildTmuxSession(options: BuildTmuxSessionOptions): void {
-  const roles = options.loaded.config.roles;
+  const players = options.loaded.config.players;
   const bossCommand = buildSessionCommand(options);
 
   runTmux(
@@ -147,15 +147,15 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     options.sessionName,
     bossCommand,
   );
-  const rolePanes = createRolePanes(options.sessionName, options.workDir, roles);
+  const playerPanes = createPlayerPanes(options.sessionName, options.workDir, players);
   setPaneTitles(
     options.sessionName,
-    rolePanes,
+    playerPanes,
     options.loaded.config.captain.adapter,
   );
-  setTimerOptions(options.sessionName, rolePanes);
-  disableRolePaneInput(options.sessionName, rolePanes);
-  configureLayoutHooks(options.sessionName, roles.length);
+  setTimerOptions(options.sessionName, playerPanes);
+  disablePlayerPaneInput(options.sessionName, playerPanes);
+  configureLayoutHooks(options.sessionName, players.length);
   applyCatppuccinMochaTheme(options.sessionName);
   runTmux(
     'set-window-option',
@@ -330,89 +330,89 @@ function buildSessionCommand(options: BuildTmuxSessionOptions): string {
   return args.map(shellQuote).join(' ');
 }
 
-function createRolePanes(
+function createPlayerPanes(
   sessionName: string,
   workDir: string,
-  roles: readonly RoleConfig[],
-): RolePane[] {
-  const firstColumnCount = Math.ceil(roles.length / 2);
-  const rolePanes: RolePane[] = [];
+  players: readonly PlayerConfig[],
+): PlayerPane[] {
+  const firstColumnCount = Math.ceil(players.length / 2);
+  const playerPanes: PlayerPane[] = [];
   let nextPaneIndex = 1;
 
   runTmux(
     'split-window',
     '-h',
     '-l',
-    ROLE_AREA_SIZE,
+    PLAYER_AREA_SIZE,
     '-t',
     sessionName,
-    tailCommand(workDir, roles[0]),
+    tailCommand(workDir, players[0]),
   );
-  rolePanes[0] = { role: requireRole(roles[0]), paneIndex: nextPaneIndex++ };
+  playerPanes[0] = { player: requirePlayer(players[0]), paneIndex: nextPaneIndex++ };
 
-  if (roles.length < 2) {
-    return rolePanes;
+  if (players.length < 2) {
+    return playerPanes;
   }
 
   runTmux(
     'split-window',
     '-h',
     '-l',
-    SECOND_ROLE_COLUMN_SIZE,
+    SECOND_PLAYER_COLUMN_SIZE,
     '-t',
-    paneTarget(sessionName, rolePanes[0].paneIndex),
-    tailCommand(workDir, roles[firstColumnCount]),
+    paneTarget(sessionName, playerPanes[0].paneIndex),
+    tailCommand(workDir, players[firstColumnCount]),
   );
-  rolePanes[firstColumnCount] = {
-    role: requireRole(roles[firstColumnCount]),
+  playerPanes[firstColumnCount] = {
+    player: requirePlayer(players[firstColumnCount]),
     paneIndex: nextPaneIndex++,
   };
 
-  let firstColumnLastPane = rolePanes[0].paneIndex;
+  let firstColumnLastPane = playerPanes[0].paneIndex;
   for (let i = 1; i < firstColumnCount; i++) {
     runTmux(
       'split-window',
       '-v',
       '-t',
       paneTarget(sessionName, firstColumnLastPane),
-      tailCommand(workDir, roles[i]),
+      tailCommand(workDir, players[i]),
     );
     firstColumnLastPane = nextPaneIndex++;
-    rolePanes[i] = {
-      role: requireRole(roles[i]),
+    playerPanes[i] = {
+      player: requirePlayer(players[i]),
       paneIndex: firstColumnLastPane,
     };
   }
 
-  let secondColumnLastPane = rolePanes[firstColumnCount].paneIndex;
-  for (let i = firstColumnCount + 1; i < roles.length; i++) {
+  let secondColumnLastPane = playerPanes[firstColumnCount].paneIndex;
+  for (let i = firstColumnCount + 1; i < players.length; i++) {
     runTmux(
       'split-window',
       '-v',
       '-t',
       paneTarget(sessionName, secondColumnLastPane),
-      tailCommand(workDir, roles[i]),
+      tailCommand(workDir, players[i]),
     );
     secondColumnLastPane = nextPaneIndex++;
-    rolePanes[i] = {
-      role: requireRole(roles[i]),
+    playerPanes[i] = {
+      player: requirePlayer(players[i]),
       paneIndex: secondColumnLastPane,
     };
   }
 
-  return rolePanes;
+  return playerPanes;
 }
 
-interface RolePane {
-  readonly role: RoleConfig;
+interface PlayerPane {
+  readonly player: PlayerConfig;
   readonly paneIndex: number;
 }
 
-// TMUX-048: pane titles carry `<role> · <adapter>` so each pane reveals which
-// model is in it at a glance, even when the role id is generic (e.g. "Coder").
+// TMUX-048: pane titles carry `<player> · <adapter>` so each pane reveals which
+// model is in it at a glance, even when the player id is generic (e.g. "Coder").
 function setPaneTitles(
   sessionName: string,
-  rolePanes: readonly RolePane[],
+  playerPanes: readonly PlayerPane[],
   captainAdapter: string,
 ): void {
   runTmux(
@@ -422,26 +422,26 @@ function setPaneTitles(
     '-T',
     captainPaneTitle(captainAdapter),
   );
-  for (const pane of rolePanes) {
+  for (const pane of playerPanes) {
     runTmux(
       'select-pane',
       '-t',
       paneTarget(sessionName, pane.paneIndex),
       '-T',
-      rolePaneTitle(pane.role.id, pane.role.adapter),
+      playerPaneTitle(pane.player.id, pane.player.adapter),
     );
   }
 }
 
 function setTimerOptions(
   sessionName: string,
-  rolePanes: readonly RolePane[],
+  playerPanes: readonly PlayerPane[],
 ): void {
   setPaneTimerOptions(paneTarget(sessionName, 0), SPEAKER_CAPTAIN);
-  for (const pane of rolePanes) {
+  for (const pane of playerPanes) {
     setPaneTimerOptions(
       paneTarget(sessionName, pane.paneIndex),
-      roleAccent(pane.role.adapter),
+      playerAccent(pane.player.adapter),
     );
   }
   runTmux(
@@ -487,11 +487,11 @@ function setPaneTimerOptions(pane: string, accent: string): void {
   );
 }
 
-function disableRolePaneInput(
+function disablePlayerPaneInput(
   sessionName: string,
-  rolePanes: readonly RolePane[],
+  playerPanes: readonly PlayerPane[],
 ): void {
-  for (const pane of rolePanes) {
+  for (const pane of playerPanes) {
     runTmux(
       'select-pane',
       '-t',
@@ -515,17 +515,17 @@ function requestTerminalResize(stream: Output): void {
 // accounting for the 1-cell tmux border on each non-rightmost pane.
 function configureLayoutHooks(
   sessionName: string,
-  roleCount: number,
+  playerCount: number,
 ): void {
   const widthCmd =
     `tmux display-message -t ${sessionName} -p '#{window_width}'`;
   const resizeBoss =
     `tmux resize-pane -t ${sessionName}:0.0 -x $((W * 4 / 16 - 1))`;
-  const resizeFirstRoleColumn =
+  const resizeFirstPlayerColumn =
     `tmux resize-pane -t ${sessionName}:0.1 -x $((W * 6 / 16 - 1))`;
   const shell =
-    roleCount >= 2
-      ? `W=$(${widthCmd}) && ${resizeBoss} && ${resizeFirstRoleColumn}`
+    playerCount >= 2
+      ? `W=$(${widthCmd}) && ${resizeBoss} && ${resizeFirstPlayerColumn}`
       : `W=$(${widthCmd}) && ${resizeBoss}`;
   const hookCommand = `run-shell -b "${shell}"`;
   for (const hook of ['client-resized', 'after-resize-window']) {
@@ -533,18 +533,18 @@ function configureLayoutHooks(
   }
 }
 
-function tailCommand(workDir: string, role: RoleConfig | undefined): string {
-  if (!role) {
-    throw new Error('tmux-play requires at least one role pane');
+function tailCommand(workDir: string, player: PlayerConfig | undefined): string {
+  if (!player) {
+    throw new Error('tmux-play requires at least one player pane');
   }
-  return ['tail', '-f', logFilePath(workDir, role.id)].map(shellQuote).join(' ');
+  return ['tail', '-f', logFilePath(workDir, player.id)].map(shellQuote).join(' ');
 }
 
-function requireRole(role: RoleConfig | undefined): RoleConfig {
-  if (!role) {
-    throw new Error('tmux-play requires at least one role pane');
+function requirePlayer(player: PlayerConfig | undefined): PlayerConfig {
+  if (!player) {
+    throw new Error('tmux-play requires at least one player pane');
   }
-  return role;
+  return player;
 }
 
 function paneTarget(sessionName: string, paneIndex: number): string {

@@ -11,10 +11,10 @@ import {
   openAppendLogStreams,
 } from '../shared/logs.js';
 import { killTmuxSession, queryPaneWidthsByTitle } from '../shared/tmux.js';
-import { rolePaneTitle } from './pane-title.js';
+import { playerPaneTitle } from './pane-title.js';
 import type {
   Captain,
-  RuntimeRoleConfig,
+  RuntimePlayerConfig,
   RunTmuxPlayOptions,
 } from './contract.js';
 import {
@@ -22,7 +22,7 @@ import {
   type TmuxPlayConfig,
 } from './config.js';
 import { createTmuxPresenter, type WidthSource } from './presenter-tmux.js';
-import { SGR_RESET, SPEAKER_BOSS, bold24bitFg } from './role-colors.js';
+import { SGR_RESET, SPEAKER_BOSS, bold24bitFg } from './player-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
@@ -31,10 +31,10 @@ import {
   type TimingObserverHandle,
 } from './timing-observer.js';
 import {
-  isKnownRoleAdapter,
-  type RoleAdapterImports,
-  type RoleConfig,
-} from './roles.js';
+  isKnownPlayerAdapter,
+  type PlayerAdapterImports,
+  type PlayerConfig,
+} from './players.js';
 import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
 
 type RuntimeHandle = Pick<
@@ -75,7 +75,7 @@ export interface TmuxPlaySessionOptions {
   readonly cwd?: string;
   readonly input?: Readable;
   readonly output?: Writable;
-  readonly adapterImports?: RoleAdapterImports;
+  readonly adapterImports?: PlayerAdapterImports;
   readonly observers?: readonly RecordObserver[];
   readonly createReadline?: (options: {
     input: Readable;
@@ -92,7 +92,7 @@ export interface TmuxPlaySessionOptions {
   readonly killSession?: (sessionName: string) => void;
   readonly removeWorkDir?: (workDir: string) => void;
   readonly signalTarget?: SignalTarget;
-  // Width query for role panes (keyed by title-cased role id). Defaults to a
+  // Width query for player panes (keyed by title-cased player id). Defaults to a
   // tmux query that returns an empty map outside tmux; tests can stub this to
   // pin widths without spawning tmux.
   readonly queryPaneWidths?: (sessionName: string) => Map<string, number>;
@@ -111,7 +111,7 @@ export class TmuxPlaySession {
   private timingObserver: TimingObserverHandle | undefined;
   private pending = Promise.resolve();
   private shuttingDown = false;
-  private rolePaneWidths: Map<string, number> = new Map();
+  private playerPaneWidths: Map<string, number> = new Map();
   private resizeTarget: Writable | undefined;
   private resizeListener: (() => void) | undefined;
   private keypressTarget: Readable | undefined;
@@ -139,42 +139,42 @@ export class TmuxPlaySession {
       config.captain.options,
       this.options.importCaptain,
     );
-    const roleIds = config.roles.map((role) => role.id);
+    const playerIds = config.players.map((player) => player.id);
     const output = this.options.output ?? process.stdout;
     const logStreams = openAppendLogStreams(
       this.options.workDir,
-      roleIds,
-      (roleId, error) => {
-        output.write(`[${roleId}] log write error: ${error.message}\n`);
+      playerIds,
+      (playerId, error) => {
+        output.write(`[${playerId}] log write error: ${error.message}\n`);
       },
     );
     this.logStreams = logStreams;
 
-    this.refreshRolePaneWidths();
+    this.refreshPlayerPaneWidths();
     this.subscribeToResize(output);
-    const roleWidths = new Map<string, WidthSource>();
-    for (const role of config.roles) {
-      const title = rolePaneTitle(role.id, role.adapter);
-      roleWidths.set(role.id, () =>
-        this.rolePaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
+    const playerWidths = new Map<string, WidthSource>();
+    for (const player of config.players) {
+      const title = playerPaneTitle(player.id, player.adapter);
+      playerWidths.set(player.id, () =>
+        this.playerPaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
       );
     }
-    const roleAdapters = new Map(
-      config.roles.map((role) => [role.id, role.adapter]),
+    const playerAdapters = new Map(
+      config.players.map((player) => [player.id, player.adapter]),
     );
     const presenter = createTmuxPresenter({
       boss: output,
-      roles: logStreams,
+      players: logStreams,
       bossWidth: () => outputWidth(output),
-      roleWidths,
-      roleAdapters,
+      playerWidths,
+      playerAdapters,
     });
     const timingObserver = (
       this.options.createTimingObserver ?? createTimingObserver
     )({
       sessionName: this.sessionName(),
       captainAdapter: config.captain.adapter,
-      roles: config.roles,
+      players: config.players,
     });
     this.timingObserver = timingObserver;
     timingObserver.refresh();
@@ -189,7 +189,7 @@ export class TmuxPlaySession {
         permissions: config.captain.permissions,
         reasoningEffort: config.captain.reasoningEffort,
       },
-      roles: runtimeRoles(config.roles),
+      players: runtimePlayers(config.players),
       observers: [presenter, timingObserver, ...(this.options.observers ?? [])],
       cwd: this.options.cwd,
       adapterImports: this.options.adapterImports,
@@ -236,7 +236,7 @@ export class TmuxPlaySession {
         if (this.shuttingDown) {
           return;
         }
-        this.refreshRolePaneWidths();
+        this.refreshPlayerPaneWidths();
         this.activeBossTurn = true;
         try {
           await this.runtime?.runBossTurn(prompt);
@@ -428,22 +428,22 @@ export class TmuxPlaySession {
   }
 
   // tmux is only reachable when this process runs inside a pane; outside tmux
-  // (e.g., unit tests) the query is skipped and roles fall back to no soft-wrap.
-  private refreshRolePaneWidths(): void {
+  // (e.g., unit tests) the query is skipped and players fall back to no soft-wrap.
+  private refreshPlayerPaneWidths(): void {
     const query = this.options.queryPaneWidths ?? defaultQueryPaneWidths;
-    this.rolePaneWidths = query(this.sessionName());
+    this.playerPaneWidths = query(this.sessionName());
   }
 
   // tmux's client-resized / after-resize-window hooks resize every pane in the
   // session, which causes Node to surface a 'resize' event on the captain
-  // pane's stdout. Re-query role widths then so mid-turn streaming wraps at
+  // pane's stdout. Re-query player widths then so mid-turn streaming wraps at
   // the current pane size instead of the size captured at turn start.
   private subscribeToResize(output: Writable): void {
     if (typeof output.on !== 'function') {
       return;
     }
     const listener = (): void => {
-      this.refreshRolePaneWidths();
+      this.refreshPlayerPaneWidths();
     };
     output.on('resize', listener);
     this.resizeTarget = output;
@@ -532,18 +532,18 @@ async function runShutdownStep(
   }
 }
 
-function runtimeRoles(roles: readonly RoleConfig[]): RuntimeRoleConfig[] {
-  return roles.map((role) => {
-    if (!isKnownRoleAdapter(role.adapter)) {
-      throw new Error(`Unknown adapter "${role.adapter}" for role "${role.id}"`);
+function runtimePlayers(players: readonly PlayerConfig[]): RuntimePlayerConfig[] {
+  return players.map((player) => {
+    if (!isKnownPlayerAdapter(player.adapter)) {
+      throw new Error(`Unknown adapter "${player.adapter}" for player "${player.id}"`);
     }
     return {
-      id: role.id,
-      adapter: role.adapter,
-      model: role.model,
-      instruction: role.instruction,
-      permissions: role.permissions,
-      reasoningEffort: role.reasoningEffort,
+      id: player.id,
+      adapter: player.adapter,
+      model: player.model,
+      instruction: player.instruction,
+      permissions: player.permissions,
+      reasoningEffort: player.reasoningEffort,
     };
   });
 }

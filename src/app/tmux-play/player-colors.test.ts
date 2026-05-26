@@ -16,21 +16,21 @@ import {
   TOOL_OUTPUT_DIM,
   bold24bitFg,
   fg24bit,
-  roleAccent,
-} from './role-colors.js';
+  playerAccent,
+} from './player-colors.js';
 
-describe('roleAccent', () => {
+describe('playerAccent', () => {
   it('returns the canonical Mocha accent for each known adapter', () => {
     // Anchors per TMUX-048; changes here are normative.
-    expect(roleAccent('claude')).toBe('#a6e3a1');
-    expect(roleAccent('codex')).toBe('#94e2d5');
-    expect(roleAccent('gemini')).toBe('#b4befe');
-    expect(roleAccent('opencode')).toBe('#f5c2e7');
+    expect(playerAccent('claude')).toBe('#a6e3a1');
+    expect(playerAccent('codex')).toBe('#94e2d5');
+    expect(playerAccent('gemini')).toBe('#b4befe');
+    expect(playerAccent('opencode')).toBe('#f5c2e7');
   });
 
   it('returns a stable fallback color for unknown adapters', () => {
-    const first = roleAccent('some-future-adapter');
-    const second = roleAccent('some-future-adapter');
+    const first = playerAccent('some-future-adapter');
+    const second = playerAccent('some-future-adapter');
     expect(first).toBe(second);
   });
 
@@ -43,7 +43,7 @@ describe('roleAccent', () => {
       '#f2cdcd',
     ]);
     for (const name of ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']) {
-      expect(pool.has(roleAccent(name))).toBe(true);
+      expect(pool.has(playerAccent(name))).toBe(true);
     }
   });
 
@@ -51,7 +51,7 @@ describe('roleAccent', () => {
     // djb2 over a handful of distinct strings should land on >=2 buckets.
     const seen = new Set<string>();
     for (const name of ['adapter-a', 'adapter-b', 'adapter-c', 'adapter-d', 'adapter-e']) {
-      seen.add(roleAccent(name));
+      seen.add(playerAccent(name));
     }
     expect(seen.size).toBeGreaterThan(1);
   });
@@ -67,7 +67,7 @@ describe('roleAccent', () => {
       STATUS_ABORTED,
     ]);
     for (const adapter of ['claude', 'codex', 'gemini', 'opencode']) {
-      expect(reserved.has(roleAccent(adapter))).toBe(false);
+      expect(reserved.has(playerAccent(adapter))).toBe(false);
     }
   });
 });

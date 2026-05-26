@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 // TMUX-048: stable per-adapter accent colors from the Catppuccin Mocha palette.
-// Used by the presenter for `<roleId>>` speaker prefixes (Task 2) and any
-// other adapter-keyed coloring. Keying by adapter (not role id) means a config
+// Used by the presenter for `<playerId>>` speaker prefixes (Task 2) and any
+// other adapter-keyed coloring. Keying by adapter (not player id) means a config
 // renaming `claude` → `coder` keeps the Claude-green accent.
-const KNOWN_ROLE_COLORS: Readonly<Record<string, string>> = {
+const KNOWN_PLAYER_COLORS: Readonly<Record<string, string>> = {
   claude: '#a6e3a1', // green
   codex: '#94e2d5', // teal
   gemini: '#b4befe', // lavender
@@ -24,8 +24,8 @@ const FALLBACK_POOL: readonly string[] = [
   '#f2cdcd', // flamingo
 ];
 
-export function roleAccent(adapter: string): string {
-  const known = KNOWN_ROLE_COLORS[adapter];
+export function playerAccent(adapter: string): string {
+  const known = KNOWN_PLAYER_COLORS[adapter];
   if (known !== undefined) return known;
   return FALLBACK_POOL[hash(adapter) % FALLBACK_POOL.length] ?? FALLBACK_POOL[0]!;
 }
@@ -52,8 +52,8 @@ export function fg24bit(hex: string): string {
   return `\x1b[38;2;${r};${g};${b}m`;
 }
 
-// TMUX-038/039: fixed accents for the non-role speakers and status kinds.
-// Kept here next to the role-color map so a future palette swap is a
+// TMUX-038/039: fixed accents for the non-player speakers and status kinds.
+// Kept here next to the player-color map so a future palette swap is a
 // single-file change.
 export const SPEAKER_BOSS = '#89b4fa'; // blue
 export const SPEAKER_CAPTAIN = '#cba6f7'; // mauve

@@ -6,7 +6,7 @@ import type {
   BossTurn,
   CaptainTelemetry,
   CaptainRunResult,
-  RoleRunResult,
+  PlayerRunResult,
 } from './contract.js';
 
 export interface BaseRecord<
@@ -28,19 +28,19 @@ export interface TurnAbortedRecord extends BaseRecord<'turn_aborted'> {
   readonly reason?: string;
 }
 
-export interface RolePromptRecord extends BaseRecord<'role_prompt'> {
-  readonly roleId: string;
+export interface PlayerPromptRecord extends BaseRecord<'player_prompt'> {
+  readonly playerId: string;
   readonly prompt: string;
 }
 
-export interface RoleEventRecord extends BaseRecord<'role_event'> {
-  readonly roleId: string;
+export interface PlayerEventRecord extends BaseRecord<'player_event'> {
+  readonly playerId: string;
   readonly event: CligentEvent;
 }
 
-export interface RoleFinishedRecord extends BaseRecord<'role_finished'> {
-  readonly roleId: string;
-  readonly result: RoleRunResult;
+export interface PlayerFinishedRecord extends BaseRecord<'player_finished'> {
+  readonly playerId: string;
+  readonly result: PlayerRunResult;
 }
 
 export interface CaptainPromptRecord extends BaseRecord<'captain_prompt'> {
@@ -78,9 +78,9 @@ export type TmuxPlayRecord =
   | TurnStartedRecord
   | TurnFinishedRecord
   | TurnAbortedRecord
-  | RolePromptRecord
-  | RoleEventRecord
-  | RoleFinishedRecord
+  | PlayerPromptRecord
+  | PlayerEventRecord
+  | PlayerFinishedRecord
   | CaptainPromptRecord
   | CaptainEventRecord
   | CaptainFinishedRecord

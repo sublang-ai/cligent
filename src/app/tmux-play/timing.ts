@@ -9,14 +9,14 @@ export interface TimerValue {
 }
 
 export interface TimingSnapshot {
-  readonly roles: ReadonlyMap<string, TimerValue>;
+  readonly players: ReadonlyMap<string, TimerValue>;
   readonly captain: TimerValue;
   readonly total: TimerValue;
 }
 
 export class TmuxPlayTiming {
-  private readonly roleTotals = new Map<string, number>();
-  private readonly roleOpenStarts = new Map<string, number[]>();
+  private readonly playerTotals = new Map<string, number>();
+  private readonly playerOpenStarts = new Map<string, number[]>();
   private captainTotal = 0;
   private readonly captainOpenStarts: number[] = [];
   private total = 0;
@@ -24,11 +24,11 @@ export class TmuxPlayTiming {
 
   apply(record: TmuxPlayRecord): void {
     switch (record.type) {
-      case 'role_prompt':
-        this.openRole(record.roleId, record.timestamp);
+      case 'player_prompt':
+        this.openPlayer(record.playerId, record.timestamp);
         break;
-      case 'role_finished':
-        this.closeRole(record.roleId, record.timestamp);
+      case 'player_finished':
+        this.closePlayer(record.playerId, record.timestamp);
         break;
       case 'captain_prompt':
         this.captainOpenStarts.push(record.timestamp);
@@ -49,16 +49,16 @@ export class TmuxPlayTiming {
   }
 
   snapshot(now: number): TimingSnapshot {
-    const roles = new Map<string, TimerValue>();
-    for (const roleId of this.roleIds()) {
-      roles.set(roleId, {
-        elapsedMs: this.roleElapsedMs(roleId, now),
-        running: (this.roleOpenStarts.get(roleId)?.length ?? 0) > 0,
+    const players = new Map<string, TimerValue>();
+    for (const playerId of this.playerIds()) {
+      players.set(playerId, {
+        elapsedMs: this.playerElapsedMs(playerId, now),
+        running: (this.playerOpenStarts.get(playerId)?.length ?? 0) > 0,
       });
     }
 
     return {
-      roles,
+      players,
       captain: {
         elapsedMs: elapsedMs(this.captainTotal, this.captainOpenStarts, now),
         running: this.captainOpenStarts.length > 0,
@@ -70,38 +70,38 @@ export class TmuxPlayTiming {
     };
   }
 
-  private openRole(roleId: string, timestamp: number): void {
-    this.ensureRole(roleId);
-    this.roleOpenStarts.get(roleId)?.push(timestamp);
+  private openPlayer(playerId: string, timestamp: number): void {
+    this.ensurePlayer(playerId);
+    this.playerOpenStarts.get(playerId)?.push(timestamp);
   }
 
-  private closeRole(roleId: string, timestamp: number): void {
-    this.ensureRole(roleId);
-    const openStarts = this.roleOpenStarts.get(roleId) ?? [];
-    const priorTotal = this.roleTotals.get(roleId) ?? 0;
-    this.roleTotals.set(roleId, priorTotal + closeOne(openStarts, timestamp));
+  private closePlayer(playerId: string, timestamp: number): void {
+    this.ensurePlayer(playerId);
+    const openStarts = this.playerOpenStarts.get(playerId) ?? [];
+    const priorTotal = this.playerTotals.get(playerId) ?? 0;
+    this.playerTotals.set(playerId, priorTotal + closeOne(openStarts, timestamp));
   }
 
-  private roleElapsedMs(roleId: string, now: number): number {
+  private playerElapsedMs(playerId: string, now: number): number {
     return elapsedMs(
-      this.roleTotals.get(roleId) ?? 0,
-      this.roleOpenStarts.get(roleId) ?? [],
+      this.playerTotals.get(playerId) ?? 0,
+      this.playerOpenStarts.get(playerId) ?? [],
       now,
     );
   }
 
-  private ensureRole(roleId: string): void {
-    if (!this.roleTotals.has(roleId)) {
-      this.roleTotals.set(roleId, 0);
+  private ensurePlayer(playerId: string): void {
+    if (!this.playerTotals.has(playerId)) {
+      this.playerTotals.set(playerId, 0);
     }
-    if (!this.roleOpenStarts.has(roleId)) {
-      this.roleOpenStarts.set(roleId, []);
+    if (!this.playerOpenStarts.has(playerId)) {
+      this.playerOpenStarts.set(playerId, []);
     }
   }
 
-  private roleIds(): string[] {
+  private playerIds(): string[] {
     return [
-      ...new Set([...this.roleTotals.keys(), ...this.roleOpenStarts.keys()]),
+      ...new Set([...this.playerTotals.keys(), ...this.playerOpenStarts.keys()]),
     ].sort();
   }
 }

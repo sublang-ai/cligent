@@ -27,11 +27,11 @@ export type {
   CaptainSession,
   CaptainTelemetry,
   RuntimeCaptainConfig,
-  RoleHandle,
-  RoleRunResult,
+  PlayerHandle,
+  PlayerRunResult,
   RunStatus,
   RunTmuxPlayOptions,
-  RuntimeRoleConfig,
+  RuntimePlayerConfig,
 } from './contract.js';
 
 export {
@@ -50,11 +50,11 @@ export type {
 
 export { TmuxPlayRuntime, createTmuxPlayRuntime } from './runtime.js';
 
-export { KNOWN_ROLE_ADAPTERS, isKnownRoleAdapter } from './roles.js';
+export { KNOWN_PLAYER_ADAPTERS, isKnownPlayerAdapter } from './players.js';
 export type {
-  ResolvedRole,
-  ResolveRolesOptions,
-  RoleAdapterImports,
-  RoleAdapterName,
-  RoleConfig,
-} from './roles.js';
+  ResolvedPlayer,
+  ResolvePlayersOptions,
+  PlayerAdapterImports,
+  PlayerAdapterName,
+  PlayerConfig,
+} from './players.js';

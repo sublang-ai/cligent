@@ -48,7 +48,7 @@ import type {
   AgentType,
 } from '../../types.js';
 import type { TmuxPlayRecord } from './records.js';
-import type { RoleAdapterImports } from './roles.js';
+import type { PlayerAdapterImports } from './players.js';
 
 interface PaneRow {
   readonly index: number;
@@ -169,7 +169,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'creates a 240x67 session with 60/90/90 panes, titled, role panes read-only, Captain active',
+    'creates a 240x67 session with 60/90/90 panes, titled, player panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -219,7 +219,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(coder.title).toBe('Coder · codex');
       expect(reviewer.title).toBe('Reviewer · claude');
 
-      // TTMUX-033: role panes read-only, captain pane writable
+      // TTMUX-033: player panes read-only, captain pane writable
       expect(captain.inputOff).toBe('0');
       expect(coder.inputOff).toBe('1');
       expect(reviewer.inputOff).toBe('1');
@@ -352,7 +352,7 @@ describe('tmux-play real-tmux acceptance', () => {
       const observer = new TimingObserver({
         sessionName,
         captainAdapter: 'claude',
-        roles: [
+        players: [
           { id: 'coder', adapter: 'codex' },
           { id: 'reviewer', adapter: 'claude' },
         ],
@@ -361,9 +361,9 @@ describe('tmux-play real-tmux acceptance', () => {
 
       try {
         observer.onRecord(turnStarted(1_000));
-        observer.onRecord(rolePrompt('coder', 2_000));
-        observer.onRecord(roleFinished('coder', 5_000));
-        observer.onRecord(rolePrompt('reviewer', 6_000));
+        observer.onRecord(playerPrompt('coder', 2_000));
+        observer.onRecord(playerFinished('coder', 5_000));
+        observer.onRecord(playerPrompt('reviewer', 6_000));
         observer.onRecord(captainPrompt(7_000));
         observer.refresh(10_000);
 
@@ -402,7 +402,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⏰ #[fg=#cba6f7]9s',
         );
 
-        observer.onRecord(roleFinished('reviewer', 11_000));
+        observer.onRecord(playerFinished('reviewer', 11_000));
         observer.onRecord(captainFinished(12_000));
         observer.onRecord(turnFinished(13_000));
 
@@ -449,7 +449,7 @@ describe('tmux-play real-tmux acceptance', () => {
 // `AgentOptions.permissions`, and the adapter's exported mapping function
 // translates the mode to the spec-defined SDK knob. The probe does not
 // spawn tmux (so it does not gate on tmux availability) and does not call
-// the real SDK (the role adapter is a capturing stub).
+// the real SDK (the player adapter is a capturing stub).
 describe('tmux-play YAML → adapter permission seam', () => {
   let cwd: string | undefined;
 
@@ -472,7 +472,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
         '  options: {}',
         '  permissions:',
         '    mode: auto',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: claude',
         '    permissions:',
@@ -520,7 +520,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
       }
     }
 
-    const adapterImports: RoleAdapterImports = {
+    const adapterImports: PlayerAdapterImports = {
       claude: async () => CapturingClaudeAdapter,
       codex: async () => CapturingCodexAdapter,
       gemini: async () => CapturingClaudeAdapter,
@@ -529,8 +529,8 @@ describe('tmux-play YAML → adapter permission seam', () => {
 
     const captain: Captain = {
       async handleBossTurn(turn, context) {
-        await context.callRole('coder', turn.prompt);
-        await context.callRole('reviewer', turn.prompt);
+        await context.callPlayer('coder', turn.prompt);
+        await context.callPlayer('reviewer', turn.prompt);
       },
     };
 
@@ -542,12 +542,12 @@ describe('tmux-play YAML → adapter permission seam', () => {
         instruction: loaded.config.captain.instruction,
         permissions: loaded.config.captain.permissions,
       },
-      roles: loaded.config.roles.map((role) => ({
-        id: role.id,
-        adapter: role.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
-        model: role.model,
-        instruction: role.instruction,
-        permissions: role.permissions,
+      players: loaded.config.players.map((player) => ({
+        id: player.id,
+        adapter: player.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        model: player.model,
+        instruction: player.instruction,
+        permissions: player.permissions,
       })),
       adapterImports,
     });
@@ -605,7 +605,7 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
         '  model: claude-opus-4-7',
         '  reasoningEffort: xhigh',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: reviewer',
         '    adapter: claude',
         '    model: claude-sonnet-4-5',
@@ -657,7 +657,7 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
       opencode: [],
     };
 
-    const adapterImports: RoleAdapterImports = {
+    const adapterImports: PlayerAdapterImports = {
       claude: async () => makeCapturingAdapter('claude-code', captured.claude),
       codex: async () => makeCapturingAdapter('codex', captured.codex),
       gemini: async () => makeCapturingAdapter('gemini', captured.gemini),
@@ -667,8 +667,8 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
     const captain: Captain = {
       async handleBossTurn(turn, context) {
         await context.callCaptain(`captain: ${turn.prompt}`);
-        for (const role of context.roles) {
-          await context.callRole(role.id, turn.prompt);
+        for (const player of context.players) {
+          await context.callPlayer(player.id, turn.prompt);
         }
       },
     };
@@ -682,13 +682,13 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
         permissions: loaded.config.captain.permissions,
         reasoningEffort: loaded.config.captain.reasoningEffort,
       },
-      roles: loaded.config.roles.map((role) => ({
-        id: role.id,
-        adapter: role.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
-        model: role.model,
-        instruction: role.instruction,
-        permissions: role.permissions,
-        reasoningEffort: role.reasoningEffort,
+      players: loaded.config.players.map((player) => ({
+        id: player.id,
+        adapter: player.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        model: player.model,
+        instruction: player.instruction,
+        permissions: player.permissions,
+        reasoningEffort: player.reasoningEffort,
       })),
       adapterImports,
     });
@@ -708,15 +708,15 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
       }).queryOptions.effort,
     ).toBe('xhigh');
 
-    const claudeRoleOptions = capturedByModel(
+    const claudePlayerOptions = capturedByModel(
       captured.claude,
       'claude-sonnet-4-5',
     );
-    expect(claudeRoleOptions.reasoningEffort).toBe('max');
+    expect(claudePlayerOptions.reasoningEffort).toBe('max');
     expect(
       mapAgentOptionsToClaudeQueryOptions({
-        model: claudeRoleOptions.model,
-        reasoningEffort: claudeRoleOptions.reasoningEffort,
+        model: claudePlayerOptions.model,
+        reasoningEffort: claudePlayerOptions.reasoningEffort,
       }).queryOptions.effort,
     ).toBe('max');
 
@@ -885,8 +885,8 @@ function defaultYamlConfig(): string {
     "  from: '@sublang/cligent/captains/fanout'",
     '  adapter: claude',
     '  options:',
-    '    maxRoleOutputChars: 4000',
-    'roles:',
+    '    maxPlayerOutputChars: 4000',
+    'players:',
     '  - id: coder',
     '    adapter: codex',
     '  - id: reviewer',
@@ -947,7 +947,7 @@ function showWindowOption(session: string, option: string): string {
 
 // tmux 3.6 substitutes tab with `_` in -F output, so use `|` as the field
 // separator. Pane titles cannot contain `|` because tmux-play sets them from
-// `Captain` and config role ids (validated by the schema).
+// `Captain` and config player ids (validated by the schema).
 const FIELD_SEP = '|';
 
 function listPanes(session: string): readonly PaneRow[] {
@@ -1125,23 +1125,23 @@ function turnFinished(timestamp: number): TmuxPlayRecord {
   return { type: 'turn_finished', turnId: 1, timestamp };
 }
 
-function rolePrompt(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerPrompt(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_prompt',
+    type: 'player_prompt',
     turnId: 1,
     timestamp,
-    roleId,
+    playerId,
     prompt: 'work',
   };
 }
 
-function roleFinished(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerFinished(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp,
-    roleId,
-    result: { roleId, turnId: 1, status: 'ok' },
+    playerId,
+    result: { playerId, turnId: 1, status: 'ok' },
   };
 }
 

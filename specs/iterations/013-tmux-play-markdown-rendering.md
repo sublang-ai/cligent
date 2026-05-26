@@ -5,7 +5,7 @@
 
 ## Goal
 
-Render each speaker's Markdown through `glow` instead of streaming raw text through a hand-rolled char-by-char soft-wrap, so prose wraps at word boundaries, inline styles render, and fenced code survives intact for the coding-agent role panes.
+Render each speaker's Markdown through `glow` instead of streaming raw text through a hand-rolled char-by-char soft-wrap, so prose wraps at word boundaries, inline styles render, and fenced code survives intact for the coding-agent player panes.
 
 The presenter buffers each block until complete, renders it through `glow` at `paneWidth - prefixWidth`, and appends the result to the pane log.
 `glow` owns wrapping, fenced code, tables, lists, and inline styles.
@@ -13,7 +13,7 @@ The presenter buffers each block until complete, renders it through `glow` at `p
 Key design choices:
 
 - Markdown is not streamable; blocks buffer and render on completion. Token-by-token streaming is the deliberate tradeoff.
-- Panes still `tail -f` the per-role log; only complete rendered blocks are appended, no repaint machinery.
+- Panes still `tail -f` the per-player log; only complete rendered blocks are appended, no repaint machinery.
 - `glow` is a hard launch requirement, mirroring `tmux`. No fallback path — Task 2 removes the [TMUX-046](../user/tmux-play.md#tmux-046) machinery that would otherwise serve as one. Not an npm package; [PKG-003](../dev/package.md#pkg-003) is not implicated.
 - The presenter stays an observer per [DR-004](../decisions/004-tmux-play-captain-architecture.md); runtime, record set, and Captain contract are unchanged.
 
@@ -25,7 +25,7 @@ Done — Task 4's real-`glow` acceptance gate closed: `npm run test:acceptance` 
 
 In scope:
 
-- Buffer-then-render write path; blocks flush on `role_finished` / `captain_finished`, on a non-streaming `text` event, and on `tool_use` / `tool_result` interrupting a text run.
+- Buffer-then-render write path; blocks flush on `player_finished` / `captain_finished`, on a non-streaming `text` event, and on `tool_use` / `tool_result` interrupting a text run.
 - Render module in `src/app/shared/glow.ts`: spawn `glow` at width `paneWidth - prefixWidth`, stdin-fed, stdout captured.
 - Speaker-prefix post-indent so [TMUX-038](../user/tmux-play.md#tmux-038) grammar holds; the prefix budget keeps prose rows within pane width.
 - Tool-result bodies routed through the same pipeline, wrapped in a fenced code block. Wrapper fence is `max(3, longest_backtick_run + 1)` so an embedded fence cannot terminate it.
@@ -69,7 +69,7 @@ Each task is one commit.
 
 - `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` pass at every task boundary.
 - After Task 1: `renderMarkdown` returns `glow`-rendered output at a requested width; `launchTmuxPlay` aborts with an install-pointing error when `glow` is absent.
-- After Task 2: presenter snapshot for a Boss → Captain → Role turn shows rendered blocks (bold styled, no mid-token wraps, prefix + two-space indent intact); every prose row fits pane width after prefixing.
+- After Task 2: presenter snapshot for a Boss → Captain → Player turn shows rendered blocks (bold styled, no mid-token wraps, prefix + two-space indent intact); every prose row fits pane width after prefixing.
 - After Task 3: a `tool_result` whose payload contains a triple-backtick fence renders the entire body unwrapped inside the wrapper.
 - `npm run test:acceptance` passes with `glow` installed. On a `tmux`-available / `glow`-absent runner, every `launchTmuxPlay`-driving TTMUX item self-skips per the broadened skip clauses.
 - IR-013 shall not be marked Done unless the real-`glow` acceptance test was executed end-to-end with `glow` available within the same change set.

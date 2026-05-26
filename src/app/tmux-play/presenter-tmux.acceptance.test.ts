@@ -41,23 +41,23 @@ function textEvent(content: string): CligentEvent {
   return createEvent('text', 'codex', { content }, 'sid');
 }
 
-function roleEvent(roleId: string, event: CligentEvent): TmuxPlayRecord {
+function playerEvent(playerId: string, event: CligentEvent): TmuxPlayRecord {
   return {
-    type: 'role_event',
+    type: 'player_event',
     turnId: 1,
     timestamp: 1,
-    roleId,
+    playerId,
     event,
   };
 }
 
-function roleFinishedOk(roleId: string): TmuxPlayRecord {
+function playerFinishedOk(playerId: string): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp: 2,
-    roleId,
-    result: { roleId, turnId: 1, status: 'ok' },
+    playerId,
+    result: { playerId, turnId: 1, status: 'ok' },
   };
 }
 
@@ -80,18 +80,18 @@ describe('TmuxPresenter + real glow acceptance', () => {
       const coder = new MemoryWriter();
       const presenter = createTmuxPresenter({
         boss: new MemoryWriter(),
-        roles: new Map([['coder', coder]]),
-        roleAdapters: new Map([['coder', 'claude']]),
-        roleWidths: new Map([['coder', () => 80]]),
+        players: new Map([['coder', coder]]),
+        playerAdapters: new Map([['coder', 'claude']]),
+        playerWidths: new Map([['coder', () => 80]]),
       });
 
       presenter.onRecord(
-        roleEvent(
+        playerEvent(
           'coder',
           textEvent('# Heading\n\nA paragraph with **bold** content.'),
         ),
       );
-      presenter.onRecord(roleFinishedOk('coder'));
+      presenter.onRecord(playerFinishedOk('coder'));
 
       const raw = coder.raw();
       const visible = coder.text();
@@ -128,13 +128,13 @@ describe('TmuxPresenter + real glow acceptance', () => {
       const coder = new MemoryWriter();
       const presenter = createTmuxPresenter({
         boss: new MemoryWriter(),
-        roles: new Map([['coder', coder]]),
+        players: new Map([['coder', coder]]),
       });
 
       // Payload ends with an intentional blank row (think `cat` on a file
       // whose final line is empty). The TMUX-049 contract is that this
       // blank survives the fence + glow + indent pipeline.
-      presenter.onRecord(roleEvent('coder', toolResultEvent('Cat', 'foo\n\n')));
+      presenter.onRecord(playerEvent('coder', toolResultEvent('Cat', 'foo\n\n')));
 
       const visible = coder.text();
       // Structural assertion: somewhere in the output, `foo` is followed
@@ -152,8 +152,8 @@ describe('TmuxPresenter + real glow acceptance', () => {
       const coder = new MemoryWriter();
       const presenter = createTmuxPresenter({
         boss: new MemoryWriter(),
-        roles: new Map([['coder', coder]]),
-        roleWidths: new Map([['coder', () => 80]]),
+        players: new Map([['coder', coder]]),
+        playerWidths: new Map([['coder', () => 80]]),
       });
 
       // Two short blocks back-to-back. Pre-trim-1, each block carried
@@ -161,10 +161,10 @@ describe('TmuxPresenter + real glow acceptance', () => {
       // turns was 2 blank lines (one trailing from block A + one leading
       // from block B). The user explicitly flagged this as "excessive
       // blank lines between player messages" on a live screenshot.
-      presenter.onRecord(roleEvent('coder', textEvent('first message')));
-      presenter.onRecord(roleFinishedOk('coder'));
-      presenter.onRecord(roleEvent('coder', textEvent('second message')));
-      presenter.onRecord(roleFinishedOk('coder'));
+      presenter.onRecord(playerEvent('coder', textEvent('first message')));
+      presenter.onRecord(playerFinishedOk('coder'));
+      presenter.onRecord(playerEvent('coder', textEvent('second message')));
+      presenter.onRecord(playerFinishedOk('coder'));
 
       const visible = coder.text();
       // No run of 3+ consecutive newlines anywhere — that would mean two

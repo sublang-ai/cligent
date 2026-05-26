@@ -16,8 +16,8 @@ import type {
   CaptainRunResult,
   CaptainSession,
   CaptainTelemetry,
-  RoleHandle,
-  RoleRunResult,
+  PlayerHandle,
+  PlayerRunResult,
   RunStatus,
   RunTmuxPlayOptions,
 } from './contract.js';
@@ -30,10 +30,10 @@ import {
   type RuntimeErrorRecord,
 } from './records.js';
 import {
-  createRoleCligent,
-  resolveRoles,
-  type ResolvedRole,
-} from './roles.js';
+  createPlayerCligent,
+  resolvePlayers,
+  type ResolvedPlayer,
+} from './players.js';
 
 interface ActiveTurn {
   readonly turn: BossTurn;
@@ -58,8 +58,8 @@ export class TmuxPlayRuntime {
   private readonly captain: Captain;
   private readonly captainCligent: Cligent;
   private readonly captainInstruction: string | undefined;
-  private readonly roleHandles: readonly RoleHandle[];
-  private readonly rolesById: ReadonlyMap<string, ResolvedRole>;
+  private readonly playerHandles: readonly PlayerHandle[];
+  private readonly playersById: ReadonlyMap<string, ResolvedPlayer>;
   private readonly sessionController = new AbortController();
   private readonly session: CaptainSession;
   private readonly dispatcher = new RecordDispatcher();
@@ -75,22 +75,22 @@ export class TmuxPlayRuntime {
 
   constructor(
     options: RunTmuxPlayOptions,
-    roles: readonly ResolvedRole[],
+    players: readonly ResolvedPlayer[],
     captainCligent: Cligent,
   ) {
     this.captain = options.captain;
     this.captainCligent = captainCligent;
     this.captainInstruction = options.captainConfig.instruction;
-    this.roleHandles = roles.map((role) => ({
-      id: role.id,
-      adapter: role.adapter,
-      model: role.model,
+    this.playerHandles = players.map((player) => ({
+      id: player.id,
+      adapter: player.adapter,
+      model: player.model,
     }));
-    this.rolesById = new Map(roles.map((role) => [role.id, role]));
+    this.playersById = new Map(players.map((player) => [player.id, player]));
     this.externalSignal = options.signal;
     this.session = {
       signal: this.sessionController.signal,
-      roles: this.roleHandles,
+      players: this.playerHandles,
       emitStatus: (message, data) => this.emitSessionStatus(message, data),
       emitTelemetry: (event) => this.emitSessionTelemetry(event),
     };
@@ -227,52 +227,52 @@ export class TmuxPlayRuntime {
   private createContext(turn: BossTurn, signal: AbortSignal): CaptainContext {
     return {
       signal,
-      roles: this.roleHandles,
-      callRole: (roleId, prompt) => this.callRole(turn, signal, roleId, prompt),
+      players: this.playerHandles,
+      callPlayer: (playerId, prompt) => this.callPlayer(turn, signal, playerId, prompt),
       callCaptain: (prompt) => this.callCaptain(turn, signal, prompt),
     };
   }
 
-  private async callRole(
+  private async callPlayer(
     turn: BossTurn,
     signal: AbortSignal,
-    roleId: string,
+    playerId: string,
     prompt: string,
-  ): Promise<RoleRunResult> {
-    const role = this.rolesById.get(roleId);
-    if (!role) {
-      throw new Error(`Unknown role: ${roleId}`);
+  ): Promise<PlayerRunResult> {
+    const player = this.playersById.get(playerId);
+    if (!player) {
+      throw new Error(`Unknown player: ${playerId}`);
     }
 
     await this.emit({
-      ...makeRecordBase('role_prompt', turn.id),
-      roleId,
+      ...makeRecordBase('player_prompt', turn.id),
+      playerId,
       prompt,
     });
 
     const call = await runCligentCall({
-      cligent: role.cligent,
+      cligent: player.cligent,
       prompt,
-      instruction: role.instruction,
+      instruction: player.instruction,
       signal,
       emitEvent: (event) =>
         this.emit({
-          ...makeRecordBase('role_event', turn.id, event.timestamp),
-          roleId,
+          ...makeRecordBase('player_event', turn.id, event.timestamp),
+          playerId,
           event,
         }),
     });
-    const result: RoleRunResult = {
+    const result: PlayerRunResult = {
       status: call.status,
-      roleId,
+      playerId,
       turnId: turn.id,
       finalText: call.finalText,
       error: call.error,
     };
 
     await this.emit({
-      ...makeRecordBase('role_finished', turn.id),
-      roleId,
+      ...makeRecordBase('player_finished', turn.id),
+      playerId,
       result,
     });
     return result;
@@ -400,11 +400,11 @@ export class TmuxPlayRuntime {
 export async function createTmuxPlayRuntime(
   options: RunTmuxPlayOptions,
 ): Promise<TmuxPlayRuntime> {
-  const roles = await resolveRoles(options.roles, {
+  const players = await resolvePlayers(options.players, {
     cwd: options.cwd,
     adapterImports: options.adapterImports,
   });
-  const captainCligent = await createRoleCligent(options.captainConfig.adapter, {
+  const captainCligent = await createPlayerCligent(options.captainConfig.adapter, {
     cwd: options.cwd,
     model: options.captainConfig.model,
     role: 'captain',
@@ -412,7 +412,7 @@ export async function createTmuxPlayRuntime(
     reasoningEffort: options.captainConfig.reasoningEffort,
     adapterImports: options.adapterImports,
   });
-  const runtime = new TmuxPlayRuntime(options, roles, captainCligent);
+  const runtime = new TmuxPlayRuntime(options, players, captainCligent);
   await runtime.initialize();
   return runtime;
 }

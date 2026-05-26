@@ -11,10 +11,10 @@ export function captainPaneTitle(adapter: string): string {
   return paneTitle(CAPTAIN_PANE_DISPLAY, adapter);
 }
 
-export function rolePaneTitle(roleId: string, adapter: string): string {
-  return paneTitle(titleCaseRoleId(roleId), adapter);
+export function playerPaneTitle(playerId: string, adapter: string): string {
+  return paneTitle(titleCasePlayerId(playerId), adapter);
 }
 
-export function titleCaseRoleId(roleId: string): string {
-  return roleId.charAt(0).toUpperCase() + roleId.slice(1);
+export function titleCasePlayerId(playerId: string): string {
+  return playerId.charAt(0).toUpperCase() + playerId.slice(1);
 }

@@ -4,9 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import { createEvent } from '../../events.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
-import type { Captain, CaptainSession, RoleRunResult } from './contract.js';
+import type { Captain, CaptainSession, PlayerRunResult } from './contract.js';
 import type { TmuxPlayRecord } from './records.js';
-import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
+import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime } from './runtime.js';
 
 type RunScript = (
@@ -35,8 +35,8 @@ function adapterClass(
 }
 
 function adapterImports(
-  scripts: Partial<Record<RoleAdapterName, { agent: string; run: RunScript }>>,
-): RoleAdapterImports {
+  scripts: Partial<Record<PlayerAdapterName, { agent: string; run: RunScript }>>,
+): PlayerAdapterImports {
   const fallback: { agent: string; run: RunScript } = {
     agent: 'test-agent',
     async *run() {
@@ -100,19 +100,19 @@ function deferred<T = void>(): {
 }
 
 describe('TmuxPlayRuntime', () => {
-  it('emits causal records around role and Captain calls', async () => {
+  it('emits causal records around player and Captain calls', async () => {
     const records: TmuxPlayRecord[] = [];
     const prompts: string[] = [];
     const captain: Captain = {
       async handleBossTurn(turn, context) {
-        const roleResult = await context.callRole(
+        const playerResult = await context.callPlayer(
           'coder',
           `implement ${turn.prompt}`,
         );
-        expect(roleResult.finalText).toBe('role done');
+        expect(playerResult.finalText).toBe('player done');
 
         const captainResult = await context.callCaptain(
-          `summarize ${roleResult.finalText}`,
+          `summarize ${playerResult.finalText}`,
         );
         expect(captainResult.finalText).toBe('captain done');
       },
@@ -124,11 +124,11 @@ describe('TmuxPlayRuntime', () => {
         instruction: 'Captain instruction.',
         reasoningEffort: 'high',
       },
-      roles: [
+      players: [
         {
           id: 'coder',
           adapter: 'codex',
-          instruction: 'Role instruction.',
+          instruction: 'Player instruction.',
           reasoningEffort: 'low',
         },
       ],
@@ -143,8 +143,8 @@ describe('TmuxPlayRuntime', () => {
           async *run(prompt, options) {
             prompts.push(prompt);
             expect(options?.reasoningEffort).toBe('low');
-            yield textEvent('codex', 'role text');
-            yield doneEvent('codex', 'role done');
+            yield textEvent('codex', 'player text');
+            yield doneEvent('codex', 'player done');
           },
         },
         claude: {
@@ -163,10 +163,10 @@ describe('TmuxPlayRuntime', () => {
 
     expect(records.map((record) => record.type)).toEqual([
       'turn_started',
-      'role_prompt',
-      'role_event',
-      'role_event',
-      'role_finished',
+      'player_prompt',
+      'player_event',
+      'player_event',
+      'player_finished',
       'captain_prompt',
       'captain_event',
       'captain_event',
@@ -174,8 +174,8 @@ describe('TmuxPlayRuntime', () => {
       'turn_finished',
     ]);
     expect(prompts).toEqual([
-      'Role instruction.\n\nimplement feature',
-      'Captain instruction.\n\nsummarize role done',
+      'Player instruction.\n\nimplement feature',
+      'Captain instruction.\n\nsummarize player done',
     ]);
   });
 
@@ -195,7 +195,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       adapterImports: adapterImports({}),
     });
 
@@ -211,36 +211,36 @@ describe('TmuxPlayRuntime', () => {
     expect(handled).toEqual(['one', 'two']);
   });
 
-  it('reuses role Cligents and passes prior resume tokens across turns', async () => {
-    const roleResumes: (string | undefined)[] = [];
-    const roleInstanceIds: number[] = [];
-    const constructedRoleInstanceIds: number[] = [];
-    let roleRuns = 0;
+  it('reuses player Cligents and passes prior resume tokens across turns', async () => {
+    const playerResumes: (string | undefined)[] = [];
+    const playerInstanceIds: number[] = [];
+    const constructedPlayerInstanceIds: number[] = [];
+    let playerRuns = 0;
     const captain: Captain = {
       async handleBossTurn(turn, context) {
-        await context.callRole('coder', `role ${turn.prompt}`);
+        await context.callPlayer('coder', `player ${turn.prompt}`);
       },
     };
-    class ContinuityRoleAdapter implements AgentAdapter {
+    class ContinuityPlayerAdapter implements AgentAdapter {
       readonly agent = 'codex';
-      readonly instanceId = constructedRoleInstanceIds.length + 1;
+      readonly instanceId = constructedPlayerInstanceIds.length + 1;
 
       constructor() {
-        constructedRoleInstanceIds.push(this.instanceId);
+        constructedPlayerInstanceIds.push(this.instanceId);
       }
 
       async *run(
         _prompt: string,
         options?: AgentOptions,
       ): AsyncGenerator<AgentEvent, void, void> {
-        roleInstanceIds.push(this.instanceId);
-        roleResumes.push(options?.resume);
-        roleRuns += 1;
+        playerInstanceIds.push(this.instanceId);
+        playerResumes.push(options?.resume);
+        playerRuns += 1;
         yield doneEvent(
           'codex',
-          `role ${roleRuns}`,
+          `player ${playerRuns}`,
           'success',
-          `role-token-${roleRuns}`,
+          `player-token-${playerRuns}`,
         );
       }
 
@@ -249,20 +249,20 @@ describe('TmuxPlayRuntime', () => {
       }
     }
     const imports = adapterImports({});
-    imports.codex = async () => ContinuityRoleAdapter;
+    imports.codex = async () => ContinuityPlayerAdapter;
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       adapterImports: imports,
     });
 
     await runtime.runBossTurn('one');
     await runtime.runBossTurn('two');
 
-    expect(constructedRoleInstanceIds).toEqual([1]);
-    expect(roleInstanceIds).toEqual([1, 1]);
-    expect(roleResumes).toEqual([undefined, 'role-token-1']);
+    expect(constructedPlayerInstanceIds).toEqual([1]);
+    expect(playerInstanceIds).toEqual([1, 1]);
+    expect(playerResumes).toEqual([undefined, 'player-token-1']);
   });
 
   it('drains fire-and-forget status before finishing a turn', async () => {
@@ -281,7 +281,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
           async onRecord(record) {
@@ -331,7 +331,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
           onRecord: (record) => records.push(record),
@@ -355,19 +355,19 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
-  it('binds role calls to the active turn abort signal', async () => {
+  it('binds player calls to the active turn abort signal', async () => {
     const records: TmuxPlayRecord[] = [];
-    const roleStarted = deferred<AbortSignal | undefined>();
-    const roleResults: RoleRunResult[] = [];
+    const playerStarted = deferred<AbortSignal | undefined>();
+    const playerResults: PlayerRunResult[] = [];
     const captain: Captain = {
       async handleBossTurn(_turn, context) {
-        roleResults.push(await context.callRole('coder', 'slow work'));
+        playerResults.push(await context.callPlayer('coder', 'slow work'));
       },
     };
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
           onRecord: (record) => records.push(record as TmuxPlayRecord),
@@ -377,7 +377,7 @@ describe('TmuxPlayRuntime', () => {
         codex: {
           agent: 'codex',
           async *run(_prompt, options) {
-            roleStarted.resolve(options?.abortSignal);
+            playerStarted.resolve(options?.abortSignal);
             await new Promise<void>((resolve) => {
               options?.abortSignal?.addEventListener('abort', () => resolve(), {
                 once: true,
@@ -389,18 +389,18 @@ describe('TmuxPlayRuntime', () => {
     });
 
     const running = runtime.runBossTurn('abort');
-    const signal = await roleStarted.promise;
+    const signal = await playerStarted.promise;
     expect(signal?.aborted).toBe(false);
 
     runtime.abortActiveTurn('stop now');
     await running;
 
-    expect(roleResults).toMatchObject([{ status: 'aborted' }]);
+    expect(playerResults).toMatchObject([{ status: 'aborted' }]);
     expect(records.map((record) => record.type)).toEqual([
       'turn_started',
-      'role_prompt',
-      'role_event',
-      'role_finished',
+      'player_prompt',
+      'player_event',
+      'player_finished',
       'turn_aborted',
     ]);
     expect(records[records.length - 1]).toMatchObject({
@@ -423,7 +423,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
           onRecord: (record) => records.push(record as TmuxPlayRecord),
@@ -460,7 +460,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
           onRecord() {
@@ -502,7 +502,7 @@ describe('TmuxPlayRuntime', () => {
     const runtime = await createTmuxPlayRuntime({
       captain,
       captainConfig: { adapter: 'claude' },
-      roles: [{ id: 'coder', adapter: 'codex' }],
+      players: [{ id: 'coder', adapter: 'codex' }],
       adapterImports: adapterImports({}),
     });
 

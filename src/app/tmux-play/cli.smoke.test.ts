@@ -57,7 +57,7 @@ describe('tmux-play built CLI smoke', () => {
     mkdirSync(join(cwd, 'captains'), { recursive: true });
     writeYamlConfig(join(cwd, 'tmux-play.config.yaml'), {
       captainFrom: './captains/router.js',
-      roles: ['coder', 'reviewer'],
+      players: ['coder', 'reviewer'],
     });
 
     const result = runCli(['--cwd', cwd], harness);
@@ -74,13 +74,13 @@ describe('tmux-play built CLI smoke', () => {
       readFileSync(join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT), 'utf8'),
     ) as {
       captain: { from: string };
-      roles: Array<{ id: string }>;
+      players: Array<{ id: string }>;
     };
 
     expect(snapshot.captain.from).toBe(
       pathToFileURL(join(cwd, 'captains/router.js')).href,
     );
-    expect(snapshot.roles.map((role) => role.id)).toEqual(['coder', 'reviewer']);
+    expect(snapshot.players.map((player) => player.id)).toEqual(['coder', 'reviewer']);
     expect(newSession).toContain('-x');
     expect(valueAfter(newSession, '-x')).toBe('240');
     expect(newSession).toContain('-y');
@@ -157,7 +157,7 @@ describe('tmux-play built CLI smoke', () => {
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '    permissions:',
@@ -170,7 +170,7 @@ describe('tmux-play built CLI smoke', () => {
 
     expect(result.status, result.stderr).not.toBe(0);
     expect(result.stderr).toContain(
-      'roles[0].permissions.mode must be one of: auto, bypass',
+      'players[0].permissions.mode must be one of: auto, bypass',
     );
     expect(result.stderr.startsWith('Error: ')).toBe(true);
     // The runtime never starts, so no tmux session is constructed and no
@@ -194,7 +194,7 @@ describe('tmux-play built CLI smoke', () => {
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  options: {}',
-        'roles:',
+        'players:',
         '  - id: coder',
         '    adapter: codex',
         '    reasoningEffort: turbo',
@@ -206,7 +206,7 @@ describe('tmux-play built CLI smoke', () => {
 
     expect(result.status, result.stderr).not.toBe(0);
     expect(result.stderr).toContain(
-      'roles[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+      'players[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
     );
     expect(result.stderr.startsWith('Error: ')).toBe(true);
     expect(readTmuxCalls(harness).some((call) => call[0] === 'new-session')).toBe(
@@ -231,7 +231,7 @@ describe('tmux-play built CLI smoke', () => {
             adapter: 'claude',
             options: {},
           },
-          roles: [{ id: 'coder', adapter: 'codex' }],
+          players: [{ id: 'coder', adapter: 'codex' }],
         },
         null,
         2,
@@ -378,10 +378,10 @@ function writeYamlConfig(
   path: string,
   options: {
     readonly captainFrom: string;
-    readonly roles?: readonly string[];
+    readonly players?: readonly string[];
   },
 ): void {
-  const roles = options.roles ?? ['coder'];
+  const players = options.players ?? ['coder'];
   writeFileSync(
     path,
     [
@@ -389,14 +389,14 @@ function writeYamlConfig(
       `  from: '${options.captainFrom}'`,
       '  adapter: claude',
       '  model: claude-opus-4-7',
-      '  instruction: Coordinate roles.',
+      '  instruction: Coordinate players.',
       '  options:',
-      '    maxRoleOutputChars: 4000',
-      'roles:',
-      ...roles.flatMap((role) => [
-        `  - id: ${role}`,
-        role === 'reviewer' ? '    adapter: claude' : '    adapter: codex',
-        `    instruction: ${role} work.`,
+      '    maxPlayerOutputChars: 4000',
+      'players:',
+      ...players.flatMap((player) => [
+        `  - id: ${player}`,
+        player === 'reviewer' ? '    adapter: claude' : '    adapter: codex',
+        `    instruction: ${player} work.`,
       ]),
       '',
     ].join('\n'),

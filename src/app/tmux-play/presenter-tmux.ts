@@ -6,13 +6,13 @@ import { formatCligentEvent } from '../shared/events.js';
 import { renderMarkdown } from '../shared/glow.js';
 import type {
   CaptainRunResult,
-  RoleRunResult,
+  PlayerRunResult,
 } from './contract.js';
 import type {
   RecordObserver,
-  RoleEventRecord,
-  RoleFinishedRecord,
-  RolePromptRecord,
+  PlayerEventRecord,
+  PlayerFinishedRecord,
+  PlayerPromptRecord,
   TmuxPlayRecord,
 } from './records.js';
 import {
@@ -25,8 +25,8 @@ import {
   TOOL_FAIL,
   TOOL_OK,
   bold24bitFg,
-  roleAccent,
-} from './role-colors.js';
+  playerAccent,
+} from './player-colors.js';
 import type {
   ToolResultPayload,
   ToolUsePayload,
@@ -62,13 +62,13 @@ export interface TmuxPresenterWriter {
 
 export interface TmuxPresenterOptions {
   readonly boss: TmuxPresenterWriter;
-  readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
+  readonly players: ReadonlyMap<string, TmuxPresenterWriter>;
   readonly bossWidth?: WidthSource;
-  readonly roleWidths?: ReadonlyMap<string, WidthSource>;
-  // role-id → adapter-name. Used to pick the role's prefix SGR color from
-  // the adapter map per TMUX-048. When absent the role prefix stays uncolored
+  readonly playerWidths?: ReadonlyMap<string, WidthSource>;
+  // player-id → adapter-name. Used to pick the player's prefix SGR color from
+  // the adapter map per TMUX-048. When absent the player prefix stays uncolored
   // (graceful fallback for callers / older tests that don't supply it).
-  readonly roleAdapters?: ReadonlyMap<string, string>;
+  readonly playerAdapters?: ReadonlyMap<string, string>;
 }
 
 interface OpenBlock {
@@ -78,8 +78,8 @@ interface OpenBlock {
 
 export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
-  private readonly roles: ReadonlyMap<string, TmuxPresenterWriter>;
-  private readonly roleAdapters: ReadonlyMap<string, string>;
+  private readonly players: ReadonlyMap<string, TmuxPresenterWriter>;
+  private readonly playerAdapters: ReadonlyMap<string, string>;
   private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
   // TMUX-050: per-writer accumulator for the open text block. A block opens
   // on the first text / text_delta event for a writer and flushes through
@@ -90,14 +90,14 @@ export class TmuxPresenter implements RecordObserver {
 
   constructor(options: TmuxPresenterOptions) {
     this.boss = options.boss;
-    this.roles = options.roles;
-    this.roleAdapters = options.roleAdapters ?? new Map();
+    this.players = options.players;
+    this.playerAdapters = options.playerAdapters ?? new Map();
     if (options.bossWidth) {
       this.widths.set(this.boss, options.bossWidth);
     }
-    if (options.roleWidths) {
-      for (const [roleId, source] of options.roleWidths) {
-        const writer = this.roles.get(roleId);
+    if (options.playerWidths) {
+      for (const [playerId, source] of options.playerWidths) {
+        const writer = this.players.get(playerId);
         if (writer) {
           this.widths.set(writer, source);
         }
@@ -120,14 +120,14 @@ export class TmuxPresenter implements RecordObserver {
           paintStatus('aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
         );
         break;
-      case 'role_prompt':
-        this.writeRolePrompt(record);
+      case 'player_prompt':
+        this.writePlayerPrompt(record);
         break;
-      case 'role_event':
-        this.writeRoleEvent(record);
+      case 'player_event':
+        this.writePlayerEvent(record);
         break;
-      case 'role_finished':
-        this.writeRoleFinished(record);
+      case 'player_finished':
+        this.writePlayerFinished(record);
         break;
       case 'captain_event':
         this.writeFormatted(this.boss, 'captain', record.event);
@@ -154,23 +154,23 @@ export class TmuxPresenter implements RecordObserver {
     }
   }
 
-  private writeRolePrompt(record: RolePromptRecord): void {
-    const writer = this.roleWriter(record.roleId);
+  private writePlayerPrompt(record: PlayerPromptRecord): void {
+    const writer = this.playerWriter(record.playerId);
     this.writeBlock(writer, 'captain', record.prompt);
   }
 
-  private writeRoleEvent(record: RoleEventRecord): void {
+  private writePlayerEvent(record: PlayerEventRecord): void {
     this.writeFormatted(
-      this.roleWriter(record.roleId),
-      record.roleId,
+      this.playerWriter(record.playerId),
+      record.playerId,
       record.event,
     );
   }
 
-  private writeRoleFinished(record: RoleFinishedRecord): void {
+  private writePlayerFinished(record: PlayerFinishedRecord): void {
     this.writeRunResult(
-      this.roleWriter(record.roleId),
-      record.roleId,
+      this.playerWriter(record.playerId),
+      record.playerId,
       record.result,
     );
   }
@@ -178,7 +178,7 @@ export class TmuxPresenter implements RecordObserver {
   private writeRunResult(
     writer: TmuxPresenterWriter,
     who: string,
-    result: RoleRunResult | CaptainRunResult,
+    result: PlayerRunResult | CaptainRunResult,
   ): void {
     this.flushBlock(writer);
     if (result.status === 'ok') return;
@@ -242,7 +242,7 @@ export class TmuxPresenter implements RecordObserver {
 
   // Render a complete text block immediately: flush any open block on this
   // writer first, then push the new block and flush it. Used for non-streaming
-  // `text` events and for role/captain prompts that arrive complete.
+  // `text` events and for player/captain prompts that arrive complete.
   private writeBlock(
     writer: TmuxPresenterWriter,
     who: string,
@@ -308,7 +308,7 @@ export class TmuxPresenter implements RecordObserver {
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
     // The `tool>` prefix carries the caller's speaker color (mauve for
-    // captain, the adapter accent for a role) instead of a fixed peach
+    // captain, the adapter accent for a player) instead of a fixed peach
     // anchor, so at-a-glance the invocation is attributable to its caller
     // alongside text bodies. Falls back to uncolored when the speaker has
     // no defined color, matching the TMUX-038 prefix fallback.
@@ -382,8 +382,8 @@ export class TmuxPresenter implements RecordObserver {
   private prefixSgr(who: string): string | undefined {
     if (who === 'boss') return PREFIX_BOSS_SGR;
     if (who === 'captain') return PREFIX_CAPTAIN_SGR;
-    const adapter = this.roleAdapters.get(who);
-    if (adapter) return bold24bitFg(roleAccent(adapter));
+    const adapter = this.playerAdapters.get(who);
+    if (adapter) return bold24bitFg(playerAccent(adapter));
     return undefined;
   }
 
@@ -396,10 +396,10 @@ export class TmuxPresenter implements RecordObserver {
       : Number.POSITIVE_INFINITY;
   }
 
-  private roleWriter(roleId: string): TmuxPresenterWriter {
-    const writer = this.roles.get(roleId);
+  private playerWriter(playerId: string): TmuxPresenterWriter {
+    const writer = this.players.get(playerId);
     if (!writer) {
-      throw new Error(`Missing tmux presenter writer for role: ${roleId}`);
+      throw new Error(`Missing tmux presenter writer for player: ${playerId}`);
     }
     return writer;
   }

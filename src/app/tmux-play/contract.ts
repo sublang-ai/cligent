@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { RoleAdapterImports, RoleAdapterName } from './roles.js';
+import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import type { RecordObserver } from './records.js';
 import type { PermissionPolicy, ReasoningEffort } from '../../types.js';
 
@@ -19,7 +19,7 @@ export interface BossTurn {
 
 export interface CaptainSession {
   readonly signal: AbortSignal;
-  readonly roles: readonly RoleHandle[];
+  readonly players: readonly PlayerHandle[];
   emitStatus(
     message: string,
     data?: Record<string, unknown>,
@@ -29,8 +29,8 @@ export interface CaptainSession {
 
 export interface CaptainContext {
   readonly signal: AbortSignal;
-  readonly roles: readonly RoleHandle[];
-  callRole(roleId: string, prompt: string): Promise<RoleRunResult>;
+  readonly players: readonly PlayerHandle[];
+  callPlayer(playerId: string, prompt: string): Promise<PlayerRunResult>;
   callCaptain(prompt: string): Promise<CaptainRunResult>;
 }
 
@@ -39,17 +39,17 @@ export interface CaptainTelemetry {
   readonly payload: unknown;
 }
 
-export interface RoleHandle {
+export interface PlayerHandle {
   readonly id: string;
-  readonly adapter: RoleAdapterName;
+  readonly adapter: PlayerAdapterName;
   readonly model?: string;
 }
 
 export type RunStatus = 'ok' | 'aborted' | 'error';
 
-export interface RoleRunResult {
+export interface PlayerRunResult {
   readonly status: RunStatus;
-  readonly roleId: string;
+  readonly playerId: string;
   readonly turnId: number;
   readonly finalText?: string;
   readonly error?: string;
@@ -62,9 +62,9 @@ export interface CaptainRunResult {
   readonly error?: string;
 }
 
-export interface RuntimeRoleConfig {
+export interface RuntimePlayerConfig {
   readonly id: string;
-  readonly adapter: RoleAdapterName;
+  readonly adapter: PlayerAdapterName;
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
@@ -72,7 +72,7 @@ export interface RuntimeRoleConfig {
 }
 
 export interface RuntimeCaptainConfig {
-  readonly adapter: RoleAdapterName;
+  readonly adapter: PlayerAdapterName;
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
@@ -82,9 +82,9 @@ export interface RuntimeCaptainConfig {
 export interface RunTmuxPlayOptions {
   readonly captain: Captain;
   readonly captainConfig: RuntimeCaptainConfig;
-  readonly roles: readonly RuntimeRoleConfig[];
+  readonly players: readonly RuntimePlayerConfig[];
   readonly observers?: readonly RecordObserver[];
   readonly cwd?: string;
   readonly signal?: AbortSignal;
-  readonly adapterImports?: RoleAdapterImports;
+  readonly adapterImports?: PlayerAdapterImports;
 }

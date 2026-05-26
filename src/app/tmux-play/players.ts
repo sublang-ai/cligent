@@ -8,16 +8,16 @@ import type {
   ReasoningEffort,
 } from '../../types.js';
 
-export const KNOWN_ROLE_ADAPTERS = [
+export const KNOWN_PLAYER_ADAPTERS = [
   'claude',
   'codex',
   'gemini',
   'opencode',
 ] as const;
 
-export type RoleAdapterName = (typeof KNOWN_ROLE_ADAPTERS)[number];
+export type PlayerAdapterName = (typeof KNOWN_PLAYER_ADAPTERS)[number];
 
-export interface RoleConfig {
+export interface PlayerConfig {
   id: string;
   adapter: string;
   model?: string;
@@ -26,38 +26,38 @@ export interface RoleConfig {
   reasoningEffort?: ReasoningEffort;
 }
 
-export interface ResolvedRole {
+export interface ResolvedPlayer {
   id: string;
-  adapter: RoleAdapterName;
+  adapter: PlayerAdapterName;
   model?: string;
   instruction?: string;
   cligent: Cligent;
 }
 
-export interface CreateRoleCligentOptions {
+export interface CreatePlayerCligentOptions {
   cwd?: string;
   model?: string;
   role?: string;
   permissions?: PermissionPolicy;
   reasoningEffort?: ReasoningEffort;
-  adapterImports?: RoleAdapterImports;
+  adapterImports?: PlayerAdapterImports;
 }
 
-export interface ResolveRolesOptions {
+export interface ResolvePlayersOptions {
   cwd?: string;
-  adapterImports?: RoleAdapterImports;
+  adapterImports?: PlayerAdapterImports;
 }
 
 type AdapterConstructor = new () => AgentAdapter;
 
-export type RoleAdapterImports = Record<
-  RoleAdapterName,
+export type PlayerAdapterImports = Record<
+  PlayerAdapterName,
   () => Promise<AdapterConstructor>
 >;
 
-const ROLE_ID_RE = /^[a-z][a-z0-9_-]*$/;
+const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*$/;
 
-const DEFAULT_ADAPTER_IMPORTS: RoleAdapterImports = {
+const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
   claude: async () =>
     (await import('../../adapters/claude-code.js')).ClaudeCodeAdapter,
   codex: async () =>
@@ -68,41 +68,41 @@ const DEFAULT_ADAPTER_IMPORTS: RoleAdapterImports = {
     (await import('../../adapters/opencode.js')).OpenCodeAdapter,
 };
 
-export function isKnownRoleAdapter(name: string): name is RoleAdapterName {
-  return (KNOWN_ROLE_ADAPTERS as readonly string[]).includes(name);
+export function isKnownPlayerAdapter(name: string): name is PlayerAdapterName {
+  return (KNOWN_PLAYER_ADAPTERS as readonly string[]).includes(name);
 }
 
-export function validateRoleConfigs(configs: readonly RoleConfig[]): void {
+export function validatePlayerConfigs(configs: readonly PlayerConfig[]): void {
   const seen = new Set<string>();
 
   for (const config of configs) {
-    if (!ROLE_ID_RE.test(config.id)) {
+    if (!PLAYER_ID_RE.test(config.id)) {
       throw new Error(
-        `Invalid role id "${config.id}". Role ids must match ${ROLE_ID_RE.source}`,
+        `Invalid player id "${config.id}". Player ids must match ${PLAYER_ID_RE.source}`,
       );
     }
 
     if (config.id === 'captain') {
-      throw new Error('Invalid role id "captain": reserved for the Captain');
+      throw new Error('Invalid player id "captain": reserved for the Captain');
     }
 
     if (seen.has(config.id)) {
-      throw new Error(`Duplicate role id: ${config.id}`);
+      throw new Error(`Duplicate player id: ${config.id}`);
     }
     seen.add(config.id);
 
-    if (!isKnownRoleAdapter(config.adapter)) {
+    if (!isKnownPlayerAdapter(config.adapter)) {
       throw new Error(
-        `Unknown adapter "${config.adapter}" for role "${config.id}". ` +
-          `Valid adapters: ${KNOWN_ROLE_ADAPTERS.join(', ')}`,
+        `Unknown adapter "${config.adapter}" for player "${config.id}". ` +
+          `Valid adapters: ${KNOWN_PLAYER_ADAPTERS.join(', ')}`,
       );
     }
   }
 }
 
-export async function createRoleCligent(
-  adapterName: RoleAdapterName,
-  options: CreateRoleCligentOptions = {},
+export async function createPlayerCligent(
+  adapterName: PlayerAdapterName,
+  options: CreatePlayerCligentOptions = {},
 ): Promise<Cligent> {
   const adapterImports = options.adapterImports ?? DEFAULT_ADAPTER_IMPORTS;
   const AdapterClass = await adapterImports[adapterName]();
@@ -115,18 +115,18 @@ export async function createRoleCligent(
   });
 }
 
-export async function resolveRoles(
-  configs: readonly RoleConfig[],
-  options: ResolveRolesOptions = {},
-): Promise<ResolvedRole[]> {
-  validateRoleConfigs(configs);
+export async function resolvePlayers(
+  configs: readonly PlayerConfig[],
+  options: ResolvePlayersOptions = {},
+): Promise<ResolvedPlayer[]> {
+  validatePlayerConfigs(configs);
 
   const adapterImports = options.adapterImports ?? DEFAULT_ADAPTER_IMPORTS;
-  const roles: ResolvedRole[] = [];
+  const players: ResolvedPlayer[] = [];
 
   for (const config of configs) {
-    const adapterName = config.adapter as RoleAdapterName;
-    const cligent = await createRoleCligent(adapterName, {
+    const adapterName = config.adapter as PlayerAdapterName;
+    const cligent = await createPlayerCligent(adapterName, {
       adapterImports,
       cwd: options.cwd,
       model: config.model,
@@ -135,7 +135,7 @@ export async function resolveRoles(
       reasoningEffort: config.reasoningEffort,
     });
 
-    roles.push({
+    players.push({
       id: config.id,
       adapter: adapterName,
       model: config.model,
@@ -144,5 +144,5 @@ export async function resolveRoles(
     });
   }
 
-  return roles;
+  return players;
 }

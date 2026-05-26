@@ -161,26 +161,26 @@ describe('launchTmuxPlay', () => {
     const initialColumns = Number(
       valueAfter(runTmuxMock.mock.calls[0] ?? [], '-x'),
     );
-    const roleAreaPercent = Number(
+    const playerAreaPercent = Number(
       valueAfter(runTmuxMock.mock.calls[1] ?? [], '-l').replace('%', ''),
     );
-    const secondRoleColumnPercent = Number(
+    const secondPlayerColumnPercent = Number(
       valueAfter(runTmuxMock.mock.calls[2] ?? [], '-l').replace('%', ''),
     );
-    const roleAreaColumns = Math.floor(
-      (initialColumns * roleAreaPercent) / 100,
+    const playerAreaColumns = Math.floor(
+      (initialColumns * playerAreaPercent) / 100,
     );
-    const secondRoleColumnColumns = Math.floor(
-      (roleAreaColumns * secondRoleColumnPercent) / 100,
+    const secondPlayerColumnColumns = Math.floor(
+      (playerAreaColumns * secondPlayerColumnPercent) / 100,
     );
     expect({
-      bossColumns: initialColumns - roleAreaColumns,
-      firstRoleColumnColumns: roleAreaColumns - secondRoleColumnColumns,
-      secondRoleColumnColumns,
+      bossColumns: initialColumns - playerAreaColumns,
+      firstPlayerColumnColumns: playerAreaColumns - secondPlayerColumnColumns,
+      secondPlayerColumnColumns,
     }).toEqual({
       bossColumns: 60,
-      firstRoleColumnColumns: 90,
-      secondRoleColumnColumns: 90,
+      firstPlayerColumnColumns: 90,
+      secondPlayerColumnColumns: 90,
     });
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
@@ -488,7 +488,7 @@ describe('launchTmuxPlay', () => {
     expect(setValue('tmux-play-timers', 'status-right-length')).toBe('32');
   });
 
-  it('configures the resize hook for a single-role session', async () => {
+  it('configures the resize hook for a single-player session', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['solo']);
     const workDir = join(tempDir, 'work');
@@ -524,7 +524,7 @@ describe('launchTmuxPlay', () => {
   it.each([
     {
       count: 4,
-      roles: ['r1', 'r2', 'r3', 'r4'],
+      players: ['r1', 'r2', 'r3', 'r4'],
       expected: [
         ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid4', 'r1'],
         ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid4:0.1', 'r3'],
@@ -534,7 +534,7 @@ describe('launchTmuxPlay', () => {
     },
     {
       count: 5,
-      roles: ['r1', 'r2', 'r3', 'r4', 'r5'],
+      players: ['r1', 'r2', 'r3', 'r4', 'r5'],
       expected: [
         ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid5', 'r1'],
         ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid5:0.1', 'r4'],
@@ -544,10 +544,10 @@ describe('launchTmuxPlay', () => {
       ],
     },
   ])(
-    'creates columns before rows for $count roles',
-    async ({ count, roles, expected }) => {
+    'creates columns before rows for $count players',
+    async ({ count, players, expected }) => {
       tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
-      const configPath = writeConfig(tempDir, roles);
+      const configPath = writeConfig(tempDir, players);
       const workDir = join(tempDir, 'work');
 
       await launchTmuxPlay({
@@ -559,7 +559,7 @@ describe('launchTmuxPlay', () => {
         attach: false,
       });
 
-      expect(splitWindowCalls(workDir, roles)).toEqual(expected);
+      expect(splitWindowCalls(workDir, players)).toEqual(expected);
     },
   );
 
@@ -692,7 +692,7 @@ describe('launchTmuxPlay', () => {
   });
 });
 
-function writeConfig(dir: string, roleIds: readonly string[]): string {
+function writeConfig(dir: string, playerIds: readonly string[]): string {
   const configPath = join(dir, 'tmux-play.config.yaml');
   writeFileSync(
     configPath,
@@ -701,8 +701,8 @@ function writeConfig(dir: string, roleIds: readonly string[]): string {
       "  from: '@sublang/cligent/captains/fanout'",
       '  adapter: claude',
       '  options: {}',
-      'roles:',
-      ...roleIds.flatMap((id) => [
+      'players:',
+      ...playerIds.flatMap((id) => [
         `  - id: ${id}`,
         '    adapter: codex',
       ]),
@@ -712,23 +712,23 @@ function writeConfig(dir: string, roleIds: readonly string[]): string {
   return configPath;
 }
 
-function tailCommand(workDir: string, roleId: string): string {
-  return ['tail', '-f', join(workDir, `${roleId}.log`)]
+function tailCommand(workDir: string, playerId: string): string {
+  return ['tail', '-f', join(workDir, `${playerId}.log`)]
     .map(shellQuote)
     .join(' ');
 }
 
 function splitWindowCalls(
   workDir: string,
-  roleIds: readonly string[],
+  playerIds: readonly string[],
 ): unknown[][] {
   return runTmuxMock.mock.calls
     .filter((call) => call[0] === 'split-window')
     .map((call) => {
-      const roleId =
-        roleIds.find((id) => call.at(-1) === tailCommand(workDir, id)) ??
+      const playerId =
+        playerIds.find((id) => call.at(-1) === tailCommand(workDir, id)) ??
         call.at(-1);
-      return [...call.slice(0, -1), roleId];
+      return [...call.slice(0, -1), playerId];
     });
 }
 

@@ -14,12 +14,12 @@ import {
 } from './timing-observer.js';
 
 describe('TimingObserver', () => {
-  it('pushes frozen zero timers for configured roles before any role records', () => {
+  it('pushes frozen zero timers for configured players before any player records', () => {
     const tmux = fakeTmuxClient();
     const observer = new TimingObserver({
       sessionName: 'tmux-play-test',
       captainAdapter: 'claude',
-      roles: [
+      players: [
         { id: 'coder', adapter: 'codex' },
         { id: 'reviewer', adapter: 'gemini' },
       ],
@@ -44,7 +44,7 @@ describe('TimingObserver', () => {
     const observer = new TimingObserver({
       sessionName: 'tmux-play-test',
       captainAdapter: 'claude',
-      roles: [
+      players: [
         { id: 'coder', adapter: 'codex' },
         { id: 'reviewer', adapter: 'gemini' },
       ],
@@ -59,7 +59,7 @@ describe('TimingObserver', () => {
       1000,
     );
 
-    observer.onRecord(rolePrompt('coder', 2000));
+    observer.onRecord(playerPrompt('coder', 2000));
     observer.onRecord(captainPrompt(4000));
     now = 7000;
     schedulerState.tick();
@@ -71,7 +71,7 @@ describe('TimingObserver', () => {
     expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe('6s');
     expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_RUNNING_OPTION)).toBe('1');
 
-    observer.onRecord(roleFinished('coder', 8000));
+    observer.onRecord(playerFinished('coder', 8000));
     observer.onRecord(captainFinished(9000));
     observer.onRecord(turnFinished(11000));
 
@@ -89,7 +89,7 @@ describe('TimingObserver', () => {
     const observer = new TimingObserver({
       sessionName: 'tmux-play-test',
       captainAdapter: 'claude',
-      roles: [],
+      players: [],
       tmux: fakeTmuxClient(),
       scheduler: schedulerState.scheduler,
     });
@@ -191,23 +191,23 @@ function turnFinished(timestamp: number): TmuxPlayRecord {
   return { type: 'turn_finished', turnId: 1, timestamp };
 }
 
-function rolePrompt(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerPrompt(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_prompt',
+    type: 'player_prompt',
     turnId: 1,
     timestamp,
-    roleId,
+    playerId,
     prompt: 'work',
   };
 }
 
-function roleFinished(roleId: string, timestamp: number): TmuxPlayRecord {
+function playerFinished(playerId: string, timestamp: number): TmuxPlayRecord {
   return {
-    type: 'role_finished',
+    type: 'player_finished',
     turnId: 1,
     timestamp,
-    roleId,
-    result: { roleId, turnId: 1, status: 'ok' },
+    playerId,
+    result: { playerId, turnId: 1, status: 'ok' },
   };
 }
 

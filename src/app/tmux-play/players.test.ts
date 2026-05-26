@@ -4,12 +4,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
 import {
-  KNOWN_ROLE_ADAPTERS,
-  resolveRoles,
-  validateRoleConfigs,
-  type RoleAdapterImports,
-  type RoleConfig,
-} from './roles.js';
+  KNOWN_PLAYER_ADAPTERS,
+  resolvePlayers,
+  validatePlayerConfigs,
+  type PlayerAdapterImports,
+  type PlayerConfig,
+} from './players.js';
 
 class FakeAdapter implements AgentAdapter {
   readonly agent: string;
@@ -38,7 +38,7 @@ function adapterClass(agent: string): new () => AgentAdapter {
   };
 }
 
-function fakeAdapterImports(): RoleAdapterImports {
+function fakeAdapterImports(): PlayerAdapterImports {
   return {
     claude: async () => adapterClass('claude-code'),
     codex: async () => adapterClass('codex'),
@@ -47,52 +47,52 @@ function fakeAdapterImports(): RoleAdapterImports {
   };
 }
 
-describe('validateRoleConfigs', () => {
+describe('validatePlayerConfigs', () => {
   it('accepts the supported adapter names', () => {
-    const configs = KNOWN_ROLE_ADAPTERS.map((adapter, index) => ({
-      id: `role-${index}`,
+    const configs = KNOWN_PLAYER_ADAPTERS.map((adapter, index) => ({
+      id: `player-${index}`,
       adapter,
     }));
 
-    expect(() => validateRoleConfigs(configs)).not.toThrow();
+    expect(() => validatePlayerConfigs(configs)).not.toThrow();
   });
 
-  it('rejects invalid role ids', () => {
+  it('rejects invalid player ids', () => {
     expect(() =>
-      validateRoleConfigs([{ id: 'Reviewer', adapter: 'claude' }]),
-    ).toThrow('Invalid role id "Reviewer"');
+      validatePlayerConfigs([{ id: 'Reviewer', adapter: 'claude' }]),
+    ).toThrow('Invalid player id "Reviewer"');
     expect(() =>
-      validateRoleConfigs([{ id: '1reviewer', adapter: 'claude' }]),
-    ).toThrow('Invalid role id "1reviewer"');
+      validatePlayerConfigs([{ id: '1reviewer', adapter: 'claude' }]),
+    ).toThrow('Invalid player id "1reviewer"');
   });
 
-  it('rejects the reserved captain role id', () => {
+  it('rejects the reserved captain player id', () => {
     expect(() =>
-      validateRoleConfigs([{ id: 'captain', adapter: 'claude' }]),
+      validatePlayerConfigs([{ id: 'captain', adapter: 'claude' }]),
     ).toThrow('reserved for the Captain');
   });
 
-  it('rejects duplicate role ids', () => {
+  it('rejects duplicate player ids', () => {
     expect(() =>
-      validateRoleConfigs([
+      validatePlayerConfigs([
         { id: 'coder', adapter: 'claude' },
         { id: 'coder', adapter: 'codex' },
       ]),
-    ).toThrow('Duplicate role id: coder');
+    ).toThrow('Duplicate player id: coder');
   });
 
   it('rejects unknown adapters with valid choices', () => {
     expect(() =>
-      validateRoleConfigs([{ id: 'coder', adapter: 'unknown' }]),
+      validatePlayerConfigs([{ id: 'coder', adapter: 'unknown' }]),
     ).toThrow(
-      'Unknown adapter "unknown" for role "coder". Valid adapters: claude, codex, gemini, opencode',
+      'Unknown adapter "unknown" for player "coder". Valid adapters: claude, codex, gemini, opencode',
     );
   });
 });
 
-describe('resolveRoles', () => {
-  it('creates one role-scoped Cligent per config', async () => {
-    const roles = await resolveRoles(
+describe('resolvePlayers', () => {
+  it('creates one player-scoped Cligent per config', async () => {
+    const players = await resolvePlayers(
       [
         {
           id: 'coder',
@@ -112,25 +112,25 @@ describe('resolveRoles', () => {
       },
     );
 
-    expect(roles).toHaveLength(2);
-    expect(roles[0]).toMatchObject({
+    expect(players).toHaveLength(2);
+    expect(players[0]).toMatchObject({
       id: 'coder',
       adapter: 'codex',
       model: 'codex-test-model',
       instruction: 'Implement changes.',
     });
-    expect(roles[0]?.cligent.role).toBe('coder');
-    expect(roles[0]?.cligent.agentType).toBe('codex');
-    expect(roles[1]).toMatchObject({
+    expect(players[0]?.cligent.role).toBe('coder');
+    expect(players[0]?.cligent.agentType).toBe('codex');
+    expect(players[1]).toMatchObject({
       id: 'reviewer',
       adapter: 'claude',
       instruction: 'Review changes.',
     });
-    expect(roles[1]?.cligent.role).toBe('reviewer');
-    expect(roles[1]?.cligent.agentType).toBe('claude-code');
+    expect(players[1]?.cligent.role).toBe('reviewer');
+    expect(players[1]?.cligent.agentType).toBe('claude-code');
   });
 
-  it('forwards RoleConfig defaults into adapter run options', async () => {
+  it('forwards PlayerConfig defaults into adapter run options', async () => {
     const captured: (AgentOptions | undefined)[] = [];
 
     class CapturingAdapter implements AgentAdapter {
@@ -146,14 +146,14 @@ describe('resolveRoles', () => {
       }
     }
 
-    const adapterImports: RoleAdapterImports = {
+    const adapterImports: PlayerAdapterImports = {
       claude: async () => adapterClass('claude-code'),
       codex: async () => CapturingAdapter,
       gemini: async () => adapterClass('gemini'),
       opencode: async () => adapterClass('opencode'),
     };
 
-    const roles = await resolveRoles(
+    const players = await resolvePlayers(
       [
         {
           id: 'coder',
@@ -165,7 +165,7 @@ describe('resolveRoles', () => {
       { adapterImports },
     );
 
-    const gen = roles[0]!.cligent.run('hello');
+    const gen = players[0]!.cligent.run('hello');
     while (!(await gen.next()).done) {
       // drain
     }
@@ -174,23 +174,23 @@ describe('resolveRoles', () => {
     expect(captured[0]?.reasoningEffort).toBe('xhigh');
   });
 
-  it('allows multiple roles to use the same adapter and model', async () => {
-    const configs: RoleConfig[] = [
+  it('allows multiple players to use the same adapter and model', async () => {
+    const configs: PlayerConfig[] = [
       { id: 'coder', adapter: 'claude', model: 'same-model' },
       { id: 'reviewer', adapter: 'claude', model: 'same-model' },
     ];
 
-    const roles = await resolveRoles(configs, {
+    const players = await resolvePlayers(configs, {
       adapterImports: fakeAdapterImports(),
     });
 
-    expect(roles.map((role) => role.adapter)).toEqual(['claude', 'claude']);
-    expect(roles.map((role) => role.model)).toEqual([
+    expect(players.map((player) => player.adapter)).toEqual(['claude', 'claude']);
+    expect(players.map((player) => player.model)).toEqual([
       'same-model',
       'same-model',
     ]);
-    expect(roles[0]?.cligent).not.toBe(roles[1]?.cligent);
-    expect(roles.map((role) => role.cligent.role)).toEqual([
+    expect(players[0]?.cligent).not.toBe(players[1]?.cligent);
+    expect(players.map((player) => player.cligent.role)).toEqual([
       'coder',
       'reviewer',
     ]);

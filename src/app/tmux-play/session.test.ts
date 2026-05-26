@@ -105,7 +105,7 @@ describe('TmuxPlaySession', () => {
       captain: {
         from: '@sublang/cligent/captains/fanout',
       },
-      roles: [{ id: 'coder' }],
+      players: [{ id: 'coder' }],
     });
   });
 
@@ -152,14 +152,14 @@ describe('TmuxPlaySession', () => {
     expect(createTimingObserver).toHaveBeenCalledWith({
       sessionName: 'tmux-play-abc123',
       captainAdapter: 'claude',
-      roles: [expect.objectContaining({ id: 'coder', adapter: 'codex' })],
+      players: [expect.objectContaining({ id: 'coder', adapter: 'codex' })],
     });
     expect(timingObserver.refresh).toHaveBeenCalledTimes(1);
     expect(createRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         captainConfig: expect.objectContaining({
           adapter: 'claude',
-          instruction: 'Coordinate roles.',
+          instruction: 'Coordinate players.',
           reasoningEffort: 'high',
         }),
         cwd: '/repo',
@@ -168,7 +168,7 @@ describe('TmuxPlaySession', () => {
           timingObserver,
           optInObserver,
         ]),
-        roles: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
+        players: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
       }),
     );
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
@@ -318,7 +318,7 @@ describe('TmuxPlaySession', () => {
     );
   });
 
-  it('refreshes role pane widths on terminal resize and unsubscribes on shutdown', async () => {
+  it('refreshes player pane widths on terminal resize and unsubscribes on shutdown', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();
     const output = new MemoryOutput();
@@ -571,11 +571,11 @@ function makeWorkDir(): string {
       captain: {
         from: '@sublang/cligent/captains/fanout',
         adapter: 'claude',
-        instruction: 'Coordinate roles.',
+        instruction: 'Coordinate players.',
         reasoningEffort: 'high',
         options: { tone: 'direct' },
       },
-      roles: [
+      players: [
         {
           id: 'coder',
           adapter: 'codex',

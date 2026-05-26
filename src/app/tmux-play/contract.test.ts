@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ReasoningEffort } from '../../types.js';
 import {
-  KNOWN_ROLE_ADAPTERS,
+  KNOWN_PLAYER_ADAPTERS,
   createTmuxPlayRuntime,
   type BossTurn,
   type Captain,
@@ -15,9 +15,9 @@ import {
   type CaptainTelemetry,
   type RecordObserver,
   type RuntimeCaptainConfig,
-  type RuntimeRoleConfig,
-  type RoleHandle,
-  type RoleRunResult,
+  type RuntimePlayerConfig,
+  type PlayerHandle,
+  type PlayerRunResult,
   type RunStatus,
   type RunTmuxPlayOptions,
 } from './index.js';
@@ -26,7 +26,7 @@ describe('tmux-play public contract', () => {
   it('accepts Captain implementations', () => {
     const captain: Captain = {
       async init(session: CaptainSession) {
-        expectTypeOf(session.roles).toEqualTypeOf<readonly RoleHandle[]>();
+        expectTypeOf(session.players).toEqualTypeOf<readonly PlayerHandle[]>();
         await session.emitStatus('ready', { phase: 'init' });
         const telemetry: CaptainTelemetry = {
           topic: 'metrics.ready',
@@ -36,9 +36,9 @@ describe('tmux-play public contract', () => {
       },
       async handleBossTurn(turn: BossTurn, context: CaptainContext) {
         expectTypeOf(turn.id).toEqualTypeOf<number>();
-        expectTypeOf(context.roles).toEqualTypeOf<readonly RoleHandle[]>();
+        expectTypeOf(context.players).toEqualTypeOf<readonly PlayerHandle[]>();
 
-        await context.callRole('coder', turn.prompt);
+        await context.callPlayer('coder', turn.prompt);
         await context.callCaptain('summarize');
       },
       async dispose() {
@@ -51,14 +51,14 @@ describe('tmux-play public contract', () => {
 
   it('exports runtime API option types', () => {
     expectTypeOf<RuntimeCaptainConfig>().toMatchTypeOf<{
-      adapter: RoleHandle['adapter'];
+      adapter: PlayerHandle['adapter'];
       model?: string;
       instruction?: string;
       reasoningEffort?: ReasoningEffort;
     }>();
-    expectTypeOf<RuntimeRoleConfig>().toMatchTypeOf<{
+    expectTypeOf<RuntimePlayerConfig>().toMatchTypeOf<{
       id: string;
-      adapter: RoleHandle['adapter'];
+      adapter: PlayerHandle['adapter'];
       model?: string;
       instruction?: string;
       reasoningEffort?: ReasoningEffort;
@@ -66,7 +66,7 @@ describe('tmux-play public contract', () => {
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;
       captainConfig: RuntimeCaptainConfig;
-      roles: readonly RoleHandle[];
+      players: readonly PlayerHandle[];
       observers?: readonly RecordObserver[];
       cwd?: string;
       signal?: AbortSignal;
@@ -76,9 +76,9 @@ describe('tmux-play public contract', () => {
 
   it('uses stable run result status values', () => {
     const status: RunStatus = 'ok';
-    const roleResult: RoleRunResult = {
+    const playerResult: PlayerRunResult = {
       status,
-      roleId: 'coder',
+      playerId: 'coder',
       turnId: 1,
       finalText: 'done',
     };
@@ -88,12 +88,12 @@ describe('tmux-play public contract', () => {
       error: 'failed',
     };
 
-    expect(roleResult.status).toBe('ok');
+    expect(playerResult.status).toBe('ok');
     expect(captainResult.status).toBe('error');
   });
 
   it('re-exports known adapters', () => {
-    expect(KNOWN_ROLE_ADAPTERS).toEqual([
+    expect(KNOWN_PLAYER_ADAPTERS).toEqual([
       'claude',
       'codex',
       'gemini',

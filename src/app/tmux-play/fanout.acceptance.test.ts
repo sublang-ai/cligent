@@ -10,21 +10,21 @@ import { describe, expect, it } from 'vitest';
 import createFanoutCaptain from '../../captains/fanout.js';
 import type {
   CaptainFinishedRecord,
-  RoleFinishedRecord,
+  PlayerFinishedRecord,
   TmuxPlayRecord,
 } from './records.js';
-import type { RoleAdapterName } from './roles.js';
+import type { PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL;
 const OPENCODE_MODEL =
   process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
-const ROLE_ADAPTERS = [
+const PLAYER_ADAPTERS = [
   'claude',
   'codex',
   'gemini',
   'opencode',
-] as const satisfies readonly RoleAdapterName[];
+] as const satisfies readonly PlayerAdapterName[];
 const dependencyReport = fanoutAcceptanceDeps();
 
 // Acceptance files are excluded from the standard CI matrix; CI hard-fails
@@ -67,16 +67,16 @@ describe('tmux-play fanout acceptance', () => {
       expect(types).not.toContain('turn_aborted');
       expect(types.at(-1)).toBe('turn_finished');
 
-      const roleFinished = records.filter(isRoleFinished);
-      expect(roleFinished.map((record) => record.roleId).sort()).toEqual([
-        ...ROLE_ADAPTERS,
+      const playerFinished = records.filter(isPlayerFinished);
+      expect(playerFinished.map((record) => record.playerId).sort()).toEqual([
+        ...PLAYER_ADAPTERS,
       ]);
-      for (const record of roleFinished) {
+      for (const record of playerFinished) {
         expect(
           record.result.status,
-          `${record.roleId} failed: ${record.result.error ?? '(no error text)'}`,
+          `${record.playerId} failed: ${record.result.error ?? '(no error text)'}`,
         ).toBe('ok');
-        expect(normalized(record.result.finalText), record.roleId).toContain(
+        expect(normalized(record.result.finalText), record.playerId).toContain(
           normalized(sentinel),
         );
       }
@@ -87,15 +87,15 @@ describe('tmux-play fanout acceptance', () => {
         normalized(sentinel),
       );
 
-      const lastRoleFinishedIndex = Math.max(
+      const lastPlayerFinishedIndex = Math.max(
         ...records
           .map((record, index) =>
-            record.type === 'role_finished' ? index : -1,
+            record.type === 'player_finished' ? index : -1,
           )
           .filter((index) => index !== -1),
       );
       expect(types.indexOf('captain_prompt')).toBeGreaterThan(
-        lastRoleFinishedIndex,
+        lastPlayerFinishedIndex,
       );
     },
     240_000,
@@ -116,20 +116,20 @@ async function runFanoutTurn(
 
   try {
     runtime = await createTmuxPlayRuntime({
-      captain: createFanoutCaptain({ maxRoleOutputChars: 2_000 }),
+      captain: createFanoutCaptain({ maxPlayerOutputChars: 2_000 }),
       captainConfig: {
         adapter: 'gemini',
         instruction:
           'You are the Captain. Include required acceptance tokens exactly.',
         ...(GEMINI_MODEL ? { model: GEMINI_MODEL } : {}),
       },
-      // This acceptance test intentionally uses role id == adapter name
-      // so each role proves one canonical adapter path.
-      roles: ROLE_ADAPTERS.map((adapter) => ({
+      // This acceptance test intentionally uses player id == adapter name
+      // so each player proves one canonical adapter path.
+      players: PLAYER_ADAPTERS.map((adapter) => ({
         id: adapter,
         adapter,
         instruction:
-          `You are role ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
+          `You are player ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
         ...adapterModel(adapter),
       })),
       cwd: options.workDir,
@@ -145,7 +145,7 @@ async function runFanoutTurn(
     await runtime.runBossTurn(
       [
         'Acceptance test.',
-        `Every role response and the final Captain answer must include exactly this token: ${options.sentinel}`,
+        `Every player response and the final Captain answer must include exactly this token: ${options.sentinel}`,
         'No file edits are needed.',
       ].join('\n'),
     );
@@ -171,9 +171,9 @@ function findTransientUpstreamFailure(
   records: readonly TmuxPlayRecord[],
 ): string | undefined {
   for (const record of records) {
-    if (record.type === 'role_finished') {
+    if (record.type === 'player_finished') {
       const transient = matchTransient(record.result);
-      if (transient) return `${record.roleId}: ${transient}`;
+      if (transient) return `${record.playerId}: ${transient}`;
       continue;
     }
     if (record.type === 'captain_finished') {
@@ -196,10 +196,10 @@ function matchTransient(result: {
     : undefined;
 }
 
-function isRoleFinished(
+function isPlayerFinished(
   record: TmuxPlayRecord,
-): record is RoleFinishedRecord {
-  return record.type === 'role_finished';
+): record is PlayerFinishedRecord {
+  return record.type === 'player_finished';
 }
 
 function isCaptainFinished(
@@ -213,7 +213,7 @@ function normalized(value: string | undefined): string {
 }
 
 function adapterModel(
-  adapter: RoleAdapterName,
+  adapter: PlayerAdapterName,
 ): { model?: string } {
   if (adapter === 'gemini' && GEMINI_MODEL) {
     return { model: GEMINI_MODEL };

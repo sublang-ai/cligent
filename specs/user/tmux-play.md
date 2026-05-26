@@ -19,7 +19,7 @@ When `tmux-play` is invoked without `--session`, the CLI shall run launcher mode
 
 ### TMUX-003
 
-When `tmux-play` is invoked with `--session <id> --work-dir <path>`, the CLI shall run session mode: instantiate the Captain and roles, run a Boss readline against stdin/stdout, dispatch records to observers, and clean up on exit.
+When `tmux-play` is invoked with `--session <id> --work-dir <path>`, the CLI shall run session mode: instantiate the Captain and players, run a Boss readline against stdin/stdout, dispatch records to observers, and clean up on exit.
 
 ### TMUX-004
 
@@ -29,7 +29,7 @@ When `--config <path>` is supplied, the launcher shall load that file and skip d
 
 ### TMUX-005
 
-A `tmux-play` config shall be YAML with a `captain` object and a non-empty `roles` array.
+A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array.
 
 ### TMUX-006
 
@@ -37,21 +37,21 @@ The `captain` object shall require `from` (local path or package specifier), `ad
 
 ### TMUX-007
 
-Each entry in `roles` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `reasoningEffort` per [TMUX-056](#tmux-056). Role `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple roles may share an adapter and model.
+Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `reasoningEffort` per [TMUX-056](#tmux-056). Player `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple players may share an adapter and model.
 
 ### TMUX-052
 
-The `captain` object and each `roles` entry may include a `permissions` object whose typed shape is [ENG-021](engine.md#eng-021)'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, and `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`.
-The loader shall forward an accepted `permissions` value verbatim to the captain / role `Cligent` constructor as `CligentOptions.permissions` per [DR-005](../decisions/005-per-adapter-permission-configuration.md); the adapter performs the SDK-knob mapping at `run()` time per ENG-021.
+The `captain` object and each `players` entry may include a `permissions` object whose typed shape is [ENG-021](engine.md#eng-021)'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, and `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`.
+The loader shall forward an accepted `permissions` value verbatim to the captain / player `Cligent` constructor as `CligentOptions.permissions` per [DR-005](../decisions/005-per-adapter-permission-configuration.md); the adapter performs the SDK-knob mapping at `run()` time per ENG-021.
 The loader shall reject unknown sub-fields under `permissions` and values outside the closed sets above with an error that names the offending path per [TMUX-008](#tmux-008).
 A missing `permissions` field shall be treated as no policy override; the adapter retains its SDK default.
 
 ### TMUX-056
 
-The `captain` object and each `roles` entry may include `reasoningEffort`, whose value shall be [ENG-020](engine.md#eng-020)'s closed set: `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
-The loader shall forward an accepted `reasoningEffort` value to the corresponding captain or role `Cligent` constructor as `CligentOptions.reasoningEffort` per [ENG-001](engine.md#eng-001).
-The loader shall reject values outside the closed set with an error that names the offending path (`captain.reasoningEffort` or `roles[N].reasoningEffort`) per [TMUX-008](#tmux-008).
-A missing `reasoningEffort` field shall be treated as no reasoning-effort override; the adapter retains its default for that role or captain.
+The `captain` object and each `players` entry may include `reasoningEffort`, whose value shall be [ENG-020](engine.md#eng-020)'s closed set: `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
+The loader shall forward an accepted `reasoningEffort` value to the corresponding captain or player `Cligent` constructor as `CligentOptions.reasoningEffort` per [ENG-001](engine.md#eng-001).
+The loader shall reject values outside the closed set with an error that names the offending path (`captain.reasoningEffort` or `players[N].reasoningEffort`) per [TMUX-008](#tmux-008).
+A missing `reasoningEffort` field shall be treated as no reasoning-effort override; the adapter retains its default for that player or captain.
 
 ### TMUX-008
 
@@ -69,7 +69,7 @@ When neither location holds a config and `--config` is not supplied, the launche
 
 ### TMUX-011
 
-The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two roles whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` role shall use `model: claude-opus-4-7` with `reasoningEffort: xhigh`; the default `codex` role shall use `model: gpt-5.5` with `reasoningEffort: xhigh`. Each default role shall include an `instruction` that identifies that role for the runtime-created `Cligent` instance. The default Captain and each default role shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052) so the shipped Claude Code and Codex CLI defaults run in each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
+The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two players whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` player shall use `model: claude-opus-4-7` with `reasoningEffort: xhigh`; the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`. Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance. The default Captain and each default player shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052) so the shipped Claude Code and Codex CLI defaults run in each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
 
 ### TMUX-012
 
@@ -87,15 +87,15 @@ A Captain module shall default-export a factory `(options: unknown) => Captain |
 
 ### TMUX-015
 
-The runtime shall own every role and Captain `Cligent` instance. Captains shall reach roles only through the `context` passed to `handleBossTurn` and shall not construct adapters or `Cligent` directly.
+The runtime shall own every player and Captain `Cligent` instance. Captains shall reach players only through the `context` passed to `handleBossTurn` and shall not construct adapters or `Cligent` directly.
 
 ### TMUX-016
 
-`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `roles` manifest, and `callRole(roleId, prompt)` and `callCaptain(prompt)` methods. The methods shall return `RoleRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033).
+`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033).
 
 ### TMUX-017
 
-`CaptainSession` shall expose a session-scoped `signal: AbortSignal`, a readonly `roles` manifest, and `emitStatus(message, data?)` and `emitTelemetry({ topic, payload })` methods. Captains may retain the session reference from `init` and emit at any point during the session — within `init`, during turns, or between turns.
+`CaptainSession` shall expose a session-scoped `signal: AbortSignal`, a readonly `players` manifest, and `emitStatus(message, data?)` and `emitTelemetry({ topic, payload })` methods. Captains may retain the session reference from `init` and emit at any point during the session — within `init`, during turns, or between turns.
 
 ### TMUX-018
 
@@ -109,7 +109,7 @@ On session shutdown the runtime shall (1) unwind the active turn, (2) abort `Cap
 
 ### TMUX-020
 
-The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `role_prompt`, `role_event`, `role_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_status`, `captain_telemetry`, `runtime_error`. Each record shall carry a stable role ID where applicable.
+The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_status`, `captain_telemetry`, `runtime_error`. Each record shall carry a stable player ID where applicable.
 
 ### TMUX-021
 
@@ -117,7 +117,7 @@ Turn-bound records shall carry `turnId: number`. `captain_status` and `captain_t
 
 ### TMUX-022
 
-Within a turn the runtime shall emit `turn_started` first; for each role `role_prompt` → `role_event*` → `role_finished`; for each `callCaptain()` `captain_prompt` → `captain_event*` → `captain_finished`; and `turn_finished` (or `turn_aborted` on abort) last.
+Within a turn the runtime shall emit `turn_started` first; for each player `player_prompt` → `player_event*` → `player_finished`; for each `callCaptain()` `captain_prompt` → `captain_event*` → `captain_finished`; and `turn_finished` (or `turn_aborted` on abort) last.
 
 ### TMUX-023
 
@@ -129,7 +129,7 @@ Turn-bound emissions shall drain before `turn_finished`/`turn_aborted`. `turnId:
 
 ### TMUX-025
 
-The runtime shall emit a `runtime_error` record when a control-plane failure prevents normal record emission — startup, `Captain.init`, a `handleBossTurn` exception, or observer dispatch. The record shall carry `turnId: number` when an active turn exists at the moment of failure, else `turnId: null`. After emission, the runtime shall abort the active turn if any and run shutdown per [TMUX-019](#tmux-019). When the failure originates in an observer, the record shall additionally be delivered to the remaining observers in registration order before shutdown begins. Individual role or Captain run failures shall surface in the corresponding `role_finished` / `captain_finished` record with `status: 'error'`, not as `runtime_error`.
+The runtime shall emit a `runtime_error` record when a control-plane failure prevents normal record emission — startup, `Captain.init`, a `handleBossTurn` exception, or observer dispatch. The record shall carry `turnId: number` when an active turn exists at the moment of failure, else `turnId: null`. After emission, the runtime shall abort the active turn if any and run shutdown per [TMUX-019](#tmux-019). When the failure originates in an observer, the record shall additionally be delivered to the remaining observers in registration order before shutdown begins. Individual player or Captain run failures shall surface in the corresponding `player_finished` / `captain_finished` record with `status: 'error'`, not as `runtime_error`.
 
 ### TMUX-026
 
@@ -139,37 +139,37 @@ When SIGINT, SIGTERM, or stdin EOF reaches the session, the runtime shall abort 
 
 ### TMUX-027
 
-The Boss/Captain pane shall occupy the left column. Role panes shall fill the right side in config order, read-only.
+The Boss/Captain pane shall occupy the left column. Player panes shall fill the right side in config order, read-only.
 
 ### TMUX-028
 
-With two or more roles, `tmux-play` shall use two role columns. The Boss/Captain pane shall occupy 4/16 of the window width and each role column shall occupy 6/16 of the window width. The first column shall hold `ceil(roleCount / 2)` roles from top to bottom.
+With two or more players, `tmux-play` shall use two player columns. The Boss/Captain pane shall occupy 4/16 of the window width and each player column shall occupy 6/16 of the window width. The first column shall hold `ceil(playerCount / 2)` players from top to bottom.
 
 ## Programmatic Runtime API
 
 ### TMUX-029
 
-The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, a `captainConfig` with `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), optional `model`, optional `instruction`, optional `permissions` per [TMUX-052](#tmux-052), and optional `reasoningEffort` per [TMUX-056](#tmux-056), a non-empty `roles` array (each entry with `id`, `adapter`, optional `model`, optional `instruction`, optional `permissions`, and optional `reasoningEffort`, conforming to [TMUX-007](#tmux-007)), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
+The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, a `captainConfig` with `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), optional `model`, optional `instruction`, optional `permissions` per [TMUX-052](#tmux-052), and optional `reasoningEffort` per [TMUX-056](#tmux-056), a non-empty `players` array (each entry with `id`, `adapter`, optional `model`, optional `instruction`, optional `permissions`, and optional `reasoningEffort`, conforming to [TMUX-007](#tmux-007)), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
 
 ## Built-in Fanout Captain
 
 ### TMUX-030
 
-The `@sublang/cligent/captains/fanout` Captain shall, per Boss turn, invoke `callRole` for every configured role concurrently, then issue a single `callCaptain` summary referencing each role's status and final text.
+The `@sublang/cligent/captains/fanout` Captain shall, per Boss turn, invoke `callPlayer` for every configured player concurrently, then issue a single `callCaptain` summary referencing each player's status and final text.
 
 ### TMUX-031
 
-The fanout Captain shall not copy raw role events into the Boss/Captain pane; only the synthesized summary shall reach the Boss via `callCaptain`.
+The fanout Captain shall not copy raw player events into the Boss/Captain pane; only the synthesized summary shall reach the Boss via `callCaptain`.
 
 ## Public Contract Shapes
 
 ### TMUX-032
 
-A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, and a `timestamp`. A `RoleHandle` shall expose the role `id`, the `adapter`, and an optional `model`.
+A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, and a `timestamp`. A `PlayerHandle` shall expose the player `id`, the `adapter`, and an optional `model`.
 
 ### TMUX-033
 
-`RoleRunResult` shall expose `roleId`, `turnId`, and `status`, and may include `finalText` and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `finalText` and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`.
+`PlayerRunResult` shall expose `playerId`, `turnId`, and `status`, and may include `finalText` and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `finalText` and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`.
 
 ## Launcher → Session Protocol
 
@@ -195,7 +195,7 @@ Before invoking `tmux attach-session`, the launcher shall write the xterm window
 
 ### TMUX-044
 
-The 4/6/6 region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, the Boss/Captain region is `W × 4/16` cells, the first role column region is `W × 6/16` cells, and the second role column region (if present) absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region. With a single role, only the Boss/Captain pane is re-sized and the role pane absorbs the remainder.
+The 4/6/6 region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, the Boss/Captain region is `W × 4/16` cells, the first player column region is `W × 6/16` cells, and the second player column region (if present) absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region. With a single player, only the Boss/Captain pane is re-sized and the player pane absorbs the remainder.
 
 ### TMUX-045
 
@@ -205,7 +205,7 @@ After the launcher constructs the tmux session and before it attaches a client, 
 
 ### TMUX-036
 
-The Boss/Captain pane title shall be `Captain`. Each role pane title shall be the role `id` rendered with the first character upper-cased and the remaining characters preserved (e.g., `coder` → `Coder`, `reviewer` → `Reviewer`). The literal `Role:` prefix shall not appear in pane titles.
+The Boss/Captain pane title shall be `Captain`. Each player pane title shall be the player `id` rendered with the first character upper-cased and the remaining characters preserved (e.g., `coder` → `Coder`, `reviewer` → `Reviewer`). The literal `Player:` prefix shall not appear in pane titles.
 
 ## Presenter Output
 
@@ -230,15 +230,15 @@ The session shall enable bracketed paste only for its own duration and shall emi
 
 ### TMUX-038
 
-The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's role `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a role pane shall be prefixed with `captain> `; and the first nonblank line of the role's reply rendered in the role pane shall be prefixed with `<roleId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
+The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's player `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a player pane shall be prefixed with `captain> `; and the first nonblank line of the player's reply rendered in the player pane shall be prefixed with `<playerId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
 
 The presenter shall color the speaker prefix by wrapping its bytes — including the trailing space — in a bold 24-bit-foreground SGR pair: `\x1b[1;38;2;<r>;<g>;<b>m<who>> \x1b[0m`. Body text following the prefix shall remain unstyled by the presenter, so any ANSI bytes inside the body come from the body itself. Continuation indents shall stay uncolored. The speaker → color mapping is:
 
-| Speaker | Mocha role | Hex |
+| Speaker | Mocha player | Hex |
 | --- | --- | --- |
 | `boss` | `blue` | `#89b4fa` |
 | `captain` | `mauve` | `#cba6f7` |
-| `<roleId>` | adapter-keyed via [TMUX-048](#tmux-048) `roleAccent(role.adapter)` | varies (e.g., `claude` → `#a6e3a1`) |
+| `<playerId>` | adapter-keyed via [TMUX-048](#tmux-048) `playerAccent(player.adapter)` | varies (e.g., `claude` → `#a6e3a1`) |
 
 The Boss readline prompt set by session mode shall carry the same colored form (`\x1b[1;38;2;137;180;250mboss> \x1b[0m`); Node's readline strips ANSI from prompts when computing the visible width, so cursor positioning still treats the prompt as 6 cells wide.
 
@@ -246,34 +246,34 @@ Per [TMUX-050](#tmux-050), text bodies pass through `glow` before reaching the w
 
 ### TMUX-039
 
-When a role or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[role <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
+When a player or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[player <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
 
 The bracketed status body on these lines shall additionally be wrapped in its own bold 24-bit-foreground SGR pair, distinct from the surrounding speaker prefix span:
 
-| Status kind | Mocha role | Hex |
+| Status kind | Mocha player | Hex |
 | --- | --- | --- |
-| `[error: …]` (role or Captain) | `red` | `#f38ba8` |
+| `[error: …]` (player or Captain) | `red` | `#f38ba8` |
 | `[runtime error: …]` (Boss/Captain pane) | `red` | `#f38ba8` |
-| `[aborted]` (role or Captain) | `yellow` | `#f9e2af` |
+| `[aborted]` (player or Captain) | `yellow` | `#f9e2af` |
 | `[turn aborted: …]` (Boss/Captain pane) | `yellow` | `#f9e2af` |
 
 The result is a status line whose prefix carries the speaker color and whose body carries the status color, e.g., `<captain-mauve>captain> </reset><red>[runtime error: boom]</reset>`.
 
 ### TMUX-040
 
-The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-role outputs and the Captain's prompt body (which references role results) shall not be written to the Boss/Captain pane; role-emitted tool events remain in their respective role panes.
+The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-player outputs and the Captain's prompt body (which references player results) shall not be written to the Boss/Captain pane; player-emitted tool events remain in their respective player panes.
 
 ### TMUX-049
 
-`tool_use` and `tool_result` events shall render with a dedicated `tool>` / `tool<` prefix grammar in the calling entity's pane (the role pane for role-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)), replacing the `<who>> ` speaker prefix for those events.
+`tool_use` and `tool_result` events shall render with a dedicated `tool>` / `tool<` prefix grammar in the calling entity's pane (the player pane for player-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)), replacing the `<who>> ` speaker prefix for those events.
 
-A `tool_use` event shall render as a single line `tool> <toolName> <inputSummary>` where the prefix bytes `tool> ` carry the caller's bold 24-bit-foreground SGR per [TMUX-038](#tmux-038)'s speaker color table (mauve for `captain`, the adapter accent for a role pane); when the caller has no defined color the prefix remains uncolored. The body remains unstyled. Pairing the invocation prefix with its caller's color attributes each tool call at a glance, mirroring how text bodies surface their speaker; only `tool<` retains an outcome-driven palette (✓ green / ✗ red / · yellow) so success-vs-failure remains scannable. The retired fixed peach `#fab387` `tool>` SGR is no longer applied.
+A `tool_use` event shall render as a single line `tool> <toolName> <inputSummary>` where the prefix bytes `tool> ` carry the caller's bold 24-bit-foreground SGR per [TMUX-038](#tmux-038)'s speaker color table (mauve for `captain`, the adapter accent for a player pane); when the caller has no defined color the prefix remains uncolored. The body remains unstyled. Pairing the invocation prefix with its caller's color attributes each tool call at a glance, mirroring how text bodies surface their speaker; only `tool<` retains an outcome-driven palette (✓ green / ✗ red / · yellow) so success-vs-failure remains scannable. The retired fixed peach `#fab387` `tool>` SGR is no longer applied.
 
 `<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `query`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. The `query` slot covers search/fetch tools (ToolSearch, WebFetch wrappers, etc.) so a real query surfaces in the header instead of the JSON fallback. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `tool> <toolName>` with no trailing space.
 
 A `tool_result` event shall render as a header line followed by the tool's output as a continuation block. The header is `tool< <symbol> <toolName>[ <duration>]` where `<symbol>` and the prefix SGR derive from `status`:
 
-| `status` | Symbol | Mocha role | Hex |
+| `status` | Symbol | Mocha player | Hex |
 | --- | --- | --- | --- |
 | `success` | `✓` | `green` | `#a6e3a1` |
 | `error` | `✗` | `red` | `#f38ba8` |
@@ -287,7 +287,7 @@ When the extracted output is non-empty, the presenter shall strip exactly one tr
 
 ### TMUX-050
 
-While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `role_finished` or `captain_finished` record; a `text` event (always a complete block); a `tool_use` or `tool_result` event on the same writer; a `role_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
+While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `player_finished` or `captain_finished` record; a `text` event (always a complete block); a `tool_use` or `tool_result` event on the same writer; a `player_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
 
 The render width shall be `max(1, paneWidth - prefixWidth)` where `prefixWidth` is the cell width of the speaker's `<who>> ` first-line prefix. This budget keeps the prefixed first line and the two-space-indented continuations within the pane's display width without triggering a terminal-level rewrap. When no pane-width source is configured for the writer, the render width shall default to `80 - prefixWidth`.
 
@@ -319,7 +319,7 @@ At every continuation boundary — soft-wrap, explicit newline, or any path that
 This is what makes the [TMUX-038](#tmux-038) "continuation indents shall stay uncolored" invariant hold for status bodies wrapped by [TMUX-039](#tmux-039) and for any other body that opens an SGR span and then crosses a line break.
 Non-SGR CSI sequences (cursor movement, erase, etc., terminated by bytes other than `m`) do not change color/style and are not subject to this close/reopen rule.
 
-Width sources: the Boss/Captain pane width shall track the captain's stdout `columns` property, which Node refreshes via SIGWINCH on terminal resize. Each role pane width shall be queried from tmux at session start; the session shall refresh role widths when its stdout emits `'resize'` (the in-pane SIGWINCH that follows the tmux resize hooks set per [TMUX-044](#tmux-044)) and again before each Boss turn as a safety net. When a width source is unavailable or the value would not leave room for the two-space indent, the writer shall fall back to no soft wrap.
+Width sources: the Boss/Captain pane width shall track the captain's stdout `columns` property, which Node refreshes via SIGWINCH on terminal resize. Each player pane width shall be queried from tmux at session start; the session shall refresh player widths when its stdout emits `'resize'` (the in-pane SIGWINCH that follows the tmux resize hooks set per [TMUX-044](#tmux-044)) and again before each Boss turn as a safety net. When a width source is unavailable or the value would not leave room for the two-space indent, the writer shall fall back to no soft wrap.
 
 ## Theme
 
@@ -348,18 +348,18 @@ The theme shall set exactly these tmux options and no others:
 
 ### TMUX-048
 
-The launcher shall set each pane's title to `<Display> · <adapter>` where `<Display>` is `Captain` for the Boss/Captain pane and the title-cased role id (per [TMUX-036](#tmux-036)) for each role pane, and `<adapter>` is the adapter name configured in the YAML config for the captain or the role respectively. The middle separator shall be ` · ` (space + U+00B7 middle dot + space).
+The launcher shall set each pane's title to `<Display> · <adapter>` where `<Display>` is `Captain` for the Boss/Captain pane and the title-cased player id (per [TMUX-036](#tmux-036)) for each player pane, and `<adapter>` is the adapter name configured in the YAML config for the captain or the player respectively. The middle separator shall be ` · ` (space + U+00B7 middle dot + space).
 
-The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and future role-keyed coloring) as a single lookup keyed by adapter name. Known adapter accents:
+The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and future player-keyed coloring) as a single lookup keyed by adapter name. Known adapter accents:
 
-| Adapter | Mocha role | Hex |
+| Adapter | Mocha player | Hex |
 | --- | --- | --- |
 | `claude` | `green` | `#a6e3a1` |
 | `codex` | `teal` | `#94e2d5` |
 | `gemini` | `lavender` | `#b4befe` |
 | `opencode` | `pink` | `#f5c2e7` |
 
-For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
+For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status players (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
 
 When the launcher sets `pane-border-format`, the format shall keep the full pane-border row on an explicit Catppuccin Mocha surface background after the pane title rather than resetting to terminal default styling before the timer segment.
 The active pane title segment shall remain accented with the active border color, but the separator, timer glyph, and timer duration text shall render on the same explicit surface row instead of a default-background gap.
@@ -369,18 +369,18 @@ The active pane title segment shall remain accented with the active border color
 ### TMUX-053
 
 While a tmux-play session is running, the session shall maintain cumulative active-time timers derived from existing record timestamps.
-A role pane's timer shall add `role_finished.timestamp - role_prompt.timestamp` for each run of that role.
+A player pane's timer shall add `player_finished.timestamp - player_prompt.timestamp` for each run of that player.
 The Boss/Captain pane's timer shall add `captain_finished.timestamp - captain_prompt.timestamp` for each Captain run.
 The session-total timer shall add `(turn_finished.timestamp | turn_aborted.timestamp) - turn_started.timestamp` for each Boss turn.
-While a role, Captain, or turn occurrence is open, the corresponding displayed timer shall equal its accumulated closed duration plus `now - <open-start>.timestamp`.
-The role and Captain timers shall not include gaps between that participant's runs, and the session-total timer shall not include gaps between Boss turns.
+While a player, Captain, or turn occurrence is open, the corresponding displayed timer shall equal its accumulated closed duration plus `now - <open-start>.timestamp`.
+The player and Captain timers shall not include gaps between that participant's runs, and the session-total timer shall not include gaps between Boss turns.
 
 ### TMUX-054
 
 When the launcher constructs a tmux-play session, each pane border shall include that pane's cumulative active-time timer.
-The Boss/Captain pane border timer shall display the Captain timer from [TMUX-053](#tmux-053), and each role pane border timer shall display that role's timer from [TMUX-053](#tmux-053).
+The Boss/Captain pane border timer shall display the Captain timer from [TMUX-053](#tmux-053), and each player pane border timer shall display that player's timer from [TMUX-053](#tmux-053).
 The pane-border timer shall not replace or remove the pane title and adapter information required by [TMUX-048](#tmux-048).
-While a pane's current run is open, its timer shall refresh roughly once per second and render with the running glyph `⏳` plus the bright Catppuccin accent for that pane: `mauve` (`#cba6f7`) for Captain and [TMUX-048](#tmux-048)'s adapter accent for a role.
+While a pane's current run is open, its timer shall refresh roughly once per second and render with the running glyph `⏳` plus the bright Catppuccin accent for that pane: `mauve` (`#cba6f7`) for Captain and [TMUX-048](#tmux-048)'s adapter accent for a player.
 When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus a Catppuccin text-level neutral color such as `subtext1` (`#bac2de`), not `overlay1` (`#7f849c`), so the timer remains legible against the pane-border surface.
 The timer format shall budget two display cells for each emoji glyph because terminal emoji presentation is not uniformly reported by tmux.
 The glyph's own color shall be left to the terminal's emoji font; the duration text shall carry the Catppuccin running/frozen cue.
@@ -393,15 +393,15 @@ The status-total timer shall use the clock glyph `⏰` in both states.
 While a Boss turn is open, the duration text shall use Catppuccin `mauve` (`#cba6f7`); between turns, it shall use `overlay1` (`#7f849c`).
 The launcher shall set sufficient `status-left-length` and `status-right-length` values so the hints and total timer are not truncated under the 240-column initial window from [TMUX-035](#tmux-035).
 
-## Role Session Continuity
+## Player Session Continuity
 
 ### TMUX-041
 
-Within a single tmux-play session, each role's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so role responses on later turns may build on prior context for adapters that support session continuity.
+Within a single tmux-play session, each player's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
 
 ### TMUX-042
 
-The built-in fanout Captain shall convey each role's identity once, via the role's `instruction` configured at `Cligent` construction. Per Boss turn, the per-role prompt the fanout Captain passes to `callRole` shall be the Boss prompt verbatim, with no static framing label such as `The Boss asked:`, no role identity preamble such as `You are the "<role>" role`, and no trailing instructions that reference inter-role behavior (e.g., "Respond independently", "Do not wait for other roles") — roles cannot see other roles, so such instructions are unactionable. Static framing labels and inter-role instructions are permitted only in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they describe context for the synthesizer rather than instruct a role.
+The built-in fanout Captain shall convey each player's identity once, via the player's `instruction` configured at `Cligent` construction. Per Boss turn, the per-player prompt the fanout Captain passes to `callPlayer` shall be the Boss prompt verbatim, with no static framing label such as `The Boss asked:`, no player identity preamble such as `You are the "<player>" player`, and no trailing instructions that reference inter-player behavior (e.g., "Respond independently", "Do not wait for other players") — players cannot see other players, so such instructions are unactionable. Static framing labels and inter-player instructions are permitted only in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they describe context for the synthesizer rather than instruct a player.
 
 ## References
 

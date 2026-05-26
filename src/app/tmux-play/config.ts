@@ -8,11 +8,11 @@ import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
 import {
-  isKnownRoleAdapter,
-  validateRoleConfigs,
-  type RoleAdapterName,
-  type RoleConfig,
-} from './roles.js';
+  isKnownPlayerAdapter,
+  validatePlayerConfigs,
+  type PlayerAdapterName,
+  type PlayerConfig,
+} from './players.js';
 import type {
   PermissionLevel,
   PermissionPolicy,
@@ -27,7 +27,7 @@ export type JsonValue =
 
 export interface CaptainConfig {
   from: string;
-  adapter: RoleAdapterName;
+  adapter: PlayerAdapterName;
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
@@ -37,7 +37,7 @@ export interface CaptainConfig {
 
 export interface TmuxPlayConfig {
   captain: CaptainConfig;
-  roles: RoleConfig[];
+  players: PlayerConfig[];
 }
 
 export interface LoadedTmuxPlayConfig {
@@ -70,18 +70,18 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     adapter: 'claude',
     model: 'claude-opus-4-7',
     reasoningEffort: 'xhigh',
-    instruction: 'Coordinate roles and answer the Boss.',
+    instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
-    options: { maxRoleOutputChars: 4000 },
+    options: { maxPlayerOutputChars: 4000 },
   },
-  roles: [
+  players: [
     {
       id: 'claude',
       adapter: 'claude',
       model: 'claude-opus-4-7',
       reasoningEffort: 'xhigh',
       instruction:
-        'You are the claude role in a fanout Captain session. Provide an independent answer.',
+        'You are the claude player in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },
     },
     {
@@ -90,7 +90,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
       model: 'gpt-5.5',
       reasoningEffort: 'xhigh',
       instruction:
-        'You are the codex role in a fanout Captain session. Provide an independent answer.',
+        'You are the codex player in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },
     },
   ],
@@ -248,8 +248,8 @@ async function loadConfigValue(path: string): Promise<unknown> {
 function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const input = requireObject(value, 'config');
   const captain = normalizeCaptainConfig(input.captain);
-  const roles = normalizeRoleConfigs(input.roles);
-  return { captain, roles };
+  const players = normalizePlayerConfigs(input.players);
+  return { captain, players };
 }
 
 function normalizeCaptainConfig(value: unknown): CaptainConfig {
@@ -291,21 +291,21 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   return captain;
 }
 
-function normalizeRoleConfigs(value: unknown): RoleConfig[] {
+function normalizePlayerConfigs(value: unknown): PlayerConfig[] {
   if (!Array.isArray(value)) {
-    throw new Error('roles must be a non-empty array');
+    throw new Error('players must be a non-empty array');
   }
   if (value.length === 0) {
-    throw new Error('roles must contain at least one role');
+    throw new Error('players must contain at least one player');
   }
 
-  const roles = value.map((entry, index) => normalizeRoleConfig(entry, index));
-  validateRoleConfigs(roles);
-  return roles;
+  const players = value.map((entry, index) => normalizePlayerConfig(entry, index));
+  validatePlayerConfigs(players);
+  return players;
 }
 
-function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
-  const path = `roles[${index}]`;
+function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
+  const path = `players[${index}]`;
   const input = requireObject(value, path);
   const allowed = new Set([
     'id',
@@ -317,7 +317,7 @@ function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
   ]);
   rejectUnknownKeys(input, allowed, path);
 
-  const role: RoleConfig = {
+  const player: PlayerConfig = {
     id: requireString(input.id, `${path}.id`),
     adapter: requireAdapterName(input.adapter, `${path}.adapter`),
   };
@@ -332,11 +332,11 @@ function normalizeRoleConfig(value: unknown, index: number): RoleConfig {
     input.reasoningEffort,
     `${path}.reasoningEffort`,
   );
-  if (model !== undefined) role.model = model;
-  if (instruction !== undefined) role.instruction = instruction;
-  if (permissions !== undefined) role.permissions = permissions;
-  if (reasoningEffort !== undefined) role.reasoningEffort = reasoningEffort;
-  return role;
+  if (model !== undefined) player.model = model;
+  if (instruction !== undefined) player.instruction = instruction;
+  if (permissions !== undefined) player.permissions = permissions;
+  if (reasoningEffort !== undefined) player.reasoningEffort = reasoningEffort;
+  return player;
 }
 
 function requireObject(
@@ -458,9 +458,9 @@ function optionalReasoningEffort(
   return value as ReasoningEffort;
 }
 
-function requireAdapterName(value: unknown, path: string): RoleAdapterName {
+function requireAdapterName(value: unknown, path: string): PlayerAdapterName {
   const adapter = requireString(value, path);
-  if (!isKnownRoleAdapter(adapter)) {
+  if (!isKnownPlayerAdapter(adapter)) {
     throw new Error(
       `Unknown adapter "${adapter}" at ${path}. ` +
         'Valid adapters: claude, codex, gemini, opencode',
