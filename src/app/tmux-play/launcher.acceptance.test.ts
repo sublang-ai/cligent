@@ -328,6 +328,12 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain(
         `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
       );
+      expect(paneBorderFormat).toContain(
+        `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#bac2de]}`,
+      );
+      expect(paneBorderFormat).toContain(
+        ' #{pane_title} #[fg=#cdd6f4]#[bg=#181825]#[nobold] ',
+      );
       expect(paneBorderFormat).toContain('⏳');
       expect(paneBorderFormat).toContain('⌛');
 
@@ -387,7 +393,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⏳ #[fg=#cba6f7]3s',
         );
         expect(expandedPaneBorder(sessionName, coder.index)).toContain(
-          '⌛ #[fg=#7f849c]3s',
+          '⌛ #[fg=#bac2de]3s',
         );
         expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
           '⏳ #[fg=#a6e3a1]4s',
@@ -423,10 +429,10 @@ describe('tmux-play real-tmux acceptance', () => {
         ).toBe('0');
 
         expect(expandedPaneBorder(sessionName, captain.index)).toContain(
-          '⌛ #[fg=#7f849c]5s',
+          '⌛ #[fg=#bac2de]5s',
         );
         expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
-          '⌛ #[fg=#7f849c]5s',
+          '⌛ #[fg=#bac2de]5s',
         );
         expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
           '⏰ #[fg=#7f849c]12s',

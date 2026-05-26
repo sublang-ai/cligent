@@ -441,17 +441,22 @@ describe('launchTmuxPlay', () => {
     expect(paneBorderFormat).toContain(
       '#{?pane_active,#[fg=#1e1e2e]#[bg=#89b4fa]#[bold],#[fg=#cdd6f4]#[bg=#181825]}',
     );
+    expect(paneBorderFormat).toContain(
+      ' #{pane_title} #[fg=#cdd6f4]#[bg=#181825]#[nobold] ',
+    );
     expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`);
     expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_TEXT_OPTION}}`);
     expect(paneBorderFormat).toContain(
       `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
     );
     expect(paneBorderFormat).toContain(
-      `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#7f849c]}`,
+      `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#bac2de]}`,
     );
     expect(paneBorderFormat).toContain('⏳');
     expect(paneBorderFormat).toContain('⌛');
-    expect(paneBorderFormat).toContain('#7f849c');
+    expect(paneBorderFormat).toContain('#bac2de');
+    expect(paneBorderFormat).not.toContain('#[default] ⏳');
+    expect(paneBorderFormat).not.toContain('#[default] ⌛');
     expect(paneBorderFormat.indexOf('⏳')).toBeLessThan(
       paneBorderFormat.indexOf(
         `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=`,

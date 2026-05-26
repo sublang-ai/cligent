@@ -198,6 +198,7 @@ const CATPPUCCIN_MOCHA = {
   overlay0: '#6c7086',
   overlay1: '#7f849c',
   subtext0: '#a6adc8',
+  subtext1: '#bac2de',
   text: '#cdd6f4',
   blue: '#89b4fa',
   mauve: '#cba6f7',
@@ -265,12 +266,13 @@ function paneBorderFormat(): string {
   return [
     `#{?pane_active,#[fg=${c.base}]#[bg=${c.blue}]#[bold],#[fg=${c.text}]#[bg=${c.mantle}]}`,
     ' #{pane_title} ',
-    '#[default]',
+    `#[fg=${c.text}]#[bg=${c.mantle}]#[nobold]`,
     ' ',
     `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},⏳,⌛} `,
     timerColorFormat(
       TMUX_PANE_TIMER_RUNNING_OPTION,
       `#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`,
+      c.subtext1,
     ),
     `#{${TMUX_PANE_TIMER_TEXT_OPTION}}`,
     '#[default]',
@@ -291,8 +293,24 @@ function statusRightFormat(): string {
   ].join('');
 }
 
-function timerColorFormat(runningOption: string, runningColor: string): string {
-  return `#{?#{==:#{${runningOption}},1},#[fg=${runningColor}],#[fg=${CATPPUCCIN_MOCHA.overlay1}]}`;
+function timerColorFormat(
+  runningOption: string,
+  runningColor: string,
+  frozenColor: string = CATPPUCCIN_MOCHA.overlay1,
+): string {
+  return timerColorFormatWithFrozenColor(
+    runningOption,
+    runningColor,
+    frozenColor,
+  );
+}
+
+function timerColorFormatWithFrozenColor(
+  runningOption: string,
+  runningColor: string,
+  frozenColor: string,
+): string {
+  return `#{?#{==:#{${runningOption}},1},#[fg=${runningColor}],#[fg=${frozenColor}]}`;
 }
 
 function buildSessionCommand(options: BuildTmuxSessionOptions): string {
