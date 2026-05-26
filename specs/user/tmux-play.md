@@ -361,6 +361,9 @@ The launcher shall publish a stable per-adapter accent color, surfaced to consum
 
 For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
 
+When the launcher sets `pane-border-format`, the format shall keep the full pane-border row on an explicit Catppuccin Mocha surface background after the pane title rather than resetting to terminal default styling before the timer segment.
+The active pane title segment shall remain accented with the active border color, but the separator, timer glyph, and timer duration text shall render on the same explicit surface row instead of a default-background gap.
+
 ## Run-Time Timers
 
 ### TMUX-053
@@ -378,7 +381,7 @@ When the launcher constructs a tmux-play session, each pane border shall include
 The Boss/Captain pane border timer shall display the Captain timer from [TMUX-053](#tmux-053), and each role pane border timer shall display that role's timer from [TMUX-053](#tmux-053).
 The pane-border timer shall not replace or remove the pane title and adapter information required by [TMUX-048](#tmux-048).
 While a pane's current run is open, its timer shall refresh roughly once per second and render with the running glyph `⏳` plus the bright Catppuccin accent for that pane: `mauve` (`#cba6f7`) for Captain and [TMUX-048](#tmux-048)'s adapter accent for a role.
-When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus the dim neutral `overlay1` (`#7f849c`).
+When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus a Catppuccin text-level neutral color such as `subtext1` (`#bac2de`), not `overlay1` (`#7f849c`), so the timer remains legible against the pane-border surface.
 The timer format shall budget two display cells for each emoji glyph because terminal emoji presentation is not uniformly reported by tmux.
 The glyph's own color shall be left to the terminal's emoji font; the duration text shall carry the Catppuccin running/frozen cue.
 

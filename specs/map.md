@@ -61,7 +61,7 @@ meta.md     The spec of specs
 | IR-017 | [017-codex-modern-permission-profiles.md](iterations/017-codex-modern-permission-profiles.md) | Codex adapter: modern `default_permissions` profile model, automation/local-access axis composition |
 | IR-018 | [018-reasoning-effort-yaml-and-per-adapter-mappings.md](iterations/018-reasoning-effort-yaml-and-per-adapter-mappings.md) | tmux-play YAML `reasoningEffort` per role/captain; Claude `xhigh` mapping refresh; Gemini settings-file + OpenCode variant wiring |
 | IR-019 | [019-boss-esc-interrupt-and-bracketed-paste.md](iterations/019-boss-esc-interrupt-and-bracketed-paste.md) | tmux-play Boss input: ESC interrupts active turn without ending the session; bracketed paste submits multi-line as one Boss turn |
-| IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters emit `resumeToken` on `interrupted` `done` when a session ID is known, so role context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
+| IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters preserve `resumeToken` on `interrupted` `done` from backend id or inbound `resume`, so role context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
 
 ## Packages
 

@@ -117,7 +117,9 @@ When `AbortSignal` fires, the adapter shall send `SIGTERM` to the spawned proces
 
 ### GEMINI-009
 
-When the Gemini CLI stream provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value, enabling `Cligent` auto-resume via `--resume` per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token). When no session identifier is received, the adapter shall omit `resumeToken`.
+When the Gemini CLI stream provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that value, enabling `Cligent` auto-resume via `--resume` per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
+When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: the Gemini-provided session identifier observed before the abort; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+When terminal `done` is not interrupted and no session identifier was received, the adapter shall omit `resumeToken`.
 
 ## References
 

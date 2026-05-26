@@ -15,14 +15,14 @@ Carry the Catppuccin surface tone across the whole border row and lift the not-r
 
 ## Status
 
-Planned
+In Progress
 
 ## Scope
 
 In scope:
 
 - [CLAUDE-007](../user/adapters/claude-code.md#claude-007), [CODEX-006](../user/adapters/codex.md#codex-006), [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011): amend each so that on `done` with `status: 'interrupted'` the adapter shall set `DonePayload.resumeToken` per a three-stage rule: (a) if the backend emitted a session identifier before the abort, use that identifier; (b) otherwise, if the call's `options.resume` was non-empty (a resumed turn aborted before the backend echoed a replacement id), echo `options.resume` back; (c) otherwise (no id ever known for this run), omit `resumeToken`. The success-path behavior is unchanged. The (b) branch is required because cligent's role-scoped session clears its stored continuity whenever a `done` omits `resumeToken` (`src/cligent.ts:218,312`); without (b) the common ESC-during-resumed-turn case would silently make the next turn fresh.
-- New TADAPT item (next free ID): given each adapter (Claude, Codex, Gemini, OpenCode), the adapter's `done` event with `status: 'interrupted'` shall carry `resumeToken` per the three-stage rule above. Given a mock SDK that emitted a session identifier and was then aborted, `resumeToken` shall equal that identifier. Given a mock SDK that did not emit a session identifier but the call's `options.resume` was non-empty, `resumeToken` shall equal `options.resume`. Given a mock SDK that emitted no identifier and an empty/absent `options.resume`, `resumeToken` shall be omitted.
+- New [TADAPT-020](../test/adapters.md#tadapt-020): given each adapter (Claude, Codex, Gemini, OpenCode), the adapter's `done` event with `status: 'interrupted'` shall carry `resumeToken` per the three-stage rule above. Given a mock SDK that emitted a session identifier and was then aborted, `resumeToken` shall equal that identifier. Given a mock SDK that did not emit a session identifier but the call's `options.resume` was non-empty, `resumeToken` shall equal `options.resume`. Given a mock SDK that emitted no identifier and an empty/absent `options.resume`, `resumeToken` shall be omitted.
 - [TMUX-048](../user/tmux-play.md#tmux-048): amend the `pane-border-format` clause to carry an explicit Catppuccin Mocha [[1]] surface background across the full pane-border row, not `#[default]`, so the post-title segment (separator, timer hourglass, timer text) renders on the same surface as the title rather than on the terminal default.
 - [TMUX-054](../user/tmux-play.md#tmux-054): amend to pin the not-running pane-border timer text to a Catppuccin Mocha text-level tone (e.g., `subtext1` `#bac2de`) instead of `overlay1` (`#7f849c`), for legible contrast against the pane-border surface; the running-state per-pane accent color remains unchanged.
 - `src/adapters/claude-code.ts:875` and `:912`, `src/adapters/codex.ts:888` and `:929`, `src/adapters/gemini.ts:1051`, `src/adapters/opencode.ts:1103`, `:1406`, and `:1469` — eight interrupt-path `done` emissions in total (main-loop and catch-path for Claude and OpenCode; main and turn-failed for Codex; gemini and opencode `!doneYielded`-fallback). Apply the three-stage rule to every site, ideally via a single helper (e.g., `resolveInterruptedResumeToken(backendProvidedSessionId, sessionId, options?.resume)`) so the eight call sites stay one-line.
@@ -54,17 +54,17 @@ Bumping to `subtext1` (`#bac2de`) keeps the timer subdued relative to the active
 
 ## Deliverables
 
-- [ ] `specs/user/adapters/{claude-code,codex,gemini,opencode}.md` — amend CLAUDE-007 / CODEX-006 / GEMINI-009 / OPENCODE-011 with the interrupt-token clause.
-- [ ] `specs/test/adapters.md` — add a new TADAPT item verifying the interrupt-with-token contract across all four adapters.
-- [ ] `specs/user/tmux-play.md` — amend TMUX-048 (pane-border row surface continuity) and TMUX-054 (timer color contrast).
-- [ ] `specs/map.md` — index IR-020.
+- [x] `specs/user/adapters/{claude-code,codex,gemini,opencode}.md` — amend CLAUDE-007 / CODEX-006 / GEMINI-009 / OPENCODE-011 with the interrupt-token clause.
+- [x] `specs/test/adapters.md` — add a new TADAPT item verifying the interrupt-with-token contract across all four adapters.
+- [x] `specs/user/tmux-play.md` — amend TMUX-048 (pane-border row surface continuity) and TMUX-054 (timer color contrast).
+- [x] `specs/map.md` — index IR-020.
 - [ ] `src/adapters/{claude-code,codex,gemini,opencode}.ts` — apply the three-stage `resumeToken` rule (via a shared helper) at every interrupt-path `done` emission (8 touch points).
 - [ ] `src/__tests__/{claude-code,codex,gemini,opencode}-adapter.test.ts` — per-adapter abort-with-token unit tests.
 - [ ] `src/app/tmux-play/launcher.ts` — `paneBorderFormat` post-title bg continuity; `timerColorFormat` not-running color bump.
 
 ## Tasks
 
-1. **Spec items + map.** Amend the four adapter user items and TMUX-048 / TMUX-054; add the new TADAPT item; index IR-020 in `specs/map.md`. Single docs-only commit.
+1. [x] **Spec items + map.** Amend the four adapter user items and TMUX-048 / TMUX-054; add the new TADAPT item; index IR-020 in `specs/map.md`. Single docs-only commit.
 2. **Adapter abort-token fix.** Factor the three-stage resume-token rule into a shared helper and apply it at all eight interrupt-path `done` emissions across the four adapters; add per-adapter unit tests covering all three branches of the rule. Per-task-boundary green.
 3. **Pane-border row contrast.** Update `paneBorderFormat` to carry a single surface tone across the full row and `timerColorFormat`'s not-running color; update or add launcher tests asserting the new format string. Per-task-boundary green.
 
