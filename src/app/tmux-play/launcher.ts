@@ -34,8 +34,14 @@ import type { PlayerConfig } from './players.js';
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 const INITIAL_TMUX_COLUMNS = '240';
 const INITIAL_TMUX_ROWS = '67';
-const PLAYER_AREA_SIZE = '75%';
-const SECOND_PLAYER_COLUMN_SIZE = '50%';
+// Even split: every visible column gets 1/N of the initial 240-cell window
+// where N is the total column count (2 for a single player, 3 for two or
+// more). Right pane after the first horizontal split absorbs everything but
+// the Boss/Captain column; the resize hook below preserves the invariant at
+// any window width.
+const PLAYER_AREA_SIZE_SINGLE = '120'; // 240/2 — boss + 1 player evenly
+const PLAYER_AREA_SIZE_MULTI = '160'; // 240×2/3 — boss + right area (two columns)
+const SECOND_PLAYER_COLUMN_SIZE = '50%'; // 50% of right area = 80 cells each
 const NAVIGATION_HINTS =
   'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)';
 const INITIAL_TIMER_TEXT = '0s';
@@ -210,8 +216,8 @@ const CATPPUCCIN_MOCHA = {
 } as const;
 
 // TMUX-047: claim the visual options we color from Catppuccin Mocha.
-// pane-border-format, status-left/right, window-list formats, and the 4:6:6
-// layout are NOT touched here —
+// pane-border-format, status-left/right, window-list formats, and the
+// even-column layout are NOT touched here —
 // they remain owned by their existing clauses, so the order in buildTmuxSession
 // (theme first, content second) keeps our format strings authoritative.
 function applyCatppuccinMochaTheme(sessionName: string): void {
@@ -347,7 +353,7 @@ function createPlayerPanes(
     'split-window',
     '-h',
     '-l',
-    PLAYER_AREA_SIZE,
+    players.length >= 2 ? PLAYER_AREA_SIZE_MULTI : PLAYER_AREA_SIZE_SINGLE,
     '-t',
     sessionName,
     tailCommand(workDir, players[0]),
@@ -513,20 +519,23 @@ function requestTerminalResize(stream: Output): void {
   stream.write(`\x1b[8;${INITIAL_TMUX_ROWS};${INITIAL_TMUX_COLUMNS}t`);
 }
 
-// TMUX-044: keep the 4/6/6 region split invariant under any window resize.
-// resize-pane -x does not accept tmux format expansion, so we compute via
-// shell. The -1 corrections give region widths exactly W*4/16 and W*6/16 by
-// accounting for the 1-cell tmux border on each non-rightmost pane.
+// TMUX-044: keep the even region split invariant under any window resize.
+// Each visible column gets 1/N of the window where N is the total column
+// count (2 for a single player, 3 for two or more). resize-pane -x does not
+// accept tmux format expansion, so we compute via shell. The -1 corrections
+// give region widths exactly W/N by accounting for the 1-cell tmux border on
+// each non-rightmost pane.
 function configureLayoutHooks(
   sessionName: string,
   playerCount: number,
 ): void {
   const widthCmd =
     `tmux display-message -t ${sessionName} -p '#{window_width}'`;
+  const bossDivisor = playerCount >= 2 ? 3 : 2;
   const resizeBoss =
-    `tmux resize-pane -t ${sessionName}:0.0 -x $((W * 4 / 16 - 1))`;
+    `tmux resize-pane -t ${sessionName}:0.0 -x $((W / ${bossDivisor} - 1))`;
   const resizeFirstPlayerColumn =
-    `tmux resize-pane -t ${sessionName}:0.1 -x $((W * 6 / 16 - 1))`;
+    `tmux resize-pane -t ${sessionName}:0.1 -x $((W / 3 - 1))`;
   const shell =
     playerCount >= 2
       ? `W=$(${widthCmd}) && ${resizeBoss} && ${resizeFirstPlayerColumn}`

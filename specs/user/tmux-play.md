@@ -143,7 +143,7 @@ The Boss/Captain pane shall occupy the left column. Player panes shall fill the 
 
 ### TMUX-028
 
-With two or more players, `tmux-play` shall use two player columns. The Boss/Captain pane shall occupy 4/16 of the window width and each player column shall occupy 6/16 of the window width. The first column shall hold `ceil(playerCount / 2)` players from top to bottom.
+With two or more players, `tmux-play` shall use two player columns. The Boss/Captain pane and each player column shall each occupy 1/3 of the window width. The first column shall hold `ceil(playerCount / 2)` players from top to bottom. With a single player, the Boss/Captain pane and the player pane shall each occupy 1/2 of the window width.
 
 ## Programmatic Runtime API
 
@@ -195,7 +195,7 @@ Before invoking `tmux attach-session`, the launcher shall write the xterm window
 
 ### TMUX-044
 
-The 4/6/6 region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, the Boss/Captain region is `W × 4/16` cells, the first player column region is `W × 6/16` cells, and the second player column region (if present) absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region. With a single player, only the Boss/Captain pane is re-sized and the player pane absorbs the remainder.
+The even region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, with two or more players the Boss/Captain region is `floor(W / 3)` cells, the first player column region is `floor(W / 3)` cells, and the second player column region absorbs the remainder; with a single player the Boss/Captain region is `floor(W / 2)` cells and the player pane absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region.
 
 ### TMUX-045
 

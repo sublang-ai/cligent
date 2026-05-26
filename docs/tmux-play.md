@@ -123,9 +123,10 @@ players:
 ## Layout
 
 Boss/Captain occupies the left pane; players fill the right in config
-order. Sessions start on a 240x67 grid. With ≥2 players `tmux-play` uses a
-4/6/6 column split, putting `ceil(playerCount / 2)` players in the first player
-column from top to bottom.
+order. Sessions start on a 240x67 grid. Columns are evenly sized: every
+visible column gets 1/N of the window width, where N is the column count
+(2 with a single player, 3 with two or more). With ≥2 players the first
+column holds `ceil(playerCount / 2)` players from top to bottom.
 
 ## Snapshot and work directory
 

@@ -81,7 +81,7 @@ Given the built bin on PATH (or invoked directly with execute permission), when 
 ### TTMUX-014
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028)
 
-Given N configured players, when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2, the Boss/Captain pane shall occupy 4/16 of the window width, the right side shall use two 6/16 player columns, and the first player column shall hold `ceil(N / 2)` players top-to-bottom.
+Given N configured players, when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2, the Boss/Captain pane and each of the two player columns shall each occupy 1/3 of the window width, and the first player column shall hold `ceil(N / 2)` players top-to-bottom; with N = 1, the Boss/Captain pane and the player pane shall each occupy 1/2 of the window width.
 
 ### TTMUX-015
 Verifies: [TMUX-003](../user/tmux-play.md#tmux-003), [TMUX-034](../user/tmux-play.md#tmux-034)
@@ -132,7 +132,7 @@ When the launcher creates the tmux session, the `new-session` invocation shall r
 ### TTMUX-022
 Verifies: [TMUX-028](../user/tmux-play.md#tmux-028)
 
-Given two or more players, when the launcher constructs the tmux session against a 240-column-wide grid, the Boss/Captain pane shall occupy 60 columns (4/16) and each of the two player columns shall occupy 90 columns (6/16), within tmux's nearest-cell rounding.
+Given two or more players, when the launcher constructs the tmux session against a 240-column-wide grid, the Boss/Captain pane and each of the two player columns shall each occupy 80 columns (1/3), within tmux's nearest-cell rounding.
 
 ## Pane Titles
 
@@ -237,7 +237,7 @@ Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmu
 ### TTMUX-031
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028)
 
-Given a real tmux server with two configured players, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes: a Boss/Captain pane at `pane_left=0` with effective width 60 columns (less tmux's 1-cell border), a first player column at `pane_left=60` with effective width 90 columns, and a second player column at `pane_left=150` with effective width 90 columns. Pane order in `list-panes` index space shall match config order.
+Given a real tmux server with two configured players, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes: a Boss/Captain pane at `pane_left=0` with effective width 80 columns (less tmux's 1-cell border), a first player column at `pane_left=80` with effective width 80 columns (less tmux's 1-cell border), and a second player column at `pane_left=160` with effective width 80 columns. Pane order in `list-panes` index space shall match config order.
 
 ### TTMUX-032
 Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
@@ -257,7 +257,7 @@ Given a launcher invocation with `attach: true` and stdout routed to an in-memor
 ### TTMUX-035
 Verifies: [TMUX-044](../user/tmux-play.md#tmux-044)
 
-Given a real tmux server with two configured players, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W × 4/16)` and the first player column region width equal to `floor(W × 6/16)`, where region width = `pane_width + 1` for each pane with a right-side border separator. The reviewer pane's region width shall equal the remainder. The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).
+Given a real tmux server with two configured players, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W / 3)` and the first player column region width equal to `floor(W / 3)`, where region width = `pane_width + 1` for each pane with a right-side border separator. The reviewer pane's region width shall equal the remainder. The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).
 
 ### TTMUX-036
 Verifies: [TMUX-045](../user/tmux-play.md#tmux-045)

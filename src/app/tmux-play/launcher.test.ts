@@ -135,7 +135,7 @@ describe('launchTmuxPlay', () => {
       'split-window',
       '-h',
       '-l',
-      '75%',
+      '160',
       '-t',
       'tmux-play-abc123',
       tailCommand(workDir, 'coder'),
@@ -161,14 +161,11 @@ describe('launchTmuxPlay', () => {
     const initialColumns = Number(
       valueAfter(runTmuxMock.mock.calls[0] ?? [], '-x'),
     );
-    const playerAreaPercent = Number(
-      valueAfter(runTmuxMock.mock.calls[1] ?? [], '-l').replace('%', ''),
+    const playerAreaColumns = Number(
+      valueAfter(runTmuxMock.mock.calls[1] ?? [], '-l'),
     );
     const secondPlayerColumnPercent = Number(
       valueAfter(runTmuxMock.mock.calls[2] ?? [], '-l').replace('%', ''),
-    );
-    const playerAreaColumns = Math.floor(
-      (initialColumns * playerAreaPercent) / 100,
     );
     const secondPlayerColumnColumns = Math.floor(
       (playerAreaColumns * secondPlayerColumnPercent) / 100,
@@ -178,9 +175,9 @@ describe('launchTmuxPlay', () => {
       firstPlayerColumnColumns: playerAreaColumns - secondPlayerColumnColumns,
       secondPlayerColumnColumns,
     }).toEqual({
-      bossColumns: 60,
-      firstPlayerColumnColumns: 90,
-      secondPlayerColumnColumns: 90,
+      bossColumns: 80,
+      firstPlayerColumnColumns: 80,
+      secondPlayerColumnColumns: 80,
     });
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
@@ -236,8 +233,8 @@ describe('launchTmuxPlay', () => {
     );
     const expectedHookCmd =
       `run-shell -b "W=$(tmux display-message -t tmux-play-abc123 -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W * 4 / 16 - 1))` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W * 6 / 16 - 1))"`;
+      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W / 3 - 1))` +
+      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W / 3 - 1))"`;
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -515,7 +512,7 @@ describe('launchTmuxPlay', () => {
 
     const expectedHookCmd =
       `run-shell -b "W=$(tmux display-message -t tmux-play-one -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W * 4 / 16 - 1))"`;
+      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W / 2 - 1))"`;
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -537,7 +534,7 @@ describe('launchTmuxPlay', () => {
       count: 4,
       players: ['r1', 'r2', 'r3', 'r4'],
       expected: [
-        ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid4', 'r1'],
+        ['split-window', '-h', '-l', '160', '-t', 'tmux-play-grid4', 'r1'],
         ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid4:0.1', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.2', 'r4'],
@@ -547,7 +544,7 @@ describe('launchTmuxPlay', () => {
       count: 5,
       players: ['r1', 'r2', 'r3', 'r4', 'r5'],
       expected: [
-        ['split-window', '-h', '-l', '75%', '-t', 'tmux-play-grid5', 'r1'],
+        ['split-window', '-h', '-l', '160', '-t', 'tmux-play-grid5', 'r1'],
         ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid5:0.1', 'r4'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.3', 'r3'],

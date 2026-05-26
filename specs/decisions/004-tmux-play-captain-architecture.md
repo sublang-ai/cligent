@@ -54,7 +54,7 @@ One player uses one right column.
 Two or more players use two columns, with `ceil(playerCount / 2)` players in the first column from top to bottom.
 
 Pane titles are single tokens — `Captain` for the Boss/Captain pane and the title-cased player `id` for each player pane (no `Player:` prefix).
-Width split is 4/16 for the Boss/Captain pane and 6/16 for each player column; the spec items in [user/tmux-play.md](../user/tmux-play.md) carry the normative ratios.
+Width split is even: each visible column gets 1/N of the window where N is the column count (2 for a single player, 3 for two or more); the spec items in [user/tmux-play.md](../user/tmux-play.md) carry the normative ratios.
 
 The Boss/Captain pane runs `tmux-play --session <id> --work-dir <path>`.
 Player panes tail their log and accept no input.

@@ -96,7 +96,7 @@ describe('tmux-play real-tmux acceptance', () => {
   });
 
   acceptanceIt(
-    'preserves the 4/6/6 region split across forced window resizes',
+    'preserves the 1/3 region split across forced window resizes',
     async () => {
       cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
       workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
@@ -140,9 +140,9 @@ describe('tmux-play real-tmux acceptance', () => {
         const panes = await waitForRegions(
           sessionName,
           [
-            Math.floor((width * 4) / 16),
-            Math.floor((width * 6) / 16),
-            width - Math.floor((width * 4) / 16) - Math.floor((width * 6) / 16),
+            Math.floor(width / 3),
+            Math.floor(width / 3),
+            width - 2 * Math.floor(width / 3),
           ],
           2_000,
         );
@@ -156,12 +156,9 @@ describe('tmux-play real-tmux acceptance', () => {
           { width, captainRegion, coderRegion, reviewerRegion },
         ).toEqual({
           width,
-          captainRegion: Math.floor((width * 4) / 16),
-          coderRegion: Math.floor((width * 6) / 16),
-          reviewerRegion:
-            width -
-            Math.floor((width * 4) / 16) -
-            Math.floor((width * 6) / 16),
+          captainRegion: Math.floor(width / 3),
+          coderRegion: Math.floor(width / 3),
+          reviewerRegion: width - 2 * Math.floor(width / 3),
         });
       }
     },
@@ -169,7 +166,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'creates a 240x67 session with 60/90/90 panes, titled, player panes read-only, Captain active',
+    'creates a 240x67 session with 80/80/80 panes, titled, player panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -203,16 +200,16 @@ describe('tmux-play real-tmux acceptance', () => {
       const coder = paneByTitle(panes, 'Coder · codex');
       const reviewer = paneByTitle(panes, 'Reviewer · claude');
 
-      // TTMUX-031: layout — 60/90/90 columns within tmux's border accounting.
-      // Two 1-cell separators eat 1 col from coder (border with captain) and
-      // 1 col from reviewer (border with coder). pane_left advances by the
-      // pane width plus its right-side border, so reviewer.left is 60+90=150.
+      // TTMUX-031: layout — 80/80/80 columns within tmux's border accounting.
+      // Two 1-cell separators eat 1 col from captain (border with coder) and
+      // 1 col from coder (border with reviewer). pane_left advances by the
+      // pane width plus its right-side border, so reviewer.left is 80+80=160.
       expect(captain.left).toBe(0);
-      expect(captain.width).toBe(59);
-      expect(coder.left).toBe(60);
-      expect(coder.width).toBe(89);
-      expect(reviewer.left).toBe(150);
-      expect(reviewer.width).toBe(90);
+      expect(captain.width).toBe(79);
+      expect(coder.left).toBe(80);
+      expect(coder.width).toBe(79);
+      expect(reviewer.left).toBe(160);
+      expect(reviewer.width).toBe(80);
 
       // TTMUX-032 + TTMUX-040: pane titles carry `· <adapter>`.
       expect(captain.title).toBe('Captain · claude');
