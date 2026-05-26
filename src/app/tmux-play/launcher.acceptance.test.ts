@@ -348,6 +348,11 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(statusRight).toContain(
         `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
       );
+      expect(showSessionOption(sessionName, 'window-status-format')).toBe('');
+      expect(showSessionOption(sessionName, 'window-status-current-format')).toBe(
+        '',
+      );
+      expect(showSessionOption(sessionName, 'window-status-separator')).toBe('');
 
       const observer = new TimingObserver({
         sessionName,

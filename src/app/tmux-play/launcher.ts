@@ -187,6 +187,9 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     statusRightFormat(),
   );
   runTmux('set', '-t', options.sessionName, 'status-right-length', '32');
+  runTmux('set', '-t', options.sessionName, 'window-status-format', '');
+  runTmux('set', '-t', options.sessionName, 'window-status-current-format', '');
+  runTmux('set', '-t', options.sessionName, 'window-status-separator', '');
   selectBossPane(options.sessionName);
 }
 
@@ -207,7 +210,8 @@ const CATPPUCCIN_MOCHA = {
 } as const;
 
 // TMUX-047: claim the visual options we color from Catppuccin Mocha.
-// pane-border-format, status-left/right, and the 4:6:6 layout are NOT touched here —
+// pane-border-format, status-left/right, window-list formats, and the 4:6:6
+// layout are NOT touched here —
 // they remain owned by their existing clauses, so the order in buildTmuxSession
 // (theme first, content second) keeps our format strings authoritative.
 function applyCatppuccinMochaTheme(sessionName: string): void {

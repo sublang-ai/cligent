@@ -332,8 +332,9 @@ describe('launchTmuxPlay', () => {
     expect(indexOf('clock-mode-colour')).toBeGreaterThanOrEqual(0);
 
     // Ordering invariant: every theme option precedes the content-bearing
-    // options it does NOT touch, so our pane-border-format and status-left/right
-    // strings remain authoritative if a future theme tries to set them.
+    // options it does NOT touch, so our pane-border-format, status-left/right,
+    // and hidden window-list strings remain authoritative if a future theme
+    // tries to set them.
     const themeOptions = [
       'default-terminal',
       'status-style',
@@ -353,6 +354,13 @@ describe('launchTmuxPlay', () => {
     expect(commandIndexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
     expect(commandIndexOf('status-left')).toBeGreaterThan(lastThemeIndex);
     expect(commandIndexOf('status-right')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('window-status-format')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('window-status-current-format')).toBeGreaterThan(
+      lastThemeIndex,
+    );
+    expect(commandIndexOf('window-status-separator')).toBeGreaterThan(
+      lastThemeIndex,
+    );
 
     // First theme set still comes after the layout has been built.
     expect(optionAt(0)).toBe('default-terminal');
@@ -486,6 +494,9 @@ describe('launchTmuxPlay', () => {
       ),
     );
     expect(setValue('tmux-play-timers', 'status-right-length')).toBe('32');
+    expect(setValue('tmux-play-timers', 'window-status-format')).toBe('');
+    expect(setValue('tmux-play-timers', 'window-status-current-format')).toBe('');
+    expect(setValue('tmux-play-timers', 'window-status-separator')).toBe('');
   });
 
   it('configures the resize hook for a single-player session', async () => {

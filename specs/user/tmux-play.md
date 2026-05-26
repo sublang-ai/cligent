@@ -344,7 +344,7 @@ The theme shall set exactly these tmux options and no others:
 | `display-panes-active-colour` | `mauve` (`#cba6f7`) | |
 | `clock-mode-colour` | `mauve` (`#cba6f7`) | |
 
-`pane-border-format`, `pane-border-status`, `status-left`, `status-left-length`, `status-right`, and `status-right-length` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
+`pane-border-format`, `pane-border-status`, `status-left`, `status-left-length`, `status-right`, `status-right-length`, `window-status-format`, `window-status-current-format`, and `window-status-separator` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
 
 ### TMUX-048
 
@@ -388,6 +388,7 @@ The glyph's own color shall be left to the terminal's emoji font; the duration t
 ### TMUX-055
 
 When the launcher constructs a tmux-play session, the navigation hints shall be rendered in `status-left`, and the session-total timer from [TMUX-053](#tmux-053) shall be rendered in `status-right`.
+The launcher shall suppress tmux's default window-list segment by setting `window-status-format`, `window-status-current-format`, and `window-status-separator` to empty strings, so the status bar does not render window text such as `0:node*`.
 The status-total timer shall refresh roughly once per second while a Boss turn is open and shall freeze between Boss turns.
 The status-total timer shall use the clock glyph `⏰` in both states.
 While a Boss turn is open, the duration text shall use Catppuccin `mauve` (`#cba6f7`); between turns, it shall use `overlay1` (`#7f849c`).
