@@ -125,17 +125,6 @@ describe('fanout Captain', () => {
     expect(captainPrompts[0]).toContain('review notes');
   });
 
-  it('bounds player output in the summary prompt', () => {
-    const prompt = summaryPrompt(
-      'Explain',
-      [playerResult('coder', 'abcdef')],
-      { maxPlayerOutputChars: 3 },
-    );
-
-    expect(prompt).toContain('abc\n[truncated 3 chars]');
-    expect(prompt).not.toContain('abcdef');
-  });
-
   it('includes failed player status and error text', () => {
     const prompt = summaryPrompt('Explain', [
       {

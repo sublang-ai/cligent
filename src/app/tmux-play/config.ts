@@ -85,7 +85,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     reasoningEffort: 'xhigh',
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
-    options: { maxPlayerOutputChars: 4000 },
+    options: {},
   },
   players: [
     {

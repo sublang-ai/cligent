@@ -9,29 +9,11 @@ import type {
   PlayerRunResult,
 } from '../app/tmux-play/contract.js';
 
-const DEFAULT_MAX_PLAYER_OUTPUT_CHARS = 4_000;
-
-export interface FanoutCaptainOptions {
-  readonly maxPlayerOutputChars?: number;
-}
-
-interface ResolvedFanoutOptions {
-  readonly maxPlayerOutputChars: number;
-}
-
-export default function createFanoutCaptain(
-  options: unknown = {},
-): Captain {
-  return new FanoutCaptain(resolveOptions(options));
+export default function createFanoutCaptain(): Captain {
+  return new FanoutCaptain();
 }
 
 export class FanoutCaptain implements Captain {
-  private readonly options: ResolvedFanoutOptions;
-
-  constructor(options: FanoutCaptainOptions = {}) {
-    this.options = resolveOptions(options);
-  }
-
   async handleBossTurn(
     turn: BossTurn,
     context: CaptainContext,
@@ -42,9 +24,7 @@ export class FanoutCaptain implements Captain {
       ),
     );
 
-    await context.callCaptain(
-      summaryPrompt(turn.prompt, playerResults, this.options),
-    );
+    await context.callCaptain(summaryPrompt(turn.prompt, playerResults));
   }
 }
 
@@ -58,12 +38,8 @@ export function playerPrompt(
 export function summaryPrompt(
   bossPrompt: string,
   playerResults: readonly PlayerRunResult[],
-  options: FanoutCaptainOptions = {},
 ): string {
-  const resolved = resolveOptions(options);
-  const sections = playerResults.map((result) =>
-    playerResultSection(result, resolved.maxPlayerOutputChars),
-  );
+  const sections = playerResults.map(playerResultSection);
 
   return [
     'The Boss asked:',
@@ -78,14 +54,11 @@ export function summaryPrompt(
   ].join('\n');
 }
 
-function playerResultSection(
-  result: PlayerRunResult,
-  maxChars: number,
-): string {
+function playerResultSection(result: PlayerRunResult): string {
   const body = result.finalText ?? result.error ?? '(no final text)';
   const lines = [
     `=== player:${result.playerId} status:${result.status} ===`,
-    truncate(body, maxChars),
+    body,
   ];
 
   if (result.error && result.finalText) {
@@ -94,32 +67,4 @@ function playerResultSection(
 
   lines.push(`=== /player:${result.playerId} ===`);
   return lines.join('\n');
-}
-
-function resolveOptions(options: unknown): ResolvedFanoutOptions {
-  if (!isRecord(options)) {
-    return { maxPlayerOutputChars: DEFAULT_MAX_PLAYER_OUTPUT_CHARS };
-  }
-
-  const value = options.maxPlayerOutputChars;
-  if (
-    typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value > 0
-  ) {
-    return { maxPlayerOutputChars: value };
-  }
-
-  return { maxPlayerOutputChars: DEFAULT_MAX_PLAYER_OUTPUT_CHARS };
-}
-
-function truncate(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-  return `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

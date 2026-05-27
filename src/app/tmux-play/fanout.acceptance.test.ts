@@ -116,7 +116,7 @@ async function runFanoutTurn(
 
   try {
     runtime = await createTmuxPlayRuntime({
-      captain: createFanoutCaptain({ maxPlayerOutputChars: 2_000 }),
+      captain: createFanoutCaptain(),
       captainConfig: {
         adapter: 'gemini',
         instruction:

@@ -113,7 +113,7 @@ async function runScenario(): Promise<ScenarioOutcome> {
   let runtime: TmuxPlayRuntime | undefined;
   try {
     runtime = await createTmuxPlayRuntime({
-      captain: createFanoutCaptain({ maxPlayerOutputChars: 2_000 }),
+      captain: createFanoutCaptain(),
       captainConfig: { adapter: 'claude', permissions: { mode: 'auto' } },
       players: [
         { id: 'claude', adapter: 'claude', permissions: { mode: 'auto' } },

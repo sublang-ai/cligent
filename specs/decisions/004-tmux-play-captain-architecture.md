@@ -214,8 +214,7 @@ captain:
   adapter: claude
   model: claude-opus-4-7
   instruction: Coordinate players and answer the Boss.
-  options:
-    maxPlayerOutputChars: 4000
+  options: {}
 players:
   - id: claude
     adapter: claude
@@ -224,6 +223,11 @@ players:
 ```
 
 Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-owned Captain `Cligent` (target of `callCaptain`); `options` is opaque to the runtime and passed verbatim to the factory.
+The built-in fanout captain accepts no options; its factory ignores any value at `captain.options`, so YAML keys there are forwarded but inert for fanout.
+
+The built-in fanout captain stitches each player's full `finalText` (or `error`) into the summary prompt verbatim — no per-player truncation.
+The Captain's built-in instruction ("Players answered independently. Synthesize a final answer for the Boss. Preserve useful disagreements, call out failed or aborted players, and do not copy raw player logs wholesale.") is the only soft check; cligent imposes no hard cap on player output length.
+Workloads that need a hard cap should write a thin Captain wrapper or use a different Captain implementation.
 
 `captain.from` accepts local paths (resolved against the config file's directory) or package specifiers; both resolve through `import()` at session startup.
 

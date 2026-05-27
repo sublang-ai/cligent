@@ -52,8 +52,7 @@ captain:
   instruction: Coordinate the players and answer the Boss.
   permissions:
     mode: auto
-  options:
-    maxPlayerOutputChars: 4000
+  options: {}
 players:
   - id: claude
     adapter: claude
@@ -88,7 +87,7 @@ default; cligent itself ships no project-wide permission posture.
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
-- `captain.options` is opaque to the runtime and forwarded to the factory.
+- `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
 
 ### Permissions
 

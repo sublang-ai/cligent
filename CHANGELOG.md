@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-05-27
+## [0.7.0] - 2026-05-27
 
 ### Changed
 
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `tmux-play-dev` published `bin` entry. The wrapper at `bin/tmux-play-dev.mjs` requires the source tree (`src/`, `tsconfig.json`, `node_modules/.bin/tsc`) to rebuild on launch; none of these ship in the npm tarball (`files` includes `dist`, `docs`, `LICENSE`, `README.md` only) and `typescript` is a `devDependency`, so the 0.6.0 published bin failed for any user not running it from a source checkout. The wrapper script stays in the repo and is exposed locally as `npm run tmux-play-dev`; for "from any directory" access, symlink or alias `bin/tmux-play-dev.mjs` from the source checkout
+- **Breaking:** fanout captain's `maxPlayerOutputChars` option (and the underlying truncation feature) is removed. `createFanoutCaptain()` is now zero-arg in the `@sublang/cligent/captains/fanout` public export; the `FanoutCaptainOptions` type is gone. YAML configs whose `captain.options` still carry `maxPlayerOutputChars` continue to load (the loader treats `captain.options` as opaque per DR-004), but the value is silently ignored. The fanout captain now stitches each player's full `finalText` (or `error`) into the summary prompt verbatim; the Captain's built-in instruction ("do not copy raw player logs wholesale") remains the only soft check, so very long player outputs may consume Captain context or token budget. Re-introduce a cap as explicit configuration if your workload needs one
 
 ### Fixed
 
@@ -163,8 +164,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.6.1...HEAD
-[0.6.1]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.6.1
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sublang-ai/cligent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sublang-ai/cligent/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/sublang-ai/cligent/compare/v0.3.0...v0.4.0

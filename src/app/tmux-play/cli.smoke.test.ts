@@ -390,8 +390,7 @@ function writeYamlConfig(
       '  adapter: claude',
       '  model: claude-opus-4-7',
       '  instruction: Coordinate players.',
-      '  options:',
-      '    maxPlayerOutputChars: 4000',
+      '  options: {}',
       'players:',
       ...players.flatMap((player) => [
         `  - id: ${player}`,

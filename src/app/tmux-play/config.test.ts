@@ -32,7 +32,7 @@ function validConfig(
       adapter: 'claude',
       model: 'claude-opus-4-7',
       instruction: 'Coordinate players.',
-      options: { maxPlayerOutputChars: 4000 },
+      options: {},
     },
     players: [
       {
@@ -65,10 +65,14 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       config.captain.reasoningEffort
         ? `  reasoningEffort: ${config.captain.reasoningEffort}`
         : undefined,
-      '  options:',
-      ...Object.entries(config.captain.options as Record<string, unknown>).map(
-        ([key, value]) => `    ${key}: ${JSON.stringify(value)}`,
-      ),
+      ...(Object.keys(config.captain.options as Record<string, unknown>).length
+        ? [
+            '  options:',
+            ...Object.entries(config.captain.options as Record<string, unknown>).map(
+              ([key, value]) => `    ${key}: ${JSON.stringify(value)}`,
+            ),
+          ]
+        : ['  options: {}']),
       'players:',
       ...config.players.flatMap((player) => [
         `  - id: ${player.id}`,
@@ -678,7 +682,7 @@ describe('tmux-play config loading', () => {
       captain: {
         from: './captains/fanout.js',
         adapter: 'claude',
-        options: { maxPlayerOutputChars: 5000 },
+        options: { tone: 'direct' },
       },
     }));
 
