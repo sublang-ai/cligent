@@ -513,7 +513,11 @@ describe('launchTmuxPlay', () => {
     expect(setValue('tmux-play-timers', 'status-left-length')).toBe('96');
 
     const statusRight = setValue('tmux-play-timers', 'status-right');
-    expect(statusRight).toContain('⏰');
+    expect(statusRight).toContain('⏳');
+    expect(statusRight).toContain('⌛');
+    expect(statusRight).toContain(
+      `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},⏳,⌛}`,
+    );
     expect(statusRight).toContain(`#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`);
     expect(statusRight).toContain(
       `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
@@ -523,7 +527,12 @@ describe('launchTmuxPlay', () => {
     );
     expect(statusRight).toContain('#cba6f7');
     expect(statusRight).toContain('#7f849c');
-    expect(statusRight.indexOf('⏰')).toBeLessThan(
+    // The hourglass conditional precedes the color conditional.
+    expect(
+      statusRight.indexOf(
+        `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},⏳,⌛}`,
+      ),
+    ).toBeLessThan(
       statusRight.indexOf(
         `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},#[fg=`,
       ),

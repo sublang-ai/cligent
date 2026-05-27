@@ -419,8 +419,13 @@ function statusLeftFormat(c: CatppuccinPalette): string {
 }
 
 function statusRightFormat(c: CatppuccinPalette): string {
+  // TMUX-055: the status-total timer uses the same hourglass pair as the
+  // per-pane title timers (TMUX-054) — ⏳ while a Boss turn is open and ⌛
+  // between turns — so the bottom-right status timer carries the same
+  // flowing-vs-settled cue as the pane titles above it. The duration text
+  // still carries the running/frozen Catppuccin color cue.
   return [
-    '⏰ ',
+    `#{?#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1},⏳,⌛} `,
     timerColorFormat(TMUX_STATUS_TIMER_RUNNING_OPTION, c.mauve, c.overlay1),
     `#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`,
     '#[default]',

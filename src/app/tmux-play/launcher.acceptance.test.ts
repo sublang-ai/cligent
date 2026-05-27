@@ -340,7 +340,8 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(statusLeft).toContain('o=switch pane');
 
       const statusRight = showSessionOption(sessionName, 'status-right');
-      expect(statusRight).toContain('⏰');
+      expect(statusRight).toContain('⏳');
+      expect(statusRight).toContain('⌛');
       expect(statusRight).toContain(`#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`);
       expect(statusRight).toContain(
         `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
@@ -401,7 +402,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⏳ #[fg=#a6e3a1]4s',
         );
         expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
-          '⏰ #[fg=#cba6f7]9s',
+          '⏳ #[fg=#cba6f7]9s',
         );
 
         observer.onRecord(playerFinished('reviewer', 11_000));
@@ -437,7 +438,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⌛ #[fg=#bac2de]5s',
         );
         expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
-          '⏰ #[fg=#7f849c]12s',
+          '⌛ #[fg=#7f849c]12s',
         );
       } finally {
         observer.dispose();

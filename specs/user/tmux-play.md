@@ -399,7 +399,7 @@ The glyph's own color shall be left to the terminal's emoji font; the duration t
 When the launcher constructs a tmux-play session, the navigation hints shall be rendered in `status-left`, and the session-total timer from [TMUX-053](#tmux-053) shall be rendered in `status-right`.
 The launcher shall suppress tmux's default window-list segment by setting `window-status-format`, `window-status-current-format`, and `window-status-separator` to empty strings, so the status bar does not render window text such as `0:node*`.
 The status-total timer shall refresh roughly once per second while a Boss turn is open and shall freeze between Boss turns.
-The status-total timer shall use the clock glyph `⏰` in both states.
+The status-total timer shall use the hourglass pair from [TMUX-054](#tmux-054) — the running glyph `⏳` while a Boss turn is open and the settled glyph `⌛` between turns — so the bottom-right status timer reads with the same flowing-vs-settled cue as the per-pane title timers.
 While a Boss turn is open, the duration text shall use Catppuccin `mauve` (`#cba6f7`); between turns, it shall use `overlay1` (`#7f849c`).
 The launcher shall set sufficient `status-left-length` and `status-right-length` values so the hints and total timer are not truncated under the 240-column initial window from [TMUX-035](#tmux-035).
 
