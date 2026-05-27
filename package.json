@@ -22,15 +22,13 @@
     "adapter"
   ],
   "files": [
-    "bin",
     "dist",
     "docs",
     "LICENSE",
     "README.md"
   ],
   "bin": {
-    "tmux-play": "./dist/app/tmux-play/cli.js",
-    "tmux-play-dev": "./bin/tmux-play-dev.mjs"
+    "tmux-play": "./dist/app/tmux-play/cli.js"
   },
   "sideEffects": false,
   "main": "dist/index.js",
@@ -77,6 +75,7 @@
     "test": "vitest run --config config/vitest.config.ts",
     "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",
+    "tmux-play-dev": "node ./bin/tmux-play-dev.mjs",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
