@@ -44,6 +44,7 @@ Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 config, `tmux-play` prints a warning to rename or convert it.
 
 ```yaml
+theme: auto
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
@@ -63,6 +64,15 @@ players:
     permissions:
       mode: auto
 ```
+
+The top-level `theme` field selects the Catppuccin flavor applied to the
+session chrome (status bar, pane-border row, accent colors). Accepted
+values are `mocha` (dark terminals), `latte` (light terminals), and
+`auto` (default; the launcher detects via `COLORFGBG` and
+`TERM_PROGRAM=Apple_Terminal`, then falls back to Mocha). The presenter
+inside each pane uses the same resolved flavor for speaker prefixes,
+status lines, and tool lifecycle, so the `boss>` prompt and per-player
+text stay readable on the host terminal's background.
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
 Captain and both players so the Claude Code and Codex CLI defaults run in

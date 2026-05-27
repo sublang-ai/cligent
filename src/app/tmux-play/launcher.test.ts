@@ -66,17 +66,34 @@ class MemoryOutput {
 describe('launchTmuxPlay', () => {
   let tempDir: string | undefined;
 
+  // Save env state for restoration so the flavor detector behaves
+  // deterministically (default Mocha) regardless of the dev's terminal.
+  const originalColorFgBg = process.env.COLORFGBG;
+  const originalTermProgram = process.env.TERM_PROGRAM;
+
   beforeEach(() => {
     isTmuxAvailableMock.mockReturnValue(true);
     isGlowAvailableMock.mockReturnValue(true);
     runTmuxMock.mockReset();
     attachTmuxSessionMock.mockReset();
+    delete process.env.COLORFGBG;
+    delete process.env.TERM_PROGRAM;
   });
 
   afterEach(() => {
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = undefined;
+    }
+    if (originalColorFgBg === undefined) {
+      delete process.env.COLORFGBG;
+    } else {
+      process.env.COLORFGBG = originalColorFgBg;
+    }
+    if (originalTermProgram === undefined) {
+      delete process.env.TERM_PROGRAM;
+    } else {
+      process.env.TERM_PROGRAM = originalTermProgram;
     }
   });
 
@@ -296,7 +313,17 @@ describe('launchTmuxPlay', () => {
       ',*:RGB',
     );
 
-    // TMUX-047: theme options the launcher claims, each with a Mocha hex anchor.
+    // TMUX-047: window-style / window-active-style are NOT claimed. The
+    // canonical Catppuccin tmux pattern leaves the pane content area as the
+    // user's terminal-native canvas; the theme paints only the status bar,
+    // pane-border row, and accents. Switching flavor by host bg keeps the
+    // band adaptive (Mocha on dark terminals, Latte on light) instead of
+    // forcing a single canvas across all hosts.
+    expect(indexOf('window-style')).toBe(-1);
+    expect(indexOf('window-active-style')).toBe(-1);
+    // status-style: Mocha text on mantle band by default (test env has
+    // neither COLORFGBG nor TERM_PROGRAM=Apple_Terminal set, so the
+    // detector falls back to Mocha per detectCatppuccinFlavor).
     expect(setCalls).toContainEqual([
       'set',
       '-t',
@@ -320,8 +347,11 @@ describe('launchTmuxPlay', () => {
       'pane-border-style',
       'fg=#6c7086',
     ]);
-    expect(indexOf('window-status-style')).toBeGreaterThanOrEqual(0);
-    expect(indexOf('window-status-current-style')).toBeGreaterThanOrEqual(0);
+    // window-status-style and window-status-current-style are not claimed:
+    // window-status-format / window-status-current-format are set to empty
+    // strings below, so those style options have nothing to color.
+    expect(indexOf('window-status-style')).toBe(-1);
+    expect(indexOf('window-status-current-style')).toBe(-1);
     expect(indexOf('message-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('message-command-style')).toBeGreaterThanOrEqual(0);
     expect(indexOf('display-panes-colour')).toBeGreaterThanOrEqual(0);
@@ -335,8 +365,6 @@ describe('launchTmuxPlay', () => {
     const themeOptions = [
       'default-terminal',
       'status-style',
-      'window-status-style',
-      'window-status-current-style',
       'pane-border-style',
       'pane-active-border-style',
       'message-style',
@@ -443,9 +471,14 @@ describe('launchTmuxPlay', () => {
       'pane-border-format',
     );
     expect(paneBorderFormat).toContain('#{pane_title}');
+    // TMUX-048: only the Captain pane (index 0) carries the blue highlight
+    // block, and only while active. The else branch carries Mocha text on
+    // the mantle surface — every other pane (inactive Captain, active
+    // player, inactive player) reads against the theme's own surface band.
     expect(paneBorderFormat).toContain(
-      '#{?pane_active,#[fg=#1e1e2e]#[bg=#89b4fa]#[bold],#[fg=#cdd6f4]#[bg=#181825]}',
+      '#{?#{&&:#{pane_active},#{e|==:#{pane_index},0}},#[fg=#1e1e2e]#[bg=#89b4fa]#[bold],#[fg=#cdd6f4]#[bg=#181825]}',
     );
+    // After the title the row continues on Mocha mantle through the timer.
     expect(paneBorderFormat).toContain(
       ' #{pane_title} #[fg=#cdd6f4]#[bg=#181825]#[nobold] ',
     );
@@ -454,14 +487,19 @@ describe('launchTmuxPlay', () => {
     expect(paneBorderFormat).toContain(
       `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
     );
+    // TMUX-054: frozen timer color is subtext1, picked for legibility on
+    // the Mocha mantle surface the pane-border row carries.
     expect(paneBorderFormat).toContain(
       `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#bac2de]}`,
     );
     expect(paneBorderFormat).toContain('⏳');
     expect(paneBorderFormat).toContain('⌛');
     expect(paneBorderFormat).toContain('#bac2de');
-    expect(paneBorderFormat).not.toContain('#[default] ⏳');
-    expect(paneBorderFormat).not.toContain('#[default] ⌛');
+    // Symmetry: one space leads the title (' #{pane_title}') and one
+    // space trails the timer text before the closing #[default] reset.
+    expect(paneBorderFormat).toContain(
+      `#{${TMUX_PANE_TIMER_TEXT_OPTION}} #[default]`,
+    );
     expect(paneBorderFormat.indexOf('⏳')).toBeLessThan(
       paneBorderFormat.indexOf(
         `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=`,

@@ -29,11 +29,15 @@ When `--config <path>` is supplied, the launcher shall load that file and skip d
 
 ### TMUX-005
 
-A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array.
+A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array. The top-level config may also include an optional `theme` field per [TMUX-060](#tmux-060).
 
 ### TMUX-006
 
 The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `reasoningEffort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
+
+### TMUX-060
+
+The top-level `theme` field shall be one of the closed set `'mocha' | 'latte' | 'auto'` and selects the Catppuccin flavor per [TMUX-047](#tmux-047). A missing `theme` field is equivalent to `'auto'`. The loader shall reject values outside the closed set with an error that names the offending path (`theme`) per [TMUX-008](#tmux-008). The default home config shall include `theme: auto` so first-run users see the option exists.
 
 ### TMUX-007
 
@@ -325,44 +329,49 @@ Width sources: the Boss/Captain pane width shall track the captain's stdout `col
 
 ### TMUX-047
 
-The launcher shall apply the **Catppuccin Mocha** palette per [[1]] to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-left/status-right strings remain authoritative for any option a future theme might also claim.
+The launcher shall apply a **Catppuccin flavor** (Mocha for dark terminals, Latte for light) per [[1]] to the session's appearance options before any content-bearing option in [TMUX-036](#tmux-036), [TMUX-038](#tmux-038)–[TMUX-040](#tmux-040), or [TMUX-044](#tmux-044) is set, so the launcher's own pane-border-format and status-left/status-right strings remain authoritative for any option a future theme might also claim. Catppuccin ships both flavors with matching role keys; selecting the flavor whose `mantle` band reads as a subtle tonal step on the user's terminal canvas — rather than an inverted dark block on light or vice versa — is the canonical pattern.
 
-The theme shall set exactly these tmux options and no others:
+The flavor shall resolve in this priority: (1) explicit `themeFlavor` on the programmatic `launchTmuxPlay` option, when present and one of `'mocha' | 'latte'`; (2) the YAML config's `theme` field per [TMUX-006](#tmux-006), when present and one of `'mocha' | 'latte'`; (3) env detection — `COLORFGBG` with bg index ≥ 7 → Latte else Mocha, then `TERM_PROGRAM=Apple_Terminal` → Latte, else default Mocha — triggered when the highest-priority value is `'auto'` or unset. The launcher shall write the resolved (concrete) flavor into the session work-dir snapshot per [TMUX-034](#tmux-034) so the session subprocess uses the same flavor for pane-content SGR colors per [TMUX-038](#tmux-038) without re-running detection.
+
+The `window-style` and `window-active-style` options are NOT claimed — the canonical Catppuccin tmux pattern leaves the pane content area on the user's terminal-native canvas, and switching flavor by host bg is what keeps the band tonally correct without forcing a dark UI onto a light terminal.
+
+The theme shall set exactly these tmux options and no others (`<text>`, `<mantle>`, etc. resolve to the Mocha or Latte hex per the resolved flavor):
 
 | Option | Value | Note |
 | --- | --- | --- |
 | `default-terminal` | `tmux-256color` | Truecolor enablement so the hex values below render rather than quantizing to the nearest 256-color index. Set on the session. |
 | `terminal-overrides` | append `,*:RGB` | Server option; the leading-comma list-separator idiom prepends `*:RGB` without clobbering existing entries. tmux normalizes the stored value, so `show-options -gv terminal-overrides` reports the entry as `*:RGB`. |
-| `status-style` | `fg=text,bg=mantle` (`fg=#cdd6f4,bg=#181825`) | |
-| `window-status-style` | `fg=subtext0,bg=mantle` (`fg=#a6adc8,bg=#181825`) | |
-| `window-status-current-style` | `fg=mauve,bg=mantle` (`fg=#cba6f7,bg=#181825`) | |
-| `pane-border-style` | `fg=overlay0` (`fg=#6c7086`) | Inactive border; dimmer than the active border for at-a-glance contrast per [TMUX-048](#tmux-048). |
-| `pane-active-border-style` | `fg=blue` (`fg=#89b4fa`) | |
-| `message-style` | `fg=base,bg=peach` (`fg=#1e1e2e,bg=#fab387`) | |
-| `message-command-style` | `fg=base,bg=green` (`fg=#1e1e2e,bg=#a6e3a1`) | |
-| `display-panes-colour` | `overlay0` (`#6c7086`) | |
-| `display-panes-active-colour` | `mauve` (`#cba6f7`) | |
-| `clock-mode-colour` | `mauve` (`#cba6f7`) | |
+| `status-style` | `fg=<text>,bg=<mantle>` | Catppuccin text on the mantle band. Mocha: `fg=#cdd6f4,bg=#181825`. Latte: `fg=#4c4f69,bg=#e6e9ef`. |
+| `pane-border-style` | `fg=<overlay0>` | Inactive border; dimmer than the active border for at-a-glance contrast per [TMUX-048](#tmux-048). Mocha: `fg=#6c7086`. Latte: `fg=#9ca0b0`. |
+| `pane-active-border-style` | `fg=<blue>` | Mocha: `fg=#89b4fa`. Latte: `fg=#1e66f5`. |
+| `message-style` | `fg=<base>,bg=<peach>` | Mocha: `fg=#1e1e2e,bg=#fab387`. Latte: `fg=#eff1f5,bg=#fe640b`. |
+| `message-command-style` | `fg=<base>,bg=<green>` | Mocha: `fg=#1e1e2e,bg=#a6e3a1`. Latte: `fg=#eff1f5,bg=#40a02b`. |
+| `display-panes-colour` | `<overlay0>` | |
+| `display-panes-active-colour` | `<mauve>` | Mocha: `#cba6f7`. Latte: `#8839ef`. |
+| `clock-mode-colour` | `<mauve>` | |
 
-`pane-border-format`, `pane-border-status`, `status-left`, `status-left-length`, `status-right`, `status-right-length`, `window-status-format`, `window-status-current-format`, and `window-status-separator` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
+`window-style` and `window-active-style` are not claimed: the canonical Catppuccin tmux pattern leaves the pane content area as the user's terminal-native canvas, and a per-host flavor choice gives the theme adaptive surface tone without overriding the terminal background. `window-status-style` and `window-status-current-style` are not claimed either: the window-list formats below ([TMUX-055](#tmux-055)) are set to empty strings, so those style options have nothing to color and any tmux default for them is inert. `pane-border-format`, `pane-border-status`, `status-left`, `status-left-length`, `status-right`, `status-right-length`, `window-status-format`, `window-status-current-format`, and `window-status-separator` are NOT claimed by the theme; they remain owned by the clauses cited above (and [TMUX-048](#tmux-048) for the format) and shall be set after the theme so a future swap is a one-place change.
 
 ### TMUX-048
 
 The launcher shall set each pane's title to `<Display> · <adapter>` where `<Display>` is `Captain` for the Boss/Captain pane and the title-cased player id (per [TMUX-036](#tmux-036)) for each player pane, and `<adapter>` is the adapter name configured in the YAML config for the captain or the player respectively. The middle separator shall be ` · ` (space + U+00B7 middle dot + space).
 
-The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and future player-keyed coloring) as a single lookup keyed by adapter name. Known adapter accents:
+The launcher shall publish a stable per-adapter accent color, surfaced to consumers (the presenter, per [TMUX-038](#tmux-038) Task 2 and the launcher's own per-pane timer accents) as a single lookup keyed by adapter name and the resolved Catppuccin flavor from [TMUX-047](#tmux-047). Each adapter maps to the same role across flavors (claude → green, codex → teal, etc.) so the session reads the matching variant. Known adapter accents:
 
-| Adapter | Mocha role | Hex |
-| --- | --- | --- |
-| `claude` | `green` | `#a6e3a1` |
-| `codex` | `teal` | `#94e2d5` |
-| `gemini` | `lavender` | `#b4befe` |
-| `opencode` | `pink` | `#f5c2e7` |
+| Adapter | Role | Mocha hex | Latte hex |
+| --- | --- | --- | --- |
+| `claude` | `green` | `#a6e3a1` | `#40a02b` |
+| `codex` | `teal` | `#94e2d5` | `#179299` |
+| `gemini` | `lavender` | `#b4befe` | `#7287fd` |
+| `opencode` | `pink` | `#f5c2e7` | `#ea76cb` |
 
-For an adapter name outside the table, the lookup shall return a stable color from a fallback pool of `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`, selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The fallback pool shall not contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
+For an adapter name outside the table, the lookup shall return a stable color from a fallback pool selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The Mocha pool is `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`; the Latte pool is the same roles at their Latte hex (`sapphire #209fb5`, `sky #04a5e5`, `rosewater #dc8a78`, `maroon #e64553`, `flamingo #dd7878`). Neither pool shall contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
+The Boss/Captain pane's timer accent shall use Catppuccin `mauve` at the flavor-resolved hex (`#cba6f7` on Mocha, `#8839ef` on Latte), so the Captain pane timer reads against the mantle band on either polarity rather than washing out under a Mocha-only lookup on a Latte session.
 
-When the launcher sets `pane-border-format`, the format shall keep the full pane-border row on an explicit Catppuccin Mocha surface background after the pane title rather than resetting to terminal default styling before the timer segment.
-The active pane title segment shall remain accented with the active border color, but the separator, timer glyph, and timer duration text shall render on the same explicit surface row instead of a default-background gap.
+When the launcher sets `pane-border-format`, only the Boss/Captain pane (pane index 0) shall carry the highlighted blue title block, and only while it is the active pane. Player pane titles — even when active — shall never carry the highlight block (they are read-only per [TMUX-027](#tmux-027) and don't need a focus indicator there); the format's else branch shall render their titles on the resolved flavor's mantle surface (`fg=text,bg=mantle`).
+The pane-border row shall carry an explicit Catppuccin mantle background end-to-end after the title segment, so the separator, timer glyph, and timer duration text all sit on the same theme-defined surface. The pane content area above this row stays on the user's terminal-native canvas (no `window-style` claim per [TMUX-047](#tmux-047)); the mantle band on the border row reads as a tonal step away from that canvas — darker on a dark terminal under Mocha, lighter-but-distinct on a light terminal under Latte — so the title-and-timer band always stands out from pane content without inverting the user's chosen polarity.
+The launcher shall set `pane-border-status` to `top` so each pane's title-and-timer row renders above its content. The bottom edge of each pane is the tonal step between the user's terminal-native pane content and the mantle status bar below, which serves as the pane's lower visual boundary without claiming a second border row.
+The format's whitespace shall be symmetric: exactly one space precedes the `#{pane_title}` substitution and exactly one space follows the timer text substitution before the trailing `#[default]` reset, so the title-and-timer band sits with equal left and right padding rather than reading flush-right against the next pane's separator.
 
 ## Run-Time Timers
 
@@ -381,7 +390,7 @@ When the launcher constructs a tmux-play session, each pane border shall include
 The Boss/Captain pane border timer shall display the Captain timer from [TMUX-053](#tmux-053), and each player pane border timer shall display that player's timer from [TMUX-053](#tmux-053).
 The pane-border timer shall not replace or remove the pane title and adapter information required by [TMUX-048](#tmux-048).
 While a pane's current run is open, its timer shall refresh roughly once per second and render with the running glyph `⏳` plus the bright Catppuccin accent for that pane: `mauve` (`#cba6f7`) for Captain and [TMUX-048](#tmux-048)'s adapter accent for a player.
-When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus a Catppuccin text-level neutral color such as `subtext1` (`#bac2de`), not `overlay1` (`#7f849c`), so the timer remains legible against the pane-border surface.
+When a pane has no open run, its timer shall render frozen with the settled glyph `⌛` plus a Catppuccin text-level neutral color such as `subtext1` (`#bac2de`), not `overlay1` (`#7f849c`), so the timer remains legible against the Mocha mantle pane-border surface required by [TMUX-048](#tmux-048).
 The timer format shall budget two display cells for each emoji glyph because terminal emoji presentation is not uniformly reported by tmux.
 The glyph's own color shall be left to the terminal's emoji font; the duration text shall carry the Catppuccin running/frozen cue.
 

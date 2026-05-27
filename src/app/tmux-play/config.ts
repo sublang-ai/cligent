@@ -13,6 +13,7 @@ import {
   type PlayerAdapterName,
   type PlayerConfig,
 } from './players.js';
+import type { CatppuccinFlavor } from './player-colors.js';
 import type {
   PermissionLevel,
   PermissionPolicy,
@@ -35,9 +36,20 @@ export interface CaptainConfig {
   options: JsonValue;
 }
 
+export type CatppuccinFlavorConfig = CatppuccinFlavor | 'auto';
+export type { CatppuccinFlavor };
+
 export interface TmuxPlayConfig {
   captain: CaptainConfig;
   players: PlayerConfig[];
+  /**
+   * Catppuccin flavor to apply to the session chrome. `'auto'` (default
+   * when omitted) lets the launcher pick via env detection
+   * (`COLORFGBG` → `TERM_PROGRAM` → Mocha fallback). The snapshot written
+   * by {@link writeTmuxPlayConfigSnapshot} stores the resolved
+   * (`'mocha' | 'latte'`) value so the session subprocess never re-detects.
+   */
+  theme?: CatppuccinFlavorConfig;
 }
 
 export interface LoadedTmuxPlayConfig {
@@ -65,6 +77,7 @@ const LEGACY_CONFIG_FILES = [
 ] as const;
 
 const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
+  theme: 'auto',
   captain: {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
@@ -144,18 +157,25 @@ export async function loadTmuxPlayConfig(
 
 export function createTmuxPlayConfigSnapshot(
   loaded: LoadedTmuxPlayConfig,
+  resolvedFlavor?: CatppuccinFlavor,
 ): TmuxPlayConfig {
   const config = structuredCloneJson(loaded.config);
   config.captain.from = normalizeCaptainFrom(config.captain.from, loaded.path);
+  if (resolvedFlavor !== undefined) {
+    // Snapshot always stores a resolved flavor (mocha | latte) so the
+    // session subprocess uses it directly without re-running detection.
+    config.theme = resolvedFlavor;
+  }
   return config;
 }
 
 export async function writeTmuxPlayConfigSnapshot(
   loaded: LoadedTmuxPlayConfig,
   workDir: string,
+  resolvedFlavor?: CatppuccinFlavor,
 ): Promise<string> {
   const snapshotPath = join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT);
-  const snapshot = createTmuxPlayConfigSnapshot(loaded);
+  const snapshot = createTmuxPlayConfigSnapshot(loaded, resolvedFlavor);
   await mkdir(workDir, { recursive: true });
   await writeFile(snapshotPath, JSON.stringify(snapshot, null, 2) + '\n');
   return snapshotPath;
@@ -249,7 +269,27 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const input = requireObject(value, 'config');
   const captain = normalizeCaptainConfig(input.captain);
   const players = normalizePlayerConfigs(input.players);
-  return { captain, players };
+  const theme = optionalThemeFlavor(input.theme, 'theme');
+  const config: TmuxPlayConfig = { captain, players };
+  if (theme !== undefined) config.theme = theme;
+  return config;
+}
+
+const THEME_FLAVORS: ReadonlySet<CatppuccinFlavorConfig> = new Set([
+  'mocha',
+  'latte',
+  'auto',
+]);
+
+function optionalThemeFlavor(
+  value: unknown,
+  path: string,
+): CatppuccinFlavorConfig | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !THEME_FLAVORS.has(value as never)) {
+    throw new Error(`${path} must be one of: mocha, latte, auto`);
+  }
+  return value as CatppuccinFlavorConfig;
 }
 
 function normalizeCaptainConfig(value: unknown): CaptainConfig {

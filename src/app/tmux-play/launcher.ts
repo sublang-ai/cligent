@@ -15,7 +15,11 @@ import {
   runTmux,
 } from '../shared/tmux.js';
 import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
-import { playerAccent, SPEAKER_CAPTAIN } from './player-colors.js';
+import {
+  captainAccent,
+  playerAccent,
+  type CatppuccinFlavor,
+} from './player-colors.js';
 import {
   TMUX_PANE_TIMER_ACCENT_OPTION,
   TMUX_PANE_TIMER_RUNNING_OPTION,
@@ -27,6 +31,7 @@ import {
   TMUX_PLAY_CONFIG_FILE,
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,
+  type CatppuccinFlavorConfig,
   type LoadedTmuxPlayConfig,
 } from './config.js';
 import type { PlayerConfig } from './players.js';
@@ -59,6 +64,15 @@ export interface LaunchTmuxPlayOptions {
   readonly stdout?: Output;
   readonly stderr?: Output;
   readonly attach?: boolean;
+  /**
+   * Catppuccin flavor to apply. When omitted, the YAML config's `theme`
+   * field decides (`'mocha' | 'latte' | 'auto'`); when the YAML value is
+   * `'auto'` or unset, {@link detectCatppuccinFlavor} resolves via env.
+   * An explicit `'mocha'` or `'latte'` passed here overrides the YAML
+   * value; an explicit `'auto'` re-triggers env detection regardless of
+   * what the YAML says.
+   */
+  readonly themeFlavor?: CatppuccinFlavor | 'auto';
 }
 
 export interface LaunchTmuxPlayResult {
@@ -110,8 +124,15 @@ export async function launchTmuxPlay(
     TMUX_PLAY_SESSION_MARKER,
     sessionId,
   );
-  const snapshotPath = await writeTmuxPlayConfigSnapshot(loaded, workDir);
-
+  const flavor = resolveThemeFlavor(
+    options.themeFlavor,
+    loaded.config.theme,
+  );
+  const snapshotPath = await writeTmuxPlayConfigSnapshot(
+    loaded,
+    workDir,
+    flavor,
+  );
   buildTmuxSession({
     loaded,
     cwd: options.cwd,
@@ -119,6 +140,8 @@ export async function launchTmuxPlay(
     sessionName,
     workDir,
     selfBin: options.selfBin ?? process.argv[1],
+    palette: paletteFor(flavor),
+    themeFlavor: flavor,
   });
 
   if (options.attach !== false) {
@@ -136,11 +159,14 @@ interface BuildTmuxSessionOptions {
   readonly sessionName: string;
   readonly workDir: string;
   readonly selfBin: string;
+  readonly palette: CatppuccinPalette;
+  readonly themeFlavor: CatppuccinFlavor;
 }
 
 function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const players = options.loaded.config.players;
   const bossCommand = buildSessionCommand(options);
+  const c = options.palette;
 
   runTmux(
     'new-session',
@@ -159,10 +185,10 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     playerPanes,
     options.loaded.config.captain.adapter,
   );
-  setTimerOptions(options.sessionName, playerPanes);
+  setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
   disablePlayerPaneInput(options.sessionName, playerPanes);
   configureLayoutHooks(options.sessionName, players.length);
-  applyCatppuccinMochaTheme(options.sessionName);
+  applyCatppuccinTheme(options.sessionName, c);
   runTmux(
     'set-window-option',
     '-t',
@@ -175,14 +201,14 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     '-t',
     windowTarget(options.sessionName),
     'pane-border-format',
-    paneBorderFormat(),
+    paneBorderFormat(c),
   );
   runTmux(
     'set',
     '-t',
     options.sessionName,
     'status-left',
-    statusLeftFormat(),
+    statusLeftFormat(c),
   );
   runTmux('set', '-t', options.sessionName, 'status-left-length', '96');
   runTmux(
@@ -190,7 +216,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     '-t',
     options.sessionName,
     'status-right',
-    statusRightFormat(),
+    statusRightFormat(c),
   );
   runTmux('set', '-t', options.sessionName, 'status-right-length', '32');
   runTmux('set', '-t', options.sessionName, 'window-status-format', '');
@@ -199,8 +225,10 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   selectBossPane(options.sessionName);
 }
 
-// Catppuccin Mocha palette: https://catppuccin.com/palette/
-// Only the colors we actually wire up are listed.
+// Catppuccin palette family: https://catppuccin.com/palette/
+// Only the roles we actually wire up are listed; both Mocha (dark) and
+// Latte (light) carry the same role keys so the format/theme functions
+// below are palette-agnostic.
 const CATPPUCCIN_MOCHA = {
   base: '#1e1e2e',
   mantle: '#181825',
@@ -215,35 +243,125 @@ const CATPPUCCIN_MOCHA = {
   green: '#a6e3a1',
 } as const;
 
-// TMUX-047: claim the visual options we color from Catppuccin Mocha.
-// pane-border-format, status-left/right, window-list formats, and the
-// even-column layout are NOT touched here —
-// they remain owned by their existing clauses, so the order in buildTmuxSession
-// (theme first, content second) keeps our format strings authoritative.
-function applyCatppuccinMochaTheme(sessionName: string): void {
-  const c = CATPPUCCIN_MOCHA;
+const CATPPUCCIN_LATTE = {
+  base: '#eff1f5',
+  mantle: '#e6e9ef',
+  overlay0: '#9ca0b0',
+  overlay1: '#8c8fa1',
+  subtext0: '#6c6f85',
+  subtext1: '#5c5f77',
+  text: '#4c4f69',
+  blue: '#1e66f5',
+  mauve: '#8839ef',
+  peach: '#fe640b',
+  green: '#40a02b',
+} as const;
+
+type CatppuccinPalette = {
+  readonly base: string;
+  readonly mantle: string;
+  readonly overlay0: string;
+  readonly overlay1: string;
+  readonly subtext0: string;
+  readonly subtext1: string;
+  readonly text: string;
+  readonly blue: string;
+  readonly mauve: string;
+  readonly peach: string;
+  readonly green: string;
+};
+
+function paletteFor(flavor: CatppuccinFlavor): CatppuccinPalette {
+  return flavor === 'latte' ? CATPPUCCIN_LATTE : CATPPUCCIN_MOCHA;
+}
+
+// Pick the Catppuccin flavor that matches the host terminal's background.
+// We don't claim `window-style` (per the canonical Catppuccin tmux pattern),
+// so the user's terminal background bleeds through to pane content; the
+// status bar / pane-border row sit on this flavor's `mantle`, which must
+// share the host's polarity for the band to read as a subtle tonal step
+// instead of an inverted block.
+//
+// Detection signals, in priority order:
+//   1. COLORFGBG env var: many terminals (rxvt, Konsole, some configs of
+//      iTerm2 / kitty) set this to "fg;bg" with bg in the 0-15 ANSI range.
+//      bg >= 7 → bright canvas → Latte; bg <= 6 → dark canvas → Mocha.
+//   2. TERM_PROGRAM heuristic: macOS Terminal.app's default profile is a
+//      white canvas (and it does not set COLORFGBG), so default to Latte
+//      there. iTerm.app's default is dark, so default to Mocha.
+//   3. Default Mocha.
+//
+// None of these are perfect — a user with a custom Terminal.app theme on
+// dark, or a COLORFGBG that lies, will still get the wrong flavor. The
+// `themeVariant` option on launchTmuxPlay (and the YAML loader, once that
+// lands) is the user-facing override for those cases.
+/**
+ * Resolve the Catppuccin flavor to apply. Priority: explicit programmatic
+ * override (`launchOption`) → YAML `theme` field (`yamlOption`) → env
+ * detection via {@link detectCatppuccinFlavor}. An explicit `'auto'` at any
+ * level forwards to env detection; an unset value at one level falls
+ * through to the next.
+ */
+export function resolveThemeFlavor(
+  launchOption: CatppuccinFlavor | 'auto' | undefined,
+  yamlOption: CatppuccinFlavorConfig | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): CatppuccinFlavor {
+  if (launchOption === 'mocha' || launchOption === 'latte') {
+    return launchOption;
+  }
+  if (launchOption === 'auto') {
+    return detectCatppuccinFlavor(env);
+  }
+  if (yamlOption === 'mocha' || yamlOption === 'latte') {
+    return yamlOption;
+  }
+  return detectCatppuccinFlavor(env);
+}
+
+export function detectCatppuccinFlavor(
+  env: NodeJS.ProcessEnv = process.env,
+): CatppuccinFlavor {
+  const fgbg = env.COLORFGBG;
+  if (fgbg) {
+    const parts = fgbg.split(';');
+    const bg = Number(parts[parts.length - 1]);
+    if (Number.isFinite(bg)) {
+      return bg >= 7 ? 'latte' : 'mocha';
+    }
+  }
+  if (env.TERM_PROGRAM === 'Apple_Terminal') {
+    return 'latte';
+  }
+  return 'mocha';
+}
+
+// TMUX-047: apply the Catppuccin flavor to the session's surface options
+// (status bar, pane borders, message popups, accents). We deliberately do
+// NOT claim `window-style` / `window-active-style`: the canonical Catppuccin
+// tmux plugin leaves the pane content area as the user's terminal-native
+// canvas, and switching flavor by host bg is what keeps the theme adaptive
+// instead of forcing a dark UI onto a light terminal (or vice versa).
+function applyCatppuccinTheme(
+  sessionName: string,
+  c: CatppuccinPalette,
+): void {
   // 24-bit color enablement so the hex values below actually render. tmux
   // applies terminal-overrides at client attach, and the launcher attaches
   // strictly after this function runs, so the override negotiates correctly.
   runTmux('set', '-t', sessionName, 'default-terminal', 'tmux-256color');
   runTmux('set', '-as', 'terminal-overrides', ',*:RGB');
-  runTmux('set', '-t', sessionName, 'status-style', `fg=${c.text},bg=${c.mantle}`);
   runTmux(
     'set',
     '-t',
     sessionName,
-    'window-status-style',
-    `fg=${c.subtext0},bg=${c.mantle}`,
+    'status-style',
+    `fg=${c.text},bg=${c.mantle}`,
   );
-  runTmux(
-    'set',
-    '-t',
-    sessionName,
-    'window-status-current-style',
-    `fg=${c.mauve},bg=${c.mantle}`,
-  );
-  // TMUX-048: dim inactive borders to overlay0 (was surface1) so the active
-  // blue border stands out more strongly.
+  // TMUX-048: dim inactive borders to overlay0 so the active blue border
+  // stands out more strongly. window-status-style / window-status-current-
+  // style are not claimed: the window-list formats below are empty strings,
+  // so those style options have nothing to color.
   runTmux('set', '-t', sessionName, 'pane-border-style', `fg=${c.overlay0}`);
   runTmux(
     'set',
@@ -271,13 +389,20 @@ function applyCatppuccinMochaTheme(sessionName: string): void {
   runTmux('set', '-t', sessionName, 'clock-mode-colour', c.mauve);
 }
 
-function paneBorderFormat(): string {
-  const c = CATPPUCCIN_MOCHA;
+function paneBorderFormat(c: CatppuccinPalette): string {
+  // TMUX-048: only the Captain pane (index 0) carries the highlighted blue
+  // title block, and only while it is the active pane. Player panes — even
+  // when active — render on the flavor's mantle surface with no highlight
+  // block (they're read-only per TMUX-027 and don't need a focus indicator).
+  // The row carries an explicit mantle background end-to-end so it reads as
+  // the theme's own surface, tonally distinct from the user's terminal-
+  // native pane content above it. Symmetry: one leading space before
+  // #{pane_title} mirrored by one trailing space after the timer text
+  // before the closing #[default] reset.
   return [
-    `#{?pane_active,#[fg=${c.base}]#[bg=${c.blue}]#[bold],#[fg=${c.text}]#[bg=${c.mantle}]}`,
+    `#{?#{&&:#{pane_active},#{e|==:#{pane_index},0}},#[fg=${c.base}]#[bg=${c.blue}]#[bold],#[fg=${c.text}]#[bg=${c.mantle}]}`,
     ' #{pane_title} ',
-    `#[fg=${c.text}]#[bg=${c.mantle}]#[nobold]`,
-    ' ',
+    `#[fg=${c.text}]#[bg=${c.mantle}]#[nobold] `,
     `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},⏳,⌛} `,
     timerColorFormat(
       TMUX_PANE_TIMER_RUNNING_OPTION,
@@ -285,37 +410,24 @@ function paneBorderFormat(): string {
       c.subtext1,
     ),
     `#{${TMUX_PANE_TIMER_TEXT_OPTION}}`,
-    '#[default]',
+    ' #[default]',
   ].join('');
 }
 
-function statusLeftFormat(): string {
-  const c = CATPPUCCIN_MOCHA;
+function statusLeftFormat(c: CatppuccinPalette): string {
   return `#[fg=${c.blue},bold]tmux-play#[default] #[fg=${c.subtext0}]${NAVIGATION_HINTS}#[default]`;
 }
 
-function statusRightFormat(): string {
+function statusRightFormat(c: CatppuccinPalette): string {
   return [
     '⏰ ',
-    timerColorFormat(TMUX_STATUS_TIMER_RUNNING_OPTION, CATPPUCCIN_MOCHA.mauve),
+    timerColorFormat(TMUX_STATUS_TIMER_RUNNING_OPTION, c.mauve, c.overlay1),
     `#{${TMUX_STATUS_TIMER_TEXT_OPTION}}`,
     '#[default]',
   ].join('');
 }
 
 function timerColorFormat(
-  runningOption: string,
-  runningColor: string,
-  frozenColor: string = CATPPUCCIN_MOCHA.overlay1,
-): string {
-  return timerColorFormatWithFrozenColor(
-    runningOption,
-    runningColor,
-    frozenColor,
-  );
-}
-
-function timerColorFormatWithFrozenColor(
   runningOption: string,
   runningColor: string,
   frozenColor: string,
@@ -446,12 +558,13 @@ function setPaneTitles(
 function setTimerOptions(
   sessionName: string,
   playerPanes: readonly PlayerPane[],
+  flavor: CatppuccinFlavor,
 ): void {
-  setPaneTimerOptions(paneTarget(sessionName, 0), SPEAKER_CAPTAIN);
+  setPaneTimerOptions(paneTarget(sessionName, 0), captainAccent(flavor));
   for (const pane of playerPanes) {
     setPaneTimerOptions(
       paneTarget(sessionName, pane.paneIndex),
-      playerAccent(pane.player.adapter),
+      playerAccent(pane.player.adapter, flavor),
     );
   }
   runTmux(

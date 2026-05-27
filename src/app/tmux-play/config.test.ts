@@ -548,6 +548,71 @@ describe('tmux-play config loading', () => {
     );
   });
 
+  it('accepts theme: mocha | latte | auto and rejects other values', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    for (const value of ['mocha', 'latte', 'auto'] as const) {
+      const configPath = join(workDir, `${value}-${TMUX_PLAY_CONFIG_FILE}`);
+      writeFileSync(
+        configPath,
+        [
+          `theme: ${value}`,
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          '  options: {}',
+          'players:',
+          '  - id: coder',
+          '    adapter: codex',
+          '',
+        ].join('\n'),
+      );
+      const loaded = await loadTmuxPlayConfig({ configPath });
+      expect(loaded.config.theme).toBe(value);
+    }
+
+    const bad = join(workDir, `bad-${TMUX_PLAY_CONFIG_FILE}`);
+    writeFileSync(
+      bad,
+      [
+        'theme: solarized',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      loadTmuxPlayConfig({ configPath: bad }),
+    ).rejects.toThrow('theme must be one of: mocha, latte, auto');
+  });
+
+  it('snapshot stores the resolved Catppuccin flavor when supplied', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'theme: auto',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    expect(loaded.config.theme).toBe('auto');
+    const snapshot = createTmuxPlayConfigSnapshot(loaded, 'latte');
+    expect(snapshot.theme).toBe('latte');
+  });
+
   it('rewrites relative local captain modules against the config directory', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configDir = join(workDir, 'configs');

@@ -22,7 +22,12 @@ import {
   type TmuxPlayConfig,
 } from './config.js';
 import { createTmuxPresenter, type WidthSource } from './presenter-tmux.js';
-import { SGR_RESET, SPEAKER_BOSS, bold24bitFg } from './player-colors.js';
+import {
+  SGR_RESET,
+  bold24bitFg,
+  presenterPalette,
+  type CatppuccinFlavor,
+} from './player-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
@@ -162,12 +167,19 @@ export class TmuxPlaySession {
     const playerAdapters = new Map(
       config.players.map((player) => [player.id, player.adapter]),
     );
+    // The snapshot carries the launcher-resolved Catppuccin flavor
+    // (mocha | latte) per TMUX-047, so prefix / status / tool SGRs in
+    // pane content — including the readline prompt below — match the
+    // flavor of the tmux chrome.
+    const themeFlavor: CatppuccinFlavor =
+      config.theme === 'latte' ? 'latte' : 'mocha';
     const presenter = createTmuxPresenter({
       boss: output,
       players: logStreams,
       bossWidth: () => outputWidth(output),
       playerWidths,
       playerAdapters,
+      themeFlavor,
     });
     const timingObserver = (
       this.options.createTimingObserver ?? createTimingObserver
@@ -201,11 +213,14 @@ export class TmuxPlaySession {
       output,
       escapeCodeTimeout: READLINE_ESCAPE_CODE_TIMEOUT_MS,
     });
-    // TMUX-038: color the `boss> ` prefix blue. Node ≥18's readline strips
-    // ANSI escapes when computing prompt visible width (via getStringWidth),
-    // so cursor positioning still treats the prompt as 6 cells wide.
+    // TMUX-038: color the `boss> ` prefix with the boss role color from
+    // the resolved flavor (Mocha `#89b4fa` on dark, Latte `#1e66f5` on
+    // light), so the prompt keeps contrast against the user's terminal
+    // background. Node ≥18's readline strips ANSI escapes when computing
+    // prompt visible width (via getStringWidth), so cursor positioning
+    // still treats the prompt as 6 cells wide.
     this.readline.setPrompt(
-      `${bold24bitFg(SPEAKER_BOSS)}boss> ${SGR_RESET}`,
+      `${bold24bitFg(presenterPalette(themeFlavor).speakerBoss)}boss> ${SGR_RESET}`,
     );
     this.readline.on('line', (line) => {
       this.handleLine(line);

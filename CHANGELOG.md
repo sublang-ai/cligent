@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-27
+
+### Changed
+
+- tmux-play picks the Catppuccin **flavor** (Mocha or Latte) to match the host terminal's background polarity instead of hard-coding Mocha against every terminal. Catppuccin ships a family — Mocha for dark backgrounds, Latte for light — and the canonical tmux pattern is to apply the flavor whose `mantle` band reads as a subtle tonal step on the user's canvas rather than an inverted block. Detection looks at `COLORFGBG` (bg index ≥ 7 → Latte), then `TERM_PROGRAM=Apple_Terminal` (→ Latte for macOS Terminal.app's white default), then falls back to Mocha. The programmatic API exposes `themeFlavor: 'mocha' | 'latte' | 'auto'` as an explicit override. `window-style` and `window-active-style` are NOT claimed — the pane content area stays on the user's terminal-native canvas, which is what makes the per-host flavor choice meaningful. The Captain pane carries the blue highlight title block when active; player pane titles always render on the mantle surface with no highlight block (read-only per TMUX-027); the pane-border row stays at the top with symmetric one-space padding around the title-and-timer band. Per-pane timer accents and the Captain pane timer accent are also flavor-aware — `playerAccent(adapter, flavor)` and `captainAccent(flavor)` return the Latte hex (dark green `#40a02b`, dark teal `#179299`, mauve `#8839ef`, etc.) on Latte sessions so the running timer reads against the light mantle band instead of washing out — TMUX-047, TMUX-048, TMUX-054 amended accordingly
+
+### Removed
+
+- `tmux-play-dev` published `bin` entry. The wrapper at `bin/tmux-play-dev.mjs` requires the source tree (`src/`, `tsconfig.json`, `node_modules/.bin/tsc`) to rebuild on launch; none of these ship in the npm tarball (`files` includes `dist`, `docs`, `LICENSE`, `README.md` only) and `typescript` is a `devDependency`, so the 0.6.0 published bin failed for any user not running it from a source checkout. The wrapper script stays in the repo and is exposed locally as `npm run tmux-play-dev`; for "from any directory" access, symlink or alias `bin/tmux-play-dev.mjs` from the source checkout
+
+### Fixed
+
+- `package-lock.json` regenerated to match `package.json` (was stale at `0.5.0` after the 0.6.0 version bump, and its root `bin` was missing `tmux-play-dev`)
+
 ## [0.6.0] - 2026-05-27
 
 ### Added
@@ -149,7 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/sublang-ai/cligent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sublang-ai/cligent/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/sublang-ai/cligent/compare/v0.3.0...v0.4.0

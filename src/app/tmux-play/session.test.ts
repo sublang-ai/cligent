@@ -188,6 +188,48 @@ describe('TmuxPlaySession', () => {
     expect(readline.promptCount).toBe(3);
   });
 
+  it('colors the boss> prompt with the snapshot-resolved Latte blue', async () => {
+    // TMUX-038 + TMUX-047: when the snapshot's `theme` is `latte` the
+    // readline prompt shall render in Latte `speakerBoss` (#1e66f5 / RGB
+    // 30,102,245), not the Mocha default. Mirrors the Mocha assertion
+    // above so a regression in either direction surfaces here.
+    tempDir = makeWorkDir({ theme: 'latte' });
+    const readline = new FakeReadline();
+    const output = new MemoryOutput();
+    const runBossTurn = vi.fn(async () => undefined);
+    const dispose = vi.fn(async () => undefined);
+    const abortActiveTurn = vi.fn();
+    const timingObserver = noopTimingObserver();
+    const createTimingObserver = vi.fn(() => timingObserver);
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn,
+      dispose,
+      runBossTurn,
+    }));
+    const factory = vi.fn((): Captain => ({
+      async handleBossTurn() {
+        // no-op
+      },
+    }));
+
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime,
+      createTimingObserver,
+      importCaptain: async () => ({ default: factory }),
+      output,
+    });
+
+    await session.start();
+
+    expect(readline.promptValue).toBe('\x1b[1;38;2;30;102;245mboss> \x1b[0m');
+    expect(readline.promptCount).toBe(1);
+
+    readline.close();
+    await session.done;
+  });
+
   it('cleans up runtime, work dir, and tmux session on EOF', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();
@@ -562,28 +604,31 @@ function noopTimingObserver(): TimingObserverHandle {
   };
 }
 
-function makeWorkDir(): string {
+function makeWorkDir(
+  overrides: { theme?: 'mocha' | 'latte' } = {},
+): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
   writeFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'abc123');
-  writeFileSync(
-    join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
-    JSON.stringify({
-      captain: {
-        from: '@sublang/cligent/captains/fanout',
-        adapter: 'claude',
-        instruction: 'Coordinate players.',
-        reasoningEffort: 'high',
-        options: { tone: 'direct' },
+  const snapshot: Record<string, unknown> = {
+    captain: {
+      from: '@sublang/cligent/captains/fanout',
+      adapter: 'claude',
+      instruction: 'Coordinate players.',
+      reasoningEffort: 'high',
+      options: { tone: 'direct' },
+    },
+    players: [
+      {
+        id: 'coder',
+        adapter: 'codex',
+        reasoningEffort: 'low',
       },
-      players: [
-        {
-          id: 'coder',
-          adapter: 'codex',
-          reasoningEffort: 'low',
-        },
-      ],
-    }),
-  );
+    ],
+  };
+  if (overrides.theme !== undefined) {
+    snapshot.theme = overrides.theme;
+  }
+  writeFileSync(join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT), JSON.stringify(snapshot));
   return workDir;
 }
 

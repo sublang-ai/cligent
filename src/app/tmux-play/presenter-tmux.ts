@@ -17,15 +17,11 @@ import type {
 } from './records.js';
 import {
   SGR_RESET,
-  SPEAKER_BOSS,
-  SPEAKER_CAPTAIN,
-  STATUS_ABORTED,
-  STATUS_ERROR,
-  TOOL_DENIED,
-  TOOL_FAIL,
-  TOOL_OK,
   bold24bitFg,
   playerAccent,
+  presenterPalette,
+  type CatppuccinFlavor,
+  type PresenterPalette,
 } from './player-colors.js';
 import type {
   ToolResultPayload,
@@ -40,19 +36,32 @@ const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
 // and keeps glow output sane until a real pane width is available.
 const DEFAULT_PANE_WIDTH = 80;
 
-// TMUX-038/039 prefix and status SGR anchors. Built once at module load.
-const PREFIX_BOSS_SGR = bold24bitFg(SPEAKER_BOSS);
-const PREFIX_CAPTAIN_SGR = bold24bitFg(SPEAKER_CAPTAIN);
-const STATUS_ERROR_SGR = bold24bitFg(STATUS_ERROR);
-const STATUS_ABORTED_SGR = bold24bitFg(STATUS_ABORTED);
+// TMUX-038/039/049 SGR anchors built once per presenter instance from the
+// session's resolved Catppuccin flavor, so a Latte session uses Latte ANSI
+// prefixes inside pane content and a Mocha session uses Mocha. The shape
+// matches the previous module-level constants; the difference is they're
+// now per-instance fields populated from `presenterPalette(flavor)`.
+interface PresenterSgr {
+  readonly prefixBoss: string;
+  readonly prefixCaptain: string;
+  readonly statusError: string;
+  readonly statusAborted: string;
+  readonly toolOk: string;
+  readonly toolFail: string;
+  readonly toolDenied: string;
+}
 
-// TMUX-049 tool-result outcome SGR anchors. The `tool>` invocation prefix
-// now carries the caller's speaker color rather than a fixed peach anchor
-// (see writeToolInvoke); only `tool<` keeps an outcome-driven palette so a
-// success/failure scan stays at-a-glance.
-const TOOL_OK_SGR = bold24bitFg(TOOL_OK);
-const TOOL_FAIL_SGR = bold24bitFg(TOOL_FAIL);
-const TOOL_DENIED_SGR = bold24bitFg(TOOL_DENIED);
+function buildPresenterSgr(p: PresenterPalette): PresenterSgr {
+  return {
+    prefixBoss: bold24bitFg(p.speakerBoss),
+    prefixCaptain: bold24bitFg(p.speakerCaptain),
+    statusError: bold24bitFg(p.statusError),
+    statusAborted: bold24bitFg(p.statusAborted),
+    toolOk: bold24bitFg(p.toolOk),
+    toolFail: bold24bitFg(p.toolFail),
+    toolDenied: bold24bitFg(p.toolDenied),
+  };
+}
 
 export type WidthSource = () => number;
 
@@ -69,6 +78,13 @@ export interface TmuxPresenterOptions {
   // the adapter map per TMUX-048. When absent the player prefix stays uncolored
   // (graceful fallback for callers / older tests that don't supply it).
   readonly playerAdapters?: ReadonlyMap<string, string>;
+  /**
+   * Catppuccin flavor for the SGR palette used in pane content (speaker
+   * prefixes, status lines, tool lifecycle). Defaults to Mocha for
+   * backwards-compat; pass `'latte'` so prefixes/status/tool colors keep
+   * contrast on light-terminal sessions.
+   */
+  readonly themeFlavor?: CatppuccinFlavor;
 }
 
 interface OpenBlock {
@@ -80,6 +96,8 @@ export class TmuxPresenter implements RecordObserver {
   private readonly boss: TmuxPresenterWriter;
   private readonly players: ReadonlyMap<string, TmuxPresenterWriter>;
   private readonly playerAdapters: ReadonlyMap<string, string>;
+  private readonly flavor: CatppuccinFlavor;
+  private readonly sgr: PresenterSgr;
   private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
   // TMUX-050: per-writer accumulator for the open text block. A block opens
   // on the first text / text_delta event for a writer and flushes through
@@ -92,6 +110,8 @@ export class TmuxPresenter implements RecordObserver {
     this.boss = options.boss;
     this.players = options.players;
     this.playerAdapters = options.playerAdapters ?? new Map();
+    this.flavor = options.themeFlavor ?? 'mocha';
+    this.sgr = buildPresenterSgr(presenterPalette(this.flavor));
     if (options.bossWidth) {
       this.widths.set(this.boss, options.bossWidth);
     }
@@ -117,7 +137,7 @@ export class TmuxPresenter implements RecordObserver {
         this.writeStatusLine(
           this.boss,
           'captain',
-          paintStatus('aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
+          paintStatus(this.sgr, 'aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
         );
         break;
       case 'player_prompt':
@@ -148,7 +168,7 @@ export class TmuxPresenter implements RecordObserver {
         this.writeStatusLine(
           this.boss,
           'captain',
-          paintStatus('error', `[runtime error: ${record.message}]`),
+          paintStatus(this.sgr, 'error', `[runtime error: ${record.message}]`),
         );
         break;
     }
@@ -184,8 +204,8 @@ export class TmuxPresenter implements RecordObserver {
     if (result.status === 'ok') return;
     const line =
       result.status === 'error'
-        ? paintStatus('error', `[error: ${result.error ?? 'Agent run failed'}]`)
-        : paintStatus('aborted', '[aborted]');
+        ? paintStatus(this.sgr, 'error', `[error: ${result.error ?? 'Agent run failed'}]`)
+        : paintStatus(this.sgr, 'aborted', '[aborted]');
     this.writeStatusLine(writer, who, line);
   }
 
@@ -322,7 +342,7 @@ export class TmuxPresenter implements RecordObserver {
     payload: ToolResultPayload,
   ): void {
     this.flushBlock(writer);
-    const { symbol, sgr } = toolResultStyle(payload.status);
+    const { symbol, sgr } = toolResultStyle(this.sgr, payload.status);
     const intro = `${sgr}tool< ${symbol} ${SGR_RESET}`;
     const durationText = formatDuration(payload.durationMs);
     const headLine = durationText
@@ -380,10 +400,10 @@ export class TmuxPresenter implements RecordObserver {
   // undefined when there's no defined color (fallback: emit the prefix in
   // the writer's default foreground).
   private prefixSgr(who: string): string | undefined {
-    if (who === 'boss') return PREFIX_BOSS_SGR;
-    if (who === 'captain') return PREFIX_CAPTAIN_SGR;
+    if (who === 'boss') return this.sgr.prefixBoss;
+    if (who === 'captain') return this.sgr.prefixCaptain;
     const adapter = this.playerAdapters.get(who);
-    if (adapter) return bold24bitFg(playerAccent(adapter));
+    if (adapter) return bold24bitFg(playerAccent(adapter, this.flavor));
     return undefined;
   }
 
@@ -541,19 +561,24 @@ function trimOuterMargin(text: string): string {
 
 // TMUX-039 status coloring. The bracketed status body gets a red (error) or
 // yellow (aborted) bold span; the surrounding speaker prefix keeps its own
-// SGR colors.
-function paintStatus(kind: 'error' | 'aborted', text: string): string {
-  const sgr = kind === 'error' ? STATUS_ERROR_SGR : STATUS_ABORTED_SGR;
-  return `${sgr}${text}${SGR_RESET}`;
+// SGR colors. The SGR colors come from the presenter's resolved flavor.
+function paintStatus(
+  sgr: PresenterSgr,
+  kind: 'error' | 'aborted',
+  text: string,
+): string {
+  const open = kind === 'error' ? sgr.statusError : sgr.statusAborted;
+  return `${open}${text}${SGR_RESET}`;
 }
 
 // TMUX-049 tool-result outcome → status symbol + prefix SGR.
 function toolResultStyle(
+  sgr: PresenterSgr,
   status: ToolResultPayload['status'],
 ): { symbol: string; sgr: string } {
-  if (status === 'success') return { symbol: '✓', sgr: TOOL_OK_SGR };
-  if (status === 'error') return { symbol: '✗', sgr: TOOL_FAIL_SGR };
-  return { symbol: '·', sgr: TOOL_DENIED_SGR };
+  if (status === 'success') return { symbol: '✓', sgr: sgr.toolOk };
+  if (status === 'error') return { symbol: '✗', sgr: sgr.toolFail };
+  return { symbol: '·', sgr: sgr.toolDenied };
 }
 
 // Pick the most useful single-string description of a tool's input for the
