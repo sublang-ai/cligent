@@ -1,6 +1,6 @@
 {
   "name": "@sublang/cligent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, OpenCode, and more)",
   "type": "module",
   "license": "Apache-2.0",
@@ -22,13 +22,15 @@
     "adapter"
   ],
   "files": [
+    "bin",
     "dist",
     "docs",
     "LICENSE",
     "README.md"
   ],
   "bin": {
-    "tmux-play": "./dist/app/tmux-play/cli.js"
+    "tmux-play": "./dist/app/tmux-play/cli.js",
+    "tmux-play-dev": "./bin/tmux-play-dev.mjs"
   },
   "sideEffects": false,
   "main": "dist/index.js",

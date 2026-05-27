@@ -10,9 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-27
+
+### Added
+
+- tmux-play Boss/Captain pane keybindings (TMUX-057, TMUX-058): bare ESC during an active turn aborts the turn without ending the session and preserves the Boss readline edit buffer; multi-line pasted text submits as one Boss turn whose prompt preserves embedded newlines (bracketed paste). Both gate on TTY stdin/stdout and fall back to plain readline otherwise — IR-019
+- `reasoningEffort` reachable from tmux-play YAML on each `captain` and each `players` entry (TMUX-056), validated against the closed `minimal | low | medium | high | xhigh | max` set with the offending path on error — IR-018
+- Gemini adapter maps `reasoningEffort` onto per-run thinking config via a settings-file alias when `AgentOptions.model` is a concrete Gemini id (`^gemini-3` → `thinkingLevel`, `^gemini-2.5` → `thinkingBudget`); CLI aliases, unset, and non-matching models skip silently so adapter `--model` forwarding stays intact — IR-018, GEMINI-011
+- OpenCode adapter maps `reasoningEffort` onto the v2 prompt body's top-level `variant` field per provider (Anthropic, OpenAI, Google); other providers defer to `opencode.jsonc` — IR-018, OPENCODE-012
+- Default tmux-play home YAML pins `model` and `reasoningEffort: xhigh` on the Captain and each default player so a fresh install exercises the IR-018 wiring out of the box; existing home configs are untouched
+- `tmux-play-dev` bin — dev counterpart to `tmux-play` that rebuilds `dist/` from `src/` via `tsc` on each launch before dispatching into the same CLI entry, so edits land in the next invocation without a manual `npm run build`. Both bins share the same `~/.config/tmux-play/config.yaml` discovery
+
 ### Changed
 
 - **Breaking:** tmux-play renames its domain concept "role" to "player." YAML config key `roles:` → `players:`, record types `role_prompt` / `role_event` / `role_finished` → `player_prompt` / `player_event` / `player_finished`, fanout captain option `maxRoleOutputChars` → `maxPlayerOutputChars`, fanout summary protocol markers `=== role:NAME ===` → `=== player:NAME ===`, runtime API `RoleConfig` / `RoleHandle` / `RoleRunResult` / `callRole(...)` / `roles[]` → `PlayerConfig` / `PlayerHandle` / `PlayerRunResult` / `callPlayer(...)` / `players[]`. The engine layer (DR-003) keeps its `Cligent.role` / `CligentEvent.role` attribution tag — that's an opaque per-instance label the app populates with the player id. No backwards-compat shim; pre-existing `roles:` configs must be renamed to `players:`
+- **Breaking:** tmux-play window layout uses equal column widths instead of a 4:6:6 (or 4:12) ratio. With two or more players the Boss/Captain pane and each player column each get `1/3` of the window width; with a single player the Boss/Captain pane and the player pane each get `1/2`. At the default 240-cell grid this yields 3×80 (was 60/90/90) or 2×120 (was 60/180) — TMUX-028, TMUX-044
+- Claude adapter maps `reasoningEffort: 'xhigh'` to the SDK's now-native `xhigh` tier instead of collapsing it to `high`; `minimal` still falls back to `low` because Claude has no minimal tier — IR-018, CLAUDE-008
+- tmux-play suppresses tmux's default window-list segment (`window-status-format`, `window-status-current-format`, and `window-status-separator` set empty after the Catppuccin theme block) so the curated status-left navigation hints and status-right session-total timer own the status bar — TMUX-047, TMUX-055
+- tmux-play pane-border row keeps an explicit Catppuccin Mocha mantle surface across the full row after the pane title — the previous `#[default]` reset left a terminal-default (often black) gap between the title and the timer; the not-running pane timer color moves from `overlay1` (`#7f849c`) to `subtext1` (`#bac2de`) for legible contrast on that surface (TMUX-054 scope; the status-bar timer keeps `overlay1`) — TMUX-048, TMUX-054
+
+### Fixed
+
+- Adapters preserve `DonePayload.resumeToken` on `interrupted` `done` per a three-stage rule (backend session/thread id → inbound `AgentOptions.resume` → omit). Previously every adapter's interrupted path omitted the token even when an id was in scope, so cligent cleared stored continuity and ESC silently made the player's next turn fresh — IR-020, CLAUDE-007 / CODEX-006 / GEMINI-009 / OPENCODE-011
+- OpenCode adapter applies the v2 `permission` field per session (via `session.create` for fresh sessions, `session.update` before each resumed prompt). The v2 SDK migration moved `permission` off the prompt body, so pre-existing `mode: 'auto'` configs hung on the first interactive prompt; the adapter also restores `tools` on the v2 prompt body, normalizes `permission.asked` (v2 only emits it for fresh requests), and surfaces SDK result errors so a rejected ruleset fails fast instead of silently hanging on the SSE stream
 
 ## [0.5.0] - 2026-05-24
 
@@ -129,7 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/sublang-ai/cligent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sublang-ai/cligent/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/sublang-ai/cligent/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sublang-ai/cligent/compare/v0.2.0...v0.3.0
