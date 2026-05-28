@@ -332,9 +332,9 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Bash', { command: 'ls' })),
     );
 
-    // The text deltas flushed before the `[tool ⤷]` header so the order on
+    // The text deltas flushed before the `[tool ↪]` header so the order on
     // the pane matches the order of events.
-    expect(coder.text()).toBe('coder> partial\ncoder> [tool ⤷] Bash ls\n');
+    expect(coder.text()).toBe('coder> partial\ncoder> [tool ↪] Bash ls\n');
   });
 
   it('flushes the open block before a new player_prompt on the same writer', () => {
@@ -879,10 +879,10 @@ describe('TmuxPresenter', () => {
     );
 
     // claude → green #a6e3a1 → fg 166;227;161 on the `coder> ` speaker prefix
-    // span. The `[tool ⤷]` tag is uncolored per TMUX-039 — speaker identity is
+    // span. The `[tool ↪]` tag is uncolored per TMUX-039 — speaker identity is
     // already carried by the prefix, so the tag carries no color span.
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ⤷] Bash npm test\n',
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ↪] Bash npm test\n',
     );
   });
 
@@ -898,9 +898,9 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
-    // No SGR anywhere: the prefix has no adapter color and the `[tool ⤷]`
+    // No SGR anywhere: the prefix has no adapter color and the `[tool ↪]`
     // bracketed tag is always uncolored per TMUX-039.
-    expect(coder.raw()).toBe('coder> [tool ⤷] Bash npm test\n');
+    expect(coder.raw()).toBe('coder> [tool ↪] Bash npm test\n');
   });
 
   it('colors the captain speaker prefix mauve for a Captain-emitted tool_use', () => {
@@ -915,9 +915,9 @@ describe('TmuxPresenter', () => {
     );
 
     // captain → mauve #cba6f7 → fg 203;166;247 on the `captain> ` prefix.
-    // The `[tool ⤷]` tag stays uncolored per TMUX-039.
+    // The `[tool ↪]` tag stays uncolored per TMUX-039.
     expect(boss.raw()).toBe(
-      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ⤷] Read src/main.ts\n',
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ↪] Read src/main.ts\n',
     );
   });
 
@@ -940,7 +940,7 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe(
-      'coder> [tool ⤷] Read /very/long/path/that/will/be/truncated/because/it/exceeds/s…\n',
+      'coder> [tool ↪] Read /very/long/path/that/will/be/truncated/because/it/exceeds/s…\n',
     );
   });
 
@@ -962,8 +962,8 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe(
-      'coder> [tool ⤷] X 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…\n' +
-        'coder> [tool ⤷] Y 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀…\n',
+      'coder> [tool ↪] X 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…\n' +
+        'coder> [tool ↪] Y 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀…\n',
     );
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(coder.raw())).toBe(false);
   });
@@ -979,7 +979,7 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Custom', { count: 3, flag: true })),
     );
 
-    expect(coder.text()).toBe('coder> [tool ⤷] Custom {"count":3,"flag":true}\n');
+    expect(coder.text()).toBe('coder> [tool ↪] Custom {"count":3,"flag":true}\n');
   });
 
   it('uses `query` as a priority key so search-tool calls do not fall through to JSON', () => {
@@ -1000,10 +1000,10 @@ describe('TmuxPresenter', () => {
     );
 
     // Without `query` in the priority list this would render as
-    // `coder> [tool ⤷] ToolSearch {"query":"select:WebFetch","max_results":1}`
+    // `coder> [tool ↪] ToolSearch {"query":"select:WebFetch","max_results":1}`
     // — technically correct but visually noisy and the same pattern the user
     // flagged in IR-013's post-implementation review.
-    expect(coder.text()).toBe('coder> [tool ⤷] ToolSearch select:WebFetch\n');
+    expect(coder.text()).toBe('coder> [tool ↪] ToolSearch select:WebFetch\n');
   });
 
   it('omits the input summary when the tool has no input keys', () => {
@@ -1017,7 +1017,7 @@ describe('TmuxPresenter', () => {
 
     // No usable input summary → line ends at `<toolName>` with no trailing
     // space per TMUX-049.
-    expect(coder.text()).toBe('coder> [tool ⤷] Status\n');
+    expect(coder.text()).toBe('coder> [tool ↪] Status\n');
   });
 
   it('renders a success tool_result with a green `[tool ✓]` tag and a fenced + indented body', () => {
@@ -1108,7 +1108,7 @@ describe('TmuxPresenter', () => {
     );
 
     expect(boss.text()).toBe(
-      'captain> [tool ⤷] Read src/main.ts\n' +
+      'captain> [tool ↪] Read src/main.ts\n' +
         'captain> [tool ✓] Read 80ms\n' +
         '  ```\n' +
         '  42 lines\n' +

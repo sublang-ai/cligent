@@ -341,7 +341,7 @@ export class TmuxPresenter implements RecordObserver {
   // <optional body>`. The speaker prefix carries the TMUX-038 color span; the
   // bracketed tag carries its own outcome SGR span (red/yellow/green) when
   // the kind is colored, or is emitted plain for uncolored kinds (status,
-  // tool ⤷). The body — when present — lives outside the brackets and is
+  // tool ↪). The body — when present — lives outside the brackets and is
   // unstyled by the presenter so any ANSI inside it comes from the source.
   // Single source of truth for every operational-line emission so the
   // SGR-on-tag and body-outside-brackets invariants are not hand-coded at
@@ -387,12 +387,12 @@ export class TmuxPresenter implements RecordObserver {
     this.flushBlock(writer);
     const inputSummary = summarizeToolInput(payload.input);
     // Body is `<toolName>` when no input summary exists, or `<toolName>
-    // <inputSummary>` otherwise. The bracketed tag `[tool ⤷]` is uncolored
+    // <inputSummary>` otherwise. The bracketed tag `[tool ↪]` is uncolored
     // per TMUX-039 — speaker identity is carried by the `<who>> ` prefix.
     const body = inputSummary
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
-    this.writeBracketedLine(writer, who, 'tool', '⤷', undefined, body);
+    this.writeBracketedLine(writer, who, 'tool', '↪', undefined, body);
   }
 
   private writeToolResult(
@@ -632,13 +632,13 @@ function toolResultStyle(
 }
 
 // Pick the most useful single-string description of a tool's input for the
-// `[tool ⤷]` header. Known keys come first; fall back to a truncated JSON
+// `[tool ↪]` header. Known keys come first; fall back to a truncated JSON
 // dump.
 function summarizeToolInput(input: Record<string, unknown>): string {
   // Ordered priority: filesystem/shell keys first, then search/fetch
   // (`query`, common to tools like ToolSearch / WebFetch wrappers), then
   // free-form prose. `query` lifts the common search-tool case out of the
-  // compact-JSON fallback so the `[tool ⤷]` header surfaces the actual
+  // compact-JSON fallback so the `[tool ↪]` header surfaces the actual
   // query text instead of `{"query":"…","max_results":N}`.
   for (const key of [
     'command',

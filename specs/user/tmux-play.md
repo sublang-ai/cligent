@@ -250,7 +250,7 @@ Per [TMUX-050](#tmux-050), text bodies pass through `glow` before reaching the w
 
 ### TMUX-039
 
-Every operational line in a tmux-play pane shall follow one unified shape: `<who>> [<tag> <optional glyph>] <optional body>`. The `<who>> ` speaker prefix follows [TMUX-038](#tmux-038); the bracketed tag is one of the kinds in the table below; the body, when present, lives outside the brackets — not after a colon inside them. Colored tags (kinds whose row in the table below assigns a tag color) carry their own bold 24-bit-foreground SGR span distinct from the surrounding speaker prefix span; uncolored tags (`[status]`, `[tool ⤷]`) are emitted plain so the surrounding text style passes through. The body remains unstyled by the presenter. Lines whose body is non-empty emit `<who>> [tag] <body>`; lines with no body emit just `<who>> [tag]` — `[aborted]` always (per [TMUX-033](#tmux-033)) and `[turn aborted]` when the `turn_aborted` record carries no reason. No synthesized placeholder body shall be inserted when a source field is absent.
+Every operational line in a tmux-play pane shall follow one unified shape: `<who>> [<tag> <optional glyph>] <optional body>`. The `<who>> ` speaker prefix follows [TMUX-038](#tmux-038); the bracketed tag is one of the kinds in the table below; the body, when present, lives outside the brackets — not after a colon inside them. Colored tags (kinds whose row in the table below assigns a tag color) carry their own bold 24-bit-foreground SGR span distinct from the surrounding speaker prefix span; uncolored tags (`[status]`, `[tool ↪]`) are emitted plain so the surrounding text style passes through. The body remains unstyled by the presenter. Lines whose body is non-empty emit `<who>> [tag] <body>`; lines with no body emit just `<who>> [tag]` — `[aborted]` always (per [TMUX-033](#tmux-033)) and `[turn aborted]` when the `turn_aborted` record carries no reason. No synthesized placeholder body shall be inserted when a source field is absent.
 
 The glyph slot is optional and is only populated for kinds with multi-state semantics — tools today. Single-state kinds (status, error, aborted, turn-aborted, runtime-error) carry no glyph; the word in the tag names the kind and color names the outcome.
 
@@ -265,7 +265,7 @@ The kind table:
 | `[aborted]` | — | — | `yellow` (`#f9e2af`) | `player_finished` / `captain_finished` with `status: 'aborted'` |
 | `[turn aborted]` | — | turn-abort reason when present | `yellow` (`#f9e2af`) | `turn_aborted` |
 | `[runtime error]` | — | runtime-error message | `red` (`#f38ba8`) | `runtime_error` |
-| `[tool ⤷]` | `⤷` (call) | tool name + input summary | uncolored | `tool_use` |
+| `[tool ↪]` | `↪` (call) | tool name + input summary | uncolored | `tool_use` |
 | `[tool ✓]` | `✓` (ok) | tool name + duration | `green` (`#a6e3a1`) | `tool_result` `status: 'success'` |
 | `[tool ✗]` | `✗` (err) | tool name + duration | `red` (`#f38ba8`) | `tool_result` `status: 'error'` |
 | `[tool ·]` | `·` (denied) | tool name + duration | `yellow` (`#f9e2af`) | `tool_result` `status: 'denied'` |
@@ -280,9 +280,9 @@ The Boss/Captain pane shall display the Boss's input lines, the Captain's synthe
 
 `tool_use` and `tool_result` events shall render under the unified bracketed-tag grammar of [TMUX-039](#tmux-039) in the calling entity's pane (the player pane for player-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)). The speaker prefix follows [TMUX-038](#tmux-038)'s `<who>> ` grammar — `captain> ` for Captain-emitted events and `<playerId>> ` for player-emitted events — and the bracketed tag follows [TMUX-039](#tmux-039)'s kind table. The `tool>` / `tool<` prefix replacement and its caller-accent rule are retired; speaker identity is carried in the `<who>> ` prefix, not in the bracketed tag's color.
 
-A `tool_use` event shall render as a single line `<who>> [tool ⤷] <toolName> <inputSummary>` where the bracketed tag is uncolored (the speaker prefix already carries identity) and the body — tool name + input summary — is unstyled.
+A `tool_use` event shall render as a single line `<who>> [tool ↪] <toolName> <inputSummary>` where the bracketed tag is uncolored (the speaker prefix already carries identity) and the body — tool name + input summary — is unstyled.
 
-`<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `query`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. The `query` slot covers search/fetch tools (ToolSearch, WebFetch wrappers, etc.) so a real query surfaces in the header instead of the JSON fallback. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `<who>> [tool ⤷] <toolName>` with no trailing space.
+`<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `query`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. The `query` slot covers search/fetch tools (ToolSearch, WebFetch wrappers, etc.) so a real query surfaces in the header instead of the JSON fallback. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `<who>> [tool ↪] <toolName>` with no trailing space.
 
 A `tool_result` event shall render as a header line `<who>> [tool <symbol>] <toolName>[ <duration>]` followed by the tool's output as a continuation block. The `<symbol>` and the bracketed tag's SGR derive from `status` per [TMUX-039](#tmux-039)'s kind table: `✓` green for `success`, `✗` red for `error`, `·` yellow for `denied`. The body — tool name and optional duration — is unstyled.
 
