@@ -17,7 +17,7 @@ Other members (status, error, aborted, turn-aborted, runtime-error) carry no gly
 
 ## Status
 
-Proposed
+Done — all four tasks closed at per-task-boundary green (typecheck, lint, unit 473/473 including the no-reason `turn_aborted` regression guard, smoke 7/7); the real-glow acceptance probe pins the unified `<who>> [tool ✓] <toolName>` header alongside the preserved TMUX-049 payload-preservation invariants, and the full acceptance suite reports 18/18 passing.
 
 ## Scope
 
