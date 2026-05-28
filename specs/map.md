@@ -62,6 +62,7 @@ meta.md     The spec of specs
 | IR-018 | [018-reasoning-effort-yaml-and-per-adapter-mappings.md](iterations/018-reasoning-effort-yaml-and-per-adapter-mappings.md) | tmux-play YAML `reasoningEffort` per player/captain; Claude `xhigh` mapping refresh; Gemini settings-file + OpenCode variant wiring |
 | IR-019 | [019-boss-esc-interrupt-and-bracketed-paste.md](iterations/019-boss-esc-interrupt-and-bracketed-paste.md) | tmux-play Boss input: ESC interrupts active turn without ending the session; bracketed paste submits multi-line as one Boss turn |
 | IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters preserve `resumeToken` on `interrupted` `done` from backend id or inbound `resume`, so player context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
+| IR-021 | [021-unified-bracketed-tag-grammar.md](iterations/021-unified-bracketed-tag-grammar.md) | tmux-play presenter unifies status / error / aborted / turn-aborted / runtime-error / tool lifecycle lines under one `<who>> [<tag> <optional glyph>] <optional body>` grammar; bodies move outside brackets; `tool>` / `tool<` prefix retired |
 
 ## Packages
 
