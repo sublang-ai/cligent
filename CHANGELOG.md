@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-28
+
 ### Changed
 
 - tmux-play presenter unifies its operational-line family — `[status]`, `[error]`, `[aborted]`, `[turn aborted]`, `[runtime error]`, plus the previously separate `tool>` / `tool<` lines — under one bracketed-tag grammar: every line now reads `<who>> [<tag> <optional glyph>] <optional body>` where the speaker prefix is the standard TMUX-038 `<who>> `, the bracketed tag carries the kind and (for tools) a state glyph, and the body — when present — sits outside the brackets unstyled (`captain> [runtime error] boom` rather than the retired `[runtime error: boom]`). Tool lines render as `<who>> [tool ↪] <toolName> <inputSummary>` for invocations (uncolored tag) and `<who>> [tool ✓|✗|·] <toolName>[ <duration>]` for results, with the bracketed tag in the green/red/yellow outcome color and the body unstyled — the `tool>` / `tool<` prefix replacement and its caller-accent rule are retired (speaker identity now lives in the standard `<who>> ` prefix). The on-the-wire record types (`tool_use`, `tool_result`, `captain_status`, `runtime_error`, `turn_aborted`, `player_finished`, `captain_finished`) and their payloads are unchanged; only the rendered bytes in tmux panes change, so third-party observers that listen on records (visualizers, metric exporters, custom panels) need no update — IR-021, TMUX-038, TMUX-039, TMUX-049, TMUX-050
@@ -175,7 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/sublang-ai/cligent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sublang-ai/cligent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sublang-ai/cligent/compare/v0.4.0...v0.5.0
