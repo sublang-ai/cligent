@@ -423,11 +423,11 @@ export class TmuxPresenter implements RecordObserver {
 
   // Render a tool-result body through glow as a fenced code block (per
   // TMUX-049) so glow leaves the content unwrapped, then indent every line
-  // by two spaces so the body trails its `tool< …` header line under the
-  // standard continuation-indent grammar. The fence is selected to be safe
-  // against an embedded triple-backtick block in the payload (see
-  // `selectCodeFence`). On rare mid-session glow failure, the raw body is
-  // emitted indented so the session keeps moving.
+  // by two spaces so the body trails its `<who>> [tool …]` header line
+  // under the standard continuation-indent grammar. The fence is selected
+  // to be safe against an embedded triple-backtick block in the payload
+  // (see `selectCodeFence`). On rare mid-session glow failure, the raw
+  // body is emitted indented so the session keeps moving.
   private renderToolBody(
     writer: TmuxPresenterWriter,
     body: string,
@@ -566,8 +566,8 @@ function selectCodeFence(body: string): string {
 
 // Indent every nonblank line of `rendered` with `indent`, leaving blank
 // lines blank, and ensure exactly one trailing newline. Used to drop a
-// glow-rendered tool body under the `tool< …` header line so it carries
-// the same two-space continuation indent as text-body continuations.
+// glow-rendered tool body under the `<who>> [tool …]` header line so it
+// carries the same two-space continuation indent as text-body continuations.
 // Mirrors `applyPrefix`'s outer-margin trim so glow's outermost paragraph
 // margin doesn't stack between the header and the body; any further blank
 // lines (the fenced-code frame, payload edge blanks, etc.) are preserved.
@@ -632,13 +632,14 @@ function toolResultStyle(
 }
 
 // Pick the most useful single-string description of a tool's input for the
-// `tool>` header. Known keys come first; fall back to a truncated JSON dump.
+// `[tool ⤷]` header. Known keys come first; fall back to a truncated JSON
+// dump.
 function summarizeToolInput(input: Record<string, unknown>): string {
   // Ordered priority: filesystem/shell keys first, then search/fetch
   // (`query`, common to tools like ToolSearch / WebFetch wrappers), then
   // free-form prose. `query` lifts the common search-tool case out of the
-  // compact-JSON fallback so the `tool>` header surfaces the actual query
-  // text instead of `{"query":"…","max_results":N}`.
+  // compact-JSON fallback so the `[tool ⤷]` header surfaces the actual
+  // query text instead of `{"query":"…","max_results":N}`.
   for (const key of [
     'command',
     'file_path',

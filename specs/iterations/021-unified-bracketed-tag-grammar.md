@@ -93,14 +93,14 @@ A test observer that asserts on record types (not on rendered bytes) needs no up
 - [x] `specs/map.md` — index IR-021.
 - [x] `src/app/tmux-play/presenter-tmux.ts` — implement the unified grammar across the five existing operational-line paths and the two tool paths; one shared helper (e.g., `writeBracketedLine(writer, who, tag, glyph?, outcomeRole?, body?)`) keeps the kind table addressable from one place.
 - [x] `src/app/tmux-play/presenter-tmux.test.ts` — update assertions for the new prefix + bracketed-tag form across status, error, aborted, turn-aborted, runtime-error, tool_use, tool_result paths.
-- [ ] `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (or equivalent) — refresh real-glow / real-tmux assertions that capture exact rendered bytes.
+- [x] `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (or equivalent) — refresh real-glow / real-tmux assertions that capture exact rendered bytes.
 - [ ] `README.md` and `docs/tmux-play.md` — update any prose or examples that reference `tool>` / `tool<` or the inside-brackets body form.
 
 ## Tasks
 
 1. [x] **Spec items + map.** Amend TMUX-038, TMUX-039, TMUX-049, TMUX-050 in the user spec; refresh the tool-related items in the test spec and add the new body-attachment + unified-tool-line test items; index IR-021 in `specs/map.md`. Single docs-only commit.
 2. [x] **Presenter implementation.** Implement the unified grammar in `presenter-tmux.ts` via a single bracketed-line helper that owns the SGR-on-tag rule and the body-outside-brackets rule, route all five existing operational paths and both tool paths through it, retire the `tool>` / `tool<` prefix replacement. Update unit tests in lockstep. Per-task-boundary green.
-3. [ ] **Acceptance refresh.** Update the real-glow / real-tmux acceptance suite assertions to match the new rendered bytes; verify the pre-existing payload-preservation invariants (fenced code, trailing blanks, outer-margin trim) still hold under the new header form. Per-task-boundary green.
+3. [x] **Acceptance refresh.** Update the real-glow / real-tmux acceptance suite assertions to match the new rendered bytes; verify the pre-existing payload-preservation invariants (fenced code, trailing blanks, outer-margin trim) still hold under the new header form. Per-task-boundary green.
 4. [ ] **Docs.** Sweep README and `docs/tmux-play.md` for stale `tool>` / `tool<` prose and example screenshots; update to the new grammar.
 
 ## Acceptance

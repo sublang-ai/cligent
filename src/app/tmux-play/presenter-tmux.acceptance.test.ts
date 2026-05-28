@@ -123,7 +123,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
   );
 
   acceptanceIt(
-    'preserves an intentional payload trailing blank in a tool_result body',
+    'renders a tool_result under the unified bracketed-tag grammar with payload-preservation intact',
     () => {
       const coder = new MemoryWriter();
       const presenter = createTmuxPresenter({
@@ -133,16 +133,42 @@ describe('TmuxPresenter + real glow acceptance', () => {
 
       // Payload ends with an intentional blank row (think `cat` on a file
       // whose final line is empty). The TMUX-049 contract is that this
-      // blank survives the fence + glow + indent pipeline.
+      // blank survives the fence + glow + indent pipeline, AND under
+      // IR-021's unified grammar the header now reads as the speaker
+      // prefix plus a bracketed `[tool ✓]` tag — not the retired
+      // `tool< ✓` prefix replacement.
       presenter.onRecord(playerEvent('coder', toolResultEvent('Cat', 'foo\n\n')));
 
       const visible = coder.text();
-      // Structural assertion: somewhere in the output, `foo` is followed
-      // by a blank line before the next content (the closing fence row).
-      // We don't pin exact bytes — real glow's fenced-code rendering
-      // varies in padding — but the trailing-blank-preservation property
-      // must hold or the user's intent is silently lost.
+
+      // Unified header form (TMUX-038 speaker prefix + TMUX-039 bracketed
+      // tag): the visible (ANSI-stripped) header line is exactly
+      // `coder> [tool ✓] Cat`. Asserting the literal substring catches a
+      // regression that restores the retired `tool< ` prefix replacement
+      // or drops the `<who>> ` speaker prefix from tool lines.
+      expect(visible).toContain('coder> [tool ✓] Cat');
+      // Regression guards: the retired prefix replacements must not leak
+      // through the new bracketed-tag pipeline.
+      expect(visible).not.toContain('tool< ');
+      expect(visible).not.toContain('tool> ');
+
+      // Pre-existing payload-preservation invariant (TMUX-049): somewhere
+      // in the output, `foo` is followed by a blank line before the next
+      // content (the closing fence row). We don't pin exact bytes — real
+      // glow's fenced-code rendering varies in padding — but the
+      // trailing-blank-preservation property must hold or the user's
+      // intent is silently lost.
       expect(visible).toMatch(/foo\s*\n\s*\n/);
+
+      // Pre-existing two-space continuation indent invariant: the body
+      // line carrying `foo` sits under the header with the indent applied
+      // (matching how text-body continuations look). This pins
+      // [TTMUX-049]'s indent rule through real glow output rather than
+      // against an identity mock.
+      const lines = visible.split('\n');
+      const fooLine = lines.find((line) => /foo/.test(line));
+      expect(fooLine, 'expected a body line containing foo').toBeDefined();
+      expect(fooLine ?? '').toMatch(/^ {2}/);
     },
   );
 
