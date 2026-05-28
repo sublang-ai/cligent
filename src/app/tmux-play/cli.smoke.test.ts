@@ -42,7 +42,7 @@ describe('tmux-play built CLI smoke', () => {
       return;
     }
 
-    const result = spawnSync(builtCliPath(), ['--help'], {
+    const result = spawnSync(builtBinPath(), ['--help'], {
       encoding: 'utf8',
       timeout: 10_000,
     });
@@ -320,7 +320,7 @@ function runCli(
   env: NodeJS.ProcessEnv = {},
   input?: string,
 ): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [builtCliPath(), ...args], {
+  return spawnSync(process.execPath, [builtBinPath(), ...args], {
     encoding: 'utf8',
     env: {
       ...harness.env,
@@ -331,12 +331,18 @@ function runCli(
   });
 }
 
-function builtCliPath(): string {
+function builtBinPath(): string {
+  const binPath = join(process.cwd(), 'bin/tmux-play.mjs');
+  if (!existsSync(binPath)) {
+    throw new Error('Missing bin/tmux-play.mjs');
+  }
+  // The wrapper dynamically imports the compiled CLI; surface a clear error
+  // when the build artifact is missing rather than a runtime module-not-found.
   const cliPath = join(process.cwd(), 'dist/app/tmux-play/cli.js');
   if (!existsSync(cliPath)) {
     throw new Error('Missing dist/app/tmux-play/cli.js; run npm run build first');
   }
-  return cliPath;
+  return binPath;
 }
 
 function expectSuccess(result: SpawnSyncReturns<string>): void {

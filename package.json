@@ -22,13 +22,14 @@
     "adapter"
   ],
   "files": [
+    "bin/tmux-play.mjs",
     "dist",
     "docs",
     "LICENSE",
     "README.md"
   ],
   "bin": {
-    "tmux-play": "./dist/app/tmux-play/cli.js"
+    "tmux-play": "./bin/tmux-play.mjs"
   },
   "sideEffects": false,
   "main": "dist/index.js",
@@ -68,7 +69,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "postbuild": "node -e \"require('fs').chmodSync('dist/app/tmux-play/cli.js',0o755)\"",
     "lint": "eslint --config config/eslint.config.js .",
     "format": "prettier --config config/prettierrc.json --write .",
     "typecheck": "tsc --noEmit -p config/tsconfig.test.json",
