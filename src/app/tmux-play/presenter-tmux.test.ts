@@ -818,6 +818,30 @@ describe('TmuxPresenter', () => {
     );
   });
 
+  it('omits the body when a turn_aborted record carries no reason', () => {
+    // TMUX-039 kind table: `[turn aborted]` body is the abort reason "when
+    // present". TurnAbortedRecord.reason is optional, so a record without
+    // it must render as the bracketed tag alone — no synthesized fallback
+    // word (under the outside-brackets grammar a placeholder like
+    // `aborted` would read as an actual reason, not absence).
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    presenter.onRecord({
+      type: 'turn_aborted',
+      turnId: 1,
+      timestamp: 0,
+    });
+
+    expect(boss.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
+        '\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m\n',
+    );
+  });
+
   it('paints runtime_error body red under captain prefix', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({

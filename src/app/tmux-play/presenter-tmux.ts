@@ -134,13 +134,18 @@ export class TmuxPresenter implements RecordObserver {
         break;
       case 'turn_aborted':
         this.flushBlock(this.boss);
+        // TMUX-039 kind table: `[turn aborted]` body is the abort reason
+        // "when present" — no synthesized fallback. A record without a
+        // reason renders as just `captain> [turn aborted]\n`; under the
+        // outside-brackets grammar a fallback word would read as an actual
+        // reason rather than as a missing-reason placeholder.
         this.writeBracketedLine(
           this.boss,
           'captain',
           'turn aborted',
           undefined,
           this.sgr.statusAborted,
-          record.reason ?? 'aborted',
+          record.reason,
         );
         break;
       case 'player_prompt':
