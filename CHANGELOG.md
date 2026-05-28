@@ -10,11 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-05-27
+## [0.7.0] - 2026-05-28
 
 ### Changed
 
 - tmux-play picks the Catppuccin **flavor** (Mocha or Latte) to match the host terminal's background polarity instead of hard-coding Mocha against every terminal. Catppuccin ships a family — Mocha for dark backgrounds, Latte for light — and the canonical tmux pattern is to apply the flavor whose `mantle` band reads as a subtle tonal step on the user's canvas rather than an inverted block. Detection looks at `COLORFGBG` (bg index ≥ 7 → Latte), then `TERM_PROGRAM=Apple_Terminal` (→ Latte for macOS Terminal.app's white default), then falls back to Mocha. The programmatic API exposes `themeFlavor: 'mocha' | 'latte' | 'auto'` as an explicit override. `window-style` and `window-active-style` are NOT claimed — the pane content area stays on the user's terminal-native canvas, which is what makes the per-host flavor choice meaningful. The Captain pane carries the blue highlight title block when active; player pane titles always render on the mantle surface with no highlight block (read-only per TMUX-027); the pane-border row stays at the top with symmetric one-space padding around the title-and-timer band. Per-pane timer accents and the Captain pane timer accent are also flavor-aware — `playerAccent(adapter, flavor)` and `captainAccent(flavor)` return the Latte hex (dark green `#40a02b`, dark teal `#179299`, mauve `#8839ef`, etc.) on Latte sessions so the running timer reads against the light mantle band instead of washing out — TMUX-047, TMUX-048, TMUX-054 amended accordingly
+- tmux-play status-right session-total timer renders `⏳` while a Boss turn is open and `⌛` between turns, matching the per-pane title timers' running-vs-settled glyph pair (TMUX-054); the unconditional `⏰` glyph is gone. The duration text keeps its mauve/overlay1 color cue, so the glyph swap adds a font-independent second signal of state without re-styling the surface — TMUX-055
 
 ### Removed
 
