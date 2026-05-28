@@ -315,6 +315,10 @@ describe('TmuxPlaySession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    // Per TMUX-039 the bracketed tag is `[runtime error]` with the message
+    // outside the brackets; assert the new form doesn't appear either so a
+    // regression that re-emits a runtime_error via the bypass path is caught.
+    expect(output.text()).not.toContain('[runtime error] captain failed');
     expect(output.text()).not.toContain('[runtime error: captain failed]');
   });
 
@@ -355,8 +359,10 @@ describe('TmuxPlaySession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    // Per TMUX-039 unified grammar: bracketed tag is `[runtime error]` with
+    // the message in the body outside the brackets.
     expect(output.text()).toContain(
-      'captain> [runtime error: Record observer 0 failed while handling turn_started: observer failed]',
+      'captain> [runtime error] Record observer 0 failed while handling turn_started: observer failed',
     );
   });
 
@@ -484,8 +490,15 @@ describe('TmuxPlaySession', () => {
     expect(records).toEqual([
       expect.objectContaining({ type: 'turn_aborted', reason: 'ESC' }),
     ]);
-    expect(output.text()).toContain('[turn aborted: ESC]');
-    expect(output.text()).not.toContain('[runtime error:');
+    // Per TMUX-039 unified grammar: bracketed tag `[turn aborted]` carries
+    // the yellow outcome SGR span, then a `\x1b[0m` reset, then the reason
+    // `ESC` sits outside the brackets unstyled. The reset bytes separate
+    // the closing `]` from the space + `ESC`, so we strip ANSI before
+    // asserting the visible content is contiguous.
+    const visible = output.text().replace(/\x1B\[[0-9;]*m/g, '');
+    expect(visible).toContain('[turn aborted] ESC');
+    expect(visible).not.toContain('[runtime error]');
+    expect(visible).not.toContain('[turn aborted:');
 
     input.write('\n');
     await waitUntil(() => runBossTurn.mock.calls.length === 2);

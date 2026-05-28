@@ -134,10 +134,13 @@ export class TmuxPresenter implements RecordObserver {
         break;
       case 'turn_aborted':
         this.flushBlock(this.boss);
-        this.writeStatusLine(
+        this.writeBracketedLine(
           this.boss,
           'captain',
-          paintStatus(this.sgr, 'aborted', `[turn aborted: ${record.reason ?? 'aborted'}]`),
+          'turn aborted',
+          undefined,
+          this.sgr.statusAborted,
+          record.reason ?? 'aborted',
         );
         break;
       case 'player_prompt':
@@ -157,18 +160,24 @@ export class TmuxPresenter implements RecordObserver {
         break;
       case 'captain_status':
         this.flushBlock(this.boss);
-        this.writeStatusLine(
+        this.writeBracketedLine(
           this.boss,
           'captain',
-          `[status] ${record.message}${formatStatusData(record.data)}`,
+          'status',
+          undefined,
+          undefined,
+          `${record.message}${formatStatusData(record.data)}`,
         );
         break;
       case 'runtime_error':
         this.flushBlock(this.boss);
-        this.writeStatusLine(
+        this.writeBracketedLine(
           this.boss,
           'captain',
-          paintStatus(this.sgr, 'error', `[runtime error: ${record.message}]`),
+          'runtime error',
+          undefined,
+          this.sgr.statusError,
+          record.message,
         );
         break;
     }
@@ -202,11 +211,26 @@ export class TmuxPresenter implements RecordObserver {
   ): void {
     this.flushBlock(writer);
     if (result.status === 'ok') return;
-    const line =
-      result.status === 'error'
-        ? paintStatus(this.sgr, 'error', `[error: ${result.error ?? 'Agent run failed'}]`)
-        : paintStatus(this.sgr, 'aborted', '[aborted]');
-    this.writeStatusLine(writer, who, line);
+    if (result.status === 'error') {
+      this.writeBracketedLine(
+        writer,
+        who,
+        'error',
+        undefined,
+        this.sgr.statusError,
+        result.error ?? 'Agent run failed',
+      );
+    } else {
+      // Aborted: no body — TMUX-033 says aborted results need not carry a reason.
+      this.writeBracketedLine(
+        writer,
+        who,
+        'aborted',
+        undefined,
+        this.sgr.statusAborted,
+        undefined,
+      );
+    }
   }
 
   private writeFormatted(
@@ -218,14 +242,15 @@ export class TmuxPresenter implements RecordObserver {
     // would duplicate failures and reintroduce noisy ok/usage footers.
     if (event.type === 'done' || event.type === 'error') return;
 
-    // TMUX-049: tool lifecycle has its own prefix grammar instead of the
-    // speaker prefix, so it bypasses the markdown pipeline.
+    // TMUX-049: tool lifecycle uses the standard speaker prefix plus the
+    // [tool …] bracketed tag from TMUX-039's kind table — single-line
+    // operational text that bypasses the Markdown pipeline.
     if (event.type === 'tool_use') {
       this.writeToolInvoke(writer, who, event.payload as ToolUsePayload);
       return;
     }
     if (event.type === 'tool_result') {
-      this.writeToolResult(writer, event.payload as ToolResultPayload);
+      this.writeToolResult(writer, who, event.payload as ToolResultPayload);
       return;
     }
 
@@ -307,14 +332,46 @@ export class TmuxPresenter implements RecordObserver {
     writer.write(this.applyPrefix(block.who, rendered));
   }
 
-  private writeStatusLine(
+  // TMUX-039 unified operational-line shape: `<who>> [<tag> <optional glyph>]
+  // <optional body>`. The speaker prefix carries the TMUX-038 color span; the
+  // bracketed tag carries its own outcome SGR span (red/yellow/green) when
+  // the kind is colored, or is emitted plain for uncolored kinds (status,
+  // tool ⤷). The body — when present — lives outside the brackets and is
+  // unstyled by the presenter so any ANSI inside it comes from the source.
+  // Single source of truth for every operational-line emission so the
+  // SGR-on-tag and body-outside-brackets invariants are not hand-coded at
+  // each call site.
+  private writeBracketedLine(
     writer: TmuxPresenterWriter,
     who: string,
-    body: string,
+    tag: string,
+    glyph: string | undefined,
+    tagSgr: string | undefined,
+    body: string | undefined,
   ): void {
-    const sgr = this.prefixSgr(who);
-    const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
-    writer.write(`${intro}${body}\n`);
+    writer.write(this.formatBracketedLine(who, tag, glyph, tagSgr, body));
+  }
+
+  // Build (but don't write) the bytes for a single bracketed-tag line.
+  // Used by tool_result so the header bytes can be concatenated with the
+  // continuation-block body before a single `writer.write` call — keeping
+  // the order-of-emission invariant the existing tests rely on.
+  private formatBracketedLine(
+    who: string,
+    tag: string,
+    glyph: string | undefined,
+    tagSgr: string | undefined,
+    body: string | undefined,
+  ): string {
+    const prefixSgr = this.prefixSgr(who);
+    const prefix = prefixSgr ? `${prefixSgr}${who}> ${SGR_RESET}` : `${who}> `;
+    const tagInner = glyph ? `[${tag} ${glyph}]` : `[${tag}]`;
+    const tagSpan = tagSgr ? `${tagSgr}${tagInner}${SGR_RESET}` : tagInner;
+    // Trailing space rule (TMUX-049): when there's no body, the line ends at
+    // the closing bracket — no stranded space. When a body is present, it
+    // sits one space outside the brackets, unstyled.
+    const trailer = body !== undefined && body.length > 0 ? ` ${body}` : '';
+    return `${prefix}${tagSpan}${trailer}\n`;
   }
 
   private writeToolInvoke(
@@ -324,31 +381,27 @@ export class TmuxPresenter implements RecordObserver {
   ): void {
     this.flushBlock(writer);
     const inputSummary = summarizeToolInput(payload.input);
-    const header = inputSummary
+    // Body is `<toolName>` when no input summary exists, or `<toolName>
+    // <inputSummary>` otherwise. The bracketed tag `[tool ⤷]` is uncolored
+    // per TMUX-039 — speaker identity is carried by the `<who>> ` prefix.
+    const body = inputSummary
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
-    // The `tool>` prefix carries the caller's speaker color (mauve for
-    // captain, the adapter accent for a player) instead of a fixed peach
-    // anchor, so at-a-glance the invocation is attributable to its caller
-    // alongside text bodies. Falls back to uncolored when the speaker has
-    // no defined color, matching the TMUX-038 prefix fallback.
-    const sgr = this.prefixSgr(who);
-    const intro = sgr ? `${sgr}tool> ${SGR_RESET}` : 'tool> ';
-    writer.write(`${intro}${header}\n`);
+    this.writeBracketedLine(writer, who, 'tool', '⤷', undefined, body);
   }
 
   private writeToolResult(
     writer: TmuxPresenterWriter,
+    who: string,
     payload: ToolResultPayload,
   ): void {
     this.flushBlock(writer);
     const { symbol, sgr } = toolResultStyle(this.sgr, payload.status);
-    const intro = `${sgr}tool< ${symbol} ${SGR_RESET}`;
     const durationText = formatDuration(payload.durationMs);
-    const headLine = durationText
+    const headBody = durationText
       ? `${payload.toolName} ${durationText}`
       : payload.toolName;
-    let output = `${intro}${headLine}\n`;
+    let output = this.formatBracketedLine(who, 'tool', symbol, sgr, headBody);
     // Strip exactly one trailing newline — the line terminator on the
     // payload's last line — so a plain `foo\n` does not surface as
     // `foo` + a phantom blank inside the fence. A blanket `.trimEnd()`
@@ -559,19 +612,11 @@ function trimOuterMargin(text: string): string {
   return lines.slice(start, end).join('\n');
 }
 
-// TMUX-039 status coloring. The bracketed status body gets a red (error) or
-// yellow (aborted) bold span; the surrounding speaker prefix keeps its own
-// SGR colors. The SGR colors come from the presenter's resolved flavor.
-function paintStatus(
-  sgr: PresenterSgr,
-  kind: 'error' | 'aborted',
-  text: string,
-): string {
-  const open = kind === 'error' ? sgr.statusError : sgr.statusAborted;
-  return `${open}${text}${SGR_RESET}`;
-}
-
-// TMUX-049 tool-result outcome → status symbol + prefix SGR.
+// TMUX-049 tool-result outcome → bracketed-tag glyph + tag SGR. The SGR
+// opens the bracketed tag (`[tool ✓]` / `[tool ✗]` / `[tool ·]`) per
+// TMUX-039's kind table; the body sits outside the brackets unstyled, so
+// the SGR span is now narrower than the retired `tool< <symbol>` prefix
+// span that covered the whole header line.
 function toolResultStyle(
   sgr: PresenterSgr,
   status: ToolResultPayload['status'],

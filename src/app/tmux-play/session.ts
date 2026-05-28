@@ -257,10 +257,13 @@ export class TmuxPlaySession {
           await this.runtime?.runBossTurn(prompt);
         } catch (error) {
           // Non-observer failures are already emitted as runtime_error records
-          // by the runtime and rendered by the tmux presenter.
+          // by the runtime and rendered by the tmux presenter. Observer
+          // dispatch failures bypass that path because the failing observer
+          // is the presenter itself, so we emit the line directly under the
+          // TMUX-039 bracketed-tag grammar.
           if (error instanceof ObserverDispatchError) {
             this.writeOutput(
-              `captain> [runtime error: ${errorMessage(error)}]\n`,
+              `captain> [runtime error] ${errorMessage(error)}\n`,
             );
           }
         } finally {
@@ -271,8 +274,10 @@ export class TmuxPlaySession {
         }
       })
       .catch((error) => {
+        // Same TMUX-039 bracketed-tag grammar for the catch-all failure
+        // path: bracketed tag carries the kind, message sits outside.
         this.writeOutput(
-          `captain> [runtime error: ${errorMessage(error)}]\n`,
+          `captain> [runtime error] ${errorMessage(error)}\n`,
         );
       });
   }

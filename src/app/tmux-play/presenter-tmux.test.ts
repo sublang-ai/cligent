@@ -332,9 +332,9 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Bash', { command: 'ls' })),
     );
 
-    // The text deltas flushed before the tool> header so the order on the
-    // pane matches the order of events.
-    expect(coder.text()).toBe('coder> partial\ntool> Bash ls\n');
+    // The text deltas flushed before the `[tool ⤷]` header so the order on
+    // the pane matches the order of events.
+    expect(coder.text()).toBe('coder> partial\ncoder> [tool ⤷] Bash ls\n');
   });
 
   it('flushes the open block before a new player_prompt on the same writer', () => {
@@ -366,7 +366,7 @@ describe('TmuxPresenter', () => {
     });
 
     expect(boss.text()).toBe(
-      'captain> partial\ncaptain> [runtime error: boom]\n',
+      'captain> partial\ncaptain> [runtime error] boom\n',
     );
   });
 
@@ -594,7 +594,7 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe(
       'captain> [status] reviewing {"playerCount":1}\n' +
         'captain> answer\n' +
-        'captain> [runtime error: observer failed]\n',
+        'captain> [runtime error] observer failed\n',
     );
     expect(coder.text()).toBe('');
   });
@@ -700,11 +700,11 @@ describe('TmuxPresenter', () => {
     });
 
     expect(coder.text()).toBe(
-      'coder> [error: player failed]\n' +
+      'coder> [error] player failed\n' +
         'coder> [aborted]\n',
     );
     expect(boss.text()).toBe(
-      'captain> [error: captain failed]\n' +
+      'captain> [error] captain failed\n' +
         'captain> [aborted]\n',
     );
   });
@@ -771,9 +771,11 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerFinished('coder', 'error', 'player failed'));
 
+    // Per TMUX-039 the SGR span now wraps only the bracketed tag `[error]`;
+    // the body sits outside the brackets, unstyled.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0m' +
-        '\x1b[1;38;2;243;139;168m[error: player failed]\x1b[0m\n',
+        '\x1b[1;38;2;243;139;168m[error]\x1b[0m player failed\n',
     );
   });
 
@@ -787,6 +789,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerFinished('coder', 'aborted'));
 
+    // No body for `[aborted]` per TMUX-039 — the bracketed tag stands alone.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;148;226;213mcoder> \x1b[0m' +
         '\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n',
@@ -807,9 +810,11 @@ describe('TmuxPresenter', () => {
       reason: 'sigint',
     });
 
+    // Per TMUX-039 only the bracketed tag carries the yellow outcome SGR
+    // span; the reason `sigint` sits outside the brackets, unstyled.
     expect(boss.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
-        '\x1b[1;38;2;249;226;175m[turn aborted: sigint]\x1b[0m\n',
+        '\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m sigint\n',
     );
   });
 
@@ -827,15 +832,17 @@ describe('TmuxPresenter', () => {
       message: 'boom',
     });
 
+    // TMUX-039 body-attachment normalization: message sits outside the
+    // brackets unstyled; the colored span covers `[runtime error]` only.
     expect(boss.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
-        '\x1b[1;38;2;243;139;168m[runtime error: boom]\x1b[0m\n',
+        '\x1b[1;38;2;243;139;168m[runtime error]\x1b[0m boom\n',
     );
   });
 
-  // Tool lifecycle (TMUX-049).
+  // Tool lifecycle (TMUX-049 under the unified TMUX-039 bracketed-tag grammar).
 
-  it('colors the `tool>` prefix by the caller\'s adapter accent', () => {
+  it('colors the player speaker prefix by the caller\'s adapter accent for tool_use', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -847,14 +854,15 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
-    // claude → green #a6e3a1 → fg 166;227;161. Same SGR the player's `<who>>`
-    // prefix carries; tool invocations are attributed to their caller.
+    // claude → green #a6e3a1 → fg 166;227;161 on the `coder> ` speaker prefix
+    // span. The `[tool ⤷]` tag is uncolored per TMUX-039 — speaker identity is
+    // already carried by the prefix, so the tag carries no color span.
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;166;227;161mtool> \x1b[0mBash npm test\n',
+      '\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ⤷] Bash npm test\n',
     );
   });
 
-  it('leaves the `tool>` prefix uncolored when the caller has no adapter mapping', () => {
+  it('leaves the speaker prefix uncolored for tool_use when no adapter is mapped', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -866,10 +874,12 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Bash', { command: 'npm test' })),
     );
 
-    expect(coder.raw()).toBe('tool> Bash npm test\n');
+    // No SGR anywhere: the prefix has no adapter color and the `[tool ⤷]`
+    // bracketed tag is always uncolored per TMUX-039.
+    expect(coder.raw()).toBe('coder> [tool ⤷] Bash npm test\n');
   });
 
-  it('colors the `tool>` prefix mauve when the caller is the captain', () => {
+  it('colors the captain speaker prefix mauve for a Captain-emitted tool_use', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
@@ -880,9 +890,10 @@ describe('TmuxPresenter', () => {
       captainEvent(toolUseEvent('Read', { file_path: 'src/main.ts' })),
     );
 
-    // captain → mauve #cba6f7 → fg 203;166;247.
+    // captain → mauve #cba6f7 → fg 203;166;247 on the `captain> ` prefix.
+    // The `[tool ⤷]` tag stays uncolored per TMUX-039.
     expect(boss.raw()).toBe(
-      '\x1b[1;38;2;203;166;247mtool> \x1b[0mRead src/main.ts\n',
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ⤷] Read src/main.ts\n',
     );
   });
 
@@ -905,7 +916,7 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe(
-      'tool> Read /very/long/path/that/will/be/truncated/because/it/exceeds/s…\n',
+      'coder> [tool ⤷] Read /very/long/path/that/will/be/truncated/because/it/exceeds/s…\n',
     );
   });
 
@@ -927,8 +938,8 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe(
-      'tool> X 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…\n' +
-        'tool> Y 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀…\n',
+      'coder> [tool ⤷] X 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…\n' +
+        'coder> [tool ⤷] Y 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀…\n',
     );
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(coder.raw())).toBe(false);
   });
@@ -944,7 +955,7 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolUseEvent('Custom', { count: 3, flag: true })),
     );
 
-    expect(coder.text()).toBe('tool> Custom {"count":3,"flag":true}\n');
+    expect(coder.text()).toBe('coder> [tool ⤷] Custom {"count":3,"flag":true}\n');
   });
 
   it('uses `query` as a priority key so search-tool calls do not fall through to JSON', () => {
@@ -965,10 +976,10 @@ describe('TmuxPresenter', () => {
     );
 
     // Without `query` in the priority list this would render as
-    // `tool> ToolSearch {"query":"select:WebFetch","max_results":1}` —
-    // technically correct but visually noisy and the same pattern the user
+    // `coder> [tool ⤷] ToolSearch {"query":"select:WebFetch","max_results":1}`
+    // — technically correct but visually noisy and the same pattern the user
     // flagged in IR-013's post-implementation review.
-    expect(coder.text()).toBe('tool> ToolSearch select:WebFetch\n');
+    expect(coder.text()).toBe('coder> [tool ⤷] ToolSearch select:WebFetch\n');
   });
 
   it('omits the input summary when the tool has no input keys', () => {
@@ -980,10 +991,12 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', toolUseEvent('Status', {})));
 
-    expect(coder.text()).toBe('tool> Status\n');
+    // No usable input summary → line ends at `<toolName>` with no trailing
+    // space per TMUX-049.
+    expect(coder.text()).toBe('coder> [tool ⤷] Status\n');
   });
 
-  it('renders a success tool_result as green `tool< ✓` with a fenced + indented body', () => {
+  it('renders a success tool_result with a green `[tool ✓]` tag and a fenced + indented body', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -1002,12 +1015,15 @@ describe('TmuxPresenter', () => {
       ),
     );
 
-    // The body is wrapped in a triple-backtick fence (longest backtick run
-    // in the payload is 0, so the minimum fence of three applies) and
-    // passed through glow; the identity mock returns it verbatim. The
-    // result is then indented two spaces under the header.
+    // Under TMUX-039 the colored SGR span covers only the bracketed tag
+    // `[tool ✓]`; the body `Bash 1.2s` sits outside the brackets unstyled.
+    // The speaker prefix `coder> ` is uncolored here (no playerAdapters
+    // mapping for `coder`). The body block is wrapped in a triple-backtick
+    // fence (longest backtick run in the payload is 0, so the minimum fence
+    // of three applies) and passed through glow; the identity mock returns
+    // it verbatim. The result is then indented two spaces under the header.
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;166;227;161mtool< ✓ \x1b[0mBash 1.2s\n' +
+      'coder> \x1b[1;38;2;166;227;161m[tool ✓]\x1b[0m Bash 1.2s\n' +
         '  ```\n' +
         '  npm test passed\n' +
         '  2 tests run\n' +
@@ -1015,7 +1031,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('renders an error tool_result as red `tool< ✗` with a fenced + indented body', () => {
+  it('renders an error tool_result with a red `[tool ✗]` tag and a fenced + indented body', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -1030,14 +1046,14 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;243;139;168mtool< ✗ \x1b[0mEdit 50ms\n' +
+      'coder> \x1b[1;38;2;243;139;168m[tool ✗]\x1b[0m Edit 50ms\n' +
         '  ```\n' +
         '  permission denied\n' +
         '  ```\n',
     );
   });
 
-  it('renders a denied tool_result as yellow `tool< ·` with no body when output is empty', () => {
+  it('renders a denied tool_result with a yellow `[tool ·]` tag and no body when output is empty', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -1049,7 +1065,7 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.raw()).toBe(
-      '\x1b[1;38;2;249;226;175mtool< · \x1b[0mWebFetch\n',
+      'coder> \x1b[1;38;2;249;226;175m[tool ·]\x1b[0m WebFetch\n',
     );
   });
 
@@ -1068,8 +1084,8 @@ describe('TmuxPresenter', () => {
     );
 
     expect(boss.text()).toBe(
-      'tool> Read src/main.ts\n' +
-        'tool< ✓ Read 80ms\n' +
+      'captain> [tool ⤷] Read src/main.ts\n' +
+        'captain> [tool ✓] Read 80ms\n' +
         '  ```\n' +
         '  42 lines\n' +
         '  ```\n',
@@ -1147,7 +1163,7 @@ describe('TmuxPresenter', () => {
     // including the embedded ``` — sits under the outer ```` wrapper with
     // the two-space indent applied.
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '  ````\n' +
         '  pre\n' +
         '  ```\n' +
@@ -1197,7 +1213,7 @@ describe('TmuxPresenter', () => {
     // intact under the two-space indent. Real glow likewise leaves long code
     // lines unwrapped by design.
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '  ```\n' +
         `  ${long}\n` +
         '  ```\n',
@@ -1228,7 +1244,7 @@ describe('TmuxPresenter', () => {
     // padded rows on either side of `foo` pass through unmodified, only
     // `foo` itself picks up the two-space indent.
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '   \n' +
         '  foo\n' +
         '   \n',
@@ -1253,7 +1269,7 @@ describe('TmuxPresenter', () => {
     );
 
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '  ```\n' +
         '  foo\n' +
         '\n' +
@@ -1287,7 +1303,7 @@ describe('TmuxPresenter', () => {
     // unindented so the frame reads as the user would see it in a glow
     // pane outside this presenter.
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '\n' +
         '\n' +
         '  foo\n' +
@@ -1320,7 +1336,7 @@ describe('TmuxPresenter', () => {
     // raw 'foo\n\n' → body 'foo\n' after strip-one-terminator. The blank
     // line beyond that terminator survives into the indented output.
     expect(coder.text()).toBe(
-      'tool< ✓ Cat\n' +
+      'coder> [tool ✓] Cat\n' +
         '  foo\n' +
         '\n',
     );
@@ -1341,10 +1357,11 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolResultEvent('Bash', 'success', 'first\nsecond')),
     );
 
-    // Header still emits with prefix coloring; body falls through as the raw
-    // payload (no fences) with the two-space continuation indent applied.
+    // Header still emits with the unified speaker prefix + bracketed-tag
+    // grammar; body falls through as the raw payload (no fences) with the
+    // two-space continuation indent applied.
     expect(coder.text()).toBe(
-      'tool< ✓ Bash\n' +
+      'coder> [tool ✓] Bash\n' +
         '  first\n' +
         '  second\n',
     );
@@ -1362,7 +1379,9 @@ describe('TmuxPresenter', () => {
       playerEvent('coder', toolResultEvent('B', 'success', '', 1500)),
     );
 
-    expect(coder.text()).toBe('tool< ✓ A 7ms\ntool< ✓ B 1.5s\n');
+    expect(coder.text()).toBe(
+      'coder> [tool ✓] A 7ms\ncoder> [tool ✓] B 1.5s\n',
+    );
   });
 
   it('omits the duration when durationMs is undefined', () => {
@@ -1374,7 +1393,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', toolResultEvent('A', 'success', '')));
 
-    expect(coder.text()).toBe('tool< ✓ A\n');
+    expect(coder.text()).toBe('coder> [tool ✓] A\n');
   });
 });
 
