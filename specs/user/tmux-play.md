@@ -220,7 +220,7 @@ While in session mode, the Boss readline shall echo the user's input line as the
 ### TMUX-057
 
 Where session mode is running with TTY stdin, while a Boss turn is active, when the Boss presses a bare ESC key in the Boss/Captain pane, the session shall abort the active turn without shutting down, preserve the Boss readline's current edit-buffer contents, and return to a ready `boss> ` prompt for the next Boss turn.
-The Boss/Captain pane shall render the existing `[turn aborted: ESC]` status line per [TMUX-040](#tmux-040).
+The Boss/Captain pane shall render the existing `[turn aborted] ESC` status line per [TMUX-040](#tmux-040).
 While no Boss turn is active, a bare ESC keypress shall have no observable effect.
 Terminal escape sequences that are not a bare ESC keypress (for example arrow-key sequences) shall not trigger a turn abort.
 Where stdin is not a TTY, the ESC keybinding shall not be installed, and the SIGINT/SIGTERM/EOF lifecycle per [TMUX-026](#tmux-026) shall remain unchanged.
@@ -246,22 +246,31 @@ The presenter shall color the speaker prefix by wrapping its bytes — including
 
 The Boss readline prompt set by session mode shall carry the same colored form (`\x1b[1;38;2;137;180;250mboss> \x1b[0m`); Node's readline strips ANSI from prompts when computing the visible width, so cursor positioning still treats the prompt as 6 cells wide.
 
-Per [TMUX-050](#tmux-050), text bodies pass through `glow` before reaching the writer; the presenter applies the prefix and two-space hanging indent to `glow`'s rendered output, and budgets the visible prefix's cell width into the render width passed to `glow` so the prefixed first line and the indented continuation lines both fit the pane. Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass `glow` — they are single-line operational text — and apply the prefix directly.
+Per [TMUX-050](#tmux-050), text bodies pass through `glow` before reaching the writer; the presenter applies the prefix and two-space hanging indent to `glow`'s rendered output, and budgets the visible prefix's cell width into the render width passed to `glow` so the prefixed first line and the indented continuation lines both fit the pane. Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass `glow` — they are single-line operational text — and apply the speaker prefix plus the bracketed-tag grammar directly. The speaker prefix grammar now governs tool lines as well; the `tool>` / `tool<` prefix replacement is retired.
 
 ### TMUX-039
 
-When a player or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[player <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error: <message>]` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
+Every operational line in a tmux-play pane shall follow one unified shape: `<who>> [<tag> <optional glyph>] <optional body>`. The `<who>> ` speaker prefix follows [TMUX-038](#tmux-038); the bracketed tag is one of the kinds in the table below; the body, when present, lives outside the brackets — not after a colon inside them. Colored tags (kinds whose row in the table below assigns a tag color) carry their own bold 24-bit-foreground SGR span distinct from the surrounding speaker prefix span; uncolored tags (`[status]`, `[tool ⤷]`) are emitted plain so the surrounding text style passes through. The body remains unstyled by the presenter. Lines whose body is non-empty emit `<who>> [tag] <body>`; lines with no body emit just `<who>> [tag]` (e.g., `[aborted]`).
 
-The bracketed status body on these lines shall additionally be wrapped in its own bold 24-bit-foreground SGR pair, distinct from the surrounding speaker prefix span:
+The glyph slot is optional and is only populated for kinds with multi-state semantics — tools today. Single-state kinds (status, error, aborted, turn-aborted, runtime-error) carry no glyph; the word in the tag names the kind and color names the outcome.
 
-| Status kind | Mocha role | Hex |
-| --- | --- | --- |
-| `[error: …]` (player or Captain) | `red` | `#f38ba8` |
-| `[runtime error: …]` (Boss/Captain pane) | `red` | `#f38ba8` |
-| `[aborted]` (player or Captain) | `yellow` | `#f9e2af` |
-| `[turn aborted: …]` (Boss/Captain pane) | `yellow` | `#f9e2af` |
+When a player or Captain run finishes with `status: 'ok'`, the presenter shall not write a trailing status line such as `[player <id> ok]` or `[captain ok]`. When a run finishes with `status: 'error'`, the presenter shall write a single `<who>> [error] <message>` line in the corresponding pane, where `<message>` is the result's `error` field. When a run finishes with `status: 'aborted'`, the presenter shall write a single `<who>> [aborted]` line; per [TMUX-033](#tmux-033) aborted results need not carry a reason, so no reason is rendered.
 
-The result is a status line whose prefix carries the speaker color and whose body carries the status color, e.g., `<captain-mauve>captain> </reset><red>[runtime error: boom]</reset>`.
+The kind table:
+
+| Tag | Glyph slot | Body | Tag color | Source record / event |
+| --- | --- | --- | --- | --- |
+| `[status]` | — | message + optional structured-data tail | uncolored | `captain_status` |
+| `[error]` | — | result `error` field | `red` (`#f38ba8`) | `player_finished` / `captain_finished` with `status: 'error'` |
+| `[aborted]` | — | — | `yellow` (`#f9e2af`) | `player_finished` / `captain_finished` with `status: 'aborted'` |
+| `[turn aborted]` | — | turn-abort reason when present | `yellow` (`#f9e2af`) | `turn_aborted` |
+| `[runtime error]` | — | runtime-error message | `red` (`#f38ba8`) | `runtime_error` |
+| `[tool ⤷]` | `⤷` (call) | tool name + input summary | uncolored | `tool_use` |
+| `[tool ✓]` | `✓` (ok) | tool name + duration | `green` (`#a6e3a1`) | `tool_result` `status: 'success'` |
+| `[tool ✗]` | `✗` (err) | tool name + duration | `red` (`#f38ba8`) | `tool_result` `status: 'error'` |
+| `[tool ·]` | `·` (denied) | tool name + duration | `yellow` (`#f9e2af`) | `tool_result` `status: 'denied'` |
+
+The result is an operational line whose speaker prefix carries the speaker color, whose bracketed tag (when colored) carries the outcome color, and whose body is unstyled — e.g., `<captain-mauve>captain> </reset><red>[runtime error]</reset> boom`.
 
 ### TMUX-040
 
@@ -269,19 +278,13 @@ The Boss/Captain pane shall display the Boss's input lines, the Captain's synthe
 
 ### TMUX-049
 
-`tool_use` and `tool_result` events shall render with a dedicated `tool>` / `tool<` prefix grammar in the calling entity's pane (the player pane for player-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)), replacing the `<who>> ` speaker prefix for those events.
+`tool_use` and `tool_result` events shall render under the unified bracketed-tag grammar of [TMUX-039](#tmux-039) in the calling entity's pane (the player pane for player-emitted events; the Boss/Captain pane for Captain-emitted events per [TMUX-040](#tmux-040)). The speaker prefix follows [TMUX-038](#tmux-038)'s `<who>> ` grammar — `captain> ` for Captain-emitted events and `<playerId>> ` for player-emitted events — and the bracketed tag follows [TMUX-039](#tmux-039)'s kind table. The `tool>` / `tool<` prefix replacement and its caller-accent rule are retired; speaker identity is carried in the `<who>> ` prefix, not in the bracketed tag's color.
 
-A `tool_use` event shall render as a single line `tool> <toolName> <inputSummary>` where the prefix bytes `tool> ` carry the caller's bold 24-bit-foreground SGR per [TMUX-038](#tmux-038)'s speaker color table (mauve for `captain`, the adapter accent for a player pane); when the caller has no defined color the prefix remains uncolored. The body remains unstyled. Pairing the invocation prefix with its caller's color attributes each tool call at a glance, mirroring how text bodies surface their speaker; only `tool<` retains an outcome-driven palette (✓ green / ✗ red / · yellow) so success-vs-failure remains scannable. The retired fixed peach `#fab387` `tool>` SGR is no longer applied.
+A `tool_use` event shall render as a single line `<who>> [tool ⤷] <toolName> <inputSummary>` where the bracketed tag is uncolored (the speaker prefix already carries identity) and the body — tool name + input summary — is unstyled.
 
-`<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `query`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. The `query` slot covers search/fetch tools (ToolSearch, WebFetch wrappers, etc.) so a real query surfaces in the header instead of the JSON fallback. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `tool> <toolName>` with no trailing space.
+`<inputSummary>` is the first non-empty string value found in `input` checked in priority order `command`, `file_path`, `path`, `pattern`, `query`, `prompt`, `description`, or a compact `JSON.stringify(input)` otherwise. The `query` slot covers search/fetch tools (ToolSearch, WebFetch wrappers, etc.) so a real query surfaces in the header instead of the JSON fallback. Whitespace runs in the chosen string shall be collapsed to single spaces and the result truncated at 60 cells with a trailing `…` when longer. When no usable summary exists, the line shall be `<who>> [tool ⤷] <toolName>` with no trailing space.
 
-A `tool_result` event shall render as a header line followed by the tool's output as a continuation block. The header is `tool< <symbol> <toolName>[ <duration>]` where `<symbol>` and the prefix SGR derive from `status`:
-
-| `status` | Symbol | Mocha role | Hex |
-| --- | --- | --- | --- |
-| `success` | `✓` | `green` | `#a6e3a1` |
-| `error` | `✗` | `red` | `#f38ba8` |
-| `denied` | `·` | `yellow` | `#f9e2af` |
+A `tool_result` event shall render as a header line `<who>> [tool <symbol>] <toolName>[ <duration>]` followed by the tool's output as a continuation block. The `<symbol>` and the bracketed tag's SGR derive from `status` per [TMUX-039](#tmux-039)'s kind table: `✓` green for `success`, `✗` red for `error`, `·` yellow for `denied`. The body — tool name and optional duration — is unstyled.
 
 `<duration>` is `<n>ms` when `durationMs < 1000`, `<n.n>s` otherwise; the duration segment is omitted when `durationMs` is undefined. When the extracted output (the string itself, or `output.stdout` when present, or the pretty-printed JSON of `output` otherwise) is empty or undefined, the header line stands alone with no body.
 
@@ -301,7 +304,7 @@ After rendering, the presenter shall trim at most one leading and at most one tr
 
 `text_delta` events accumulate until a boundary fires. Token-by-token streaming is the deliberate tradeoff: Markdown is not a streamable format — a renderer cannot tell whether subsequent bytes belong to an open fence until the closing fence arrives — so partial rendering would corrupt fenced code, tables, and lists.
 
-Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass the buffer-then-render pipeline: each is a single line of operational text, not Markdown, and writes directly with the speaker or tool prefix grammar applied.
+Status lines (per [TMUX-039](#tmux-039)) and tool lifecycle lines (per [TMUX-049](#tmux-049)) bypass the buffer-then-render pipeline: each is a single line of operational text, not Markdown, and writes directly with the speaker prefix and the bracketed-tag grammar applied.
 
 ### TMUX-046
 

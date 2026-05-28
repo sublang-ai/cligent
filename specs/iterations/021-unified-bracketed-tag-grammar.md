@@ -88,9 +88,9 @@ A test observer that asserts on record types (not on rendered bytes) needs no up
 
 ## Deliverables
 
-- [ ] `specs/user/tmux-play.md` — amend TMUX-038's closing paragraph; rewrite TMUX-039 with the unified rule + kind table; rewrite TMUX-049 to defer the prefix grammar to TMUX-038 and the bracketed tag to TMUX-039; amend TMUX-050's closing paragraph.
-- [ ] `specs/test/tmux-play.md` — refresh every `tool>` / `tool<` assertion to the new form; add the body-attachment normalization test items; add the unified tool-line grammar test items.
-- [ ] `specs/map.md` — index IR-021.
+- [x] `specs/user/tmux-play.md` — amend TMUX-038's closing paragraph; rewrite TMUX-039 with the unified rule + kind table; rewrite TMUX-049 to defer the prefix grammar to TMUX-038 and the bracketed tag to TMUX-039; amend TMUX-050's closing paragraph.
+- [x] `specs/test/tmux-play.md` — refresh every `tool>` / `tool<` assertion to the new form; add the body-attachment normalization test items; add the unified tool-line grammar test items.
+- [x] `specs/map.md` — index IR-021.
 - [ ] `src/app/tmux-play/presenter-tmux.ts` — implement the unified grammar across the five existing operational-line paths and the two tool paths; one shared helper (e.g., `writeBracketedLine(writer, who, tag, glyph?, outcomeRole?, body?)`) keeps the kind table addressable from one place.
 - [ ] `src/app/tmux-play/presenter-tmux.test.ts` — update assertions for the new prefix + bracketed-tag form across status, error, aborted, turn-aborted, runtime-error, tool_use, tool_result paths.
 - [ ] `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (or equivalent) — refresh real-glow / real-tmux assertions that capture exact rendered bytes.
@@ -98,7 +98,7 @@ A test observer that asserts on record types (not on rendered bytes) needs no up
 
 ## Tasks
 
-1. [ ] **Spec items + map.** Amend TMUX-038, TMUX-039, TMUX-049, TMUX-050 in the user spec; refresh the tool-related items in the test spec and add the new body-attachment + unified-tool-line test items; index IR-021 in `specs/map.md`. Single docs-only commit.
+1. [x] **Spec items + map.** Amend TMUX-038, TMUX-039, TMUX-049, TMUX-050 in the user spec; refresh the tool-related items in the test spec and add the new body-attachment + unified-tool-line test items; index IR-021 in `specs/map.md`. Single docs-only commit.
 2. [ ] **Presenter implementation.** Implement the unified grammar in `presenter-tmux.ts` via a single bracketed-line helper that owns the SGR-on-tag rule and the body-outside-brackets rule, route all five existing operational paths and both tool paths through it, retire the `tool>` / `tool<` prefix replacement. Update unit tests in lockstep. Per-task-boundary green.
 3. [ ] **Acceptance refresh.** Update the real-glow / real-tmux acceptance suite assertions to match the new rendered bytes; verify the pre-existing payload-preservation invariants (fenced code, trailing blanks, outer-margin trim) still hold under the new header form. Per-task-boundary green.
 4. [ ] **Docs.** Sweep README and `docs/tmux-play.md` for stale `tool>` / `tool<` prose and example screenshots; update to the new grammar.
