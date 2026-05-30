@@ -226,6 +226,9 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(coder.active).toBe('0');
       expect(reviewer.active).toBe('0');
 
+      // TTMUX-062: pane-local mouse selection is enabled for this session.
+      expect(showSessionOption(sessionName, 'mouse')).toBe('on');
+
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
         'tmux',
@@ -338,6 +341,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(statusLeft).toContain('Quit: Ctrl+C');
       expect(statusLeft).toContain('d=detach');
       expect(statusLeft).toContain('o=switch pane');
+      expect(statusLeft).toContain('drag=select');
 
       const statusRight = showSessionOption(sessionName, 'status-right');
       expect(statusRight).toContain('⏳');

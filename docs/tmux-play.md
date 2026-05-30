@@ -137,6 +137,10 @@ visible column gets 1/N of the window width, where N is the column count
 (2 with a single player, 3 with two or more). With ≥2 players the first
 column holds `ceil(playerCount / 2)` players from top to bottom.
 
+tmux-play enables tmux mouse mode for the session, so dragging selects within
+one pane under tmux's default mouse bindings. System clipboard integration
+follows the user's tmux and terminal clipboard configuration.
+
 ## Snapshot and work directory
 
 The launcher validates the config and writes

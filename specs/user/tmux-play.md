@@ -209,6 +209,15 @@ The even region split required by [TMUX-028](#tmux-028) shall hold at every wind
 
 After the launcher constructs the tmux session and before it attaches a client, the active pane shall be the Boss/Captain pane so startup cursor focus lands at the `boss> ` readline prompt.
 
+## Mouse Interaction
+
+### TMUX-062
+
+When the launcher creates a tmux-play session, it shall set that session's `mouse` option to `on` so tmux intercepts mouse events before the terminal and drag selection can be scoped by tmux pane instead of by the terminal's screen rectangle.
+Under tmux's default mouse bindings, drag selection is scoped to the pane under the cursor, clicking selects the pane under the cursor, and the scroll wheel enters or operates pane copy mode to scroll pane history.
+User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
+The launcher shall not configure `set-clipboard` and shall not add `Mouse*` / `Wheel*` bindings; clipboard integration remains delegated to the user's tmux and terminal configuration.
+
 ## Pane Titles
 
 ### TMUX-036
