@@ -63,6 +63,7 @@ meta.md     The spec of specs
 | IR-019 | [019-boss-esc-interrupt-and-bracketed-paste.md](iterations/019-boss-esc-interrupt-and-bracketed-paste.md) | tmux-play Boss input: ESC interrupts active turn without ending the session; bracketed paste submits multi-line as one Boss turn |
 | IR-020 | [020-abort-continuity-and-pane-contrast.md](iterations/020-abort-continuity-and-pane-contrast.md) | All adapters preserve `resumeToken` on `interrupted` `done` from backend id or inbound `resume`, so player context survives ESC; tmux-play pane-border row uses one surface tone and a legible timer color |
 | IR-021 | [021-unified-bracketed-tag-grammar.md](iterations/021-unified-bracketed-tag-grammar.md) | tmux-play presenter unifies status / error / aborted / turn-aborted / runtime-error / tool lifecycle lines under one `<who>> [<tag> <optional glyph>] <optional body>` grammar; bodies move outside brackets; `tool>` / `tool<` prefix retired |
+| IR-022 | [022-tmux-play-layout-configuration.md](iterations/022-tmux-play-layout-configuration.md) | tmux-play YAML `layout` block exposes initial window resolution and per-column weights; shipped multi-player default shifts from equal thirds to `4 : 6 : 6` |
 
 ## Packages
 
@@ -138,5 +139,5 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (top-level `theme: mocha \| latte \| auto`, per-player/captain `permissions` and `reasoningEffort`), discovery and auto-create, Captain contract, records, observers, topology, mouse selection + system clipboard right-click copy, OSC 11 flavor-aware Catppuccin theme + diagnostics, run-time timers, Boss input keybindings, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
+| user | [tmux-play.md](user/tmux-play.md) | tmux-play CLI, YAML config (top-level `theme: mocha \| latte \| auto`, top-level `layout` with `window` resolution and `columnWeights`, per-player/captain `permissions` and `reasoningEffort`), discovery and auto-create, Captain contract, records, observers, topology, mouse selection + system clipboard right-click copy, OSC 11 flavor-aware Catppuccin theme + diagnostics, run-time timers, Boss input keybindings, speaker colors, tool lifecycle, glow-rendered Markdown pipeline + launcher gate, runtime API, fanout |
 | test | [tmux-play.md](test/tmux-play.md) | tmux-play config discovery, runtime causality, observer dispatch, topology, fanout acceptance, permission and reasoning-effort configuration, run-time timers, Boss input keybindings, real-tmux acceptance, real-glow acceptance |
