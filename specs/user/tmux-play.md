@@ -214,9 +214,13 @@ After the launcher constructs the tmux session and before it attaches a client, 
 ### TMUX-062
 
 When the launcher creates a tmux-play session, it shall set that session's `mouse` option to `on` so tmux intercepts mouse events before the terminal and drag selection can be scoped by tmux pane instead of by the terminal's screen rectangle.
-Under tmux's default mouse bindings, drag selection is scoped to the pane under the cursor, clicking selects the pane under the cursor, and the scroll wheel enters or operates pane copy mode to scroll pane history.
+The launcher shall bind `MouseDragEnd1Pane` in both the `copy-mode` and `copy-mode-vi` key tables to `send-keys -X stop-selection`, so releasing the primary mouse button after a drag leaves the selected text highlighted in copy mode instead of copying and cancelling immediately.
+The launcher shall bind `MouseDown3Pane` in both key tables to `send-keys -X copy-pipe-and-cancel`, so right-clicking an active selection copies through tmux's normal copy path and exits copy mode.
+Customizing tmux copy-mode key tables is necessarily server-global because tmux does not offer per-session copy-mode bindings, so these four bindings outlive the tmux-play session; the launcher accepts that server-level footprint because preserving selection after mouse release is the requested UX and tmux has no narrower mechanism for it.
+A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
+Under tmux's default root mouse bindings, clicking selects the pane under the cursor and the scroll wheel enters or operates pane copy mode to scroll pane history.
 User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
-The launcher shall not configure `set-clipboard` and shall not add `Mouse*` / `Wheel*` bindings; clipboard integration remains delegated to the user's tmux and terminal configuration.
+The launcher shall not configure `set-clipboard` and shall not add `Wheel*` bindings; clipboard integration remains delegated to the user's tmux and terminal configuration.
 
 ## Pane Titles
 

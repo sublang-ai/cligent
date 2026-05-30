@@ -228,6 +228,18 @@ describe('tmux-play real-tmux acceptance', () => {
 
       // TTMUX-062: pane-local mouse selection is enabled for this session.
       expect(showSessionOption(sessionName, 'mouse')).toBe('on');
+      expect(keyBinding('copy-mode', 'MouseDragEnd1Pane')).toContain(
+        'stop-selection',
+      );
+      expect(keyBinding('copy-mode-vi', 'MouseDragEnd1Pane')).toContain(
+        'stop-selection',
+      );
+      expect(keyBinding('copy-mode', 'MouseDown3Pane')).toContain(
+        'copy-pipe-and-cancel',
+      );
+      expect(keyBinding('copy-mode-vi', 'MouseDown3Pane')).toContain(
+        'copy-pipe-and-cancel',
+      );
 
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
@@ -342,6 +354,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(statusLeft).toContain('d=detach');
       expect(statusLeft).toContain('o=switch pane');
       expect(statusLeft).toContain('drag=select');
+      expect(statusLeft).toContain('right-click=copy');
 
       const statusRight = showSessionOption(sessionName, 'status-right');
       expect(statusRight).toContain('⏳');
@@ -947,6 +960,16 @@ function showWindowOption(session: string, option: string): string {
   );
   if (result.status !== 0) {
     throw new Error(`tmux show-options -w failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trimEnd();
+}
+
+function keyBinding(table: string, key: string): string {
+  const result = spawnSync('tmux', ['list-keys', '-T', table, key], {
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`tmux list-keys failed: ${result.stderr.trim()}`);
   }
   return result.stdout.trimEnd();
 }

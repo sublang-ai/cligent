@@ -276,7 +276,7 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
-  it('does not configure clipboard policy or mouse key-table bindings', async () => {
+  it('preserves mouse selection and copies it on right-click without changing clipboard policy', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
 
@@ -289,6 +289,26 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
+    for (const table of ['copy-mode', 'copy-mode-vi']) {
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'bind-key',
+        '-T',
+        table,
+        'MouseDragEnd1Pane',
+        'send-keys',
+        '-X',
+        'stop-selection',
+      );
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'bind-key',
+        '-T',
+        table,
+        'MouseDown3Pane',
+        'send-keys',
+        '-X',
+        'copy-pipe-and-cancel',
+      );
+    }
     expect(runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')))
       .toBe(false);
     expect(
@@ -296,7 +316,7 @@ describe('launchTmuxPlay', () => {
         (call) =>
           call[0] === 'bind-key' &&
           call.some(
-            (arg) => typeof arg === 'string' && /^(Mouse|Wheel)/.test(arg),
+            (arg) => typeof arg === 'string' && /^Wheel/.test(arg),
           ),
       ),
     ).toBe(false);
@@ -638,7 +658,8 @@ describe('launchTmuxPlay', () => {
     expect(statusLeft).toContain('Quit: Ctrl+C');
     expect(statusLeft).toContain('d=detach');
     expect(statusLeft).toContain('drag=select');
-    expect(setValue('tmux-play-timers', 'status-left-length')).toBe('112');
+    expect(statusLeft).toContain('right-click=copy');
+    expect(setValue('tmux-play-timers', 'status-left-length')).toBe('136');
 
     const statusRight = setValue('tmux-play-timers', 'status-right');
     expect(statusRight).toContain('⏳');
