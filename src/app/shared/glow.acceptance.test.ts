@@ -52,8 +52,8 @@ describe('glow render acceptance', () => {
     // Smoke check that glow renders at all: a paragraph at a reasonable
     // width produces non-empty output containing the source words. Mostly
     // guards against silent glow misconfiguration (e.g., a glow build that
-    // writes only to a TTY and emits nothing under spawnSync — `-s dark`
-    // forces a real style and is asserted indirectly by the bold test).
+    // writes only to a TTY and emits nothing under spawnSync — a pinned
+    // style forces styled output and is asserted indirectly by the bold test).
     const output = renderMarkdown('the quick brown fox\n', 80);
     expect(output.length).toBeGreaterThan(0);
     expect(stripAnsi(output)).toContain('quick');

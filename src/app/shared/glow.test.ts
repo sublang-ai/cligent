@@ -42,7 +42,7 @@ describe('glow helpers', () => {
     expect(isGlowAvailable()).toBe(false);
   });
 
-  it('renders Markdown via glow with width pinned and stdin-fed', () => {
+  it('renders Markdown via glow with width pinned, dark style, and stdin-fed', () => {
     spawnSyncMock.mockReturnValue({
       status: 0,
       stdout: Buffer.from('  rendered\n'),
@@ -53,6 +53,21 @@ describe('glow helpers', () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       'glow',
       ['-w', '80', '-s', 'dark', '-'],
+      { input: '# hi', stdio: 'pipe' },
+    );
+  });
+
+  it('uses glow light style for the Latte flavor', () => {
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from('  rendered\n'),
+      stderr: Buffer.from(''),
+    });
+
+    expect(renderMarkdown('# hi', 80, 'latte')).toBe('  rendered\n');
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'glow',
+      ['-w', '80', '-s', 'light', '-'],
       { input: '# hi', stdio: 'pipe' },
     );
   });

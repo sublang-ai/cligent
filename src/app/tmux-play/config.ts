@@ -44,9 +44,9 @@ export interface TmuxPlayConfig {
   players: PlayerConfig[];
   /**
    * Catppuccin flavor to apply to the session chrome. `'auto'` (default
-   * when omitted) lets the launcher pick via env detection
-   * (`COLORFGBG` → `TERM_PROGRAM` → Mocha fallback). The snapshot written
-   * by {@link writeTmuxPlayConfigSnapshot} stores the resolved
+   * when omitted) lets the launcher pick via OSC 11 terminal-background
+   * detection, falling back to Mocha. The snapshot written by
+   * {@link writeTmuxPlayConfigSnapshot} stores the resolved
    * (`'mocha' | 'latte'`) value so the session subprocess never re-detects.
    */
   theme?: CatppuccinFlavorConfig;

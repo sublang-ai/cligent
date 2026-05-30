@@ -123,6 +123,67 @@ describe('runTmuxPlayCli', () => {
 
     expect(code).toBe(0);
     expect(stdout.text()).toContain('tmux-play [--config <path>]');
+    expect(stdout.text()).toContain('tmux-play --theme-diagnostics');
+  });
+
+  it('prints theme diagnostics without launching a session', async () => {
+    const stdout = new MemoryOutput();
+    const launch = vi.fn(async () => undefined);
+    const themeDiagnostics = vi.fn(async () => ({
+      selected: 'latte' as const,
+      reason: 'osc11' as const,
+      rawOsc11Reply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+    }));
+
+    const code = await runTmuxPlayCli({
+      argv: [
+        '--theme-diagnostics',
+        '--config',
+        'tmux-play.config.yaml',
+        '--cwd',
+        '/repo',
+      ],
+      stdout,
+      launch,
+      themeDiagnostics,
+    });
+
+    expect(code).toBe(0);
+    expect(themeDiagnostics).toHaveBeenCalledWith({
+      configPath: 'tmux-play.config.yaml',
+      cwd: '/repo',
+      stdout,
+    });
+    expect(launch).not.toHaveBeenCalled();
+    expect(stdout.text()).toContain('selected: latte\n');
+    expect(stdout.text()).toContain('reason: osc11\n');
+    expect(stdout.text()).toContain(
+      'rawOsc11Reply: "\\u001b]11;rgb:eeee/eeee/eeee\\u0007"',
+    );
+  });
+
+  it('rejects theme diagnostics in session mode', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-cli-'));
+    const stderr = new MemoryOutput();
+    const runSession = vi.fn(async () => undefined);
+
+    const code = await runTmuxPlayCli({
+      argv: [
+        '--theme-diagnostics',
+        '--session',
+        'abc123',
+        '--work-dir',
+        tempDir,
+      ],
+      runSession,
+      stderr,
+    });
+
+    expect(code).toBe(1);
+    expect(runSession).not.toHaveBeenCalled();
+    expect(stderr.text()).toContain(
+      'Error: --theme-diagnostics is only valid in launcher mode',
+    );
   });
 
   it('detects symlinked bin invocations as CLI entries', () => {

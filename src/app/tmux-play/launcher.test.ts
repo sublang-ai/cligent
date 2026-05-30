@@ -38,7 +38,9 @@ vi.mock('../shared/glow.js', () => ({
 
 import {
   launchTmuxPlay,
+  parseOsc11BackgroundFlavor,
   TMUX_PLAY_SESSION_MARKER,
+  tmuxPlayThemeDiagnostics,
 } from './launcher.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import {
@@ -66,9 +68,8 @@ class MemoryOutput {
 describe('launchTmuxPlay', () => {
   let tempDir: string | undefined;
 
-  // Save env state for restoration so the flavor detector behaves
-  // deterministically (default Mocha) regardless of the dev's terminal.
-  const originalColorFgBg = process.env.COLORFGBG;
+  // Save env state for restoration so tests that set terminal variables do
+  // not leak into unrelated launcher assertions.
   const originalTermProgram = process.env.TERM_PROGRAM;
 
   beforeEach(() => {
@@ -76,7 +77,6 @@ describe('launchTmuxPlay', () => {
     isGlowAvailableMock.mockReturnValue(true);
     runTmuxMock.mockReset();
     attachTmuxSessionMock.mockReset();
-    delete process.env.COLORFGBG;
     delete process.env.TERM_PROGRAM;
   });
 
@@ -84,11 +84,6 @@ describe('launchTmuxPlay', () => {
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = undefined;
-    }
-    if (originalColorFgBg === undefined) {
-      delete process.env.COLORFGBG;
-    } else {
-      process.env.COLORFGBG = originalColorFgBg;
     }
     if (originalTermProgram === undefined) {
       delete process.env.TERM_PROGRAM;
@@ -321,9 +316,8 @@ describe('launchTmuxPlay', () => {
     // forcing a single canvas across all hosts.
     expect(indexOf('window-style')).toBe(-1);
     expect(indexOf('window-active-style')).toBe(-1);
-    // status-style: Mocha text on mantle band by default (test env has
-    // neither COLORFGBG nor TERM_PROGRAM=Apple_Terminal set, so the
-    // detector falls back to Mocha per detectCatppuccinFlavor).
+    // status-style: Mocha text on mantle band when auto detection cannot
+    // probe an attached terminal (attach: false).
     expect(setCalls).toContainEqual([
       'set',
       '-t',
@@ -389,6 +383,106 @@ describe('launchTmuxPlay', () => {
 
     // First theme set still comes after the layout has been built.
     expect(optionAt(0)).toBe('default-terminal');
+  });
+
+  it('does not infer Latte from Apple Terminal without an OSC 11 answer', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    process.env.TERM_PROGRAM = 'Apple_Terminal';
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'apple-dark',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    expect(setValue('tmux-play-apple-dark', 'status-style')).toBe(
+      'fg=#cdd6f4,bg=#181825',
+    );
+  });
+
+  it('resolves Latte from a light OSC 11 background reply', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    const workDir = join(tempDir, 'work');
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'osc11',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+      themeProbe: async () => ({
+        rawReply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+      }),
+      themeFlavor: 'auto',
+    });
+
+    // attach:false disables active OSC probing, even if a test probe is
+    // supplied. This keeps programmatic/session-building calls deterministic.
+    expect(setValue('tmux-play-osc11', 'status-style')).toBe(
+      'fg=#cdd6f4,bg=#181825',
+    );
+
+    runTmuxMock.mockReset();
+    const attachedWorkDir = join(tempDir, 'attached-work');
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'osc11-attached',
+      workDir: attachedWorkDir,
+      selfBin: '/tmp/cli.js',
+      themeProbe: async () => ({
+        rawReply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+      }),
+    });
+
+    expect(setValue('tmux-play-osc11-attached', 'status-style')).toBe(
+      'fg=#4c4f69,bg=#e6e9ef',
+    );
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(attachedWorkDir, TMUX_PLAY_CONFIG_SNAPSHOT),
+          'utf8',
+        ),
+      ).theme,
+    ).toBe('latte');
+  });
+
+  it('parses OSC 11 RGB replies with BEL or ST terminators', () => {
+    expect(
+      parseOsc11BackgroundFlavor('\x1b]11;rgb:00/00/00\x07'),
+    ).toBe('mocha');
+    expect(
+      parseOsc11BackgroundFlavor('\x1b]11;rgb:eeee/eeee/eeee\x1b\\'),
+    ).toBe('latte');
+  });
+
+  it('reports theme diagnostics without tmux or glow availability', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+    isTmuxAvailableMock.mockReturnValue(false);
+    isGlowAvailableMock.mockReturnValue(false);
+
+    const diagnostics = await tmuxPlayThemeDiagnostics({
+      cwd: tempDir,
+      configPath,
+      themeProbe: async () => ({
+        rawReply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+      }),
+    });
+
+    expect(diagnostics).toEqual({
+      selected: 'latte',
+      reason: 'osc11',
+      rawOsc11Reply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+    });
+    expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
   it('configures timer slots on the pane borders and tmux status bar', async () => {
