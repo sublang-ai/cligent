@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { mkdtempSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Writable } from 'node:stream';
+import { ReadStream } from 'node:tty';
 import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
@@ -51,8 +52,24 @@ const NAVIGATION_HINTS =
   'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)';
 const INITIAL_TIMER_TEXT = '0s';
 const INITIAL_TIMER_RUNNING = '0';
+const OSC11_QUERY = '\x1b]11;?\x07';
+const OSC11_TIMEOUT_MS = 100;
 
 type Output = Pick<Writable, 'write'>;
+
+export type ThemeResolutionReason = 'explicit' | 'yaml' | 'osc11' | 'fallback';
+
+export interface ThemeDiagnostics {
+  readonly selected: CatppuccinFlavor;
+  readonly reason: ThemeResolutionReason;
+  readonly rawOsc11Reply?: string;
+}
+
+export interface Osc11ProbeResult {
+  readonly rawReply?: string;
+}
+
+export type Osc11Probe = () => Promise<Osc11ProbeResult>;
 
 export interface LaunchTmuxPlayOptions {
   readonly cwd?: string;
@@ -67,12 +84,15 @@ export interface LaunchTmuxPlayOptions {
   /**
    * Catppuccin flavor to apply. When omitted, the YAML config's `theme`
    * field decides (`'mocha' | 'latte' | 'auto'`); when the YAML value is
-   * `'auto'` or unset, {@link detectCatppuccinFlavor} resolves via env.
-   * An explicit `'mocha'` or `'latte'` passed here overrides the YAML
-   * value; an explicit `'auto'` re-triggers env detection regardless of
-   * what the YAML says.
+   * `'auto'` or unset, OSC 11 probing resolves auto during attach.
+   * An explicit `'mocha'` or `'latte'` passed here overrides the YAML value.
    */
   readonly themeFlavor?: CatppuccinFlavor | 'auto';
+  /**
+   * Internal test hook for theme auto-detection. Production callers should
+   * leave this unset so the launcher queries the controlling terminal.
+   */
+  readonly themeProbe?: Osc11Probe;
 }
 
 export interface LaunchTmuxPlayResult {
@@ -124,10 +144,13 @@ export async function launchTmuxPlay(
     TMUX_PLAY_SESSION_MARKER,
     sessionId,
   );
-  const flavor = resolveThemeFlavor(
-    options.themeFlavor,
-    loaded.config.theme,
-  );
+  const theme = await resolveThemeDiagnostics({
+    launchOption: options.themeFlavor,
+    yamlOption: loaded.config.theme,
+    allowOsc11: shouldAttemptOsc11(options),
+    osc11Probe: options.themeProbe,
+  });
+  const flavor = theme.selected;
   const snapshotPath = await writeTmuxPlayConfigSnapshot(
     loaded,
     workDir,
@@ -150,6 +173,54 @@ export async function launchTmuxPlay(
   }
 
   return { sessionId, sessionName, workDir, snapshotPath };
+}
+
+function shouldAttemptOsc11(options: LaunchTmuxPlayOptions): boolean {
+  if (options.attach === false) return false;
+  if (options.themeProbe !== undefined) return true;
+  const stdout = options.stdout as
+    | (Output & { readonly isTTY?: boolean })
+    | undefined;
+  const stdoutIsTty = stdout
+    ? stdout.isTTY === true
+    : process.stdout.isTTY === true;
+  return process.stdin.isTTY === true && stdoutIsTty;
+}
+
+export interface TmuxPlayThemeDiagnosticsOptions {
+  readonly cwd?: string;
+  readonly configPath?: string;
+  readonly configHome?: string;
+  readonly stdout?: Output;
+  readonly stderr?: Output;
+  readonly themeFlavor?: CatppuccinFlavor | 'auto';
+  readonly themeProbe?: Osc11Probe;
+}
+
+export async function tmuxPlayThemeDiagnostics(
+  options: TmuxPlayThemeDiagnosticsOptions = {},
+): Promise<ThemeDiagnostics> {
+  const loaded = await loadTmuxPlayConfig({
+    cwd: options.cwd,
+    configPath: options.configPath,
+    configHome: options.configHome,
+    onDefaultConfigCreated: (path) => {
+      (options.stdout ?? process.stdout).write(
+        `Created tmux-play config at ${path}\n`,
+      );
+    },
+    onLegacyConfigIgnored: (path) => {
+      (options.stderr ?? process.stderr).write(
+        `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
+      );
+    },
+  });
+  return resolveThemeDiagnostics({
+    launchOption: options.themeFlavor,
+    yamlOption: loaded.config.theme,
+    allowOsc11: true,
+    osc11Probe: options.themeProbe,
+  });
 }
 
 interface BuildTmuxSessionOptions {
@@ -275,65 +346,157 @@ function paletteFor(flavor: CatppuccinFlavor): CatppuccinPalette {
   return flavor === 'latte' ? CATPPUCCIN_LATTE : CATPPUCCIN_MOCHA;
 }
 
-// Pick the Catppuccin flavor that matches the host terminal's background.
-// We don't claim `window-style` (per the canonical Catppuccin tmux pattern),
-// so the user's terminal background bleeds through to pane content; the
-// status bar / pane-border row sit on this flavor's `mantle`, which must
-// share the host's polarity for the band to read as a subtle tonal step
-// instead of an inverted block.
-//
-// Detection signals, in priority order:
-//   1. COLORFGBG env var: many terminals (rxvt, Konsole, some configs of
-//      iTerm2 / kitty) set this to "fg;bg" with bg in the 0-15 ANSI range.
-//      bg >= 7 → bright canvas → Latte; bg <= 6 → dark canvas → Mocha.
-//   2. TERM_PROGRAM heuristic: macOS Terminal.app's default profile is a
-//      white canvas (and it does not set COLORFGBG), so default to Latte
-//      there. iTerm.app's default is dark, so default to Mocha.
-//   3. Default Mocha.
-//
-// None of these are perfect — a user with a custom Terminal.app theme on
-// dark, or a COLORFGBG that lies, will still get the wrong flavor. The
-// `themeVariant` option on launchTmuxPlay (and the YAML loader, once that
-// lands) is the user-facing override for those cases.
 /**
- * Resolve the Catppuccin flavor to apply. Priority: explicit programmatic
- * override (`launchOption`) → YAML `theme` field (`yamlOption`) → env
- * detection via {@link detectCatppuccinFlavor}. An explicit `'auto'` at any
- * level forwards to env detection; an unset value at one level falls
- * through to the next.
+ * Resolve the Catppuccin flavor to apply. Priority: explicit concrete
+ * programmatic override (`launchOption`) → concrete YAML `theme` field
+ * (`yamlOption`) → OSC 11 background-color probe when allowed → Mocha
+ * fallback. `'auto'` is equivalent to "continue to the next source".
  */
-export function resolveThemeFlavor(
-  launchOption: CatppuccinFlavor | 'auto' | undefined,
-  yamlOption: CatppuccinFlavorConfig | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): CatppuccinFlavor {
+export async function resolveThemeDiagnostics(options: {
+  readonly launchOption?: CatppuccinFlavor | 'auto';
+  readonly yamlOption?: CatppuccinFlavorConfig;
+  readonly allowOsc11: boolean;
+  readonly osc11Probe?: Osc11Probe;
+}): Promise<ThemeDiagnostics> {
+  const { launchOption, yamlOption } = options;
   if (launchOption === 'mocha' || launchOption === 'latte') {
-    return launchOption;
-  }
-  if (launchOption === 'auto') {
-    return detectCatppuccinFlavor(env);
+    return { selected: launchOption, reason: 'explicit' };
   }
   if (yamlOption === 'mocha' || yamlOption === 'latte') {
-    return yamlOption;
+    return { selected: yamlOption, reason: 'yaml' };
   }
-  return detectCatppuccinFlavor(env);
+  if (options.allowOsc11) {
+    const probe = await (options.osc11Probe ?? probeOsc11Background)();
+    const selected = probe.rawReply
+      ? parseOsc11BackgroundFlavor(probe.rawReply)
+      : undefined;
+    if (selected) {
+      return {
+        selected,
+        reason: 'osc11',
+        rawOsc11Reply: probe.rawReply,
+      };
+    }
+    return {
+      selected: 'mocha',
+      reason: 'fallback',
+      ...(probe.rawReply ? { rawOsc11Reply: probe.rawReply } : {}),
+    };
+  }
+  return { selected: 'mocha', reason: 'fallback' };
 }
 
-export function detectCatppuccinFlavor(
-  env: NodeJS.ProcessEnv = process.env,
-): CatppuccinFlavor {
-  const fgbg = env.COLORFGBG;
-  if (fgbg) {
-    const parts = fgbg.split(';');
-    const bg = Number(parts[parts.length - 1]);
-    if (Number.isFinite(bg)) {
-      return bg >= 7 ? 'latte' : 'mocha';
+export function parseOsc11BackgroundFlavor(
+  rawReply: string,
+): CatppuccinFlavor | undefined {
+  const reply = extractOsc11Reply(rawReply);
+  if (!reply) return undefined;
+  const match = reply.match(
+    /(?:\x1b\]|\x9d)11;rgb:([0-9a-fA-F]{2,4})\/([0-9a-fA-F]{2,4})\/([0-9a-fA-F]{2,4})(?:\x07|\x1b\\)/,
+  );
+  if (!match) return undefined;
+  const r = normalizedChannel(match[1]!);
+  const g = normalizedChannel(match[2]!);
+  const b = normalizedChannel(match[3]!);
+  if (r === undefined || g === undefined || b === undefined) {
+    return undefined;
+  }
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance >= 0.5 ? 'latte' : 'mocha';
+}
+
+async function probeOsc11Background(): Promise<Osc11ProbeResult> {
+  let fd: number | undefined;
+  try {
+    fd = openSync('/dev/tty', 'r+');
+  } catch {
+    return {};
+  }
+  const ttyFd = fd;
+  return new Promise((resolve) => {
+    let input: ReadStream | undefined;
+    let raw = '';
+    let finished = false;
+    let rawModeEnabled = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const finish = (reply: string | undefined): void => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      if (input) {
+        input.off('data', onData);
+        if (rawModeEnabled) {
+          try {
+            input.setRawMode(false);
+          } catch {
+            // Best effort: the process is about to continue with a fallback
+            // even if the terminal rejects raw-mode cleanup.
+          }
+        }
+        input.pause();
+        input.destroy();
+        fd = undefined;
+      } else if (fd !== undefined) {
+        try {
+          closeSync(fd);
+        } catch {
+          // Fallback remains safe even if the platform closed the fd first.
+        }
+        fd = undefined;
+      }
+      resolve(reply ? { rawReply: reply } : {});
+    };
+
+    const onData = (chunk: Buffer): void => {
+      raw += chunk.toString('utf8');
+      const reply = extractOsc11Reply(raw);
+      if (reply) finish(reply);
+    };
+
+    try {
+      input = new ReadStream(ttyFd);
+      if (!input.isTTY) {
+        finish(undefined);
+        return;
+      }
+      // This is not preservation of a caller's prior raw-mode state:
+      // the launcher owns this short-lived /dev/tty stream and probes before
+      // readline/tmux attach. A future concurrent stdin reader would race the
+      // OSC 11 reply and should not be introduced around this window.
+      input.setRawMode(true);
+      rawModeEnabled = true;
+      input.on('data', onData);
+      input.resume();
+      writeSync(ttyFd, OSC11_QUERY);
+      timer = setTimeout(() => finish(extractOsc11Reply(raw)), OSC11_TIMEOUT_MS);
+    } catch {
+      finish(undefined);
     }
-  }
-  if (env.TERM_PROGRAM === 'Apple_Terminal') {
-    return 'latte';
-  }
-  return 'mocha';
+  });
+}
+
+function extractOsc11Reply(raw: string): string | undefined {
+  const escStart = raw.indexOf('\x1b]11;');
+  const c1Start = raw.indexOf('\x9d11;');
+  const starts = [escStart, c1Start].filter((index) => index >= 0);
+  if (starts.length === 0) return undefined;
+  const start = Math.min(...starts);
+  const belEnd = raw.indexOf('\x07', start);
+  const stEnd = raw.indexOf('\x1b\\', start);
+  const ends = [
+    belEnd >= 0 ? belEnd + 1 : -1,
+    stEnd >= 0 ? stEnd + 2 : -1,
+  ].filter((index) => index >= 0);
+  if (ends.length === 0) return undefined;
+  return raw.slice(start, Math.min(...ends));
+}
+
+function normalizedChannel(hex: string): number | undefined {
+  if (hex.length !== 2 && hex.length !== 4) return undefined;
+  const value = Number.parseInt(hex, 16);
+  if (!Number.isFinite(value)) return undefined;
+  return value / (hex.length === 2 ? 0xff : 0xffff);
 }
 
 // TMUX-047: apply the Catppuccin flavor to the session's surface options

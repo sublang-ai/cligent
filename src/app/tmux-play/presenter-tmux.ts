@@ -324,7 +324,7 @@ export class TmuxPresenter implements RecordObserver {
 
     let rendered: string;
     try {
-      rendered = renderMarkdown(block.text, renderWidth);
+      rendered = renderMarkdown(block.text, renderWidth, this.flavor);
     } catch {
       // The launcher gate guarantees glow is healthy at startup, so a
       // mid-session render failure is rare. Surface the raw text rather than
@@ -440,7 +440,7 @@ export class TmuxPresenter implements RecordObserver {
       : DEFAULT_PANE_WIDTH;
     const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
     try {
-      const rendered = renderMarkdown(fenced, renderWidth);
+      const rendered = renderMarkdown(fenced, renderWidth, this.flavor);
       return indentLines(rendered, CONTINUATION_INDENT);
     } catch {
       // The raw body never passed through glow, so it carries no outer

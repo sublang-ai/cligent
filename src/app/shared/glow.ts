@@ -20,18 +20,23 @@ export function isGlowAvailable(): boolean {
 // returns glow's stdout. `width` is the effective render budget; the
 // caller (the presenter) subtracts the visible `<who>> ` prefix before
 // invoking so prefixed first lines and indented continuations both fit
-// the pane. `-s dark` is forced because glow's `auto` style picks
-// `notty` when stdout is not a TTY (our case under spawnSync), which
-// strips ANSI styling.
-export function renderMarkdown(text: string, width: number): string {
+// the pane. The style is pinned from tmux-play's resolved Catppuccin
+// flavor because glow's `auto` style picks `notty` when stdout is not a
+// TTY (our case under spawnSync), which strips ANSI styling.
+export function renderMarkdown(
+  text: string,
+  width: number,
+  flavor: 'mocha' | 'latte' = 'mocha',
+): string {
   if (!Number.isFinite(width) || width <= 0) {
     throw new Error(
       `renderMarkdown requires a positive width, got: ${width}`,
     );
   }
+  const style = flavor === 'latte' ? 'light' : 'dark';
   const result = spawnSync(
     'glow',
-    ['-w', String(Math.trunc(width)), '-s', 'dark', '-'],
+    ['-w', String(Math.trunc(width)), '-s', style, '-'],
     { input: text, stdio: 'pipe' },
   );
   if (result.error) {

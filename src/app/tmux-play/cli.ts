@@ -12,7 +12,12 @@ import {
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Writable } from 'node:stream';
-import { launchTmuxPlay, type LaunchTmuxPlayOptions } from './launcher.js';
+import {
+  launchTmuxPlay,
+  tmuxPlayThemeDiagnostics,
+  type LaunchTmuxPlayOptions,
+  type TmuxPlayThemeDiagnosticsOptions,
+} from './launcher.js';
 import {
   runTmuxPlaySession,
   type TmuxPlaySessionOptions,
@@ -26,6 +31,9 @@ export interface RunTmuxPlayCliOptions {
   readonly stderr?: Output;
   readonly selfBin?: string;
   readonly launch?: (options: LaunchTmuxPlayOptions) => Promise<unknown>;
+  readonly themeDiagnostics?: (
+    options: TmuxPlayThemeDiagnosticsOptions,
+  ) => Promise<Awaited<ReturnType<typeof tmuxPlayThemeDiagnostics>>>;
   readonly runSession?: (options: TmuxPlaySessionOptions) => Promise<void>;
 }
 
@@ -45,6 +53,7 @@ export async function runTmuxPlayCli(
         cwd: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
         session: { type: 'string' },
+        'theme-diagnostics': { type: 'boolean' },
         'work-dir': { type: 'string' },
       },
       strict: true,
@@ -52,6 +61,25 @@ export async function runTmuxPlayCli(
 
     if (values.help) {
       stdout.write(usage());
+      return 0;
+    }
+
+    if (values['theme-diagnostics']) {
+      if (values.session) {
+        throw new Error('--theme-diagnostics is only valid in launcher mode');
+      }
+      if (values['work-dir']) {
+        throw new Error('--work-dir is only valid with --session');
+      }
+      const diagnostics = await (
+        options.themeDiagnostics ?? tmuxPlayThemeDiagnostics
+      )({
+        configPath: values.config,
+        cwd: values.cwd,
+        ...(options.stdout ? { stdout } : {}),
+        ...(options.stderr ? { stderr } : {}),
+      });
+      stdout.write(formatThemeDiagnostics(diagnostics));
       return 0;
     }
 
@@ -118,9 +146,23 @@ function usage(): string {
   return [
     'Usage:',
     '  tmux-play [--config <path>] [--cwd <path>]',
+    '  tmux-play --theme-diagnostics [--config <path>] [--cwd <path>]',
     '  tmux-play --session <id> --work-dir <path> [--cwd <path>]',
     '',
   ].join('\n');
+}
+
+function formatThemeDiagnostics(
+  diagnostics: Awaited<ReturnType<typeof tmuxPlayThemeDiagnostics>>,
+): string {
+  const lines = [
+    `selected: ${diagnostics.selected}`,
+    `reason: ${diagnostics.reason}`,
+  ];
+  if (diagnostics.rawOsc11Reply) {
+    lines.push(`rawOsc11Reply: ${JSON.stringify(diagnostics.rawOsc11Reply)}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 function errorMessage(error: unknown): string {

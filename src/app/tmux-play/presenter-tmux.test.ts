@@ -12,7 +12,9 @@ import type { CligentEvent } from '../../types.js';
 // stay readable; individual tests override when they care about glow
 // arguments or simulated render failures.
 const { renderMarkdownMock } = vi.hoisted(() => ({
-  renderMarkdownMock: vi.fn((text: string, _width: number) => text),
+  renderMarkdownMock: vi.fn(
+    (text: string, _width: number, _flavor: 'mocha' | 'latte') => text,
+  ),
 }));
 
 vi.mock('../shared/glow.js', () => ({
@@ -384,7 +386,7 @@ describe('TmuxPresenter', () => {
 
     // `coder> ` is 7 cells, so glow renders into 73. The prefixed line then
     // fits 73 + 7 = 80 cells, matching the pane width without re-wrap.
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 73);
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 73, 'mocha');
   });
 
   it('budgets prefixWidth from the speaker length, not the player id length', () => {
@@ -398,7 +400,7 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(captainEvent(textEvent('hi')));
 
     // `captain> ` is 9 cells. 80 - 9 = 71.
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 71);
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 71, 'mocha');
   });
 
   it('falls back to an 80-column default render width when no width source is configured', () => {
@@ -411,7 +413,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', textEvent('hi')));
 
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 73); // 80 - 7
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 73, 'mocha'); // 80 - 7
   });
 
   // Prefix grammar (TMUX-038).
@@ -1148,6 +1150,7 @@ describe('TmuxPresenter', () => {
     expect(renderMarkdownMock).toHaveBeenCalledWith(
       '```\nhi\n```\n',
       78,
+      'mocha',
     );
   });
 
@@ -1168,6 +1171,7 @@ describe('TmuxPresenter', () => {
     expect(renderMarkdownMock).toHaveBeenCalledWith(
       '````\nbefore\n```\ninner code\n```\nafter\n````\n',
       expect.any(Number),
+      'mocha',
     );
   });
 
@@ -1216,6 +1220,7 @@ describe('TmuxPresenter', () => {
     expect(renderMarkdownMock).toHaveBeenCalledWith(
       '```````\nedges `````` here\n```````\n',
       expect.any(Number),
+      'mocha',
     );
   });
 
