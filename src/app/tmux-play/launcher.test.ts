@@ -243,6 +243,13 @@ describe('launchTmuxPlay', () => {
       'tmux-play-abc123:0.0',
       '-d',
     );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-option',
+      '-t',
+      'tmux-play-abc123',
+      'mouse',
+      'on',
+    );
     const expectedHookCmd =
       `run-shell -b "W=$(tmux display-message -t tmux-play-abc123 -p '#{window_width}')` +
       ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W / 3 - 1))` +
@@ -267,6 +274,32 @@ describe('launchTmuxPlay', () => {
       'tmux-play-abc123:0.0',
     ]);
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('does not configure clipboard policy or mouse key-table bindings', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'mouse-boundary',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    expect(runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')))
+      .toBe(false);
+    expect(
+      runTmuxMock.mock.calls.some(
+        (call) =>
+          call[0] === 'bind-key' &&
+          call.some(
+            (arg) => typeof arg === 'string' && /^(Mouse|Wheel)/.test(arg),
+          ),
+      ),
+    ).toBe(false);
   });
 
   it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
@@ -604,7 +637,8 @@ describe('launchTmuxPlay', () => {
     expect(statusLeft).toContain('tmux-play');
     expect(statusLeft).toContain('Quit: Ctrl+C');
     expect(statusLeft).toContain('d=detach');
-    expect(setValue('tmux-play-timers', 'status-left-length')).toBe('96');
+    expect(statusLeft).toContain('drag=select');
+    expect(setValue('tmux-play-timers', 'status-left-length')).toBe('112');
 
     const statusRight = setValue('tmux-play-timers', 'status-right');
     expect(statusRight).toContain('⏳');

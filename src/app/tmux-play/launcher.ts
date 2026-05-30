@@ -49,7 +49,7 @@ const PLAYER_AREA_SIZE_SINGLE = '120'; // 240/2 — boss + 1 player evenly
 const PLAYER_AREA_SIZE_MULTI = '160'; // 240×2/3 — boss + right area (two columns)
 const SECOND_PLAYER_COLUMN_SIZE = '50%'; // 50% of right area = 80 cells each
 const NAVIGATION_HINTS =
-  'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)';
+  'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits) | drag=select';
 const INITIAL_TIMER_TEXT = '0s';
 const INITIAL_TIMER_RUNNING = '0';
 const OSC11_QUERY = '\x1b]11;?\x07';
@@ -258,6 +258,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   );
   setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
   disablePlayerPaneInput(options.sessionName, playerPanes);
+  configureMouseInteraction(options.sessionName);
   configureLayoutHooks(options.sessionName, players.length);
   applyCatppuccinTheme(options.sessionName, c);
   runTmux(
@@ -281,7 +282,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'status-left',
     statusLeftFormat(c),
   );
-  runTmux('set', '-t', options.sessionName, 'status-left-length', '96');
+  runTmux('set', '-t', options.sessionName, 'status-left-length', '112');
   runTmux(
     'set',
     '-t',
@@ -790,6 +791,10 @@ function disablePlayerPaneInput(
       '-d',
     );
   }
+}
+
+function configureMouseInteraction(sessionName: string): void {
+  runTmux('set-option', '-t', sessionName, 'mouse', 'on');
 }
 
 function selectBossPane(sessionName: string): void {
