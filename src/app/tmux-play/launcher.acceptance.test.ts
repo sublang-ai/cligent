@@ -245,6 +245,23 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
 
+      // TTMUX-063: Ctrl+Left/Right at the root key table switch panes
+      // directly inside this session. The binding gates on the session
+      // name via if-shell so other tmux sessions on the same server
+      // forward the key unchanged.
+      const ctrlLeftBinding = keyBinding('root', 'C-Left');
+      expect(ctrlLeftBinding).toContain('if-shell');
+      expect(ctrlLeftBinding).toContain(`session_name`);
+      expect(ctrlLeftBinding).toContain(sessionName);
+      expect(ctrlLeftBinding).toContain('select-pane -L');
+      expect(ctrlLeftBinding).toContain('send-keys C-Left');
+      const ctrlRightBinding = keyBinding('root', 'C-Right');
+      expect(ctrlRightBinding).toContain('if-shell');
+      expect(ctrlRightBinding).toContain(`session_name`);
+      expect(ctrlRightBinding).toContain(sessionName);
+      expect(ctrlRightBinding).toContain('select-pane -R');
+      expect(ctrlRightBinding).toContain('send-keys C-Right');
+
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
         'tmux',
@@ -354,11 +371,16 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
-      expect(statusLeft).toContain('Quit: Ctrl+C');
-      expect(statusLeft).toContain('d=detach');
-      expect(statusLeft).toContain('o=switch pane');
+      // TMUX-063: navigation hints advertise direct Ctrl+arrow pane
+      // switching and the ESC stop / Ctrl+C exit shortcuts. The retired
+      // `Ctrl+b` prefix mentions are gone.
+      expect(statusLeft).toContain('Switch pane: Ctrl+←/→');
+      expect(statusLeft).toContain('Stop: ESC');
+      expect(statusLeft).toContain('Exit: Ctrl+C');
       expect(statusLeft).toContain('drag=select');
       expect(statusLeft).toContain('right-click=copy');
+      expect(statusLeft).not.toContain('d=detach');
+      expect(statusLeft).not.toContain('o=switch pane');
 
       const statusRight = showSessionOption(sessionName, 'status-right');
       expect(statusRight).toContain('⏳');

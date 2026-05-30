@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- tmux-play binds `Ctrl+Left` / `Ctrl+Right` at the root key table to switch panes directly without the `Ctrl+b` prefix; the navigation hints in `status-left` now read `Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy`. The retired hint fragments `Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)` are gone — mouse is on by default so the manual scroll-mode entry is redundant, detach is rarely used and remains available via tmux's default `Ctrl+b d`, and `Ctrl+b o` still works for prefix-style pane cycling. The root binding is gated on the active `#{session_name}` via `if-shell -F`, so `Ctrl+Left` / `Ctrl+Right` in every other tmux session on the same server forward the key verbatim through `send-keys` instead of capturing it — TMUX-063, GitHub issue #2
+
 ## [0.8.0] - 2026-05-28
 
 ### Changed

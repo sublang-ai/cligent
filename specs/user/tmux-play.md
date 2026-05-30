@@ -223,6 +223,17 @@ Under tmux's default root mouse bindings, clicking selects the pane under the cu
 User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
 The launcher shall not configure `set-clipboard` and shall not add `Wheel*` bindings; terminal policy may still block the OSC 52 fallback.
 
+## Keyboard Interaction
+
+### TMUX-063
+
+When the launcher creates a tmux-play session, it shall bind `C-Left` and `C-Right` in the `root` key table so that, while the active client is attached to the launched session, `C-Left` runs `select-pane -L` and `C-Right` runs `select-pane -R`.
+The binding shall be gated on the current `#{session_name}` matching the launched session name via `if-shell -F`, with a false branch of `send-keys C-Left` (resp. `C-Right`), so that for any other tmux session on the same server the binding is a no-op and the original `Ctrl+Left` / `Ctrl+Right` key is forwarded verbatim to the active pane.
+This delivers the direct pane-switch UX that `status-left` advertises (`Switch pane: Ctrl+←/→`) without requiring the `Ctrl+b` prefix.
+The launcher shall render `status-left` with hints in the form `Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy`, naming the Boss-input ESC interrupt per [TMUX-057](#tmux-057) and the Ctrl+C exit lifecycle per [TMUX-026](#tmux-026); the retired `Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)` hint fragments shall not appear.
+As with the copy-mode bindings of [TMUX-062](#tmux-062), tmux's root key table is server-global because tmux does not offer per-session root-table bindings, so the two entries outlive the tmux-play session; the `if-shell` guard keeps the binding inert in every other session and is the launcher's narrowest available scoping mechanism.
+A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
+
 ## Pane Titles
 
 ### TMUX-036

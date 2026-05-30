@@ -338,6 +338,44 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
+  it('binds Ctrl+Left and Ctrl+Right at the root key table for direct pane switching, scoped to the launched session via if-shell', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'pane-switch',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    const condition = '#{==:#{session_name},tmux-play-pane-switch}';
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'C-Left',
+      'if-shell',
+      '-F',
+      condition,
+      'select-pane -L',
+      'send-keys C-Left',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'C-Right',
+      'if-shell',
+      '-F',
+      condition,
+      'select-pane -R',
+      'send-keys C-Right',
+    );
+  });
+
   it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
@@ -671,10 +709,17 @@ describe('launchTmuxPlay', () => {
 
     const statusLeft = setValue('tmux-play-timers', 'status-left');
     expect(statusLeft).toContain('tmux-play');
-    expect(statusLeft).toContain('Quit: Ctrl+C');
-    expect(statusLeft).toContain('d=detach');
+    // TMUX-063: status-left advertises direct pane switching and the ESC
+    // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions
+    // (`d=detach`, `o=switch pane`, `[=scroll`) are gone.
+    expect(statusLeft).toContain('Switch pane: Ctrl+←/→');
+    expect(statusLeft).toContain('Stop: ESC');
+    expect(statusLeft).toContain('Exit: Ctrl+C');
     expect(statusLeft).toContain('drag=select');
     expect(statusLeft).toContain('right-click=copy');
+    expect(statusLeft).not.toContain('d=detach');
+    expect(statusLeft).not.toContain('o=switch pane');
+    expect(statusLeft).not.toContain('[=scroll');
     expect(setValue('tmux-play-timers', 'status-left-length')).toBe('136');
 
     const statusRight = setValue('tmux-play-timers', 'status-right');

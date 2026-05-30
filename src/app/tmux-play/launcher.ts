@@ -49,7 +49,7 @@ const PLAYER_AREA_SIZE_SINGLE = '120'; // 240/2 — boss + 1 player evenly
 const PLAYER_AREA_SIZE_MULTI = '160'; // 240×2/3 — boss + right area (two columns)
 const SECOND_PLAYER_COLUMN_SIZE = '50%'; // 50% of right area = 80 cells each
 const NAVIGATION_HINTS =
-  'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits) | drag=select | right-click=copy';
+  'Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy';
 const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'if command -v pbcopy >/dev/null 2>&1; then exec pbcopy; ' +
   'elif [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then exec wl-copy; ' +
@@ -266,6 +266,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
   disablePlayerPaneInput(options.sessionName, playerPanes);
   configureMouseInteraction(options.sessionName);
+  configureBossPaneSwitchKeys(options.sessionName);
   configureLayoutHooks(options.sessionName, players.length);
   applyCatppuccinTheme(options.sessionName, c);
   runTmux(
@@ -823,6 +824,43 @@ function configureMouseInteraction(sessionName: string): void {
       SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
   }
+}
+
+// TMUX-063: bind Ctrl+Left / Ctrl+Right at the root key table so the Boss
+// can switch panes directly without the Ctrl+b prefix the navigation hints
+// in `status-left` advertise. Like the copy-mode bindings in TMUX-062, the
+// root key table is server-global — tmux does not offer per-session root
+// bindings — so the launcher scopes the action with `if-shell -F` against
+// the current session name. Inside the launcher's own tmux-play session
+// the binding selects the adjacent pane; in every other tmux session on
+// the same server the false branch forwards the key verbatim via
+// `send-keys`, leaving the user's word-movement (or any other Ctrl+arrow
+// consumer) intact. The binding outlives the tmux-play session but
+// remains a no-op once the session is killed.
+function configureBossPaneSwitchKeys(sessionName: string): void {
+  const condition = `#{==:#{session_name},${sessionName}}`;
+  runTmux(
+    'bind-key',
+    '-T',
+    'root',
+    'C-Left',
+    'if-shell',
+    '-F',
+    condition,
+    'select-pane -L',
+    'send-keys C-Left',
+  );
+  runTmux(
+    'bind-key',
+    '-T',
+    'root',
+    'C-Right',
+    'if-shell',
+    '-F',
+    condition,
+    'select-pane -R',
+    'send-keys C-Right',
+  );
 }
 
 function selectBossPane(sessionName: string): void {
