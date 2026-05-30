@@ -50,6 +50,13 @@ const PLAYER_AREA_SIZE_MULTI = '160'; // 240×2/3 — boss + right area (two col
 const SECOND_PLAYER_COLUMN_SIZE = '50%'; // 50% of right area = 80 cells each
 const NAVIGATION_HINTS =
   'Quit: Ctrl+C | Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits) | drag=select | right-click=copy';
+const SYSTEM_CLIPBOARD_COPY_COMMAND =
+  'if command -v pbcopy >/dev/null 2>&1; then exec pbcopy; ' +
+  'elif [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then exec wl-copy; ' +
+  'elif [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then exec xclip -selection clipboard -in; ' +
+  'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
+  'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
+  'else exec tmux load-buffer -w -; fi';
 const INITIAL_TIMER_TEXT = '0s';
 const INITIAL_TIMER_RUNNING = '0';
 const OSC11_QUERY = '\x1b]11;?\x07';
@@ -813,6 +820,7 @@ function configureMouseInteraction(sessionName: string): void {
       'send-keys',
       '-X',
       'copy-pipe-and-cancel',
+      SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
   }
 }

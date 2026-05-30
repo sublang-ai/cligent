@@ -276,7 +276,7 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
-  it('preserves mouse selection and copies it on right-click without changing clipboard policy', async () => {
+  it('preserves mouse selection and copies it to the system clipboard on right-click without changing clipboard policy', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
 
@@ -299,7 +299,13 @@ describe('launchTmuxPlay', () => {
         '-X',
         'stop-selection',
       );
-      expect(runTmuxMock).toHaveBeenCalledWith(
+      const rightClickCopyCall = runTmuxMock.mock.calls.find(
+        (call) =>
+          call[0] === 'bind-key' &&
+          call[2] === table &&
+          call[3] === 'MouseDown3Pane',
+      );
+      expect(rightClickCopyCall).toEqual([
         'bind-key',
         '-T',
         table,
@@ -307,6 +313,16 @@ describe('launchTmuxPlay', () => {
         'send-keys',
         '-X',
         'copy-pipe-and-cancel',
+        expect.any(String),
+      ]);
+      const clipboardCommand = rightClickCopyCall?.at(-1);
+      expect(clipboardCommand).toEqual(expect.stringContaining('pbcopy'));
+      expect(clipboardCommand).toEqual(expect.stringContaining('wl-copy'));
+      expect(clipboardCommand).toEqual(expect.stringContaining('xclip'));
+      expect(clipboardCommand).toEqual(expect.stringContaining('xsel'));
+      expect(clipboardCommand).toEqual(expect.stringContaining('clip.exe'));
+      expect(clipboardCommand).toEqual(
+        expect.stringContaining('tmux load-buffer -w -'),
       );
     }
     expect(runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')))

@@ -139,9 +139,9 @@ column holds `ceil(playerCount / 2)` players from top to bottom.
 
 tmux-play enables tmux mouse mode for the session, so dragging selects within
 one pane. Releasing the mouse keeps the selection highlighted in copy mode;
-right-click copies the selection through tmux's normal copy path. System
-clipboard integration follows the user's tmux and terminal clipboard
-configuration.
+right-click copies the selection through tmux's normal copy path and also
+pipes it to the host system clipboard when `pbcopy`, `wl-copy`, `xclip`,
+`xsel`, `clip.exe`, or OSC 52 clipboard delivery through tmux is available.
 
 ## Snapshot and work directory
 

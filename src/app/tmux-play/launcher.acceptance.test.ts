@@ -234,12 +234,16 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(keyBinding('copy-mode-vi', 'MouseDragEnd1Pane')).toContain(
         'stop-selection',
       );
-      expect(keyBinding('copy-mode', 'MouseDown3Pane')).toContain(
-        'copy-pipe-and-cancel',
-      );
-      expect(keyBinding('copy-mode-vi', 'MouseDown3Pane')).toContain(
-        'copy-pipe-and-cancel',
-      );
+      for (const table of ['copy-mode', 'copy-mode-vi']) {
+        const rightClickCopyBinding = keyBinding(table, 'MouseDown3Pane');
+        expect(rightClickCopyBinding).toContain('copy-pipe-and-cancel');
+        expect(rightClickCopyBinding).toContain('pbcopy');
+        expect(rightClickCopyBinding).toContain('wl-copy');
+        expect(rightClickCopyBinding).toContain('xclip');
+        expect(rightClickCopyBinding).toContain('xsel');
+        expect(rightClickCopyBinding).toContain('clip.exe');
+        expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
+      }
 
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(

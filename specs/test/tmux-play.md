@@ -144,8 +144,9 @@ Given two or more players, when the launcher constructs the tmux session against
 ### TTMUX-062
 Verifies: [TMUX-062](../user/tmux-play.md#tmux-062)
 
-Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe-and-cancel`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe-and-cancel`, shall not include a `set-clipboard` option write, and shall not include any `Wheel*` binding.
-Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and right-click-copy bindings above.
+Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe-and-cancel <system-clipboard-command>`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe-and-cancel <system-clipboard-command>`, shall not include a `set-clipboard` option write, and shall not include any `Wheel*` binding.
+The `<system-clipboard-command>` shall contain `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, and `tmux load-buffer -w -`.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above.
 
 ## Pane Titles
 
