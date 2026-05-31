@@ -24,10 +24,16 @@
 // them on each keypress) and emits only byte strings, so its output is
 // deterministic and unit-testable at exact `W` and `2·W` boundary widths.
 //
-// Cell model: each UTF-16 code unit of `line` counts as one cell, matching the
-// readline `cursor` index so positioning stays exact for the ASCII prompts and
-// content this app renders. Double-width (e.g. CJK) cells are out of scope for
-// IR-024, whose bug is an ASCII full-width-row artifact.
+// Cell model: widths are measured in display cells via `displayCells` — the
+// same model the presenter soft-wraps with (TMUX-046) — and the buffer is
+// packed a code point at a time. A wide (CJK / emoji, two-cell) character is
+// therefore never split across a wrap boundary and never overflows the reserved
+// rightmost column: when it would not fit in a row's remaining cells it wraps to
+// the next row, leaving the odd trailing cell blank. The readline `cursor` is a
+// UTF-16 code-unit index, so positions are mapped back to it via each code
+// point's code-unit length.
+
+import { displayCells } from '../shared/display-width.js';
 
 const RESERVED_COLUMNS = 1;
 const CLEAR_TO_END_OF_SCREEN = '\x1b[0J';
@@ -47,10 +53,20 @@ interface Position {
   readonly col: number;
 }
 
-interface Layout {
+// A placed code point: the code-unit offset of its start in `line`, and the
+// (row, col) where it was painted. Used to map a readline cursor index back to
+// a screen position.
+interface Placement {
+  readonly offset: number;
+  readonly row: number;
+  readonly col: number;
+}
+
+interface Packed {
   readonly rows: string[];
-  readonly row0Capacity: number;
-  readonly contCapacity: number;
+  readonly placements: Placement[];
+  // Position of the cursor when it sits at the very end of the buffer.
+  readonly end: Position;
 }
 
 export class BossInputRenderer {
@@ -71,22 +87,17 @@ export class BossInputRenderer {
   // after construction / `reset`, at the input region's top-left).
   render(line: string, cursor: number, columns: number): string {
     const clampedCursor = Math.max(0, Math.min(cursor, line.length));
-    const layout = this.layout(line, columns);
-    const target = positionOf(
-      clampedCursor,
-      line.length,
-      this.promptWidth,
-      layout,
-    );
+    const packed = this.pack(line, columns);
+    const target = positionOf(clampedCursor, this.promptWidth, packed);
 
     let out = this.moveToTopLeft();
     out += CLEAR_TO_END_OF_SCREEN;
-    out += this.prompt + layout.rows[0];
-    for (let i = 1; i < layout.rows.length; i += 1) {
-      out += `\r\n${layout.rows[i]}`;
+    out += this.prompt + packed.rows[0];
+    for (let i = 1; i < packed.rows.length; i += 1) {
+      out += `\r\n${packed.rows[i]}`;
     }
 
-    const lastRow = layout.rows.length - 1;
+    const lastRow = packed.rows.length - 1;
     out += '\r';
     const up = lastRow - target.row;
     if (up > 0) {
@@ -124,51 +135,68 @@ export class BossInputRenderer {
     return out;
   }
 
-  private layout(line: string, columns: number): Layout {
+  // Pack the edit buffer into display rows that each stay within `columns - 1`
+  // cells (reserving the rightmost column). Row 0 begins after the prompt; wrap
+  // rows begin at column 0. A code point that would not fit in the current row's
+  // remaining cells starts a new row, so a two-cell character never straddles
+  // the reserved column.
+  private pack(line: string, columns: number): Packed {
     const wrapWidth = Math.max(1, columns - RESERVED_COLUMNS);
-    const row0Capacity = Math.max(1, wrapWidth - this.promptWidth);
-    const contCapacity = wrapWidth;
+    const row0Budget = Math.max(0, wrapWidth - this.promptWidth);
 
-    const rows = [line.slice(0, row0Capacity)];
-    const rest = line.slice(row0Capacity);
-    for (let i = 0; i < rest.length; i += contCapacity) {
-      rows.push(rest.slice(i, i + contCapacity));
+    const rows = [''];
+    const placements: Placement[] = [];
+    let row = 0;
+    let used = 0; // cells filled in the current row's content area
+    let offset = 0; // code-unit offset of the next code point
+
+    const rowBudget = (r: number): number => (r === 0 ? row0Budget : wrapWidth);
+    const rowBase = (r: number): number => (r === 0 ? this.promptWidth : 0);
+
+    for (const char of line) {
+      const cells = displayCells(char.codePointAt(0) ?? 0);
+      const budget = rowBudget(row);
+      const overflows = used + cells > budget;
+      // Wrap when the code point does not fit — either the row already holds
+      // content, or row 0 is too narrow for it (prompt nearly fills the line),
+      // in which case content starts on the first wrap row. A row that is still
+      // empty on a wrap row keeps the character to avoid an infinite loop in
+      // degenerately narrow panes.
+      if (overflows && (used > 0 || (row === 0 && cells > budget))) {
+        row += 1;
+        rows.push('');
+        used = 0;
+      }
+      placements.push({ offset, row, col: rowBase(row) + used });
+      rows[row] += char;
+      used += cells;
+      offset += char.length;
     }
-    return { rows, row0Capacity, contCapacity };
+
+    const lastRow = rows.length - 1;
+    const end: Position = { row: lastRow, col: rowBase(lastRow) + used };
+    return { rows, placements, end };
   }
 }
 
-// Map a cursor offset (0..lineLength) to its (row, col) in the laid-out region.
-// A cursor at a row's capacity boundary sits at the next row's column 0 when
-// more content follows, but rests on the (unwritten) reserved cell at the row's
-// right edge when it is the end of the buffer — so a full row does not push a
-// phantom blank row.
+// Map a readline cursor index (a UTF-16 code-unit offset, 0..lineLength) to its
+// painted (row, col). A cursor sitting before a code point shows at that code
+// point's position — which is the start of the next row when the previous row
+// filled — and a cursor at the end of the buffer rests just past the last code
+// point (on the unwritten reserved cell when the row filled exactly).
 function positionOf(
-  offset: number,
-  lineLength: number,
+  cursor: number,
   promptWidth: number,
-  layout: Layout,
+  packed: Packed,
 ): Position {
-  const { row0Capacity, contCapacity } = layout;
-
-  if (offset < row0Capacity) {
-    return { row: 0, col: promptWidth + offset };
+  const { placements, end } = packed;
+  if (placements.length === 0) {
+    return { row: 0, col: promptWidth };
   }
-  if (offset === row0Capacity) {
-    if (offset === lineLength) {
-      return { row: 0, col: promptWidth + offset };
+  for (const placement of placements) {
+    if (placement.offset >= cursor) {
+      return { row: placement.row, col: placement.col };
     }
-    return { row: 1, col: 0 };
   }
-
-  const rel = offset - row0Capacity;
-  const row = 1 + Math.floor(rel / contCapacity);
-  const col = rel % contCapacity;
-  if (col === 0) {
-    if (offset === lineLength) {
-      return { row: row - 1, col: contCapacity };
-    }
-    return { row, col: 0 };
-  }
-  return { row, col };
+  return end;
 }

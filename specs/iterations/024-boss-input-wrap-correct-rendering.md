@@ -64,6 +64,7 @@ Out of scope (deliberate non-goals):
 
 Renderer ownership: create the readline interface with `terminal: true` so it still raw-modes stdin (required by [TMUX-057](../user/tmux-play.md#tmux-057)/[TMUX-058](../user/tmux-play.md#tmux-058)) and maintains `line`/`cursor`/history/`line` events, but give it a discarding sink as `output` so its own redraw is suppressed.
 The session renders the prompt-plus-`line` to the real pane on each `keypress`, wrapping at `W-1` cells with an explicit `\r\n` at each wrap point so the terminal never enters deferred wrap, and positions the cursor from `rl.cursor`.
+Width is measured in display cells via the shared `displayCells` model (the same one the presenter soft-wraps with, [TMUX-046](../user/tmux-play.md#tmux-046)), not UTF-16 code units, and the buffer is packed a code point at a time: a wide (CJK / emoji) character is never split across a wrap boundary and never overflows the reserved rightmost column, so the no-`W`-th-column guarantee holds for non-ASCII Boss input; the `rl.cursor` code-unit index is mapped back to a column through each code point's code-unit length.
 
 Lifecycle coordination: the presenter writes captain output to the same pane during a turn.
 The renderer must clear its input region before captain output streams and repaint after the turn finishes and at every point that previously called `readline.prompt()`, so input still appears exactly once per [TMUX-037](../user/tmux-play.md#tmux-037).

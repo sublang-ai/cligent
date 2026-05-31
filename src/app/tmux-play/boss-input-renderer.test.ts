@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { displayCells } from '../shared/display-width.js';
 import { BossInputRenderer } from './boss-input-renderer.js';
 
 // A plain `boss> ` prompt keeps the asserted byte strings readable; the prompt
@@ -27,6 +28,15 @@ function paintedRows(output: string): string[] {
   const afterClear = output.slice(output.indexOf('\x1b[0J') + '\x1b[0J'.length);
   const body = afterClear.replace(/\r(?:\x1b\[\d+A)?(?:\x1b\[\d+C)?$/, '');
   return body.split('\r\n').map(stripAnsi);
+}
+
+// Visible cell width of a string, matching the renderer's wrap model.
+function cellWidth(value: string): number {
+  let cells = 0;
+  for (const char of value) {
+    cells += displayCells(char.codePointAt(0) ?? 0);
+  }
+  return cells;
 }
 
 describe('BossInputRenderer.render — boundary byte output', () => {
@@ -81,6 +91,55 @@ describe('BossInputRenderer.render — cursor tracking and repaint', () => {
   });
 });
 
+describe('BossInputRenderer.render — wide characters (cell-aware)', () => {
+  // W = 10, prompt width 6 → row-0 content budget 3 cells. `中` (U+4E2D) and
+  // `🙂` (U+1F642) are each two cells wide; `🙂` is also a surrogate pair (two
+  // UTF-16 code units), so naive code-unit slicing would split it.
+  const W = 10;
+
+  it('wraps a wide character that overflows the row budget by cells', () => {
+    // First `中` fills cols 6-7; the second needs cols 6-7 of a new row.
+    expect(renderer().render('中中', 2, W)).toBe(
+      '\r\x1b[0Jboss> 中\r\n中\r\x1b[2C',
+    );
+  });
+
+  it('fills a row to the reserved edge with a trailing wide character', () => {
+    // 'a' at col 6, `中` at cols 7-8 → row 0 is 9 = W-1 cells; col 9 stays free.
+    expect(renderer().render('a中', 2, W)).toBe('\r\x1b[0Jboss> a中\r\x1b[9C');
+  });
+
+  it('wraps rather than splitting a wide character, leaving a blank cell', () => {
+    // 'ab' uses cols 6-7; `中` needs two cells but only col 8 remains before the
+    // reserved col 9, so it wraps — col 8 stays blank, never half a glyph.
+    expect(renderer().render('ab中', 3, W)).toBe(
+      '\r\x1b[0Jboss> ab\r\n中\r\x1b[2C',
+    );
+  });
+
+  it('counts a wide character as two cells when placing the cursor', () => {
+    // Cursor index 1 sits before 'a', which `中` (two cells) pushed to col 8.
+    expect(renderer().render('中a', 1, W)).toBe('\r\x1b[0Jboss> 中a\r\x1b[8C');
+  });
+
+  it('keeps a surrogate-pair emoji whole across a wrap boundary', () => {
+    expect(renderer().render('🙂🙂', 4, W)).toBe(
+      '\r\x1b[0Jboss> 🙂\r\n🙂\r\x1b[2C',
+    );
+  });
+
+  it('maps a code-unit cursor past a surrogate pair to the right column', () => {
+    // The emoji is two code units, so cursor index 2 sits before 'a' at col 8.
+    expect(renderer().render('🙂a', 2, W)).toBe('\r\x1b[0Jboss> 🙂a\r\x1b[8C');
+  });
+
+  it('starts content on the wrap row when row 0 is too narrow for a wide char', () => {
+    // W = 8 → row-0 content budget is 1 cell, too small for a two-cell `中`, so
+    // row 0 carries only the prompt and `中` begins on the wrap row.
+    expect(renderer().render('中', 1, 8)).toBe('\r\x1b[0Jboss> \r\n中\r\x1b[2C');
+  });
+});
+
 describe('BossInputRenderer.clear', () => {
   const W = 10;
 
@@ -105,25 +164,29 @@ describe('BossInputRenderer.clear', () => {
 });
 
 describe('BossInputRenderer — reserved-column and lossless invariants', () => {
-  it('never paints a row of visible width W and loses no characters', () => {
-    const sample =
-      'The quick brown fox jumps over the lazy dog 0123456789 ' +
-      'and keeps typing well past two pane widths to force wrapping.';
+  it('never paints a row wider than W-1 cells and loses no characters', () => {
+    // Mixed ASCII, wide CJK, surrogate-pair emoji, and a precomposed accent, so
+    // the cell-aware packing is exercised against real boundary positions.
+    const codePoints = [
+      ...('The quick brown 狐 fox 🙂 jumps 测试 over the lazy 🐶 dog ' +
+        'café 0123456789 and keeps typing 中文 well past two pane widths.'),
+    ];
     for (let W = 8; W <= 40; W += 1) {
-      for (const len of [0, 1, W - 7, W - 6, W, W + 1, 2 * W, sample.length]) {
-        const line = sample.slice(0, Math.max(0, Math.min(len, sample.length)));
+      for (const len of [0, 1, W - 7, W - 6, W, W + 1, 2 * W, codePoints.length]) {
+        const count = Math.max(0, Math.min(len, codePoints.length));
+        const line = codePoints.slice(0, count).join('');
         const rows = paintedRows(renderer().render(line, line.length, W));
 
         // No painted row reaches the terminal width: the rightmost column
-        // stays unused (TMUX-067).
+        // stays unused, measured in display cells (TMUX-067).
         for (const row of rows) {
-          expect(row.length).toBeLessThanOrEqual(W - 1);
+          expect(cellWidth(row)).toBeLessThanOrEqual(W - 1);
         }
 
         // The prompt-stripped rows concatenate back to the typed text: the
-        // renderer drops and duplicates no characters.
+        // renderer drops, duplicates, and splits no characters.
         const joined = rows
-          .map((row, index) => (index === 0 ? row.slice(PROMPT_WIDTH) : row))
+          .map((row, index) => (index === 0 ? row.slice(PROMPT.length) : row))
           .join('');
         expect(joined).toBe(line);
       }
