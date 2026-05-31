@@ -251,16 +251,32 @@ describe('tmux-play real-tmux acceptance', () => {
 
       // TTMUX-066: left-clicking any pane cancels copy-mode in every
       // pane before focusing the clicked pane, so at most one pane in
-      // the session can hold a selection. The binding gates on the
-      // session name via if-shell so other tmux sessions on the same
-      // server retain stock click-to-focus behavior.
-      const mouseDown1Binding = keyBinding('root', 'MouseDown1Pane');
-      expect(mouseDown1Binding).toContain('if-shell');
-      expect(mouseDown1Binding).toContain('session_name');
-      expect(mouseDown1Binding).toContain(sessionName);
-      expect(mouseDown1Binding).toContain('pane_in_mode');
-      expect(mouseDown1Binding).toContain('-X cancel');
-      expect(mouseDown1Binding).toContain('select-pane -t=');
+      // the session can hold a selection. The binding must be installed
+      // in all three tables tmux dispatches mouse events through —
+      // `root` for non-mode panes and `copy-mode` / `copy-mode-vi` for
+      // panes already in a mode — and each gates on the session name
+      // via if-shell so other tmux sessions on the same server retain
+      // stock per-table behavior, including `send-keys -M` mouse-event
+      // forwarding to mouse-aware terminal applications under root.
+      const rootMouseDown1 = keyBinding('root', 'MouseDown1Pane');
+      expect(rootMouseDown1).toContain('if-shell');
+      expect(rootMouseDown1).toContain('session_name');
+      expect(rootMouseDown1).toContain(sessionName);
+      expect(rootMouseDown1).toContain('pane_in_mode');
+      expect(rootMouseDown1).toContain('-X cancel');
+      expect(rootMouseDown1).toContain('select-pane -t=');
+      // Preserve `send-keys -M` so mouse-aware apps in other sessions
+      // still receive forwarded clicks (review item 2).
+      expect(rootMouseDown1).toContain('send-keys -M');
+      for (const table of ['copy-mode', 'copy-mode-vi']) {
+        const modeMouseDown1 = keyBinding(table, 'MouseDown1Pane');
+        expect(modeMouseDown1).toContain('if-shell');
+        expect(modeMouseDown1).toContain('session_name');
+        expect(modeMouseDown1).toContain(sessionName);
+        expect(modeMouseDown1).toContain('pane_in_mode');
+        expect(modeMouseDown1).toContain('-X cancel');
+        expect(modeMouseDown1).toContain('select-pane');
+      }
 
       // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key
       // table both switch panes directly inside this session. Each
