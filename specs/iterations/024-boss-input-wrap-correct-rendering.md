@@ -12,7 +12,8 @@ Eliminate the duplication at its source while preserving the single-occurrence e
 ## Status
 
 In progress.
-Task 1 (spec items + map) complete; Tasks 2–4 (implementation, integration, acceptance) not started.
+Tasks 1–2 complete (spec items + map; wrap-correct input renderer module with boundary-byte unit tests).
+Tasks 3–4 (session integration, real-tmux acceptance) not started.
 
 ## Root cause (confirmed)
 
@@ -74,7 +75,7 @@ Fallback: if coordinating a wrap-correct multi-row repaint with async captain ou
 - [x] `specs/user/tmux-play.md` — add TMUX-067 (wrap-correct Boss input rendering, no scrollback duplication).
 - [x] `specs/test/tmux-play.md` — add TTMUX-067 (real-tmux no-duplication + no-rightmost-column acceptance that submits no Boss turn; ESC/paste continuity delegated to TTMUX-059/060).
 - [x] `specs/map.md` — index IR-024; extend the TMUX user-summary line.
-- [ ] `src/app/tmux-play/` — Boss input renderer module with unit tests for byte output at boundary widths.
+- [x] `src/app/tmux-play/boss-input-renderer.ts` — Boss input renderer module (reserve last column, explicit wrap breaks, region clear/repaint) with `boss-input-renderer.test.ts` unit tests for byte output at boundary widths.
 - [ ] `src/app/tmux-play/session.ts` — sink output for readline; repaint-on-keypress; clear-before / repaint-after turn lifecycle; TMUX-037/057/058 preserved.
 - [ ] `src/app/tmux-play/session.test.ts` — session-level tests that the input region repaints exactly once around a turn and that ESC/paste still behave per TMUX-057/058.
 - [ ] `src/app/tmux-play/*.acceptance` (real-tmux gate) — TTMUX-067 scrollback no-duplication acceptance.
@@ -82,7 +83,7 @@ Fallback: if coordinating a wrap-correct multi-row repaint with async captain ou
 ## Tasks
 
 1. [x] **Spec items + map.** Add TMUX-067 and TTMUX-067; index IR-024 in `specs/map.md`; extend the TMUX user-summary line. Docs-only commit.
-2. [ ] **Input renderer module.** Implement the wrap-correct renderer (reserve last column, explicit breaks at wrap points, region clear/repaint) driven off `line`/`cursor`. Unit tests pin the emitted bytes at widths where the prompt-plus-content hits exact `W` and `2·W` boundaries. Per-task-boundary green.
+2. [x] **Input renderer module.** Implement the wrap-correct renderer (reserve last column, explicit breaks at wrap points, region clear/repaint) driven off `line`/`cursor`. Unit tests pin the emitted bytes at widths where the prompt-plus-content hits exact `W` and `2·W` boundaries. Per-task-boundary green.
 3. [ ] **Session integration.** Give readline a discarding sink output; repaint on `keypress`; clear the input region before captain output and repaint after `runBossTurn` and at prior `prompt()` points; preserve TMUX-037/057/058. Session-level integration tests. Per-task-boundary green.
 4. [ ] **Real-tmux acceptance.** Add TTMUX-067 under the existing real-tmux acceptance gate: fill the pane so `boss> ` sits on the bottom row, type/edit ≥ `2·W` across the boundary with distinct per-row content, assert no input row repeats in captured scrollback, assert no captured input row is `W` cells wide, and assert the prompt-stripped rows concatenate to the typed text; submit no Boss turn (ESC + bracketed paste continuity stays covered by TTMUX-059/060). Per-task-boundary green.
 
