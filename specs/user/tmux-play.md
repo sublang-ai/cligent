@@ -310,10 +310,9 @@ The session shall enable bracketed paste only for its own duration and shall emi
 
 ### TMUX-067
 
-Where session mode renders the Boss readline to a TTY of width `W` columns, while the Boss types or edits an input line whose prompt-plus-content visible width reaches or exceeds `W`, the Boss/Captain pane scrollback shall not accumulate duplicated copies of any input row, and the cursor shall track the edit position across wrap boundaries.
-The session shall render the input itself rather than rely on the underlying readline redraw, and no input row shall occupy the terminal's rightmost column; reserving that column removes the deferred-wrap ("magic margin") ambiguity that the readline redraw mishandles when a rendered row equals the terminal width.
-The single-occurrence input echo of [TMUX-037](#tmux-037), the ESC interrupt of [TMUX-057](#tmux-057), and the bracketed-paste submission of [TMUX-058](#tmux-058) shall continue to hold.
-Where stdout is not a TTY, the session shall fall back to the underlying readline echo and this row-duplication guarantee shall not apply.
+Where session mode renders the Boss readline to a TTY of width `W` columns, while the Boss types or edits an input line whose prompt-plus-content visible width reaches or exceeds `W`, the Boss/Captain pane scrollback shall not accumulate duplicated copies of any input row, no rendered input row shall occupy the terminal's rightmost (`W`-th) column, and the cursor shall track the edit position across wrap boundaries.
+The Boss input shall still appear exactly once per [TMUX-037](#tmux-037), and the ESC interrupt of [TMUX-057](#tmux-057) and the bracketed-paste submission of [TMUX-058](#tmux-058) shall continue to hold.
+Where stdout is not a TTY, the duplicate-row and rightmost-column guarantees shall not apply and the Boss input shall be echoed as in the underlying readline.
 
 ### TMUX-038
 

@@ -48,7 +48,7 @@ In scope:
   The rendered input shall reserve the rightmost column so no input row is written into the terminal's last cell, removing the deferred-wrap ambiguity.
   The single-occurrence echo of [TMUX-037](../user/tmux-play.md#tmux-037), the ESC interrupt of [TMUX-057](../user/tmux-play.md#tmux-057), and the bracketed-paste submission of [TMUX-058](../user/tmux-play.md#tmux-058) shall continue to hold.
   Where stdout is not a TTY, input rendering shall fall back to the underlying readline echo and the row-duplication guarantee shall not apply.
-- New [TTMUX-067](../test/tmux-play.md#ttmux-067): real-tmux acceptance that types and edits a line of visible width ≥ `2·W` across the `W`-column boundary, then asserts no input row repeats in captured scrollback and the submitted `BossTurn.prompt` equals the typed text; plus an ESC-during-turn and a bracketed multi-line paste regression in the same harness.
+- New [TTMUX-067](../test/tmux-play.md#ttmux-067): real-tmux acceptance that first fills the pane so the `boss> ` prompt sits on the bottom row, then types and edits a line of visible width ≥ `2·W` (with distinct per-row content) across the `W`-column boundary, then asserts that no input row repeats in captured scrollback, that no captured input row is `W` cells wide, and that the prompt-stripped visible input rows concatenate to the typed text; it submits no Boss turn (needs no API key), and delegates the ESC-during-turn and bracketed multi-line paste regressions to the session-level [TTMUX-059](../test/tmux-play.md#ttmux-059) / [TTMUX-060](../test/tmux-play.md#ttmux-060).
 - `src/app/tmux-play/`: a Boss input renderer that drives off readline's `line`/`cursor`, reserves the last column, emits explicit breaks at wrap boundaries, and clears/repaints the input region; readline is given a discarding sink output so its magic-margin redraw never reaches the pane.
 - `src/app/tmux-play/session.ts`: wire the renderer into the turn lifecycle (clear the input region before captain output streams, repaint after `runBossTurn` and at every `prompt()` point), keeping TMUX-037/057/058 intact.
 - `specs/map.md`: index IR-024; extend the TMUX user-summary line to mention wrap-correct Boss input rendering.
@@ -72,7 +72,7 @@ Fallback: if coordinating a wrap-correct multi-row repaint with async captain ou
 ## Deliverables
 
 - [x] `specs/user/tmux-play.md` — add TMUX-067 (wrap-correct Boss input rendering, no scrollback duplication).
-- [x] `specs/test/tmux-play.md` — add TTMUX-067 (real-tmux no-duplication acceptance with ESC + paste regression).
+- [x] `specs/test/tmux-play.md` — add TTMUX-067 (real-tmux no-duplication + no-rightmost-column acceptance that submits no Boss turn; ESC/paste continuity delegated to TTMUX-059/060).
 - [x] `specs/map.md` — index IR-024; extend the TMUX user-summary line.
 - [ ] `src/app/tmux-play/` — Boss input renderer module with unit tests for byte output at boundary widths.
 - [ ] `src/app/tmux-play/session.ts` — sink output for readline; repaint-on-keypress; clear-before / repaint-after turn lifecycle; TMUX-037/057/058 preserved.
@@ -84,12 +84,12 @@ Fallback: if coordinating a wrap-correct multi-row repaint with async captain ou
 1. [x] **Spec items + map.** Add TMUX-067 and TTMUX-067; index IR-024 in `specs/map.md`; extend the TMUX user-summary line. Docs-only commit.
 2. [ ] **Input renderer module.** Implement the wrap-correct renderer (reserve last column, explicit breaks at wrap points, region clear/repaint) driven off `line`/`cursor`. Unit tests pin the emitted bytes at widths where the prompt-plus-content hits exact `W` and `2·W` boundaries. Per-task-boundary green.
 3. [ ] **Session integration.** Give readline a discarding sink output; repaint on `keypress`; clear the input region before captain output and repaint after `runBossTurn` and at prior `prompt()` points; preserve TMUX-037/057/058. Session-level integration tests. Per-task-boundary green.
-4. [ ] **Real-tmux acceptance.** Add TTMUX-067 under the existing real-tmux acceptance gate: type/edit ≥ `2·W` across the boundary, assert no input row repeats in captured scrollback, assert the submitted prompt, and regress ESC + bracketed paste. Per-task-boundary green.
+4. [ ] **Real-tmux acceptance.** Add TTMUX-067 under the existing real-tmux acceptance gate: fill the pane so `boss> ` sits on the bottom row, type/edit ≥ `2·W` across the boundary with distinct per-row content, assert no input row repeats in captured scrollback, assert no captured input row is `W` cells wide, and assert the prompt-stripped rows concatenate to the typed text; submit no Boss turn (ESC + bracketed paste continuity stays covered by TTMUX-059/060). Per-task-boundary green.
 
 ## Acceptance
 
-- In a real tmux pane of width `W`, typing and editing an input line of visible width ≥ `2·W` across the `W`-column boundary leaves no duplicated input row in the captured scrollback.
-- The submitted `BossTurn.prompt` equals the typed text byte-for-byte.
+- In a real tmux pane of width `W` whose prompt sits on the bottom row, typing and editing an input line of visible width ≥ `2·W` across the `W`-column boundary leaves no duplicated input row in the captured scrollback and no captured input row of width `W`.
+- The prompt-stripped visible Boss input rows concatenate to the typed text byte-for-byte.
 - The Boss input still appears exactly once in the pane per [TMUX-037](../user/tmux-play.md#tmux-037); captain output during a turn does not double-print the input region.
 - ESC during an active turn still aborts per [TMUX-057](../user/tmux-play.md#tmux-057); a bracketed multi-line paste still submits one turn per [TMUX-058](../user/tmux-play.md#tmux-058).
 - Where stdout is not a TTY, the session falls back to readline echo and remains functional; the SIGINT/SIGTERM/EOF lifecycle per [TMUX-026](../user/tmux-play.md#tmux-026) is unchanged in every mode.
