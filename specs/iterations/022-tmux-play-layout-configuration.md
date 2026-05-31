@@ -60,6 +60,12 @@ Snapshot consumption: per [TMUX-034](../user/tmux-play.md#tmux-034) the launcher
 The launcher resolves any missing `layout` values to their defaults before writing the snapshot, so the snapshot always carries concrete `window.columns` / `window.rows` / `columnWeights`.
 The launcher does not consult the YAML again after session creation, so reading `layout` from `loaded.config` (post-normalization) is the single point of truth.
 
+Why `columnWeights` are positive integers: [TMUX-044](../user/tmux-play.md#tmux-044)'s `resize-pane` hook interpolates each weight verbatim into POSIX shell arithmetic (`$((W * w_i / sum(w) - 1))`), which is integer-only [[1]].
+A decimal weight would emit a malformed `$((…))` expression and silently break the post-creation resize invariant — the initial geometry (computed in JS via `Math.floor`) would still look right, but `client-resized` and `after-resize-window` hooks would no-op on every terminal resize.
+Loader-time rejection (TMUX-064) prevents that path from ever being taken.
+Scaling fractional ratios up to integers before configuring preserves the formula exactly: `floor(W * (k*w_i) / (k*sum)) = floor(W * w_i / sum)` for any positive scalar `k`, so the user-facing rule "scale to integers" loses no expressive power.
+This rationale lives in the IR rather than [TMUX-064](../user/tmux-play.md#tmux-064) because the constraint is observable user behavior (per [META-26](../meta.md#meta-26)) but its origin is implementation logic (per [META-24](../meta.md#meta-24)).
+
 ## Deliverables
 
 - [x] `specs/user/tmux-play.md` — amend TMUX-005, TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044; add TMUX-064 defining `layout`.
@@ -77,7 +83,7 @@ Each task is one commit.
 
 1. [x] **Spec items + map.** Amend TMUX-005 / TMUX-011 / TMUX-028 / TMUX-035 / TMUX-043 / TMUX-044 and add TMUX-064 in `specs/user/tmux-play.md`; amend TTMUX-014 / TTMUX-021 / TTMUX-022 / TTMUX-031 / TTMUX-034 / TTMUX-035 and add TTMUX-064 in `specs/test/tmux-play.md`; update the `specs/map.md` TMUX package summary to mention the new top-level `layout` field. Docs-only commit.
 
-2. [x] **Config schema for `layout`.** Add `TmuxPlayConfig.layout` (`window: { columns, rows }`, `columnWeights: number[]`) to `src/app/tmux-play/config.ts`; normalize/validate per TMUX-064 (reject non-positive integer dimensions, non-array or non-positive-number weights, weights-length not matching `players.length === 1 ? 2 : 3`); default the field at load time so the snapshot always carries concrete values. Update `DEFAULT_TMUX_PLAY_CONFIG` to include explicit `layout`. Add unit tests in `src/app/tmux-play/config.test.ts` covering the accepted defaults, each rejection path, and snapshot preservation. Per-task-boundary green.
+2. [x] **Config schema for `layout`.** Add `TmuxPlayConfig.layout` (`window: { columns, rows }`, `columnWeights: number[]`) to `src/app/tmux-play/config.ts`; normalize/validate per TMUX-064 (reject non-positive integer dimensions; non-array `columnWeights`; any weight that is not a positive integer — decimals included, since [TMUX-044](../user/tmux-play.md#tmux-044)'s POSIX shell-arithmetic hook is integer-only; weights-length not matching `players.length === 1 ? 2 : 3`); default the field at load time so the snapshot always carries concrete values. Update `DEFAULT_TMUX_PLAY_CONFIG` to include explicit `layout`. Add unit tests in `src/app/tmux-play/config.test.ts` covering the accepted defaults, each rejection path, and snapshot preservation. Per-task-boundary green.
 
 3. [x] **Launcher wiring + tests.** Thread `loaded.config.layout` into `buildTmuxSession` so `new-session -x/-y` uses `layout.window`, `requestTerminalResize` emits `\x1b[8;<rows>;<columns>t` from the same `layout.window`, each `split-window -l` value is computed from `layout.columnWeights` and `layout.window.columns`, and `configureLayoutHooks` builds its `resize-pane` chain from the weights and the runtime `#{window_width}`. Retire the now-unused `INITIAL_TMUX_COLUMNS`, `INITIAL_TMUX_ROWS`, `PLAYER_AREA_SIZE_*`, and `SECOND_PLAYER_COLUMN_SIZE` constants. Update `src/app/tmux-play/launcher.test.ts` to assert the new default geometry (`60 / 90 / 90` for two players, `120 / 120` for one player, `240×67` window) and the unchanged-default `\x1b[8;67;240t` resize sequence, and add an explicit-override case that exercises a non-default `layout.window` end-to-end (new-session args, terminal CSI bytes, column weights). Update `src/app/tmux-play/launcher.acceptance.test.ts` similarly against a real tmux server. Per-task-boundary green; the acceptance suite shall be executed end-to-end inside this commit per the IR-011 precedent.
 
@@ -89,3 +95,7 @@ Each task is one commit.
 - With an explicit `layout.columnWeights` in the YAML, the resolved region widths follow that ratio at the resolved `layout.window.columns`; with an explicit `layout.window` in the YAML, both the `new-session -x/-y` arguments and the pre-attach `\x1b[8;<rows>;<columns>t` bytes match — no path still asserts `240×67` against a configured override.
 - Malformed `layout` values are rejected with an error naming the offending path (e.g., `layout.window.columns`, `layout.columnWeights[2]`) per [TMUX-008](../user/tmux-play.md#tmux-008).
 - The session snapshot JSON at `<workDir>/tmux-play.config.snapshot.json` carries the resolved `layout` block; mutating the YAML after launch does not change the running session.
+
+## References
+
+[1]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_06_04 "POSIX.1-2017 §2.6.4 Arithmetic Expansion"

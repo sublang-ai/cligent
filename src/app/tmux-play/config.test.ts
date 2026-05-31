@@ -803,7 +803,7 @@ describe('tmux-play config loading', () => {
     );
 
     await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
-      'layout.columnWeights must be an array of positive numbers',
+      'layout.columnWeights must be an array of positive integers',
     );
   });
 
@@ -832,7 +832,7 @@ describe('tmux-play config loading', () => {
     );
 
     await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
-      'layout.columnWeights[2] must be a finite positive number',
+      'layout.columnWeights[2] must be a positive integer',
     );
   });
 
@@ -1053,10 +1053,45 @@ describe('tmux-play config loading', () => {
     );
 
     await expect(loadTmuxPlayConfig({ configPath: nanWeight })).rejects.toThrow(
-      'layout.columnWeights[1] must be a finite positive number',
+      'layout.columnWeights[1] must be a positive integer',
     );
     await expect(loadTmuxPlayConfig({ configPath: stringWeight })).rejects.toThrow(
-      'layout.columnWeights[1] must be a finite positive number',
+      'layout.columnWeights[1] must be a positive integer',
+    );
+  });
+
+  it('rejects decimal layout.columnWeights with the offending index', async () => {
+    // TMUX-064: weights are restricted to positive integers because the
+    // TMUX-044 resize hook interpolates each weight into POSIX shell
+    // arithmetic (`$((W * w_i / sum - 1))`), which is integer-only. A
+    // decimal like `0.5` would emit a malformed `$((…))` expression and
+    // silently break the post-creation resize invariant; loader-time
+    // rejection prevents that path from ever being taken.
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 0.5',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.columnWeights[1] must be a positive integer',
     );
   });
 

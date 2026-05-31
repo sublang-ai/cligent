@@ -181,6 +181,50 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.stdout).not.toContain('runtime_error');
   });
 
+  // TTMUX-064: invalid YAML layout — a decimal columnWeights value — aborts
+  // the launcher at the CLI boundary. The TMUX-044 resize hook would
+  // interpolate the weight verbatim into POSIX integer-only shell
+  // arithmetic, so loader-time rejection prevents a broken `$((…))`
+  // expression from ever being emitted. Uses the fake tmux + glow harness
+  // so the test does not depend on real binaries.
+  it('rejects decimal layout.columnWeights with stderr and nonzero exit', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      join(cwd, 'tmux-play.config.yaml'),
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 0.5',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runCli(['--cwd', cwd], harness);
+
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(
+      'layout.columnWeights[1] must be a positive integer',
+    );
+    expect(result.stderr.startsWith('Error: ')).toBe(true);
+    expect(readTmuxCalls(harness).some((call) => call[0] === 'new-session')).toBe(
+      false,
+    );
+    expect(result.stdout).not.toContain('runtime_error');
+  });
+
   // TTMUX-058: invalid YAML reasoningEffort aborts the launcher at the
   // CLI boundary before the runtime exists.
   it('rejects invalid reasoningEffort with stderr and nonzero exit', () => {

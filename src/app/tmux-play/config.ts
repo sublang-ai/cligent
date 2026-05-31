@@ -408,7 +408,7 @@ function resolveColumnWeights(
     return [...defaults];
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${path} must be an array of positive numbers`);
+    throw new Error(`${path} must be an array of positive integers`);
   }
   if (value.length !== expectedLength) {
     const role =
@@ -422,12 +422,19 @@ function resolveColumnWeights(
   const result: number[] = [];
   for (let i = 0; i < value.length; i++) {
     const weight = value[i];
+    // Positive-integer constraint (TMUX-064): the resize hook interpolates
+    // each weight verbatim into POSIX shell arithmetic (`$((W * w / sum -
+    // 1))`), which is integer-only. A decimal like `0.5` would emit a
+    // malformed `$((…))` and silently break the post-creation resize
+    // invariant. `Number.isInteger` already returns `false` for NaN /
+    // Infinity / non-numbers, but the explicit `typeof` guard keeps the
+    // closed-set rejection enumeration readable.
     if (
       typeof weight !== 'number' ||
-      !Number.isFinite(weight) ||
+      !Number.isInteger(weight) ||
       weight <= 0
     ) {
-      throw new Error(`${path}[${i}] must be a finite positive number`);
+      throw new Error(`${path}[${i}] must be a positive integer`);
     }
     result.push(weight);
   }

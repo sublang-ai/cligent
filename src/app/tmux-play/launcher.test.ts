@@ -791,6 +791,51 @@ describe('launchTmuxPlay', () => {
     );
   });
 
+  it('rejects decimal layout.columnWeights before emitting any tmux call', async () => {
+    // TMUX-064: decimal weights would interpolate raw into the TMUX-044
+    // POSIX shell-arithmetic hook (`$((W * 0.5 / 1.5 - 1))`), which is a
+    // syntax error in /bin/sh and dash. Loader-time rejection is the only
+    // safeguard — if it ever regressed, the launcher would emit a broken
+    // hook silently and the post-creation resize invariant would die after
+    // the first window resize. This test pins the launcher path: the
+    // failure must surface before any `runTmux` call, so the broken hook
+    // can't reach a real shell.
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = join(tempDir, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 0.5',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      launchTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: 'decimal-weight',
+        workDir: join(tempDir, 'work'),
+        selfBin: '/tmp/cli.js',
+        attach: false,
+      }),
+    ).rejects.toThrow('layout.columnWeights[1] must be a positive integer');
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
   it('threads an explicit layout override into new-session, splits, hook, and CSI 8', async () => {
     // TMUX-035 / TMUX-043 / TMUX-044 / TMUX-064: a YAML override of
     // layout.window and layout.columnWeights must reach every launcher
