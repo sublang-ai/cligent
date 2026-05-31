@@ -212,7 +212,7 @@ Example:
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
-  model: claude-opus-4-7
+  model: claude-opus-4-8-1m
   instruction: Coordinate players and answer the Boss.
   options: {}
 players:

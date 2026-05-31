@@ -12,7 +12,7 @@ Verification criteria for the `tmux-play` CLI, configuration, Captain runtime, a
 ### TTMUX-001
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011)
 
-Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-7` with `reasoningEffort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`, and both default players and the default Captain shall carry `permissions: { mode: 'auto' }`. A one-line notice naming the path shall be printed to stdout, and a second invocation shall not overwrite the file.
+Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8-1m` with `reasoningEffort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`, and both default players and the default Captain shall carry `permissions: { mode: 'auto' }`. A one-line notice naming the path shall be printed to stdout, and a second invocation shall not overwrite the file.
 
 ### TTMUX-002
 Verifies: [TMUX-009](../user/tmux-play.md#tmux-009)
@@ -87,7 +87,7 @@ Given `tmux-play --theme-diagnostics` is invoked with a YAML config, the CLI sha
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028), [TMUX-064](../user/tmux-play.md#tmux-064)
 
 Given N configured players, when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2 the first player column shall hold `ceil(N / 2)` players top-to-bottom.
-Given a YAML config that omits `layout.columnWeights`, each visible column shall occupy its share of the window width per the shipped defaults of [TMUX-064](../user/tmux-play.md#tmux-064): with N = 1 the weights are `[1, 1]` (Boss/Captain and player each 1/2); with N ≥ 2 the weights are `[4, 6, 6]` (Boss/Captain at 4/16, each player column at 6/16, rightmost absorbing the remainder).
+Given a YAML config that omits `layout.columnWeights`, each visible column shall occupy its share of the window width per the shipped defaults of [TMUX-064](../user/tmux-play.md#tmux-064): with N = 1 the weights are `[1, 1]` (Boss/Captain and player each 1/2); with N ≥ 2 the weights are `[1, 1, 1]` (Boss/Captain and each player column each 1/3, rightmost absorbing the remainder).
 Given a YAML config that supplies an explicit `layout.columnWeights`, the resolved region widths shall follow that ratio at the resolved `layout.window.columns` per [TMUX-028](../user/tmux-play.md#tmux-028) and [TMUX-044](../user/tmux-play.md#tmux-044).
 
 ### TTMUX-015
@@ -134,13 +134,13 @@ Given a cwd YAML config whose `captain.from` is a relative local path and a sepa
 ### TTMUX-021
 Verifies: [TMUX-035](../user/tmux-play.md#tmux-035), [TMUX-064](../user/tmux-play.md#tmux-064)
 
-Given a YAML config that omits `layout.window`, when the launcher creates the tmux session, the `new-session` invocation shall request a 240-column by 67-row grid (16:9 sized for 1920×1080).
-Given a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the `new-session` invocation shall request `-x 200 -y 50` and shall not fall back to the default 240×67.
+Given a YAML config that omits `layout.window`, when the launcher creates the tmux session, the `new-session` invocation shall request a 174-column by 49-row grid (sized for 1920×1080 at 18pt monospace).
+Given a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the `new-session` invocation shall request `-x 200 -y 50` and shall not fall back to the default 174×49.
 
 ### TTMUX-022
 Verifies: [TMUX-028](../user/tmux-play.md#tmux-028), [TMUX-064](../user/tmux-play.md#tmux-064)
 
-Given two or more players and a YAML config that omits `layout.columnWeights`, when the launcher constructs the tmux session against a 240-column-wide grid, the Boss/Captain pane shall occupy 60 columns, the first player column shall occupy 90 columns, and the second player column shall occupy 90 columns — matching the shipped `[4, 6, 6]` multi-player default, within tmux's nearest-cell rounding.
+Given two or more players and a YAML config that omits `layout.columnWeights`, when the launcher constructs the tmux session against a 174-column-wide grid, the Boss/Captain pane shall occupy 58 columns, the first player column shall occupy 58 columns, and the second player column shall occupy 58 columns — matching the shipped `[1, 1, 1]` multi-player default, within tmux's nearest-cell rounding.
 
 ## Mouse Interaction
 
@@ -275,12 +275,12 @@ Items in this section verify behavior end-to-end against a real `tmux` server (n
 ### TTMUX-030
 Verifies: [TMUX-035](../user/tmux-play.md#tmux-035)
 
-Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` shall report `240x67`.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` shall report `174x49`.
 
 ### TTMUX-031
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028), [TMUX-064](../user/tmux-play.md#tmux-064)
 
-Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights`, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes matching the shipped `[4, 6, 6]` multi-player default: a Boss/Captain pane at `pane_left=0` with effective width 60 columns (less tmux's 1-cell border), a first player column at `pane_left=60` with effective width 90 columns (less tmux's 1-cell border), and a second player column at `pane_left=150` with effective width 90 columns. Pane order in `list-panes` index space shall match config order.
+Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights`, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes matching the shipped `[1, 1, 1]` multi-player default: a Boss/Captain pane at `pane_left=0` with effective width 58 columns (less tmux's 1-cell border), a first player column at `pane_left=58` with effective width 58 columns (less tmux's 1-cell border), and a second player column at `pane_left=116` with effective width 58 columns. Pane order in `list-panes` index space shall match config order.
 
 ### TTMUX-032
 Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
@@ -295,15 +295,15 @@ Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, ever
 ### TTMUX-034
 Verifies: [TMUX-043](../user/tmux-play.md#tmux-043), [TMUX-064](../user/tmux-play.md#tmux-064)
 
-Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes against a YAML config that omits `layout.window`, the writer's content shall contain the byte sequence `\x1b[8;67;240t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked.
-Given the same invocation against a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the writer's content shall contain `\x1b[8;50;200t` and shall not contain `\x1b[8;67;240t`, so the pre-attach CSI 8 payload reads from the same `layout.window` source of truth as `new-session -x/-y` per [TMUX-035](../user/tmux-play.md#tmux-035).
+Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes against a YAML config that omits `layout.window`, the writer's content shall contain the byte sequence `\x1b[8;49;174t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked.
+Given the same invocation against a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the writer's content shall contain `\x1b[8;50;200t` and shall not contain `\x1b[8;49;174t`, so the pre-attach CSI 8 payload reads from the same `layout.window` source of truth as `new-session -x/-y` per [TMUX-035](../user/tmux-play.md#tmux-035).
 
 ### TTMUX-035
 Verifies: [TMUX-044](../user/tmux-play.md#tmux-044), [TMUX-064](../user/tmux-play.md#tmux-064)
 
-Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights`, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W * 4 / 16)`, the first player column region width equal to `floor(W * 6 / 16)`, and the second player column region width equal to the remainder, where region width = `pane_width + 1` for each pane with a right-side border separator.
+Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights`, when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W / 3)`, the first player column region width equal to `floor(W / 3)`, and the second player column region width equal to the remainder, where region width = `pane_width + 1` for each pane with a right-side border separator.
 The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).
-Given the same setup with an explicit `layout.columnWeights` (for example `[1, 1, 1]`), the per-column region widths shall follow the generalized formula `floor(W * w_i / sum(w))` for each non-rightmost column `i`, with the rightmost column absorbing the remainder, recovering the prior equal-thirds behavior for that explicit override.
+Given the same setup with an explicit non-equal `layout.columnWeights` (for example `[3, 5, 5]`), the per-column region widths shall follow the generalized formula `floor(W * w_i / sum(w))` for each non-rightmost column `i`, with the rightmost column absorbing the remainder, so an explicit override is honored distinctly from the equal-thirds default.
 
 ### TTMUX-036
 Verifies: [TMUX-045](../user/tmux-play.md#tmux-045)
@@ -384,9 +384,9 @@ Given a YAML config whose `captain.reasoningEffort` or `players[0].reasoningEffo
 ### TTMUX-064
 Verifies: [TMUX-064](../user/tmux-play.md#tmux-064), [TMUX-008](../user/tmux-play.md#tmux-008), [TMUX-025](../user/tmux-play.md#tmux-025), [TMUX-034](../user/tmux-play.md#tmux-034)
 
-Given a YAML config that omits `layout`, when `launchTmuxPlay({ attach: false })` returns, the work-directory snapshot at `<workDir>/tmux-play.config.snapshot.json` shall carry `layout: { window: { columns: 240, rows: 67 }, columnWeights: [1, 1] }` when one player is configured and `layout: { window: { columns: 240, rows: 67 }, columnWeights: [4, 6, 6] }` when two or more players are configured.
+Given a YAML config that omits `layout`, when `launchTmuxPlay({ attach: false })` returns, the work-directory snapshot at `<workDir>/tmux-play.config.snapshot.json` shall carry `layout: { window: { columns: 174, rows: 49 }, columnWeights: [1, 1] }` when one player is configured and `layout: { window: { columns: 174, rows: 49 }, columnWeights: [1, 1, 1] }` when two or more players are configured.
 Given a YAML config that supplies a fully concrete `layout`, the same snapshot file shall carry the same `window.columns`, `window.rows`, and `columnWeights` values verbatim per [TMUX-034](../user/tmux-play.md#tmux-034).
-Given a YAML config that supplies a partial `layout.window` (for example `columns: 200` with no `rows`), the snapshot's `layout.window` shall be `{ columns: 200, rows: 67 }` — each missing sub-field independently defaulted, each supplied sub-field preserved verbatim — and the snapshot shall not contain `{ columns: 240, rows: 67 }` for that window.
+Given a YAML config that supplies a partial `layout.window` (for example `columns: 200` with no `rows`), the snapshot's `layout.window` shall be `{ columns: 200, rows: 49 }` — each missing sub-field independently defaulted, each supplied sub-field preserved verbatim — and the snapshot shall not contain `{ columns: 174, rows: 49 }` for that window.
 Given a YAML config whose `layout` is malformed — `layout.window.columns` or `layout.window.rows` not a positive integer; `layout.columnWeights` not an array; any weight not a positive integer (decimals such as `0.5`, NaN, Infinity, zero, negatives, and non-number types shall all reject); `layout.columnWeights` length not matching the visible column count derived from the configured players (2 with one player, 3 with two or more); any unknown sub-field under `layout` or `layout.window` — when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path (e.g., `layout.window.columns`, `layout.columnWeights[2]`) per [TMUX-008](../user/tmux-play.md#tmux-008).
 The runtime shall not start, no tmux session shall be created, and no `runtime_error` record shall be observable because the failure is a launcher-startup abort outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope.
 

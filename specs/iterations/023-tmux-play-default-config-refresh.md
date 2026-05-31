@@ -17,7 +17,7 @@ The model string is an opaque literal forwarded to the SDK per [CLAUDE-001](../u
 
 ## Status
 
-Planned
+In progress — Task 1 (specs + map) done; Tasks 2–3 (config + tests, launcher + docs) pending.
 
 ## Scope
 
@@ -56,10 +56,10 @@ Out of scope:
 
 ## Deliverables
 
-- [ ] `specs/user/tmux-play.md` — TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044, TMUX-064.
-- [ ] `specs/test/tmux-play.md` — TTMUX-001, TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-030, TTMUX-031, TTMUX-034, TTMUX-035, TTMUX-064.
-- [ ] `specs/decisions/004-tmux-play-captain-architecture.md` — example YAML Captain model.
-- [ ] `specs/map.md` — IR-023 index row.
+- [x] `specs/user/tmux-play.md` — TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044, TMUX-064.
+- [x] `specs/test/tmux-play.md` — TTMUX-001, TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-030, TTMUX-031, TTMUX-034, TTMUX-035, TTMUX-064.
+- [x] `specs/decisions/004-tmux-play-captain-architecture.md` — example YAML Captain model.
+- [x] `specs/map.md` — IR-023 index row.
 - [ ] `src/app/tmux-play/config.ts` — `DEFAULT_TMUX_PLAY_CONFIG`, `DEFAULT_LAYOUT_WINDOW`, `defaultColumnWeights`.
 - [ ] `src/app/tmux-play/config.test.ts` — fixture, first-run, single/multi default-layout, partial-window cases.
 - [ ] `src/app/tmux-play/launcher.test.ts` — geometry, resize hook, CSI 8, 4/5-player `it.each`.
