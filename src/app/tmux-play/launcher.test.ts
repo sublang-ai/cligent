@@ -844,7 +844,8 @@ describe('launchTmuxPlay', () => {
     );
 
     const statusLeft = setValue('tmux-play-timers', 'status-left');
-    expect(statusLeft).toContain('tmux-play');
+    // TMUX-055: status-left opens with the bold-blue `Cligent` brand heading.
+    expect(statusLeft).toContain('Cligent');
     // TMUX-063: status-left advertises direct pane switching and the ESC
     // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions
     // (`d=detach`, `o=switch pane`, `[=scroll`) are gone.

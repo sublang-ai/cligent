@@ -499,6 +499,10 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
+      // TMUX-055: status-left opens with the `Cligent` brand heading and
+      // not the retired `tmux-play` label.
+      expect(statusLeft).toContain('Cligent');
+      expect(statusLeft).not.toContain('tmux-play');
       // TMUX-055 + TMUX-063: status-left renders the navigation hints,
       // and the hint shape is the exact substring TMUX-063 owns —
       // including the `or Shift+←/→` tail that makes pane switching

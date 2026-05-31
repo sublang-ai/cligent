@@ -478,6 +478,7 @@ The glyph's own color shall be left to the terminal's emoji font; the duration t
 ### TMUX-055
 
 When the launcher constructs a tmux-play session, the navigation hints shall be rendered in `status-left`, and the session-total timer from [TMUX-053](#tmux-053) shall be rendered in `status-right`.
+The `status-left` segment shall open with the bold brand heading `Cligent` rendered in the resolved Catppuccin flavor's `blue` accent per [TMUX-047](#tmux-047), followed by a single space and then the navigation hints whose shape is owned by [TMUX-063](#tmux-063); the heading text shall be `Cligent` and shall not be `tmux-play`.
 The launcher shall suppress tmux's default window-list segment by setting `window-status-format`, `window-status-current-format`, and `window-status-separator` to empty strings, so the status bar does not render window text such as `0:node*`.
 The status-total timer shall refresh roughly once per second while a Boss turn is open and shall freeze between Boss turns.
 The status-total timer shall use the hourglass pair from [TMUX-054](#tmux-054) — the running glyph `⏳` while a Boss turn is open and the settled glyph `⌛` between turns — so the bottom-right status timer reads with the same flowing-vs-settled cue as the per-pane title timers.
