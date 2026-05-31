@@ -84,14 +84,29 @@ describe('shared log helpers', () => {
     expect(errors[0]?.message).toContain('ENOENT');
   });
 
-  it('closes every provided log stream', () => {
+  it('closes every provided log stream', async () => {
     const closed: string[] = [];
 
-    closeLogStreams([
+    await closeLogStreams([
       { end: () => closed.push('claude') },
       { end: () => closed.push('codex') },
     ]);
 
     expect(closed).toEqual(['claude', 'codex']);
+  });
+
+  it('resolves only after real streams flush and close', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'cligent-logs-'));
+    const streams = openAppendLogStreams(workDir, ['claude', 'codex']);
+    streams.get('claude')?.write('hello\n');
+
+    await closeLogStreams(streams.values());
+
+    for (const stream of streams.values()) {
+      expect(stream.closed).toBe(true);
+    }
+    expect(readFileSync(logFilePath(workDir, 'claude'), 'utf8')).toContain(
+      'hello',
+    );
   });
 });

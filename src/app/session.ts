@@ -34,25 +34,25 @@ export async function runSession(options: SessionOptions): Promise<void> {
 
   let abortController: AbortController | null = null;
 
-  const cleanup = () => {
+  const cleanup = async () => {
     // Abort any in-flight runs
     abortController?.abort();
 
-    // Close streams (logs persist in .fanout/)
-    closeLogStreams(streams.values());
+    // Flush and close streams before exiting, so buffered log writes are
+    // not lost when process.exit() tears the process down (logs persist in
+    // .fanout/).
+    await closeLogStreams(streams.values());
 
     // Kill tmux session
     killTmuxSession(sessionName);
   };
 
-  process.on('SIGINT', () => {
-    cleanup();
-    process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    cleanup();
-    process.exit(0);
-  });
+  const cleanupThenExit = (): void => {
+    void cleanup().finally(() => process.exit(0));
+  };
+
+  process.on('SIGINT', cleanupThenExit);
+  process.on('SIGTERM', cleanupThenExit);
 
   const rl = createInterface({
     input: process.stdin,
@@ -108,8 +108,5 @@ export async function runSession(options: SessionOptions): Promise<void> {
     });
   });
 
-  rl.on('close', () => {
-    cleanup();
-    process.exit(0);
-  });
+  rl.on('close', cleanupThenExit);
 }
