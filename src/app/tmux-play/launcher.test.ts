@@ -379,6 +379,38 @@ describe('launchTmuxPlay', () => {
     );
   });
 
+  it('binds Ctrl+C at the root key table to forward to the Boss/Captain pane from any pane, scoped via if-shell to the launched session', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'exit-key',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    // TMUX-065: player panes have pane-input-off=1, so a press of Ctrl+C
+    // in a player pane is normally swallowed. The root-table binding
+    // intercepts the key before the pane sees it and forwards it to
+    // pane 0 (the Boss/Captain pane), where the Captain process runs
+    // the existing SIGINT lifecycle from TMUX-026.
+    const condition = '#{==:#{session_name},tmux-play-exit-key}';
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'C-c',
+      'if-shell',
+      '-F',
+      condition,
+      'send-keys -t tmux-play-exit-key:0.0 C-c',
+      'send-keys C-c',
+    );
+  });
+
   it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);

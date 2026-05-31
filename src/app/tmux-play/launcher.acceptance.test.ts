@@ -266,6 +266,21 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(ctrlRightBinding).toContain('select-pane -R');
       expect(ctrlRightBinding).toContain('send-keys C-Right');
 
+      // TTMUX-065: Ctrl+C at the root key table forwards to the
+      // Boss/Captain pane (pane 0) so the exit hint fires from any pane,
+      // not only the Captain pane whose readline normally intercepts the
+      // key. Player panes are read-only (pane-input-off=1) and would
+      // otherwise swallow the key; the root-table binding intercepts
+      // before the pane sees it. The binding gates on the session name
+      // via if-shell so other tmux sessions on the same server forward
+      // Ctrl+C unchanged.
+      const ctrlCBinding = keyBinding('root', 'C-c');
+      expect(ctrlCBinding).toContain('if-shell');
+      expect(ctrlCBinding).toContain('session_name');
+      expect(ctrlCBinding).toContain(sessionName);
+      expect(ctrlCBinding).toContain(`send-keys -t ${sessionName}:0.0 C-c`);
+      expect(ctrlCBinding).toContain('send-keys C-c');
+
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
         'tmux',

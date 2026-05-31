@@ -259,6 +259,15 @@ The launcher shall render `status-left` with hints in the form `Switch pane: Ctr
 As with the copy-mode bindings of [TMUX-062](#tmux-062), tmux's root key table is server-global because tmux does not offer per-session root-table bindings, so the two entries outlive the tmux-play session; the `if-shell` guard keeps the binding inert in every other session and is the launcher's narrowest available scoping mechanism.
 A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
 
+### TMUX-065
+
+When the launcher creates a tmux-play session, it shall bind `C-c` in the `root` key table so that, while the active client is attached to the launched session, `C-c` runs `send-keys -t <session>:0.0 C-c`, delivering the Ctrl+C byte to the Boss/Captain pane (pane index 0) regardless of which pane is currently active.
+The binding shall be gated on the current `#{session_name}` matching the launched session name via `if-shell -F`, with a false branch of `send-keys C-c`, so that for any other tmux session on the same server the binding is a no-op and the original `Ctrl+C` key is forwarded verbatim to the active pane.
+Player panes are read-only per [TMUX-027](#tmux-027) — their `pane-input-off=1` would otherwise swallow `Ctrl+C` entirely; intercepting at the `root` key table fires the binding before the pane sees the key, so the `Exit: Ctrl+C` hint advertised by `status-left` per [TMUX-063](#tmux-063) is honored from every pane in the launched session, not only from the Boss/Captain pane whose readline already raises the signal.
+Once delivered to the Boss/Captain pane, the Captain process handles the byte per [TMUX-026](#tmux-026): the runtime aborts the active turn, runs shutdown per [TMUX-019](#tmux-019), kills the tmux session, and removes launcher-owned work directories.
+As with the copy-mode bindings of [TMUX-062](#tmux-062) and the navigation bindings of [TMUX-063](#tmux-063), tmux's root key table is server-global, so this entry outlives the tmux-play session; the `if-shell` guard keeps the binding inert in every other session and is the launcher's narrowest available scoping mechanism.
+A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
+
 ## Pane Titles
 
 ### TMUX-036

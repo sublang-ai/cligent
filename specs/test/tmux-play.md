@@ -161,6 +161,13 @@ The launcher shall render `status-left` with `Switch pane: Ctrl+←/→`, `Stop:
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux list-keys -T root C-Left` shall report a binding whose body contains `if-shell`, `session_name`, the launched session name, `select-pane -L`, and `send-keys C-Left`, and `tmux list-keys -T root C-Right` shall report the symmetric binding with `select-pane -R` and `send-keys C-Right`.
 The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
 
+### TTMUX-065
+Verifies: [TMUX-065](../user/tmux-play.md#tmux-065), [TMUX-026](../user/tmux-play.md#tmux-026)
+
+Given the launcher constructing a tmux-play session whose `sessionName` is `<session>`, the tmux command stream shall include `bind-key -T root C-c if-shell -F #{==:#{session_name},<session>} 'send-keys -t <session>:0.0 C-c' 'send-keys C-c'`, so the binding's true branch forwards `Ctrl+C` to the Boss/Captain pane (pane index 0) inside this session while the false branch forwards the original key for every other tmux session on the same server.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux list-keys -T root C-c` shall report a binding whose body contains `if-shell`, `session_name`, the launched session name, `send-keys -t <session>:0.0 C-c`, and `send-keys C-c`.
+The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
+
 ## Pane Titles
 
 ### TTMUX-023

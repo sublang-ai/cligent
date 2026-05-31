@@ -268,6 +268,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   disablePlayerPaneInput(options.sessionName, playerPanes);
   configureMouseInteraction(options.sessionName);
   configureBossPaneSwitchKeys(options.sessionName);
+  configureSessionExitKey(options.sessionName);
   configureLayoutHooks(options.sessionName, layout.columnWeights);
   applyCatppuccinTheme(options.sessionName, c);
   runTmux(
@@ -866,6 +867,34 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
     condition,
     'select-pane -R',
     'send-keys C-Right',
+  );
+}
+
+// TMUX-065: bind Ctrl+C at the root key table so the `Exit: Ctrl+C`
+// navigation hint actually fires from any pane, not only the Boss/Captain
+// pane. Player panes are read-only (`pane-input-off=1` per TMUX-027) and
+// would otherwise swallow the key entirely. The binding forwards C-c to
+// the Boss/Captain pane (pane index 0) via `send-keys`, so the Captain
+// process receives the Ctrl+C byte exactly as if the user had pressed it
+// in that pane and the existing SIGINT lifecycle from TMUX-026 runs
+// unchanged. Like the C-Left / C-Right bindings in TMUX-063 the root
+// table is server-global, so the binding is scoped via `if-shell -F`
+// against the current session name; the false branch forwards C-c
+// verbatim so other tmux sessions on the same server retain the original
+// key for whatever consumer they have. The binding outlives the
+// tmux-play session but is inert once the session is killed.
+function configureSessionExitKey(sessionName: string): void {
+  const condition = `#{==:#{session_name},${sessionName}}`;
+  runTmux(
+    'bind-key',
+    '-T',
+    'root',
+    'C-c',
+    'if-shell',
+    '-F',
+    condition,
+    `send-keys -t ${paneTarget(sessionName, 0)} C-c`,
+    'send-keys C-c',
   );
 }
 
