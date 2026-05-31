@@ -30,7 +30,7 @@ function validConfig(
     captain: {
       from: '@sublang/cligent/captains/fanout',
       adapter: 'claude',
-      model: 'claude-opus-4-8-1m',
+      model: 'claude-opus-4-8',
       instruction: 'Coordinate players.',
       options: {},
     },
@@ -193,10 +193,10 @@ describe('tmux-play config loading', () => {
       'claude',
       'codex',
     ]);
-    expect(loaded.config.captain.model).toBe('claude-opus-4-8-1m');
+    expect(loaded.config.captain.model).toBe('claude-opus-4-8');
     expect(loaded.config.captain.reasoningEffort).toBe('xhigh');
     expect(loaded.config.players.map((player) => player.model)).toEqual([
-      'claude-opus-4-8-1m',
+      'claude-opus-4-8',
       'gpt-5.5',
     ]);
     expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual([

@@ -125,7 +125,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   captain: {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
-    model: 'claude-opus-4-8-1m',
+    model: 'claude-opus-4-8',
     reasoningEffort: 'xhigh',
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
@@ -135,7 +135,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     {
       id: 'claude',
       adapter: 'claude',
-      model: 'claude-opus-4-8-1m',
+      model: 'claude-opus-4-8',
       reasoningEffort: 'xhigh',
       instruction:
         'You are the claude player in a fanout Captain session. Provide an independent answer.',

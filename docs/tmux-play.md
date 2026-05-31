@@ -48,7 +48,7 @@ theme: auto
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
-  model: claude-opus-4-8-1m
+  model: claude-opus-4-8
   instruction: Coordinate the players and answer the Boss.
   permissions:
     mode: auto
