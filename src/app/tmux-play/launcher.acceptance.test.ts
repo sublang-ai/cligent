@@ -123,7 +123,7 @@ describe('tmux-play real-tmux acceptance', () => {
       ]);
 
       for (const [width, height] of [
-        [240, 67],
+        [174, 49],
         [80, 24],
         [160, 40],
         [200, 50],
@@ -138,10 +138,10 @@ describe('tmux-play real-tmux acceptance', () => {
           String(height),
         ]);
         // TMUX-044 / TMUX-064: shipped multi-player default weights
-        // `[4, 6, 6]` (sum = 16). Each non-rightmost column gets
+        // `[1, 1, 1]` (sum = 3). Each non-rightmost column gets
         // `floor(W * w_i / sum)`; the rightmost absorbs the remainder.
-        const captainExpected = Math.floor((width * 4) / 16);
-        const coderExpected = Math.floor((width * 6) / 16);
+        const captainExpected = Math.floor(width / 3);
+        const coderExpected = Math.floor(width / 3);
         const reviewerExpected = width - captainExpected - coderExpected;
         const panes = await waitForRegions(
           sessionName,
@@ -168,7 +168,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'creates a 240x67 session with 60/90/90 panes, titled, player panes read-only, Captain active',
+    'creates a 174x49 session with 58/58/58 panes, titled, player panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -191,9 +191,9 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      // TTMUX-030: 240x67 grid
+      // TTMUX-030: 174x49 grid
       expect(displayMessage(sessionName, '#{window_width}x#{window_height}'))
-        .toBe('240x67');
+        .toBe('174x49');
 
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
@@ -202,18 +202,18 @@ describe('tmux-play real-tmux acceptance', () => {
       const coder = paneByTitle(panes, 'Coder · codex');
       const reviewer = paneByTitle(panes, 'Reviewer · claude');
 
-      // TTMUX-031 / TMUX-064: shipped multi-player default weights `[4, 6, 6]`
-      // (sum = 16) on the 240-cell window yield regions 60/90/90. Two 1-cell
+      // TTMUX-031 / TMUX-064: shipped multi-player default weights `[1, 1, 1]`
+      // (sum = 3) on the 174-cell window yield regions 58/58/58. Two 1-cell
       // right-side separators eat 1 col from captain (border with coder) and
       // 1 col from coder (border with reviewer). pane_left advances by the
       // region (pane content + 1-cell border on non-rightmost panes), so
-      // coder.left = 60 and reviewer.left = 60 + 90 = 150.
+      // coder.left = 58 and reviewer.left = 58 + 58 = 116.
       expect(captain.left).toBe(0);
-      expect(captain.width).toBe(59);
-      expect(coder.left).toBe(60);
-      expect(coder.width).toBe(89);
-      expect(reviewer.left).toBe(150);
-      expect(reviewer.width).toBe(90);
+      expect(captain.width).toBe(57);
+      expect(coder.left).toBe(58);
+      expect(coder.width).toBe(57);
+      expect(reviewer.left).toBe(116);
+      expect(reviewer.width).toBe(58);
 
       // TTMUX-032 + TTMUX-040: pane titles carry `· <adapter>`.
       expect(captain.title).toBe('Captain · claude');

@@ -59,9 +59,9 @@ export interface LayoutWindowConfig {
  *
  * `columnWeights` length matches the visible column count derived
  * from the configured players: `2` with one player, `3` with two or
- * more. Default weights are `[1, 1]` (single-player, unchanged from
- * the pre-IR-022 50/50 split) and `[4, 6, 6]` (multi-player; shifts
- * from equal thirds toward content-column bias).
+ * more. Default weights are `[1, 1]` (single-player 50/50 split) and
+ * `[1, 1, 1]` (multi-player even thirds: Boss/Captain and each player
+ * column each take floor(W / 3)).
  */
 export interface LayoutConfig {
   window: LayoutWindowConfig;
@@ -115,16 +115,17 @@ const LEGACY_CONFIG_FILES = [
 const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   theme: 'auto',
   layout: {
-    window: { columns: 240, rows: 67 },
-    // Two-player default (TMUX-064): 4:6:6 weights bias toward the
-    // content-bearing player columns relative to the Boss/Captain
-    // input column.
-    columnWeights: [4, 6, 6],
+    window: { columns: 174, rows: 49 },
+    // Multi-player default (TMUX-064): equal-thirds [1, 1, 1] so the
+    // Boss/Captain input column and each player column each take
+    // floor(W / 3) of the window width, with the rightmost column
+    // absorbing the remainder (zero at the default W = 174).
+    columnWeights: [1, 1, 1],
   },
   captain: {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-8-1m',
     reasoningEffort: 'xhigh',
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
@@ -134,7 +135,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     {
       id: 'claude',
       adapter: 'claude',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8-1m',
       reasoningEffort: 'xhigh',
       instruction:
         'You are the claude player in a fanout Captain session. Provide an independent answer.',
@@ -340,10 +341,10 @@ function visibleColumnCount(playerCount: number): number {
 }
 
 function defaultColumnWeights(playerCount: number): number[] {
-  return playerCount === 1 ? [1, 1] : [4, 6, 6];
+  return playerCount === 1 ? [1, 1] : [1, 1, 1];
 }
 
-const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 240, rows: 67 };
+const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 174, rows: 49 };
 
 function resolveLayoutConfig(
   value: unknown,
@@ -380,7 +381,7 @@ function resolveLayoutWindow(
   path: string,
 ): LayoutWindowConfig {
   // TMUX-064: missing sub-fields default independently — a partial
-  // {columns: 200} resolves to {columns: 200, rows: 67}, not wholesale
+  // {columns: 200} resolves to {columns: 200, rows: 49}, not wholesale
   // back to the full default.
   if (value === undefined) {
     return { ...DEFAULT_LAYOUT_WINDOW };

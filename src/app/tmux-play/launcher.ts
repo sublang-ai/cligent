@@ -658,7 +658,7 @@ function createPlayerPanes(
 
   // Second-column split sized in exact cells (not percent) so arbitrary
   // weights — e.g. `[3, 5, 7]` — land within tmux's nearest-cell rounding
-  // rather than relying on a clean `50%` fraction the default `[4, 6, 6]`
+  // rather than relying on a clean `50%` fraction the default `[1, 1, 1]`
   // happens to produce.
   runTmux(
     'split-window',
@@ -973,7 +973,7 @@ function selectBossPane(sessionName: string): void {
 
 // TMUX-043: emit `\x1b[8;<rows>;<columns>t` from the resolved layout.window,
 // so the pre-attach terminal-size request matches `new-session -x/-y` for
-// either the default 240x67 grid or an explicit YAML override. Reading both
+// either the default 174x49 grid or an explicit YAML override. Reading both
 // from the same source prevents tmux's default `window-size` negotiation
 // from silently overriding a non-default `layout.window` on attach.
 function requestTerminalResize(

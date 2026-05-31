@@ -48,7 +48,7 @@ theme: auto
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
-  model: claude-opus-4-7
+  model: claude-opus-4-8-1m
   instruction: Coordinate the players and answer the Boss.
   permissions:
     mode: auto
@@ -132,7 +132,7 @@ players:
 ## Layout
 
 Boss/Captain occupies the left pane; players fill the right in config
-order. Sessions start on a 240x67 grid. Columns are evenly sized: every
+order. Sessions start on a 174x49 grid. Columns are evenly sized: every
 visible column gets 1/N of the window width, where N is the column count
 (2 with a single player, 3 with two or more). With ≥2 players the first
 column holds `ceil(playerCount / 2)` players from top to bottom.

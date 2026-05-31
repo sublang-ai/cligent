@@ -82,9 +82,9 @@ describe('tmux-play built CLI smoke', () => {
     );
     expect(snapshot.players.map((player) => player.id)).toEqual(['coder', 'reviewer']);
     expect(newSession).toContain('-x');
-    expect(valueAfter(newSession, '-x')).toBe('240');
+    expect(valueAfter(newSession, '-x')).toBe('174');
     expect(newSession).toContain('-y');
-    expect(valueAfter(newSession, '-y')).toBe('67');
+    expect(valueAfter(newSession, '-y')).toBe('49');
     expect(requiredCall(calls, 'attach-session')).toEqual([
       'attach-session',
       '-t',
@@ -438,7 +438,7 @@ function writeYamlConfig(
       'captain:',
       `  from: '${options.captainFrom}'`,
       '  adapter: claude',
-      '  model: claude-opus-4-7',
+      '  model: claude-opus-4-8-1m',
       '  instruction: Coordinate players.',
       '  options: {}',
       'players:',

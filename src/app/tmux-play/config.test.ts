@@ -30,7 +30,7 @@ function validConfig(
     captain: {
       from: '@sublang/cligent/captains/fanout',
       adapter: 'claude',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8-1m',
       instruction: 'Coordinate players.',
       options: {},
     },
@@ -47,11 +47,11 @@ function validConfig(
         instruction: 'Review changes.',
       },
     ],
-    // TMUX-064: two-player multi default — Boss 4/16, each player
-    // column 6/16, on the canonical 240x67 grid.
+    // TMUX-064: multi-player default — equal thirds [1, 1, 1] on the
+    // canonical 174x49 grid (174 / 3 = 58 per column).
     layout: {
-      window: { columns: 240, rows: 67 },
-      columnWeights: [4, 6, 6],
+      window: { columns: 174, rows: 49 },
+      columnWeights: [1, 1, 1],
     },
     ...overrides,
   };
@@ -193,10 +193,10 @@ describe('tmux-play config loading', () => {
       'claude',
       'codex',
     ]);
-    expect(loaded.config.captain.model).toBe('claude-opus-4-7');
+    expect(loaded.config.captain.model).toBe('claude-opus-4-8-1m');
     expect(loaded.config.captain.reasoningEffort).toBe('xhigh');
     expect(loaded.config.players.map((player) => player.model)).toEqual([
-      'claude-opus-4-7',
+      'claude-opus-4-8-1m',
       'gpt-5.5',
     ]);
     expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual([
@@ -213,11 +213,12 @@ describe('tmux-play config loading', () => {
       { mode: 'auto' },
     ]);
     // TMUX-011 (amended) + TMUX-064: the shipped default home YAML carries
-    // an explicit `layout` block with the canonical 240x67 grid and the
-    // 4:6:6 multi-player column weights, so first-run users see the knobs.
+    // an explicit `layout` block with the canonical 174x49 grid and the
+    // equal-thirds [1, 1, 1] multi-player column weights, so first-run users
+    // see the knobs.
     expect(loaded.config.layout).toEqual({
-      window: { columns: 240, rows: 67 },
-      columnWeights: [4, 6, 6],
+      window: { columns: 174, rows: 49 },
+      columnWeights: [1, 1, 1],
     });
     expect(readFileSync(homeConfig, 'utf8')).toContain('layout:');
     expect(readFileSync(homeConfig, 'utf8')).toContain('columnWeights:');
@@ -637,8 +638,8 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ configPath });
 
     expect(loaded.config.layout).toEqual({
-      window: { columns: 240, rows: 67 },
-      columnWeights: [4, 6, 6],
+      window: { columns: 174, rows: 49 },
+      columnWeights: [1, 1, 1],
     });
   });
 
@@ -662,7 +663,7 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ configPath });
 
     expect(loaded.config.layout).toEqual({
-      window: { columns: 240, rows: 67 },
+      window: { columns: 174, rows: 49 },
       columnWeights: [1, 1],
     });
   });
@@ -727,10 +728,10 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ configPath });
 
     // Supplied sub-field preserved; missing sub-field defaulted independently.
-    // Wholesale fallback (which would yield {columns:240,rows:67}) is forbidden.
-    expect(loaded.config.layout.window).toEqual({ columns: 200, rows: 67 });
+    // Wholesale fallback (which would yield {columns:174,rows:49}) is forbidden.
+    expect(loaded.config.layout.window).toEqual({ columns: 200, rows: 49 });
     // columnWeights still default since the multi-default applies to 2 players.
-    expect(loaded.config.layout.columnWeights).toEqual([4, 6, 6]);
+    expect(loaded.config.layout.columnWeights).toEqual([1, 1, 1]);
   });
 
   it('rejects non-positive layout.window.columns with the offending path', async () => {

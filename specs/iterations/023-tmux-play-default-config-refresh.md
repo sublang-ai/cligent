@@ -17,7 +17,7 @@ The model string is an opaque literal forwarded to the SDK per [CLAUDE-001](../u
 
 ## Status
 
-In progress — Task 1 (specs + map) done; Tasks 2–3 (config + tests, launcher + docs) pending.
+Done — Tasks 1 (specs + map), 2 (config + config tests), and 3 (launcher tests + acceptance + doc references) complete; build, unit, smoke, and acceptance suites green.
 
 ## Scope
 
@@ -61,13 +61,13 @@ Out of scope:
 - [x] `specs/test/tmux-play.md` — TTMUX-001, TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-030, TTMUX-031, TTMUX-034, TTMUX-035, TTMUX-064.
 - [x] `specs/decisions/004-tmux-play-captain-architecture.md` — example YAML Captain model.
 - [x] `specs/map.md` — IR-023 index row.
-- [ ] `src/app/tmux-play/config.ts` — `DEFAULT_TMUX_PLAY_CONFIG`, `DEFAULT_LAYOUT_WINDOW`, `defaultColumnWeights`.
-- [ ] `src/app/tmux-play/config.test.ts` — fixture, first-run, single/multi default-layout, partial-window cases.
-- [ ] `src/app/tmux-play/launcher.test.ts` — geometry, resize hook, CSI 8, 4/5-player `it.each`.
-- [ ] `src/app/tmux-play/launcher.acceptance.test.ts` — resize-invariant sweep + default-geometry blocks.
-- [ ] `src/app/tmux-play/cli.smoke.test.ts` — Captain model identifier.
-- [ ] `README.md` — quick-start `Cligent` model identifier.
-- [ ] `docs/tmux-play.md` — example YAML Captain model + `## Layout` grid number.
+- [x] `src/app/tmux-play/config.ts` — `DEFAULT_TMUX_PLAY_CONFIG`, `DEFAULT_LAYOUT_WINDOW`, `defaultColumnWeights`.
+- [x] `src/app/tmux-play/config.test.ts` — fixture, first-run, single/multi default-layout, partial-window cases.
+- [x] `src/app/tmux-play/launcher.test.ts` — geometry, resize hook, CSI 8, 4/5-player `it.each`.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — resize-invariant sweep + default-geometry blocks.
+- [x] `src/app/tmux-play/cli.smoke.test.ts` — Captain model identifier.
+- [x] `README.md` — quick-start `Cligent` model identifier.
+- [x] `docs/tmux-play.md` — example YAML Captain model + `## Layout` grid number.
 
 ## Tasks
 
