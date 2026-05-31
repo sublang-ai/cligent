@@ -33,7 +33,7 @@ When `--theme-diagnostics` is supplied, the CLI shall run theme-diagnostics mode
 
 ### TMUX-005
 
-A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array. The top-level config may also include an optional `theme` field per [TMUX-060](#tmux-060).
+A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array. The top-level config may also include an optional `theme` field per [TMUX-060](#tmux-060) and an optional `layout` field per [TMUX-064](#tmux-064).
 
 ### TMUX-006
 
@@ -42,6 +42,16 @@ The `captain` object shall require `from` (local path or package specifier), `ad
 ### TMUX-060
 
 The top-level `theme` field shall be one of the closed set `'mocha' | 'latte' | 'auto'` and selects the Catppuccin flavor per [TMUX-047](#tmux-047). A missing `theme` field is equivalent to `'auto'`. The loader shall reject values outside the closed set with an error that names the offending path (`theme`) per [TMUX-008](#tmux-008). The default home config shall include `theme: auto` so first-run users see the option exists.
+
+### TMUX-064
+
+The top-level `layout` field shall be an optional object with two optional sub-fields: `window` and `columnWeights`.
+`layout.window` shall be an optional object with two optional positive-integer fields `columns` and `rows`, supplying the initial cell grid for [TMUX-035](#tmux-035) (`new-session -x/-y`) and the pre-attach CSI 8 sequence for [TMUX-043](#tmux-043).
+A missing or partial `layout.window` shall be defaulted by the loader to `columns: 240` and `rows: 67`, so the snapshot per [TMUX-034](#tmux-034) always carries concrete values for session mode to consume.
+`layout.columnWeights` shall be an optional array of positive numbers whose length matches the visible column count derived from the configured players — `2` when one player is configured, `3` when two or more players are configured (per [TMUX-028](#tmux-028)).
+The weights govern column region widths per [TMUX-044](#tmux-044): each non-rightmost column `i` receives `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column absorbs the remainder.
+A missing `layout.columnWeights` shall be defaulted by the loader to `[1, 1]` when one player is configured and `[4, 6, 6]` when two or more players are configured, so the shipped defaults are 50/50 for the single-player layout and 4/16 + 6/16 + remainder for the multi-player layout.
+The loader shall reject values outside these constraints with an error that names the offending path per [TMUX-008](#tmux-008): non-integer or non-positive `layout.window.columns` / `layout.window.rows`; `layout.columnWeights` not an array; any weight that is not a finite positive number; a `layout.columnWeights` length that does not match the visible column count.
 
 ### TMUX-007
 
@@ -78,6 +88,7 @@ When neither location holds a config and `--config` is not supplied, the launche
 ### TMUX-011
 
 The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two players whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` player shall use `model: claude-opus-4-7` with `reasoningEffort: xhigh`; the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`. Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance. The default Captain and each default player shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052) so the shipped Claude Code and Codex CLI defaults run in each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
+The default home config shall also include an explicit `layout` block per [TMUX-064](#tmux-064) — `window: { columns: 240, rows: 67 }` and `columnWeights: [4, 6, 6]` — so first-run users see the new knobs and the shipped multi-player layout default surfaces in the YAML rather than being implicit in the code.
 
 ### TMUX-012
 
@@ -151,7 +162,10 @@ The Boss/Captain pane shall occupy the left column. Player panes shall fill the 
 
 ### TMUX-028
 
-With two or more players, `tmux-play` shall use two player columns. The Boss/Captain pane and each player column shall each occupy 1/3 of the window width. The first column shall hold `ceil(playerCount / 2)` players from top to bottom. With a single player, the Boss/Captain pane and the player pane shall each occupy 1/2 of the window width.
+With two or more players, `tmux-play` shall use two player columns; with a single player, `tmux-play` shall use one player column.
+The visible columns from left to right shall be the Boss/Captain pane followed by each player column, and the first player column shall hold `ceil(playerCount / 2)` players from top to bottom.
+Each visible column's share of the window width shall derive from [TMUX-064](#tmux-064)'s `layout.columnWeights`, applied left-to-right: with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` (where `w_0` is the Boss/Captain column), each non-rightmost column `i < N-1` shall occupy `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column shall absorb the remainder.
+The defaults are `[1, 1]` for one player (Boss/Captain and the player each occupy 1/2 of the window width, matching the prior behavior) and `[4, 6, 6]` for two or more players (Boss/Captain at 4/16, each player column at 6/16, rightmost absorbing the remainder).
 
 ## Programmatic Runtime API
 
@@ -195,15 +209,23 @@ When `tmux-play` is invoked in launcher mode (per [TMUX-002](#tmux-002)), the la
 
 ### TMUX-035
 
-When the launcher creates the tmux session, the session shall be created with a 16:9 cell grid sized for a 1920×1080 display, defaulting to 240 columns by 67 rows. When a client attaches with a different window size, tmux's normal size negotiation shall govern the displayed layout.
+When the launcher creates the tmux session, the session shall be created with a cell grid whose column and row counts come from [TMUX-064](#tmux-064)'s resolved `layout.window.columns` and `layout.window.rows`.
+The default values are `240` columns by `67` rows — a 16:9 cell grid sized for a 1920×1080 display — when the YAML config omits `layout.window`.
+When a client attaches with a different window size, tmux's normal size negotiation shall govern the displayed layout.
 
 ### TMUX-043
 
-Before invoking `tmux attach-session`, the launcher shall write the xterm window-manipulation request `CSI 8 ; 67 ; 240 t` (`\x1b[8;67;240t`) to stdout, asking the user's terminal to resize its cell grid to 240×67 to match TMUX-035. Terminals that honor the sequence (xterm, Konsole, GNOME Terminal, iTerm2 with the "Allow programs to change/resize window" option enabled, others) shall adjust before the attach completes; terminals that ignore it (including macOS Terminal.app by default) shall be left unchanged, in which case TMUX-035's normal size negotiation governs.
+Before invoking `tmux attach-session`, the launcher shall write the xterm window-manipulation request `CSI 8 ; <rows> ; <columns> t` (`\x1b[8;<rows>;<columns>t`) to stdout, where `<rows>` and `<columns>` are [TMUX-064](#tmux-064)'s resolved `layout.window.rows` and `layout.window.columns`, asking the user's terminal to resize its cell grid to match the same dimensions [TMUX-035](#tmux-035) uses for `new-session -x/-y`.
+The default sequence with the default `layout.window` is `\x1b[8;67;240t`.
+Reading both the `new-session -x/-y` arguments and the CSI 8 payload from the same `layout.window` is required because tmux's default `window-size` negotiation would otherwise renegotiate the session to whatever cell grid the terminal accepts on attach, silently overriding any non-default `layout.window` at the very moment it should take effect.
+Terminals that honor the sequence (xterm, Konsole, GNOME Terminal, iTerm2 with the "Allow programs to change/resize window" option enabled, others) shall adjust before the attach completes; terminals that ignore it (including macOS Terminal.app by default) shall be left unchanged, in which case [TMUX-035](#tmux-035)'s normal size negotiation governs.
 
 ### TMUX-044
 
-The even region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation. The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W`, with two or more players the Boss/Captain region is `floor(W / 3)` cells, the first player column region is `floor(W / 3)` cells, and the second player column region absorbs the remainder; with a single player the Boss/Captain region is `floor(W / 2)` cells and the player pane absorbs the remainder. Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region.
+The weighted region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation.
+The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W` with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` from [TMUX-064](#tmux-064)'s resolved `layout.columnWeights`, each non-rightmost column `i < N-1` is `floor(W * w_i / sum(w))` cells and the rightmost column absorbs the remainder.
+With the shipped defaults this collapses to the historical behavior: `[1, 1]` for one player yields `floor(W / 2)` for the Boss/Captain region and the remainder for the player pane; `[4, 6, 6]` for two or more players yields `floor(W * 4 / 16)` for the Boss/Captain region, `floor(W * 6 / 16)` for the first player column, and the remainder for the second player column.
+Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region.
 
 ### TMUX-045
 

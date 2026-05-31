@@ -11,7 +11,7 @@ The single-player case keeps its existing `1 : 1` default; only the multi-player
 
 ## Status
 
-Proposed
+In progress
 
 ## Scope
 
@@ -62,9 +62,9 @@ The launcher does not consult the YAML again after session creation, so reading 
 
 ## Deliverables
 
-- [ ] `specs/user/tmux-play.md` — amend TMUX-005, TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044; add TMUX-064 defining `layout`.
-- [ ] `specs/test/tmux-play.md` — amend TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-031, TTMUX-034, TTMUX-035; add TTMUX-064 covering `layout` validation and snapshot preservation.
-- [ ] `specs/map.md` — index IR-022.
+- [x] `specs/user/tmux-play.md` — amend TMUX-005, TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044; add TMUX-064 defining `layout`.
+- [x] `specs/test/tmux-play.md` — amend TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-031, TTMUX-034, TTMUX-035; add TTMUX-064 covering `layout` validation and snapshot preservation.
+- [x] `specs/map.md` — index IR-022.
 - [ ] `src/app/tmux-play/config.ts` — `TmuxPlayConfig.layout` field, normalization, validation, defaults, snapshot inclusion.
 - [ ] `src/app/tmux-play/config.test.ts` — TTMUX-064 cases.
 - [ ] `src/app/tmux-play/launcher.ts` — thread `layout` into `new-session -x/-y`, `split-window -l`, `configureLayoutHooks`; retire the hardcoded layout constants.
@@ -75,7 +75,7 @@ The launcher does not consult the YAML again after session creation, so reading 
 
 Each task is one commit.
 
-1. [ ] **Spec items + map.** Amend TMUX-005 / TMUX-011 / TMUX-028 / TMUX-035 / TMUX-043 / TMUX-044 and add TMUX-064 in `specs/user/tmux-play.md`; amend TTMUX-014 / TTMUX-021 / TTMUX-022 / TTMUX-031 / TTMUX-034 / TTMUX-035 and add TTMUX-064 in `specs/test/tmux-play.md`; update the `specs/map.md` TMUX package summary to mention the new top-level `layout` field. Docs-only commit.
+1. [x] **Spec items + map.** Amend TMUX-005 / TMUX-011 / TMUX-028 / TMUX-035 / TMUX-043 / TMUX-044 and add TMUX-064 in `specs/user/tmux-play.md`; amend TTMUX-014 / TTMUX-021 / TTMUX-022 / TTMUX-031 / TTMUX-034 / TTMUX-035 and add TTMUX-064 in `specs/test/tmux-play.md`; update the `specs/map.md` TMUX package summary to mention the new top-level `layout` field. Docs-only commit.
 
 2. [ ] **Config schema for `layout`.** Add `TmuxPlayConfig.layout` (`window: { columns, rows }`, `columnWeights: number[]`) to `src/app/tmux-play/config.ts`; normalize/validate per TMUX-064 (reject non-positive integer dimensions, non-array or non-positive-number weights, weights-length not matching `players.length === 1 ? 2 : 3`); default the field at load time so the snapshot always carries concrete values. Update `DEFAULT_TMUX_PLAY_CONFIG` to include explicit `layout`. Add unit tests in `src/app/tmux-play/config.test.ts` covering the accepted defaults, each rejection path, and snapshot preservation. Per-task-boundary green.
 
