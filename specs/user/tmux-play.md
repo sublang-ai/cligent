@@ -47,7 +47,9 @@ The top-level `theme` field shall be one of the closed set `'mocha' | 'latte' | 
 
 The top-level `layout` field shall be an optional object with two optional sub-fields: `window` and `columnWeights`.
 `layout.window` shall be an optional object with two optional positive-integer fields `columns` and `rows`, supplying the initial cell grid for [TMUX-035](#tmux-035) (`new-session -x/-y`) and the pre-attach CSI 8 sequence for [TMUX-043](#tmux-043).
-A missing or partial `layout.window` shall be defaulted by the loader to `columns: 240` and `rows: 67`, so the snapshot per [TMUX-034](#tmux-034) always carries concrete values for session mode to consume.
+When `layout.window` is missing entirely, the loader shall default it to `{ columns: 240, rows: 67 }`.
+When `layout.window` is present but partial — only `columns` or only `rows` supplied — each missing sub-field shall default independently to its full-default value (`240` for `columns`, `67` for `rows`) and each supplied sub-field shall be preserved verbatim; a partial `layout.window` shall not fall back wholesale to the full default (e.g., `{ columns: 200 }` shall resolve to `{ columns: 200, rows: 67 }`, not to `{ columns: 240, rows: 67 }`).
+Either way, the snapshot per [TMUX-034](#tmux-034) shall carry concrete `columns` and `rows` values so session mode does not re-resolve defaults.
 `layout.columnWeights` shall be an optional array of positive numbers whose length matches the visible column count derived from the configured players — `2` when one player is configured, `3` when two or more players are configured (per [TMUX-028](#tmux-028)).
 The weights govern column region widths per [TMUX-044](#tmux-044): each non-rightmost column `i` receives `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column absorbs the remainder.
 A missing `layout.columnWeights` shall be defaulted by the loader to `[1, 1]` when one player is configured and `[4, 6, 6]` when two or more players are configured, so the shipped defaults are 50/50 for the single-player layout and 4/16 + 6/16 + remainder for the multi-player layout.
