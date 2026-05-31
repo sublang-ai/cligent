@@ -39,6 +39,35 @@ export interface CaptainConfig {
 export type CatppuccinFlavorConfig = CatppuccinFlavor | 'auto';
 export type { CatppuccinFlavor };
 
+/**
+ * Initial tmux session cell grid for {@link
+ * https://github.com/charmbracelet/glow tmux} `new-session -x/-y` per
+ * TMUX-035 and the pre-attach CSI 8 sequence per TMUX-043. Both axes
+ * default independently (TMUX-064): a partial YAML `layout.window`
+ * preserves any supplied sub-field verbatim while filling in any
+ * missing sub-field from the full default.
+ */
+export interface LayoutWindowConfig {
+  columns: number;
+  rows: number;
+}
+
+/**
+ * Resolved layout configuration per TMUX-064. The loader fills in
+ * defaults at normalization time so the snapshot per TMUX-034 always
+ * carries concrete values for session mode to consume.
+ *
+ * `columnWeights` length matches the visible column count derived
+ * from the configured players: `2` with one player, `3` with two or
+ * more. Default weights are `[1, 1]` (single-player, unchanged from
+ * the pre-IR-022 50/50 split) and `[4, 6, 6]` (multi-player; shifts
+ * from equal thirds toward content-column bias).
+ */
+export interface LayoutConfig {
+  window: LayoutWindowConfig;
+  columnWeights: number[];
+}
+
 export interface TmuxPlayConfig {
   captain: CaptainConfig;
   players: PlayerConfig[];
@@ -50,6 +79,13 @@ export interface TmuxPlayConfig {
    * (`'mocha' | 'latte'`) value so the session subprocess never re-detects.
    */
   theme?: CatppuccinFlavorConfig;
+  /**
+   * Resolved layout per TMUX-064. Always concrete after normalization
+   * by {@link loadTmuxPlayConfig} (the loader fills in any missing
+   * field with its default), so the launcher and snapshot consumers
+   * never have to re-resolve.
+   */
+  layout: LayoutConfig;
 }
 
 export interface LoadedTmuxPlayConfig {
@@ -78,6 +114,13 @@ const LEGACY_CONFIG_FILES = [
 
 const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   theme: 'auto',
+  layout: {
+    window: { columns: 240, rows: 67 },
+    // Two-player default (TMUX-064): 4:6:6 weights bias toward the
+    // content-bearing player columns relative to the Boss/Captain
+    // input column.
+    columnWeights: [4, 6, 6],
+  },
   captain: {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
@@ -270,9 +313,127 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const captain = normalizeCaptainConfig(input.captain);
   const players = normalizePlayerConfigs(input.players);
   const theme = optionalThemeFlavor(input.theme, 'theme');
-  const config: TmuxPlayConfig = { captain, players };
+  // TMUX-064: defaulting at load time so loaded.config.layout is always
+  // concrete. The shape depends on players.length (1 → 2 columns, ≥2 → 3
+  // columns); validation rejects a mismatched columnWeights length.
+  const layout = resolveLayoutConfig(input.layout, players.length, 'layout');
+  const config: TmuxPlayConfig = { captain, players, layout };
   if (theme !== undefined) config.theme = theme;
   return config;
+}
+
+function visibleColumnCount(playerCount: number): number {
+  return playerCount === 1 ? 2 : 3;
+}
+
+function defaultColumnWeights(playerCount: number): number[] {
+  return playerCount === 1 ? [1, 1] : [4, 6, 6];
+}
+
+const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 240, rows: 67 };
+
+function resolveLayoutConfig(
+  value: unknown,
+  playerCount: number,
+  path: string,
+): LayoutConfig {
+  const expectedColumns = visibleColumnCount(playerCount);
+  const defaultWeights = defaultColumnWeights(playerCount);
+
+  if (value === undefined) {
+    return {
+      window: { ...DEFAULT_LAYOUT_WINDOW },
+      columnWeights: [...defaultWeights],
+    };
+  }
+
+  const input = requireObject(value, path);
+  const allowed = new Set(['window', 'columnWeights']);
+  rejectUnknownKeys(input, allowed, path);
+
+  return {
+    window: resolveLayoutWindow(input.window, `${path}.window`),
+    columnWeights: resolveColumnWeights(
+      input.columnWeights,
+      defaultWeights,
+      expectedColumns,
+      `${path}.columnWeights`,
+    ),
+  };
+}
+
+function resolveLayoutWindow(
+  value: unknown,
+  path: string,
+): LayoutWindowConfig {
+  // TMUX-064: missing sub-fields default independently — a partial
+  // {columns: 200} resolves to {columns: 200, rows: 67}, not wholesale
+  // back to the full default.
+  if (value === undefined) {
+    return { ...DEFAULT_LAYOUT_WINDOW };
+  }
+  const input = requireObject(value, path);
+  const allowed = new Set(['columns', 'rows']);
+  rejectUnknownKeys(input, allowed, path);
+
+  const columns =
+    optionalPositiveInteger(input.columns, `${path}.columns`) ??
+    DEFAULT_LAYOUT_WINDOW.columns;
+  const rows =
+    optionalPositiveInteger(input.rows, `${path}.rows`) ??
+    DEFAULT_LAYOUT_WINDOW.rows;
+  return { columns, rows };
+}
+
+function resolveColumnWeights(
+  value: unknown,
+  defaults: readonly number[],
+  expectedLength: number,
+  path: string,
+): number[] {
+  if (value === undefined) {
+    return [...defaults];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array of positive numbers`);
+  }
+  if (value.length !== expectedLength) {
+    const role =
+      expectedLength === 2
+        ? '1 visible column for the Boss/Captain pane and 1 for the single player pane'
+        : '1 visible column for the Boss/Captain pane and 2 for the player columns';
+    throw new Error(
+      `${path} length must be ${expectedLength} (${role}), got ${value.length}`,
+    );
+  }
+  const result: number[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const weight = value[i];
+    if (
+      typeof weight !== 'number' ||
+      !Number.isFinite(weight) ||
+      weight <= 0
+    ) {
+      throw new Error(`${path}[${i}] must be a finite positive number`);
+    }
+    result.push(weight);
+  }
+  return result;
+}
+
+function optionalPositiveInteger(
+  value: unknown,
+  path: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value <= 0
+  ) {
+    throw new Error(`${path} must be a positive integer`);
+  }
+  return value;
 }
 
 const THEME_FLAVORS: ReadonlySet<CatppuccinFlavorConfig> = new Set([

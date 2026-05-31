@@ -47,6 +47,12 @@ function validConfig(
         instruction: 'Review changes.',
       },
     ],
+    // TMUX-064: two-player multi default — Boss 4/16, each player
+    // column 6/16, on the canonical 240x67 grid.
+    layout: {
+      window: { columns: 240, rows: 67 },
+      columnWeights: [4, 6, 6],
+    },
     ...overrides,
   };
 }
@@ -55,6 +61,12 @@ function writeYamlConfig(path: string, config = validConfig()): void {
   writeFileSync(
     path,
     [
+      'layout:',
+      '  window:',
+      `    columns: ${config.layout.window.columns}`,
+      `    rows: ${config.layout.window.rows}`,
+      '  columnWeights:',
+      ...config.layout.columnWeights.map((weight) => `    - ${weight}`),
       'captain:',
       `  from: '${config.captain.from}'`,
       `  adapter: ${config.captain.adapter}`,
@@ -200,6 +212,15 @@ describe('tmux-play config loading', () => {
       { mode: 'auto' },
       { mode: 'auto' },
     ]);
+    // TMUX-011 (amended) + TMUX-064: the shipped default home YAML carries
+    // an explicit `layout` block with the canonical 240x67 grid and the
+    // 4:6:6 multi-player column weights, so first-run users see the knobs.
+    expect(loaded.config.layout).toEqual({
+      window: { columns: 240, rows: 67 },
+      columnWeights: [4, 6, 6],
+    });
+    expect(readFileSync(homeConfig, 'utf8')).toContain('layout:');
+    expect(readFileSync(homeConfig, 'utf8')).toContain('columnWeights:');
   });
 
   it('preserves an existing home config across runs', async () => {
@@ -592,6 +613,363 @@ describe('tmux-play config loading', () => {
     await expect(
       loadTmuxPlayConfig({ configPath: bad }),
     ).rejects.toThrow('theme must be one of: mocha, latte, auto');
+  });
+
+  it('defaults the layout block when YAML omits it (multi-player)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+
+    expect(loaded.config.layout).toEqual({
+      window: { columns: 240, rows: 67 },
+      columnWeights: [4, 6, 6],
+    });
+  });
+
+  it('defaults the layout block when YAML omits it (single-player)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: solo',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+
+    expect(loaded.config.layout).toEqual({
+      window: { columns: 240, rows: 67 },
+      columnWeights: [1, 1],
+    });
+  });
+
+  it('preserves a fully concrete layout verbatim', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 200',
+        '    rows: 50',
+        '  columnWeights:',
+        '    - 3',
+        '    - 5',
+        '    - 5',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+
+    expect(loaded.config.layout).toEqual({
+      window: { columns: 200, rows: 50 },
+      columnWeights: [3, 5, 5],
+    });
+  });
+
+  it('defaults each layout.window sub-field independently when partial', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 200',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+
+    // Supplied sub-field preserved; missing sub-field defaulted independently.
+    // Wholesale fallback (which would yield {columns:240,rows:67}) is forbidden.
+    expect(loaded.config.layout.window).toEqual({ columns: 200, rows: 67 });
+    // columnWeights still default since the multi-default applies to 2 players.
+    expect(loaded.config.layout.columnWeights).toEqual([4, 6, 6]);
+  });
+
+  it('rejects non-positive layout.window.columns with the offending path', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 0',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.window.columns must be a positive integer',
+    );
+  });
+
+  it('rejects non-integer layout.window.rows with the offending path', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    rows: 67.5',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.window.rows must be a positive integer',
+    );
+  });
+
+  it('rejects non-array layout.columnWeights', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  columnWeights: 4',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.columnWeights must be an array of positive numbers',
+    );
+  });
+
+  it('rejects a non-positive weight with the offending index', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 0',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.columnWeights[2] must be a finite positive number',
+    );
+  });
+
+  it('rejects length-mismatched layout.columnWeights against the visible column count', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const twoPlayersTwoWeights = join(workDir, 'two-players-two-weights.yaml');
+    const onePlayerThreeWeights = join(workDir, 'one-player-three-weights.yaml');
+    writeFileSync(
+      twoPlayersTwoWeights,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      onePlayerThreeWeights,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: solo',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      loadTmuxPlayConfig({ configPath: twoPlayersTwoWeights }),
+    ).rejects.toThrow('layout.columnWeights length must be 3');
+    await expect(
+      loadTmuxPlayConfig({ configPath: onePlayerThreeWeights }),
+    ).rejects.toThrow('layout.columnWeights length must be 2');
+  });
+
+  it('rejects unknown sub-fields under layout and layout.window', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const bogusUnderLayout = join(workDir, 'bogus-layout.yaml');
+    const bogusUnderWindow = join(workDir, 'bogus-window.yaml');
+    writeFileSync(
+      bogusUnderLayout,
+      [
+        'layout:',
+        '  bogus: 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      bogusUnderWindow,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 200',
+        '    bogus: 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath: bogusUnderLayout })).rejects.toThrow(
+      'Unknown config field layout.bogus',
+    );
+    await expect(loadTmuxPlayConfig({ configPath: bogusUnderWindow })).rejects.toThrow(
+      'Unknown config field layout.window.bogus',
+    );
+  });
+
+  it('snapshot preserves the resolved layout values', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const sessionWorkDir = join(workDir, 'session');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 200',
+        '    rows: 50',
+        '  columnWeights:',
+        '    - 1',
+        '    - 2',
+        '    - 3',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(
+      loaded,
+      sessionWorkDir,
+    );
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as TmuxPlayConfig;
+
+    expect(snapshot.layout).toEqual({
+      window: { columns: 200, rows: 50 },
+      columnWeights: [1, 2, 3],
+    });
   });
 
   it('snapshot stores the resolved Catppuccin flavor when supplied', async () => {
