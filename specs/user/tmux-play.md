@@ -250,6 +250,8 @@ The launcher shall not configure `set-clipboard` and shall not add `Wheel*` bind
 
 ### TMUX-066
 
+_Superseded by [TMUX-067](#tmux-067): the click-to-deselect behavior described below — cancelling copy-mode on every pane in the session before focusing the clicked pane — is retired because cancelling copy-mode returns a pane to its live tail, which surfaced as a "previously focused pane jumps to the last line" defect when the Boss scrolled up in one pane and then left-clicked anywhere. The launcher no longer installs a session-scoped `MouseDown1Pane` override in any key table; per [TMUX-067](#tmux-067), pane scroll position and any active copy-mode selection are preserved across focus changes. The original text is retained below for spec history._
+
 While a tmux-play session is running, when the Boss presses the primary mouse button on any pane in the launched session, the session shall cancel copy-mode in every pane in the session before focusing the clicked pane, so any active selection is cleared on the next click and at most one pane in the session may hold a copy-mode selection at any time.
 The deselect behavior shall hold whether the clicked pane is currently in copy-mode or not, so a click on the pane that holds the selection clears it just as a click on a sibling pane does.
 The launcher shall bind `MouseDown1Pane` in the `root`, `copy-mode`, and `copy-mode-vi` key tables, because tmux dispatches a mouse event through the clicked pane's mode-specific table when the pane is in a mode (`copy-mode` / `copy-mode-vi` both ship a default `MouseDown1Pane select-pane` that would otherwise shadow a `root`-only binding) and through the `root` table otherwise.
@@ -259,6 +261,18 @@ The per-pane cancel shall be gated by `#{pane_in_mode}` so non-mode panes are no
 Drag-select per [TMUX-062](#tmux-062) shall be unaffected: `MouseDown1Pane` fires at the start of a drag and clears any prior selection, then `MouseDrag1Pane` (tmux's stock root binding) enters `copy-mode -M` on the dragged pane and begins a fresh selection.
 As with the copy-mode bindings of [TMUX-062](#tmux-062) and the keyboard bindings of [TMUX-063](#tmux-063) / [TMUX-065](#tmux-065), tmux's `root`, `copy-mode`, and `copy-mode-vi` tables are server-global because tmux does not offer per-session bindings in those tables, so these entries outlive the tmux-play session; the `if-shell` guard keeps each binding inert in every other session and is the launcher's narrowest available scoping mechanism.
 A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
+
+### TMUX-067
+
+While a tmux-play session is running, when the Boss presses the primary mouse button on any pane in the launched session — whether the clicked pane is the currently focused pane or a sibling — every pane in the session shall retain its current copy-mode state, scroll position, and any active selection; only pane focus shall change.
+The launcher shall not install a session-scoped `MouseDown1Pane` override that cancels copy-mode on any pane; specifically, it shall not emit any `if-shell` gate on `#{session_name}`, any `#{pane_in_mode}` clause, or any `send-keys -X cancel` to any pane as part of the left-click handler in the `root`, `copy-mode`, or `copy-mode-vi` key tables.
+tmux key tables are server-global (see [TMUX-062](#tmux-062) / [TMUX-063](#tmux-063) / [TMUX-065](#tmux-065)), so a tmux server that already holds the retired [TMUX-066](#tmux-066) `if-shell` chain from an earlier launcher run on the same server would keep the defective behavior even after the upgrade.
+The launcher shall therefore explicitly re-install tmux's stock per-table `MouseDown1Pane` bindings verbatim — `select-pane -t= ; send-keys -M` in the `root` table and `select-pane` in `copy-mode` and `copy-mode-vi` — so a stale [TMUX-066](#tmux-066) entry is overwritten by the stock semantics and a freshly-started tmux server is left with bindings that match its own defaults.
+The `send-keys -M` tail in the `root` body shall not be omitted, since mouse-aware terminal applications (e.g. vim, less, htop) depend on it to receive forwarded clicks.
+The retired [TMUX-066](#tmux-066) cancel-on-every-pane chain returned scrolled panes to their live tail, which surfaced as the user-reported "previously focused pane jumps to the last line" defect; preserving scroll position and selection across focus changes is the desired UX even when a pane already holds a copy-mode selection — multiple panes in the session may therefore simultaneously hold copy-mode selections.
+Drag-select per [TMUX-062](#tmux-062) is unaffected: tmux's stock `MouseDrag1Pane` enters `copy-mode -M` on the dragged pane and begins a fresh selection there without touching other panes.
+The right-click copy path of [TMUX-062](#tmux-062) is also unaffected: right-clicking an active selection still runs `copy-pipe-and-cancel`, which cancels copy-mode on the clicked pane and returns it to its live tail because that is the explicit user action of copying and leaving copy-mode.
+The keyboard pane-switch bindings of [TMUX-063](#tmux-063) only call `select-pane -L` / `select-pane -R`, which do not enter or cancel copy-mode, so they too preserve every pane's scroll position and selection.
 
 ## Keyboard Interaction
 

@@ -341,70 +341,48 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
-  it('binds MouseDown1Pane in the root, copy-mode, and copy-mode-vi tables to cancel copy-mode in every pane before focusing the click target, scoped to the launched session via if-shell', async () => {
+  it('installs only tmux stock per-table MouseDown1Pane bindings so a left-click changes focus without cancelling copy-mode on any pane, clearing any stale TMUX-066 chain on a server reused across launches per TMUX-067', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     // Two players → Boss/Captain at pane 0, players at panes 1..2.
-    // paneCount = 3, so the true branch chains three per-pane cancels
-    // before the per-table tail.
+    // Configure a multi-pane session so a regression that scaled the
+    // (now-retired) cancel-all chain by paneCount would still surface.
     const configPath = writeConfig(tempDir, ['coder', 'reviewer']);
 
     await launchTmuxPlay({
       cwd: tempDir,
       configPath,
-      sessionId: 'click-deselect',
+      sessionId: 'focus-preserve-scroll',
       workDir: join(tempDir, 'work'),
       selfBin: '/tmp/cli.js',
       attach: false,
     });
 
-    // TMUX-066: left-clicking any pane shall first cancel copy-mode in
-    // every pane in the session, then run tmux's stock per-table click
-    // handler so unrelated behavior (focus + mouse-event forwarding via
-    // `send-keys -M` in the root table) is not regressed. The binding
-    // must be installed in all three tables because tmux dispatches a
-    // mouse event through the clicked pane's mode-specific key table
-    // when the pane is in a mode; `copy-mode` and `copy-mode-vi` ship
-    // a default `MouseDown1Pane select-pane` binding that would
-    // otherwise shadow a root-only binding when the user clicks the
-    // pane that holds the selection.
-    const sessionName = 'tmux-play-click-deselect';
-    const condition = `#{==:#{session_name},${sessionName}}`;
-    const cancels = [0, 1, 2]
-      .map(
-        (i) =>
-          `if -F -t ${sessionName}:0.${i} '#{pane_in_mode}' 'send-keys -t ${sessionName}:0.${i} -X cancel'`,
-      )
-      .join(' ; ');
-    // root: stock tail is `select-pane -t= ; send-keys -M` for
-    // mouse-aware app forwarding; the false branch must preserve it
-    // verbatim so unrelated tmux sessions retain stock behavior.
+    // TMUX-067 (supersedes TMUX-066): the launcher explicitly
+    // re-installs tmux's stock per-table MouseDown1Pane bindings
+    // verbatim so a left-click changes focus only and never cancels
+    // copy-mode on any pane. tmux key tables are server-global, so a
+    // tmux server that still holds the retired TMUX-066 if-shell
+    // chain from an earlier launcher run would keep the defective
+    // behavior unless the launcher overwrites it; explicit re-install
+    // pins the stock semantics on every launch.
     expect(runTmuxMock).toHaveBeenCalledWith(
       'bind-key',
       '-T',
       'root',
       'MouseDown1Pane',
-      'if-shell',
-      '-F',
-      condition,
-      `${cancels} ; select-pane -t= ; send-keys -M`,
       'select-pane -t= ; send-keys -M',
     );
-    // copy-mode and copy-mode-vi: stock tail is `select-pane` because
-    // mode tables consume mouse events without forwarding to the app.
     for (const table of ['copy-mode', 'copy-mode-vi']) {
       expect(runTmuxMock).toHaveBeenCalledWith(
         'bind-key',
         '-T',
         table,
         'MouseDown1Pane',
-        'if-shell',
-        '-F',
-        condition,
-        `${cancels} ; select-pane -t=`,
         'select-pane',
       );
     }
-    // Exactly one MouseDown1Pane binding per table.
+    // Exactly one MouseDown1Pane binding per table — no leftover
+    // TMUX-066 chain alongside the stock binding.
     for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
       const bindings = runTmuxMock.mock.calls.filter(
         (call) =>
@@ -413,6 +391,25 @@ describe('launchTmuxPlay', () => {
           call[3] === 'MouseDown1Pane',
       );
       expect(bindings).toHaveLength(1);
+    }
+    // Belt-and-braces: no MouseDown1Pane argv shall reference the
+    // retired session-gated if-shell, per-pane cancel filter, or
+    // `-X cancel` send-keys.
+    for (const call of runTmuxMock.mock.calls) {
+      if (
+        call[0] !== 'bind-key' ||
+        !call.some(
+          (arg) => typeof arg === 'string' && arg === 'MouseDown1Pane',
+        )
+      ) {
+        continue;
+      }
+      for (const arg of call) {
+        if (typeof arg !== 'string') continue;
+        expect(arg).not.toContain('if-shell');
+        expect(arg).not.toContain('pane_in_mode');
+        expect(arg).not.toContain('-X cancel');
+      }
     }
   });
 

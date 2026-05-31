@@ -249,33 +249,38 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
 
-      // TTMUX-066: left-clicking any pane cancels copy-mode in every
-      // pane before focusing the clicked pane, so at most one pane in
-      // the session can hold a selection. The binding must be installed
-      // in all three tables tmux dispatches mouse events through —
-      // `root` for non-mode panes and `copy-mode` / `copy-mode-vi` for
-      // panes already in a mode — and each gates on the session name
-      // via if-shell so other tmux sessions on the same server retain
-      // stock per-table behavior, including `send-keys -M` mouse-event
-      // forwarding to mouse-aware terminal applications under root.
-      const rootMouseDown1 = keyBinding('root', 'MouseDown1Pane');
-      expect(rootMouseDown1).toContain('if-shell');
-      expect(rootMouseDown1).toContain('session_name');
-      expect(rootMouseDown1).toContain(sessionName);
-      expect(rootMouseDown1).toContain('pane_in_mode');
-      expect(rootMouseDown1).toContain('-X cancel');
-      expect(rootMouseDown1).toContain('select-pane -t=');
-      // Preserve `send-keys -M` so mouse-aware apps in other sessions
-      // still receive forwarded clicks (review item 2).
-      expect(rootMouseDown1).toContain('send-keys -M');
+      // TTMUX-067 (supersedes TTMUX-066): the launcher re-installs
+      // tmux's stock per-table MouseDown1Pane bindings verbatim —
+      // `select-pane -t= ; send-keys -M` in `root` and `select-pane`
+      // in `copy-mode` / `copy-mode-vi` — so left-click only changes
+      // pane focus and never cancels copy-mode on any pane. Stock
+      // bindings preserve scroll position and active selection across
+      // focus changes; the retired TTMUX-066 cancel-all chain caused
+      // the "previously focused pane jumps to the last line" defect
+      // by returning every in-mode pane to its live tail. The
+      // explicit re-install also clears any stale TMUX-066 if-shell
+      // entry on a tmux server reused across launches (tmux key
+      // tables are server-global). tmux's `list-keys` pretty-prints
+      // the stock bindings with its own normalization (spaces around
+      // `=`, `\;` as the command separator) — match the semantic
+      // shape (`select-pane` plus, for root, `send-keys -M`) rather
+      // than the pre-pretty-print body verbatim.
+      for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
+        const mouseDown1 = keyBinding(table, 'MouseDown1Pane');
+        expect(mouseDown1).not.toContain(sessionName);
+        expect(mouseDown1).not.toContain('pane_in_mode');
+        expect(mouseDown1).not.toContain('-X cancel');
+        expect(mouseDown1).not.toContain('if-shell');
+        expect(mouseDown1).toContain('select-pane');
+      }
+      // Only the root binding forwards the mouse event via
+      // `send-keys -M` so mouse-aware terminal apps still receive it;
+      // the copy-mode tables consume the event without forwarding.
+      expect(keyBinding('root', 'MouseDown1Pane')).toContain('send-keys -M');
       for (const table of ['copy-mode', 'copy-mode-vi']) {
-        const modeMouseDown1 = keyBinding(table, 'MouseDown1Pane');
-        expect(modeMouseDown1).toContain('if-shell');
-        expect(modeMouseDown1).toContain('session_name');
-        expect(modeMouseDown1).toContain(sessionName);
-        expect(modeMouseDown1).toContain('pane_in_mode');
-        expect(modeMouseDown1).toContain('-X cancel');
-        expect(modeMouseDown1).toContain('select-pane');
+        expect(keyBinding(table, 'MouseDown1Pane')).not.toContain(
+          'send-keys -M',
+        );
       }
 
       // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key

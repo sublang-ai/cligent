@@ -266,7 +266,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   );
   setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
   disablePlayerPaneInput(options.sessionName, playerPanes);
-  configureMouseInteraction(options.sessionName, playerPanes.length + 1);
+  configureMouseInteraction(options.sessionName);
   configureBossPaneSwitchKeys(options.sessionName);
   configureSessionExitKey(options.sessionName);
   configureLayoutHooks(options.sessionName, layout.columnWeights);
@@ -808,10 +808,7 @@ function disablePlayerPaneInput(
   }
 }
 
-function configureMouseInteraction(
-  sessionName: string,
-  paneCount: number,
-): void {
+function configureMouseInteraction(sessionName: string): void {
   runTmux('set-option', '-t', sessionName, 'mouse', 'on');
   for (const table of ['copy-mode', 'copy-mode-vi']) {
     runTmux(
@@ -834,66 +831,42 @@ function configureMouseInteraction(
       SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
   }
-  // TMUX-066: only one pane in the launched session may hold a copy-mode
-  // selection at a time. tmux dispatches a left-click through the
-  // *clicked pane's* current key table, so a click on a pane that is
-  // already in copy-mode is handled by the `copy-mode` / `copy-mode-vi`
-  // tables — both of which ship a default `MouseDown1Pane select-pane`
-  // binding that would otherwise shadow any binding we add only at the
-  // `root` table. We therefore bind `MouseDown1Pane` in all three
-  // tables. Each binding's true branch first runs, for every pane in
-  // the session, an inner `if -F -t <pane> '#{pane_in_mode}'
-  // 'send-keys -t <pane> -X cancel'` to leave any non-mode pane
-  // untouched (sending `-X cancel` to a non-mode pane would emit
-  // tmux's "no key table" error). The per-table tails then preserve
-  // tmux's stock click handler so unrelated behavior is not regressed:
-  // the `root` binding ends with `select-pane -t= ; send-keys -M` to
-  // forward the mouse event to mouse-aware terminal applications
-  // (vim, less, etc.); the `copy-mode` / `copy-mode-vi` bindings end
-  // with `select-pane -t=` because mode tables consume mouse events
-  // without forwarding to the underlying app. Each binding is gated
-  // via `if-shell -F #{==:#{session_name},...}` so other tmux sessions
-  // on the same server retain tmux's stock per-table default verbatim
-  // — `select-pane -t= ; send-keys -M` in `root`, `select-pane` in
-  // `copy-mode` and `copy-mode-vi`. Drag-select per TMUX-062 is
-  // unaffected: `MouseDown1Pane` fires first and clears any prior
-  // selection, then `MouseDrag1Pane` (tmux's stock binding) enters
-  // `copy-mode -M` on the dragged pane for a fresh selection. As with
-  // TMUX-062 / TMUX-063 / TMUX-065, tmux's key tables are
-  // server-global, so these entries outlive the session; the
-  // `if-shell` guard keeps them inert in every other session.
-  const condition = `#{==:#{session_name},${sessionName}}`;
-  const cancelCmds: string[] = [];
-  for (let i = 0; i < paneCount; i++) {
-    const target = paneTarget(sessionName, i);
-    cancelCmds.push(
-      `if -F -t ${target} '#{pane_in_mode}' 'send-keys -t ${target} -X cancel'`,
-    );
-  }
-  const cancelAll = cancelCmds.join(' ; ');
+  // TMUX-067 (supersedes TMUX-066): a left-click in any pane shall
+  // only change focus and shall not cancel copy-mode on any pane, so
+  // a pane that was scrolled up or holds an active selection
+  // preserves both across focus changes. The previous TMUX-066
+  // override added a `send-keys -X cancel` for every pane currently
+  // in a mode before focusing the click target; cancelling copy-mode
+  // returns a pane to its live tail, which surfaced as the
+  // "previously focused pane jumps to the last line" defect when the
+  // Boss scrolled up in one pane and then left-clicked anywhere.
+  // tmux key tables are server-global (see TMUX-062 / TMUX-063 /
+  // TMUX-065), so a tmux server that already holds the retired
+  // TMUX-066 if-shell binding from an older launcher run on the same
+  // server would keep the defective behavior even after upgrade.
+  // Re-install tmux's stock per-table `MouseDown1Pane` bindings
+  // verbatim — `select-pane -t= ; send-keys -M` in `root` and
+  // `select-pane` in `copy-mode` / `copy-mode-vi` — to clear any
+  // stale TMUX-066 chain and pin the stock semantics. These are
+  // exactly the tmux defaults, so the only observable consequence
+  // for a freshly-started tmux server is identical to leaving the
+  // key tables alone; for a server with a stale TMUX-066 binding,
+  // the launcher resets it to stock behavior. The `send-keys -M`
+  // tail in the `root` body shall not be omitted, since mouse-aware
+  // terminal applications (vim, less, htop) depend on it to receive
+  // forwarded clicks. Drag-select per TMUX-062 still works because
+  // tmux's stock `MouseDrag1Pane` enters `copy-mode -M` on the
+  // dragged pane and begins a fresh selection there without touching
+  // other panes.
   runTmux(
     'bind-key',
     '-T',
     'root',
     'MouseDown1Pane',
-    'if-shell',
-    '-F',
-    condition,
-    `${cancelAll} ; select-pane -t= ; send-keys -M`,
     'select-pane -t= ; send-keys -M',
   );
   for (const table of ['copy-mode', 'copy-mode-vi']) {
-    runTmux(
-      'bind-key',
-      '-T',
-      table,
-      'MouseDown1Pane',
-      'if-shell',
-      '-F',
-      condition,
-      `${cancelAll} ; select-pane -t=`,
-      'select-pane',
-    );
+    runTmux('bind-key', '-T', table, 'MouseDown1Pane', 'select-pane');
   }
 }
 
