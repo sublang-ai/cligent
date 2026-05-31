@@ -28,7 +28,8 @@ Spec items — swap the default values only (validation rules, override paths, a
 - [TMUX-035](../user/tmux-play.md#tmux-035): `new-session -x/-y` grid `174×49`.
 - [TMUX-043](../user/tmux-play.md#tmux-043): pre-attach CSI 8 payload `\x1b[8;49;174t`.
 - [TMUX-064](../user/tmux-play.md#tmux-064): `layout.window` defaults to `{ columns: 174, rows: 49 }` (sub-fields default independently); multi-player `columnWeights` defaults to `[1, 1, 1]`.
-- [TTMUX-001](../test/tmux-play.md#ttmux-001): Captain + `claude` player assert `claude-opus-4-8-1m`; `codex` still `gpt-5.5`.
+- [TMUX-055](../user/tmux-play.md#tmux-055): status-length note's initial-window reference `240` → `174` columns, tracking the [TMUX-035](../user/tmux-play.md#tmux-035) grid change. The `status-left-length` / `status-right-length` budgets themselves are unchanged.
+- [TTMUX-001](../test/tmux-play.md#ttmux-001): Captain + `claude` player assert `claude-opus-4-8-1m`; `codex` still `gpt-5.5`; the created home YAML also asserts the `layout` block (`window: { columns: 174, rows: 49 }`, `columnWeights: [1, 1, 1]`) per [TMUX-011](../user/tmux-play.md#tmux-011).
 - [TTMUX-014](../test/tmux-play.md#ttmux-014): multi-player default weights `[1, 1, 1]`.
 - [TTMUX-021](../test/tmux-play.md#ttmux-021) / [TTMUX-030](../test/tmux-play.md#ttmux-030): window `174×49`.
 - [TTMUX-022](../test/tmux-play.md#ttmux-022) / [TTMUX-031](../test/tmux-play.md#ttmux-031): three columns at `58 / 58 / 58` (`pane_left` 0 / 58 / 116; non-rightmost content width is region − 1 for the border).
@@ -56,7 +57,7 @@ Out of scope:
 
 ## Deliverables
 
-- [x] `specs/user/tmux-play.md` — TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044, TMUX-064.
+- [x] `specs/user/tmux-play.md` — TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044, TMUX-055, TMUX-064.
 - [x] `specs/test/tmux-play.md` — TTMUX-001, TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-030, TTMUX-031, TTMUX-034, TTMUX-035, TTMUX-064.
 - [x] `specs/decisions/004-tmux-play-captain-architecture.md` — example YAML Captain model.
 - [x] `specs/map.md` — IR-023 index row.
@@ -80,5 +81,5 @@ Each task is one commit, green under `npm run build`, `npm test`, and `npm run t
 
 - Every task boundary is green per the Tasks contract above; additionally `npm run test:acceptance` passes locally with `tmux` available, verifying the `174×49` window and `58 / 58 / 58` multi-player geometry.
 - With no `layout` in YAML: ≥2 players yield `58 / 58 / 58`; one player yields `87 / 87`; the snapshot carries `layout.window = { columns: 174, rows: 49 }` and the matching default `columnWeights`.
-- A freshly auto-created home YAML carries `model: claude-opus-4-8-1m` for the Captain and `claude` player, `gpt-5.5` for `codex`, with `reasoningEffort: xhigh` and `permissions: { mode: 'auto' }` on all three.
+- A freshly auto-created home YAML carries `model: claude-opus-4-8-1m` for the Captain and `claude` player, `gpt-5.5` for `codex`, with `reasoningEffort: xhigh` and `permissions: { mode: 'auto' }` on all three, plus an explicit `layout` block (`window: { columns: 174, rows: 49 }`, `columnWeights: [1, 1, 1]`).
 - Explicit `layout.window` / `columnWeights` / `model` overrides are honored verbatim. No default-surface code path or fixture still references `240×67`, `[4, 6, 6]`, or `claude-opus-4-7`; the excluded non-default fixtures may.
