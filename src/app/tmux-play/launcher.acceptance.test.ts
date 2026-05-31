@@ -249,6 +249,19 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
 
+      // TTMUX-066: left-clicking any pane cancels copy-mode in every
+      // pane before focusing the clicked pane, so at most one pane in
+      // the session can hold a selection. The binding gates on the
+      // session name via if-shell so other tmux sessions on the same
+      // server retain stock click-to-focus behavior.
+      const mouseDown1Binding = keyBinding('root', 'MouseDown1Pane');
+      expect(mouseDown1Binding).toContain('if-shell');
+      expect(mouseDown1Binding).toContain('session_name');
+      expect(mouseDown1Binding).toContain(sessionName);
+      expect(mouseDown1Binding).toContain('pane_in_mode');
+      expect(mouseDown1Binding).toContain('-X cancel');
+      expect(mouseDown1Binding).toContain('select-pane -t=');
+
       // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key
       // table both switch panes directly inside this session. Each
       // binding gates on the session name via if-shell so other tmux

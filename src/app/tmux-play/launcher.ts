@@ -266,7 +266,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   );
   setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
   disablePlayerPaneInput(options.sessionName, playerPanes);
-  configureMouseInteraction(options.sessionName);
+  configureMouseInteraction(options.sessionName, playerPanes.length + 1);
   configureBossPaneSwitchKeys(options.sessionName);
   configureSessionExitKey(options.sessionName);
   configureLayoutHooks(options.sessionName, layout.columnWeights);
@@ -808,7 +808,10 @@ function disablePlayerPaneInput(
   }
 }
 
-function configureMouseInteraction(sessionName: string): void {
+function configureMouseInteraction(
+  sessionName: string,
+  paneCount: number,
+): void {
   runTmux('set-option', '-t', sessionName, 'mouse', 'on');
   for (const table of ['copy-mode', 'copy-mode-vi']) {
     runTmux(
@@ -831,6 +834,41 @@ function configureMouseInteraction(sessionName: string): void {
       SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
   }
+  // TMUX-066: only one pane in the launched session may hold a copy-mode
+  // selection at a time. Binding `MouseDown1Pane` at the root key table
+  // intercepts every left-click before tmux's default `select-pane -t=`
+  // fires: for each pane in the session, an inner `if-shell -F -t <pane>`
+  // gated on `#{pane_in_mode}` sends `-X cancel` only to panes currently
+  // in copy-mode (sending `-X` to a non-mode pane would emit tmux's
+  // "no key table" error). The `select-pane -t=` then focuses the pane
+  // under the cursor; if the click starts a drag, `MouseDrag1Pane`
+  // proceeds via tmux's default to enter copy-mode -M on the dragged
+  // pane and begin a fresh selection. Like the copy-mode bindings above
+  // and the navigation bindings of TMUX-063 / TMUX-065, tmux's root key
+  // table is server-global, so the launcher scopes the binding with
+  // `if-shell -F` against the current session name; the false branch
+  // forwards tmux's default click-to-focus action so every other tmux
+  // session on the same server retains stock behavior.
+  const condition = `#{==:#{session_name},${sessionName}}`;
+  const cancelCmds: string[] = [];
+  for (let i = 0; i < paneCount; i++) {
+    const target = paneTarget(sessionName, i);
+    cancelCmds.push(
+      `if -F -t ${target} '#{pane_in_mode}' 'send-keys -t ${target} -X cancel'`,
+    );
+  }
+  const trueBranch = `${cancelCmds.join(' ; ')} ; select-pane -t=`;
+  runTmux(
+    'bind-key',
+    '-T',
+    'root',
+    'MouseDown1Pane',
+    'if-shell',
+    '-F',
+    condition,
+    trueBranch,
+    'select-pane -t=',
+  );
 }
 
 // TMUX-063: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at

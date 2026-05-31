@@ -151,6 +151,13 @@ Given the launcher constructing a tmux-play session, the tmux command stream sha
 The `<system-clipboard-command>` shall contain `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, and `tmux load-buffer -w -`.
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above.
 
+### TTMUX-066
+Verifies: [TMUX-066](../user/tmux-play.md#tmux-066)
+
+Given the launcher constructing a tmux-play session whose `sessionName` is `<session>` and which carries `paneCount` panes indexed `0..paneCount-1`, the tmux command stream shall include exactly one `bind-key -T root MouseDown1Pane if-shell -F #{==:#{session_name},<session>} '<trueBranch>' 'select-pane -t='` invocation, where `<trueBranch>` chains, for every pane index `i` in `0..paneCount-1`, the literal `if -F -t <session>:0.<i> '#{pane_in_mode}' 'send-keys -t <session>:0.<i> -X cancel'` separated by ` ; `, followed by ` ; select-pane -t=`. With one Boss/Captain pane plus N players, `paneCount` shall equal `N + 1`.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux list-keys -T root MouseDown1Pane` shall report a binding whose body contains `if-shell`, `session_name`, the launched session name, `pane_in_mode`, `send-keys` with `-X cancel`, and `select-pane -t=`.
+The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
+
 ## Keyboard Interaction
 
 ### TTMUX-063

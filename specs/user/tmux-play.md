@@ -248,6 +248,16 @@ Under tmux's default root mouse bindings, clicking selects the pane under the cu
 User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
 The launcher shall not configure `set-clipboard` and shall not add `Wheel*` bindings; terminal policy may still block the OSC 52 fallback.
 
+### TMUX-066
+
+While a tmux-play session is running, when the Boss presses the primary mouse button on any pane in the launched session, the session shall cancel copy-mode in every pane in the session before focusing the clicked pane, so any active selection is cleared on the next click and at most one pane in the session may hold a copy-mode selection at any time.
+The launcher shall bind `MouseDown1Pane` in the `root` key table to a command that, for every pane index `i` in `0..paneCount-1`, runs `if-shell -F -t <session>:0.<i> '#{pane_in_mode}' 'send-keys -t <session>:0.<i> -X cancel'` and then runs `select-pane -t=`.
+The inner per-pane `if-shell` gate is required because `send-keys -X cancel` on a pane that is not currently in a mode emits tmux's "no key table" error; gating on `#{pane_in_mode}` leaves non-mode panes untouched.
+Each binding shall be gated on the current `#{session_name}` matching the launched session name via `if-shell -F`, with a false branch of `select-pane -t=`, so that in every other tmux session on the same server left-clicking retains tmux's default click-to-focus behavior unchanged.
+Drag-select per [TMUX-062](#tmux-062) shall be unaffected: `MouseDown1Pane` fires at the start of a drag and clears any prior selection, and `MouseDrag1Pane` proceeds via tmux's default to enter copy-mode `-M` on the dragged pane and begin a fresh selection.
+As with the copy-mode bindings of [TMUX-062](#tmux-062) and the keyboard bindings of [TMUX-063](#tmux-063) / [TMUX-065](#tmux-065), tmux's root key table is server-global because tmux does not offer per-session root-table bindings, so this entry outlives the tmux-play session; the `if-shell` guard keeps the binding inert in every other session and is the launcher's narrowest available scoping mechanism.
+A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
+
 ## Keyboard Interaction
 
 ### TMUX-063

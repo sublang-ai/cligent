@@ -341,6 +341,56 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
+  it('binds MouseDown1Pane at the root key table to cancel copy-mode in every pane before focusing the click target, scoped to the launched session via if-shell', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    // Two players → Boss/Captain at pane 0, players at panes 1..2.
+    // paneCount = 3, so the true branch chains three per-pane cancels
+    // before the final `select-pane -t=`.
+    const configPath = writeConfig(tempDir, ['coder', 'reviewer']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'click-deselect',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    // TMUX-066: left-clicking any pane shall first cancel copy-mode in
+    // every pane in the session (so any selection is cleared and at
+    // most one pane can hold a selection at a time), then focus the
+    // pane under the cursor.
+    const sessionName = 'tmux-play-click-deselect';
+    const condition = `#{==:#{session_name},${sessionName}}`;
+    const cancels = [0, 1, 2]
+      .map(
+        (i) =>
+          `if -F -t ${sessionName}:0.${i} '#{pane_in_mode}' 'send-keys -t ${sessionName}:0.${i} -X cancel'`,
+      )
+      .join(' ; ');
+    const expectedTrueBranch = `${cancels} ; select-pane -t=`;
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'MouseDown1Pane',
+      'if-shell',
+      '-F',
+      condition,
+      expectedTrueBranch,
+      'select-pane -t=',
+    );
+    // Exactly one MouseDown1Pane binding shall be issued.
+    const mouseDown1Bindings = runTmuxMock.mock.calls.filter(
+      (call) =>
+        call[0] === 'bind-key' &&
+        call[2] === 'root' &&
+        call[3] === 'MouseDown1Pane',
+    );
+    expect(mouseDown1Bindings).toHaveLength(1);
+  });
+
   it('binds Ctrl+Left/Right and Shift+Left/Right at the root key table for direct pane switching, scoped to the launched session via if-shell', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
