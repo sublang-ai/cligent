@@ -65,6 +65,7 @@ meta.md     The spec of specs
 | IR-021 | [021-unified-bracketed-tag-grammar.md](iterations/021-unified-bracketed-tag-grammar.md) | tmux-play presenter unifies status / error / aborted / turn-aborted / runtime-error / tool lifecycle lines under one `<who>> [<tag> <optional glyph>] <optional body>` grammar; bodies move outside brackets; `tool>` / `tool<` prefix retired |
 | IR-022 | [022-tmux-play-layout-configuration.md](iterations/022-tmux-play-layout-configuration.md) | tmux-play YAML `layout` block exposes initial window resolution and per-column weights; shipped multi-player default shifts from equal thirds to `4 : 6 : 6` |
 | IR-023 | [023-tmux-play-default-config-refresh.md](iterations/023-tmux-play-default-config-refresh.md) | Refresh tmux-play shipped defaults: window `174 × 49` (1080p @ 18pt monospace), multi-player `columnWeights: [1, 1, 1]`, Captain + `claude` player `model: claude-opus-4-8`; `codex` player and all `permissions` / `reasoningEffort` defaults unchanged |
+| IR-024 | [024-boss-input-wrap-correct-rendering.md](iterations/024-boss-input-wrap-correct-rendering.md) | Fix Boss/Captain pane scrollback duplicating full-width input rows (Node readline magic-margin/deferred-wrap redraw bug): own the Boss input redraw, reserve the rightmost column, preserve TMUX-037/057/058 |
 
 ## Packages
 
