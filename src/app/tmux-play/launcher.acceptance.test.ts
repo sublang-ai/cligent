@@ -470,10 +470,14 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
-      // TMUX-063: navigation hints advertise direct Ctrl+arrow pane
-      // switching and the ESC stop / Ctrl+C exit shortcuts. The retired
-      // `Ctrl+b` prefix mentions are gone.
-      expect(statusLeft).toContain('Switch pane: Ctrl+←/→');
+      // TMUX-055 + TMUX-063: status-left renders the navigation hints,
+      // and the hint shape is the exact substring TMUX-063 owns —
+      // including the `or Shift+←/→` tail that makes pane switching
+      // work out of the box on hosts where one of Ctrl+arrow or
+      // Shift+arrow is intercepted before tmux sees it. Pin the full
+      // substring so a regression that drops the tail fails this test
+      // instead of passing on the prefix.
+      expect(statusLeft).toContain('Switch pane: Ctrl+←/→ or Shift+←/→');
       expect(statusLeft).toContain('Stop: ESC');
       expect(statusLeft).toContain('Exit: Ctrl+C');
       expect(statusLeft).toContain('drag=select');
