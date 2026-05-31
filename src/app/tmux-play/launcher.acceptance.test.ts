@@ -249,10 +249,10 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
 
-      // TTMUX-063: Ctrl+Left/Right at the root key table switch panes
-      // directly inside this session. The binding gates on the session
-      // name via if-shell so other tmux sessions on the same server
-      // forward the key unchanged.
+      // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key
+      // table both switch panes directly inside this session. Each
+      // binding gates on the session name via if-shell so other tmux
+      // sessions on the same server forward the key unchanged.
       const ctrlLeftBinding = keyBinding('root', 'C-Left');
       expect(ctrlLeftBinding).toContain('if-shell');
       expect(ctrlLeftBinding).toContain(`session_name`);
@@ -265,6 +265,18 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(ctrlRightBinding).toContain(sessionName);
       expect(ctrlRightBinding).toContain('select-pane -R');
       expect(ctrlRightBinding).toContain('send-keys C-Right');
+      const shiftLeftBinding = keyBinding('root', 'S-Left');
+      expect(shiftLeftBinding).toContain('if-shell');
+      expect(shiftLeftBinding).toContain(`session_name`);
+      expect(shiftLeftBinding).toContain(sessionName);
+      expect(shiftLeftBinding).toContain('select-pane -L');
+      expect(shiftLeftBinding).toContain('send-keys S-Left');
+      const shiftRightBinding = keyBinding('root', 'S-Right');
+      expect(shiftRightBinding).toContain('if-shell');
+      expect(shiftRightBinding).toContain(`session_name`);
+      expect(shiftRightBinding).toContain(sessionName);
+      expect(shiftRightBinding).toContain('select-pane -R');
+      expect(shiftRightBinding).toContain('send-keys S-Right');
 
       // TTMUX-065: Ctrl+C at the root key table forwards to the
       // Boss/Captain pane (pane 0) so the exit hint fires from any pane,

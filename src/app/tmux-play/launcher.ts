@@ -40,7 +40,7 @@ import type { PlayerConfig } from './players.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 const NAVIGATION_HINTS =
-  'Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy';
+  'Switch pane: Ctrl+←/→ or Shift+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy';
 const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'if command -v pbcopy >/dev/null 2>&1; then exec pbcopy; ' +
   'elif [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then exec wl-copy; ' +
@@ -833,41 +833,46 @@ function configureMouseInteraction(sessionName: string): void {
   }
 }
 
-// TMUX-063: bind Ctrl+Left / Ctrl+Right at the root key table so the Boss
-// can switch panes directly without the Ctrl+b prefix the navigation hints
-// in `status-left` advertise. Like the copy-mode bindings in TMUX-062, the
-// root key table is server-global — tmux does not offer per-session root
-// bindings — so the launcher scopes the action with `if-shell -F` against
-// the current session name. Inside the launcher's own tmux-play session
-// the binding selects the adjacent pane; in every other tmux session on
-// the same server the false branch forwards the key verbatim via
-// `send-keys`, leaving the user's word-movement (or any other Ctrl+arrow
-// consumer) intact. The binding outlives the tmux-play session but
-// remains a no-op once the session is killed.
+// TMUX-063: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at
+// the root key table so the Boss can switch panes directly without the
+// Ctrl+b prefix the navigation hints in `status-left` advertise. Both
+// pairs map to the same `select-pane -L` / `select-pane -R` actions so
+// pane switching works out of the box on macOS, Windows, and Linux: at
+// least one of `Ctrl+arrow` and `Shift+arrow` reaches tmux untouched on
+// every common host — macOS Terminal.app and iTerm2 frequently rebind
+// `Ctrl+←/→` for shell word-movement, while many Linux desktops swallow
+// `Shift+←/→` for window-manager workspace switching. Shipping both
+// avoids forcing per-platform documentation or user keybinding tweaks.
+// Like the copy-mode bindings in TMUX-062, the root key table is
+// server-global — tmux does not offer per-session root bindings — so the
+// launcher scopes each binding with `if-shell -F` against the current
+// session name. Inside the launcher's own tmux-play session the binding
+// selects the adjacent pane; in every other tmux session on the same
+// server the false branch forwards the key verbatim via `send-keys`,
+// leaving the user's word-movement, workspace-switch, or other consumer
+// intact. The bindings outlive the tmux-play session but remain no-ops
+// once the session is killed.
 function configureBossPaneSwitchKeys(sessionName: string): void {
   const condition = `#{==:#{session_name},${sessionName}}`;
-  runTmux(
-    'bind-key',
-    '-T',
-    'root',
-    'C-Left',
-    'if-shell',
-    '-F',
-    condition,
-    'select-pane -L',
-    'send-keys C-Left',
-  );
-  runTmux(
-    'bind-key',
-    '-T',
-    'root',
-    'C-Right',
-    'if-shell',
-    '-F',
-    condition,
-    'select-pane -R',
-    'send-keys C-Right',
-  );
+  const bindings: ReadonlyArray<{ key: string; action: string }> = [
+    { key: 'C-Left', action: 'select-pane -L' },
+    { key: 'C-Right', action: 'select-pane -R' },
+    { key: 'S-Left', action: 'select-pane -L' },
+    { key: 'S-Right', action: 'select-pane -R' },
+  ];
+  for (const { key, action } of bindings) {
+    runTmux(
+      'bind-key',
+      '-T',
+      'root',
+      key,
+      'if-shell',
+      '-F',
+      condition,
+      action,
+      `send-keys ${key}`,
+    );
+  }
 }
 
 // TMUX-065: bind Ctrl+C at the root key table so the `Exit: Ctrl+C`

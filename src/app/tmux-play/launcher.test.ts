@@ -341,7 +341,7 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
-  it('binds Ctrl+Left and Ctrl+Right at the root key table for direct pane switching, scoped to the launched session via if-shell', async () => {
+  it('binds Ctrl+Left/Right and Shift+Left/Right at the root key table for direct pane switching, scoped to the launched session via if-shell', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
 
@@ -355,6 +355,10 @@ describe('launchTmuxPlay', () => {
     });
 
     const condition = '#{==:#{session_name},tmux-play-pane-switch}';
+    // TMUX-063: ship both Ctrl+←/→ and Shift+←/→ so pane switching works
+    // out of the box across macOS, Windows, and Linux terminals that may
+    // intercept one pair or the other for shell word-movement,
+    // workspace switching, etc.
     expect(runTmuxMock).toHaveBeenCalledWith(
       'bind-key',
       '-T',
@@ -376,6 +380,28 @@ describe('launchTmuxPlay', () => {
       condition,
       'select-pane -R',
       'send-keys C-Right',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'S-Left',
+      'if-shell',
+      '-F',
+      condition,
+      'select-pane -L',
+      'send-keys S-Left',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'S-Right',
+      'if-shell',
+      '-F',
+      condition,
+      'select-pane -R',
+      'send-keys S-Right',
     );
   });
 
@@ -747,7 +773,7 @@ describe('launchTmuxPlay', () => {
     // TMUX-063: status-left advertises direct pane switching and the ESC
     // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions
     // (`d=detach`, `o=switch pane`, `[=scroll`) are gone.
-    expect(statusLeft).toContain('Switch pane: Ctrl+←/→');
+    expect(statusLeft).toContain('Switch pane: Ctrl+←/→ or Shift+←/→');
     expect(statusLeft).toContain('Stop: ESC');
     expect(statusLeft).toContain('Exit: Ctrl+C');
     expect(statusLeft).toContain('drag=select');
