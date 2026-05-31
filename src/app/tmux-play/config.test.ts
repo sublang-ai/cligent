@@ -931,6 +931,135 @@ describe('tmux-play config loading', () => {
     );
   });
 
+  it('rejects unknown top-level config fields (e.g. typo of layout)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layoutt:',
+        '  window:',
+        '    columns: 200',
+        '    rows: 50',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'Unknown config field config.layoutt',
+    );
+  });
+
+  it('rejects a non-object layout (e.g. layout: 1)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout: 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout must be an object',
+    );
+  });
+
+  it('rejects a non-object layout.window (e.g. layout.window: 1)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window: 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'layout.window must be an object',
+    );
+  });
+
+  it('rejects non-finite or non-number weight values with the offending index', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const nanWeight = join(workDir, 'nan-weight.yaml');
+    const stringWeight = join(workDir, 'string-weight.yaml');
+    // YAML special value `.nan` lands as JS NaN through `yaml.parse`; both
+    // sub-conditions of the weight check (`!Number.isFinite` and
+    // `typeof !== 'number'`) must reject.
+    writeFileSync(
+      nanWeight,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - .nan',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      stringWeight,
+      [
+        'layout:',
+        '  columnWeights:',
+        '    - 4',
+        '    - "six"',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath: nanWeight })).rejects.toThrow(
+      'layout.columnWeights[1] must be a finite positive number',
+    );
+    await expect(loadTmuxPlayConfig({ configPath: stringWeight })).rejects.toThrow(
+      'layout.columnWeights[1] must be a finite positive number',
+    );
+  });
+
   it('snapshot preserves the resolved layout values', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);

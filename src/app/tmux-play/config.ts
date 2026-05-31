@@ -308,8 +308,21 @@ async function loadConfigValue(path: string): Promise<unknown> {
   }
 }
 
+const ALLOWED_TOP_LEVEL_KEYS = new Set<string>([
+  'captain',
+  'players',
+  'theme',
+  'layout',
+]);
+
 function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const input = requireObject(value, 'config');
+  // TMUX-008: reject unknown top-level fields so a typo like `layoutt:`
+  // surfaces at load time instead of being silently ignored and falling
+  // through to defaults. The peer scopes (`captain`, `players[i]`, the
+  // `layout` block) already enforce this; the root scope was the only
+  // gap and is closed here.
+  rejectUnknownKeys(input, ALLOWED_TOP_LEVEL_KEYS, 'config');
   const captain = normalizeCaptainConfig(input.captain);
   const players = normalizePlayerConfigs(input.players);
   const theme = optionalThemeFlavor(input.theme, 'theme');
