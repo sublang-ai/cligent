@@ -142,12 +142,16 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "'/tmp/tmux play/cli.js'",
     );
+    // TMUX-028 / TMUX-064: with the shipped multi-player default
+    // `columnWeights: [4, 6, 6]` on the 240-cell window, the player area is
+    // 180 cells (240 - floor(240 * 4 / 16)) and the second player column is
+    // 90 cells (the remainder after subtracting the 90-cell first column).
     expect(runTmuxMock).toHaveBeenNthCalledWith(
       2,
       'split-window',
       '-h',
       '-l',
-      '160',
+      '180',
       '-t',
       'tmux-play-abc123',
       tailCommand(workDir, 'coder'),
@@ -157,7 +161,7 @@ describe('launchTmuxPlay', () => {
       'split-window',
       '-h',
       '-l',
-      '50%',
+      '90',
       '-t',
       'tmux-play-abc123:0.1',
       tailCommand(workDir, 'analyst'),
@@ -176,20 +180,17 @@ describe('launchTmuxPlay', () => {
     const playerAreaColumns = Number(
       valueAfter(runTmuxMock.mock.calls[1] ?? [], '-l'),
     );
-    const secondPlayerColumnPercent = Number(
-      valueAfter(runTmuxMock.mock.calls[2] ?? [], '-l').replace('%', ''),
-    );
-    const secondPlayerColumnColumns = Math.floor(
-      (playerAreaColumns * secondPlayerColumnPercent) / 100,
+    const secondPlayerColumnColumns = Number(
+      valueAfter(runTmuxMock.mock.calls[2] ?? [], '-l'),
     );
     expect({
       bossColumns: initialColumns - playerAreaColumns,
       firstPlayerColumnColumns: playerAreaColumns - secondPlayerColumnColumns,
       secondPlayerColumnColumns,
     }).toEqual({
-      bossColumns: 80,
-      firstPlayerColumnColumns: 80,
-      secondPlayerColumnColumns: 80,
+      bossColumns: 60,
+      firstPlayerColumnColumns: 90,
+      secondPlayerColumnColumns: 90,
     });
     expect(runTmuxMock).toHaveBeenCalledWith(
       'select-pane',
@@ -250,10 +251,12 @@ describe('launchTmuxPlay', () => {
       'mouse',
       'on',
     );
+    // TMUX-044: shell-evaluated `W * w_i / sum(w)` per non-rightmost column.
+    // sum([4, 6, 6]) = 16; rightmost column absorbs the remainder.
     const expectedHookCmd =
       `run-shell -b "W=$(tmux display-message -t tmux-play-abc123 -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W / 3 - 1))` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W / 3 - 1))"`;
+      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W * 4 / 16 - 1))` +
+      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W * 6 / 16 - 1))"`;
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -767,9 +770,11 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
+    // TMUX-044: single-player default weights `[1, 1]` (sum = 2). The rightmost
+    // player pane absorbs the remainder; only pane 0 needs an explicit resize.
     const expectedHookCmd =
       `run-shell -b "W=$(tmux display-message -t tmux-play-one -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W / 2 - 1))"`;
+      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W * 1 / 2 - 1))"`;
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -786,13 +791,100 @@ describe('launchTmuxPlay', () => {
     );
   });
 
+  it('threads an explicit layout override into new-session, splits, hook, and CSI 8', async () => {
+    // TMUX-035 / TMUX-043 / TMUX-044 / TMUX-064: a YAML override of
+    // layout.window and layout.columnWeights must reach every launcher
+    // surface (new-session -x/-y, split-window -l sizes, the resize hook
+    // formula, and the pre-attach CSI 8 payload) from the same source of
+    // truth. Concretely: window 200x50 with weights [3, 5, 7] (sum = 15).
+    //
+    // Boss region   = floor(200 * 3 / 15) = 40
+    // Player area   = 200 - 40 = 160
+    // First column  = floor(200 * 5 / 15) = 66
+    // Second column = 160 - 66 = 94  (rightmost, absorbs remainder)
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = join(tempDir, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 200',
+        '    rows: 50',
+        '  columnWeights:',
+        '    - 3',
+        '    - 5',
+        '    - 7',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+    const workDir = join(tempDir, 'work');
+    const stdout = new MemoryOutput();
+    let stdoutAtAttach: string | undefined;
+    attachTmuxSessionMock.mockImplementation(() => {
+      stdoutAtAttach = stdout.text();
+    });
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'override',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      stdout,
+    });
+
+    const newSessionCall = runTmuxMock.mock.calls.find(
+      (call) => call[0] === 'new-session',
+    );
+    expect(valueAfter(newSessionCall ?? [], '-x')).toBe('200');
+    expect(valueAfter(newSessionCall ?? [], '-y')).toBe('50');
+
+    const splits = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'split-window' && call[1] === '-h',
+    );
+    expect(valueAfter(splits[0] ?? [], '-l')).toBe('160'); // player area
+    expect(valueAfter(splits[1] ?? [], '-l')).toBe('94'); // second column (remainder)
+
+    const expectedHookCmd =
+      `run-shell -b "W=$(tmux display-message -t tmux-play-override -p '#{window_width}')` +
+      ` && tmux resize-pane -t tmux-play-override:0.0 -x $((W * 3 / 15 - 1))` +
+      ` && tmux resize-pane -t tmux-play-override:0.1 -x $((W * 5 / 15 - 1))"`;
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-override',
+      'client-resized',
+      expectedHookCmd,
+    );
+
+    // TMUX-043: pre-attach CSI 8 payload reads the same layout.window, so an
+    // override of `columns: 200, rows: 50` writes `\x1b[8;50;200t` rather
+    // than the default 240x67 sequence — preventing tmux's `window-size`
+    // negotiation from silently overriding the override on attach.
+    expect(stdout.text()).toContain('\x1b[8;50;200t');
+    expect(stdout.text()).not.toContain('\x1b[8;67;240t');
+    expect(stdoutAtAttach).toContain('\x1b[8;50;200t');
+  });
+
   it.each([
     {
       count: 4,
       players: ['r1', 'r2', 'r3', 'r4'],
       expected: [
-        ['split-window', '-h', '-l', '160', '-t', 'tmux-play-grid4', 'r1'],
-        ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid4:0.1', 'r3'],
+        // `[4, 6, 6]` multi default on a 240-cell window: player area = 180,
+        // second-column = 90 (remainder of the player area).
+        ['split-window', '-h', '-l', '180', '-t', 'tmux-play-grid4', 'r1'],
+        ['split-window', '-h', '-l', '90', '-t', 'tmux-play-grid4:0.1', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid4:0.2', 'r4'],
       ],
@@ -801,8 +893,8 @@ describe('launchTmuxPlay', () => {
       count: 5,
       players: ['r1', 'r2', 'r3', 'r4', 'r5'],
       expected: [
-        ['split-window', '-h', '-l', '160', '-t', 'tmux-play-grid5', 'r1'],
-        ['split-window', '-h', '-l', '50%', '-t', 'tmux-play-grid5:0.1', 'r4'],
+        ['split-window', '-h', '-l', '180', '-t', 'tmux-play-grid5', 'r1'],
+        ['split-window', '-h', '-l', '90', '-t', 'tmux-play-grid5:0.1', 'r4'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.1', 'r2'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.3', 'r3'],
         ['split-window', '-v', '-t', 'tmux-play-grid5:0.2', 'r5'],

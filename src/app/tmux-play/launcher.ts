@@ -33,21 +33,12 @@ import {
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,
   type CatppuccinFlavorConfig,
+  type LayoutConfig,
   type LoadedTmuxPlayConfig,
 } from './config.js';
 import type { PlayerConfig } from './players.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
-const INITIAL_TMUX_COLUMNS = '240';
-const INITIAL_TMUX_ROWS = '67';
-// Even split: every visible column gets 1/N of the initial 240-cell window
-// where N is the total column count (2 for a single player, 3 for two or
-// more). Right pane after the first horizontal split absorbs everything but
-// the Boss/Captain column; the resize hook below preserves the invariant at
-// any window width.
-const PLAYER_AREA_SIZE_SINGLE = '120'; // 240/2 — boss + 1 player evenly
-const PLAYER_AREA_SIZE_MULTI = '160'; // 240×2/3 — boss + right area (two columns)
-const SECOND_PLAYER_COLUMN_SIZE = '50%'; // 50% of right area = 80 cells each
 const NAVIGATION_HINTS =
   'Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy';
 const SYSTEM_CLIPBOARD_COPY_COMMAND =
@@ -175,7 +166,10 @@ export async function launchTmuxPlay(
   });
 
   if (options.attach !== false) {
-    requestTerminalResize(options.stdout ?? process.stdout);
+    requestTerminalResize(
+      options.stdout ?? process.stdout,
+      loaded.config.layout.window,
+    );
     attachTmuxSession(sessionName);
   }
 
@@ -243,6 +237,8 @@ interface BuildTmuxSessionOptions {
 
 function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const players = options.loaded.config.players;
+  const layout = options.loaded.config.layout;
+  const sizes = computeLayoutSizes(layout, players.length);
   const bossCommand = buildSessionCommand(options);
   const c = options.palette;
 
@@ -250,14 +246,19 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'new-session',
     '-d',
     '-x',
-    INITIAL_TMUX_COLUMNS,
+    String(sizes.windowColumns),
     '-y',
-    INITIAL_TMUX_ROWS,
+    String(sizes.windowRows),
     '-s',
     options.sessionName,
     bossCommand,
   );
-  const playerPanes = createPlayerPanes(options.sessionName, options.workDir, players);
+  const playerPanes = createPlayerPanes(
+    options.sessionName,
+    options.workDir,
+    players,
+    sizes,
+  );
   setPaneTitles(
     options.sessionName,
     playerPanes,
@@ -267,7 +268,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   disablePlayerPaneInput(options.sessionName, playerPanes);
   configureMouseInteraction(options.sessionName);
   configureBossPaneSwitchKeys(options.sessionName);
-  configureLayoutHooks(options.sessionName, players.length);
+  configureLayoutHooks(options.sessionName, layout.columnWeights);
   applyCatppuccinTheme(options.sessionName, c);
   runTmux(
     'set-window-option',
@@ -633,6 +634,7 @@ function createPlayerPanes(
   sessionName: string,
   workDir: string,
   players: readonly PlayerConfig[],
+  sizes: LayoutSizes,
 ): PlayerPane[] {
   const firstColumnCount = Math.ceil(players.length / 2);
   const playerPanes: PlayerPane[] = [];
@@ -642,7 +644,7 @@ function createPlayerPanes(
     'split-window',
     '-h',
     '-l',
-    players.length >= 2 ? PLAYER_AREA_SIZE_MULTI : PLAYER_AREA_SIZE_SINGLE,
+    String(sizes.playerAreaSize),
     '-t',
     sessionName,
     tailCommand(workDir, players[0]),
@@ -653,11 +655,15 @@ function createPlayerPanes(
     return playerPanes;
   }
 
+  // Second-column split sized in exact cells (not percent) so arbitrary
+  // weights — e.g. `[3, 5, 7]` — land within tmux's nearest-cell rounding
+  // rather than relying on a clean `50%` fraction the default `[4, 6, 6]`
+  // happens to produce.
   runTmux(
     'split-window',
     '-h',
     '-l',
-    SECOND_PLAYER_COLUMN_SIZE,
+    String(sizes.secondColumnSize),
     '-t',
     paneTarget(sessionName, playerPanes[0].paneIndex),
     tailCommand(workDir, players[firstColumnCount]),
@@ -867,31 +873,81 @@ function selectBossPane(sessionName: string): void {
   runTmux('select-pane', '-t', paneTarget(sessionName, 0));
 }
 
-function requestTerminalResize(stream: Output): void {
-  stream.write(`\x1b[8;${INITIAL_TMUX_ROWS};${INITIAL_TMUX_COLUMNS}t`);
+// TMUX-043: emit `\x1b[8;<rows>;<columns>t` from the resolved layout.window,
+// so the pre-attach terminal-size request matches `new-session -x/-y` for
+// either the default 240x67 grid or an explicit YAML override. Reading both
+// from the same source prevents tmux's default `window-size` negotiation
+// from silently overriding a non-default `layout.window` on attach.
+function requestTerminalResize(
+  stream: Output,
+  window: LayoutConfig['window'],
+): void {
+  stream.write(`\x1b[8;${window.rows};${window.columns}t`);
 }
 
-// TMUX-044: keep the even region split invariant under any window resize.
-// Each visible column gets 1/N of the window where N is the total column
-// count (2 for a single player, 3 for two or more). resize-pane -x does not
-// accept tmux format expansion, so we compute via shell. The -1 corrections
-// give region widths exactly W/N by accounting for the 1-cell tmux border on
-// each non-rightmost pane.
+interface LayoutSizes {
+  readonly windowColumns: number;
+  readonly windowRows: number;
+  /** First-split `-l`: cell width of the player area (= W - boss region). */
+  readonly playerAreaSize: number;
+  /** Second-split `-l` (multi only): cell width of the second player column. */
+  readonly secondColumnSize: number;
+}
+
+// TMUX-028 / TMUX-044: derive the initial `split-window -l` cell counts so
+// they match the resize-hook formula at session creation. Non-rightmost
+// regions take `floor(W * w_i / sum(w))` cells; the rightmost column
+// absorbs the remainder. The initial second-column `-l` is the remainder,
+// not `floor(W * w_2 / sum)`, so first-column region = total - boss -
+// second equals `floor(W * w_1 / sum)` exactly.
+function computeLayoutSizes(
+  layout: LayoutConfig,
+  playerCount: number,
+): LayoutSizes {
+  const W = layout.window.columns;
+  const weights = layout.columnWeights;
+  const sum = weights.reduce((acc, value) => acc + value, 0);
+  const bossColumnSize = Math.floor((W * (weights[0] ?? 1)) / sum);
+  const playerAreaSize = W - bossColumnSize;
+  if (playerCount < 2) {
+    // Single-player layout has no second column; the second-split branch is
+    // unused, but emitting a sentinel keeps the type total.
+    return {
+      windowColumns: W,
+      windowRows: layout.window.rows,
+      playerAreaSize,
+      secondColumnSize: 0,
+    };
+  }
+  const firstColumnSize = Math.floor((W * (weights[1] ?? 1)) / sum);
+  const secondColumnSize = playerAreaSize - firstColumnSize;
+  return {
+    windowColumns: W,
+    windowRows: layout.window.rows,
+    playerAreaSize,
+    secondColumnSize,
+  };
+}
+
+// TMUX-044: keep the weighted region split invariant under any window
+// resize. Each non-rightmost column receives `floor(W * w_i / sum(w)) - 1`
+// cells of content (`resize-pane -x` sets content width; the `-1` accounts
+// for the 1-cell right-side tmux border). The rightmost column absorbs the
+// remainder and needs no explicit resize. `resize-pane -x` does not accept
+// tmux format expansion, so the arithmetic is shell-evaluated at hook fire.
 function configureLayoutHooks(
   sessionName: string,
-  playerCount: number,
+  weights: readonly number[],
 ): void {
-  const widthCmd =
-    `tmux display-message -t ${sessionName} -p '#{window_width}'`;
-  const bossDivisor = playerCount >= 2 ? 3 : 2;
-  const resizeBoss =
-    `tmux resize-pane -t ${sessionName}:0.0 -x $((W / ${bossDivisor} - 1))`;
-  const resizeFirstPlayerColumn =
-    `tmux resize-pane -t ${sessionName}:0.1 -x $((W / 3 - 1))`;
-  const shell =
-    playerCount >= 2
-      ? `W=$(${widthCmd}) && ${resizeBoss} && ${resizeFirstPlayerColumn}`
-      : `W=$(${widthCmd}) && ${resizeBoss}`;
+  const sum = weights.reduce((acc, value) => acc + value, 0);
+  const widthCmd = `tmux display-message -t ${sessionName} -p '#{window_width}'`;
+  const resizes: string[] = [];
+  for (let i = 0; i < weights.length - 1; i++) {
+    resizes.push(
+      `tmux resize-pane -t ${sessionName}:0.${i} -x $((W * ${weights[i]} / ${sum} - 1))`,
+    );
+  }
+  const shell = [`W=$(${widthCmd})`, ...resizes].join(' && ');
   const hookCommand = `run-shell -b "${shell}"`;
   for (const hook of ['client-resized', 'after-resize-window']) {
     runTmux('set-hook', '-t', sessionName, hook, hookCommand);

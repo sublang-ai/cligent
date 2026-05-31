@@ -11,7 +11,7 @@ The single-player case keeps its existing `1 : 1` default; only the multi-player
 
 ## Status
 
-In progress
+Done
 
 ## Scope
 
@@ -67,9 +67,9 @@ The launcher does not consult the YAML again after session creation, so reading 
 - [x] `specs/map.md` — index IR-022.
 - [x] `src/app/tmux-play/config.ts` — `TmuxPlayConfig.layout` field, normalization, validation, defaults, snapshot inclusion.
 - [x] `src/app/tmux-play/config.test.ts` — TTMUX-064 cases.
-- [ ] `src/app/tmux-play/launcher.ts` — thread `layout` into `new-session -x/-y`, `split-window -l`, `configureLayoutHooks`; retire the hardcoded layout constants.
-- [ ] `src/app/tmux-play/launcher.test.ts` — geometry / split / hook assertions updated to the new defaults; explicit-override case added.
-- [ ] `src/app/tmux-play/launcher.acceptance.test.ts` — real-tmux geometry assertion updated; explicit-override case added.
+- [x] `src/app/tmux-play/launcher.ts` — thread `layout` into `new-session -x/-y`, `requestTerminalResize`, `split-window -l`, and `configureLayoutHooks`; retire the hardcoded layout constants.
+- [x] `src/app/tmux-play/launcher.test.ts` — geometry / split / hook assertions updated to the new defaults; explicit-override case added.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — real-tmux geometry assertion updated; explicit-override case added.
 
 ## Tasks
 
@@ -79,7 +79,7 @@ Each task is one commit.
 
 2. [x] **Config schema for `layout`.** Add `TmuxPlayConfig.layout` (`window: { columns, rows }`, `columnWeights: number[]`) to `src/app/tmux-play/config.ts`; normalize/validate per TMUX-064 (reject non-positive integer dimensions, non-array or non-positive-number weights, weights-length not matching `players.length === 1 ? 2 : 3`); default the field at load time so the snapshot always carries concrete values. Update `DEFAULT_TMUX_PLAY_CONFIG` to include explicit `layout`. Add unit tests in `src/app/tmux-play/config.test.ts` covering the accepted defaults, each rejection path, and snapshot preservation. Per-task-boundary green.
 
-3. [ ] **Launcher wiring + tests.** Thread `loaded.config.layout` into `buildTmuxSession` so `new-session -x/-y` uses `layout.window`, `requestTerminalResize` emits `\x1b[8;<rows>;<columns>t` from the same `layout.window`, each `split-window -l` value is computed from `layout.columnWeights` and `layout.window.columns`, and `configureLayoutHooks` builds its `resize-pane` chain from the weights and the runtime `#{window_width}`. Retire the now-unused `INITIAL_TMUX_COLUMNS`, `INITIAL_TMUX_ROWS`, `PLAYER_AREA_SIZE_*`, and `SECOND_PLAYER_COLUMN_SIZE` constants. Update `src/app/tmux-play/launcher.test.ts` to assert the new default geometry (`60 / 90 / 90` for two players, `120 / 120` for one player, `240×67` window) and the unchanged-default `\x1b[8;67;240t` resize sequence, and add an explicit-override case that exercises a non-default `layout.window` end-to-end (new-session args, terminal CSI bytes, column weights). Update `src/app/tmux-play/launcher.acceptance.test.ts` similarly against a real tmux server. Per-task-boundary green; the acceptance suite shall be executed end-to-end inside this commit per the IR-011 precedent.
+3. [x] **Launcher wiring + tests.** Thread `loaded.config.layout` into `buildTmuxSession` so `new-session -x/-y` uses `layout.window`, `requestTerminalResize` emits `\x1b[8;<rows>;<columns>t` from the same `layout.window`, each `split-window -l` value is computed from `layout.columnWeights` and `layout.window.columns`, and `configureLayoutHooks` builds its `resize-pane` chain from the weights and the runtime `#{window_width}`. Retire the now-unused `INITIAL_TMUX_COLUMNS`, `INITIAL_TMUX_ROWS`, `PLAYER_AREA_SIZE_*`, and `SECOND_PLAYER_COLUMN_SIZE` constants. Update `src/app/tmux-play/launcher.test.ts` to assert the new default geometry (`60 / 90 / 90` for two players, `120 / 120` for one player, `240×67` window) and the unchanged-default `\x1b[8;67;240t` resize sequence, and add an explicit-override case that exercises a non-default `layout.window` end-to-end (new-session args, terminal CSI bytes, column weights). Update `src/app/tmux-play/launcher.acceptance.test.ts` similarly against a real tmux server. Per-task-boundary green; the acceptance suite shall be executed end-to-end inside this commit per the IR-011 precedent.
 
 ## Acceptance criteria
 

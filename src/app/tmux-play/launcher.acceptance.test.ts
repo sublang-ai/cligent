@@ -96,7 +96,7 @@ describe('tmux-play real-tmux acceptance', () => {
   });
 
   acceptanceIt(
-    'preserves the 1/3 region split across forced window resizes',
+    'preserves the weighted region split across forced window resizes',
     async () => {
       cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
       workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
@@ -137,13 +137,15 @@ describe('tmux-play real-tmux acceptance', () => {
           '-y',
           String(height),
         ]);
+        // TMUX-044 / TMUX-064: shipped multi-player default weights
+        // `[4, 6, 6]` (sum = 16). Each non-rightmost column gets
+        // `floor(W * w_i / sum)`; the rightmost absorbs the remainder.
+        const captainExpected = Math.floor((width * 4) / 16);
+        const coderExpected = Math.floor((width * 6) / 16);
+        const reviewerExpected = width - captainExpected - coderExpected;
         const panes = await waitForRegions(
           sessionName,
-          [
-            Math.floor(width / 3),
-            Math.floor(width / 3),
-            width - 2 * Math.floor(width / 3),
-          ],
+          [captainExpected, coderExpected, reviewerExpected],
           2_000,
         );
         const captain = paneByTitle(panes, 'Captain · claude');
@@ -156,9 +158,9 @@ describe('tmux-play real-tmux acceptance', () => {
           { width, captainRegion, coderRegion, reviewerRegion },
         ).toEqual({
           width,
-          captainRegion: Math.floor(width / 3),
-          coderRegion: Math.floor(width / 3),
-          reviewerRegion: width - 2 * Math.floor(width / 3),
+          captainRegion: captainExpected,
+          coderRegion: coderExpected,
+          reviewerRegion: reviewerExpected,
         });
       }
     },
@@ -166,7 +168,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'creates a 240x67 session with 80/80/80 panes, titled, player panes read-only, Captain active',
+    'creates a 240x67 session with 60/90/90 panes, titled, player panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -200,16 +202,18 @@ describe('tmux-play real-tmux acceptance', () => {
       const coder = paneByTitle(panes, 'Coder · codex');
       const reviewer = paneByTitle(panes, 'Reviewer · claude');
 
-      // TTMUX-031: layout — 80/80/80 columns within tmux's border accounting.
-      // Two 1-cell separators eat 1 col from captain (border with coder) and
+      // TTMUX-031 / TMUX-064: shipped multi-player default weights `[4, 6, 6]`
+      // (sum = 16) on the 240-cell window yield regions 60/90/90. Two 1-cell
+      // right-side separators eat 1 col from captain (border with coder) and
       // 1 col from coder (border with reviewer). pane_left advances by the
-      // pane width plus its right-side border, so reviewer.left is 80+80=160.
+      // region (pane content + 1-cell border on non-rightmost panes), so
+      // coder.left = 60 and reviewer.left = 60 + 90 = 150.
       expect(captain.left).toBe(0);
-      expect(captain.width).toBe(79);
-      expect(coder.left).toBe(80);
-      expect(coder.width).toBe(79);
-      expect(reviewer.left).toBe(160);
-      expect(reviewer.width).toBe(80);
+      expect(captain.width).toBe(59);
+      expect(coder.left).toBe(60);
+      expect(coder.width).toBe(89);
+      expect(reviewer.left).toBe(150);
+      expect(reviewer.width).toBe(90);
 
       // TTMUX-032 + TTMUX-040: pane titles carry `· <adapter>`.
       expect(captain.title).toBe('Captain · claude');
@@ -277,6 +281,74 @@ describe('tmux-play real-tmux acceptance', () => {
 
       const capture = capturePane(sessionName, coder.index);
       expect(capture).not.toContain(probe);
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'honors an explicit YAML layout override end-to-end (TMUX-064)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      // TMUX-035 / TMUX-044 / TMUX-064: window 200x50, weights [3, 5, 7]
+      // (sum = 15). Boss region = floor(200 * 3 / 15) = 40; first player
+      // column region = floor(200 * 5 / 15) = 66; second player column
+      // absorbs the remainder = 200 - 40 - 66 = 94.
+      writeFileSync(
+        configPath,
+        [
+          'layout:',
+          '  window:',
+          '    columns: 200',
+          '    rows: 50',
+          '  columnWeights:',
+          '    - 3',
+          '    - 5',
+          '    - 7',
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          '  options: {}',
+          'players:',
+          '  - id: coder',
+          '    adapter: codex',
+          '  - id: reviewer',
+          '    adapter: claude',
+          '',
+        ].join('\n'),
+      );
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      expect(displayMessage(sessionName, '#{window_width}x#{window_height}'))
+        .toBe('200x50');
+
+      const panes = listPanes(sessionName);
+      expect(panes).toHaveLength(3);
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
+      expect(captain.left).toBe(0);
+      expect(captain.width).toBe(39); // region 40 minus 1-cell right border
+      expect(coder.left).toBe(40);
+      expect(coder.width).toBe(65); // region 66 minus 1-cell right border
+      expect(reviewer.left).toBe(106); // 40 + 66
+      expect(reviewer.width).toBe(94); // rightmost: content = region
     },
     60_000,
   );
