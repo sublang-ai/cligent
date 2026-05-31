@@ -249,28 +249,26 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
 
-      // TTMUX-067 (supersedes TTMUX-066): the launcher re-installs
-      // tmux's stock per-table MouseDown1Pane bindings verbatim —
-      // `select-pane -t= ; send-keys -M` in `root` and `select-pane`
-      // in `copy-mode` / `copy-mode-vi` — so left-click only changes
-      // pane focus and never cancels copy-mode on any pane. Stock
-      // bindings preserve scroll position and active selection across
-      // focus changes; the retired TTMUX-066 cancel-all chain caused
-      // the "previously focused pane jumps to the last line" defect
-      // by returning every in-mode pane to its live tail. The
-      // explicit re-install also clears any stale TMUX-066 if-shell
-      // entry on a tmux server reused across launches (tmux key
-      // tables are server-global). tmux's `list-keys` pretty-prints
-      // the stock bindings with its own normalization (spaces around
-      // `=`, `\;` as the command separator) — match the semantic
-      // shape (`select-pane` plus, for root, `send-keys -M`) rather
-      // than the pre-pretty-print body verbatim.
+      // TTMUX-068 (supersedes TTMUX-066 / TTMUX-067): the launcher
+      // installs a session-scoped MouseDown1Pane override that
+      // chains `send-keys -X clear-selection` per in-mode pane
+      // before the per-table stock tail. `clear-selection` drops the
+      // active selection without exiting copy-mode, so a click
+      // anywhere releases any active selection while every
+      // scrolled-back pane keeps its scroll position. The retired
+      // `-X cancel` primitive (TMUX-066) exited copy-mode entirely
+      // and snapped scrolled panes to the live tail; the retired
+      // stock-only install (TMUX-067) preserved scroll but never
+      // cleared selections. clear-selection is the tmux primitive
+      // that splits the two effects.
       for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
         const mouseDown1 = keyBinding(table, 'MouseDown1Pane');
-        expect(mouseDown1).not.toContain(sessionName);
-        expect(mouseDown1).not.toContain('pane_in_mode');
+        expect(mouseDown1).toContain('if-shell');
+        expect(mouseDown1).toContain('session_name');
+        expect(mouseDown1).toContain(sessionName);
+        expect(mouseDown1).toContain('pane_in_mode');
+        expect(mouseDown1).toContain('clear-selection');
         expect(mouseDown1).not.toContain('-X cancel');
-        expect(mouseDown1).not.toContain('if-shell');
         expect(mouseDown1).toContain('select-pane');
       }
       // Only the root binding forwards the mouse event via
@@ -278,9 +276,149 @@ describe('tmux-play real-tmux acceptance', () => {
       // the copy-mode tables consume the event without forwarding.
       expect(keyBinding('root', 'MouseDown1Pane')).toContain('send-keys -M');
       for (const table of ['copy-mode', 'copy-mode-vi']) {
+        // The mode-table bodies still mention `send-keys` in the
+        // per-pane `send-keys -t ... -X clear-selection` clauses, so
+        // assert the absence of the trailing `send-keys -M` forward
+        // (which is the root-table-only behavior) rather than the
+        // word `send-keys` itself.
         expect(keyBinding(table, 'MouseDown1Pane')).not.toContain(
-          'send-keys -M',
+          ' -M',
         );
+      }
+
+      // TTMUX-068 behavioral probe: pin the observable consequence,
+      // not only the binding string. Asserting only the binding
+      // strings is what allowed TTMUX-067 to land with the
+      // click-doesn't-release-selection regression intact.
+      //
+      // Layout: pane 0 = Boss/Captain (not in copy-mode); pane 1 =
+      // Coder (will hold a selection); pane 2 = Reviewer (will be
+      // scrolled-back in copy-mode without a selection). After we
+      // execute the binding's clear-selection loop, pane 1 should
+      // have no selection but still be in copy-mode, pane 2 should
+      // still be in copy-mode (scroll preserved), and pane 0 should
+      // remain not-in-mode.
+      runOrThrow('tmux', [
+        'copy-mode',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+      ]);
+      runOrThrow('tmux', [
+        'send-keys',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+        '-X',
+        'begin-selection',
+      ]);
+      runOrThrow('tmux', [
+        'send-keys',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+        '-X',
+        'cursor-right',
+      ]);
+      runOrThrow('tmux', [
+        'send-keys',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+        '-X',
+        'cursor-right',
+      ]);
+      runOrThrow('tmux', [
+        'copy-mode',
+        '-t',
+        `${sessionName}:0.${reviewer.index}`,
+      ]);
+
+      // Sanity: selection in pane 1, scrolled-back-no-selection in
+      // pane 2, no-mode in pane 0.
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('0');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${captain.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('0');
+
+      // Execute the per-pane clear-selection loop the binding would
+      // run on click. This is the same primitive chain emitted into
+      // the MouseDown1Pane true branch — running it directly bypasses
+      // tmux's mouse-event dispatch (which requires an attached
+      // client in detached/CI environments) while still exercising
+      // the user-observable behavior.
+      for (const pane of [captain, coder, reviewer]) {
+        runOrThrow('tmux', [
+          'if',
+          '-F',
+          '-t',
+          `${sessionName}:0.${pane.index}`,
+          '#{pane_in_mode}',
+          `send-keys -t ${sessionName}:0.${pane.index} -X clear-selection`,
+        ]);
+      }
+
+      // TTMUX-068 outcome: selection cleared on pane 1; pane 1 still
+      // in copy-mode (scroll preserved); pane 2 still in copy-mode
+      // (scroll preserved); pane 0 still not in mode.
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('0');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${captain.index}`,
+          '#{pane_in_mode}',
+        ),
+      ).toBe('0');
+
+      // Clean up the copy-mode state we set on panes 1 and 2 so the
+      // rest of the test runs against the live-tail captures the
+      // subsequent send-keys probe expects.
+      for (const pane of [coder, reviewer]) {
+        runOrThrow('tmux', [
+          'send-keys',
+          '-t',
+          `${sessionName}:0.${pane.index}`,
+          '-X',
+          'cancel',
+        ]);
       }
 
       // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key
