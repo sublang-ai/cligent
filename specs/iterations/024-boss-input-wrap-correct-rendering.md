@@ -16,14 +16,14 @@ Not started.
 ## Root cause (confirmed)
 
 The Boss/Captain pane is a Node `readline` interface in `terminal: true` mode; the player panes are `tail -f` and are unaffected (their scrollback was captured clean).
-The duplication is a `readline` redraw artifact triggered when a rendered input row is exactly the pane width — the terminal "magic margin" / deferred-wrap (DECAWM) case.
+The duplication is a `readline` redraw artifact triggered when a rendered input row is exactly the pane width — the terminal "magic margin" / deferred-wrap (DECAWM [[2]]) case.
 
 Evidence from a live session at pane width 38 (`boss> On some pane (at least Captain),` is exactly 38 cells):
 
 - The 38-cell row repeated ~40× in the Captain pane scrollback, all during typing/editing and before any captain output.
 - The Coder pane (`tail -f`, no readline) showed no duplication.
 
-Mechanism, from Node v25 `readline` internals:
+Mechanism, from Node v25 `readline` internals [[1]]:
 
 - `Interface[kGetDisplayPos]` returns `{ cols: 0, rows: N }` for content whose width is an exact multiple of `columns`, asserting the cursor advanced to a fresh row; the terminal's deferred wrap actually leaves the cursor on the same row in the last cell.
 - `Interface[kRefreshLine]` compensates with `if (lineCols === 0) write(' ')` to force a new row, then repositions using the mismatched row count.
@@ -35,7 +35,7 @@ Rejected quick fixes (each verified or reasoned to be unacceptable):
 | --- | --- |
 | Report `output.columns - 1` to readline | Garbles output: readline wraps at `W-1` while the terminal wraps at `W`, so cursor math and terminal disagree and rows overlap (reproduced). |
 | `terminal: false` | Disables readline's redraw but also its echo; canonical mode would break the raw-mode `keypress` path that [TMUX-057](../user/tmux-play.md#tmux-057) ESC interrupt and [TMUX-058](../user/tmux-play.md#tmux-058) bracketed paste depend on. |
-| Monkey-patch `Symbol(_getDisplayPos)` / `Symbol(_refreshLine)` | Reaches into undocumented Node private symbols; version-fragile; fails review on best-practice grounds. |
+| Monkey-patch `Symbol(_getDisplayPos)` / `Symbol(_refreshLine)` [[1]] | Reaches into undocumented Node private symbols; version-fragile; fails review on best-practice grounds. |
 
 A robust fix must own the Boss input redraw so it never drives the terminal into the deferred-wrap state, while leaving readline to own the edit buffer, history, key handling, `line` events, and raw-mode entry/exit. That is multiple commit-sized steps, hence this IR rather than a single commit.
 
@@ -93,3 +93,8 @@ Fallback: if coordinating a wrap-correct multi-row repaint with async captain ou
 - ESC during an active turn still aborts per [TMUX-057](../user/tmux-play.md#tmux-057); a bracketed multi-line paste still submits one turn per [TMUX-058](../user/tmux-play.md#tmux-058).
 - Where stdout is not a TTY, the session falls back to readline echo and remains functional; the SIGINT/SIGTERM/EOF lifecycle per [TMUX-026](../user/tmux-play.md#tmux-026) is unchanged in every mode.
 - All per-task-boundary checks (build, typecheck, lint, unit, smoke, acceptance) pass at each task boundary.
+
+## References
+
+[1]: https://github.com/nodejs/node/blob/v25.8.0/lib/internal/readline/interface.js "Node.js — readline Interface (kGetDisplayPos / kRefreshLine), v25.8.0"
+[2]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html "xterm Control Sequences — DEC Private Mode (DECSET/DECRST), Ps = 7 Auto-Wrap Mode (DECAWM)"
