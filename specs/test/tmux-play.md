@@ -350,6 +350,13 @@ Verifies: [TMUX-051](../user/tmux-play.md#tmux-051)
 
 Given `tmux-play` invoked in launcher mode on a host where `isGlowAvailable()` returns `false`, `launchTmuxPlay` shall reject with an error whose message names `glow` and contains the install URL `https://github.com/charmbracelet/glow#installation`. The launcher shall not invoke any subsequent launcher work — no config discovery, no work-directory creation, no `tmux` session construction — so the rejection surfaces before any side effects. The `glow` check shall run after the existing `tmux` availability check so a host missing both binaries reports `tmux` first.
 
+### TTMUX-067
+Verifies: [TMUX-067](../user/tmux-play.md#tmux-067)
+
+Given a real tmux server running session mode in a Boss/Captain pane of width `W`, when the Boss input is typed and edited character by character so its prompt-plus-content visible width crosses the `W`-column boundary and reaches at least `2·W`, `tmux capture-pane -p` over the pane's scrollback shall show no input row repeated — in particular no full-width (`W`-cell) `boss> …` row shall appear more than once — and the Boss turn submitted on Enter shall carry a `BossTurn.prompt` equal to the typed text.
+Given the same pane, a bare ESC delivered during an active turn shall still abort that turn per [TMUX-057](../user/tmux-play.md#tmux-057), and a bracketed multi-line paste followed by Enter shall still submit exactly one Boss turn per [TMUX-058](../user/tmux-play.md#tmux-058).
+The probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
+
 ## Permission Configuration
 
 ### TTMUX-052

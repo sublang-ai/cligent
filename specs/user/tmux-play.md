@@ -308,6 +308,13 @@ Bytes typed by the Boss after the paste and before that Enter shall be included 
 Where either stdin or stdout is not a TTY, the multi-line paste behavior shall be omitted and embedded newlines in pasted text shall behave as in the underlying readline.
 The session shall enable bracketed paste only for its own duration and shall emit the bracketed-paste-disable sequence on every shutdown path so tmux-play does not leave bracketed-paste mode enabled in the terminal after exit.
 
+### TMUX-067
+
+Where session mode renders the Boss readline to a TTY of width `W` columns, while the Boss types or edits an input line whose prompt-plus-content visible width reaches or exceeds `W`, the Boss/Captain pane scrollback shall not accumulate duplicated copies of any input row, and the cursor shall track the edit position across wrap boundaries.
+The session shall render the input itself rather than rely on the underlying readline redraw, and no input row shall occupy the terminal's rightmost column; reserving that column removes the deferred-wrap ("magic margin") ambiguity that the readline redraw mishandles when a rendered row equals the terminal width.
+The single-occurrence input echo of [TMUX-037](#tmux-037), the ESC interrupt of [TMUX-057](#tmux-057), and the bracketed-paste submission of [TMUX-058](#tmux-058) shall continue to hold.
+Where stdout is not a TTY, the session shall fall back to the underlying readline echo and this row-duplication guarantee shall not apply.
+
 ### TMUX-038
 
 The presenter shall tag the first nonblank textual line of each tmux-play pane output block with a `<who>> ` prefix where `<who>` is `boss`, `captain`, or the speaker's player `id`. Continuation lines within the same block shall use a two-space hanging indent without repeating the speaker prefix. Blank lines shall remain blank and shall not count as continuation lines before the first nonblank line. The Boss readline prompt shall be `boss> `; the first nonblank line of the Captain's reply rendered in the Boss/Captain pane shall be prefixed with `captain> `; the first nonblank line of the Captain's prompt rendered in a player pane shall be prefixed with `captain> `; and the first nonblank line of the player's reply rendered in the player pane shall be prefixed with `<playerId>> `. Bracket-tag notation such as `[from captain]` or `[captain llm prompt]` shall not be used.
