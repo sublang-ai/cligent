@@ -147,9 +147,10 @@ Given two or more players and a YAML config that omits `layout.columnWeights`, w
 ### TTMUX-062
 Verifies: [TMUX-062](../user/tmux-play.md#tmux-062)
 
-Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe-and-cancel <system-clipboard-command>`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe-and-cancel <system-clipboard-command>`, shall not include a `set-clipboard` option write, and shall not include any `Wheel*` binding.
+Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, shall not include a `set-clipboard` option write, and shall not include any `Wheel*` binding.
+The right-click binding argv shall be exactly `copy-pipe`, not `copy-pipe-and-cancel`: `copy-pipe-and-cancel` exits copy-mode and snaps a scrolled-back pane to its live tail, which is the "right-click on a scrolled-back pane jumps to the last line" defect [TMUX-062](../user/tmux-play.md#tmux-062) requires not to occur.
 The `<system-clipboard-command>` shall contain `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, and `tmux load-buffer -w -`.
-Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above; neither table's `MouseDown3Pane` binding shall reference `copy-pipe-and-cancel`.
 
 ### TTMUX-066
 Verifies: [TMUX-066](../user/tmux-play.md#tmux-066)

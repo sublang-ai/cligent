@@ -243,7 +243,12 @@ describe('tmux-play real-tmux acceptance', () => {
       );
       for (const table of ['copy-mode', 'copy-mode-vi']) {
         const rightClickCopyBinding = keyBinding(table, 'MouseDown3Pane');
-        expect(rightClickCopyBinding).toContain('copy-pipe-and-cancel');
+        // TMUX-062: `copy-pipe` (not `copy-pipe-and-cancel`) preserves
+        // the clicked pane's scroll position after copy. Pin the
+        // primitive precisely so a regression to the scroll-snapping
+        // `copy-pipe-and-cancel` variant fails the assertion.
+        expect(rightClickCopyBinding).toMatch(/\bcopy-pipe\b/);
+        expect(rightClickCopyBinding).not.toContain('copy-pipe-and-cancel');
         expect(rightClickCopyBinding).toContain('pbcopy');
         expect(rightClickCopyBinding).toContain('wl-copy');
         expect(rightClickCopyBinding).toContain('xclip');

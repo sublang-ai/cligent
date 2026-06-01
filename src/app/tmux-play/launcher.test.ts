@@ -315,7 +315,7 @@ describe('launchTmuxPlay', () => {
         'MouseDown3Pane',
         'send-keys',
         '-X',
-        'copy-pipe-and-cancel',
+        'copy-pipe',
         expect.any(String),
       ]);
       const clipboardCommand = rightClickCopyCall?.at(-1);

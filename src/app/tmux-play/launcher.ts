@@ -823,6 +823,19 @@ function configureMouseInteraction(
       '-X',
       'stop-selection',
     );
+    // TMUX-062: right-click copy uses `copy-pipe` (not
+    // `copy-pipe-and-cancel`) so the clicked pane keeps its current
+    // copy-mode scroll position after the copy. `copy-pipe-and-cancel`
+    // exits copy-mode entirely, which snaps a scrolled-back pane back
+    // to its live tail — the "right-click on a scrolled-back pane
+    // jumps to the last line" defect, the right-click analogue of the
+    // left-click defect TMUX-068 fixes for the `MouseDown1Pane`
+    // override below. `copy-pipe` still clears the active selection
+    // (matching the left-click `clear-selection` story so the copy
+    // surfaces a visible cue and a stale selection cannot survive the
+    // copy gesture), but leaves the pane in copy-mode at the same
+    // scroll position. Users who want to leave copy-mode after the
+    // copy can press `q` as usual.
     runTmux(
       'bind-key',
       '-T',
@@ -830,7 +843,7 @@ function configureMouseInteraction(
       'MouseDown3Pane',
       'send-keys',
       '-X',
-      'copy-pipe-and-cancel',
+      'copy-pipe',
       SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
   }
