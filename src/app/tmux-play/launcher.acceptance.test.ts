@@ -68,6 +68,9 @@ interface PaneRow {
 const TMUX_AVAILABLE = isTmuxAvailable();
 const GLOW_AVAILABLE = isGlowAvailable();
 const acceptanceIt = TMUX_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
+const EXPECT_AVAILABLE = isCommandAvailable('expect', ['-v']);
+const mouseDispatchIt =
+  TMUX_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
 
 const BUILT_CLI_PATH = join(
   process.cwd(),
@@ -292,12 +295,16 @@ describe('tmux-play real-tmux acceptance', () => {
       // click-doesn't-release-selection regression intact.
       //
       // Layout: pane 0 = Boss/Captain (not in copy-mode); pane 1 =
-      // Coder (will hold a selection); pane 2 = Reviewer (will be
-      // scrolled-back in copy-mode without a selection). After we
-      // execute the binding's clear-selection loop, pane 1 should
-      // have no selection but still be in copy-mode, pane 2 should
-      // still be in copy-mode (scroll preserved), and pane 0 should
-      // remain not-in-mode.
+      // Coder (will hold a selection); pane 2 = Reviewer (in copy-mode
+      // without a selection). After we execute the binding's
+      // clear-selection loop, pane 1 should have no selection but still
+      // be in copy-mode, pane 2 should still be in copy-mode, and pane 0
+      // should remain not-in-mode. This test pins that clear-selection
+      // keeps panes in copy-mode (the inverse of the retired -X cancel,
+      // which exited copy-mode and snapped scrolled panes to the tail);
+      // the genuine scroll-position-preservation outcome is pinned by the
+      // attached-client probe below, on panes scrolled back into real
+      // history.
       runOrThrow('tmux', [
         'copy-mode',
         '-t',
@@ -330,7 +337,7 @@ describe('tmux-play real-tmux acceptance', () => {
         `${sessionName}:0.${reviewer.index}`,
       ]);
 
-      // Sanity: selection in pane 1, scrolled-back-no-selection in
+      // Sanity: selection in pane 1, copy-mode-without-selection in
       // pane 2, no-mode in pane 0.
       expect(
         displayMessage(
@@ -380,9 +387,9 @@ describe('tmux-play real-tmux acceptance', () => {
         ]);
       }
 
-      // TTMUX-068 outcome: selection cleared on pane 1; pane 1 still
-      // in copy-mode (scroll preserved); pane 2 still in copy-mode
-      // (scroll preserved); pane 0 still not in mode.
+      // TTMUX-068 outcome: selection cleared on pane 1; pane 1 still in
+      // copy-mode (not snapped out by clear-selection); pane 2 still in
+      // copy-mode; pane 0 still not in mode.
       expect(
         displayMessage(
           `${sessionName}:0.${coder.index}`,
@@ -480,6 +487,230 @@ describe('tmux-play real-tmux acceptance', () => {
 
       const capture = capturePane(sessionName, coder.index);
       expect(capture).not.toContain(probe);
+    },
+    60_000,
+  );
+
+  mouseDispatchIt(
+    'clears a stopped selection and preserves scroll position through a real attached-client left-click (TMUX-068)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `mouse-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // Keep the attached expect client at a predictable 80x24 grid so
+      // the synthetic SGR mouse coordinate lands inside the reviewer pane.
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      const captainExpected = Math.floor(80 / 3);
+      const coderExpected = Math.floor(80 / 3);
+      const reviewerExpected = 80 - captainExpected - coderExpected;
+      const panes = await waitForRegions(
+        sessionName,
+        [captainExpected, coderExpected, reviewerExpected],
+        2_000,
+      );
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
+
+      // The player panes launch with empty scrollback (history_size 0):
+      // the acceptance suite runs without adapter API keys, so the adapters
+      // stream nothing and there is nothing to scroll back through. But a
+      // genuinely scrolled-back pane is exactly the state TMUX-068 must
+      // preserve, so seed deterministic history into the two player panes
+      // with `respawn-pane`. The MouseDown1Pane binding under test is
+      // session- and `pane_in_mode`-gated and independent of what each pane
+      // runs, so substituting the pane contents does not weaken the probe;
+      // it lets us scroll to a known, non-zero position and assert it
+      // survives the click. `respawn-pane` preserves pane geometry and
+      // tmux-play's pane title (so the indices captured above stay valid).
+      for (const pane of [coder, reviewer]) {
+        runOrThrow('tmux', [
+          'respawn-pane',
+          '-k',
+          '-t',
+          `${sessionName}:0.${pane.index}`,
+          'seq 1 500; sleep 600',
+        ]);
+      }
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+      await waitForHistory(sessionName, reviewer.index, 100, 2_000);
+
+      // Pane A (Coder): scroll back into history, then stop a selection
+      // there. Covers TMUX-068's "a pane that holds an active selection
+      // shall stay in copy-mode at the same scroll position with the
+      // selection cleared".
+      runOrThrow('tmux', [
+        'select-pane',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+      ]);
+      runOrThrow('tmux', [
+        'copy-mode',
+        '-t',
+        `${sessionName}:0.${coder.index}`,
+      ]);
+      for (let i = 0; i < 6; i += 1) {
+        runOrThrow('tmux', [
+          'send-keys',
+          '-t',
+          `${sessionName}:0.${coder.index}`,
+          '-X',
+          'scroll-up',
+        ]);
+      }
+      for (const motion of [
+        'begin-selection',
+        'cursor-right',
+        'stop-selection',
+      ]) {
+        runOrThrow('tmux', [
+          'send-keys',
+          '-t',
+          `${sessionName}:0.${coder.index}`,
+          '-X',
+          motion,
+        ]);
+      }
+
+      // Pane B (Reviewer): scroll back into history WITHOUT a selection.
+      // Covers TMUX-068's "a pane that is in copy-mode without an active
+      // selection (a scrolled-back pane) shall stay in copy-mode at its
+      // existing scroll position" — the previously unverified sibling case.
+      runOrThrow('tmux', [
+        'copy-mode',
+        '-t',
+        `${sessionName}:0.${reviewer.index}`,
+      ]);
+      for (let i = 0; i < 9; i += 1) {
+        runOrThrow('tmux', [
+          'send-keys',
+          '-t',
+          `${sessionName}:0.${reviewer.index}`,
+          '-X',
+          'scroll-up',
+        ]);
+      }
+
+      // Capture pre-click scroll positions. Assert both are non-zero so a
+      // setup that failed to scroll back fails loudly instead of letting
+      // the preservation assertions below pass vacuously at 0 == 0.
+      const coderScrollBefore = displayMessage(
+        `${sessionName}:0.${coder.index}`,
+        '#{scroll_position}',
+      );
+      const reviewerScrollBefore = displayMessage(
+        `${sessionName}:0.${reviewer.index}`,
+        '#{scroll_position}',
+      );
+      expect(Number(coderScrollBefore)).toBeGreaterThan(0);
+      expect(Number(reviewerScrollBefore)).toBeGreaterThan(0);
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('1');
+      expect(
+        displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('0');
+      expect(
+        displayMessage(`${sessionName}:0.${reviewer.index}`, '#{pane_in_mode}'),
+      ).toBe('1');
+      expect(
+        displayMessage(`${sessionName}:0.${captain.index}`, '#{pane_in_mode}'),
+      ).toBe('0');
+      // Focus is on Coder (the last select-pane), not on the click target,
+      // so the post-click focus assertion proves a real focus change.
+      expect(
+        displayMessage(`${sessionName}:0.${captain.index}`, '#{pane_active}'),
+      ).toBe('0');
+
+      // Drive a real primary-button mouse-down through an attached client
+      // inside the Captain pane (not in copy-mode), exercising tmux's actual
+      // mouse-event dispatch and key-table routing — not a manual invocation
+      // of the binding body.
+      sendAttachedClientMouseDown(
+        sessionName,
+        captain.left + 2,
+        captain.top + 2,
+      );
+
+      // TMUX-068 outcome through the real click path: Coder's stopped
+      // selection is cleared...
+      expect(
+        displayMessage(
+          `${sessionName}:0.${coder.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('0');
+      // ...without leaving copy-mode...
+      expect(
+        displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
+      ).toBe('1');
+      // ...and at the same scroll position (the user-visible "jumps to the
+      // last line" regression that -X cancel caused under TMUX-066).
+      expect(
+        displayMessage(`${sessionName}:0.${coder.index}`, '#{scroll_position}'),
+      ).toBe(coderScrollBefore);
+      // The scrolled-back, selection-free sibling keeps copy-mode and scroll.
+      expect(
+        displayMessage(`${sessionName}:0.${reviewer.index}`, '#{pane_in_mode}'),
+      ).toBe('1');
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{scroll_position}',
+        ),
+      ).toBe(reviewerScrollBefore);
+      expect(
+        displayMessage(
+          `${sessionName}:0.${reviewer.index}`,
+          '#{selection_present}',
+        ),
+      ).toBe('0');
+      // Focus moved to the click target.
+      expect(
+        displayMessage(`${sessionName}:0.${captain.index}`, '#{pane_active}'),
+      ).toBe('1');
     },
     60_000,
   );
@@ -1368,6 +1599,33 @@ function showPaneOption(
   return result.stdout.trimEnd();
 }
 
+function sendAttachedClientMouseDown(
+  session: string,
+  x: number,
+  y: number,
+): void {
+  const script = [
+    `spawn tmux attach-session -t ${session}`,
+    'after 500',
+    `send -- "\\033\\[<0;${x};${y}M"`,
+    'after 500',
+    'send -- "\\002d"',
+    'expect eof',
+  ].join('\n');
+  const result = spawnSync('expect', ['-c', script], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (result.error) {
+    throw new Error(`expect mouse probe failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `expect mouse probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
+    );
+  }
+}
+
 function expandedPaneBorder(session: string, paneIndex: number): string {
   return displayMessage(`${session}:0.${paneIndex}`, '#{E:pane-border-format}');
 }
@@ -1401,6 +1659,11 @@ function runOrThrow(cmd: string, args: readonly string[]): void {
   }
 }
 
+function isCommandAvailable(cmd: string, args: readonly string[]): boolean {
+  const result = spawnSync(cmd, args, { stdio: 'ignore' });
+  return result.error === undefined && result.status === 0;
+}
+
 async function waitForRegions(
   session: string,
   expectedRegions: readonly number[],
@@ -1421,6 +1684,29 @@ async function waitForRegions(
   }
   throw new Error(
     `Layout did not reach expected regions [${expectedRegions.join(',')}] within ${timeoutMs}ms; last seen: ${JSON.stringify(lastSeen)}`,
+  );
+}
+
+// `respawn-pane` returns before the seeded process has written its output,
+// so poll `#{history_size}` until the pane has enough scrollback for a
+// scroll-up to reach a non-zero `#{scroll_position}`.
+async function waitForHistory(
+  session: string,
+  paneIndex: number,
+  minLines: number,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  let last = '0';
+  while (Date.now() - start < timeoutMs) {
+    last = displayMessage(`${session}:0.${paneIndex}`, '#{history_size}');
+    if (Number(last) >= minLines) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `pane ${paneIndex} history_size stayed below ${minLines} (last ${last}) within ${timeoutMs}ms`,
   );
 }
 
