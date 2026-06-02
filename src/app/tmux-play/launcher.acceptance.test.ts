@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import {
   existsSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEvent } from '../../events.js';
 import { isGlowAvailable } from '../shared/glow.js';
+import { shellQuote } from '../shared/shell.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
 import {
@@ -492,6 +494,73 @@ describe('tmux-play real-tmux acceptance', () => {
 
       const capture = capturePane(sessionName, coder.index);
       expect(capture).not.toContain(probe);
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'copies and clears a scrolled selection without leaving copy-mode (TMUX-062)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      const coder = paneByTitle(listPanes(sessionName), 'Coder · codex');
+      const target = `${sessionName}:0.${coder.index}`;
+      runOrThrow('tmux', [
+        'respawn-pane',
+        '-k',
+        '-t',
+        target,
+        'seq 1 500; sleep 600',
+      ]);
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+
+      runOrThrow('tmux', ['copy-mode', '-t', target]);
+      for (let i = 0; i < 6; i += 1) {
+        runOrThrow('tmux', ['send-keys', '-t', target, '-X', 'scroll-up']);
+      }
+      const selectedLine = displayMessage(target, '#{copy_cursor_line}');
+      expect(selectedLine).toMatch(/^\d+$/);
+      runOrThrow('tmux', ['send-keys', '-t', target, '-X', 'select-line']);
+
+      const scrollBefore = displayMessage(target, '#{scroll_position}');
+      expect(Number(scrollBefore)).toBeGreaterThan(0);
+      expect(displayMessage(target, '#{selection_present}')).toBe('1');
+      expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
+
+      const copiedPath = join(cwd, 'right-click-copy.txt');
+      runOrThrow('tmux', [
+        'send-keys',
+        '-t',
+        target,
+        '-X',
+        'copy-pipe',
+        `cat > ${shellQuote(copiedPath)}`,
+      ]);
+
+      const copiedText = await waitForNonEmptyFile(copiedPath, 2_000);
+      expect(copiedText.trim()).toBe(selectedLine);
+      expect(displayMessage(target, '#{selection_present}')).toBe('0');
+      expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
+      expect(displayMessage(target, '#{scroll_position}')).toBe(scrollBefore);
     },
     60_000,
   );
@@ -1712,6 +1781,25 @@ async function waitForHistory(
   }
   throw new Error(
     `pane ${paneIndex} history_size stayed below ${minLines} (last ${last}) within ${timeoutMs}ms`,
+  );
+}
+
+async function waitForNonEmptyFile(
+  path: string,
+  timeoutMs: number,
+): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (existsSync(path)) {
+      const content = readFileSync(path, 'utf8');
+      if (content.length > 0) {
+        return content;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `${path} was not written with copied text within ${timeoutMs}ms`,
   );
 }
 

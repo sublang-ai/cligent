@@ -151,6 +151,7 @@ Given the launcher constructing a tmux-play session, the tmux command stream sha
 The right-click binding argv shall be exactly `copy-pipe`, not `copy-pipe-and-cancel`: `copy-pipe-and-cancel` exits copy-mode and snaps a scrolled-back pane to its live tail, which is the "right-click on a scrolled-back pane jumps to the last line" defect [TMUX-062](../user/tmux-play.md#tmux-062) requires not to occur.
 The `<system-clipboard-command>` shall contain `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, and `tmux load-buffer -w -`.
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above; neither table's `MouseDown3Pane` binding shall reference `copy-pipe-and-cancel`.
+Given a real tmux server with a launched pane holding a stopped active selection while scrolled back into history, when the same `copy-pipe` primitive used by the right-click binding copies that selection through a test pipe command, the pipe command shall receive the expected selected text, `#{selection_present}` shall become `0`, `#{pane_in_mode}` shall remain `1`, and `#{scroll_position}` shall equal its pre-copy value.
 
 ### TTMUX-066
 Verifies: [TMUX-066](../user/tmux-play.md#tmux-066)
