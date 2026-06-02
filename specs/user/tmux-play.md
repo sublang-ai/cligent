@@ -302,6 +302,7 @@ While a tmux-play session is running, when the session writes new content to a p
 The pane shall be returned to its live tail by a copy-mode exit primitive (`send-keys -X cancel`), not by killing the pane or its feeding process, so a player pane's `tail -f` per [TMUX-027](#tmux-027) and the Boss/Captain pane's process keep running; clearing any active selection on that pane is an accepted side effect of the exit.
 A pane that is not in a mode shall be left untouched, and no copy-mode exit shall be issued against it.
 The trigger shall be new output only: this override of the click and right-click scroll-preservation of [TMUX-062](#tmux-062) and [TMUX-068](#tmux-068) shall occur only when content is written, so between Boss turns — when no output is produced to a pane — a scrolled-back pane shall keep its scroll position and stay in copy-mode for historical review.
+Content that renders to no visible bytes shall not count as new output: when a processed event emits nothing to the pane — for example an all-blank rendered block that per [TMUX-050](#tmux-050) writes no bytes — a scrolled-back pane shall keep its scroll position and shall not be returned to its live tail, since the trigger is visible content reaching the pane, not the mere processing of an event.
 A write to one pane shall not return any other pane to its tail; a pane that receives no concurrent write shall retain its copy-mode state and scroll position.
 The behavior shall be scoped to the launched tmux-play session and shall not affect panes in any other tmux session on the same server.
 
