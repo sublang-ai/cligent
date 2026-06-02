@@ -34,6 +34,7 @@ import {
 import { mapReasoningEffortToOpenCodeVariant } from '../../adapters/opencode.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
+import { FollowObserver } from './follow-observer.js';
 import { TimingObserver, type TimingScheduler } from './timing-observer.js';
 import {
   TMUX_PANE_TIMER_ACCENT_OPTION,
@@ -577,6 +578,102 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(displayMessage(target, '#{selection_present}')).toBe('0');
       expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
       expect(displayMessage(target, '#{scroll_position}')).toBe(scrollBefore);
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'returns a scrolled pane to its live tail when the runtime writes to it, leaving a sibling pane scrolled (TMUX-069)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      const panes = listPanes(sessionName);
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
+      const coderTarget = `${sessionName}:0.${coder.index}`;
+      const reviewerTarget = `${sessionName}:0.${reviewer.index}`;
+
+      // Seed scrollback into both player panes via respawn-pane so a
+      // scroll-up reaches a non-zero #{scroll_position}. The follow is
+      // #{pane_in_mode}-gated and independent of pane contents, so synthetic
+      // history stands in for real streamed output.
+      for (const target of [coderTarget, reviewerTarget]) {
+        runOrThrow('tmux', ['respawn-pane', '-k', '-t', target, 'seq 1 500; sleep 600']);
+      }
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+      await waitForHistory(sessionName, reviewer.index, 100, 2_000);
+
+      const scrollBack = (target: string): void => {
+        runOrThrow('tmux', ['copy-mode', '-t', target]);
+        for (let i = 0; i < 6; i += 1) {
+          runOrThrow('tmux', ['send-keys', '-t', target, '-X', 'scroll-up']);
+        }
+        // Guard: a setup that failed to scroll back would pass the
+        // pane_in_mode assertions vacuously, so require real scroll-back.
+        expect(Number(displayMessage(target, '#{scroll_position}'))).toBeGreaterThan(0);
+        expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
+      };
+
+      // The observer points at the live session through the real tmux client
+      // (debounce disabled so each synthetic record issues immediately).
+      const followOptions = {
+        sessionName,
+        captainAdapter: 'claude',
+        players: [
+          { id: 'coder', adapter: 'codex' },
+          { id: 'reviewer', adapter: 'claude' },
+        ],
+        debounceMs: 0,
+      };
+
+      // Phase A: activity that renders no pane output must NOT exit copy-mode.
+      scrollBack(coderTarget);
+      const phaseA = new FollowObserver(followOptions);
+      phaseA.onRecord(turnStarted(1)); // no-op control record
+      phaseA.onRecord(captainPrompt(2)); // no-op control record
+      phaseA.onRecord(playerEvent('coder', doneEvent(), 3)); // suppressed event
+      phaseA.onRecord(playerEvent('coder', textDelta('partial'), 4)); // buffered
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+      expect(Number(displayMessage(coderTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+
+      // Phase B: a write-driving record returns the written pane to its tail
+      // while a sibling pane with no concurrent output stays scrolled. Scroll
+      // the reviewer pane back too so its staying-scrolled is a real outcome,
+      // not an artifact of never having entered copy-mode (coder is still
+      // scrolled from phase A, which did not follow it).
+      scrollBack(reviewerTarget);
+      const phaseB = new FollowObserver(followOptions);
+      phaseB.onRecord(playerPrompt('coder', 5));
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
+      expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('1');
+
+      // Phase C: a pane scrolled after buffered deltas but before the final
+      // flush is still returned to its tail when the flush lands.
+      scrollBack(coderTarget);
+      const phaseC = new FollowObserver(followOptions);
+      phaseC.onRecord(playerEvent('coder', textDelta('chunk'), 6)); // buffered: no follow
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+      phaseC.onRecord(playerFinished('coder', 7)); // flush: follow
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
     },
     60_000,
   );
@@ -1872,6 +1969,26 @@ function playerFinished(playerId: string, timestamp: number): TmuxPlayRecord {
     playerId,
     result: { playerId, turnId: 1, status: 'ok' },
   };
+}
+
+function playerEvent(
+  playerId: string,
+  event: AgentEvent,
+  timestamp: number,
+): TmuxPlayRecord {
+  return { type: 'player_event', turnId: 1, timestamp, playerId, event };
+}
+
+function textDelta(delta: string): AgentEvent {
+  return createEvent('text_delta', 'codex', { delta });
+}
+
+function doneEvent(): AgentEvent {
+  return createEvent('done', 'codex', {
+    status: 'success',
+    usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+    durationMs: 0,
+  });
 }
 
 function captainPrompt(timestamp: number): TmuxPlayRecord {

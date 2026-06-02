@@ -171,7 +171,10 @@ describe('TmuxPlaySession', () => {
         players: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
       }),
     );
+    // Order: presenter, then the TMUX-069 follow observer (constructed
+    // internally), then the timing observer, then any opt-in observers.
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
+      expect.any(Object),
       expect.any(Object),
       timingObserver,
       optInObserver,

@@ -29,6 +29,7 @@ import {
   type CatppuccinFlavor,
 } from './player-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
+import { createFollowObserver } from './follow-observer.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
   createTimingObserver,
@@ -191,6 +192,17 @@ export class TmuxPlaySession {
     this.timingObserver = timingObserver;
     timingObserver.refresh();
 
+    // TMUX-069: return a scrolled-back (copy-mode) pane to its live tail when
+    // the session writes new content to it, so streaming output is visible
+    // even after a wheel-scroll. Display-only and failure-swallowing like the
+    // timing observer; registered after the presenter so a pane's follow runs
+    // once the presenter has put the new bytes on it.
+    const followObserver = createFollowObserver({
+      sessionName: this.sessionName(),
+      captainAdapter: config.captain.adapter,
+      players: config.players,
+    });
+
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
       captain,
@@ -202,7 +214,12 @@ export class TmuxPlaySession {
         reasoningEffort: config.captain.reasoningEffort,
       },
       players: runtimePlayers(config.players),
-      observers: [presenter, timingObserver, ...(this.options.observers ?? [])],
+      observers: [
+        presenter,
+        followObserver,
+        timingObserver,
+        ...(this.options.observers ?? []),
+      ],
       cwd: this.options.cwd,
       adapterImports: this.options.adapterImports,
     });
