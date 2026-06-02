@@ -68,9 +68,9 @@ copy* false := send-keys -X cancel
 
 ## Deliverables
 
-- [ ] `specs/user/tmux-play.md` — add TMUX-069 (copy-mode live-follow); amend TMUX-065 (three-table cancel-then-forward Ctrl+C).
-- [ ] `specs/test/tmux-play.md` — add TTMUX-069 (live-follow unit + real-tmux probe); amend TTMUX-065 (three-table binding assertions).
-- [ ] `specs/map.md` — index IR-024; extend the TMUX user/test summary lines.
+- [x] `specs/user/tmux-play.md` — add TMUX-069 (copy-mode live-follow); amend TMUX-065 (three-table cancel-then-forward Ctrl+C).
+- [x] `specs/test/tmux-play.md` — add TTMUX-069 (live-follow unit + real-tmux probe); amend TTMUX-065 (three-table binding assertions).
+- [x] `specs/map.md` — index IR-024; extend the TMUX user/test summary lines.
 - [ ] `src/app/tmux-play/launcher.ts` — three-table `C-c` bindings with cancel-then-forward true branch and per-table stock false branch.
 - [ ] `src/app/tmux-play/follow-observer.ts` — new output-driven copy-mode-exit `RecordObserver`.
 - [ ] `src/app/tmux-play/session.ts` — construct and register the follow observer.
@@ -79,7 +79,7 @@ copy* false := send-keys -X cancel
 
 ## Tasks
 
-1. [ ] **Spec items + map.** Add TMUX-069 and TTMUX-069; amend TMUX-065 and TTMUX-065; index IR-024 in `specs/map.md` and extend the TMUX user/test summary lines. Single docs-only commit.
+1. [x] **Spec items + map.** Add TMUX-069 and TTMUX-069; amend TMUX-065 and TTMUX-065; index IR-024 in `specs/map.md` and extend the TMUX user/test summary lines. Single docs-only commit.
 2. [ ] **Single-Ctrl+C exit across modes.** Extend `configureSessionExitKey` to bind `C-c` in `root`, `copy-mode`, and `copy-mode-vi` with the cancel-pane-0-then-forward true branch and per-table stock false branch; update `launcher.test.ts` argv assertions and the `launcher.acceptance.test.ts` `list-keys` probe per TTMUX-065. Per-task-boundary green.
 3. [ ] **Copy-mode live-follow observer.** Add `follow-observer.ts` (record → destination pane via `queryPaneTargetsByTitle`; debounced, `#{pane_in_mode}`-gated `send-keys -X cancel`), register it in `session.ts`, and add the unit test plus the real-tmux acceptance probe per TTMUX-069. Per-task-boundary green.
 

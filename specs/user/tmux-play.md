@@ -296,6 +296,15 @@ Drag-select per [TMUX-062](#tmux-062) is unaffected: starting a new primary-butt
 The right-click copy path of [TMUX-062](#tmux-062) is also scroll-preserving: right-clicking an active selection runs `copy-pipe` (not `copy-pipe-and-cancel`), which clears the selection as visible copy-confirmation and leaves the clicked pane in copy-mode at its existing scroll position so a Boss reviewing historical pane content does not lose their place after copying; see [TMUX-062](#tmux-062) for the rationale.
 The keyboard pane-switch bindings of [TMUX-063](#tmux-063) are unaffected and shall continue preserving every pane's scroll position and selection.
 
+### TMUX-069
+
+While a tmux-play session is running, when the session writes new content to a pane in the launched session — the Boss/Captain pane or a player pane, with the destination pane resolved as the pane that write routes to per [TMUX-040](#tmux-040) — that is currently in copy-mode, that pane shall return to its live tail so the newly written content is visible, overriding any prior scroll-back on that pane.
+The pane shall be returned to its live tail by a copy-mode exit primitive (`send-keys -X cancel`), not by killing the pane or its feeding process, so a player pane's `tail -f` per [TMUX-027](#tmux-027) and the Boss/Captain pane's process keep running; clearing any active selection on that pane is an accepted side effect of the exit.
+A pane that is not in a mode shall be left untouched, and no copy-mode exit shall be issued against it.
+The trigger shall be new output only: this override of the click and right-click scroll-preservation of [TMUX-062](#tmux-062) and [TMUX-068](#tmux-068) shall occur only when content is written, so between Boss turns — when no output is produced to a pane — a scrolled-back pane shall keep its scroll position and stay in copy-mode for historical review.
+A write to one pane shall not return any other pane to its tail; a pane that receives no concurrent write shall retain its copy-mode state and scroll position.
+The behavior shall be scoped to the launched tmux-play session and shall not affect panes in any other tmux session on the same server.
+
 ## Keyboard Interaction
 
 ### TMUX-063
@@ -310,11 +319,14 @@ A future cleanup hook may reduce the binding lifetime, but safe cleanup must pre
 
 ### TMUX-065
 
-When the launcher creates a tmux-play session, it shall bind `C-c` in the `root` key table so that, while the active client is attached to the launched session, `C-c` runs `send-keys -t <session>:0.0 C-c`, delivering the Ctrl+C byte to the Boss/Captain pane (pane index 0) regardless of which pane is currently active.
-The binding shall be gated on the current `#{session_name}` matching the launched session name via `if-shell -F`, with a false branch of `send-keys C-c`, so that for any other tmux session on the same server the binding is a no-op and the original `Ctrl+C` key is forwarded verbatim to the active pane.
-Player panes are read-only per [TMUX-027](#tmux-027) — their `pane-input-off=1` would otherwise swallow `Ctrl+C` entirely; intercepting at the `root` key table fires the binding before the pane sees the key, so the `Exit: Ctrl+C` hint advertised by `status-left` per [TMUX-063](#tmux-063) is honored from every pane in the launched session, not only from the Boss/Captain pane whose readline already raises the signal.
+When the launcher creates a tmux-play session, it shall bind `C-c` in the `root`, `copy-mode`, and `copy-mode-vi` key tables so that, while the active client is attached to the launched session, a single `C-c` pressed in any pane and in any mode triggers the [TMUX-026](#tmux-026) exit lifecycle on the Boss/Captain pane (pane index 0).
+Each of the three bindings shall be gated on the current `#{session_name}` matching the launched session name via `if-shell -F`, so that for any other tmux session on the same server the binding is a no-op and the original key is forwarded verbatim through that table's stock behavior.
+Each binding's true branch shall first exit pane 0's copy-mode when pane 0 is in a mode and then deliver the Ctrl+C byte to pane 0 — `if -F -t <session>:0.0 '#{pane_in_mode}' 'send-keys -t <session>:0.0 -X cancel'` followed by `send-keys -t <session>:0.0 C-c` — because a `C-c` delivered via `send-keys` to a pane that is itself in copy-mode is consumed by copy-mode's stock `cancel` and never reaches the Boss readline, so without the prior cancel the forwarded byte raises no signal when pane 0 is the scrolled pane.
+Each binding's false branch shall reproduce that table's stock binding verbatim — `send-keys C-c` for `root`, and `send-keys -X cancel` for `copy-mode` and `copy-mode-vi` — so other tmux sessions on the same server retain stock `Ctrl+C` and stock copy-mode `C-c` behavior.
+Binding `C-c` in the `copy-mode` and `copy-mode-vi` tables in addition to `root` is required because, while the active pane is scrolled into copy-mode, tmux dispatches `C-c` through the mode table's stock `send-keys -X cancel` rather than the `root` binding, so a `root`-only binding would merely cancel copy-mode on the first press and need a second press to quit.
+Player panes are read-only per [TMUX-027](#tmux-027) — their `pane-input-off=1` would otherwise swallow `Ctrl+C` entirely; intercepting at the key table fires the binding before the pane sees the key, so the `Exit: Ctrl+C` hint advertised by `status-left` per [TMUX-063](#tmux-063) is honored from every pane in the launched session, not only from the Boss/Captain pane whose readline already raises the signal.
 Once delivered to the Boss/Captain pane, the Captain process handles the byte per [TMUX-026](#tmux-026): the runtime aborts the active turn, runs shutdown per [TMUX-019](#tmux-019), kills the tmux session, and removes launcher-owned work directories.
-As with the copy-mode bindings of [TMUX-062](#tmux-062) and the navigation bindings of [TMUX-063](#tmux-063), tmux's root key table is server-global, so this entry outlives the tmux-play session; the `if-shell` guard keeps the binding inert in every other session and is the launcher's narrowest available scoping mechanism.
+As with the copy-mode bindings of [TMUX-062](#tmux-062) and the navigation bindings of [TMUX-063](#tmux-063), tmux's root, `copy-mode`, and `copy-mode-vi` key tables are server-global, so these entries outlive the tmux-play session; the `if-shell` guard keeps each binding inert in every other session and is the launcher's narrowest available scoping mechanism.
 A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
 
 ## Pane Titles
