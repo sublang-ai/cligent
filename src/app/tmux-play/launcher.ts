@@ -968,32 +968,56 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
   }
 }
 
-// TMUX-065: bind Ctrl+C at the root key table so the `Exit: Ctrl+C`
-// navigation hint actually fires from any pane, not only the Boss/Captain
-// pane. Player panes are read-only (`pane-input-off=1` per TMUX-027) and
-// would otherwise swallow the key entirely. The binding forwards C-c to
-// the Boss/Captain pane (pane index 0) via `send-keys`, so the Captain
-// process receives the Ctrl+C byte exactly as if the user had pressed it
-// in that pane and the existing SIGINT lifecycle from TMUX-026 runs
-// unchanged. Like the C-Left / C-Right bindings in TMUX-063 the root
-// table is server-global, so the binding is scoped via `if-shell -F`
-// against the current session name; the false branch forwards C-c
-// verbatim so other tmux sessions on the same server retain the original
-// key for whatever consumer they have. The binding outlives the
-// tmux-play session but is inert once the session is killed.
+// TMUX-065 (amended by IR-024): bind Ctrl+C so the `Exit: Ctrl+C`
+// navigation hint fires from any pane in any mode with a single press.
+// Player panes are read-only (`pane-input-off=1` per TMUX-027) and would
+// otherwise swallow the key entirely, and once a pane has been scrolled
+// back it enters copy-mode, where `C-c` is dispatched through the
+// `copy-mode` / `copy-mode-vi` key table (stock `send-keys -X cancel`)
+// rather than `root` — so a `root`-only binding required a second press
+// (the first only cancelled copy-mode). The binding is therefore
+// installed in `root`, `copy-mode`, and `copy-mode-vi`, each scoped via
+// `if-shell -F` against the current session name (tmux key tables are
+// server-global; the false branch reproduces the per-table stock binding
+// verbatim so other sessions on the same server are unaffected and any
+// prior session-scoped override on a reused server is overwritten).
+//
+// Every true branch is the same cancel-then-forward pair: it first exits
+// pane 0's copy-mode when pane 0 is itself scrolled
+// (`if -F -t <s>:0.0 '#{pane_in_mode}' 'send-keys -t <s>:0.0 -X cancel'`)
+// and then forwards the byte (`send-keys -t <s>:0.0 C-c`). The cancel
+// step is required because a `C-c` delivered via `send-keys` to a pane
+// that is itself in copy-mode is consumed by copy-mode's stock `cancel`
+// and never reaches the Boss readline — so without it the forwarded
+// `C-c` would be swallowed whenever pane 0 is the scrolled pane. Once
+// pane 0 is out of copy-mode the forwarded `C-c` reaches the Captain
+// process exactly as if pressed there and the existing SIGINT lifecycle
+// from TMUX-026 runs unchanged. The bindings outlive the tmux-play
+// session but are inert once the session is killed.
 function configureSessionExitKey(sessionName: string): void {
   const condition = `#{==:#{session_name},${sessionName}}`;
-  runTmux(
-    'bind-key',
-    '-T',
-    'root',
-    'C-c',
-    'if-shell',
-    '-F',
-    condition,
-    `send-keys -t ${paneTarget(sessionName, 0)} C-c`,
-    'send-keys C-c',
-  );
+  const pane0 = paneTarget(sessionName, 0);
+  const trueBranch =
+    `if -F -t ${pane0} '#{pane_in_mode}' ` +
+    `'send-keys -t ${pane0} -X cancel' ; send-keys -t ${pane0} C-c`;
+  const tables: ReadonlyArray<{ table: string; falseBranch: string }> = [
+    { table: 'root', falseBranch: 'send-keys C-c' },
+    { table: 'copy-mode', falseBranch: 'send-keys -X cancel' },
+    { table: 'copy-mode-vi', falseBranch: 'send-keys -X cancel' },
+  ];
+  for (const { table, falseBranch } of tables) {
+    runTmux(
+      'bind-key',
+      '-T',
+      table,
+      'C-c',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      falseBranch,
+    );
+  }
 }
 
 function selectBossPane(sessionName: string): void {

@@ -527,7 +527,7 @@ describe('launchTmuxPlay', () => {
     );
   });
 
-  it('binds Ctrl+C at the root key table to forward to the Boss/Captain pane from any pane, scoped via if-shell to the launched session', async () => {
+  it('binds Ctrl+C in root, copy-mode, and copy-mode-vi with a cancel-then-forward true branch and per-table stock false branch, scoped via if-shell to the launched session', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
 
@@ -540,12 +540,23 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
-    // TMUX-065: player panes have pane-input-off=1, so a press of Ctrl+C
-    // in a player pane is normally swallowed. The root-table binding
-    // intercepts the key before the pane sees it and forwards it to
-    // pane 0 (the Boss/Captain pane), where the Captain process runs
-    // the existing SIGINT lifecycle from TMUX-026.
+    // TTMUX-065: player panes have pane-input-off=1, so a press of Ctrl+C
+    // in a player pane is normally swallowed; and once any pane is
+    // scrolled back into copy-mode, C-c is dispatched through the
+    // copy-mode / copy-mode-vi key table (stock `send-keys -X cancel`),
+    // not root. The binding is installed in all three tables so a single
+    // press quits from any pane in any mode. Each true branch first exits
+    // pane 0's copy-mode when pane 0 is itself scrolled (otherwise the
+    // forwarded C-c is consumed by copy-mode's stock cancel) and then
+    // forwards the byte to pane 0, where the Captain process runs the
+    // existing SIGINT lifecycle from TMUX-026. Each false branch
+    // reproduces that table's stock binding verbatim so other tmux
+    // sessions on the same server are unaffected.
     const condition = '#{==:#{session_name},tmux-play-exit-key}';
+    const trueBranch =
+      "if -F -t tmux-play-exit-key:0.0 '#{pane_in_mode}' " +
+      "'send-keys -t tmux-play-exit-key:0.0 -X cancel' ; " +
+      'send-keys -t tmux-play-exit-key:0.0 C-c';
     expect(runTmuxMock).toHaveBeenCalledWith(
       'bind-key',
       '-T',
@@ -554,8 +565,30 @@ describe('launchTmuxPlay', () => {
       'if-shell',
       '-F',
       condition,
-      'send-keys -t tmux-play-exit-key:0.0 C-c',
+      trueBranch,
       'send-keys C-c',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'copy-mode',
+      'C-c',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      'send-keys -X cancel',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'copy-mode-vi',
+      'C-c',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      'send-keys -X cancel',
     );
   });
 

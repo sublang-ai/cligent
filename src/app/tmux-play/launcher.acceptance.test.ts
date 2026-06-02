@@ -464,20 +464,36 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(shiftRightBinding).toContain('select-pane -R');
       expect(shiftRightBinding).toContain('send-keys S-Right');
 
-      // TTMUX-065: Ctrl+C at the root key table forwards to the
-      // Boss/Captain pane (pane 0) so the exit hint fires from any pane,
-      // not only the Captain pane whose readline normally intercepts the
-      // key. Player panes are read-only (pane-input-off=1) and would
-      // otherwise swallow the key; the root-table binding intercepts
-      // before the pane sees it. The binding gates on the session name
-      // via if-shell so other tmux sessions on the same server forward
-      // Ctrl+C unchanged.
-      const ctrlCBinding = keyBinding('root', 'C-c');
-      expect(ctrlCBinding).toContain('if-shell');
-      expect(ctrlCBinding).toContain('session_name');
-      expect(ctrlCBinding).toContain(sessionName);
-      expect(ctrlCBinding).toContain(`send-keys -t ${sessionName}:0.0 C-c`);
-      expect(ctrlCBinding).toContain('send-keys C-c');
+      // TTMUX-065: Ctrl+C is bound in root, copy-mode, and copy-mode-vi
+      // so a single press fires the exit lifecycle from any pane in any
+      // mode. Player panes are read-only (pane-input-off=1) and would
+      // otherwise swallow the key; and once a pane is scrolled back into
+      // copy-mode, C-c is dispatched through the copy-mode tables (stock
+      // `send-keys -X cancel`), not root, so a root-only binding needed a
+      // second press. Each true branch first exits pane 0's copy-mode
+      // when pane 0 is itself scrolled (otherwise the forwarded C-c is
+      // consumed by copy-mode's stock cancel) and then forwards the byte
+      // to pane 0. Each binding gates on the session name via if-shell so
+      // other tmux sessions on the same server retain the per-table stock
+      // binding (its false branch).
+      for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
+        const ctrlCBinding = keyBinding(table, 'C-c');
+        expect(ctrlCBinding).toContain('if-shell');
+        expect(ctrlCBinding).toContain('session_name');
+        expect(ctrlCBinding).toContain(sessionName);
+        expect(ctrlCBinding).toContain('pane_in_mode');
+        expect(ctrlCBinding).toContain(
+          `send-keys -t ${sessionName}:0.0 -X cancel`,
+        );
+        expect(ctrlCBinding).toContain(`send-keys -t ${sessionName}:0.0 C-c`);
+      }
+      // The root false branch is the stock `send-keys C-c`; the copy-mode
+      // tables' false branch is the stock `send-keys -X cancel`.
+      expect(keyBinding('root', 'C-c')).toContain('send-keys C-c');
+      expect(keyBinding('copy-mode', 'C-c')).toContain('send-keys -X cancel');
+      expect(keyBinding('copy-mode-vi', 'C-c')).toContain(
+        'send-keys -X cancel',
+      );
 
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
