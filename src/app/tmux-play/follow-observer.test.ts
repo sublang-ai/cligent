@@ -88,6 +88,50 @@ describe('FollowObserver', () => {
     expect(followed).toEqual([]);
   });
 
+  it('does not follow when an all-whitespace-delta block is flushed by its finished record', () => {
+    const { observer, followed } = makeObserver();
+
+    // The presenter renders a whitespace-only block to nothing (`applyPrefix`
+    // returns '' for all-blank rendered text), so these deltas put no bytes on
+    // the pane and the terminal `ok` flush must not snap a scrolled pane back.
+    observer.onRecord(captainEvent(textDelta('   ')));
+    observer.onRecord(captainEvent(textDelta('\n\t')));
+    observer.onRecord(captainFinished('ok'));
+
+    expect(followed).toEqual([]);
+  });
+
+  it('follows when a whitespace delta is followed by a visible delta, then flushed', () => {
+    const { observer, followed } = makeObserver();
+
+    // A leading whitespace delta carries no visible text, but the next delta
+    // does, so the accumulated block renders to bytes and the finished flush
+    // must follow.
+    observer.onRecord(captainEvent(textDelta('  ')));
+    observer.onRecord(captainEvent(textDelta('hello')));
+    observer.onRecord(captainFinished('ok'));
+
+    expect(followed).toEqual([CAPTAIN_PANE]);
+  });
+
+  it('does not follow an all-whitespace non-streaming text event', () => {
+    const { observer, followed } = makeObserver();
+
+    // A complete `text` event renders through the same glow pipeline; a
+    // whitespace-only body writes no bytes, so it must not follow.
+    observer.onRecord(captainEvent(text('   \n')));
+
+    expect(followed).toEqual([]);
+  });
+
+  it('follows a visible non-streaming text event', () => {
+    const { observer, followed } = makeObserver();
+
+    observer.onRecord(captainEvent(text('done')));
+
+    expect(followed).toEqual([CAPTAIN_PANE]);
+  });
+
   it('follows only the pane that received output, leaving a sibling pane untouched', () => {
     const { observer, followed } = makeObserver();
 
@@ -299,6 +343,10 @@ function playerFinished(playerId: string, status: RunStatus): TmuxPlayRecord {
 
 function textDelta(delta: string): CligentEvent {
   return { type: 'text_delta', payload: { delta } } as CligentEvent;
+}
+
+function text(content: string): CligentEvent {
+  return { type: 'text', payload: { content } } as CligentEvent;
 }
 
 function toolUse(): CligentEvent {

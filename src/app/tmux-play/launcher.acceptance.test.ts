@@ -34,7 +34,13 @@ import {
 import { mapReasoningEffortToOpenCodeVariant } from '../../adapters/opencode.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
-import { FollowObserver } from './follow-observer.js';
+import { createFollowObserver } from './follow-observer.js';
+import { createTmuxPresenter } from './presenter-tmux.js';
+import {
+  closeLogStreams,
+  logFilePath,
+  openAppendLogStreams,
+} from '../shared/logs.js';
 import { TimingObserver, type TimingScheduler } from './timing-observer.js';
 import {
   TMUX_PANE_TIMER_ACCENT_OPTION,
@@ -583,7 +589,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'returns a scrolled pane to its live tail when the runtime writes to it, leaving a sibling pane scrolled (TMUX-069)',
+    'returns a scrolled pane to its live tail when the runtime + presenter write to it, with the written content visible and a sibling pane left scrolled (TMUX-069)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -612,12 +618,19 @@ describe('tmux-play real-tmux acceptance', () => {
       const coderTarget = `${sessionName}:0.${coder.index}`;
       const reviewerTarget = `${sessionName}:0.${reviewer.index}`;
 
-      // Seed scrollback into both player panes via respawn-pane so a
-      // scroll-up reaches a non-zero #{scroll_position}. The follow is
-      // #{pane_in_mode}-gated and independent of pane contents, so synthetic
-      // history stands in for real streamed output.
-      for (const target of [coderTarget, reviewerTarget]) {
-        runOrThrow('tmux', ['respawn-pane', '-k', '-t', target, 'seq 1 500; sleep 600']);
+      // The launched player panes tail `<workDir>/<id>.log`. Respawn each to
+      // print scrollback (so a scroll-up reaches a non-zero #{scroll_position})
+      // and then re-tail the SAME logfile via `exec`, so a later presenter
+      // write to that file still lands in the live pane.
+      for (const id of ['coder', 'reviewer'] as const) {
+        const target = id === 'coder' ? coderTarget : reviewerTarget;
+        runOrThrow('tmux', [
+          'respawn-pane',
+          '-k',
+          '-t',
+          target,
+          `seq 1 500; exec tail -f ${shellQuote(logFilePath(workDir, id))}`,
+        ]);
       }
       await waitForHistory(sessionName, coder.index, 100, 2_000);
       await waitForHistory(sessionName, reviewer.index, 100, 2_000);
@@ -633,9 +646,22 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
       };
 
-      // The observer points at the live session through the real tmux client
-      // (debounce disabled so each synthetic record issues immediately).
-      const followOptions = {
+      // Reconstruct the exact observer wiring session.ts installs: the real
+      // presenter writing player blocks to the panes' logfiles, then the real
+      // follow observer, both registered on (and dispatched by) the real
+      // runtime's RecordDispatcher in that order. The follow must run after the
+      // presenter has put new bytes on a pane — so a captured marker proves the
+      // production write path end-to-end rather than the observer in isolation.
+      const playerLogStreams = openAppendLogStreams(workDir, ['coder', 'reviewer']);
+      const presenter = createTmuxPresenter({
+        boss: { write: () => undefined },
+        players: playerLogStreams,
+        playerAdapters: new Map([
+          ['coder', 'codex'],
+          ['reviewer', 'claude'],
+        ]),
+      });
+      const followObserver = createFollowObserver({
         sessionName,
         captainAdapter: 'claude',
         players: [
@@ -643,37 +669,93 @@ describe('tmux-play real-tmux acceptance', () => {
           { id: 'reviewer', adapter: 'claude' },
         ],
         debounceMs: 0,
+      });
+
+      // The stub player streams this marker as its only output, so a
+      // capture-pane that contains it proves real presenter bytes reached the
+      // pane (not merely that copy-mode was exited against an empty tail).
+      const marker = `FOLLOW${randomBytes(3).toString('hex').toUpperCase()}`;
+      const streamMarker = (agent: AgentType): new () => AgentAdapter =>
+        class implements AgentAdapter {
+          readonly agent = agent;
+          async *run(): AsyncGenerator<AgentEvent, void, void> {
+            yield createEvent('text_delta', agent, { delta: marker });
+            yield createEvent('done', agent, {
+              status: 'success',
+              usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+              durationMs: 0,
+            });
+          }
+          async isAvailable(): Promise<boolean> {
+            return true;
+          }
+        };
+      const adapterImports: PlayerAdapterImports = {
+        claude: async () => streamMarker('claude'),
+        codex: async () => streamMarker('codex'),
+        gemini: async () => streamMarker('gemini'),
+        opencode: async () => streamMarker('opencode'),
       };
 
-      // Phase A: activity that renders no pane output must NOT exit copy-mode.
-      scrollBack(coderTarget);
-      const phaseA = new FollowObserver(followOptions);
-      phaseA.onRecord(turnStarted(1)); // no-op control record
-      phaseA.onRecord(captainPrompt(2)); // no-op control record
-      phaseA.onRecord(playerEvent('coder', doneEvent(), 3)); // suppressed event
-      phaseA.onRecord(playerEvent('coder', textDelta('partial'), 4)); // buffered
-      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
-      expect(Number(displayMessage(coderTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+      // A minimal captain: a turn whose prompt names a player calls just that
+      // player; any other prompt (e.g. 'idle') drives no player write.
+      const captain: Captain = {
+        async handleBossTurn(turn, context): Promise<void> {
+          if (turn.prompt === 'coder') {
+            await context.callPlayer('coder', 'go');
+          }
+        },
+      };
 
-      // Phase B: a write-driving record returns the written pane to its tail
-      // while a sibling pane with no concurrent output stays scrolled. Scroll
-      // the reviewer pane back too so its staying-scrolled is a real outcome,
-      // not an artifact of never having entered copy-mode (coder is still
-      // scrolled from phase A, which did not follow it).
-      scrollBack(reviewerTarget);
-      const phaseB = new FollowObserver(followOptions);
-      phaseB.onRecord(playerPrompt('coder', 5));
-      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
-      expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('1');
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [
+          { id: 'coder', adapter: 'codex' },
+          { id: 'reviewer', adapter: 'claude' },
+        ],
+        observers: [presenter, followObserver],
+        adapterImports,
+      });
 
-      // Phase C: a pane scrolled after buffered deltas but before the final
-      // flush is still returned to its tail when the flush lands.
-      scrollBack(coderTarget);
-      const phaseC = new FollowObserver(followOptions);
-      phaseC.onRecord(playerEvent('coder', textDelta('chunk'), 6)); // buffered: no follow
-      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
-      phaseC.onRecord(playerFinished('coder', 7)); // flush: follow
-      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
+      try {
+        // Phase 1: a real player write returns the written (coder) pane to its
+        // live tail with the streamed marker visible, while the sibling
+        // (reviewer) pane — no output this turn — stays scrolled in place.
+        scrollBack(coderTarget);
+        scrollBack(reviewerTarget);
+        const reviewerScroll = displayMessage(reviewerTarget, '#{scroll_position}');
+
+        await runtime.runBossTurn('coder');
+
+        expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
+        const coderView = await waitForPaneContains(
+          sessionName,
+          coder.index,
+          marker,
+          3_000,
+        );
+        expect(coderView).toContain(marker);
+
+        expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('1');
+        expect(displayMessage(reviewerTarget, '#{scroll_position}')).toBe(
+          reviewerScroll,
+        );
+
+        // Phase 2: a turn that writes nothing to the coder pane (no player
+        // call) must leave a freshly-scrolled coder pane untouched — the follow
+        // fires only on real new output, never on the no-op control records.
+        scrollBack(coderTarget);
+        const coderScroll = displayMessage(coderTarget, '#{scroll_position}');
+
+        await runtime.runBossTurn('idle');
+
+        expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+        expect(displayMessage(coderTarget, '#{scroll_position}')).toBe(coderScroll);
+      } finally {
+        await runtime.dispose();
+        await closeLogStreams(playerLogStreams.values());
+      }
     },
     60_000,
   );
@@ -1897,6 +1979,30 @@ async function waitForHistory(
   );
 }
 
+// The presenter writes to the logfile and `tail -f` delivers it to the pane
+// asynchronously, so poll the visible pane until the streamed marker lands (or
+// time out). A non-followed pane stays scrolled with the marker off-screen at
+// the live tail, so this also fails fast if the follow never fired.
+async function waitForPaneContains(
+  session: string,
+  paneIndex: number,
+  needle: string,
+  timeoutMs: number,
+): Promise<string> {
+  const start = Date.now();
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    last = capturePane(session, paneIndex);
+    if (last.includes(needle)) {
+      return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `pane ${paneIndex} did not show ${needle} within ${timeoutMs}ms; last capture:\n${last}`,
+  );
+}
+
 async function waitForNonEmptyFile(
   path: string,
   timeoutMs: number,
@@ -1969,26 +2075,6 @@ function playerFinished(playerId: string, timestamp: number): TmuxPlayRecord {
     playerId,
     result: { playerId, turnId: 1, status: 'ok' },
   };
-}
-
-function playerEvent(
-  playerId: string,
-  event: AgentEvent,
-  timestamp: number,
-): TmuxPlayRecord {
-  return { type: 'player_event', turnId: 1, timestamp, playerId, event };
-}
-
-function textDelta(delta: string): AgentEvent {
-  return createEvent('text_delta', 'codex', { delta });
-}
-
-function doneEvent(): AgentEvent {
-  return createEvent('done', 'codex', {
-    status: 'success',
-    usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
-    durationMs: 0,
-  });
 }
 
 function captainPrompt(timestamp: number): TmuxPlayRecord {

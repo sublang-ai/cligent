@@ -194,16 +194,38 @@ export class FollowObserver implements RecordObserver {
     }
     if (event.type === 'text_delta') {
       // Buffered into the open block; flushed (and followed) later. Track the
-      // block as non-empty only once a delta carries visible text, so an
-      // all-empty-delta block — which the presenter flushes to nothing — does
-      // not provoke a follow on the terminal `*_finished` flush.
-      if (formatted.length > 0) {
+      // block as pending only once a delta carries *visible* text. The
+      // presenter renders the accumulated block through glow and emits nothing
+      // for an all-blank result (`applyPrefix` returns '' for whitespace-only
+      // rendered text — presenter-tmux.ts), so an all-whitespace stream puts no
+      // bytes on the pane and must not provoke a follow on the terminal
+      // `*_finished` flush. Visibility is monotonic under accumulation: if any
+      // delta carries a non-whitespace character the whole block does too.
+      if (hasVisibleText(formatted)) {
         this.pending.add(title);
       }
       return { title, writes: false };
     }
-    return this.flushedWrite(title);
+    // A non-streaming `text` event: the presenter flushes the open block, then
+    // renders this content as its own block (`writeBlock`). Both flushes write
+    // iff their text is visible, so follow iff there was buffered visible text
+    // or this content is itself visible — an all-whitespace `text` event with
+    // no pending block writes nothing, mirroring the presenter.
+    const hadPending = this.pending.delete(title);
+    return { title, writes: hadPending || hasVisibleText(formatted) };
   }
+}
+
+// Mirror the presenter's all-blank suppression. The presenter renders each
+// text block through glow and `applyPrefix` returns '' — no bytes — when the
+// result holds no visible content (`trimOuterMargin` + `visibleNonblank` in
+// presenter-tmux.ts). glow can't be run here, but the case the TMUX-069 rule
+// must honor is a whitespace-only stream: text whose only characters are
+// spaces/newlines renders to nothing, so it must not count as output that
+// justifies snapping a deliberately scrolled pane back to its tail. A string
+// carries visible text iff it holds any non-whitespace character.
+function hasVisibleText(text: string): boolean {
+  return /\S/.test(text);
 }
 
 export function createFollowObserver(
