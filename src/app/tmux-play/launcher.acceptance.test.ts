@@ -1193,38 +1193,38 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.refresh(10_000);
 
         expectPaneTimer(sessionName, captain.index, {
-          text: '3s',
+          text: '00:00:03',
           running: '1',
           accent: '#cba6f7',
         });
         expectPaneTimer(sessionName, coder.index, {
-          text: '3s',
+          text: '00:00:03',
           running: '0',
           accent: '#94e2d5',
         });
         expectPaneTimer(sessionName, reviewer.index, {
-          text: '4s',
+          text: '00:00:04',
           running: '1',
           accent: '#a6e3a1',
         });
         expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
-          '9s',
+          '00:00:09',
         );
         expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
         ).toBe('1');
 
         expect(expandedPaneBorder(sessionName, captain.index)).toContain(
-          '⏳ #[fg=#cba6f7]3s',
+          '⏳ #[fg=#cba6f7]00:00:03',
         );
         expect(expandedPaneBorder(sessionName, coder.index)).toContain(
-          '⌛ #[fg=#bac2de]3s',
+          '⌛ #[fg=#bac2de]00:00:03',
         );
         expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
-          '⏳ #[fg=#a6e3a1]4s',
+          '⏳ #[fg=#a6e3a1]00:00:04',
         );
         expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
-          '⏳ #[fg=#cba6f7]9s',
+          '⏳ #[fg=#cba6f7]00:00:09',
         );
 
         observer.onRecord(playerFinished('reviewer', 11_000));
@@ -1232,35 +1232,88 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.onRecord(turnFinished(13_000));
 
         expectPaneTimer(sessionName, captain.index, {
-          text: '5s',
+          text: '00:00:05',
           running: '0',
           accent: '#cba6f7',
         });
         expectPaneTimer(sessionName, coder.index, {
-          text: '3s',
+          text: '00:00:03',
           running: '0',
           accent: '#94e2d5',
         });
         expectPaneTimer(sessionName, reviewer.index, {
-          text: '5s',
+          text: '00:00:05',
           running: '0',
           accent: '#a6e3a1',
         });
         expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
-          '12s',
+          '00:00:12',
         );
         expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
         ).toBe('0');
 
         expect(expandedPaneBorder(sessionName, captain.index)).toContain(
-          '⌛ #[fg=#bac2de]5s',
+          '⌛ #[fg=#bac2de]00:00:05',
         );
         expect(expandedPaneBorder(sessionName, reviewer.index)).toContain(
-          '⌛ #[fg=#bac2de]5s',
+          '⌛ #[fg=#bac2de]00:00:05',
         );
         expect(displayMessage(sessionName, '#{E:status-right}')).toContain(
-          '⌛ #[fg=#7f849c]12s',
+          '⌛ #[fg=#7f849c]00:00:12',
+        );
+
+        // TMUX-069 / TTMUX-056 — pin the `hh:mm:ss` format on a real
+        // tmux server at the two regression-relevant magnitudes where
+        // the sub-minute samples above are not enough to catch a shape
+        // regression:
+        //
+        //   * at or above one minute (rendered text shall be `00:MM:SS`
+        //     with MM > 0)
+        //   * at or above one hour   (rendered text shall be `HH:MM:SS`
+        //     with HH > 0)
+        //
+        // Drive a second synthetic Boss turn whose per-player /
+        // per-Captain / per-turn deltas exceed one minute. Deltas are
+        // chosen so the seconds component is non-zero, locking in the
+        // "all three components always present" clause.
+        observer.onRecord(turnStarted(100_000));
+        observer.onRecord(playerPrompt('coder', 100_000));
+        observer.onRecord(playerFinished('coder', 162_000));
+        observer.onRecord(captainPrompt(170_000));
+        observer.onRecord(captainFinished(237_000));
+        observer.onRecord(turnFinished(237_000));
+
+        expectMinuteForm(
+          showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
+        );
+        expectMinuteForm(
+          showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
+        );
+        expectMinuteForm(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
+        );
+
+        // Drive a third synthetic Boss turn whose deltas exceed one
+        // hour so every timer crosses the hour boundary. Assert each
+        // timer surface matches the hour-form pattern, locking in
+        // both the non-zero `HH` component and the retained
+        // `MM:SS` tail (no `1h00m` rollup that drops seconds).
+        observer.onRecord(turnStarted(300_000));
+        observer.onRecord(playerPrompt('coder', 300_000));
+        observer.onRecord(playerFinished('coder', 4_000_000));
+        observer.onRecord(captainPrompt(4_000_000));
+        observer.onRecord(captainFinished(7_700_000));
+        observer.onRecord(turnFinished(7_700_000));
+
+        expectHourForm(
+          showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
+        );
+        expectHourForm(
+          showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
+        );
+        expectHourForm(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
         );
       } finally {
         observer.dispose();
@@ -1269,6 +1322,34 @@ describe('tmux-play real-tmux acceptance', () => {
     60_000,
   );
 });
+
+// TMUX-069 / TTMUX-056: timer text at or above one minute (but below
+// one hour) shall render as `00:MM:SS` with each component zero-padded
+// to two digits and a non-zero minutes component. The pattern also
+// rejects regressions to a seconds-only `<N>s` form or to the retired
+// padded `<m>m<NN>s` form.
+function expectMinuteForm(text: string): void {
+  const match = /^00:([0-9]{2}):([0-9]{2})$/.exec(text);
+  expect(
+    match,
+    `expected "00:MM:SS" minute-form timer text but got ${JSON.stringify(text)}`,
+  ).not.toBeNull();
+  expect(Number(match![1])).toBeGreaterThanOrEqual(1);
+}
+
+// TMUX-069 / TTMUX-056: timer text at or above one hour shall render
+// as `HH:MM:SS` with HH at least two digits, MM and SS exactly two
+// digits, and a non-zero hours component. The pattern also rejects
+// regressions to the retired `<h>h<MM>m` form (which dropped seconds
+// entirely) or to a minute-only or seconds-only form.
+function expectHourForm(text: string): void {
+  const match = /^([0-9]{2,}):([0-9]{2}):([0-9]{2})$/.exec(text);
+  expect(
+    match,
+    `expected "HH:MM:SS" hour-form timer text but got ${JSON.stringify(text)}`,
+  ).not.toBeNull();
+  expect(Number(match![1])).toBeGreaterThanOrEqual(1);
+}
 
 // TTMUX-053: YAML `permissions.mode` reaches the adapter's `run()` call as
 // `AgentOptions.permissions`, and the adapter's exported mapping function

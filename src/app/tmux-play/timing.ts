@@ -107,19 +107,19 @@ export class TmuxPlayTiming {
 }
 
 export function formatTimerDuration(ms: number): string {
+  // TMUX-069: timers render in `hh:mm:ss` form — colon-separated, with
+  // each component zero-padded to at least two digits. The hours field
+  // expands beyond two digits at and above 100 hours so the format stays
+  // monotonic across every magnitude (`100:00:00` follows `99:59:59`)
+  // rather than truncating or wrapping. Hours, minutes, and seconds are
+  // always present so the rendered width stays stable from one second
+  // to the next and the Boss never loses sub-minute resolution.
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
-
-  if (hours > 0) {
-    return `${hours}h${pad2(minutes)}m`;
-  }
-  if (totalMinutes > 0) {
-    return `${totalMinutes}m${pad2(seconds)}s`;
-  }
-  return `${seconds}s`;
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
 }
 
 function closeOne(openStarts: number[], end: number): number {

@@ -29,11 +29,11 @@ describe('TimingObserver', () => {
 
     observer.refresh(0);
 
-    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('0s');
+    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:00');
     expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('0');
-    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('0s');
+    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:00');
     expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('0');
-    expect(latestPaneOption(tmux, '%2', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('0s');
+    expect(latestPaneOption(tmux, '%2', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:00');
     expect(latestPaneOption(tmux, '%2', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('0');
   });
 
@@ -64,22 +64,22 @@ describe('TimingObserver', () => {
     now = 7000;
     schedulerState.tick();
 
-    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('5s');
+    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:05');
     expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('1');
-    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('3s');
+    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:03');
     expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('1');
-    expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe('6s');
+    expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe('00:00:06');
     expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_RUNNING_OPTION)).toBe('1');
 
     observer.onRecord(playerFinished('coder', 8000));
     observer.onRecord(captainFinished(9000));
     observer.onRecord(turnFinished(11000));
 
-    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('6s');
+    expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:06');
     expect(latestPaneOption(tmux, '%1', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('0');
-    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('5s');
+    expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_TEXT_OPTION)).toBe('00:00:05');
     expect(latestPaneOption(tmux, '%0', TMUX_PANE_TIMER_RUNNING_OPTION)).toBe('0');
-    expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe('10s');
+    expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe('00:00:10');
     expect(latestSessionOption(tmux, TMUX_STATUS_TIMER_RUNNING_OPTION)).toBe('0');
     expect(schedulerState.clearInterval).toHaveBeenCalledWith('interval-1');
   });

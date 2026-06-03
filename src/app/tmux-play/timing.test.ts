@@ -64,12 +64,26 @@ describe('TmuxPlayTiming', () => {
     expect(snapshot.total).toEqual({ elapsedMs: 9000, running: true });
   });
 
-  it('formats timer durations for seconds, minutes, and hours', () => {
-    expect(formatTimerDuration(0)).toBe('0s');
-    expect(formatTimerDuration(12_999)).toBe('12s');
-    expect(formatTimerDuration(187_000)).toBe('3m07s');
-    expect(formatTimerDuration(3_720_000)).toBe('1h02m');
-    expect(formatTimerDuration(-1)).toBe('0s');
+  it('formats timer durations in hh:mm:ss form per TMUX-069', () => {
+    // Every magnitude renders as three colon-separated, 2-digit-padded
+    // components so the column width stays stable across consecutive
+    // seconds.
+    expect(formatTimerDuration(0)).toBe('00:00:00');
+    expect(formatTimerDuration(12_999)).toBe('00:00:12');
+    expect(formatTimerDuration(59_000)).toBe('00:00:59');
+    expect(formatTimerDuration(60_000)).toBe('00:01:00');
+    expect(formatTimerDuration(187_000)).toBe('00:03:07');
+    expect(formatTimerDuration(3_600_000)).toBe('01:00:00');
+    expect(formatTimerDuration(3_723_000)).toBe('01:02:03');
+    // The hour boundary surfaces with seconds intact (no `1h02m` rollup
+    // that would drop the seconds component).
+    expect(formatTimerDuration(3_720_000)).toBe('01:02:00');
+    // The hours field expands beyond two digits past 100 h so the
+    // format stays monotonic across every magnitude.
+    expect(formatTimerDuration(100 * 3_600_000)).toBe('100:00:00');
+    // Negative input clamps to zero rather than rendering a negative
+    // duration.
+    expect(formatTimerDuration(-1)).toBe('00:00:00');
   });
 });
 
