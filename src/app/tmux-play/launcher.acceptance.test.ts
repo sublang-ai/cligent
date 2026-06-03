@@ -1265,18 +1265,30 @@ describe('tmux-play real-tmux acceptance', () => {
 
         // TMUX-069 / TTMUX-056 — pin the `hh:mm:ss` format on a real
         // tmux server at the two regression-relevant magnitudes where
-        // the sub-minute samples above are not enough to catch a shape
-        // regression:
+        // the sub-minute samples above are not enough to catch
+        // regressions:
         //
         //   * at or above one minute (rendered text shall be `00:MM:SS`
         //     with MM > 0)
         //   * at or above one hour   (rendered text shall be `HH:MM:SS`
         //     with HH > 0)
         //
-        // Drive a second synthetic Boss turn whose per-player /
-        // per-Captain / per-turn deltas exceed one minute. Deltas are
-        // chosen so the seconds component is non-zero, locking in the
-        // "all three components always present" clause.
+        // Drive a second synthetic Boss turn whose deltas push each
+        // timer past one minute. Per-pane deltas are chosen so the
+        // seconds component is non-zero — locking in the "all three
+        // components always present" clause — and the expected value
+        // at every surface is pinned byte-for-byte so an arithmetic
+        // regression with the right shape (e.g., off-by-one closing
+        // of overlapping intervals) is still caught here per
+        // TTMUX-056's "component values shall match the byte-for-byte
+        // expected text" clause.
+        //
+        //   coder delta:  162_000 - 100_000 = 62_000 ms (62 s)
+        //                 prior 3 s + 62 s   = 65 s  → 00:01:05
+        //   captain delta: 237_000 - 170_000 = 67_000 ms (67 s)
+        //                 prior 5 s + 67 s  = 72 s  → 00:01:12
+        //   turn delta:   237_000 - 100_000 = 137_000 ms (137 s)
+        //                 prior 12 s + 137 s = 149 s → 00:02:29
         observer.onRecord(turnStarted(100_000));
         observer.onRecord(playerPrompt('coder', 100_000));
         observer.onRecord(playerFinished('coder', 162_000));
@@ -1284,21 +1296,28 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.onRecord(captainFinished(237_000));
         observer.onRecord(turnFinished(237_000));
 
-        expectMinuteForm(
+        expect(
           showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
-        );
-        expectMinuteForm(
+        ).toBe('00:01:12');
+        expect(
           showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
-        );
-        expectMinuteForm(
+        ).toBe('00:01:05');
+        expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
-        );
+        ).toBe('00:02:29');
 
-        // Drive a third synthetic Boss turn whose deltas exceed one
-        // hour so every timer crosses the hour boundary. Assert each
-        // timer surface matches the hour-form pattern, locking in
-        // both the non-zero `HH` component and the retained
-        // `MM:SS` tail (no `1h00m` rollup that drops seconds).
+        // Drive a third synthetic Boss turn whose deltas push every
+        // timer past one hour. Locks in both the non-zero `HH`
+        // component and the retained `MM:SS` tail (no `1h00m` rollup
+        // that would drop seconds). Expected values are again pinned
+        // byte-for-byte per TTMUX-056.
+        //
+        //   coder delta:  4_000_000 - 300_000 = 3_700_000 ms (3700 s)
+        //                 prior 65 s + 3700 s   = 3765 s → 01:02:45
+        //   captain delta: 7_700_000 - 4_000_000 = 3_700_000 ms (3700 s)
+        //                 prior 72 s + 3700 s   = 3772 s → 01:02:52
+        //   turn delta:   7_700_000 - 300_000 = 7_400_000 ms (7400 s)
+        //                 prior 149 s + 7400 s   = 7549 s → 02:05:49
         observer.onRecord(turnStarted(300_000));
         observer.onRecord(playerPrompt('coder', 300_000));
         observer.onRecord(playerFinished('coder', 4_000_000));
@@ -1306,15 +1325,15 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.onRecord(captainFinished(7_700_000));
         observer.onRecord(turnFinished(7_700_000));
 
-        expectHourForm(
+        expect(
           showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
-        );
-        expectHourForm(
+        ).toBe('01:02:52');
+        expect(
           showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
-        );
-        expectHourForm(
+        ).toBe('01:02:45');
+        expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
-        );
+        ).toBe('02:05:49');
       } finally {
         observer.dispose();
       }
@@ -1322,34 +1341,6 @@ describe('tmux-play real-tmux acceptance', () => {
     60_000,
   );
 });
-
-// TMUX-069 / TTMUX-056: timer text at or above one minute (but below
-// one hour) shall render as `00:MM:SS` with each component zero-padded
-// to two digits and a non-zero minutes component. The pattern also
-// rejects regressions to a seconds-only `<N>s` form or to the retired
-// padded `<m>m<NN>s` form.
-function expectMinuteForm(text: string): void {
-  const match = /^00:([0-9]{2}):([0-9]{2})$/.exec(text);
-  expect(
-    match,
-    `expected "00:MM:SS" minute-form timer text but got ${JSON.stringify(text)}`,
-  ).not.toBeNull();
-  expect(Number(match![1])).toBeGreaterThanOrEqual(1);
-}
-
-// TMUX-069 / TTMUX-056: timer text at or above one hour shall render
-// as `HH:MM:SS` with HH at least two digits, MM and SS exactly two
-// digits, and a non-zero hours component. The pattern also rejects
-// regressions to the retired `<h>h<MM>m` form (which dropped seconds
-// entirely) or to a minute-only or seconds-only form.
-function expectHourForm(text: string): void {
-  const match = /^([0-9]{2,}):([0-9]{2}):([0-9]{2})$/.exec(text);
-  expect(
-    match,
-    `expected "HH:MM:SS" hour-form timer text but got ${JSON.stringify(text)}`,
-  ).not.toBeNull();
-  expect(Number(match![1])).toBeGreaterThanOrEqual(1);
-}
 
 // TTMUX-053: YAML `permissions.mode` reaches the adapter's `run()` call as
 // `AgentOptions.permissions`, and the adapter's exported mapping function

@@ -28,6 +28,7 @@ import {
   TMUX_STATUS_TIMER_RUNNING_OPTION,
   TMUX_STATUS_TIMER_TEXT_OPTION,
 } from './timer-options.js';
+import { formatTimerDuration } from './timing.js';
 import {
   TMUX_PLAY_CONFIG_FILE,
   loadTmuxPlayConfig,
@@ -48,7 +49,14 @@ const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
   'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
   'else exec tmux load-buffer -w -; fi';
-const INITIAL_TIMER_TEXT = '0s';
+// TMUX-069: the initial timer text the launcher writes to every pane
+// and to the status-bar option shall be the same `hh:mm:ss` rendering
+// that `TimingObserver` would push for zero elapsed milliseconds, so the
+// surface a Boss sees at launch (before the first turn opens) reads as
+// `00:00:00` rather than as a stale literal. Deriving the constant from
+// `formatTimerDuration(0)` keeps it self-correcting against any future
+// change to the canonical format helper.
+const INITIAL_TIMER_TEXT = formatTimerDuration(0);
 const INITIAL_TIMER_RUNNING = '0';
 const OSC11_QUERY = '\x1b]11;?\x07';
 const OSC11_TIMEOUT_MS = 100;
