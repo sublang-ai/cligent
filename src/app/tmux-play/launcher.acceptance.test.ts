@@ -502,6 +502,35 @@ describe('tmux-play real-tmux acceptance', () => {
         'send-keys -X cancel',
       );
 
+      // TTMUX-070: Escape forwards to pane 0 across the same three tables,
+      // mirroring the Ctrl+C cancel-then-forward pattern so the readline
+      // keypress handler (TMUX-057) sees ESC regardless of which pane the
+      // Boss pressed it in or whether that pane was scrolled. Player panes
+      // carry pane-input-off=1 and would swallow ESC without this binding;
+      // scrolled panes would have ESC consumed by the stock `Escape -X
+      // cancel` before reaching root. Each true branch first exits pane 0's
+      // copy-mode when pane 0 is itself scrolled and then forwards the byte.
+      for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
+        const escBinding = keyBinding(table, 'Escape');
+        expect(escBinding).toContain('if-shell');
+        expect(escBinding).toContain('session_name');
+        expect(escBinding).toContain(sessionName);
+        expect(escBinding).toContain('pane_in_mode');
+        expect(escBinding).toContain(
+          `send-keys -t ${sessionName}:0.0 -X cancel`,
+        );
+        expect(escBinding).toContain(`send-keys -t ${sessionName}:0.0 Escape`);
+      }
+      // The root false branch is the stock `send-keys Escape`; the
+      // copy-mode tables' false branch is the stock `send-keys -X cancel`.
+      expect(keyBinding('root', 'Escape')).toContain('send-keys Escape');
+      expect(keyBinding('copy-mode', 'Escape')).toContain(
+        'send-keys -X cancel',
+      );
+      expect(keyBinding('copy-mode-vi', 'Escape')).toContain(
+        'send-keys -X cancel',
+      );
+
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
         'tmux',

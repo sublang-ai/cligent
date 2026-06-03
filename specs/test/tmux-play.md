@@ -221,6 +221,16 @@ Each binding's false branch shall reproduce that table's stock binding verbatim:
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux list-keys -T root C-c`, `tmux list-keys -T copy-mode C-c`, and `tmux list-keys -T copy-mode-vi C-c` shall each report a binding whose body contains `if-shell`, `session_name`, the launched session name, the `pane_in_mode`-gated `send-keys -t <session>:0.0 -X cancel`, and `send-keys -t <session>:0.0 C-c`; the `root` body shall additionally contain its `send-keys C-c` false branch, and the `copy-mode` and `copy-mode-vi` bodies shall additionally contain their `send-keys -X cancel` false branch.
 The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
 
+### TTMUX-070
+Verifies: [TMUX-070](../user/tmux-play.md#tmux-070), [TMUX-057](../user/tmux-play.md#tmux-057)
+
+Given the launcher constructing a tmux-play session whose `sessionName` is `<session>`, the tmux command stream shall include a `bind-key -T root Escape`, a `bind-key -T copy-mode Escape`, and a `bind-key -T copy-mode-vi Escape`, each gated `if-shell -F #{==:#{session_name},<session>}` whose true branch is the same cancel-then-forward pair — `if -F -t <session>:0.0 '#{pane_in_mode}' 'send-keys -t <session>:0.0 -X cancel'` followed by `send-keys -t <session>:0.0 Escape` — so pane 0's copy-mode is exited (when pane 0 is in a mode) before the bare ESC byte reaches the Boss/Captain pane (pane index 0), mirroring the [TTMUX-065](#ttmux-065) `C-c` pattern.
+Each binding's false branch shall reproduce that table's stock binding verbatim: `send-keys Escape` for `root`, and `send-keys -X cancel` for `copy-mode` and `copy-mode-vi`, so other tmux sessions on the same server retain stock `Escape` and stock copy-mode `Escape` behavior.
+The cross-table install is the ESC analogue of [TTMUX-065](#ttmux-065)'s "Ctrl+C requires two presses to quit when a pane is scrolled" fix: a binding only at `root` would leave the "ESC pressed on a player pane is swallowed by `pane-input-off=1`" path fixed but reintroduce the "ESC on a scrolled-back pane cancels copy-mode instead of aborting the turn" defect.
+Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux list-keys -T root Escape`, `tmux list-keys -T copy-mode Escape`, and `tmux list-keys -T copy-mode-vi Escape` shall each report a binding whose body contains `if-shell`, `session_name`, the launched session name, the `pane_in_mode`-gated `send-keys -t <session>:0.0 -X cancel`, and `send-keys -t <session>:0.0 Escape`; the `root` body shall additionally contain its `send-keys Escape` false branch, and the `copy-mode` and `copy-mode-vi` bodies shall additionally contain their `send-keys -X cancel` false branch.
+Once the byte reaches pane 0, the existing [TMUX-057](../user/tmux-play.md#tmux-057) keypress handler shall raise the bare-ESC abort path covered by [TTMUX-059](#ttmux-059); this item does not duplicate that verification.
+The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V` or `glow -v` fails.
+
 ## Pane Titles
 
 ### TTMUX-023

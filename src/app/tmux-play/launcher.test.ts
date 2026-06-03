@@ -592,6 +592,71 @@ describe('launchTmuxPlay', () => {
     );
   });
 
+  it('binds Escape in root, copy-mode, and copy-mode-vi with a cancel-then-forward true branch and per-table stock false branch, mirroring the Ctrl+C pattern (TMUX-070)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'esc-key',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    // TTMUX-070: ESC pressed on a player pane is swallowed by
+    // pane-input-off=1; ESC pressed on any pane scrolled back into
+    // copy-mode hits the stock `Escape -X cancel` first. The binding is
+    // installed in all three tables so a bare ESC reaches pane 0 from any
+    // pane in any mode. Each true branch first exits pane 0's copy-mode
+    // when pane 0 is itself scrolled (otherwise the forwarded Escape is
+    // consumed by copy-mode's stock cancel) and then forwards the byte to
+    // pane 0, where the existing TMUX-057 readline keypress handler calls
+    // `abortActiveTurn('ESC')`. Each false branch reproduces that table's
+    // stock binding verbatim (`send-keys Escape` in root, `send-keys -X
+    // cancel` in the mode tables) so other tmux sessions on the same
+    // server are unaffected.
+    const condition = '#{==:#{session_name},tmux-play-esc-key}';
+    const trueBranch =
+      "if -F -t tmux-play-esc-key:0.0 '#{pane_in_mode}' " +
+      "'send-keys -t tmux-play-esc-key:0.0 -X cancel' ; " +
+      'send-keys -t tmux-play-esc-key:0.0 Escape';
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'root',
+      'Escape',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      'send-keys Escape',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'copy-mode',
+      'Escape',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      'send-keys -X cancel',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'bind-key',
+      '-T',
+      'copy-mode-vi',
+      'Escape',
+      'if-shell',
+      '-F',
+      condition,
+      trueBranch,
+      'send-keys -X cancel',
+    );
+  });
+
   it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
