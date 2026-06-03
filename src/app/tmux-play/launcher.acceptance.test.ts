@@ -1305,7 +1305,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⌛ #[fg=#7f849c]00:00:12',
         );
 
-        // TMUX-069 / TTMUX-056 — pin the `hh:mm:ss` format on a real
+        // TMUX-071 / TTMUX-056 — pin the `hh:mm:ss` format on a real
         // tmux server at the two regression-relevant magnitudes where
         // the sub-minute samples above are not enough to catch
         // regressions:

@@ -548,7 +548,7 @@ The status-total timer shall use the hourglass pair from [TMUX-054](#tmux-054) â
 While a Boss turn is open, the duration text shall use Catppuccin `mauve` (`#cba6f7`); between turns, it shall use `overlay1` (`#7f849c`).
 The launcher shall set sufficient `status-left-length` and `status-right-length` values so the hints and total timer are not truncated under the 174-column initial window from [TMUX-035](#tmux-035).
 
-### TMUX-069
+### TMUX-071
 
 The duration text for every per-pane timer of [TMUX-054](#tmux-054) and for the status-bar total timer of [TMUX-055](#tmux-055) shall be rendered in `hh:mm:ss` form, derived from the non-negative integer `s = floor(elapsedMs / 1000)` where `elapsedMs` is the timer's elapsed milliseconds from [TMUX-053](#tmux-053) clamped to zero for any negative value, with `h = floor(s / 3600)`, `m = floor(s / 60) mod 60`, and `n = s mod 60`.
 The duration text shall be the literal string `<HH>:<MM>:<SS>`, where `<MM>` is `m` and `<SS>` is `n` each rendered as a decimal integer zero-padded to exactly two digits, the components are joined by a single ASCII colon (`:`), and the three components are always present at every magnitude so a session that has accumulated zero active time surfaces as `00:00:00` and a session that has accumulated exactly one hour surfaces as `01:00:00`.

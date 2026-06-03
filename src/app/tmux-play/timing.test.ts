@@ -64,7 +64,7 @@ describe('TmuxPlayTiming', () => {
     expect(snapshot.total).toEqual({ elapsedMs: 9000, running: true });
   });
 
-  it('formats timer durations in hh:mm:ss form per TMUX-069', () => {
+  it('formats timer durations in hh:mm:ss form per TMUX-071', () => {
     // Every magnitude renders as three colon-separated, 2-digit-padded
     // components so the column width stays stable across consecutive
     // seconds.

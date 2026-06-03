@@ -49,7 +49,7 @@ const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
   'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
   'else exec tmux load-buffer -w -; fi';
-// TMUX-069: the initial timer text the launcher writes to every pane
+// TMUX-071: the initial timer text the launcher writes to every pane
 // and to the status-bar option shall be the same `hh:mm:ss` rendering
 // that `TimingObserver` would push for zero elapsed milliseconds, so the
 // surface a Boss sees at launch (before the first turn opens) reads as

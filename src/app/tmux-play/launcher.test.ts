@@ -930,7 +930,7 @@ describe('launchTmuxPlay', () => {
       'tmux-play-timers:0.1',
       'tmux-play-timers:0.2',
     ]) {
-      // TMUX-069: launcher seeds every per-pane timer with the
+      // TMUX-071: launcher seeds every per-pane timer with the
       // canonical zero rendering `00:00:00`, not the retired `0s`
       // literal, so the surface a Boss sees at launch matches the
       // hh:mm:ss form before any `TimingObserver` record arrives.
@@ -951,7 +951,7 @@ describe('launchTmuxPlay', () => {
         '0',
       );
     }
-    // TMUX-069: same zero rendering for the status-bar total timer.
+    // TMUX-071: same zero rendering for the status-bar total timer.
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-option',
       '-t',
