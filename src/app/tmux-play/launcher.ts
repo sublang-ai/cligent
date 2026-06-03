@@ -988,13 +988,14 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
 //      original TMUX-065 root binding and for Escape by TMUX-070.
 //   2. A pane scrolled back into copy-mode dispatches its keys through
 //      tmux's `copy-mode` / `copy-mode-vi` key tables, where the stock
-//      C-c and Escape bindings run `-X cancel`. With a root-only binding
-//      the first keypress on a scrolled pane is consumed by `cancel`
-//      (exits copy-mode) and only the second press reaches the forwarding
-//      logic — the user-reported "Ctrl+C requires two presses to quit
-//      when a pane is scrolled" defect, mirrored on Escape. Installing the
-//      same binding in `copy-mode` and `copy-mode-vi` makes single-press
-//      exit / abort hold even when the focused pane is in copy-mode.
+//      C-c and Escape bindings run `-X cancel` (and, in `copy-mode-vi`,
+//      stock `Escape` runs `-X clear-selection`). With a root-only binding
+//      the first keypress on a scrolled pane is consumed by that stock
+//      binding and only the second press reaches the forwarding logic —
+//      the user-reported "Ctrl+C requires two presses to quit when a pane
+//      is scrolled" defect, mirrored on Escape. Installing the same
+//      binding in `copy-mode` and `copy-mode-vi` makes single-press exit /
+//      abort hold even when the focused pane is in copy-mode.
 //
 // Every true branch is the same cancel-then-forward pair: it first exits
 // pane 0's copy-mode when pane 0 is itself scrolled
@@ -1010,28 +1011,56 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
 // TMUX-057.
 //
 // Each binding is scoped to the launched session via `if-shell -F`
-// against `#{session_name}`. The false branch reproduces the per-table
-// tmux stock binding verbatim so other tmux sessions on the same server
-// retain stock semantics (and any prior session-scoped override on a
-// reused server is overwritten): `send-keys <key>` for `root` and
-// `send-keys -X cancel` for the mode tables. tmux key tables are
-// server-global, so each entry outlives the tmux-play session; the
-// `if-shell` guard keeps them inert in every other session.
+// against `#{session_name}`. The false branch reproduces the per-(key,
+// table) tmux stock binding verbatim so other tmux sessions on the same
+// server retain stock semantics (and any prior session-scoped override on
+// a reused server is overwritten). Because tmux key tables are
+// server-global (see TMUX-062 / TMUX-063 / TMUX-065), a single false
+// branch that did not match the exact stock would silently downgrade the
+// corresponding key in every other tmux session on the host.
+//
+// The stock binding is NOT uniform across (key, table) — see the
+// `STOCK_FALSE_BRANCH` table below. In particular `copy-mode-vi`'s stock
+// `Escape` is `send-keys -X clear-selection`, not `-X cancel`: the vi
+// convention is that Escape leaves visual selection without leaving
+// copy-mode (the `q` key is the vi-mode exit). Collapsing `(Escape,
+// copy-mode-vi)` to `-X cancel` would change every unrelated vi-mode
+// user's Escape from "drop selection, keep scrollback" to "exit copy-mode,
+// snap to live tail" — the same scroll-snapping regression class TMUX-068
+// spelled out for mouse events.
+const FORWARD_KEY_TABLES = ['root', 'copy-mode', 'copy-mode-vi'] as const;
+type ForwardKey = 'C-c' | 'Escape';
+type ForwardTable = (typeof FORWARD_KEY_TABLES)[number];
+
+// Stock per-(key, table) tmux bindings, verified via `tmux list-keys`
+// on a fresh server:
+//   - root: neither key is bound; the focused pane receives the byte,
+//     which `send-keys <key>` (without `-t`) reproduces.
+//   - copy-mode (emacs-style mode-keys): both keys → `-X cancel`.
+//   - copy-mode-vi: `C-c` → `-X cancel`, `Escape` → `-X clear-selection`
+//     (vi convention).
+const STOCK_FALSE_BRANCH: Record<ForwardKey, Record<ForwardTable, string>> = {
+  'C-c': {
+    'root': 'send-keys C-c',
+    'copy-mode': 'send-keys -X cancel',
+    'copy-mode-vi': 'send-keys -X cancel',
+  },
+  Escape: {
+    'root': 'send-keys Escape',
+    'copy-mode': 'send-keys -X cancel',
+    'copy-mode-vi': 'send-keys -X clear-selection',
+  },
+};
 function configureBossPaneForwardKey(
   sessionName: string,
-  key: 'C-c' | 'Escape',
+  key: ForwardKey,
 ): void {
   const condition = `#{==:#{session_name},${sessionName}}`;
   const pane0 = paneTarget(sessionName, 0);
   const trueBranch =
     `if -F -t ${pane0} '#{pane_in_mode}' ` +
     `'send-keys -t ${pane0} -X cancel' ; send-keys -t ${pane0} ${key}`;
-  const tables: ReadonlyArray<{ table: string; falseBranch: string }> = [
-    { table: 'root', falseBranch: `send-keys ${key}` },
-    { table: 'copy-mode', falseBranch: 'send-keys -X cancel' },
-    { table: 'copy-mode-vi', falseBranch: 'send-keys -X cancel' },
-  ];
-  for (const { table, falseBranch } of tables) {
+  for (const table of FORWARD_KEY_TABLES) {
     runTmux(
       'bind-key',
       '-T',
@@ -1041,7 +1070,7 @@ function configureBossPaneForwardKey(
       '-F',
       condition,
       trueBranch,
-      falseBranch,
+      STOCK_FALSE_BRANCH[key][table],
     );
   }
 }

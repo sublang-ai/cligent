@@ -521,13 +521,26 @@ describe('tmux-play real-tmux acceptance', () => {
         );
         expect(escBinding).toContain(`send-keys -t ${sessionName}:0.0 Escape`);
       }
-      // The root false branch is the stock `send-keys Escape`; the
-      // copy-mode tables' false branch is the stock `send-keys -X cancel`.
+      // Asymmetric stock false branches: emacs-mode `Escape` is
+      // `-X cancel` (exit copy-mode); vi-mode `Escape` is
+      // `-X clear-selection` (vi convention: leave visual selection
+      // without leaving copy-mode; `q` is the vi-mode copy-mode exit).
+      // tmux key tables are server-global, so the launched session's
+      // false branch must reproduce each table's stock verbatim or the
+      // binding silently degrades Escape for every unrelated vi-mode
+      // user on the host — the scroll-snapping regression class
+      // TTMUX-068 already enumerates for mouse events.
       expect(keyBinding('root', 'Escape')).toContain('send-keys Escape');
-      expect(keyBinding('copy-mode', 'Escape')).toContain(
-        'send-keys -X cancel',
-      );
+      expect(keyBinding('copy-mode', 'Escape')).toContain('-X cancel');
       expect(keyBinding('copy-mode-vi', 'Escape')).toContain(
+        '-X clear-selection',
+      );
+      // The cancel-then-forward true branch legitimately contains a
+      // `send-keys -t <session>:0.0 -X cancel` (pane 0's copy-mode exit), so
+      // the negative check targets the bare `send-keys -X cancel` *false
+      // branch* form specifically — only present if vi-mode's false branch
+      // regressed from `clear-selection` to `cancel`.
+      expect(keyBinding('copy-mode-vi', 'Escape')).not.toContain(
         'send-keys -X cancel',
       );
 

@@ -607,16 +607,25 @@ describe('launchTmuxPlay', () => {
 
     // TTMUX-070: ESC pressed on a player pane is swallowed by
     // pane-input-off=1; ESC pressed on any pane scrolled back into
-    // copy-mode hits the stock `Escape -X cancel` first. The binding is
-    // installed in all three tables so a bare ESC reaches pane 0 from any
-    // pane in any mode. Each true branch first exits pane 0's copy-mode
-    // when pane 0 is itself scrolled (otherwise the forwarded Escape is
-    // consumed by copy-mode's stock cancel) and then forwards the byte to
-    // pane 0, where the existing TMUX-057 readline keypress handler calls
-    // `abortActiveTurn('ESC')`. Each false branch reproduces that table's
-    // stock binding verbatim (`send-keys Escape` in root, `send-keys -X
-    // cancel` in the mode tables) so other tmux sessions on the same
-    // server are unaffected.
+    // copy-mode hits the stock `Escape` binding first (emacs-mode
+    // `-X cancel`, vi-mode `-X clear-selection`). The binding is installed
+    // in all three tables so a bare ESC reaches pane 0 from any pane in any
+    // mode. Each true branch first exits pane 0's copy-mode when pane 0 is
+    // itself scrolled (otherwise the forwarded Escape is consumed by
+    // copy-mode's stock cancel) and then forwards the byte to pane 0, where
+    // the existing TMUX-057 readline keypress handler calls
+    // `abortActiveTurn('ESC')`.
+    //
+    // Each false branch reproduces that table's *exact* stock binding
+    // verbatim, and the stocks differ between `copy-mode` and
+    // `copy-mode-vi` for Escape specifically: emacs-mode `Escape` →
+    // `-X cancel` (exit copy-mode), vi-mode `Escape` → `-X clear-selection`
+    // (leave visual selection without leaving copy-mode; vi users press `q`
+    // to exit). Because tmux key tables are server-global, collapsing the
+    // vi-mode false branch to `-X cancel` would silently snap every
+    // unrelated vi-mode user's scrolled pane back to its live tail on
+    // Escape — the same scroll-snapping regression class TMUX-068
+    // enumerated for mouse events.
     const condition = '#{==:#{session_name},tmux-play-esc-key}';
     const trueBranch =
       "if -F -t tmux-play-esc-key:0.0 '#{pane_in_mode}' " +
@@ -653,8 +662,20 @@ describe('launchTmuxPlay', () => {
       '-F',
       condition,
       trueBranch,
-      'send-keys -X cancel',
+      'send-keys -X clear-selection',
     );
+
+    // Exactly one Escape binding per table — no stale leftover chain
+    // alongside the new one.
+    for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
+      const bindings = runTmuxMock.mock.calls.filter(
+        (call) =>
+          call[0] === 'bind-key' &&
+          call[2] === table &&
+          call[3] === 'Escape',
+      );
+      expect(bindings).toHaveLength(1);
+    }
   });
 
   it('applies the Catppuccin Mocha theme before content-bearing options', async () => {
