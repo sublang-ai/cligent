@@ -8,7 +8,12 @@ import type {
   AgentOptions,
 } from './types.js';
 import { generateSessionId } from './events.js';
-import { safeReturn, raceAbort, makeSynthDone, makeSynthError } from './protocol.js';
+import {
+  safeReturn,
+  nextWithAbortDrain,
+  makeSynthDone,
+  makeSynthError,
+} from './protocol.js';
 import type { AdapterRegistry } from './registry.js';
 
 export interface ParallelTask {
@@ -34,7 +39,13 @@ export async function* runAgent(
 
   // Short-circuit on pre-aborted signal — never call adapter.run()
   if (signal?.aborted) {
-    yield makeSynthDone(agent, 'interrupted', sessionId, startTime);
+    yield makeSynthDone(
+      agent,
+      'interrupted',
+      sessionId,
+      startTime,
+      options?.resume ? { resumeToken: options.resume } : undefined,
+    );
     return;
   }
 
@@ -45,8 +56,13 @@ export async function* runAgent(
   try {
     while (true) {
       let result: IteratorResult<AgentEvent, void>;
+      let abortDone: AgentEvent | undefined;
+      let aborted = false;
       try {
-        result = await raceAbort(gen.next(), signal);
+        const next = await nextWithAbortDrain(gen, signal);
+        result = next.result;
+        abortDone = next.abortDone;
+        aborted = next.aborted;
       } catch (err) {
         // Adapter threw
         if (!doneYielded) {
@@ -59,9 +75,20 @@ export async function* runAgent(
       }
 
       // Check abort after awaiting
-      if (signal?.aborted) {
+      if (aborted) {
         if (!doneYielded) {
-          yield makeSynthDone(agent, 'interrupted', lastSessionId, startTime);
+          if (abortDone) {
+            lastSessionId = abortDone.sessionId;
+            yield abortDone;
+          } else {
+            yield makeSynthDone(
+              agent,
+              'interrupted',
+              lastSessionId,
+              startTime,
+              options?.resume ? { resumeToken: options.resume } : undefined,
+            );
+          }
         }
         safeReturn(gen);
         return;

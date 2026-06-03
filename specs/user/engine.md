@@ -50,6 +50,7 @@ When the adapter's generator throws and no `done` event has been yielded, `run()
 ### ENG-009
 
 When the `AbortSignal` fires and no `done` event has been yielded, `run()` shall call `.return()` on the adapter generator and yield a `done` event (`status: 'interrupted'`). When the signal is already aborted before `.run()` is called, `run()` shall yield `done` (`status: 'interrupted'`) without calling the adapter.
+When the signal fires while an adapter `.next()` read is already pending, `run()` shall give the adapter a short bounded drain window before synthesis. During that drain, post-abort non-terminal events shall be suppressed; if the drain reaches an adapter-emitted `done`, that adapter event shall be yielded and processed normally before generator cleanup. For stateful `Cligent.run()`, processing that adapter `done` includes [ENG-005](#eng-005) resume-token capture. If the drain does not reach `done`, the synthesized interrupted `done` may include the inbound `resume` token when one was passed into the run, but shall not fabricate a token from a non-terminal event `sessionId`.
 
 ### ENG-010
 
@@ -66,6 +67,7 @@ When the adapter's generator exhausts without yielding a `done` event, `run()` s
 ### ENG-013
 
 Synthesized `done` payloads shall use zeroed usage (`inputTokens: 0`, `outputTokens: 0`, `toolUses: 0`) and `durationMs` measured from when the adapter's `.run()` was called. An adapter-emitted `done` shall take precedence over synthesis.
+This precedence includes an adapter-emitted interrupted `done` observed during the abort-drain path of [ENG-009](#eng-009).
 
 ## Cligent.parallel()
 

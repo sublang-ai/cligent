@@ -409,6 +409,81 @@ describe('TmuxPlayRuntime', () => {
     });
   });
 
+  it('resumes a player on the next Boss turn after an ESC-aborted round', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const playerStarted = deferred();
+    const playerResumes: (string | undefined)[] = [];
+    let playerRuns = 0;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        await context.callPlayer('coder', `work ${turn.prompt}`);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(_prompt, options) {
+            playerResumes.push(options?.resume);
+            playerRuns += 1;
+            if (playerRuns === 1) {
+              const abortSeen = options?.abortSignal?.aborted
+                ? Promise.resolve()
+                : new Promise<void>((resolve) => {
+                    options?.abortSignal?.addEventListener('abort', resolve, {
+                      once: true,
+                    });
+                  });
+              yield textEvent('codex', 'started');
+              playerStarted.resolve();
+              await abortSeen;
+              yield textEvent('codex', 'flush after abort');
+              yield doneEvent(
+                'codex',
+                undefined,
+                'interrupted',
+                'player-abort-token',
+              );
+              return;
+            }
+            yield doneEvent('codex', 'resumed');
+          },
+        },
+      }),
+    });
+
+    const first = runtime.runBossTurn('one');
+    await playerStarted.promise;
+    runtime.abortActiveTurn('ESC');
+    await first;
+
+    await runtime.runBossTurn('two');
+
+    expect(playerResumes).toEqual([undefined, 'player-abort-token']);
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'player_prompt',
+      'player_event',
+      'player_event',
+      'player_finished',
+      'turn_aborted',
+      'turn_started',
+      'player_prompt',
+      'player_event',
+      'player_finished',
+      'turn_finished',
+    ]);
+    expect(records[5]).toMatchObject({ type: 'turn_aborted', reason: 'ESC' });
+  });
+
   it('emits runtime_error on Captain failure and disposes once', async () => {
     const records: TmuxPlayRecord[] = [];
     let disposeCount = 0;

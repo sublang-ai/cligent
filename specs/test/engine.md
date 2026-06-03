@@ -44,9 +44,10 @@ Verifies: [ENG-001](../user/engine.md#eng-001)
 Given a mock adapter that yields canned events, when calling `run()`, the consumer shall receive all expected `CligentEvent` values in order.
 
 ### TENG-007
-Verifies: [ENG-009](../user/engine.md#eng-009), [ENG-010](../user/engine.md#eng-010)
+Verifies: [ENG-005](../user/engine.md#eng-005), [ENG-009](../user/engine.md#eng-009), [ENG-010](../user/engine.md#eng-010), [ENG-013](../user/engine.md#eng-013)
 
 When `AbortSignal` fires during `run()`, the engine shall yield `done` (`status: 'interrupted'`) and no further events.
+When the adapter responds to that abort by yielding non-terminal flush events followed by its own terminal `done` with `status: 'interrupted'` and `resumeToken` during the bounded abort drain, the engine shall suppress the non-terminal events, yield that adapter `done` rather than a synthesized one, capture the token, and pass it as `resume` on the next `Cligent.run()` call. When the adapter does not settle to terminal `done` during the abort drain, the engine shall synthesize `done` (`status: 'interrupted'`) without clearing the previously stored resume token.
 
 ### TENG-008
 Verifies: [ENG-008](../user/engine.md#eng-008)

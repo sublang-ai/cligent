@@ -61,12 +61,14 @@ function doneEvent(
   agent: string,
   status: 'success' | 'error' | 'interrupted' = 'success',
   sid = 'test-sid',
+  extra?: Record<string, unknown>,
 ): AgentEvent {
   return createEvent(
     'done',
     agent,
     {
       status,
+      ...extra,
       usage: { inputTokens: 10, outputTokens: 20, toolUses: 1 },
       durationMs: 100,
     },
@@ -206,6 +208,72 @@ describe('runAgent', () => {
     expect(
       (last as AgentEvent & { payload: { status: string } }).payload.status,
     ).toBe('interrupted');
+  });
+
+  it('prefers an adapter-emitted interrupted done when abort wins the race', async () => {
+    const controller = new AbortController();
+    const adapter: AgentAdapter = {
+      agent: 'claude-code',
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        const abortSeen = options?.abortSignal?.aborted
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              options?.abortSignal?.addEventListener('abort', resolve, {
+                once: true,
+              });
+        });
+        yield textEvent('claude-code', 'start', 'adapter-session-A');
+        await abortSeen;
+        yield createEvent(
+          'text_delta',
+          'claude-code',
+          { delta: 'flush-after-abort' },
+          'adapter-session-A',
+        );
+        yield doneEvent('claude-code', 'interrupted', 'adapter-session-A', {
+          resumeToken: 'adapter-session-A',
+        });
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    const registry = new AdapterRegistry();
+    registry.register(adapter);
+
+    const gen = runAgent(
+      'claude-code',
+      'hi',
+      { abortSignal: controller.signal },
+      registry,
+    );
+    const events: AgentEvent[] = [];
+    const first = await gen.next();
+    if (!first.done) events.push(first.value);
+    controller.abort();
+    for await (const event of gen) events.push(event);
+
+    const done = events[events.length - 1];
+    expect(done.type).toBe('done');
+    expect(done.sessionId).toBe('adapter-session-A');
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'text_delta' &&
+          (event as AgentEvent & { payload: { delta: string } }).payload
+            .delta === 'flush-after-abort',
+      ),
+    ).toBe(false);
+    expect(
+      (done as AgentEvent & { payload: { status: string; resumeToken?: string } })
+        .payload,
+    ).toMatchObject({
+      status: 'interrupted',
+      resumeToken: 'adapter-session-A',
+    });
   });
 
   it('yields MISSING_DONE on exhaustion without done', async () => {

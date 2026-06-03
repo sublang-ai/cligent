@@ -560,6 +560,7 @@ The duration text shall always carry exactly two digits per component while `h <
 ### TMUX-041
 
 Within a single tmux-play session, each player's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
+This continuity shall include an ESC-aborted Boss turn: when a player's interrupted adapter `done` carries a `resumeToken` per [ENG-009](engine.md#eng-009), the next Boss turn that calls the same player shall pass that token as `resume`, and the player shall remain callable normally after the aborted round.
 
 ### TMUX-042
 

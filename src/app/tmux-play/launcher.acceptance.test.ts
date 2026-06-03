@@ -78,8 +78,9 @@ const TMUX_AVAILABLE = isTmuxAvailable();
 const GLOW_AVAILABLE = isGlowAvailable();
 const acceptanceIt = TMUX_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
 const EXPECT_AVAILABLE = isCommandAvailable('expect', ['-v']);
-const mouseDispatchIt =
+const attachedClientIt =
   TMUX_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
+const mouseDispatchIt = attachedClientIt;
 
 const BUILT_CLI_PATH = join(
   process.cwd(),
@@ -559,6 +560,139 @@ describe('tmux-play real-tmux acceptance', () => {
 
       const capture = capturePane(sessionName, coder.index);
       expect(capture).not.toContain(probe);
+    },
+    60_000,
+  );
+
+  attachedClientIt(
+    'forwards single-press Ctrl+C and Escape to pane 0 through root and copy-mode key tables (TMUX-065, TMUX-070)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `keys-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      const captainExpected = Math.floor(80 / 3);
+      const coderExpected = Math.floor(80 / 3);
+      const reviewerExpected = 80 - captainExpected - coderExpected;
+      const panes = await waitForRegions(
+        sessionName,
+        [captainExpected, coderExpected, reviewerExpected],
+        2_000,
+      );
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const reviewer = paneByTitle(panes, 'Reviewer · claude');
+      const captainTarget = `${sessionName}:0.${captain.index}`;
+      const coderTarget = `${sessionName}:0.${coder.index}`;
+      const reviewerTarget = `${sessionName}:0.${reviewer.index}`;
+
+      const keyLog = join(cwd, 'pane-0-key-bytes.log');
+      const readyPath = join(cwd, 'pane-0-key-bytes.ready');
+      startPaneByteLogger(sessionName, captain.index, keyLog, readyPath);
+      await waitForNonEmptyFile(readyPath, 2_000);
+      await waitForHistory(sessionName, captain.index, 100, 2_000);
+
+      runOrThrow('tmux', [
+        'respawn-pane',
+        '-k',
+        '-t',
+        coderTarget,
+        'seq 1 500; sleep 600',
+      ]);
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+
+      // Copy-mode origin: the active player pane is scrolled and has a
+      // stopped selection, so tmux dispatches keys through copy-mode rather
+      // than root. A root-only binding would only cancel copy-mode here.
+      runOrThrow('tmux', ['select-pane', '-t', coderTarget]);
+      runOrThrow('tmux', ['copy-mode', '-t', coderTarget]);
+      for (let i = 0; i < 6; i += 1) {
+        runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', 'scroll-up']);
+      }
+      for (const motion of [
+        'begin-selection',
+        'cursor-right',
+        'stop-selection',
+      ]) {
+        runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', motion]);
+      }
+      expect(Number(displayMessage(coderTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+      expect(displayMessage(coderTarget, '#{selection_present}')).toBe('1');
+      expect(displayMessage(captainTarget, '#{pane_in_mode}')).toBe('0');
+
+      writeFileSync(keyLog, '');
+      sendAttachedClientKey(sessionName, '\\033');
+      expect(await waitForFileContains(keyLog, '1b', 2_000)).toContain('1b');
+
+      writeFileSync(keyLog, '');
+      sendAttachedClientKey(sessionName, '\\003');
+      expect(await waitForFileContains(keyLog, '03', 2_000)).toContain('03');
+
+      // Pane-0 copy-mode target: the active player pane is in root mode, but
+      // pane 0 is scrolled. The binding must first exit pane 0's copy-mode,
+      // then forward the key byte; otherwise the byte is swallowed by pane
+      // 0's copy-mode stock binding.
+      runOrThrow('tmux', ['select-pane', '-t', reviewerTarget]);
+      expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('0');
+
+      for (const [sequence, hex] of [
+        ['\\033', '1b'],
+        ['\\003', '03'],
+      ] as const) {
+        runOrThrow('tmux', ['copy-mode', '-t', captainTarget]);
+        for (let i = 0; i < 6; i += 1) {
+          runOrThrow('tmux', [
+            'send-keys',
+            '-t',
+            captainTarget,
+            '-X',
+            'scroll-up',
+          ]);
+        }
+        expect(Number(displayMessage(captainTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+        expect(displayMessage(captainTarget, '#{pane_in_mode}')).toBe('1');
+        runOrThrow('tmux', ['select-pane', '-t', reviewerTarget]);
+
+        writeFileSync(keyLog, '');
+        sendAttachedClientKey(sessionName, sequence);
+        expect(await waitForFileContains(keyLog, hex, 2_000)).toContain(hex);
+        expect(displayMessage(captainTarget, '#{pane_in_mode}')).toBe('0');
+        expect(displayMessage(reviewerTarget, '#{pane_active}')).toBe('1');
+      }
     },
     60_000,
   );
@@ -1982,6 +2116,57 @@ function showPaneOption(
   return result.stdout.trimEnd();
 }
 
+function startPaneByteLogger(
+  session: string,
+  paneIndex: number,
+  keyLog: string,
+  readyPath: string,
+): void {
+  const script = [
+    'const fs = require("fs");',
+    `const keyLog = ${JSON.stringify(keyLog)};`,
+    `const readyPath = ${JSON.stringify(readyPath)};`,
+    'fs.writeFileSync(readyPath, "ready\\n");',
+    'if (process.stdin.isTTY && process.stdin.setRawMode) process.stdin.setRawMode(true);',
+    'process.stdin.resume();',
+    'process.stdin.on("data", (chunk) => {',
+    '  fs.appendFileSync(keyLog, Buffer.from(chunk).toString("hex") + "\\n");',
+    '});',
+    'setInterval(() => {}, 1000);',
+  ].join('');
+
+  runOrThrow('tmux', [
+    'respawn-pane',
+    '-k',
+    '-t',
+    `${session}:0.${paneIndex}`,
+    `seq 1 500; exec node -e ${shellQuote(script)}`,
+  ]);
+}
+
+function sendAttachedClientKey(session: string, sequence: string): void {
+  const script = [
+    `spawn tmux attach-session -t ${session}`,
+    'after 500',
+    `send -- "${sequence}"`,
+    'after 500',
+    'send -- "\\002d"',
+    'expect eof',
+  ].join('\n');
+  const result = spawnSync('expect', ['-c', script], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (result.error) {
+    throw new Error(`expect key probe failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `expect key probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
+    );
+  }
+}
+
 function sendAttachedClientMouseDown(
   session: string,
   x: number,
@@ -2134,6 +2319,25 @@ async function waitForNonEmptyFile(
   throw new Error(
     `${path} was not written with copied text within ${timeoutMs}ms`,
   );
+}
+
+async function waitForFileContains(
+  path: string,
+  needle: string,
+  timeoutMs: number,
+): Promise<string> {
+  const start = Date.now();
+  let content = '';
+  while (Date.now() - start < timeoutMs) {
+    if (existsSync(path)) {
+      content = readFileSync(path, 'utf8');
+      if (content.includes(needle)) {
+        return content;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`${path} did not contain ${needle}; last content:\n${content}`);
 }
 
 function regionWidthFor(

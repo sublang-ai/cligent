@@ -11,7 +11,12 @@ import type {
   PermissionPolicy,
   RunOptions,
 } from './types.js';
-import { safeReturn, raceAbort, makeSynthDone, makeSynthError } from './protocol.js';
+import {
+  safeReturn,
+  nextWithAbortDrain,
+  makeSynthDone,
+  makeSynthError,
+} from './protocol.js';
 import { generateSessionId } from './events.js';
 
 export interface CligentParallelTask {
@@ -132,7 +137,13 @@ export class Cligent {
       // Pre-abort short-circuit (ENG-009)
       if (signal?.aborted) {
         yield injectRole(
-          makeSynthDone(agent, 'interrupted', sessionId, startTime),
+          makeSynthDone(
+            agent,
+            'interrupted',
+            sessionId,
+            startTime,
+            resume ? { resumeToken: resume } : undefined,
+          ),
           role,
         );
         return;
@@ -145,8 +156,13 @@ export class Cligent {
       try {
         while (true) {
           let result: IteratorResult<AgentEvent, void>;
+          let abortDone: AgentEvent | undefined;
+          let aborted = false;
           try {
-            result = await raceAbort(gen.next(), signal);
+            const next = await nextWithAbortDrain(gen, signal);
+            result = next.result;
+            abortDone = next.abortDone;
+            aborted = next.aborted;
           } catch (err) {
             // Adapter threw (ENG-008)
             if (!doneYielded) {
@@ -167,12 +183,25 @@ export class Cligent {
           }
 
           // Abort after awaiting (ENG-009)
-          if (signal?.aborted) {
+          if (aborted) {
             if (!doneYielded) {
-              yield injectRole(
-                makeSynthDone(agent, 'interrupted', lastSessionId, startTime),
-                role,
-              );
+              if (abortDone) {
+                lastSessionId = abortDone.sessionId;
+                yield injectRole(abortDone, role);
+                const payload = abortDone.payload as DonePayload;
+                this.captureResumeToken(payload.resumeToken);
+              } else {
+                yield injectRole(
+                  makeSynthDone(
+                    agent,
+                    'interrupted',
+                    lastSessionId,
+                    startTime,
+                    resume ? { resumeToken: resume } : undefined,
+                  ),
+                  role,
+                );
+              }
               doneYielded = true;
             }
             safeReturn(gen);

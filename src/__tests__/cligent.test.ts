@@ -79,6 +79,17 @@ async function collectEvents(
   return result;
 }
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 function textEvent(agent: string, content: string, sid = 'test-sid'): AgentEvent {
   return createEvent('text', agent, { content }, sid);
 }
@@ -404,6 +415,130 @@ describe('Cligent protocol hardening', () => {
     const last = events[events.length - 1];
     expect(last.type).toBe('done');
     expect((last.payload as DonePayload).status).toBe('interrupted');
+  });
+
+  it('uses adapter interrupted done after abort and captures its resumeToken', async () => {
+    const controller = new AbortController();
+    const abortSeen = deferred();
+    const resumes: (string | undefined)[] = [];
+    let calls = 0;
+    const adapter: AgentAdapter = {
+      agent: 'claude-code',
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        resumes.push(options?.resume);
+        calls += 1;
+        if (calls === 1) {
+          yield textEvent('claude-code', 'start', 'backend-session-A');
+          if (!options?.abortSignal?.aborted) {
+            options?.abortSignal?.addEventListener(
+              'abort',
+              () => abortSeen.resolve(undefined),
+              { once: true },
+            );
+            await abortSeen.promise;
+          }
+          yield createEvent(
+            'text_delta',
+            'claude-code',
+            { delta: 'flush-after-abort' },
+            'backend-session-A',
+          );
+          yield doneEvent(
+            'claude-code',
+            'interrupted',
+            'backend-session-A',
+            { resumeToken: 'backend-session-A' },
+          );
+          return;
+        }
+        yield doneEvent('claude-code', 'success', 'backend-session-B', {
+          resumeToken: 'backend-session-B',
+        });
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    const agent = new Cligent(adapter);
+    const gen = agent.run('first', { abortSignal: controller.signal });
+    const events: CligentEvent[] = [];
+
+    const first = await gen.next();
+    if (!first.done) events.push(first.value);
+    controller.abort();
+    for await (const event of gen) {
+      events.push(event);
+    }
+
+    const done = events[events.length - 1];
+    expect(done.type).toBe('done');
+    expect((done.payload as DonePayload).status).toBe('interrupted');
+    expect((done.payload as DonePayload).resumeToken).toBe('backend-session-A');
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'text_delta' &&
+          (event.payload as { delta: string }).delta === 'flush-after-abort',
+      ),
+    ).toBe(false);
+    expect(agent.resumeToken).toBe('backend-session-A');
+
+    await collectEvents(agent.run('second'));
+    expect(resumes).toEqual([undefined, 'backend-session-A']);
+  });
+
+  it('keeps the prior resume token when abort synthesis is needed', async () => {
+    const controller = new AbortController();
+    const resumes: (string | undefined)[] = [];
+    let calls = 0;
+    const adapter: AgentAdapter = {
+      agent: 'claude-code',
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        resumes.push(options?.resume);
+        calls += 1;
+        if (calls === 1) {
+          yield doneEvent('claude-code', 'success', 'test-sid', {
+            resumeToken: 'tok-A',
+          });
+          return;
+        }
+        if (calls === 2) {
+          yield textEvent('claude-code', 'start');
+          await new Promise(() => {});
+          return;
+        }
+        yield doneEvent('claude-code', 'success');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    const agent = new Cligent(adapter);
+    await collectEvents(agent.run('seed'));
+
+    const gen = agent.run('abort', { abortSignal: controller.signal });
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    controller.abort();
+    const events: CligentEvent[] = [];
+    for await (const event of gen) {
+      events.push(event);
+    }
+
+    const done = events[events.length - 1];
+    expect(done.type).toBe('done');
+    expect((done.payload as DonePayload).status).toBe('interrupted');
+    expect((done.payload as DonePayload).resumeToken).toBe('tok-A');
+    expect(agent.resumeToken).toBe('tok-A');
+
+    await collectEvents(agent.run('after abort'));
+    expect(resumes).toEqual([undefined, 'tok-A', 'tok-A']);
   });
 
   it('pre-aborted signal yields done(interrupted) without calling adapter', async () => {
