@@ -577,6 +577,8 @@ A `'hidden'` call shall run identically to a `'visible'` call and shall return t
 
 The tmux presenter shall produce zero Boss/Captain-pane output for a `'hidden'` call: it shall skip the call's `captain_event` records (so their text never accumulates into a rendered block) and its `captain_finished` record (so no terminal reply, status, or error line is written), in addition to the Captain-prompt body already withheld per [TMUX-040](#tmux-040). For `'visible'` or omitted visibility, Boss/Captain-pane output shall be byte-for-byte identical to the behavior before this option existed.
 
+Because a `'hidden'` call writes no bytes to the Boss/Captain pane, it shall not trigger the live-tail follow of [TMUX-069](#tmux-069): a Boss who has scrolled the Captain pane into copy-mode shall keep that scroll position across a hidden call, since a hidden call's records are no-visible-bytes activity under [TMUX-069](#tmux-069).
+
 `callPlayer` shall not accept this option; player visibility is unchanged.
 
 ## References

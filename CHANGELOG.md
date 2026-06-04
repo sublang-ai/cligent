@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Per-call `callCaptain` visibility: `callCaptain(prompt, { visibility: 'hidden' })` runs the Captain normally and returns the same `CaptainRunResult`, but produces zero Boss-pane output. The runtime still emits the call's `captain_prompt` / `captain_event` / `captain_finished` records tagged with the resolved `visibility`, so non-presenter observers keep the full trace while the tmux presenter skips the hidden ones. Omitting the option (or passing `'visible'`) is byte-for-byte unchanged; `callPlayer` is unaffected — TMUX-016, TMUX-040, TMUX-072
+- Per-call `callCaptain` visibility: `callCaptain(prompt, { visibility: 'hidden' })` runs the Captain normally and returns the same `CaptainRunResult`, but produces zero Boss-pane output. The runtime still emits the call's `captain_prompt` / `captain_event` / `captain_finished` records tagged with the resolved `visibility`, so non-presenter observers keep the full trace while the tmux presenter skips the hidden ones. Because a hidden call writes no Boss-pane bytes, the copy-mode follow observer also leaves a scrolled Boss/Captain pane at its scroll position across the call. Omitting the option (or passing `'visible'`) is byte-for-byte unchanged; `callPlayer` is unaffected — TMUX-016, TMUX-040, TMUX-069, TMUX-072
 
 ## [0.9.0] - 2026-06-04
 

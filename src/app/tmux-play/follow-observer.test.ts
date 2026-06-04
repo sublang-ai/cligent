@@ -77,6 +77,43 @@ describe('FollowObserver', () => {
     expect(followed).toEqual([]);
   });
 
+  it('does not follow on hidden captain events or hidden finished records', () => {
+    const { observer, followed } = makeObserver();
+
+    // A hidden Captain call (TMUX-072) puts zero bytes on the boss pane — the
+    // presenter skips its captain_event and captain_finished records — so none
+    // of these may snap a scrolled pane to its tail, regardless of event type
+    // or finished status.
+    observer.onRecord(hiddenCaptainEvent(toolUse()));
+    observer.onRecord(hiddenCaptainEvent(text('done')));
+    observer.onRecord(hiddenCaptainEvent(errorEvent()));
+    observer.onRecord(hiddenCaptainFinished('ok'));
+    observer.onRecord(hiddenCaptainFinished('error'));
+    observer.onRecord(hiddenCaptainFinished('aborted'));
+
+    expect(followed).toEqual([]);
+  });
+
+  it('keeps hidden captain records from disturbing the visible block state', () => {
+    const { observer, followed } = makeObserver();
+
+    // A hidden delta must not enter the pending block, and a hidden finished
+    // must not consume one: a hidden ok-finished after a hidden delta never
+    // follows...
+    observer.onRecord(hiddenCaptainEvent(textDelta('secret')));
+    observer.onRecord(hiddenCaptainFinished('ok'));
+    expect(followed).toEqual([]);
+
+    // ...and a visible block that a hidden finished cannot flush still follows
+    // exactly once when its own visible finished arrives.
+    observer.onRecord(captainEvent(textDelta('hello')));
+    observer.onRecord(hiddenCaptainFinished('error'));
+    expect(followed).toEqual([]);
+
+    observer.onRecord(captainFinished('ok'));
+    expect(followed).toEqual([CAPTAIN_PANE]);
+  });
+
   it('does not follow when an all-empty-delta block is flushed by its finished record', () => {
     const { observer, followed } = makeObserver();
 
@@ -312,6 +349,26 @@ function captainFinished(status: RunStatus): TmuxPlayRecord {
     turnId: 1,
     timestamp: 0,
     result: { turnId: 1, status },
+  };
+}
+
+function hiddenCaptainEvent(event: CligentEvent): TmuxPlayRecord {
+  return {
+    type: 'captain_event',
+    turnId: 1,
+    timestamp: 0,
+    event,
+    visibility: 'hidden',
+  };
+}
+
+function hiddenCaptainFinished(status: RunStatus): TmuxPlayRecord {
+  return {
+    type: 'captain_finished',
+    turnId: 1,
+    timestamp: 0,
+    result: { turnId: 1, status },
+    visibility: 'hidden',
   };
 }
 

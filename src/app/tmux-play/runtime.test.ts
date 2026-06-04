@@ -236,6 +236,59 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
+  it('returns an error result and tags records hidden for a failing hidden call', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        const hidden = await context.callCaptain('hidden work', {
+          visibility: 'hidden',
+        });
+        // A failing hidden call still returns the full result shape — the
+        // caller sees the error even though the Boss pane shows nothing.
+        expect(hidden.status).toBe('error');
+        expect(hidden.error).toBe('boom');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run() {
+            yield textEvent('claude-code', 'partial');
+            yield doneEvent('claude-code', 'boom', 'error');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('feature');
+
+    // The full trace still reaches non-presenter observers, tagged hidden so
+    // the tmux presenter and follow observer skip it, and the finished record
+    // carries the error status.
+    const captainRecords = records.filter((record) =>
+      record.type.startsWith('captain_'),
+    );
+    expect(captainRecords).toMatchObject([
+      { type: 'captain_prompt', visibility: 'hidden' },
+      { type: 'captain_event', visibility: 'hidden' },
+      { type: 'captain_event', visibility: 'hidden' },
+      {
+        type: 'captain_finished',
+        visibility: 'hidden',
+        result: { status: 'error', error: 'boom' },
+      },
+    ]);
+  });
+
   it('serializes Boss turns', async () => {
     const firstStarted = deferred();
     const releaseFirst = deferred();

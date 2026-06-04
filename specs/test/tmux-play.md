@@ -314,11 +314,15 @@ Verifies: [TMUX-040](../user/tmux-play.md#tmux-040), [TMUX-049](../user/tmux-pla
 Given a `captain_event` carrying a `tool_use` record, the Boss/Captain pane writer (not any player writer) shall receive the `captain> [tool ↪] …` header per [TMUX-049](../user/tmux-play.md#tmux-049). Given a player-id `coder` `player_event` carrying the same `tool_use`, only the `coder` player pane writer shall receive the `coder> [tool ↪] …` header; the Boss/Captain pane writer shall not.
 
 ### TTMUX-071
-Verifies: [TMUX-072](../user/tmux-play.md#tmux-072)
+Verifies: [TMUX-072](../user/tmux-play.md#tmux-072), [TMUX-069](../user/tmux-play.md#tmux-069)
 
 Given a Captain that issues one `callCaptain(prompt)` and one `callCaptain(prompt, { visibility: 'hidden' })` within a turn, both calls shall return a `CaptainRunResult` with the run's `status` and `finalText`, and observers shall receive both calls' `captain_prompt` / `captain_event` / `captain_finished` records — the first call's tagged `visibility: 'visible'`, the second's tagged `visibility: 'hidden'`.
 
+Given a hidden call whose underlying run reports an error `status`, it shall still return the full `CaptainRunResult` — `status: 'error'` with the propagated `error` — and the observers' `captain_finished` record, tagged `visibility: 'hidden'`, shall carry that error `status`.
+
 Given the tmux presenter receives a hidden call's records (`captain_event` carrying streamed text or an `error` event, then a `captain_finished` of any `status`), the Boss/Captain pane writer shall capture zero bytes — no rendered reply block, and no `[error]`, `[aborted]`, or status line. Given the same records tagged `visibility: 'visible'` (or with `visibility` omitted), the captured Boss/Captain-pane bytes shall be identical to the presenter's behavior before the option existed.
+
+Given a Boss/Captain pane scrolled back into copy-mode, a hidden call's records — a `captain_event` carrying a tool, text, or `error` event, then a `captain_finished` of any `status` — shall not return that pane to its live tail per [TMUX-069](../user/tmux-play.md#tmux-069): the pane shall keep its `#{scroll_position}` and remain at `#{pane_in_mode}` `1`. A later visible call whose flush writes bytes to that pane shall still return it to its live tail, so interleaved hidden records do not suppress the return owed once visible content reaches the pane.
 
 ## Player Session Continuity
 

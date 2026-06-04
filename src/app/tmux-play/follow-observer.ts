@@ -135,8 +135,19 @@ export class FollowObserver implements RecordObserver {
         // The presenter flushes the boss block then writes a bracketed line.
         return this.flushedWrite(this.captainTitle);
       case 'captain_finished':
+        // TMUX-072: a hidden Captain call puts zero bytes on the pane
+        // (presenter-tmux.ts skips its captain_event / captain_finished), so it
+        // must drive no follow. Mirror the presenter's skip exactly — report no
+        // write and leave the pending-block state untouched, since a hidden
+        // event never accumulated into the presenter's open block.
+        if (record.visibility === 'hidden') {
+          return { title: this.captainTitle, writes: false };
+        }
         return this.finishedWrite(this.captainTitle, record.result.status);
       case 'captain_event':
+        if (record.visibility === 'hidden') {
+          return { title: this.captainTitle, writes: false };
+        }
         return this.classifyEvent(this.captainTitle, record.event);
       case 'player_prompt': {
         const title = this.playerTitles.get(record.playerId);
