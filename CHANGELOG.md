@@ -10,9 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-04
+
+### Added
+
+- Per-pane mouse selection and system-clipboard right-click copy. tmux-play turns on mouse mode: left-drag selects within a pane, right-click copies the selection to the system clipboard (`pbcopy` / `wl-copy` / `xclip` / `xsel`, falling back to a tmux buffer) via `copy-pipe` (not `copy-pipe-and-cancel`), and a left-click drops any active selection — each path preserving the clicked pane's copy-mode scroll position — TMUX-062, TMUX-068
+- Direct pane switching without the `Ctrl+b` prefix: `Ctrl+←/→` and `Shift+←/→` both move between panes (both pairs ship because terminal emulators variously intercept one or the other). `status-left` advertises `Switch pane: Ctrl+←/→ or Shift+←/→`. Each binding is gated on the active `#{session_name}` via `if-shell -F`, so other tmux sessions on the same server keep stock behavior — TMUX-063
+- Single-press exit and turn-abort from any pane in any mode: `Ctrl+C` runs the TMUX-026 exit lifecycle and a bare `ESC` aborts the active turn even from a read-only player pane or a pane scrolled into copy-mode. Both are forwarded to the Boss/Captain pane across the `root` / `copy-mode` / `copy-mode-vi` key tables with a cancel-pane-0-then-forward true branch, fixing the "two presses to quit when scrolled" and "swallowed on a player pane" defects — TMUX-065, TMUX-070, IR-024
+- Copy-mode live-follow: a pane scrolled back into copy-mode returns to its live tail when new output is written to it, while a pane with no concurrent output stays scrolled for review — TMUX-069, IR-024
+- YAML `layout` block: optional `layout.window` (`columns` / `rows`) sets the initial cell grid and `layout.columnWeights` sets per-column width ratios, both validated with the offending path named on error — TMUX-064, IR-022
+- OSC 11 terminal-background detection: tmux-play queries the terminal background color to auto-select the Catppuccin flavor (Mocha for dark, Latte for light), refining the prior `COLORFGBG` / `TERM_PROGRAM` heuristic; a `--theme-diagnostics` mode prints the resolved flavor and reason without creating a session — TMUX-047, TMUX-061
+
 ### Changed
 
-- tmux-play binds `Ctrl+Left` / `Ctrl+Right` at the root key table to switch panes directly without the `Ctrl+b` prefix; the navigation hints in `status-left` now read `Switch pane: Ctrl+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy`. The retired hint fragments `Ctrl+b, then: d=detach | o=switch pane | [=scroll (q exits)` are gone — mouse is on by default so the manual scroll-mode entry is redundant, detach is rarely used and remains available via tmux's default `Ctrl+b d`, and `Ctrl+b o` still works for prefix-style pane cycling. The root binding is gated on the active `#{session_name}` via `if-shell -F`, so `Ctrl+Left` / `Ctrl+Right` in every other tmux session on the same server forward the key verbatim through `send-keys` instead of capturing it — TMUX-063, GitHub issue #2
+- Refreshed shipped tmux-play defaults: the first-run home config uses a `174 × 49` window (1080p at 18 pt monospace), multi-player `columnWeights: [1, 1, 1]`, and `model: claude-opus-4-8` for the Captain and the `claude` player; the `codex` player and all `permissions` / `reasoningEffort` defaults are unchanged — TMUX-064, IR-023
+- Run-time timers render in `hh:mm:ss` form on every per-pane border and the status-bar total: all three components are always present and zero-padded (e.g., `00:00:00`, `00:01:00`, `01:02:03`), with the hours field expanding past two digits at 100 h. This replaces the prior seconds-only `<n>s` and padded `Xm…s` / `Xh…m` forms — TMUX-071
+- The `status-left` brand heading reads `Cligent` instead of `tmux-play`
+- tmux-play config loading now rejects unknown top-level YAML keys (e.g. a typo like `layoutt:`) with an error naming the offending path, instead of silently ignoring them and falling through to defaults; the `captain`, `players[]`, and `layout` scopes already validated their own keys, so only the root scope changes — TMUX-008
+
+### Fixed
+
+- Player context now survives an ESC-aborted Boss turn end-to-end. The engine captures the adapter's interrupt-time resume token that the abort short-circuit previously discarded (so a resumable player resumes its session on the next turn); when the interrupted `done` carries no resumable token, the built-in fanout Captain re-sends the interrupted Boss prompt(s) on the player's next call so it continues with context instead of answering "this appears to be the first turn." `Cligent` stays prompt-agnostic — it captures the opaque token (exposed via the `Cligent.resumeToken` getter and the `done` event); tmux-play surfaces it as `PlayerRunResult.resumeToken`, and prompt recovery lives in the fanout Captain — ENG-009, TMUX-033, TMUX-042, CLAUDE-007, IR-020
+- tmux-play flushes player log streams before session teardown, so trailing pane output is not dropped on exit
 
 ## [0.8.0] - 2026-05-28
 
@@ -181,7 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/sublang-ai/cligent/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sublang-ai/cligent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sublang-ai/cligent/compare/v0.5.0...v0.6.0
