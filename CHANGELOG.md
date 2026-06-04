@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-04
+
+### Added
+
+- Per-call `callCaptain` visibility: `callCaptain(prompt, { visibility: 'hidden' })` runs the Captain normally and returns the same `CaptainRunResult`, but produces zero Boss-pane output. The runtime still emits the call's `captain_prompt` / `captain_event` / `captain_finished` records tagged with the resolved `visibility`, so non-presenter observers keep the full trace while the tmux presenter skips the hidden ones. Omitting the option (or passing `'visible'`) is byte-for-byte unchanged; `callPlayer` is unaffected — TMUX-016, TMUX-040, TMUX-072
+
 ## [0.9.0] - 2026-06-04
 
 ### Added
@@ -200,7 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/sublang-ai/cligent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/sublang-ai/cligent/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sublang-ai/cligent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/sublang-ai/cligent/compare/v0.6.0...v0.7.0

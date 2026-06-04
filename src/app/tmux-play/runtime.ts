@@ -11,6 +11,7 @@ import type {
 } from '../../types.js';
 import type {
   BossTurn,
+  CallCaptainOptions,
   Captain,
   CaptainContext,
   CaptainRunResult,
@@ -18,6 +19,7 @@ import type {
   CaptainTelemetry,
   PlayerHandle,
   PlayerRunResult,
+  RecordVisibility,
   RunStatus,
   RunTmuxPlayOptions,
 } from './contract.js';
@@ -230,7 +232,8 @@ export class TmuxPlayRuntime {
       signal,
       players: this.playerHandles,
       callPlayer: (playerId, prompt) => this.callPlayer(turn, signal, playerId, prompt),
-      callCaptain: (prompt) => this.callCaptain(turn, signal, prompt),
+      callCaptain: (prompt, options) =>
+        this.callCaptain(turn, signal, prompt, options),
     };
   }
 
@@ -284,10 +287,17 @@ export class TmuxPlayRuntime {
     turn: BossTurn,
     signal: AbortSignal,
     prompt: string,
+    options?: CallCaptainOptions,
   ): Promise<CaptainRunResult> {
+    // Resolve once and stamp every record this call emits. A 'hidden' tag
+    // lets the tmux presenter skip Boss-pane output while non-presenter
+    // observers keep the full trace; the returned result is unaffected.
+    const visibility: RecordVisibility = options?.visibility ?? 'visible';
+
     await this.emit({
       ...makeRecordBase('captain_prompt', turn.id),
       prompt,
+      visibility,
     });
 
     const call = await runCligentCall({
@@ -299,6 +309,7 @@ export class TmuxPlayRuntime {
         this.emit({
           ...makeRecordBase('captain_event', turn.id, event.timestamp),
           event,
+          visibility,
         }),
     });
     const result: CaptainRunResult = {
@@ -311,6 +322,7 @@ export class TmuxPlayRuntime {
     await this.emit({
       ...makeRecordBase('captain_finished', turn.id),
       result,
+      visibility,
     });
     return result;
   }

@@ -24,7 +24,7 @@ vi.mock('../shared/glow.js', () => ({
 }));
 
 import { createTmuxPresenter } from './presenter-tmux.js';
-import type { TmuxPlayRecord } from './records.js';
+import type { CaptainEventRecord, TmuxPlayRecord } from './records.js';
 
 // Per TMUX-038/039 the presenter emits SGR escapes around speaker prefixes
 // and status bodies. Tests that assert visible content call `text()`
@@ -84,7 +84,7 @@ function toolResultEvent(
   );
 }
 
-function captainEvent(event: CligentEvent): TmuxPlayRecord {
+function captainEvent(event: CligentEvent): CaptainEventRecord {
   return {
     type: 'captain_event',
     turnId: 1,
@@ -640,6 +640,95 @@ describe('TmuxPresenter', () => {
     });
 
     expect(boss.text()).toBe('');
+  });
+
+  // Hidden Captain calls (TMUX-072).
+
+  it('writes nothing to the Boss pane for a hidden Captain call', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    // A hidden call's records flow through the presenter exactly as a
+    // visible one would (prompt → streamed deltas → finished), but every
+    // record carries `visibility: 'hidden'`.
+    presenter.onRecord({
+      type: 'captain_prompt',
+      turnId: 1,
+      timestamp: 1,
+      prompt: 'hidden work',
+      visibility: 'hidden',
+    });
+    presenter.onRecord({
+      ...captainEvent(textDeltaEvent('secret ')),
+      visibility: 'hidden',
+    });
+    presenter.onRecord({
+      ...captainEvent(textDeltaEvent('answer')),
+      visibility: 'hidden',
+    });
+    presenter.onRecord({
+      type: 'captain_finished',
+      turnId: 1,
+      timestamp: 2,
+      result: { status: 'ok', turnId: 1, finalText: 'secret answer' },
+      visibility: 'hidden',
+    });
+
+    // Skipping the hidden events keeps the text out of the open block, so
+    // the finished record has nothing to flush — zero bytes reach the pane.
+    expect(boss.raw()).toBe('');
+    expect(renderMarkdownMock).not.toHaveBeenCalled();
+  });
+
+  it('writes no error line for a hidden Captain call that fails', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    presenter.onRecord({
+      ...captainEvent(errorEvent('captain failed')),
+      visibility: 'hidden',
+    });
+    presenter.onRecord({
+      type: 'captain_finished',
+      turnId: 1,
+      timestamp: 2,
+      result: { status: 'error', turnId: 1, error: 'captain failed' },
+      visibility: 'hidden',
+    });
+
+    // The error status is still carried in the record for non-presenter
+    // observers, but the tmux presenter emits nothing for a hidden call.
+    expect(boss.raw()).toBe('');
+  });
+
+  it('renders a visible Captain call unchanged when visibility is set explicitly', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    // An explicit `visibility: 'visible'` produces byte-for-byte the same
+    // output as an untagged (omitted) record.
+    presenter.onRecord({
+      ...captainEvent(textEvent('answer')),
+      visibility: 'visible',
+    });
+    presenter.onRecord({
+      type: 'captain_finished',
+      turnId: 1,
+      timestamp: 2,
+      result: { status: 'ok', turnId: 1, finalText: 'answer' },
+      visibility: 'visible',
+    });
+
+    expect(boss.text()).toBe('captain> answer\n');
   });
 
   it('does not fail on unserializable status data', () => {

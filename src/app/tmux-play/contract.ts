@@ -27,11 +27,31 @@ export interface CaptainSession {
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
 }
 
+/**
+ * Presentation visibility for the records a call emits. `visible` (the
+ * default) renders to the Boss pane as before; `hidden` keeps the call's
+ * behaviour and result identical but tags its records so the tmux presenter
+ * skips them, while non-presenter observers still receive the full trace.
+ */
+export type RecordVisibility = 'visible' | 'hidden';
+
+export interface CallCaptainOptions {
+  /**
+   * Whether the Captain call's records reach the Boss pane. Defaults to
+   * `'visible'`. `'hidden'` produces zero Boss-pane output while returning
+   * the same {@link CaptainRunResult}.
+   */
+  readonly visibility?: RecordVisibility;
+}
+
 export interface CaptainContext {
   readonly signal: AbortSignal;
   readonly players: readonly PlayerHandle[];
   callPlayer(playerId: string, prompt: string): Promise<PlayerRunResult>;
-  callCaptain(prompt: string): Promise<CaptainRunResult>;
+  callCaptain(
+    prompt: string,
+    options?: CallCaptainOptions,
+  ): Promise<CaptainRunResult>;
 }
 
 export interface CaptainTelemetry {

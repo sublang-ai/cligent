@@ -179,6 +179,63 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
+  it('tags Captain records with visibility and returns finalText for hidden calls', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        const visible = await context.callCaptain('visible work');
+        expect(visible.finalText).toBe('visible done');
+
+        const hidden = await context.callCaptain('hidden work', {
+          visibility: 'hidden',
+        });
+        // A hidden call runs normally and returns the same result shape.
+        expect(hidden.status).toBe('ok');
+        expect(hidden.finalText).toBe('hidden done');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run(prompt) {
+            const result = prompt.includes('hidden')
+              ? 'hidden done'
+              : 'visible done';
+            yield textEvent('claude-code', result);
+            yield doneEvent('claude-code', result);
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('feature');
+
+    // Non-presenter observers receive the full trace for both calls; the
+    // hidden call's records are tagged so the tmux presenter can skip them.
+    const captainRecords = records.filter((record) =>
+      record.type.startsWith('captain_'),
+    );
+    expect(captainRecords).toMatchObject([
+      { type: 'captain_prompt', visibility: 'visible' },
+      { type: 'captain_event', visibility: 'visible' },
+      { type: 'captain_event', visibility: 'visible' },
+      { type: 'captain_finished', visibility: 'visible' },
+      { type: 'captain_prompt', visibility: 'hidden' },
+      { type: 'captain_event', visibility: 'hidden' },
+      { type: 'captain_event', visibility: 'hidden' },
+      { type: 'captain_finished', visibility: 'hidden' },
+    ]);
+  });
+
   it('serializes Boss turns', async () => {
     const firstStarted = deferred();
     const releaseFirst = deferred();

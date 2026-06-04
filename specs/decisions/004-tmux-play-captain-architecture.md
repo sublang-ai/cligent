@@ -85,6 +85,7 @@ Session-scoped `captain_status` / `captain_telemetry` emitted outside an active 
 `runtime_error` carries the active turn ID when the failure belongs to a turn and `turnId: null` for startup/init failures before any turn is active.
 
 Per turn: `turn_started` first; each player gets `player_prompt` → `player_event`s → one `player_finished`; each `callCaptain()` gets `captain_prompt` → `captain_event`s → `captain_finished`; `turn_finished` last (or `turn_aborted` on abort).
+The three `captain_*` records carry an optional `visibility` (default `'visible'`) copied from the `callCaptain` options; observers other than the tmux presenter receive every record regardless of the tag.
 
 Presenters subscribe as observers.
 The dispatcher delivers each record in registration order, awaits the returned promise, and never drops or coalesces.
@@ -93,7 +94,7 @@ Turn-bound emissions drain before `turn_finished` / `turn_aborted`; `turnId: nul
 Observers bridging to external transports must enqueue and return synchronously — the dispatcher is non-blocking on network flushes.
 On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn if one exists, and runs normal cleanup.
 
-The tmux presenter is the first observer; it consumes `captain_status`, renders `runtime_error` in the Boss/Captain pane, and ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels).
+The tmux presenter is the first observer; it consumes `captain_status`, renders `runtime_error` in the Boss/Captain pane, ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels), and skips `captain_event` / `captain_finished` tagged `visibility: 'hidden'` so those calls produce zero Boss-pane output.
 Coordination stays testable without tmux; new observers attach without changing the Captain or player contracts.
 Runtime record types and the observer-registration contract are exported from `@sublang/cligent/tmux-play`, not the root package.
 
@@ -126,11 +127,17 @@ interface CaptainSession {
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
 }
 
+type RecordVisibility = 'visible' | 'hidden';
+
+interface CallCaptainOptions {
+  readonly visibility?: RecordVisibility;  // default 'visible'
+}
+
 interface CaptainContext {
   readonly signal: AbortSignal;            // turn-scoped abort
   readonly players: readonly PlayerHandle[];
   callPlayer(playerId: string, prompt: string): Promise<PlayerRunResult>;
-  callCaptain(prompt: string): Promise<CaptainRunResult>;
+  callCaptain(prompt: string, options?: CallCaptainOptions): Promise<CaptainRunResult>;
 }
 
 interface CaptainTelemetry {
@@ -167,7 +174,7 @@ interface CaptainRunResult {
 ```
 
 Neither context exposes raw `Cligent`; `callPlayer` and `callCaptain` are the only paths to a run, so every run is recorded and bound to `context.signal`.
-Per-call options are intentionally absent until a concrete consumer needs them.
+`callCaptain` accepts an optional `CallCaptainOptions` whose `visibility` (default `'visible'`) controls only presentation: a `'hidden'` call runs and returns identically, but the runtime tags its `captain_prompt` / `captain_event` / `captain_finished` records so the tmux presenter skips them while non-presenter observers keep the full trace. `callPlayer` takes no such option.
 
 `emitStatus` emits `captain_status`: free-form, human-readable; routed to the Boss/Captain pane.
 `emitTelemetry` emits `captain_telemetry`: structured, topic-routed; ignored by the tmux pane and consumed by opt-in observers (visualizer, metrics).

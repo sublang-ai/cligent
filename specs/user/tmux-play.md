@@ -113,7 +113,7 @@ The runtime shall own every player and Captain `Cligent` instance. Captains shal
 
 ### TMUX-016
 
-`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033).
+`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt, options?)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033). `callCaptain`'s optional `options` is a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072); `callPlayer` takes no such option.
 
 ### TMUX-017
 
@@ -413,7 +413,7 @@ The result is an operational line whose speaker prefix carries the speaker color
 
 ### TMUX-040
 
-The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-player outputs and the Captain's prompt body (which references player results) shall not be written to the Boss/Captain pane; player-emitted tool events remain in their respective player panes.
+The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-player outputs and the Captain's prompt body (which references player results) shall not be written to the Boss/Captain pane; player-emitted tool events remain in their respective player panes. Records from a `callCaptain` invocation tagged `visibility: 'hidden'` are the exception per [TMUX-072](#tmux-072): the Boss/Captain pane shall display none of them.
 
 ### TMUX-049
 
@@ -566,6 +566,18 @@ This continuity shall include an ESC-aborted Boss turn when a player's interrupt
 
 The built-in fanout Captain shall convey each player's identity once, via the player's `instruction` configured at `Cligent` construction. Per Boss turn, the per-player prompt the fanout Captain passes to `callPlayer` shall be the Boss prompt verbatim, with no static framing label such as `The Boss asked:`, no player identity preamble such as `You are the "<player>" player`, and no trailing instructions that reference inter-player behavior (e.g., "Respond independently", "Do not wait for other players") — players cannot see other players, so such instructions are unactionable. Static framing labels and inter-player instructions are permitted only in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they describe context for the synthesizer rather than instruct a player.
 The verbatim player-prompt rule has one exception: when a player result has `status: 'aborted'` and no `resumeToken`, fanout shall retain that player's base Boss prompt as unresolved recovery context. On that player's next call, fanout shall pass a recovery prompt containing every retained base Boss prompt for that player plus the latest Boss prompt. Consecutive no-token aborts shall append only base Boss prompts, not already-composed recovery prompts, so recovery prompts do not nest or balloon. Fanout shall clear a player's retained recovery context after any non-aborted result, or after an aborted result that carries `resumeToken`, because those paths are either complete or backend-resumable.
+
+## Captain Call Visibility
+
+### TMUX-072
+
+`callCaptain` shall accept an optional second argument `options: CallCaptainOptions` whose only field is `visibility: 'visible' | 'hidden'`, defaulting to `'visible'` when `options` or `visibility` is omitted.
+
+A `'hidden'` call shall run identically to a `'visible'` call and shall return the same `CaptainRunResult` per [TMUX-033](#tmux-033) — same `status`, `turnId`, `finalText`, and `error`. The runtime shall still emit the call's `captain_prompt`, `captain_event*`, and `captain_finished` records in the order of [TMUX-022](#tmux-022), each carrying the resolved `visibility`, so non-presenter observers receive the full trace regardless of the tag.
+
+The tmux presenter shall produce zero Boss/Captain-pane output for a `'hidden'` call: it shall skip the call's `captain_event` records (so their text never accumulates into a rendered block) and its `captain_finished` record (so no terminal reply, status, or error line is written), in addition to the Captain-prompt body already withheld per [TMUX-040](#tmux-040). For `'visible'` or omitted visibility, Boss/Captain-pane output shall be byte-for-byte identical to the behavior before this option existed.
+
+`callPlayer` shall not accept this option; player visibility is unchanged.
 
 ## References
 

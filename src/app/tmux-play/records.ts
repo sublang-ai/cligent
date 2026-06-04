@@ -7,6 +7,7 @@ import type {
   CaptainTelemetry,
   CaptainRunResult,
   PlayerRunResult,
+  RecordVisibility,
 } from './contract.js';
 
 export interface BaseRecord<
@@ -45,14 +46,20 @@ export interface PlayerFinishedRecord extends BaseRecord<'player_finished'> {
 
 export interface CaptainPromptRecord extends BaseRecord<'captain_prompt'> {
   readonly prompt: string;
+  // Presentation visibility for this Captain call's records. Absent or
+  // 'visible' renders to the Boss pane; 'hidden' is skipped by the tmux
+  // presenter while non-presenter observers keep the full trace.
+  readonly visibility?: RecordVisibility;
 }
 
 export interface CaptainEventRecord extends BaseRecord<'captain_event'> {
   readonly event: CligentEvent;
+  readonly visibility?: RecordVisibility;
 }
 
 export interface CaptainFinishedRecord extends BaseRecord<'captain_finished'> {
   readonly result: CaptainRunResult;
+  readonly visibility?: RecordVisibility;
 }
 
 export interface CaptainStatusRecord

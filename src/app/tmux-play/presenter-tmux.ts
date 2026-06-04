@@ -158,9 +158,17 @@ export class TmuxPresenter implements RecordObserver {
         this.writePlayerFinished(record);
         break;
       case 'captain_event':
+        // TMUX-072: a hidden Captain call produces zero Boss-pane output.
+        // Skipping the event keeps it out of the open text block, so a
+        // hidden call never accumulates content to flush.
+        if (record.visibility === 'hidden') break;
         this.writeFormatted(this.boss, 'captain', record.event);
         break;
       case 'captain_finished':
+        // TMUX-072: skip the flush + status line for a hidden call. Visible
+        // calls flush their own block at their captain_finished, so there is
+        // no stale open block to drain here.
+        if (record.visibility === 'hidden') break;
         this.writeRunResult(this.boss, 'captain', record.result);
         break;
       case 'captain_status':

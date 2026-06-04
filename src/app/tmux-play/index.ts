@@ -21,11 +21,13 @@ export type {
 
 export type {
   BossTurn,
+  CallCaptainOptions,
   Captain,
   CaptainContext,
   CaptainRunResult,
   CaptainSession,
   CaptainTelemetry,
+  RecordVisibility,
   RuntimeCaptainConfig,
   PlayerHandle,
   PlayerRunResult,
