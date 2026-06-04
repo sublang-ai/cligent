@@ -194,7 +194,7 @@ A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, a
 
 ### TMUX-033
 
-`PlayerRunResult` shall expose `playerId`, `turnId`, and `status`, and may include `finalText` and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `finalText` and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`.
+`PlayerRunResult` shall expose `playerId`, `turnId`, and `status`, and may include `resumeToken`, `finalText`, and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `finalText` and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`. When an aborted player call's terminal `done` carries a `resumeToken`, `PlayerRunResult.resumeToken` shall expose it; when the terminal `done` omits `resumeToken`, `PlayerRunResult` shall omit it so captains can detect interrupted, not-resumable calls.
 
 ## Launcher → Session Protocol
 
@@ -560,11 +560,12 @@ The duration text shall always carry exactly two digits per component while `h <
 ### TMUX-041
 
 Within a single tmux-play session, each player's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
-This continuity shall include an ESC-aborted Boss turn: when a player's interrupted adapter `done` carries a `resumeToken` per [ENG-009](engine.md#eng-009), the next Boss turn that calls the same player shall pass that token as `resume`, and the player shall remain callable normally after the aborted round.
+This continuity shall include an ESC-aborted Boss turn when a player's interrupted adapter `done` carries a `resumeToken` per [ENG-009](engine.md#eng-009): the next Boss turn that calls the same player shall pass that token as `resume`. When the interrupted `done` carries no `resumeToken`, tmux-play shall expose the aborted, not-resumable result through [TMUX-033](#tmux-033) and keep the player callable normally after the aborted round without rewriting prompts at the runtime or engine layer.
 
 ### TMUX-042
 
 The built-in fanout Captain shall convey each player's identity once, via the player's `instruction` configured at `Cligent` construction. Per Boss turn, the per-player prompt the fanout Captain passes to `callPlayer` shall be the Boss prompt verbatim, with no static framing label such as `The Boss asked:`, no player identity preamble such as `You are the "<player>" player`, and no trailing instructions that reference inter-player behavior (e.g., "Respond independently", "Do not wait for other players") — players cannot see other players, so such instructions are unactionable. Static framing labels and inter-player instructions are permitted only in prompts directed at the Captain itself (e.g., the summarization prompt passed to `callCaptain`), where they describe context for the synthesizer rather than instruct a player.
+The verbatim player-prompt rule has one exception: when a player result has `status: 'aborted'` and no `resumeToken`, fanout shall retain that player's base Boss prompt as unresolved recovery context. On that player's next call, fanout shall pass a recovery prompt containing every retained base Boss prompt for that player plus the latest Boss prompt. Consecutive no-token aborts shall append only base Boss prompts, not already-composed recovery prompts, so recovery prompts do not nest or balloon. Fanout shall clear a player's retained recovery context after any non-aborted result, or after an aborted result that carries `resumeToken`, because those paths are either complete or backend-resumable.
 
 ## References
 

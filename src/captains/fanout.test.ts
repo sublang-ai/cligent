@@ -72,6 +72,108 @@ describe('fanout Captain', () => {
     expect(prompt).not.toContain('You are the');
   });
 
+  it('recovers tokenless aborted Boss prompts without nesting', async () => {
+    const captain = new FanoutCaptain();
+    const playerPrompts: string[] = [];
+    const results: PlayerRunResult[] = [
+      { status: 'aborted', playerId: 'coder', turnId: 1 },
+      { status: 'aborted', playerId: 'coder', turnId: 2 },
+      {
+        status: 'ok',
+        playerId: 'coder',
+        turnId: 3,
+        finalText: 'done',
+      },
+      {
+        status: 'ok',
+        playerId: 'coder',
+        turnId: 4,
+        finalText: 'fresh',
+      },
+    ];
+    const context: CaptainContext = {
+      signal: new AbortController().signal,
+      players: [player('coder')],
+      async callPlayer(_playerId, prompt) {
+        playerPrompts.push(prompt);
+        const result = results.shift();
+        if (!result) {
+          throw new Error('missing player result');
+        }
+        return result;
+      },
+      async callCaptain() {
+        return {
+          status: 'ok',
+          turnId: 1,
+          finalText: 'summary',
+        };
+      },
+    };
+
+    await captain.handleBossTurn(
+      turn('What is the weather like today?'),
+      context,
+    );
+    await captain.handleBossTurn(turn('Continue'), context);
+    await captain.handleBossTurn(turn('Continue again'), context);
+    await captain.handleBossTurn(turn('Fresh question'), context);
+
+    expect(playerPrompts[0]).toBe('What is the weather like today?');
+    expect(playerPrompts[1]).toContain('1. What is the weather like today?');
+    expect(playerPrompts[1]).toContain('Latest Boss turn:\nContinue');
+    expect(playerPrompts[2]).toContain('1. What is the weather like today?');
+    expect(playerPrompts[2]).toContain('2. Continue');
+    expect(playerPrompts[2]).toContain('Latest Boss turn:\nContinue again');
+    expect(playerPrompts[2]?.match(/Interrupted Boss turn/g) ?? []).toHaveLength(
+      1,
+    );
+    expect(playerPrompts[3]).toBe('Fresh question');
+  });
+
+  it('does not recover an aborted Boss prompt when resumeToken is present', async () => {
+    const captain = new FanoutCaptain();
+    const playerPrompts: string[] = [];
+    const results: PlayerRunResult[] = [
+      {
+        status: 'aborted',
+        playerId: 'coder',
+        turnId: 1,
+        resumeToken: 'thread-1',
+      },
+      {
+        status: 'ok',
+        playerId: 'coder',
+        turnId: 2,
+        finalText: 'resumed',
+      },
+    ];
+    const context: CaptainContext = {
+      signal: new AbortController().signal,
+      players: [player('coder')],
+      async callPlayer(_playerId, prompt) {
+        playerPrompts.push(prompt);
+        const result = results.shift();
+        if (!result) {
+          throw new Error('missing player result');
+        }
+        return result;
+      },
+      async callCaptain() {
+        return {
+          status: 'ok',
+          turnId: 1,
+          finalText: 'summary',
+        };
+      },
+    };
+
+    await captain.handleBossTurn(turn('Investigate'), context);
+    await captain.handleBossTurn(turn('Continue'), context);
+
+    expect(playerPrompts).toEqual(['Investigate', 'Continue']);
+  });
+
   it('calls every player concurrently before summarizing', async () => {
     const captain = createFanoutCaptain();
     const coder = deferred<PlayerRunResult>();

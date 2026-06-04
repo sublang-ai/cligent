@@ -319,12 +319,14 @@ Given a `captain_event` carrying a `tool_use` record, the Boss/Captain pane writ
 Verifies: [TMUX-041](../user/tmux-play.md#tmux-041)
 
 Given a tmux-play session and a player whose adapter supports `resumeToken`, when the runtime handles two Boss turns in sequence, the player's `Cligent` instance on the second turn shall be the same instance as on the first turn, and the second `run()` call shall pass `resume: <resumeToken>` to the adapter where the token came from the prior `done` event.
-Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries `resumeToken: <resumeToken>`, when a later Boss turn calls the same player, the same `Cligent` instance shall pass `resume: <resumeToken>` and the runtime shall finish the later turn normally.
+Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries `resumeToken: <resumeToken>`, when a later Boss turn calls the same player, the same `Cligent` instance shall pass `resume: <resumeToken>`, the `PlayerRunResult` for the aborted call shall expose `resumeToken: <resumeToken>`, and the runtime shall finish the later turn normally.
+Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries no `resumeToken`, when a later Boss turn calls the same player with no explicit resume override, the aborted `PlayerRunResult` shall omit `resumeToken`, the same `Cligent` instance shall pass no `resume` option, and the runtime/engine shall pass through the prompt supplied by the Captain rather than doing its own replay rewrite.
 
 ### TTMUX-029
 Verifies: [TMUX-042](../user/tmux-play.md#tmux-042)
 
-Given the fanout Captain handling a Boss turn, the prompt string passed to `callPlayer` shall equal the Boss prompt verbatim — no static framing label (`The Boss asked`), no player identity preamble (`You are the`), no player-id repetition, and no inter-player trailing instructions (`Respond independently`, `other players`). The player's `instruction`, configured at `Cligent` construction, shall be the sole source of player identity.
+Given the fanout Captain handling a Boss turn with no unresolved no-token abort for a player, the prompt string passed to that player's `callPlayer` shall equal the Boss prompt verbatim — no static framing label (`The Boss asked`), no player identity preamble (`You are the`), no player-id repetition, and no inter-player trailing instructions (`Respond independently`, `other players`). The player's `instruction`, configured at `Cligent` construction, shall be the sole source of player identity.
+Given a fanout player call returns `status: 'aborted'` with no `resumeToken`, when fanout handles a later Boss turn, that player's `callPlayer` prompt shall contain the retained aborted Boss prompt and the latest Boss prompt. Given consecutive no-token aborts, the later recovery prompt shall contain each retained base Boss prompt once and shall not nest a prior recovery prompt. Given an aborted player call carries `resumeToken`, the next fanout prompt for that player shall remain the Boss prompt verbatim because backend resume handles continuity.
 
 ## Real-tmux Acceptance
 

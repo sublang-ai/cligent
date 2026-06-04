@@ -57,6 +57,7 @@ interface ClaudeQueryOptions {
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: ClaudeEffort;
+  sessionId?: string;
 }
 
 interface ClaudeAgentSdk {
@@ -654,7 +655,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       model: options?.model,
       maxTurns: options?.maxTurns,
       maxBudgetUsd: options?.maxBudgetUsd,
-      resume: options?.resume,
+      resume: options?.resume || undefined,
       allowedTools: options?.allowedTools,
       disallowedTools: options?.disallowedTools,
       permissionMode: permissionOptions.permissionMode,
@@ -699,10 +700,17 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       );
     }
 
+    const inboundResume = options?.resume || undefined;
+    let sessionId = inboundResume ?? generateSessionId();
+    let resumableSessionIdKnown = false;
     const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions(options);
+    if (!inboundResume) {
+      // The SDK forwards this typed option to `claude --session-id`. It gives
+      // fresh runs a stable id once Claude persists the conversation, but an
+      // init-only abort is not resumable yet.
+      queryOptions.sessionId = sessionId;
+    }
 
-    let sessionId = options?.resume ?? generateSessionId();
-    let backendProvidedSessionId = false;
     const startTime = Date.now();
     let doneYielded = false;
 
@@ -711,17 +719,20 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         prompt,
         options: queryOptions,
       })) {
+        const messageType = isObjectWithType(message) ? message.type : undefined;
         const loadedId = loadSessionId(message);
         if (loadedId) {
           sessionId = loadedId;
-          backendProvidedSessionId = true;
+        }
+        if (messageType && messageType !== 'system') {
+          resumableSessionIdKnown = true;
         }
 
-        if (!isObjectWithType(message)) {
+        if (!messageType) {
           continue;
         }
 
-        if (message.type === 'system') {
+        if (messageType === 'system') {
           const system = message as ClaudeSystemMessage;
           yield createEvent(
             'init',
@@ -736,7 +747,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        if (message.type === 'assistant') {
+        if (messageType === 'assistant') {
           const assistant = message as ClaudeAssistantMessage;
           const textFromField = asString(assistant.text);
           if (textFromField) {
@@ -807,11 +818,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        if (
-          message.type === 'stream' ||
-          message.type === 'stream_event' ||
-          message.type === 'delta'
-        ) {
+        if (messageType === 'stream' || messageType === 'stream_event' || messageType === 'delta') {
           const delta = asString((message as { delta?: unknown; text?: unknown }).delta) ??
             asString((message as { delta?: unknown; text?: unknown }).text);
 
@@ -821,7 +828,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        if (message.type === 'result') {
+        if (messageType === 'result') {
           const result = message as ClaudeResultMessage;
           const { status, errorText } = classifyResultMessage(result);
 
@@ -853,9 +860,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
               result: asString(result.result) ?? errorText,
               ...doneResumeTokenPayload(
                 status,
-                backendProvidedSessionId,
+                resumableSessionIdKnown,
                 sessionId,
-                options?.resume,
+                inboundResume,
               ),
               usage: mapUsage(result.usage),
               durationMs,
@@ -866,7 +873,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           return;
         }
 
-        if (message.type === 'error') {
+        if (messageType === 'error') {
           const errorMessage = message as ClaudeErrorMessage;
           yield createEvent('error', AGENT, toErrorPayload(errorMessage), sessionId);
         }
@@ -881,9 +888,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
               status: 'interrupted',
               ...doneResumeTokenPayload(
                 'interrupted',
-                backendProvidedSessionId,
+                resumableSessionIdKnown,
                 sessionId,
-                options?.resume,
+                inboundResume,
               ),
               usage: { ...DEFAULT_DONE_USAGE },
               durationMs: Date.now() - startTime,
@@ -924,9 +931,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             status: 'interrupted',
             ...doneResumeTokenPayload(
               'interrupted',
-              backendProvidedSessionId,
+              resumableSessionIdKnown,
               sessionId,
-              options?.resume,
+              inboundResume,
             ),
             usage: { ...DEFAULT_DONE_USAGE },
             durationMs: Date.now() - startTime,

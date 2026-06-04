@@ -96,7 +96,9 @@ Verifies: [CLAUDE-007](../user/adapters/claude-code.md#claude-007), [CODEX-006](
 
 Given each adapter has observed a backend session or thread identifier during a run, when that run is aborted and yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the observed backend identifier.
 Given each adapter is run with a non-empty `AgentOptions.resume` value and no backend session or thread identifier is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the inbound `resume` value.
-Given each adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
+Given the Claude Code adapter starts a run without `AgentOptions.resume` and no SDK activity beyond the initial `system` message is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall have passed a generated SDK `sessionId` and shall omit `DonePayload.resumeToken`.
+Given the Claude Code adapter starts a run without `AgentOptions.resume` and SDK activity beyond the initial `system` message is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the SDK-provided or generated SDK `sessionId`.
+Given a Codex, Gemini, or OpenCode adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
 
 ### TADAPT-016
 Verifies: [GEMINI-010](../user/adapters/gemini.md#gemini-010)

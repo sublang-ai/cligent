@@ -51,6 +51,7 @@ export interface PlayerRunResult {
   readonly status: RunStatus;
   readonly playerId: string;
   readonly turnId: number;
+  readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
 }

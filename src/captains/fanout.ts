@@ -14,24 +14,69 @@ export default function createFanoutCaptain(): Captain {
 }
 
 export class FanoutCaptain implements Captain {
+  private readonly pendingRecoveryPrompts = new Map<string, string[]>();
+
   async handleBossTurn(
     turn: BossTurn,
     context: CaptainContext,
   ): Promise<void> {
     const playerResults = await Promise.all(
       context.players.map((player) =>
-        context.callPlayer(player.id, playerPrompt(turn.prompt, player)),
+        context.callPlayer(
+          player.id,
+          playerPrompt(
+            turn.prompt,
+            player,
+            this.pendingRecoveryPrompts.get(player.id) ?? [],
+          ),
+        ),
       ),
     );
 
+    for (const result of playerResults) {
+      this.captureRecoveryState(result, turn.prompt);
+    }
+
     await context.callCaptain(summaryPrompt(turn.prompt, playerResults));
+  }
+
+  private captureRecoveryState(
+    result: PlayerRunResult,
+    bossPrompt: string,
+  ): void {
+    if (result.status === 'aborted' && !result.resumeToken) {
+      const existing = this.pendingRecoveryPrompts.get(result.playerId) ?? [];
+      this.pendingRecoveryPrompts.set(result.playerId, [
+        ...existing,
+        bossPrompt,
+      ]);
+      return;
+    }
+
+    this.pendingRecoveryPrompts.delete(result.playerId);
   }
 }
 
 export function playerPrompt(
   bossPrompt: string,
   _player: PlayerHandle,
+  recoveryPrompts: readonly string[] = [],
 ): string {
+  if (recoveryPrompts.length > 0) {
+    return [
+      'Previous Boss turn(s) sent to you were interrupted before your backend exposed a resumable session token.',
+      'Continue from the interrupted Boss turn(s), then apply the latest Boss turn.',
+      '',
+      'Interrupted Boss turn(s):',
+      ...recoveryPrompts.map(
+        (prompt, index) => `${index + 1}. ${prompt}`,
+      ),
+      '',
+      'Latest Boss turn:',
+      bossPrompt,
+    ].join('\n');
+  }
+
   return bossPrompt;
 }
 

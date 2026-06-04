@@ -50,6 +50,7 @@ interface RunCligentCallOptions {
 
 interface CligentCallResult {
   readonly status: RunStatus;
+  readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
 }
@@ -266,6 +267,7 @@ export class TmuxPlayRuntime {
       status: call.status,
       playerId,
       turnId: turn.id,
+      ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
       finalText: call.finalText,
       error: call.error,
     };
@@ -479,6 +481,9 @@ async function runCligentCall(
 
   return {
     status,
+    ...(donePayload?.resumeToken
+      ? { resumeToken: donePayload.resumeToken }
+      : {}),
     finalText,
     error,
   };

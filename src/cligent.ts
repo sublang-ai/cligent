@@ -189,7 +189,7 @@ export class Cligent {
                 lastSessionId = abortDone.sessionId;
                 yield injectRole(abortDone, role);
                 const payload = abortDone.payload as DonePayload;
-                this.captureResumeToken(payload.resumeToken);
+                this.captureDoneState(payload);
               } else {
                 yield injectRole(
                   makeSynthDone(
@@ -244,7 +244,7 @@ export class Cligent {
             doneYielded = true;
             // Capture resume token from adapter's done payload (ENG-005)
             const payload = event.payload as DonePayload;
-            this.captureResumeToken(payload.resumeToken);
+            this.captureDoneState(payload);
             safeReturn(gen);
             return;
           }
@@ -339,5 +339,9 @@ export class Cligent {
 
   private captureResumeToken(token: string | undefined): void {
     this._resumeToken = token;
+  }
+
+  private captureDoneState(payload: DonePayload): void {
+    this.captureResumeToken(payload.resumeToken);
   }
 }

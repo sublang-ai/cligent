@@ -153,6 +153,7 @@ interface PlayerRunResult {
   readonly status: RunStatus;
   readonly playerId: string;
   readonly turnId: number;
+  readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
 }
@@ -226,6 +227,7 @@ Inside `captain`: `adapter`, `model`, and `instruction` configure the runtime-ow
 The built-in fanout captain accepts no options; its factory ignores any value at `captain.options`, so YAML keys there are forwarded but inert for fanout.
 
 The built-in fanout captain stitches each player's full `finalText` (or `error`) into the summary prompt verbatim — no per-player truncation.
+When a player call aborts without `resumeToken`, fanout retains that player's base Boss prompt and includes unresolved retained Boss prompt(s) with the latest Boss prompt on the player's next call. This recovery policy lives in fanout, not in `Cligent`, because fanout owns prompt composition while `Cligent` owns only opaque resume-token continuity.
 The Captain's built-in instruction ("Players answered independently. Synthesize a final answer for the Boss. Preserve useful disagreements, call out failed or aborted players, and do not copy raw player logs wholesale.") is the only soft check; cligent imposes no hard cap on player output length.
 Workloads that need a hard cap should write a thin Captain wrapper or use a different Captain implementation.
 

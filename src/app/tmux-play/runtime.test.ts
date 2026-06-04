@@ -413,10 +413,13 @@ describe('TmuxPlayRuntime', () => {
     const records: TmuxPlayRecord[] = [];
     const playerStarted = deferred();
     const playerResumes: (string | undefined)[] = [];
+    const playerResults: PlayerRunResult[] = [];
     let playerRuns = 0;
     const captain: Captain = {
       async handleBossTurn(turn, context) {
-        await context.callPlayer('coder', `work ${turn.prompt}`);
+        playerResults.push(
+          await context.callPlayer('coder', `work ${turn.prompt}`),
+        );
       },
     };
     const runtime = await createTmuxPlayRuntime({
@@ -468,6 +471,10 @@ describe('TmuxPlayRuntime', () => {
     await runtime.runBossTurn('two');
 
     expect(playerResumes).toEqual([undefined, 'player-abort-token']);
+    expect(playerResults).toMatchObject([
+      { status: 'aborted', resumeToken: 'player-abort-token' },
+      { status: 'ok' },
+    ]);
     expect(records.map((record) => record.type)).toEqual([
       'turn_started',
       'player_prompt',
@@ -482,6 +489,66 @@ describe('TmuxPlayRuntime', () => {
       'turn_finished',
     ]);
     expect(records[5]).toMatchObject({ type: 'turn_aborted', reason: 'ESC' });
+  });
+
+  it('exposes a no-token interrupted player result without rewriting prompts', async () => {
+    const playerStarted = deferred();
+    const playerPrompts: string[] = [];
+    const playerResumes: (string | undefined)[] = [];
+    const playerResults: PlayerRunResult[] = [];
+    let playerRuns = 0;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        playerResults.push(
+          await context.callPlayer('coder', `work ${turn.prompt}`),
+        );
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(prompt, options) {
+            playerPrompts.push(prompt);
+            playerResumes.push(options?.resume);
+            playerRuns += 1;
+            if (playerRuns === 1) {
+              const abortSeen = options?.abortSignal?.aborted
+                ? Promise.resolve()
+                : new Promise<void>((resolve) => {
+                    options?.abortSignal?.addEventListener('abort', resolve, {
+                      once: true,
+                    });
+                  });
+              yield textEvent('codex', 'started');
+              playerStarted.resolve();
+              await abortSeen;
+              yield doneEvent('codex', undefined, 'interrupted');
+              return;
+            }
+            yield doneEvent('codex', 'second');
+          },
+        },
+      }),
+    });
+
+    const first = runtime.runBossTurn('one');
+    await playerStarted.promise;
+    runtime.abortActiveTurn('ESC');
+    await first;
+
+    await runtime.runBossTurn('two');
+
+    expect(playerResumes).toEqual([undefined, undefined]);
+    expect(playerResults).toMatchObject([
+      { status: 'aborted' },
+      { status: 'ok' },
+    ]);
+    expect(playerResults[0].resumeToken).toBeUndefined();
+    expect(playerPrompts).toEqual(['work one', 'work two']);
   });
 
   it('emits runtime_error on Captain failure and disposes once', async () => {

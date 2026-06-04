@@ -80,6 +80,7 @@ describe('tmux-play public contract', () => {
       status,
       playerId: 'coder',
       turnId: 1,
+      resumeToken: 'thread-1',
       finalText: 'done',
     };
     const captainResult: CaptainRunResult = {
@@ -89,6 +90,7 @@ describe('tmux-play public contract', () => {
     };
 
     expect(playerResult.status).toBe('ok');
+    expect(playerResult.resumeToken).toBe('thread-1');
     expect(captainResult.status).toBe('error');
   });
 

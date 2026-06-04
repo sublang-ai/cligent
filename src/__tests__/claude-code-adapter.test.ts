@@ -37,6 +37,7 @@ interface MockSdkInnerOptions {
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: string;
+  sessionId?: string;
 }
 
 interface MockSdkOptions {
@@ -429,6 +430,7 @@ describe('ClaudeCodeAdapter', () => {
       disallowedTools: ['WebFetch'],
       permissionMode: 'default',
     });
+    expect(captured?.sessionId).toBeUndefined();
     expect(captured?.canUseTool).toBeTypeOf('function');
     const toolInput: Record<string, unknown> = { file_path: '/tmp/x' };
     // fileWrite 'deny' -> deny; shellExecute 'allow' -> allow;
@@ -443,6 +445,30 @@ describe('ClaudeCodeAdapter', () => {
     expect(await captured!.canUseTool!('WebFetch', toolInput)).toMatchObject({
       behavior: 'deny',
     });
+  });
+
+  it('treats an empty resume value as absent for SDK query options', async () => {
+    let captured: (MockSdkInnerOptions & { prompt: string }) | undefined;
+
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader(
+        [
+          {
+            type: 'result',
+            status: 'success',
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
+        ],
+        (options) => {
+          captured = options;
+        },
+      ),
+    });
+
+    await collect(adapter.run('prompt text', { resume: '' }));
+
+    expect(captured?.resume).toBeUndefined();
+    expect(captured?.sessionId).toBeDefined();
   });
 
   it('propagates abort signal to SDK abortController', async () => {
@@ -595,15 +621,21 @@ describe('ClaudeCodeAdapter', () => {
     expect(done.payload.status).toBe('interrupted');
   });
 
-  it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
+  it('sets interrupted resumeToken from activity id or inbound resume, not init-only fresh id', async () => {
     async function interruptedResumeToken(options: {
       backendSessionId?: string;
       resume?: string;
-    }): Promise<string | undefined> {
+      assistantActivity?: boolean;
+    }): Promise<{
+      resumeToken: string | undefined;
+      sdkSessionId: string | undefined;
+    }> {
       const externalAbort = new AbortController();
+      let sdkSessionId: string | undefined;
       const adapter = new ClaudeCodeAdapter({
         loadSdk: async () => ({
           query(opts: MockSdkOptions): AsyncIterable<unknown> {
+            sdkSessionId = opts.options?.sessionId;
             return {
               async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
                 yield {
@@ -615,6 +647,15 @@ describe('ClaudeCodeAdapter', () => {
                     ? { sessionId: options.backendSessionId }
                     : {}),
                 };
+                if (options.assistantActivity) {
+                  yield {
+                    type: 'assistant',
+                    text: 'started',
+                    ...(options.backendSessionId
+                      ? { sessionId: options.backendSessionId }
+                      : {}),
+                  };
+                }
 
                 await new Promise<void>((resolve) => {
                   if (opts.options?.abortController?.signal.aborted) {
@@ -648,16 +689,78 @@ describe('ClaudeCodeAdapter', () => {
         payload: { status: string; resumeToken?: string };
       };
       expect(done.payload.status).toBe('interrupted');
-      return done.payload.resumeToken;
+      return { resumeToken: done.payload.resumeToken, sdkSessionId };
     }
 
     await expect(
-      interruptedResumeToken({ backendSessionId: 'session-abort-new' }),
-    ).resolves.toBe('session-abort-new');
+      interruptedResumeToken({
+        backendSessionId: 'session-abort-new',
+        assistantActivity: true,
+      }),
+    ).resolves.toMatchObject({
+      resumeToken: 'session-abort-new',
+    });
     await expect(
       interruptedResumeToken({ resume: 'session-abort-resume' }),
-    ).resolves.toBe('session-abort-resume');
-    await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      resumeToken: 'session-abort-resume',
+      sdkSessionId: undefined,
+    });
+    const activeFresh = await interruptedResumeToken({ assistantActivity: true });
+    expect(activeFresh.sdkSessionId).toBeDefined();
+    expect(activeFresh.resumeToken).toBe(activeFresh.sdkSessionId);
+    const initOnlyFresh = await interruptedResumeToken({});
+    expect(initOnlyFresh.sdkSessionId).toBeDefined();
+    expect(initOnlyFresh.resumeToken).toBeUndefined();
+  });
+
+  it('sets fresh sessionId before the first SDK message without treating it as persisted', async () => {
+    const externalAbort = new AbortController();
+    let sdkSessionId: string | undefined;
+    let resolveQueryStarted: (() => void) | undefined;
+    const queryStarted = new Promise<void>((resolve) => {
+      resolveQueryStarted = resolve;
+    });
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(opts: MockSdkOptions): AsyncIterable<unknown> {
+          sdkSessionId = opts.options?.sessionId;
+          resolveQueryStarted?.();
+          return {
+            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+              await new Promise<void>((resolve) => {
+                if (opts.options?.abortController?.signal.aborted) {
+                  resolve();
+                  return;
+                }
+                opts.options?.abortController?.signal.addEventListener(
+                  'abort',
+                  () => resolve(),
+                  { once: true },
+                );
+              });
+            },
+          };
+        },
+      }),
+    });
+
+    const eventsPromise = collect(
+      adapter.run('prompt', { abortSignal: externalAbort.signal }),
+    );
+    await queryStarted;
+    externalAbort.abort();
+
+    const events = await eventsPromise;
+    const done = events.find((event) => event.type === 'done') as AgentEvent & {
+      payload: { status: string; resumeToken?: string };
+    };
+
+    expect(sdkSessionId).toBeDefined();
+    expect(done.payload).toMatchObject({
+      status: 'interrupted',
+    });
+    expect(done.payload.resumeToken).toBeUndefined();
   });
 
   it('builds query options with mapped permissions helper', () => {
@@ -928,29 +1031,36 @@ describe('ClaudeCodeAdapter', () => {
     }
   });
 
-  it('omits resumeToken when backend provides no session ID', async () => {
+  it('uses fresh SDK sessionId as resumeToken when backend provides no session ID', async () => {
+    let sdkSessionId: string | undefined;
     const adapter = new ClaudeCodeAdapter({
-      loadSdk: makeLoader([
-        {
-          type: 'system',
-          model: 'claude',
-          cwd: '/repo',
-          tools: [],
+      loadSdk: makeLoader(
+        [
+          {
+            type: 'system',
+            model: 'claude',
+            cwd: '/repo',
+            tools: [],
+          },
+          {
+            type: 'result',
+            status: 'success',
+            result: 'done',
+            usage: { input_tokens: 5, output_tokens: 10, tool_uses: 0 },
+            duration_ms: 100,
+          },
+        ],
+        (options) => {
+          sdkSessionId = options.sessionId;
         },
-        {
-          type: 'result',
-          status: 'success',
-          result: 'done',
-          usage: { input_tokens: 5, output_tokens: 10, tool_uses: 0 },
-          duration_ms: 100,
-        },
-      ]),
+      ),
     });
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const payload = done.payload as { resumeToken?: string };
-    expect(payload.resumeToken).toBeUndefined();
+    expect(sdkSessionId).toBeDefined();
+    expect(payload.resumeToken).toBe(sdkSessionId);
   });
 
   it('sums cache tokens into inputTokens (snake_case)', async () => {

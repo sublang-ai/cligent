@@ -53,7 +53,7 @@ The `canUseTool` callback shall conform to the Claude Agent SDK `CanUseTool` con
 
 ### CLAUDE-006
 
-The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, `resume` → SDK `resume`.
+The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, non-empty `resume` → SDK `resume`.
 
 ### CLAUDE-008
 
@@ -76,8 +76,9 @@ When `reasoningEffort` is omitted, the adapter shall not set `effort` and shall 
 
 ### CLAUDE-007
 
+When a Claude Code run starts without `AgentOptions.resume`, the adapter shall pass a generated UUID as SDK `sessionId` so the run has a stable session identifier once Claude persists the conversation.
 When the Claude Code SDK provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
-When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: the SDK-provided session identifier observed before the abort; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: a session identifier observed on SDK activity beyond the initial `system` message, or the adapter-assigned session identifier after such activity; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
 
 ## References
 
