@@ -14,7 +14,8 @@ This is an implementation refinement within the existing session-mode / presente
 
 In Progress.
 Task 1 (spec items + map) is complete: [TMUX-075](../user/tmux-play.md#tmux-075) added; [TMUX-037](../user/tmux-play.md#tmux-037) and [TMUX-057](../user/tmux-play.md#tmux-057) amended with the reconciling cross-references; [TTMUX-074](../test/tmux-play.md#ttmux-074) added; the `specs/map.md` TMUX user/test summary lines extended.
-Tasks 2 (implementation + session test) and 3 (real-tmux acceptance probe) are not started.
+Task 2 (implementation + session test) is complete: `session.ts` suspends the prompt at turn start and restores it once on every turn-end path; two `session.test.ts` regression tests over a real `createInterface` cover the typed and pasted [TTMUX-074](../test/tmux-play.md#ttmux-074) session clauses.
+Task 3 (real-tmux acceptance probe) is not started.
 
 ## Context
 
@@ -78,14 +79,14 @@ Out of scope (deliberate non-goals):
 - [x] `specs/user/tmux-play.md` — add [TMUX-075](../user/tmux-play.md#tmux-075); amend [TMUX-037](../user/tmux-play.md#tmux-037) and [TMUX-057](../user/tmux-play.md#tmux-057) with the reconciling cross-references.
 - [x] `specs/test/tmux-play.md` — add [TTMUX-074](../test/tmux-play.md#ttmux-074) with the `Verifies:` line.
 - [x] `specs/map.md` — confirm IR-025 is indexed; extend the TMUX user and test summary lines for active-turn prompt suspension.
-- [ ] `src/app/tmux-play/session.ts` — suspend/clear prompt on turn start, restore once on every turn-end path, preserve type-ahead, keep ESC handling.
-- [ ] `src/app/tmux-play/session.test.ts` — session-level regression test over a real-readline TTY pair.
+- [x] `src/app/tmux-play/session.ts` — suspend/clear prompt on turn start, restore once on every turn-end path, preserve type-ahead, keep ESC handling.
+- [x] `src/app/tmux-play/session.test.ts` — session-level regression test over a real-readline TTY pair.
 - [ ] `src/app/tmux-play/*.acceptance.test.ts` — real-tmux attached-client probe asserting no fresh `boss> ` prompt line on pane 0 during an active turn.
 
 ## Tasks
 
 1. [x] **Spec items + map.** Add [TMUX-075](../user/tmux-play.md#tmux-075); amend [TMUX-037](../user/tmux-play.md#tmux-037) and [TMUX-057](../user/tmux-play.md#tmux-057); add [TTMUX-074](../test/tmux-play.md#ttmux-074); confirm IR-025 indexed in `specs/map.md` and extend the TMUX user/test summary lines. Single docs-only commit.
-2. [ ] **Prompt-suspension implementation + session test.** `session.ts` changes to suspend/clear the prompt on turn start and restore once on completion / ESC abort / runtime-error paths while preserving typed and pasted type-ahead and the ESC keypress handler. Session-level regression test over a real-readline TTY pair verifying the [TTMUX-074](../test/tmux-play.md#ttmux-074) session clauses. Per-task-boundary green.
+2. [x] **Prompt-suspension implementation + session test.** `session.ts` changes to suspend/clear the prompt on turn start and restore once on completion / ESC abort / runtime-error paths while preserving typed and pasted type-ahead and the ESC keypress handler. Session-level regression test over a real-readline TTY pair verifying the [TTMUX-074](../test/tmux-play.md#ttmux-074) session clauses. Per-task-boundary green.
 3. [ ] **Real-tmux acceptance probe.** Attached-client `*.acceptance.test.ts` probe verifying [TTMUX-074](../test/tmux-play.md#ttmux-074)'s real-tmux clause — pane 0 shows no fresh `boss> ` prompt line between `turn_started` and the turn's terminal record — self-skipping without `tmux` / `glow` / an attached-client driver. Per-task-boundary green.
 
 ## Acceptance

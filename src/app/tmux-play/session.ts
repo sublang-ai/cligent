@@ -130,6 +130,13 @@ export class TmuxPlaySession {
     key: Keypress,
   ) => void) | undefined;
   private activeBossTurn = false;
+  // TMUX-075: the colored `boss> ` prompt string is captured at start so the
+  // turn-active suspension can blank the prompt and restore this exact value
+  // at turn end. `terminalInput` records whether stdin is a TTY; outside a TTY
+  // the readline runs in non-terminal mode (no echo), so the suspension is a
+  // no-op per TMUX-075.
+  private bossPrompt = '';
+  private terminalInput = false;
   private bracketedPasteEnabled = false;
   private inPaste = false;
   private pasteAwaitingSubmit = false;
@@ -229,6 +236,7 @@ export class TmuxPlaySession {
     });
 
     const input = this.options.input ?? process.stdin;
+    this.terminalInput = isTty(input);
     this.readline = (this.options.createReadline ?? createInterface)({
       input,
       output,
@@ -240,9 +248,10 @@ export class TmuxPlaySession {
     // background. Node ≥18's readline strips ANSI escapes when computing
     // prompt visible width (via getStringWidth), so cursor positioning
     // still treats the prompt as 6 cells wide.
-    this.readline.setPrompt(
-      `${bold24bitFg(presenterPalette(themeFlavor).speakerBoss)}boss> ${SGR_RESET}`,
-    );
+    this.bossPrompt = `${bold24bitFg(
+      presenterPalette(themeFlavor).speakerBoss,
+    )}boss> ${SGR_RESET}`;
+    this.readline.setPrompt(this.bossPrompt);
     this.readline.on('line', (line) => {
       this.handleLine(line);
     });
@@ -274,6 +283,7 @@ export class TmuxPlaySession {
         }
         this.refreshPlayerPaneWidths();
         this.activeBossTurn = true;
+        this.suspendPrompt();
         try {
           await this.runtime?.runBossTurn(prompt);
         } catch (error) {
@@ -288,7 +298,13 @@ export class TmuxPlaySession {
             );
           }
         } finally {
+          // TMUX-075: every turn-end path — normal completion, ESC abort, and
+          // the runtime-error / observer-dispatch branches above — restores the
+          // colored prompt exactly once before re-prompting, so the suspended
+          // `boss> ` chrome returns ready for the next turn with any type-ahead
+          // the Boss buffered during the turn surfaced on it.
           this.activeBossTurn = false;
+          this.restorePrompt();
           if (!this.shuttingDown) {
             this.readline?.prompt();
           }
@@ -301,6 +317,28 @@ export class TmuxPlaySession {
           `captain> [runtime error] ${errorMessage(error)}\n`,
         );
       });
+  }
+
+  // TMUX-075: while a Boss turn is active, blank the live readline prompt so
+  // any line refresh triggered by Boss type-ahead paints no fresh `boss> `
+  // chrome amid the turn's streaming presenter output — which a turn-completion
+  // consumer reading the pane would misread as an implicit turn-over signal.
+  // The edit buffer is left untouched, so type-ahead (typed or pasted) is
+  // preserved per TMUX-057 / TMUX-058 and surfaces when restorePrompt re-arms
+  // the colored prompt. `readline.pause()` is deliberately not used: pausing
+  // the input stream also stops keypress delivery, breaking the ESC handler.
+  private suspendPrompt(): void {
+    if (!this.terminalInput) {
+      return;
+    }
+    this.readline?.setPrompt('');
+  }
+
+  private restorePrompt(): void {
+    if (!this.terminalInput) {
+      return;
+    }
+    this.readline?.setPrompt(this.bossPrompt);
   }
 
   private registerSignal(event: 'SIGINT' | 'SIGTERM'): void {

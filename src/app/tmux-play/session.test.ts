@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
@@ -589,6 +590,162 @@ describe('TmuxPlaySession', () => {
     await nonTtySession.done;
     expect(nonTtyOutput.text()).not.toContain(BRACKETED_PASTE_DISABLE);
   });
+
+  // TTMUX-074: while a Boss turn is in flight, the live readline prompt is
+  // suspended so type-ahead paints no fresh `boss> ` line into the pane amid
+  // the streamed Captain output; the colored prompt is restored exactly once
+  // at turn end and the buffered type-ahead surfaces as one runBossTurn on the
+  // next Enter. A stubbed readline does not echo prompt chrome and would pass
+  // vacuously, so the probe drives a real `createInterface` over a TTY pair (as
+  // the TTMUX-059 ESC probe does), wrapping only `prompt` with a call-through
+  // spy to count restorations.
+  it('suspends the boss> prompt during an active turn and restores it once for typed type-ahead', async () => {
+    tempDir = makeWorkDir();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const turnBlock = deferred<void>();
+    const runBossTurn = vi.fn(async (prompt: string) => {
+      if (prompt !== 'first') {
+        return;
+      }
+      // Stream a Captain `captain> ` line into the Boss/Captain pane. A
+      // captain_status line bypasses glow (TMUX-050) yet still routes to the
+      // boss writer per TMUX-040, standing in for streamed Captain output.
+      const runtimeOptions = createRuntime.mock.calls[0]?.[0];
+      for (const observer of runtimeOptions?.observers ?? []) {
+        await observer.onRecord({
+          type: 'captain_status',
+          turnId: 1,
+          timestamp: 100,
+          message: 'WORKING',
+        });
+      }
+      await turnBlock.promise;
+    });
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      runBossTurn,
+    }));
+    let promptSpy: ReturnType<typeof vi.spyOn> | undefined;
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      input,
+      output,
+      createRuntime,
+      importCaptain: async () => ({ default: () => captain() }),
+      createReadline: (options) => {
+        const realInterface = createInterface(options);
+        promptSpy = vi.spyOn(realInterface, 'prompt');
+        return realInterface;
+      },
+    });
+
+    await session.start();
+    // The ready prompt is painted once at start; no further prompt while the
+    // turn is pending.
+    expect(promptSpy?.mock.calls.length).toBe(1);
+
+    input.write('first\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 1);
+    await waitUntil(() => stripAnsi(output.text()).includes('WORKING'));
+
+    const afterCaptainStart = stripAnsi(output.text()).indexOf('WORKING');
+    input.write('queued');
+    await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
+
+    // No fresh `boss> ` prompt line follows the streamed Captain output while
+    // the turn is active, even though the Boss typed type-ahead.
+    const duringTurn = stripAnsi(output.text()).slice(afterCaptainStart);
+    expect(duringTurn).not.toContain('boss>');
+    expect(promptSpy?.mock.calls.length).toBe(1);
+
+    // Turn ends: the colored prompt is restored exactly once.
+    turnBlock.resolve();
+    await waitUntil(() => (promptSpy?.mock.calls.length ?? 0) === 2);
+    expect(promptSpy?.mock.calls.length).toBe(2);
+
+    // The preserved type-ahead submits as one runBossTurn on the next Enter.
+    input.write('\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 2);
+    expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'first',
+      'queued',
+    ]);
+
+    input.end();
+    await session.done;
+  });
+
+  it('suspends the boss> prompt during an active turn and preserves pasted type-ahead newlines', async () => {
+    tempDir = makeWorkDir();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const turnBlock = deferred<void>();
+    const runBossTurn = vi.fn(async (prompt: string) => {
+      if (prompt !== 'first') {
+        return;
+      }
+      const runtimeOptions = createRuntime.mock.calls[0]?.[0];
+      for (const observer of runtimeOptions?.observers ?? []) {
+        await observer.onRecord({
+          type: 'captain_status',
+          turnId: 1,
+          timestamp: 100,
+          message: 'WORKING',
+        });
+      }
+      await turnBlock.promise;
+    });
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      runBossTurn,
+    }));
+    let promptSpy: ReturnType<typeof vi.spyOn> | undefined;
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      input,
+      output,
+      createRuntime,
+      importCaptain: async () => ({ default: () => captain() }),
+      createReadline: (options) => {
+        const realInterface = createInterface(options);
+        promptSpy = vi.spyOn(realInterface, 'prompt');
+        return realInterface;
+      },
+    });
+
+    await session.start();
+    input.write('first\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 1);
+    await waitUntil(() => stripAnsi(output.text()).includes('WORKING'));
+
+    const afterCaptainStart = stripAnsi(output.text()).indexOf('WORKING');
+    // Paste multi-line text during the active turn (no submit Enter yet).
+    input.write('\x1b[200~Alpha\nBravo\x1b[201~');
+    await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
+
+    const duringTurn = stripAnsi(output.text()).slice(afterCaptainStart);
+    expect(duringTurn).not.toContain('boss>');
+    expect(promptSpy?.mock.calls.length).toBe(1);
+
+    turnBlock.resolve();
+    await waitUntil(() => (promptSpy?.mock.calls.length ?? 0) === 2);
+    expect(promptSpy?.mock.calls.length).toBe(2);
+
+    // The pasted type-ahead submits as one runBossTurn whose prompt preserves
+    // the embedded newline per TMUX-058.
+    input.write('\n');
+    await waitUntil(() => runBossTurn.mock.calls.length === 2);
+    expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'first',
+      'Alpha\nBravo',
+    ]);
+
+    input.end();
+    await session.done;
+  });
 });
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
@@ -665,6 +822,13 @@ async function waitUntil(
     await Promise.resolve();
   }
   throw new Error('condition was not met');
+}
+
+function stripAnsi(value: string): string {
+  // Drop CSI escape sequences (SGR color, cursor moves, line clears, bracketed
+  // paste toggles) so a colored `boss> ` prompt collapses to literal `boss> `
+  // and is detectable by substring search.
+  return value.replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '');
 }
 
 async function delay(ms: number): Promise<void> {
