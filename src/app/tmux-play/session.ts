@@ -130,6 +130,12 @@ export class TmuxPlaySession {
     key: Keypress,
   ) => void) | undefined;
   private activeBossTurn = false;
+  // TMUX-075: count of Boss turns that have been submitted but not yet finished
+  // — the one currently running plus any lines the Boss submitted behind it that
+  // queued for the serialized runtime (TMUX-018). A fresh ready `boss> ` prompt
+  // is painted only when this reaches zero, so no spurious prompt appears between
+  // consecutive queued turns or amid an active turn's streaming output.
+  private pendingTurns = 0;
   // TMUX-075: the colored `boss> ` prompt string is captured at start so the
   // turn-active suspension can blank the prompt and restore this exact value
   // at turn end. `terminalInput` records whether stdin is a TTY; outside a TTY
@@ -272,40 +278,54 @@ export class TmuxPlaySession {
   private enqueueLine(line: string): void {
     const prompt = line.trim();
     if (!prompt) {
-      this.readline?.prompt();
+      // TMUX-075: an empty / whitespace-only submission paints a fresh ready
+      // prompt only while no Boss turn is active or queued; submitted amid a
+      // turn it must not repaint `boss> ` over the streaming output.
+      if (this.pendingTurns === 0) {
+        this.readline?.prompt();
+      }
       return;
     }
 
+    this.pendingTurns += 1;
     this.pending = this.pending
       .then(async () => {
-        if (this.shuttingDown) {
-          return;
-        }
-        this.refreshPlayerPaneWidths();
-        this.activeBossTurn = true;
-        this.suspendPrompt();
         try {
-          await this.runtime?.runBossTurn(prompt);
-        } catch (error) {
-          // Non-observer failures are already emitted as runtime_error records
-          // by the runtime and rendered by the tmux presenter. Observer
-          // dispatch failures bypass that path because the failing observer
-          // is the presenter itself, so we emit the line directly under the
-          // TMUX-039 bracketed-tag grammar.
-          if (error instanceof ObserverDispatchError) {
-            this.writeOutput(
-              `captain> [runtime error] ${errorMessage(error)}\n`,
-            );
+          if (this.shuttingDown) {
+            return;
+          }
+          this.refreshPlayerPaneWidths();
+          this.activeBossTurn = true;
+          this.suspendPrompt();
+          try {
+            await this.runtime?.runBossTurn(prompt);
+          } catch (error) {
+            // Non-observer failures are already emitted as runtime_error
+            // records by the runtime and rendered by the tmux presenter.
+            // Observer dispatch failures bypass that path because the failing
+            // observer is the presenter itself, so we emit the line directly
+            // under the TMUX-039 bracketed-tag grammar.
+            if (error instanceof ObserverDispatchError) {
+              this.writeOutput(
+                `captain> [runtime error] ${errorMessage(error)}\n`,
+              );
+            }
           }
         } finally {
-          // TMUX-075: every turn-end path — normal completion, ESC abort, and
-          // the runtime-error / observer-dispatch branches above — restores the
-          // colored prompt exactly once before re-prompting, so the suspended
-          // `boss> ` chrome returns ready for the next turn with any type-ahead
-          // the Boss buffered during the turn surfaced on it.
+          // TMUX-075: this finally runs on every settle path — normal
+          // completion, ESC abort, the runtime-error / observer-dispatch
+          // branches above, an early shutdown return, or any unexpected throw —
+          // so the increment in `enqueueLine` is always balanced. It restores
+          // the colored prompt, then paints a fresh ready prompt only once the
+          // queue of submitted Boss lines drains (`pendingTurns === 0`): when
+          // another line is queued behind this turn the next turn begins under
+          // the same suspension, so no spurious `boss> ` appears between
+          // consecutive turns. Any type-ahead the Boss buffered surfaces on
+          // that final restored prompt.
           this.activeBossTurn = false;
+          this.pendingTurns -= 1;
           this.restorePrompt();
-          if (!this.shuttingDown) {
+          if (this.pendingTurns === 0 && !this.shuttingDown) {
             this.readline?.prompt();
           }
         }

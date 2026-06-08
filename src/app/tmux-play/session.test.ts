@@ -746,6 +746,71 @@ describe('TmuxPlaySession', () => {
     input.end();
     await session.done;
   });
+
+  // TTMUX-074: a fresh ready `boss> ` prompt is painted only once the queue of
+  // submitted Boss lines drains. When the Boss types Enter ahead and a second
+  // line queues behind the active turn, releasing the first turn must not
+  // repaint the prompt while the second is still queued; exactly one repaint
+  // follows the last queued turn. An empty submission amid an active turn must
+  // not repaint either. A stubbed readline faithfully counts `prompt()` calls,
+  // so this property is observable without real prompt chrome.
+  it('paints no ready prompt between consecutive queued Boss turns', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const output = new MemoryOutput();
+    const firstBlock = deferred<void>();
+    const secondBlock = deferred<void>();
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
+    const runBossTurn = vi.fn(async (prompt: string) => {
+      if (prompt === 'first') {
+        firstStarted.resolve();
+        await firstBlock.promise;
+      } else if (prompt === 'second') {
+        secondStarted.resolve();
+        await secondBlock.promise;
+      }
+    });
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime: async () => ({
+        abortActiveTurn: vi.fn(),
+        dispose: async () => undefined,
+        runBossTurn,
+      }),
+      importCaptain: async () => ({ default: () => captain() }),
+      output,
+    });
+
+    await session.start();
+    expect(readline.promptCount).toBe(1);
+
+    // Turn 1 starts and blocks.
+    readline.emitLine('first');
+    await firstStarted.promise;
+
+    // An empty submission while the turn is active does not repaint boss>.
+    readline.emitLine('   ');
+    expect(readline.promptCount).toBe(1);
+
+    // Turn 2 queues behind the active turn.
+    readline.emitLine('second');
+
+    // Releasing turn 1 must not repaint while turn 2 is still queued.
+    firstBlock.resolve();
+    await secondStarted.promise;
+    expect(readline.promptCount).toBe(1);
+
+    // Once the queue drains, exactly one fresh ready prompt is painted.
+    secondBlock.resolve();
+    await waitUntil(() => readline.promptCount === 2);
+    expect(readline.promptCount).toBe(2);
+    expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
+      'first',
+      'second',
+    ]);
+  });
 });
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
