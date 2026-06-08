@@ -361,11 +361,13 @@ The Boss/Captain pane title shall be `Captain`. Each player pane title shall be 
 ### TMUX-037
 
 While in session mode, the Boss readline shall echo the user's input line as the user types it (standard readline behavior). When the runtime emits `turn_started`, the presenter shall not write the Boss prompt to the Boss/Captain pane, so the user's input shall appear exactly once in the pane.
+This as-typed echo is scoped to the ready (between-turns) `boss> ` prompt; while a Boss turn is active the live readline prompt is suspended per [TMUX-075](#tmux-075), so type-ahead the Boss enters during the turn is not echoed as a `boss> ` line until [TMUX-075](#tmux-075) restores the prompt.
 
 ### TMUX-057
 
 Where session mode is running with TTY stdin, while a Boss turn is active, when the Boss presses a bare ESC key in the Boss/Captain pane, the session shall abort the active turn without shutting down, preserve the Boss readline's current edit-buffer contents, and return to a ready `boss> ` prompt for the next Boss turn.
 The Boss/Captain pane shall render the existing `[turn aborted] ESC` status line per [TMUX-040](#tmux-040).
+The preserved edit-buffer contents are surfaced on the `boss> ` prompt when it is restored at turn end per [TMUX-075](#tmux-075), since while the turn is active that prompt is suspended.
 While no Boss turn is active, a bare ESC keypress shall have no observable effect.
 Terminal escape sequences that are not a bare ESC keypress (for example arrow-key sequences) shall not trigger a turn abort.
 Where stdin is not a TTY, the ESC keybinding shall not be installed, and the SIGINT/SIGTERM/EOF lifecycle per [TMUX-026](#tmux-026) shall remain unchanged.
@@ -377,6 +379,14 @@ Where session mode is running with TTY stdin and TTY stdout, when the Boss paste
 Bytes typed by the Boss after the paste and before that Enter shall be included in the same submission.
 Where either stdin or stdout is not a TTY, the multi-line paste behavior shall be omitted and embedded newlines in pasted text shall behave as in the underlying readline.
 The session shall enable bracketed paste only for its own duration and shall emit the bracketed-paste-disable sequence on every shutdown path so tmux-play does not leave bracketed-paste mode enabled in the terminal after exit.
+
+### TMUX-075
+
+Where session mode is running with TTY stdin, while a Boss turn is active — between the runtime's `turn_started` and the matching `turn_finished` or `turn_aborted` — the Boss/Captain pane shall display no `boss> ` readline prompt line, so the turn's streaming presenter output is never interleaved with or followed by a fresh `boss> ` prompt that a turn-completion consumer reading the pane would misread as an implicit turn-over signal.
+When the runtime starts a Boss turn, the session shall suspend or clear the live readline prompt before the turn's first presenter output reaches the pane.
+When the turn ends — normal completion or ESC abort per [TMUX-057](#tmux-057) — the session shall restore the `boss> ` prompt exactly once, ready for the next Boss turn.
+While a Boss turn is active, edit-buffer bytes the Boss types — or pastes per [TMUX-058](#tmux-058) — shall be preserved per [TMUX-057](#tmux-057) and surfaced on the restored prompt, and shall not render as a `boss> `-prefixed line until the prompt is restored.
+Where stdin is not a TTY, no live readline prompt is shown and the suspension shall be a no-op.
 
 ### TMUX-038
 

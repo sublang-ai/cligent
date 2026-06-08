@@ -485,6 +485,14 @@ Given the input delivers `\x1b[200~Alpha\nBravo\x1b[201~` followed by `-extra` a
 The output shall capture the bracketed-paste-enable sequence when the session starts and the bracketed-paste-disable sequence on shutdown.
 Given non-TTY output, neither bracketed-paste control sequence shall be written to output.
 
+### TTMUX-074
+Verifies: [TMUX-075](../user/tmux-play.md#tmux-075), [TMUX-037](../user/tmux-play.md#tmux-037), [TMUX-057](../user/tmux-play.md#tmux-057)
+
+Given a `TmuxPlaySession` running against TTY-like input and output with a Boss turn in flight whose player/Captain call is blocked (the `runBossTurn` promise is still pending), when the presenter streams `captain> ` / `<playerId>> ` output to the Boss/Captain pane, the captured pane content shall contain no `boss> ` prompt line between `turn_started` and the matching `turn_finished` or `turn_aborted`; after the turn resolves, exactly one `boss> ` prompt shall be restored ready for the next turn.
+Given the Boss types type-ahead bytes during the active turn, those bytes shall not appear as a `boss> `-prefixed line while the turn is active, and the next Enter after the turn ends shall fire exactly one `runBossTurn` whose prompt is the preserved type-ahead bytes per [TMUX-057](../user/tmux-play.md#tmux-057).
+The session-level probe shall use a real `createInterface` over a TTY-like input/output pair (as the [TTMUX-059](#ttmux-059) ESC probe does), because a stubbed readline does not echo prompt chrome and would pass vacuously.
+Given a real tmux server with an attached client and a Boss turn in flight, pane 0 shall show no `boss> ` line between `turn_started` and the turn's terminal record; this acceptance clause shall run under `*.acceptance.test.ts` and shall self-skip when `tmux -V`, `glow -v`, or an attached-client driver is unavailable.
+
 ## Real-glow Acceptance
 
 Items in this section verify behavior end-to-end against a real `glow` binary (not a mock). They live under `src/app/shared/glow.acceptance.test.ts` (glow-in-isolation checks) and `src/app/tmux-play/presenter-tmux.acceptance.test.ts` (presenter + glow integration), run via `npm run test:acceptance`, and shall self-skip only when `glow -v` fails. They shall not gate on `tmux` or adapter API keys.
