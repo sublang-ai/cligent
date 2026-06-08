@@ -382,7 +382,7 @@ The session shall enable bracketed paste only for its own duration and shall emi
 
 ### TMUX-075
 
-Where session mode is running with TTY stdin, while a Boss turn is active — between the runtime's `turn_started` and the matching `turn_finished` or `turn_aborted` — the Boss/Captain pane shall display no `boss> ` readline prompt line, so the turn's streaming presenter output is never interleaved with or followed by a fresh `boss> ` prompt that a turn-completion consumer reading the pane would misread as an implicit turn-over signal.
+Where session mode is running with TTY stdin, while a Boss turn is active — between the runtime's `turn_started` and the matching `turn_finished` or `turn_aborted` — the Boss/Captain pane shall paint no fresh `boss> ` readline prompt line (the input line already echoed for the submitted prompt per [TMUX-037](#tmux-037) is unaffected), so the turn's streaming presenter output is never interleaved with or followed by a fresh `boss> ` prompt that a turn-completion consumer reading the pane would misread as an implicit turn-over signal.
 When the runtime starts a Boss turn, the session shall suspend or clear the live readline prompt before the turn's first presenter output reaches the pane.
 When the turn ends — normal completion or ESC abort per [TMUX-057](#tmux-057) — the session shall restore the `boss> ` prompt exactly once, ready for the next Boss turn.
 While a Boss turn is active, edit-buffer bytes the Boss types — or pastes per [TMUX-058](#tmux-058) — shall be preserved per [TMUX-057](#tmux-057) and surfaced on the restored prompt, and shall not render as a `boss> `-prefixed line until the prompt is restored.

@@ -26,7 +26,7 @@ The fix therefore cannot simply stop the session from prompting (it already does
 
 ## Design decision (adopted by this IR)
 
-Adopt the prescribed direction: while a Boss turn is active the readline prompt is **suspended** (no `boss> ` line painted), and it is **restored once** at turn completion / ESC abort.
+Adopt the prescribed direction: while a Boss turn is active the readline prompt is **suspended** (no fresh `boss> ` prompt line painted), and it is **restored once** at turn completion / ESC abort.
 Reconcile the released items rather than contradict them:
 
 - [TMUX-037](../user/tmux-play.md#tmux-037) "echo the user's input line as the user types it" is scoped to the ready (between-turns) prompt; during an active turn the prompt is suspended per the new [TMUX-075](../user/tmux-play.md#tmux-075).
@@ -51,18 +51,18 @@ Bracketed-paste type-ahead during a turn must be preserved on the same path as t
 
 In scope:
 
-- New **[TMUX-075](../user/tmux-play.md#tmux-075)** (user): While session mode is running a Boss turn — between the runtime's `turn_started` and the matching `turn_finished` or `turn_aborted` — the Boss/Captain pane shall display no `boss> ` readline prompt line, so the turn's streaming output is never interleaved with or followed by a fresh `boss> ` prompt a turn-completion consumer would read as an implicit turn-over signal.
+- New **[TMUX-075](../user/tmux-play.md#tmux-075)** (user): While session mode is running a Boss turn — between the runtime's `turn_started` and the matching `turn_finished` or `turn_aborted` — the Boss/Captain pane shall paint no fresh `boss> ` readline prompt line (the already-echoed submitted-prompt input line per [TMUX-037](../user/tmux-play.md#tmux-037) aside), so the turn's streaming output is never interleaved with or followed by a fresh `boss> ` prompt a turn-completion consumer would read as an implicit turn-over signal.
   When the runtime starts a Boss turn, the session shall suspend or clear the live readline prompt before the turn's first presenter output reaches the pane.
   When the turn ends — normal completion or ESC abort per [TMUX-057](../user/tmux-play.md#tmux-057) — the session shall restore the `boss> ` prompt exactly once, ready for the next turn.
   Edit-buffer bytes the Boss types (or pastes per [TMUX-058](../user/tmux-play.md#tmux-058)) during the active turn shall be preserved per [TMUX-057](../user/tmux-play.md#tmux-057) and surfaced on the restored prompt; they shall not render as a `boss> `-prefixed line while the turn is active.
   Where stdin is not a TTY, no live readline prompt is shown and the suspension is a no-op.
 - Amend **[TMUX-037](../user/tmux-play.md#tmux-037)**: add a clause scoping its as-typed echo to the ready (between-turns) prompt and cross-referencing [TMUX-075](../user/tmux-play.md#tmux-075) for the active-turn suspension, so the two items do not contradict.
 - Amend **[TMUX-057](../user/tmux-play.md#tmux-057)**: add a clause noting the preserved edit-buffer contents are surfaced when the `boss> ` prompt is restored per [TMUX-075](../user/tmux-play.md#tmux-075).
-- New **[TTMUX-074](../test/tmux-play.md#ttmux-074)** (test), `Verifies:` [TMUX-075](../user/tmux-play.md#tmux-075), [TMUX-037](../user/tmux-play.md#tmux-037), [TMUX-057](../user/tmux-play.md#tmux-057):
-  Given a `TmuxPlaySession` running a Boss turn whose player/Captain call is blocked (the `runBossTurn` promise is pending), when the presenter streams `captain> ` / `<playerId>> ` output to the Boss/Captain pane, the captured pane content shall contain no `boss> ` prompt line until the matching `turn_finished` or `turn_aborted`; after the turn resolves, exactly one `boss> ` prompt shall be restored.
-  Given the Boss types type-ahead bytes during the active turn, those bytes shall not appear as a `boss> `-prefixed line while the turn is active, and the next Enter after the turn ends shall fire exactly one `runBossTurn` whose prompt is the preserved bytes ([TMUX-057](../user/tmux-play.md#tmux-057)).
+- New **[TTMUX-074](../test/tmux-play.md#ttmux-074)** (test), `Verifies:` [TMUX-075](../user/tmux-play.md#tmux-075), [TMUX-037](../user/tmux-play.md#tmux-037), [TMUX-057](../user/tmux-play.md#tmux-057), [TMUX-058](../user/tmux-play.md#tmux-058):
+  Given a `TmuxPlaySession` running a Boss turn whose player/Captain call is blocked (the `runBossTurn` promise is pending), when the presenter streams the Captain's `captain> ` reply to the Boss/Captain pane (player output stays in its player pane per [TMUX-040](../user/tmux-play.md#tmux-040)), the captured Boss/Captain-pane content shall contain no fresh `boss> ` prompt line after that streamed output until the matching `turn_finished` or `turn_aborted` — the already-submitted input line that opened the turn (the `boss> <prompt>` echo per [TMUX-037](../user/tmux-play.md#tmux-037)) is unaffected; after the turn resolves, exactly one fresh `boss> ` prompt shall be restored.
+  Given the Boss types type-ahead bytes during the active turn, those bytes shall not render a fresh `boss> `-prefixed line while the turn is active, and the next Enter after the turn ends shall fire exactly one `runBossTurn` whose prompt is the preserved bytes ([TMUX-057](../user/tmux-play.md#tmux-057)); given the Boss pastes multi-line text during the active turn, the same suppression holds and the next Enter fires exactly one `runBossTurn` whose prompt preserves the pasted embedded newlines ([TMUX-058](../user/tmux-play.md#tmux-058)).
   The session-level probe shall use a real `createInterface` over a TTY-like input/output pair (as the [TTMUX-059](../test/tmux-play.md#ttmux-059) ESC probe does), because a stubbed readline does not echo prompt chrome and would pass vacuously.
-  A real-tmux attached-client acceptance clause shall assert that, with a turn in flight, pane 0 shows no `boss> ` line between `turn_started` and the turn's terminal record; it shall run under `*.acceptance.test.ts` and self-skip when `tmux -V`, `glow -v`, or an attached-client driver is unavailable.
+  A real-tmux attached-client acceptance clause shall assert that, with a turn in flight, pane 0 shows no fresh `boss> ` prompt line after the streamed Captain output between `turn_started` and the turn's terminal record (the submitted-prompt input line aside); it shall run under `*.acceptance.test.ts` and self-skip when `tmux -V`, `glow -v`, or an attached-client driver is unavailable.
 - `src/app/tmux-play/session.ts`: suspend/clear the prompt on turn start and restore it once on turn end / ESC abort / runtime-error paths, preserving typed and pasted type-ahead and keeping the ESC keypress handler intact.
 - `src/app/tmux-play/session.test.ts`: session-level regression coverage for [TTMUX-074](../test/tmux-play.md#ttmux-074) over a real-readline TTY pair.
 - `specs/map.md`: extend the TMUX user and test package summary lines to mention active-turn prompt suspension (the IR-025 index row is added when this record is authored).
@@ -80,19 +80,19 @@ Out of scope (deliberate non-goals):
 - [x] `specs/map.md` — confirm IR-025 is indexed; extend the TMUX user and test summary lines for active-turn prompt suspension.
 - [ ] `src/app/tmux-play/session.ts` — suspend/clear prompt on turn start, restore once on every turn-end path, preserve type-ahead, keep ESC handling.
 - [ ] `src/app/tmux-play/session.test.ts` — session-level regression test over a real-readline TTY pair.
-- [ ] `src/app/tmux-play/*.acceptance.test.ts` — real-tmux attached-client probe asserting no `boss> ` on pane 0 during an active turn.
+- [ ] `src/app/tmux-play/*.acceptance.test.ts` — real-tmux attached-client probe asserting no fresh `boss> ` prompt line on pane 0 during an active turn.
 
 ## Tasks
 
 1. [x] **Spec items + map.** Add [TMUX-075](../user/tmux-play.md#tmux-075); amend [TMUX-037](../user/tmux-play.md#tmux-037) and [TMUX-057](../user/tmux-play.md#tmux-057); add [TTMUX-074](../test/tmux-play.md#ttmux-074); confirm IR-025 indexed in `specs/map.md` and extend the TMUX user/test summary lines. Single docs-only commit.
 2. [ ] **Prompt-suspension implementation + session test.** `session.ts` changes to suspend/clear the prompt on turn start and restore once on completion / ESC abort / runtime-error paths while preserving typed and pasted type-ahead and the ESC keypress handler. Session-level regression test over a real-readline TTY pair verifying the [TTMUX-074](../test/tmux-play.md#ttmux-074) session clauses. Per-task-boundary green.
-3. [ ] **Real-tmux acceptance probe.** Attached-client `*.acceptance.test.ts` probe verifying [TTMUX-074](../test/tmux-play.md#ttmux-074)'s real-tmux clause — pane 0 shows no `boss> ` line between `turn_started` and the turn's terminal record — self-skipping without `tmux` / `glow` / an attached-client driver. Per-task-boundary green.
+3. [ ] **Real-tmux acceptance probe.** Attached-client `*.acceptance.test.ts` probe verifying [TTMUX-074](../test/tmux-play.md#ttmux-074)'s real-tmux clause — pane 0 shows no fresh `boss> ` prompt line between `turn_started` and the turn's terminal record — self-skipping without `tmux` / `glow` / an attached-client driver. Per-task-boundary green.
 
 ## Acceptance
 
-- During an active turn whose player/Captain call is blocked, the Boss/Captain pane contains no `boss> ` prompt line; exactly one `boss> ` prompt is restored after `turn_finished` / `turn_aborted`.
-- Type-ahead typed or pasted during a turn does not render a `boss> ` line while the turn is active and is submitted verbatim as one `runBossTurn` on the next Enter after the turn ends, preserving [TMUX-057](../user/tmux-play.md#tmux-057) / [TMUX-058](../user/tmux-play.md#tmux-058).
+- During an active turn whose player/Captain call is blocked, the Boss/Captain pane contains no fresh `boss> ` prompt line beyond the submitted-prompt input line; exactly one fresh `boss> ` prompt is restored after `turn_finished` / `turn_aborted`.
+- Type-ahead typed or pasted during a turn does not render a fresh `boss> ` line while the turn is active and is submitted verbatim as one `runBossTurn` on the next Enter after the turn ends, preserving [TMUX-057](../user/tmux-play.md#tmux-057) / [TMUX-058](../user/tmux-play.md#tmux-058).
 - Bare ESC during a turn still aborts via `abortActiveTurn('ESC')` and yields `turn_aborted`; `\x1b[A` does not; non-TTY stdin skips ESC and prompt suspension non-fatally.
 - The bracketed-paste-disable sequence is still emitted on every shutdown path per [TMUX-058](../user/tmux-play.md#tmux-058).
-- Real-tmux probe confirms no `boss> ` line on pane 0 mid-turn; existing [TTMUX-059](../test/tmux-play.md#ttmux-059) / [TTMUX-060](../test/tmux-play.md#ttmux-060) ESC and paste coverage stays green.
+- Real-tmux probe confirms no fresh `boss> ` prompt line on pane 0 mid-turn; existing [TTMUX-059](../test/tmux-play.md#ttmux-059) / [TTMUX-060](../test/tmux-play.md#ttmux-060) ESC and paste coverage stays green.
 - All per-task-boundary checks (build, typecheck, lint, unit, smoke, acceptance) pass at each task boundary.
