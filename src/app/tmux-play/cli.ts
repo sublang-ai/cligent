@@ -22,6 +22,7 @@ import {
   runTmuxPlaySession,
   type TmuxPlaySessionOptions,
 } from './session.js';
+import { isolateOrchestratorFromAgents } from '../shared/tmux.js';
 
 type Output = Pick<Writable, 'write'>;
 
@@ -85,6 +86,11 @@ export async function runTmuxPlayCli(
 
     if (values.session) {
       const workDir = validateSessionOptions(values);
+      // TMUX-074: session mode means this process is the orchestrator running inside
+      // pane 0 of the tmux-play session. Sandbox player agents away from that
+      // session's tmux server before any adapter spawns, so a player that runs
+      // `tmux` cannot reach — let alone kill — the run that hosts it.
+      isolateOrchestratorFromAgents();
       await (options.runSession ?? runTmuxPlaySession)({
         sessionId: values.session,
         workDir,

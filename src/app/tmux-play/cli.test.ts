@@ -13,6 +13,18 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isCliEntry, runTmuxPlayCli } from './cli.js';
+import {
+  isOrchestratorInTmux,
+  setOrchestratorTmuxEnv,
+} from '../shared/tmux.js';
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}
 
 class MemoryOutput {
   chunks: string[] = [];
@@ -69,6 +81,66 @@ describe('runTmuxPlayCli', () => {
       workDir: tempDir,
       cwd: '/repo',
     });
+  });
+
+  // TTMUX-073 / TMUX-074: pin the isolation at the session-dispatch boundary,
+  // not just at the helper. A unit test of isolateOrchestratorFromAgents would
+  // still pass if cli.ts dropped the call before constructing the session —
+  // the exact regression that took down a live run. Capture the environment a
+  // player adapter would inherit at the moment runSession is invoked.
+  it('isolates player agents from the run tmux before constructing the session (TMUX-074)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-cli-'));
+    const savedTmux = process.env.TMUX;
+    const savedPane = process.env.TMUX_PANE;
+    const savedTmpDir = process.env.TMUX_TMPDIR;
+    process.env.TMUX = '/private/tmp/tmux-501/default,123,0';
+    process.env.TMUX_PANE = '%0';
+    delete process.env.TMUX_TMPDIR;
+
+    let envAtSession:
+      | {
+          tmux: string | undefined;
+          pane: string | undefined;
+          tmpDir: string | undefined;
+          orchestratorInTmux: boolean;
+        }
+      | undefined;
+    const runSession = vi.fn(async () => {
+      envAtSession = {
+        tmux: process.env.TMUX,
+        pane: process.env.TMUX_PANE,
+        tmpDir: process.env.TMUX_TMPDIR,
+        orchestratorInTmux: isOrchestratorInTmux(),
+      };
+    });
+
+    try {
+      const code = await runTmuxPlayCli({
+        argv: ['--session', 'abc123', '--work-dir', tempDir],
+        runSession,
+      });
+
+      expect(code).toBe(0);
+      expect(runSession).toHaveBeenCalledTimes(1);
+      // Player-inherited env: live session handles stripped, socket dir
+      // redirected away from the run's — so an agent's `tmux` cannot reach it.
+      expect(envAtSession?.tmux).toBeUndefined();
+      expect(envAtSession?.pane).toBeUndefined();
+      expect(envAtSession?.tmpDir).toBeDefined();
+      expect(envAtSession?.tmpDir).not.toBe('/private/tmp/tmux-501');
+      // The orchestrator still reports itself in tmux via the pinned snapshot,
+      // so its own pane-width queries keep running for the session.
+      expect(envAtSession?.orchestratorInTmux).toBe(true);
+    } finally {
+      setOrchestratorTmuxEnv(undefined);
+      const sandbox = process.env.TMUX_TMPDIR;
+      restoreEnv('TMUX', savedTmux);
+      restoreEnv('TMUX_PANE', savedPane);
+      restoreEnv('TMUX_TMPDIR', savedTmpDir);
+      if (sandbox && sandbox !== savedTmpDir) {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    }
   });
 
   it('rejects missing session work dir before dispatch', async () => {

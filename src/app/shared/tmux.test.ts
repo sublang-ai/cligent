@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { spawnSyncMock } = vi.hoisted(() => ({
   spawnSyncMock: vi.fn(),
@@ -13,10 +13,13 @@ vi.mock('node:child_process', () => ({
 
 import {
   attachTmuxSession,
+  isOrchestratorInTmux,
+  isolateOrchestratorFromAgents,
   isTmuxAvailable,
   killTmuxSession,
   queryPaneTargetsByTitle,
   runTmux,
+  setOrchestratorTmuxEnv,
 } from './tmux.js';
 
 describe('tmux helpers', () => {
@@ -139,5 +142,85 @@ describe('tmux helpers', () => {
     spawnSyncMock.mockReturnValue({ status: 1 });
 
     expect(queryPaneTargetsByTitle('missing')).toEqual(new Map());
+  });
+});
+
+describe('orchestrator tmux isolation', () => {
+  const savedTmux = process.env.TMUX;
+  const savedPane = process.env.TMUX_PANE;
+  const savedTmpDir = process.env.TMUX_TMPDIR;
+
+  beforeEach(() => {
+    spawnSyncMock.mockReset();
+    setOrchestratorTmuxEnv(undefined);
+  });
+
+  afterEach(() => {
+    setOrchestratorTmuxEnv(undefined);
+    restore('TMUX', savedTmux);
+    restore('TMUX_PANE', savedPane);
+    restore('TMUX_TMPDIR', savedTmpDir);
+  });
+
+  function restore(key: string, value: string | undefined): void {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  it('scrubs tmux handles from process.env so spawned agents are sandboxed', () => {
+    process.env.TMUX = '/private/tmp/tmux-501/default,123,0';
+    process.env.TMUX_PANE = '%4';
+    delete process.env.TMUX_TMPDIR;
+
+    isolateOrchestratorFromAgents();
+
+    // A spawned agent inherits this process.env: no live session handles, and
+    // a redirected socket dir so its `tmux` lands on a private server.
+    expect(process.env.TMUX).toBeUndefined();
+    expect(process.env.TMUX_PANE).toBeUndefined();
+    expect(process.env.TMUX_TMPDIR).toBeDefined();
+    expect(process.env.TMUX_TMPDIR).not.toBe('/private/tmp/tmux-501/default');
+  });
+
+  it('keeps the orchestrator reporting in-tmux after the scrub', () => {
+    process.env.TMUX = '/private/tmp/tmux-501/default,123,0';
+
+    expect(isOrchestratorInTmux()).toBe(true);
+    isolateOrchestratorFromAgents();
+    // process.env.TMUX is now gone, but the pinned snapshot keeps this true so
+    // pane-width queries still run for the orchestrator.
+    expect(process.env.TMUX).toBeUndefined();
+    expect(isOrchestratorInTmux()).toBe(true);
+  });
+
+  it("runs the orchestrator's own tmux commands with the pinned real env", () => {
+    process.env.TMUX = '/private/tmp/tmux-501/default,123,0';
+    isolateOrchestratorFromAgents();
+    spawnSyncMock.mockReturnValue({ status: 0 });
+
+    runTmux('list-panes', '-t', 'tmux-play-abc:0');
+
+    const call = spawnSyncMock.mock.calls.at(-1);
+    expect(call?.[0]).toBe('tmux');
+    expect(call?.[1]).toEqual(['list-panes', '-t', 'tmux-play-abc:0']);
+    // The pinned env still carries the real TMUX handle so this reaches the
+    // run's session, not the agents' sandbox socket.
+    expect((call?.[2] as { env?: NodeJS.ProcessEnv }).env?.TMUX).toBe(
+      '/private/tmp/tmux-501/default,123,0',
+    );
+  });
+
+  it('is a no-op when the orchestrator is not inside tmux', () => {
+    delete process.env.TMUX;
+    delete process.env.TMUX_PANE;
+    delete process.env.TMUX_TMPDIR;
+
+    isolateOrchestratorFromAgents();
+
+    expect(isOrchestratorInTmux()).toBe(false);
+    expect(process.env.TMUX_TMPDIR).toBeUndefined();
   });
 });

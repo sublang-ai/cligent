@@ -10,7 +10,11 @@ import {
   closeLogStreams,
   openAppendLogStreams,
 } from '../shared/logs.js';
-import { killTmuxSession, queryPaneWidthsByTitle } from '../shared/tmux.js';
+import {
+  isOrchestratorInTmux,
+  killTmuxSession,
+  queryPaneWidthsByTitle,
+} from '../shared/tmux.js';
 import { playerPaneTitle } from './pane-title.js';
 import type {
   Captain,
@@ -504,7 +508,11 @@ export class TmuxPlaySession {
 }
 
 function defaultQueryPaneWidths(sessionName: string): Map<string, number> {
-  if (!process.env.TMUX) {
+  // TMUX-074: the orchestrator scrubs TMUX from process.env to sandbox player agents
+  // (see isolateOrchestratorFromAgents), so consult the pinned tmux env rather
+  // than process.env.TMUX directly — otherwise pane-width queries would no-op
+  // for the whole run.
+  if (!isOrchestratorInTmux()) {
     return new Map();
   }
   return queryPaneWidthsByTitle(sessionName);

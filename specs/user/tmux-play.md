@@ -202,6 +202,13 @@ A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, a
 
 The launcher shall convert the resolved YAML config into a JSON snapshot written to the session's work directory, with local `captain.from` paths normalized to absolute `file://` URLs and package specifiers passed through unchanged. Session mode shall read the snapshot rather than reloading the YAML, so config changes made between launch and session start shall not affect the running session.
 
+### TMUX-074
+
+Session mode is the orchestrator: it runs inside the Boss/Captain pane (pane 0) of the launched tmux session per [TMUX-027](#tmux-027), so its process environment carries that session's live tmux client handles (`TMUX`, `TMUX_PANE`), and player adapters spawn their agent CLIs from that same environment.
+Before constructing the session, session mode shall isolate spawned player agents from the run's tmux server: it shall remove `TMUX` and `TMUX_PANE` from the environment player agents inherit and redirect their `TMUX_TMPDIR` to a private directory, so any `tmux` an agent runs — including `kill-server` — resolves to its own isolated server and can neither reach nor terminate the session hosting the run. (Without this, a player tasked with debugging tmux can take down its own run, surfacing to the Boss as `[server exited]` / `tmux attach-session failed`.)
+The orchestrator's own tmux interactions — pane-width and pane-target queries, status-bar and per-pane timer updates, and session teardown — shall continue to target the run's session, by running with a snapshot of the real tmux environment captured before the scrub. The pane-width query gate that skips work when not attached to tmux shall consult that snapshot rather than the scrubbed `TMUX`.
+When session mode is not running inside tmux (no inherited `TMUX`, e.g. tests), the isolation step shall be a no-op.
+
 ## External Dependencies
 
 ### TMUX-051

@@ -95,6 +95,11 @@ Verifies: [TMUX-003](../user/tmux-play.md#tmux-003), [TMUX-034](../user/tmux-pla
 
 Given a snapshot file at the work directory, when session mode runs, the Captain shall be imported once from `captain.from` (a `file://` URL for local paths or a package specifier) and Boss turns shall flow through the runtime per [TTMUX-007](#ttmux-007).
 
+### TTMUX-073
+Verifies: [TMUX-074](../user/tmux-play.md#tmux-074)
+
+Given session mode whose inherited environment carries a `TMUX` handle, when it performs the [TMUX-074](../user/tmux-play.md#tmux-074) isolation step, `TMUX` and `TMUX_PANE` shall be absent from the environment subsequently inherited by spawned player agents and `TMUX_TMPDIR` shall point to a private directory other than the run's tmux socket directory, so an agent's `tmux` resolves to an isolated server. The orchestrator shall still report itself attached to tmux so pane-width queries run, and its own tmux commands shall execute with the pinned pre-scrub environment carrying the original `TMUX` handle so they target the run's session rather than the agents' sandbox. Given no inherited `TMUX` handle, the isolation step shall be a no-op that leaves `TMUX_TMPDIR` unset.
+
 ## Built-in Fanout Captain (Acceptance)
 
 ### TTMUX-016
