@@ -10,6 +10,8 @@ import type {
   TextPayload,
   PermissionCapability,
   PermissionPolicy,
+  WritablePathsEnforcement,
+  WritablePathsPermissionMapping,
 } from '../types.js';
 
 describe('core types', () => {
@@ -70,6 +72,30 @@ describe('core types', () => {
     expectTypeOf<PermissionCapability>().toEqualTypeOf<
       'fileWrite' | 'shellExecute' | 'networkAccess'
     >();
+  });
+
+  it('WritablePathsPermissionMapping carries canonical paths and enforcement class', () => {
+    const profile: WritablePathsPermissionMapping = {
+      paths: ['.git'],
+      enforcement: 'profile',
+    };
+    const sandbox: WritablePathsPermissionMapping = {
+      paths: ['generated/cache'],
+      enforcement: 'sandbox',
+    };
+    const ambient: WritablePathsPermissionMapping = {
+      paths: ['dist'],
+      enforcement: 'ambient',
+    };
+    expectTypeOf(profile.enforcement).toEqualTypeOf<WritablePathsEnforcement>();
+    expectTypeOf(sandbox).toMatchTypeOf<WritablePathsPermissionMapping>();
+    expectTypeOf(ambient).toMatchTypeOf<WritablePathsPermissionMapping>();
+    const bad: WritablePathsPermissionMapping = {
+      paths: ['.git'],
+      // @ts-expect-error - enforcement is a closed field-local class
+      enforcement: 'filesystem',
+    };
+    void bad;
   });
 
   it('BaseEvent.type accepts AgentEventType and arbitrary strings', () => {

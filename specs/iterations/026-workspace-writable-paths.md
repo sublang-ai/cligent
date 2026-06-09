@@ -20,7 +20,8 @@ Invalid `writablePaths` entries can still pass through `Cligent` and be ignored 
 - [x] `src/permissions.ts` — shared writable-path canonicalization and validation helper.
 - [x] `src/__tests__/types.test-d.ts` and `src/__tests__/permissions.test.ts` — type and validation coverage.
 - [x] `src/__tests__/cligent.test.ts` — merge coverage proving per-call `writablePaths` arrays replace instance defaults when provided.
-- [ ] Adapter mapping results expose canonicalized paths and enforcement class.
+- [x] Shared `WritablePathsPermissionMapping` contract and helper for canonicalized paths plus enforcement class.
+- [ ] Adapter mapping results use the shared writable-path contract.
 - [ ] Codex profile-enforced mapping for non-empty `writablePaths` when local access resolves to `:workspace`.
 - [ ] Ambient acceptance/reporting for Claude, Gemini, and OpenCode where no independent filesystem sandbox is active.
 - [ ] tmux-play YAML accepts and validates `permissions.writablePaths`.
@@ -31,7 +32,7 @@ Invalid `writablePaths` entries can still pass through `Cligent` and be ignored 
 Each task stops for review before the next task begins.
 
 1. [x] **Core field and validation helper** — add `PermissionPolicy.writablePaths?: string[]`; define shared canonicalization/validation for workspace-relative writable paths; cover canonicalization, rejection rules, and `Cligent` merge replacement semantics.
-2. [ ] **Test-observable mapping contract** — add shared reporting types or mapping payloads so each adapter can expose canonicalized `writablePaths` plus `profile` / `sandbox` / `ambient` enforcement.
+2. [x] **Test-observable mapping contract** — add shared reporting types or mapping payloads so each adapter can expose canonicalized `writablePaths` plus `profile` / `sandbox` / `ambient` enforcement.
 3. [ ] **Codex profile mapping** — synthesize or deliver a Codex permission profile for `:workspace` plus extra workspace write grants; reject conflicts with `:read-only`; preserve approval/reviewer behavior.
 4. [ ] **Ambient adapter mappings** — make Claude, Gemini, and OpenCode accept valid `writablePaths` and report ambient enforcement unless an independently active sandbox route is implemented.
 5. [ ] **tmux-play YAML** — accept `permissions.writablePaths` on captain and players with the same validation and canonicalization rules.

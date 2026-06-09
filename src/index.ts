@@ -17,6 +17,8 @@ export type {
   AgentEvent,
   PermissionLevel,
   PermissionCapability,
+  WritablePathsEnforcement,
+  WritablePathsPermissionMapping,
   PermissionPolicy,
   ReasoningEffort,
   AgentAdapter,

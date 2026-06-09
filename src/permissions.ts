@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import type {
+  PermissionPolicy,
+  WritablePathsEnforcement,
+  WritablePathsPermissionMapping,
+} from './types.js';
+
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/u;
 const GLOB_CHARS = /[*?[\]{}]/u;
 const SHELL_EXPANSION_OR_CONTROL_CHARS = /[$`'"~;&|<>()]/u;
@@ -21,6 +27,19 @@ export function normalizeWritablePaths(
   return paths.map((entry, index) =>
     normalizeWritablePath(entry, `${path}[${index}]`),
   );
+}
+
+export function mapWritablePathsPermission(
+  policy: PermissionPolicy | undefined,
+  enforcement: WritablePathsEnforcement,
+  path = 'permissions.writablePaths',
+): WritablePathsPermissionMapping | undefined {
+  const paths = normalizeWritablePaths(policy?.writablePaths, path);
+  if (paths.length === 0) {
+    return undefined;
+  }
+
+  return { paths, enforcement };
 }
 
 export function normalizeWritablePath(value: unknown, path: string): string {

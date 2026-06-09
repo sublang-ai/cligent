@@ -104,6 +104,12 @@ export type PermissionCapability =
   | 'fileWrite'
   | 'shellExecute'
   | 'networkAccess';
+export type WritablePathsEnforcement = 'profile' | 'sandbox' | 'ambient';
+
+export interface WritablePathsPermissionMapping {
+  paths: string[];
+  enforcement: WritablePathsEnforcement;
+}
 
 export interface PermissionPolicy {
   /**
