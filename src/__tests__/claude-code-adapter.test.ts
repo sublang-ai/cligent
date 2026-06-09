@@ -1190,4 +1190,21 @@ describe('ClaudeCodeAdapter', () => {
     expect(autoOverridesLevels.permissionMode).toBe('auto');
     expect(autoOverridesLevels.canUseTool).toBeUndefined();
   });
+
+  it('accepts writablePaths and reports ambient enforcement', () => {
+    const mapped = mapPermissionsToClaudeOptions({
+      mode: 'auto',
+      writablePaths: ['./.git/', 'generated/./cache//'],
+    });
+
+    expect(mapped.permissionMode).toBe('auto');
+    expect(mapped.writablePaths).toEqual({
+      paths: ['.git', 'generated/cache'],
+      enforcement: 'ambient',
+    });
+
+    expect(() =>
+      mapPermissionsToClaudeOptions({ writablePaths: ['../cache'] }),
+    ).toThrow("permissions.writablePaths[0] must not contain '..'");
+  });
 });

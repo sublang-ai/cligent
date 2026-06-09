@@ -9,6 +9,7 @@ import type {
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   PermissionRuleset,
   SessionPromptAsyncData,
@@ -22,6 +23,7 @@ import type {
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
+  WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 
@@ -86,6 +88,7 @@ interface OpenCodePermissionOptions {
     bash: PermissionLevel;
     webfetch: PermissionLevel;
   };
+  writablePaths?: WritablePathsPermissionMapping;
   tools?: {
     core?: string[];
     exclude?: string[];
@@ -459,6 +462,8 @@ export function mapPermissionsToOpenCodeOptions(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
+  const writablePaths = mapWritablePathsPermission(policy, 'ambient');
+
   // ENG-021: session-wide mode takes precedence over per-capability levels.
   if (policy?.mode === 'bypass') {
     // The cligent opencode adapter spawns `opencode serve` and drives it
@@ -489,6 +494,7 @@ export function mapPermissionsToOpenCodeOptions(
     const exclude = [...new Set(options?.disallowedTools ?? [])];
     return {
       permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+      ...(writablePaths ? { writablePaths } : {}),
       ...(core.length > 0 || exclude.length > 0
         ? {
             tools: {
@@ -511,6 +517,7 @@ export function mapPermissionsToOpenCodeOptions(
       bash: normalized.shellExecute,
       webfetch: normalized.networkAccess,
     },
+    ...(writablePaths ? { writablePaths } : {}),
     ...(core.length > 0 || exclude.length > 0
       ? {
           tools: {

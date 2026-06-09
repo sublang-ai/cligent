@@ -1147,6 +1147,27 @@ describe('OpenCodeAdapter', () => {
       webfetch: 'allow',
     });
   });
+
+  it('accepts writablePaths and reports ambient enforcement', () => {
+    const mapped = mapPermissionsToOpenCodeOptions({
+      mode: 'auto',
+      writablePaths: ['./.git/', 'generated/./cache//'],
+    });
+
+    expect(mapped.permission).toEqual({
+      edit: 'allow',
+      bash: 'allow',
+      webfetch: 'allow',
+    });
+    expect(mapped.writablePaths).toEqual({
+      paths: ['.git', 'generated/cache'],
+      enforcement: 'ambient',
+    });
+
+    expect(() =>
+      mapPermissionsToOpenCodeOptions({ writablePaths: ['../cache'] }),
+    ).toThrow("permissions.writablePaths[0] must not contain '..'");
+  });
 });
 
 /**

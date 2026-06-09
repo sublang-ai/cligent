@@ -64,6 +64,7 @@ The adapter shall map process exit codes to `done` status:
 ### GEMINI-006
 
 The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `'allow'` capabilities via `--allowed-tools` flag; `'deny'` capabilities via `tools.exclude` in settings or policy rules. `allowedTools`/`disallowedTools` from options shall map to `tools.core`/`tools.exclude`.
+When `PermissionPolicy.writablePaths` is non-empty and Gemini sandboxing is not independently active through a selected adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` with `enforcement: 'ambient'` and canonical `paths`, and keep the existing tool-control and approval-mode mapping unchanged.
 
 ## Options Mapping
 

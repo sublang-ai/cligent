@@ -46,6 +46,11 @@ Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [ENG-022](../user/en
 
 Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and whose `writablePaths` contains valid entries, the Codex permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'profile'`, select a generated extra-writes permission profile that extends `:workspace`, and represent `write` grants under `:workspace_roots` for each canonical path. Given non-empty `writablePaths` with Codex local access resolved to `:read-only`, the mapping shall reject the policy. Given non-empty `writablePaths` with Codex local access resolved to `:danger-full-access`, the mapping shall report the canonical paths with `enforcement: 'ambient'`, shall not generate an extra-writes profile, and shall not narrow the broader posture.
 
+### TADAPT-022
+Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
+
+Given a Claude Code, Gemini, or OpenCode `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
+
 ## Gemini
 
 ### TADAPT-007

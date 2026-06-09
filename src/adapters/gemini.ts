@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -21,6 +22,7 @@ import type {
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
+  WritablePathsPermissionMapping,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -276,6 +278,7 @@ export interface GeminiToolConfig {
   disallowedTools: string[];
   args: string[];
   approvalMode?: GeminiApprovalMode;
+  writablePaths?: WritablePathsPermissionMapping;
 }
 
 export type GeminiThinkingLevel = 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
@@ -462,6 +465,8 @@ export function mapPermissionsToGeminiToolConfig(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): GeminiToolConfig {
+  const writablePaths = mapWritablePathsPermission(policy, 'ambient');
+
   // ENG-021: session-wide mode takes precedence over per-capability levels.
   // gemini exposes a single prompt-less SDK setting (`--approval-mode yolo`),
   // so both 'auto' and 'bypass' map to it — gemini does not differentiate
@@ -488,6 +493,7 @@ export function mapPermissionsToGeminiToolConfig(
       disallowedTools,
       args,
       approvalMode: 'yolo',
+      ...(writablePaths ? { writablePaths } : {}),
     };
   }
 
@@ -531,6 +537,7 @@ export function mapPermissionsToGeminiToolConfig(
     allowedTools,
     disallowedTools,
     args,
+    ...(writablePaths ? { writablePaths } : {}),
   };
 }
 

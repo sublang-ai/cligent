@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createEvent, generateSessionId } from '../events.js';
+import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -11,6 +12,7 @@ import type {
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
+  WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 
@@ -220,23 +222,30 @@ export interface ClaudePermissionOptions {
   permissionMode: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: ClaudeCanUseTool;
+  writablePaths?: WritablePathsPermissionMapping;
 }
 
 export function mapPermissionsToClaudeOptions(
   policy: PermissionPolicy | undefined,
 ): ClaudePermissionOptions {
+  const writablePaths = mapWritablePathsPermission(policy, 'ambient');
+
   // ENG-021: session-wide auto-mode posture takes precedence over the
   // per-capability levels. 'auto' maps to claude's classifier-backed
   // auto-mode (still blocks high-risk actions, falls back to prompts
   // after consecutive/total denies); 'bypass' maps to the unchecked
   // bypassPermissions mode.
   if (policy?.mode === 'auto') {
-    return { permissionMode: 'auto' };
+    return {
+      permissionMode: 'auto',
+      ...(writablePaths ? { writablePaths } : {}),
+    };
   }
   if (policy?.mode === 'bypass') {
     return {
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      ...(writablePaths ? { writablePaths } : {}),
     };
   }
 
@@ -247,6 +256,7 @@ export function mapPermissionsToClaudeOptions(
     return {
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      ...(writablePaths ? { writablePaths } : {}),
     };
   }
 
@@ -257,6 +267,7 @@ export function mapPermissionsToClaudeOptions(
   ) {
     return {
       permissionMode: 'acceptEdits',
+      ...(writablePaths ? { writablePaths } : {}),
     };
   }
 
@@ -269,7 +280,10 @@ export function mapPermissionsToClaudeOptions(
     (level) => level === 'allow' || level === 'deny',
   );
   if (!hasDirective) {
-    return { permissionMode: 'default' };
+    return {
+      permissionMode: 'default',
+      ...(writablePaths ? { writablePaths } : {}),
+    };
   }
 
   // Mixed policy: enforce the explicit 'allow'/'deny' capabilities through a
@@ -306,6 +320,7 @@ export function mapPermissionsToClaudeOptions(
   return {
     permissionMode: 'default',
     canUseTool,
+    ...(writablePaths ? { writablePaths } : {}),
   };
 }
 

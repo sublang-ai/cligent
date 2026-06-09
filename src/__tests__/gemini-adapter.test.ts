@@ -1259,4 +1259,21 @@ describe('GeminiAdapter', () => {
     // disallowedTools — mode took precedence.
     expect(withUserTools.disallowedTools).not.toContain('edit');
   });
+
+  it('accepts writablePaths and reports ambient enforcement', () => {
+    const mapped = mapPermissionsToGeminiToolConfig({
+      mode: 'auto',
+      writablePaths: ['./.git/', 'generated/./cache//'],
+    });
+
+    expect(mapped.approvalMode).toBe('yolo');
+    expect(mapped.writablePaths).toEqual({
+      paths: ['.git', 'generated/cache'],
+      enforcement: 'ambient',
+    });
+
+    expect(() =>
+      mapPermissionsToGeminiToolConfig({ writablePaths: ['../cache'] }),
+    ).toThrow("permissions.writablePaths[0] must not contain '..'");
+  });
 });
