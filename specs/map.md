@@ -36,6 +36,7 @@ meta.md     The spec of specs
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; no project-wide default |
+| DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode `ambient`), with Codex profile enforcement the release bar |
 
 ## Iterations
 
