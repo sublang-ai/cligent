@@ -32,7 +32,8 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   toolUses: 0,
 };
 
-type GeminiCapability = Exclude<keyof Required<PermissionPolicy>, 'mode'>;
+type PermissionCapability = Exclude<keyof Required<PermissionPolicy>, 'mode' | 'writablePaths'>;
+type GeminiCapability = PermissionCapability;
 
 type SpawnProcessFn = (
   command: string,
@@ -98,7 +99,7 @@ function normalizePermissionLevel(value: PermissionLevel | undefined): Permissio
 
 function normalizePermissions(
   policy: PermissionPolicy | undefined,
-): Required<Omit<PermissionPolicy, 'mode'>> {
+): Record<PermissionCapability, PermissionLevel> {
   return {
     fileWrite: normalizePermissionLevel(policy?.fileWrite),
     shellExecute: normalizePermissionLevel(policy?.shellExecute),

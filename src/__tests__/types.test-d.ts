@@ -51,8 +51,13 @@ describe('core types', () => {
       mode: 'auto',
       fileWrite: 'allow',
       shellExecute: 'ask',
+      writablePaths: ['.git'],
     };
     expectTypeOf(combined).toMatchTypeOf<PermissionPolicy>();
+    expectTypeOf(combined.writablePaths).toEqualTypeOf<string[] | undefined>();
+    // @ts-expect-error - writablePaths must be an array of strings
+    const badWritablePaths: PermissionPolicy = { writablePaths: '.git' };
+    void badWritablePaths;
     // Invalid mode values are rejected at compile time (verified by
     // `npm run typecheck` against config/tsconfig.test.json).
     // @ts-expect-error - 'wat' is not in the mode union

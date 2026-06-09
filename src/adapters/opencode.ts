@@ -138,7 +138,7 @@ function normalizePermissionLevel(value: PermissionLevel | undefined): Permissio
 
 function normalizePermissions(
   policy: PermissionPolicy | undefined,
-): Required<Omit<PermissionPolicy, 'mode'>> {
+): Record<'fileWrite' | 'shellExecute' | 'networkAccess', PermissionLevel> {
   return {
     fileWrite: normalizePermissionLevel(policy?.fileWrite),
     shellExecute: normalizePermissionLevel(policy?.shellExecute),

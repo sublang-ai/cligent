@@ -116,6 +116,11 @@ export interface PermissionPolicy {
   fileWrite?: PermissionLevel;
   shellExecute?: PermissionLevel;
   networkAccess?: PermissionLevel;
+  /**
+   * Additional workspace-relative subpaths that should be writable for local
+   * execution after adapter-specific validation and mapping.
+   */
+  writablePaths?: string[];
 }
 
 export type ReasoningEffort =

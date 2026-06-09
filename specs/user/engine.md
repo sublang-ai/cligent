@@ -20,6 +20,7 @@ The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOp
 ### ENG-003
 
 `Cligent.run()` shall merge `CligentOptions` instance defaults with per-call `RunOptions` overrides per [DR-003](../decisions/003-role-scoped-session-management.md#option-merge-semantics): deep merge for `permissions`, replace for `allowedTools`/`disallowedTools` arrays, per-call wins for other scalars. `abortSignal` and `resume` exist only in `RunOptions` (per-call), not in instance defaults.
+Within `permissions`, `writablePaths` is an array grant field: when a per-call `permissions.writablePaths` array is provided, it shall replace the instance default array rather than merging element-wise.
 
 ### ENG-004
 
@@ -119,3 +120,9 @@ Where an SDK models the automation posture and the local-access surface (filesys
 Where an SDK exposes an automatic reviewer for otherwise interactive approval prompts, the `'auto'` mapping shall select it when that reviewer is part of the SDK's protected auto posture; this shall not expand filesystem, network, or sandbox permissions.
 Adapters whose architecture cannot reach a given mode shall reject it at mapping time with an error naming the constraint; the rejection surfaces per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
 When `mode` is `undefined`, adapters shall continue to derive their SDK options from `fileWrite` / `shellExecute` / `networkAccess` as before.
+
+## Workspace Writable Paths
+
+### ENG-022
+
+`PermissionPolicy.writablePaths` shall accept an optional array of workspace-relative path strings per [DR-006](../decisions/006-workspace-writable-paths.md). Before adapter-specific permission mapping, implementations shall canonicalize each entry by normalizing separators to `/`, stripping leading `./` components, stripping trailing slashes, and collapsing `.` components. Implementations shall reject empty entries, root-equivalent entries, absolute paths, paths containing `..`, empty path segments, glob metacharacters, shell expansion characters, or control characters.

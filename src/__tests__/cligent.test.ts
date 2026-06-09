@@ -198,7 +198,11 @@ describe('Cligent lifecycle', () => {
     const agent = new Cligent(adapter, {
       cwd: '/default',
       model: 'default-model',
-      permissions: { fileWrite: 'allow', shellExecute: 'ask' },
+      permissions: {
+        fileWrite: 'allow',
+        shellExecute: 'ask',
+        writablePaths: ['.git'],
+      },
       maxTurns: 5,
       allowedTools: ['tool-a'],
     });
@@ -217,9 +221,35 @@ describe('Cligent lifecycle', () => {
     expect(opts.permissions).toEqual({
       fileWrite: 'allow',
       shellExecute: 'allow',
+      writablePaths: ['.git'],
     });
     expect(opts.maxTurns).toBe(5);
     expect(opts.allowedTools).toEqual(['tool-b']);
+  });
+
+  it('replaces writablePaths when per-call permissions provide the array', async () => {
+    const { adapter, captured } = createCapturingAdapter('claude-code', [
+      doneEvent('claude-code'),
+    ]);
+    const agent = new Cligent(adapter, {
+      permissions: {
+        mode: 'auto',
+        writablePaths: ['.git'],
+      },
+    });
+
+    await collectEvents(
+      agent.run('hi', {
+        permissions: {
+          writablePaths: ['dist'],
+        },
+      }),
+    );
+
+    expect(captured()!.permissions).toEqual({
+      mode: 'auto',
+      writablePaths: ['dist'],
+    });
   });
 
   it('role always comes from defaults, not overrides', async () => {
