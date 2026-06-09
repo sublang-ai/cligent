@@ -1518,9 +1518,9 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 });
 
-// TTMUX-053: YAML `permissions.mode` reaches the adapter's `run()` call as
+// TTMUX-053: YAML `permissions` reaches the adapter's `run()` call as
 // `AgentOptions.permissions`, and the adapter's exported mapping function
-// translates the mode to the spec-defined SDK knob. The probe does not
+// translates the policy to the spec-defined SDK knobs. The probe does not
 // spawn tmux (so it does not gate on tmux availability) and does not call
 // the real SDK (the player adapter is a capturing stub).
 describe('tmux-play YAML → adapter permission seam', () => {
@@ -1533,7 +1533,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
     }
   });
 
-  it('routes YAML permissions.mode through to Claude and Codex adapter mappings', async () => {
+  it('routes YAML permissions through to Claude and Codex adapter mappings', async () => {
     cwd = mkdtempSync(join(tmpdir(), 'tmux-play-perm-'));
     const configPath = join(cwd, 'tmux-play.config.yaml');
     writeFileSync(
@@ -1550,10 +1550,14 @@ describe('tmux-play YAML → adapter permission seam', () => {
         '    adapter: claude',
         '    permissions:',
         '      mode: auto',
+        '      writablePaths:',
+        '        - generated/./cache//',
         '  - id: reviewer',
         '    adapter: codex',
         '    permissions:',
         '      mode: auto',
+        '      writablePaths:',
+        '        - ./.git/',
         '',
       ].join('\n'),
     );
@@ -1631,22 +1635,39 @@ describe('tmux-play YAML → adapter permission seam', () => {
       await runtime.dispose();
     }
 
-    expect(captured.claude[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(captured.claude[0]?.permissions).toEqual({
+      mode: 'auto',
+      writablePaths: ['generated/cache'],
+    });
     expect(
       mapPermissionsToClaudeOptions(captured.claude[0]?.permissions),
     ).toEqual({
       permissionMode: 'auto',
+      writablePaths: {
+        paths: ['generated/cache'],
+        enforcement: 'ambient',
+      },
     });
-    expect(captured.codex[0]?.permissions).toEqual({ mode: 'auto' });
+    expect(captured.codex[0]?.permissions).toEqual({
+      mode: 'auto',
+      writablePaths: ['.git'],
+    });
     const codexPermissions = mapPermissionsToCodexOptions(
       captured.codex[0]?.permissions,
     );
     expect(codexPermissions).toEqual({
       approvalPolicy: 'on-request',
+      writablePaths: {
+        paths: ['.git'],
+        enforcement: 'profile',
+      },
       codexOptions: {
         config: {
-          default_permissions: ':workspace',
+          default_permissions: 'cligent-workspace-extra-writes',
           approvals_reviewer: 'auto_review',
+          'permissions.cligent-workspace-extra-writes.extends': ':workspace',
+          'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots".".git"':
+            'write',
         },
       },
     });

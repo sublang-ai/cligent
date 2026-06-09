@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
+import { normalizeWritablePaths } from '../../permissions.js';
 import {
   isKnownPlayerAdapter,
   validatePlayerConfigs,
@@ -601,6 +602,7 @@ function optionalPermissionPolicy(
     'fileWrite',
     'shellExecute',
     'networkAccess',
+    'writablePaths',
   ]);
   rejectUnknownKeys(input, allowed, path);
 
@@ -624,6 +626,12 @@ function optionalPermissionPolicy(
     policy.networkAccess = requirePermissionLevel(
       input.networkAccess,
       `${path}.networkAccess`,
+    );
+  }
+  if (input.writablePaths !== undefined) {
+    policy.writablePaths = normalizeWritablePaths(
+      input.writablePaths,
+      `${path}.writablePaths`,
     );
   }
   return policy;

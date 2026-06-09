@@ -13,7 +13,7 @@ const SHELL_EXPANSION_OR_CONTROL_CHARS = /[$`'"~;&|<>()]/u;
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:\//u;
 
 export function normalizeWritablePaths(
-  paths: readonly string[] | undefined,
+  paths: unknown,
   path = 'permissions.writablePaths',
 ): string[] {
   if (paths === undefined) {

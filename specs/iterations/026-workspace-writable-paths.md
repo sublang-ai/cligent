@@ -11,8 +11,8 @@ Implement [DR-006](../decisions/006-workspace-writable-paths.md): add typed `Per
 
 In Progress
 
-Task 1 defines the public field and shared canonicalization helper, but no production path invokes that helper yet.
-Invalid `writablePaths` entries can still pass through `Cligent` and be ignored until the adapter mapping tasks wire validation into permission mapping.
+Tasks 1-5 are complete: the public field, shared validation helper, adapter mapping/reporting, and tmux-play YAML validation paths are implemented.
+Task 6 remains: prove the real Codex config-delivery route for profile-enforced `.git` writes under `mode: 'auto'`.
 
 ## Deliverables
 
@@ -25,7 +25,7 @@ Invalid `writablePaths` entries can still pass through `Cligent` and be ignored 
 - [x] All adapter-level TADAPT items verify reported `writablePaths` paths and enforcement class.
 - [x] Codex generated-profile mapping for non-empty `writablePaths` when local access resolves to `:workspace`.
 - [x] Ambient acceptance/reporting for Claude, Gemini, and OpenCode where no independent filesystem sandbox is active.
-- [ ] tmux-play YAML accepts and validates `permissions.writablePaths`.
+- [x] tmux-play YAML accepts and validates `permissions.writablePaths`.
 - [ ] Codex config-generation tests and real Codex acceptance proving `mode: 'auto'` plus `writablePaths: ['.git']` can write git metadata without mutating user or repository config.
 
 ## Tasks
@@ -36,7 +36,7 @@ Each task stops for review before the next task begins.
 2. [x] **Test-observable mapping contract** — add shared reporting types or mapping payloads so each adapter can expose canonicalized `writablePaths` plus `profile` / `sandbox` / `ambient` enforcement.
 3. [x] **Codex profile mapping** — synthesize or deliver a Codex permission profile for `:workspace` plus extra workspace write grants; reject conflicts with `:read-only`; preserve approval/reviewer behavior.
 4. [x] **Ambient adapter mappings** — make Claude, Gemini, and OpenCode accept valid `writablePaths` and report ambient enforcement unless an independently active sandbox route is implemented.
-5. [ ] **tmux-play YAML** — accept `permissions.writablePaths` on captain and players with the same validation and canonicalization rules.
+5. [x] **tmux-play YAML** — accept `permissions.writablePaths` on captain and players with the same validation and canonicalization rules.
 6. [ ] **Codex acceptance** — prove a real Codex run can perform git metadata writes under `mode: 'auto'` with `writablePaths: ['.git']` and no human approval, without mutating machine-level or repository config.
 
 ## Acceptance criteria

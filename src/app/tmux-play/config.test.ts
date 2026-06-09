@@ -385,23 +385,81 @@ describe('tmux-play config loading', () => {
         '  options: {}',
         '  permissions:',
         '    mode: auto',
+        '    writablePaths:',
+        '      - ./.git/',
         'players:',
         '  - id: coder',
         '    adapter: codex',
         '    permissions:',
         '      mode: bypass',
         '      fileWrite: allow',
+        '      writablePaths:',
+        '        - generated/./cache//',
+        '        - dist\\assets',
         '',
       ].join('\n'),
     );
 
     const loaded = await loadTmuxPlayConfig({ cwd: workDir });
 
-    expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
+    expect(loaded.config.captain.permissions).toEqual({
+      mode: 'auto',
+      writablePaths: ['.git'],
+    });
     expect(loaded.config.players[0]?.permissions).toEqual({
       mode: 'bypass',
       fileWrite: 'allow',
+      writablePaths: ['generated/cache', 'dist/assets'],
     });
+  });
+
+  it('rejects invalid writablePaths under permissions', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    permissions:',
+        '      writablePaths:',
+        '        - ../cache',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      "players[0].permissions.writablePaths[0] must not contain '..'",
+    );
+  });
+
+  it('rejects non-array writablePaths under permissions', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        "captain:",
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        '  permissions:',
+        '    writablePaths: .git',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd: workDir })).rejects.toThrow(
+      'captain.permissions.writablePaths must be an array',
+    );
   });
 
   it('rejects unknown sub-fields under permissions', async () => {

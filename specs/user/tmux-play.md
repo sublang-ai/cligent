@@ -62,9 +62,9 @@ Each entry in `players` shall require `id` and `adapter` (one of `claude`, `code
 
 ### TMUX-052
 
-The `captain` object and each `players` entry may include a `permissions` object whose typed shape is [ENG-021](engine.md#eng-021)'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, and `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`.
-The loader shall forward an accepted `permissions` value verbatim to the captain / player `Cligent` constructor as `CligentOptions.permissions` per [DR-005](../decisions/005-per-adapter-permission-configuration.md); the adapter performs the SDK-knob mapping at `run()` time per ENG-021.
-The loader shall reject unknown sub-fields under `permissions` and values outside the closed sets above with an error that names the offending path per [TMUX-008](#tmux-008).
+The `captain` object and each `players` entry may include a `permissions` object whose typed shape is [ENG-021](engine.md#eng-021)'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`, and `writablePaths` is an optional array of workspace-relative path strings per [ENG-022](engine.md#eng-022).
+The loader shall validate and canonicalize `permissions.writablePaths` per [ENG-022](engine.md#eng-022), then forward the accepted `permissions` value to the captain / player `Cligent` constructor as `CligentOptions.permissions` per [DR-005](../decisions/005-per-adapter-permission-configuration.md); the adapter performs the SDK-knob mapping at `run()` time per [ENG-021](engine.md#eng-021).
+The loader shall reject unknown sub-fields under `permissions`, values outside the closed sets above, or invalid `writablePaths` entries with an error that names the offending path per [TMUX-008](#tmux-008).
 A missing `permissions` field shall be treated as no policy override; the adapter retains its SDK default.
 
 ### TMUX-056
