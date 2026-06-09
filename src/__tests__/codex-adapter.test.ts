@@ -641,6 +641,68 @@ describe('CodexAdapter', () => {
     expect(mapped).not.toHaveProperty('networkAccessEnabled');
   });
 
+  it('maps workspace writablePaths to a custom Codex permission profile', () => {
+    const mapped = mapPermissionsToCodexOptions({
+      mode: 'auto',
+      writablePaths: ['./.git/', 'generated/./cache//'],
+    });
+
+    expect(mapped.approvalPolicy).toBe('on-request');
+    expect(mapped.writablePaths).toEqual({
+      paths: ['.git', 'generated/cache'],
+      enforcement: 'profile',
+    });
+    expect(mapped.codexOptions).toEqual({
+      config: {
+        default_permissions: 'cligent-workspace-extra-writes',
+        approvals_reviewer: 'auto_review',
+        'permissions.cligent-workspace-extra-writes.extends': ':workspace',
+        'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots".".git"':
+          'write',
+        'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots"."generated/cache"':
+          'write',
+      },
+    });
+    expect(mapped).not.toHaveProperty('sandboxMode');
+    expect(mapped).not.toHaveProperty('networkAccessEnabled');
+  });
+
+  it('rejects writablePaths that conflict with read-only Codex local access', () => {
+    expect(() =>
+      mapPermissionsToCodexOptions({
+        fileWrite: 'deny',
+        writablePaths: ['.git'],
+      }),
+    ).toThrow(
+      'Codex permission policy cannot combine non-empty writablePaths with read-only local access',
+    );
+
+    expect(() =>
+      mapPermissionsToCodexOptions({
+        shellExecute: 'deny',
+        writablePaths: ['.git'],
+      }),
+    ).toThrow(/read-only local access/);
+  });
+
+  it('keeps danger-full-access broad when writablePaths are redundant', () => {
+    const mapped = mapPermissionsToCodexOptions({
+      mode: 'bypass',
+      writablePaths: ['./.git/'],
+    });
+
+    expect(mapped.writablePaths).toEqual({
+      paths: ['.git'],
+      enforcement: 'profile',
+    });
+    expect(mapped.codexOptions).toEqual({
+      config: {
+        default_permissions: ':danger-full-access',
+      },
+    });
+    expect(mapped.approvalPolicy).toBe('never');
+  });
+
   it('passes AgentOptions through to thread/run options', async () => {
     let capturedCodexOptions: MockCodexConstructorOptions | undefined;
     let capturedThreadOptions: MockThreadOptions | undefined;

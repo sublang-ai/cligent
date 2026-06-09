@@ -58,6 +58,8 @@ The `default_permissions` profile shall be selected as follows:
 - `PermissionPolicy.mode: 'bypass'` → `approvalPolicy: 'never'` and no `approvals_reviewer`.
 - `PermissionPolicy.mode` unset → `approvalPolicy` from the per-capability levels (all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; otherwise → `'on-request'`) and no `approvals_reviewer`.
 
+When `PermissionPolicy.writablePaths` is non-empty and the resolved `default_permissions` profile would otherwise be `:workspace`, the adapter shall select a generated `cligent-workspace-extra-writes` permission profile and add Codex config overrides that extend `:workspace` and grant `write` for each canonicalized path under `:workspace_roots`. The adapter shall expose `WritablePathsPermissionMapping` with `enforcement: 'profile'` and the canonical `paths`. When non-empty `writablePaths` resolves alongside `:read-only`, the adapter shall reject the policy before starting a Codex thread. When the resolved `default_permissions` profile is `:danger-full-access`, `writablePaths` shall not narrow that broader posture and no extra-writes profile shall be generated.
+
 ## Thread Resumption
 
 ### CODEX-005

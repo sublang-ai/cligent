@@ -41,6 +41,11 @@ Verifies: [CODEX-003](../user/adapters/codex.md#codex-003)
 
 Given Codex emits an error whose message is a JSON-encoded object string, the Codex adapter shall expose the human-readable detail/message content in the normalized `error.message`, may unwrap nested error envelopes to reach that content, and shall not pass the raw JSON string through to pane-facing consumers.
 
+### TADAPT-021
+Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
+
+Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and whose `writablePaths` contains valid entries, the Codex permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'profile'`, select a generated extra-writes permission profile, and emit Codex config overrides that extend `:workspace` and grant `write` under `:workspace_roots` for each canonical path. Given non-empty `writablePaths` with Codex local access resolved to `:read-only`, the mapping shall reject the policy. Given non-empty `writablePaths` with Codex local access resolved to `:danger-full-access`, the mapping shall report the canonical paths but shall not generate an extra-writes profile or narrow the broader posture.
+
 ## Gemini
 
 ### TADAPT-007

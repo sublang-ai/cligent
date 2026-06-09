@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createEvent, generateSessionId } from '../events.js';
+import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -9,14 +10,17 @@ import type {
   DonePayload,
   PermissionPolicy,
   ReasoningEffort,
+  WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
+type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
 type CodexDefaultPermissions =
   | ':danger-full-access'
   | ':workspace'
-  | ':read-only';
+  | ':read-only'
+  | CodexWorkspaceExtraWritesProfile;
 type CodexApprovalsReviewer = 'auto_review';
 
 type CodexModelReasoningEffort =
@@ -100,6 +104,8 @@ interface CodexAdapterDeps {
 }
 
 const AGENT = 'codex' as const;
+const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
+  'cligent-workspace-extra-writes';
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   inputTokens: 0,
@@ -186,6 +192,7 @@ function asNumber(value: unknown): number | undefined {
 export interface CodexPermissionOptions {
   approvalPolicy?: CodexApprovalPolicy;
   codexOptions?: CodexConstructorOptions;
+  writablePaths?: WritablePathsPermissionMapping;
 }
 
 function codexDefaultPermissions(
@@ -239,6 +246,25 @@ function codexApprovalPolicy(
   return 'on-request';
 }
 
+function codexWorkspaceWritablePathKey(path: string): string {
+  return (
+    `permissions.${CODEX_WORKSPACE_EXTRA_WRITES_PROFILE}.filesystem.` +
+    `":workspace_roots".${JSON.stringify(path)}`
+  );
+}
+
+function addCodexWorkspaceWritablePathsProfile(
+  config: NonNullable<CodexConstructorOptions['config']>,
+  paths: readonly string[],
+): void {
+  config[`permissions.${CODEX_WORKSPACE_EXTRA_WRITES_PROFILE}.extends`] =
+    ':workspace';
+
+  for (const path of paths) {
+    config[codexWorkspaceWritablePathKey(path)] = 'write';
+  }
+}
+
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
@@ -246,14 +272,31 @@ export function mapPermissionsToCodexOptions(
     return {};
   }
 
+  const defaultPermissions = codexDefaultPermissions(policy);
+  const writablePaths = mapWritablePathsPermission(policy, 'profile');
+
+  if (writablePaths && defaultPermissions === ':read-only') {
+    throw new Error(
+      'Codex permission policy cannot combine non-empty writablePaths with read-only local access',
+    );
+  }
+
   const config: NonNullable<CodexConstructorOptions['config']> = {
-    default_permissions: codexDefaultPermissions(policy),
+    default_permissions:
+      writablePaths && defaultPermissions === ':workspace'
+        ? CODEX_WORKSPACE_EXTRA_WRITES_PROFILE
+        : defaultPermissions,
     ...(policy.mode === 'auto' ? { approvals_reviewer: 'auto_review' } : {}),
   };
+
+  if (writablePaths && defaultPermissions === ':workspace') {
+    addCodexWorkspaceWritablePathsProfile(config, writablePaths.paths);
+  }
 
   return {
     approvalPolicy: codexApprovalPolicy(policy),
     codexOptions: { config },
+    ...(writablePaths ? { writablePaths } : {}),
   };
 }
 
