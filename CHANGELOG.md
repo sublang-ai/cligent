@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-09
+
+### Added
+
+- `PermissionPolicy.writablePaths`: an optional string array that grants specific workspace-relative subpaths as writable, so a `mode: 'auto'` player can write paths like `.git` without a full filesystem bypass or `:danger-full-access`. A shared validator canonicalizes each entry (normalizes separators, strips `./` and trailing slashes, collapses `.`) and rejects absolute, parent-traversing (`..`), glob, shell-expansion, control-character, and root-equivalent (`.` / `./`) entries with a path-named error; the validator guards untrusted input (e.g. YAML) as well as typed callers. A per-call `writablePaths` array replaces the instance default rather than merging element-wise. Adapters report how each grant is enforced through the exported `WritablePathsPermissionMapping` (canonical paths plus an enforcement class) over the closed `WritablePathsEnforcement` set `profile` / `sandbox` / `ambient`; absent or empty `writablePaths` emits no payload — DR-006, ENG-022, ENG-023, IR-026
+- Codex `writablePaths` enforcement via a generated write profile: when `writablePaths` is non-empty and local access resolves to `:workspace`, the Codex adapter synthesizes a `cligent-workspace-extra-writes` profile that extends `:workspace` and grants write under `:workspace_roots` for each canonical path (enforcement `profile`); non-empty `writablePaths` against `:read-only` is rejected before the thread starts, and `:danger-full-access` stays broad (paths reported as `ambient`, no extra-writes profile). Because the SDK's flat dotted `--config` keys cannot express the nested `:workspace_roots` table, the profile body ships as a raw CLI `--config` inline table injected through a per-run Codex path wrapper — a temp script removed after the run — which mutates neither machine-level nor repository Codex config and preserves the user's Codex home, auth, and config layers — CODEX-004, CODEX-010, DR-006
+- Ambient `writablePaths` support in the Claude, Gemini, and OpenCode adapters: these CLIs expose no filesystem-sandbox write-grant surface that cligent drives, so valid entries canonicalize and are reported with enforcement `ambient` across every mapping return path, while invalid entries throw. This adds reporting only — existing per-adapter permission and tool mapping is unchanged — CLAUDE-004, GEMINI-006, OPENCODE-007
+- tmux-play `permissions.writablePaths` in YAML: captain and player permission blocks now accept `writablePaths`, granting workspace-relative writes (e.g. `.git` for a Codex player) the same way the API does. Each entry is canonicalized and validated through the shared helper (same rules as the SDK) and invalid or non-array values are rejected with a path-named error — TMUX-052, TMUX-008
+
+### Changed
+
+- Exported a single `PermissionCapability` type (`fileWrite` / `shellExecute` / `networkAccess`) shared across the Claude, Gemini, and OpenCode adapters, replacing the per-adapter copies and Gemini's brittle `keyof`-`Exclude` derivation that had to list `writablePaths` by hand
+- Upgraded all four coding-agent integrations to their latest versions: `@anthropic-ai/claude-agent-sdk` 0.3.148 → 0.3.169, `@openai/codex-sdk` 0.133.0 → 0.138.0, and `@opencode-ai/sdk` 1.15.7 → 1.16.2 (npm dev dependencies); `@google/gemini-cli` 0.41.2 → 0.45.2 and `opencode-ai` 1.14.41 → 1.16.2 (CI global CLIs). Claude and Codex ship their agent binaries with the npm SDK, so the SDK bump moves them too — only Gemini (CLI-only) and OpenCode (SDK plus a separate CLI) carry workflow CLI pins
+
 ## [0.10.0] - 2026-06-09
 
 ### Added
@@ -211,7 +225,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/sublang-ai/cligent/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/sublang-ai/cligent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/sublang-ai/cligent/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sublang-ai/cligent/compare/v0.7.0...v0.8.0
