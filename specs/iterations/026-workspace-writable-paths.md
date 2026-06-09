@@ -23,7 +23,7 @@ Invalid `writablePaths` entries can still pass through `Cligent` and be ignored 
 - [x] Shared `WritablePathsPermissionMapping` contract and helper for canonicalized paths plus enforcement class.
 - [ ] All adapter mapping results use the shared writable-path contract.
 - [ ] All adapter-level TADAPT items verify reported `writablePaths` paths and enforcement class.
-- [x] Codex profile-config mapping for non-empty `writablePaths` when local access resolves to `:workspace`.
+- [x] Codex generated-profile mapping for non-empty `writablePaths` when local access resolves to `:workspace`.
 - [ ] Ambient acceptance/reporting for Claude, Gemini, and OpenCode where no independent filesystem sandbox is active.
 - [ ] tmux-play YAML accepts and validates `permissions.writablePaths`.
 - [ ] Codex config-generation tests and real Codex acceptance proving `mode: 'auto'` plus `writablePaths: ['.git']` can write git metadata without mutating user or repository config.

@@ -273,7 +273,10 @@ export function mapPermissionsToCodexOptions(
   }
 
   const defaultPermissions = codexDefaultPermissions(policy);
-  const writablePaths = mapWritablePathsPermission(policy, 'profile');
+  const writablePaths = mapWritablePathsPermission(
+    policy,
+    defaultPermissions === ':danger-full-access' ? 'ambient' : 'profile',
+  );
 
   if (writablePaths && defaultPermissions === ':read-only') {
     throw new Error(

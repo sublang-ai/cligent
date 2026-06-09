@@ -693,7 +693,7 @@ describe('CodexAdapter', () => {
 
     expect(mapped.writablePaths).toEqual({
       paths: ['.git'],
-      enforcement: 'profile',
+      enforcement: 'ambient',
     });
     expect(mapped.codexOptions).toEqual({
       config: {
