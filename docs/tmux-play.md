@@ -79,9 +79,9 @@ each adapter's classifier-, sandbox-, or reviewer-protected auto-mode,
 reducing routine permission prompts during a session. Prompts are not
 eliminated: Claude's `auto` still blocks high-risk actions and falls
 back to prompts after repeated denies, and Codex's `on-request +
-workspace-write + auto_review` keeps the same sandbox and network
-limits while routing eligible sandbox-boundary approval requests to a
-reviewer agent. Remove the blocks to fall back to each adapter's SDK
+:workspace + auto_review` keeps the same local-access and network limits
+while routing eligible approval requests to a reviewer agent. Remove the
+blocks to fall back to each adapter's SDK
 default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
@@ -108,6 +108,8 @@ players:
     adapter: codex
     permissions:
       mode: auto
+      writablePaths:
+        - .git                 # allow git metadata writes under mode: auto
   - id: reviewer
     adapter: claude
     permissions:
@@ -118,7 +120,7 @@ players:
 
 - `mode: 'auto'` selects each adapter's classifier-, sandbox-, or reviewer-protected
   auto-mode (claude `permissionMode: auto`, codex `approval_policy:
-  on-request + sandbox_mode: workspace-write + approvals_reviewer:
+  on-request + default_permissions: :workspace + approvals_reviewer:
   auto_review`, gemini `--approval-mode yolo`, opencode `permission:
   allow` SDK body). `mode: 'bypass'` selects each adapter's
   unchecked-bypass mode where the SDK supports one; the
@@ -126,6 +128,16 @@ players:
   drives `opencode serve` via the SDK rather than `opencode run`.
 - When `mode` is unset, the adapter derives an effective posture from
   `fileWrite` / `shellExecute` / `networkAccess`.
+- `writablePaths` lists additional workspace-relative paths that should be
+  writable for the run. Use `writablePaths: ['.git']` when a Codex player
+  running with `mode: auto` needs git metadata writes such as `git add` or
+  `git commit`; the `.git` directory entry covers `.git/index`,
+  `.git/objects`, `.git/refs`, and the rest of that subtree. The field does
+  not approve commands or grant network access.
+- `writablePaths` entries must stay inside the workspace. Valid examples
+  include `.git`, `.git/objects`, and `generated/cache`; invalid examples
+  include `.`, `./`, absolute paths, paths containing `..`, globs such as
+  `.git/**`, and shell expansions.
 - Omitting `permissions` leaves the adapter on its SDK default; cligent
   imposes no project-wide policy.
 

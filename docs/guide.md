@@ -78,7 +78,7 @@ const agent = new Cligent(adapter, {
 
 // run(prompt, overrides?) → AsyncGenerator<CligentEvent>
 // RunOptions extends CligentOptions with abortSignal and resume.
-// Per-call overrides win for scalars; permissions are deep-merged;
+// Per-call overrides win for scalars; permissions are merged by field;
 // allowedTools/disallowedTools arrays are replaced entirely.
 for await (const event of agent.run('Fix the bug', {
   model: 'claude-sonnet-4-6', // overrides the default
@@ -159,16 +159,25 @@ Control what the agent is allowed to do with `PermissionPolicy`:
 import { Cligent } from 'cligent';
 import type { PermissionPolicy } from 'cligent';
 import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
+import { CodexAdapter } from 'cligent/adapters/codex';
 
-// PermissionPolicy — three capability-based primitives that abstract over
-// each agent's native permission system.
-// Each accepts 'allow' | 'ask' | 'deny' (default: 'ask').
+// PermissionPolicy controls approval posture, broad capabilities, and
+// additional workspace-relative writable paths.
+//
+// mode accepts 'auto' | 'bypass'.
+// fileWrite / shellExecute / networkAccess each accept
+// 'allow' | 'ask' | 'deny' (default: 'ask' when a policy is provided).
+// writablePaths grants extra writable workspace subpaths where the adapter
+// has a filesystem sandbox, or is satisfied by ambient workspace access
+// otherwise. It is not a command allowlist or network grant.
 //
 // Adapters translate these to vendor-specific controls:
 //   Claude Code  → permissions.allow / ask / deny
-//   Codex        → sandbox_mode + approval_policy + network_access
+//   Codex        → default_permissions + approval_policy
 //                  (+ SDK config.approvals_reviewer for mode: 'auto')
-//                  (lossy: networkAccess 'ask' maps to networkAccessEnabled: false — no prompt-based network control)
+//                  (+ generated profile rules for writablePaths)
+//                  (lossy: networkAccess 'allow' grants network only when
+//                   the policy selects :danger-full-access)
 //   Gemini       → coreTools / excludeTools
 //   OpenCode     → permission map
 const permissions: PermissionPolicy = {
@@ -177,6 +186,18 @@ const permissions: PermissionPolicy = {
   networkAccess: 'allow', // allow HTTP requests without prompting
 };
 
+// For a Codex-backed agent that should keep protected auto-mode but still
+// run git commands that write metadata, grant the .git subtree explicitly.
+const codexGitPermissions: PermissionPolicy = {
+  mode: 'auto',
+  writablePaths: ['.git'],
+};
+
+const codexAgent = new Cligent(new CodexAdapter(), {
+  model: 'gpt-5.3-codex',
+  permissions: codexGitPermissions,
+});
+
 // Set permissions as defaults, or override per-call.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   model: 'claude-opus-4-6',
@@ -184,6 +205,15 @@ const agent = new Cligent(new ClaudeCodeAdapter(), {
 });
 
 for await (const event of agent.run('Refactor auth module')) {
+  // ...
+}
+
+// Per-call permissions are merged by field with constructor defaults, except
+// writablePaths arrays replace the default array rather than merging items.
+// This keeps mode: 'auto' but replaces ['.git'] with ['dist'] for this run.
+for await (const event of codexAgent.run('Build release artifacts', {
+  permissions: { writablePaths: ['dist'] },
+})) {
   // ...
 }
 ```
