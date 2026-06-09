@@ -10,11 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-06-04
+## [0.10.0] - 2026-06-09
 
 ### Added
 
 - Per-call `callCaptain` visibility: `callCaptain(prompt, { visibility: 'hidden' })` runs the Captain normally and returns the same `CaptainRunResult`, but produces zero Boss-pane output. The runtime still emits the call's `captain_prompt` / `captain_event` / `captain_finished` records tagged with the resolved `visibility`, so non-presenter observers keep the full trace while the tmux presenter skips the hidden ones. Because a hidden call writes no Boss-pane bytes, the copy-mode follow observer also leaves a scrolled Boss/Captain pane at its scroll position across the call. Omitting the option (or passing `'visible'`) is byte-for-byte unchanged; `callPlayer` is unaffected — TMUX-016, TMUX-040, TMUX-069, TMUX-072
+
+### Fixed
+
+- Session mode no longer paints a spurious `boss> ` prompt around an active Boss turn. While a turn is in flight the live readline used to repaint `boss> ` chrome on any keystroke, which a turn-completion consumer reading the Boss/Captain pane could misread as an implicit turn-over signal; the prompt is now suspended when the runtime starts a turn and restored exactly once on every turn-end path (normal completion, ESC abort, runtime/observer-dispatch error). Separately, when the Boss queued lines back-to-back a fresh ready prompt flashed between consecutive turns; a fresh prompt is now painted only once the turn queue drains. Type-ahead the Boss types or pastes during a turn is preserved and surfaced on the restored prompt; ESC-abort and bracketed-paste handling are unchanged, and non-TTY stdin is a no-op — TMUX-075, TMUX-037, TMUX-057, TMUX-058, IR-025
+- Player agents spawned during a session can no longer take down the run's own tmux server. Spawned agents inherited the orchestrator's live tmux client environment, so a player tasked with debugging tmux that ran `tmux kill-server` killed the session hosting the run, surfacing to the Boss as `[server exited]` / `tmux attach-session failed`. Session mode now scrubs `TMUX` / `TMUX_PANE` and redirects `TMUX_TMPDIR` to a private directory for spawned player agents, so any `tmux` they run resolves to its own isolated server; the orchestrator keeps targeting the real session via an environment snapshot captured before the scrub — TMUX-074, TTMUX-073
 
 ## [0.9.0] - 2026-06-04
 
