@@ -126,3 +126,7 @@ When `mode` is `undefined`, adapters shall continue to derive their SDK options 
 ### ENG-022
 
 `PermissionPolicy.writablePaths` shall accept an optional array of workspace-relative path strings per [DR-006](../decisions/006-workspace-writable-paths.md). Adapters shall emit only canonical workspace-relative entries: separators use `/`, leading `./` components and trailing slashes are absent, and `.` components do not appear. Adapters shall reject empty entries, root-equivalent entries such as `.` or `./`, absolute paths, paths containing `..`, empty path segments, glob metacharacters, shell expansion characters, or control characters.
+
+### ENG-023
+
+`WritablePathsEnforcement` shall accept the closed set `'profile' | 'sandbox' | 'ambient'` per [DR-006](../decisions/006-workspace-writable-paths.md). `WritablePathsPermissionMapping` shall report canonical `paths` and the field-local `enforcement` class for accepted non-empty `writablePaths` policies. When `writablePaths` is absent or empty, permission mapping shall not emit a `WritablePathsPermissionMapping` payload.

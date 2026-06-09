@@ -22,6 +22,7 @@ Invalid `writablePaths` entries can still pass through `Cligent` and be ignored 
 - [x] `src/__tests__/cligent.test.ts` — merge coverage proving per-call `writablePaths` arrays replace instance defaults when provided.
 - [x] Shared `WritablePathsPermissionMapping` contract and helper for canonicalized paths plus enforcement class.
 - [ ] Adapter mapping results use the shared writable-path contract.
+- [ ] Adapter-level TADAPT items verify reported `writablePaths` paths and enforcement class.
 - [ ] Codex profile-enforced mapping for non-empty `writablePaths` when local access resolves to `:workspace`.
 - [ ] Ambient acceptance/reporting for Claude, Gemini, and OpenCode where no independent filesystem sandbox is active.
 - [ ] tmux-play YAML accepts and validates `permissions.writablePaths`.
