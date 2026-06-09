@@ -82,13 +82,14 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM mapping, thread resumption, options mapping |
+| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM/default-permissions mapping including writablePaths profile enforcement, thread resumption, options mapping |
+| dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery without repository/user config mutation |
 
 ### ENG
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, usage reporting, reasoning effort |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, usage reporting, reasoning effort, permission policy and writablePaths contracts |
 | test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening verification |
 
 ### GEMINI
@@ -138,7 +139,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including interrupted resume tokens and Claude early-abort continuity |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including interrupted resume tokens, Claude early-abort continuity, and writablePaths enforcement/reporting |
 
 ### TMUX
 

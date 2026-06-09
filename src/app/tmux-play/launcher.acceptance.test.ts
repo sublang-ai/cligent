@@ -1665,11 +1665,11 @@ describe('tmux-play YAML → adapter permission seam', () => {
         config: {
           default_permissions: 'cligent-workspace-extra-writes',
           approvals_reviewer: 'auto_review',
-          'permissions.cligent-workspace-extra-writes.extends': ':workspace',
-          'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots".".git"':
-            'write',
         },
       },
+      codexCliConfigOverrides: [
+        'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write"}}}',
+      ],
     });
   });
 });

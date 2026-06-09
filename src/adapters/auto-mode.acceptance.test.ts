@@ -12,8 +12,9 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Cligent } from '../index.js';
@@ -25,7 +26,11 @@ import type {
   ToolResultPayload,
 } from '../index.js';
 import { ClaudeCodeAdapter } from './claude-code.js';
-import { CodexAdapter } from './codex.js';
+import {
+  CodexAdapter,
+  codexWorkspaceExtraWritesProfileConfigOverride,
+  createCodexConfigOverrideWrapper,
+} from './codex.js';
 import { GeminiAdapter } from './gemini.js';
 import { OpenCodeAdapter } from './opencode.js';
 
@@ -50,7 +55,11 @@ const TRANSIENT_UPSTREAM_MARKERS = [
 // environment limitation, not an auto-mode regression — the codex leg skips.
 // Markers are narrowed to the actual error-message shape so an unrelated
 // mention of "bwrap" in model text cannot mask a real failure.
-const SANDBOX_INIT_MARKERS = [/bwrap:\s*\S+:\s*Failed/i, /RTM_NEWADDR/];
+const SANDBOX_INIT_MARKERS = [
+  /bwrap:\s*\S+:\s*Failed/i,
+  /RTM_NEWADDR/,
+  /sandbox-exec:\s*sandbox_apply:\s*Operation not permitted/i,
+];
 
 // Codex resolves its native sandbox binary via @openai/codex's bin launcher,
 // which selects the right platform package and prepends its codex-path dirs;
@@ -111,6 +120,79 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     PROBE_TIMEOUT_MS,
   );
 
+  // TADAPT-023: credential-free proof that the generated profile definition is
+  // delivered to Codex's native sandbox without mutating user/repo config.
+  const codexCliMissing = codexCliPath ? [] : ['@openai/codex CLI'];
+  gatedIt(codexCliMissing)(
+    'codex writablePaths profile config route grants .git writes in the native sandbox',
+    async (ctx) => {
+      assertReady('codex', codexCliMissing);
+      const outcome = await runCodexWritablePathsSandboxProbe();
+      if (outcome.skipReason) {
+        process.stderr.write(
+          `codex writablePaths sandbox acceptance: skipping — ${outcome.skipReason}\n`,
+        );
+        ctx.skip();
+      }
+      expect(
+        outcome.baseWriteSucceeded,
+        `codex :workspace unexpectedly wrote inside .git; probe no longer proves protected-path widening\n${outcome.summary}`,
+      ).toBe(false);
+      expect(
+        outcome.extraWriteSucceeded,
+        `codex generated profile did not make .git writable\n${outcome.summary}`,
+      ).toBe(true);
+      expect(outcome.repoConfigCreated).toBe(false);
+      expect(outcome.userConfigChanged).toBe(false);
+    },
+    PROBE_TIMEOUT_MS,
+  );
+
+  // TADAPT-023: API-key-gated proof that the same policy works through the
+  // SDK adapter path and completes a real git metadata write without approval.
+  gatedIt(codexMissing)(
+    'codex auto mode with writablePaths writes git metadata without approval',
+    async (ctx) => {
+      assertReady('codex', codexMissing);
+      if (codexSandboxPreflight.kind === 'sandbox-init') {
+        process.stderr.write(
+          `codex writablePaths acceptance: skipping — Codex's workspace sandbox ` +
+            `cannot initialize on this host: ${codexSandboxPreflight.summary}\n`,
+        );
+        ctx.skip();
+      }
+      if (codexSandboxPreflight.kind === 'unknown') {
+        throw new Error(
+          `codex writablePaths acceptance: refusing to skip — Codex sandbox ` +
+            `preflight failed for a non-sandbox-init reason: ` +
+            codexSandboxPreflight.summary,
+        );
+      }
+      const outcome = await probeCodexWritablePathsWithRetry();
+      const sandboxFailure = sandboxInitFailure({
+        create: outcome,
+        delete: outcome,
+        fileCreated: outcome.gitIndexWritten,
+        fileDeleted: true,
+      });
+      if (sandboxFailure) {
+        process.stderr.write(
+          `codex writablePaths acceptance: skipping — sandbox failure surfaced ` +
+            `in probe events: ${sandboxFailure}\n`,
+        );
+        ctx.skip();
+      }
+      expectPhaseUnblocked('codex writablePaths git add', outcome.events);
+      expect(
+        outcome.gitIndexWritten,
+        `codex: git index was not written under .git\n${formatEvents(outcome.events)}`,
+      ).toBe(true);
+      expect(outcome.repoConfigCreated).toBe(false);
+      expect(outcome.userConfigChanged).toBe(false);
+    },
+    PROBE_TIMEOUT_MS,
+  );
+
   const geminiMissing = missingDeps(['GEMINI_API_KEY'], ['gemini']);
   gatedIt(geminiMissing)(
     'gemini auto mode auto-approves a temp-file write + delete',
@@ -145,6 +227,26 @@ interface ProbeOutcome {
   readonly fileDeleted: boolean;
 }
 
+interface CodexWritablePathsOutcome extends PhaseResult {
+  readonly gitIndexWritten: boolean;
+  readonly repoConfigCreated: boolean;
+  readonly userConfigChanged: boolean;
+}
+
+interface CodexSandboxWritablePathsOutcome {
+  readonly baseWriteSucceeded: boolean;
+  readonly extraWriteSucceeded: boolean;
+  readonly repoConfigCreated: boolean;
+  readonly userConfigChanged: boolean;
+  readonly summary: string;
+  readonly skipReason?: string;
+}
+
+interface CodexSandboxCommandResult {
+  readonly ok: boolean;
+  readonly summary: string;
+}
+
 async function runAutoModeProbe(
   makeAdapter: () => AgentAdapter,
   model: string | undefined,
@@ -175,6 +277,157 @@ async function runAutoModeProbe(
   }
 }
 
+async function runCodexWritablePathsGitProbe(): Promise<CodexWritablePathsOutcome> {
+  const cwd = mkdtempSync(join(process.cwd(), 'cligent-codex-git-'));
+  execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
+  const indexPath = join(cwd, '.git', 'index');
+  rmSync(indexPath, { force: true });
+  const userConfigBefore = userCodexConfigStamp();
+  const cligent = new Cligent(new CodexAdapter(), {
+    permissions: { mode: 'auto', writablePaths: ['.git'] },
+    cwd,
+  });
+
+  try {
+    const result = await collect(cligent, gitMetadataPrompt());
+    return {
+      ...result,
+      gitIndexWritten: existsSync(indexPath),
+      repoConfigCreated: existsSync(join(cwd, '.codex', 'config.toml')),
+      userConfigChanged: userConfigStampChanged(userConfigBefore),
+    };
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+async function probeCodexWritablePathsWithRetry(): Promise<CodexWritablePathsOutcome> {
+  let outcome: CodexWritablePathsOutcome | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    outcome = await runCodexWritablePathsGitProbe();
+    const transient = transientFailure(outcome.events);
+    if (!transient || attempt === MAX_ATTEMPTS) break;
+    process.stderr.write(
+      `codex writablePaths acceptance attempt ${attempt} hit transient upstream error: ${transient}\n`,
+    );
+  }
+  return outcome!;
+}
+
+async function runCodexWritablePathsSandboxProbe(): Promise<CodexSandboxWritablePathsOutcome> {
+  const cwd = mkdtempSync(join(process.cwd(), 'cligent-codex-sandbox-'));
+  execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
+  const probePath = join(cwd, '.git', 'cligent-profile-probe');
+  const userConfigBefore = userCodexConfigStamp();
+  const override = codexWorkspaceExtraWritesProfileConfigOverride(['.git']);
+  let cleanupWrapper: (() => Promise<void>) | undefined;
+
+  try {
+    const base = runCodexSandboxWriteProbe(cwd, ':workspace', []);
+    if (sandboxInitFailureSummary(base.summary)) {
+      return {
+        baseWriteSucceeded: false,
+        extraWriteSucceeded: false,
+        repoConfigCreated: existsSync(join(cwd, '.codex', 'config.toml')),
+        userConfigChanged: userConfigStampChanged(userConfigBefore),
+        summary: base.summary,
+        skipReason: `Codex's native sandbox cannot initialize on this host: ${base.summary}`,
+      };
+    }
+
+    rmSync(probePath, { force: true });
+    const wrapper = await createCodexConfigOverrideWrapper([override]);
+    if (!wrapper) {
+      throw new Error('Codex writablePaths acceptance did not create a wrapper');
+    }
+    cleanupWrapper = wrapper.cleanup;
+    const extra = runCodexSandboxWriteProbeThroughWrapper(
+      cwd,
+      'cligent-workspace-extra-writes',
+      wrapper.path,
+    );
+    if (sandboxInitFailureSummary(extra.summary)) {
+      return {
+        baseWriteSucceeded: base.ok,
+        extraWriteSucceeded: false,
+        repoConfigCreated: existsSync(join(cwd, '.codex', 'config.toml')),
+        userConfigChanged: userConfigStampChanged(userConfigBefore),
+        summary: extra.summary,
+        skipReason: `Codex's native sandbox cannot initialize on this host: ${extra.summary}`,
+      };
+    }
+
+    return {
+      baseWriteSucceeded: base.ok,
+      extraWriteSucceeded: extra.ok && existsSync(probePath),
+      repoConfigCreated: existsSync(join(cwd, '.codex', 'config.toml')),
+      userConfigChanged: userConfigStampChanged(userConfigBefore),
+      summary: `base=${base.summary}; extra=${extra.summary}`,
+    };
+  } finally {
+    await cleanupWrapper?.();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+function runCodexSandboxWriteProbe(
+  cwd: string,
+  permissionsProfile: string,
+  configOverrides: readonly string[],
+): CodexSandboxCommandResult {
+  if (!codexCliPath) {
+    return { ok: false, summary: '@openai/codex CLI is not installed' };
+  }
+
+  const args = [
+    codexCliPath,
+    'sandbox',
+    '--permissions-profile',
+    permissionsProfile,
+    '-C',
+    cwd,
+  ];
+  for (const override of configOverrides) {
+    args.push('-c', override);
+  }
+  args.push(
+    process.execPath,
+    '-e',
+    'require("node:fs").writeFileSync(".git/cligent-profile-probe", "ok")',
+  );
+
+  try {
+    execFileSync(process.execPath, args, { stdio: 'pipe', timeout: 30_000 });
+    return { ok: true, summary: 'ok' };
+  } catch (error) {
+    return { ok: false, summary: summarizeExecFailure(error) };
+  }
+}
+
+function runCodexSandboxWriteProbeThroughWrapper(
+  cwd: string,
+  permissionsProfile: string,
+  wrapperPath: string,
+): CodexSandboxCommandResult {
+  const args = [
+    'sandbox',
+    '--permissions-profile',
+    permissionsProfile,
+    '-C',
+    cwd,
+    process.execPath,
+    '-e',
+    'require("node:fs").writeFileSync(".git/cligent-profile-probe", "ok")',
+  ];
+
+  try {
+    execFileSync(wrapperPath, args, { stdio: 'pipe', timeout: 30_000 });
+    return { ok: true, summary: 'ok' };
+  } catch (error) {
+    return { ok: false, summary: summarizeExecFailure(error) };
+  }
+}
+
 function createPrompt(fileName: string): string {
   const path = shellQuote(`./${fileName}`);
   return (
@@ -190,6 +443,14 @@ function deletePrompt(fileName: string): string {
     `Run this exact shell command in the current working directory: ` +
     `rm -f ${path} && test ! -e ${path}. ` +
     'Do not ask for permission or confirmation. After it succeeds, reply only "deleted".'
+  );
+}
+
+function gitMetadataPrompt(): string {
+  return (
+    `Run this exact shell command in the current working directory: ` +
+    `printf '%s\\n' tracked > tracked.txt && git add tracked.txt && test -f .git/index. ` +
+    'Do not ask for permission or confirmation. After it succeeds, reply only "indexed".'
   );
 }
 
@@ -300,6 +561,10 @@ function summarizeExecFailure(error: unknown): string {
     .slice(0, 300);
 }
 
+function sandboxInitFailureSummary(text: string): boolean {
+  return SANDBOX_INIT_MARKERS.some((marker) => marker.test(text));
+}
+
 // A non-functional Codex OS sandbox (e.g. bubblewrap failing to set up its
 // network namespace on a restricted CI runner) surfaces in the event stream
 // rather than as an `error` event, so it is detected from the probe outcome.
@@ -313,6 +578,23 @@ function sandboxInitFailure(outcome: ProbeOutcome): string | undefined {
     }
   }
   return undefined;
+}
+
+function userCodexConfigPath(): string {
+  return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'config.toml');
+}
+
+function userCodexConfigStamp(): string | undefined {
+  try {
+    const stat = statSync(userCodexConfigPath());
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function userConfigStampChanged(before: string | undefined): boolean {
+  return userCodexConfigStamp() !== before;
 }
 
 function expectAutoMode(label: string, outcome: ProbeOutcome): void {

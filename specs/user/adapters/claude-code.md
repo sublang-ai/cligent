@@ -45,7 +45,7 @@ The adapter shall map `PermissionPolicy` to Claude Code permission modes per [DR
 - No capability set to `'allow'` or `'deny'` — every capability `'ask'`, which includes a missing `permissions` field — → `permissionMode: 'default'` with **no** `canUseTool` callback. Per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) a missing policy is no override, so the SDK's own `default`-mode handling governs and the adapter synthesizes nothing.
 - Any capability `'allow'` or `'deny'` present (mixed with `'ask'`) → `permissionMode: 'default'` with a `canUseTool` callback that enforces the explicit categories
 
-When `PermissionPolicy.writablePaths` is non-empty and Claude Code sandboxing is not independently active through a supported adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` with `enforcement: 'ambient'` and canonical `paths`, and keep the existing permission-mode / `canUseTool` mapping unchanged.
+When `PermissionPolicy.writablePaths` is non-empty per [ENG-022](../engine.md#eng-022) and Claude Code sandboxing is not independently active through a supported adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with `enforcement: 'ambient'` and canonical `paths`, and keep the existing permission-mode / `canUseTool` mapping unchanged.
 
 ### CLAUDE-005
 

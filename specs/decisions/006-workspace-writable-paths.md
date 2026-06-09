@@ -127,12 +127,15 @@ If the resolved local-access profile is already `:danger-full-access`, `writable
 If the resolved local-access profile is `:read-only` with non-empty `writablePaths`, the policy is contradictory and shall be rejected per the conflict rules above.
 
 The Codex adapter shall not rely on SDK `config` passthrough for the filesystem profile definition until an acceptance test proves that the chosen `--config` key shape survives both the SDK serializer and the Codex CLI parser.
-If SDK `config` passthrough cannot represent the profile definition, the adapter shall use a generated Codex profile file or another explicit Codex CLI route that loads the profile without mutating the user's machine-level Codex config.
+The accepted route is a split delivery: simple scalar settings such as `default_permissions` and `approvals_reviewer` use SDK `config` passthrough, while the generated filesystem profile body is injected as a raw CLI `--config` inline table through a per-run Codex path wrapper.
+This route preserves the user's normal Codex home, authentication, and configuration layers, and mutates neither machine-level nor repository Codex config.
+If that raw CLI route stops representing the profile definition, the adapter shall use a generated Codex profile file or another explicit Codex CLI route that loads the profile without mutating the user's machine-level Codex config.
 The adapter may still use SDK `config` passthrough for simple scalar settings such as `approval_policy`, `approvals_reviewer`, and `default_permissions`.
 
 Candidate config-delivery routes have known hazards and none is accepted without an implementation spike:
 
-- SDK / CLI `--config`: the SDK can emit a flat scalar key intact, but the Codex CLI parser must still prove it materializes quoted nested filesystem keys into the intended profile table.
+- SDK flat dotted `--config`: the SDK can emit scalar keys intact, but its recursive flattening cannot represent the profile filesystem table shape.
+- Raw CLI inline-table `--config`: accepted for the generated filesystem profile body once the per-run wrapper and acceptance test prove the Codex CLI parser materializes it into the intended profile table.
 - `CODEX_HOME` redirection: Codex stores config, auth, logs, sessions, and related state under `CODEX_HOME`, so a temp-home route must preserve auth and must not merely drop the user's login [[10]].
 - Project-local `.codex/config.toml`: this mutates the repository and is trust-layer dependent, so it does not satisfy the generated per-run route unless the user explicitly chose a repo-local config file [[10]].
 - User-level `$CODEX_HOME/*.config.toml`: this mutates machine-level Codex config and is out of scope.

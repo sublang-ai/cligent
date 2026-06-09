@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -38,6 +39,7 @@ interface MockThreadOptions {
 }
 
 interface MockCodexConstructorOptions {
+  codexPathOverride?: string;
   config?: Record<string, unknown>;
 }
 
@@ -656,15 +658,57 @@ describe('CodexAdapter', () => {
       config: {
         default_permissions: 'cligent-workspace-extra-writes',
         approvals_reviewer: 'auto_review',
-        'permissions.cligent-workspace-extra-writes.extends': ':workspace',
-        'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots".".git"':
-          'write',
-        'permissions.cligent-workspace-extra-writes.filesystem.":workspace_roots"."generated/cache"':
-          'write',
       },
     });
+    expect(mapped.codexCliConfigOverrides).toEqual([
+      'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write", "generated/cache"="write"}}}',
+    ]);
     expect(mapped).not.toHaveProperty('sandboxMode');
     expect(mapped).not.toHaveProperty('networkAccessEnabled');
+  });
+
+  it('injects generated Codex profile config through a temporary CLI wrapper', async () => {
+    let capturedCodexOptions: MockCodexConstructorOptions | undefined;
+    let wrapperScript: string | undefined;
+    let wrapperPath: string | undefined;
+
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          },
+        ],
+        onConstruct(options) {
+          capturedCodexOptions = options;
+          wrapperPath = options?.codexPathOverride;
+          if (wrapperPath) {
+            wrapperScript = readFileSync(wrapperPath, 'utf8');
+          }
+        },
+      }),
+    });
+
+    await collect(
+      adapter.run('implement feature', {
+        permissions: { mode: 'auto', writablePaths: ['.git'] },
+      }),
+    );
+
+    expect(capturedCodexOptions?.config).toEqual({
+      default_permissions: 'cligent-workspace-extra-writes',
+      approvals_reviewer: 'auto_review',
+    });
+    expect(wrapperPath).toBeDefined();
+    expect(wrapperScript).toContain(
+      'permissions.cligent-workspace-extra-writes={extends=\\"' +
+        ':workspace\\", filesystem={\\":workspace_roots\\"={\\".git\\"=\\"write\\"}}}',
+    );
+    expect(existsSync(wrapperPath!)).toBe(false);
   });
 
   it('rejects writablePaths that conflict with read-only Codex local access', () => {

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createEvent, generateSessionId } from '../events.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
@@ -38,11 +42,13 @@ type CodexConfigValue =
   | { [key: string]: CodexConfigValue };
 
 interface CodexConstructorOptions {
+  codexPathOverride?: string;
   config?: {
     [key: string]: CodexConfigValue | undefined;
     default_permissions?: CodexDefaultPermissions;
     approvals_reviewer?: CodexApprovalsReviewer;
   };
+  env?: Record<string, string>;
 }
 
 interface CodexItem {
@@ -106,6 +112,7 @@ interface CodexAdapterDeps {
 const AGENT = 'codex' as const;
 const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
   'cligent-workspace-extra-writes';
+const requireFromHere = createRequire(import.meta.url);
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   inputTokens: 0,
@@ -192,6 +199,7 @@ function asNumber(value: unknown): number | undefined {
 export interface CodexPermissionOptions {
   approvalPolicy?: CodexApprovalPolicy;
   codexOptions?: CodexConstructorOptions;
+  codexCliConfigOverrides?: string[];
   writablePaths?: WritablePathsPermissionMapping;
 }
 
@@ -246,23 +254,21 @@ function codexApprovalPolicy(
   return 'on-request';
 }
 
-function codexWorkspaceWritablePathKey(path: string): string {
-  return (
-    `permissions.${CODEX_WORKSPACE_EXTRA_WRITES_PROFILE}.filesystem.` +
-    `":workspace_roots".${JSON.stringify(path)}`
-  );
+function codexTomlString(value: string): string {
+  return JSON.stringify(value);
 }
 
-function addCodexWorkspaceWritablePathsProfile(
-  config: NonNullable<CodexConstructorOptions['config']>,
+export function codexWorkspaceExtraWritesProfileConfigOverride(
   paths: readonly string[],
-): void {
-  config[`permissions.${CODEX_WORKSPACE_EXTRA_WRITES_PROFILE}.extends`] =
-    ':workspace';
-
-  for (const path of paths) {
-    config[codexWorkspaceWritablePathKey(path)] = 'write';
-  }
+): string {
+  const rules = paths
+    .map((path) => `${codexTomlString(path)}=${codexTomlString('write')}`)
+    .join(', ');
+  return (
+    `permissions.${CODEX_WORKSPACE_EXTRA_WRITES_PROFILE}=` +
+    `{extends=${codexTomlString(':workspace')}, ` +
+    `filesystem={${codexTomlString(':workspace_roots')}={${rules}}}}`
+  );
 }
 
 export function mapPermissionsToCodexOptions(
@@ -292,13 +298,15 @@ export function mapPermissionsToCodexOptions(
     ...(policy.mode === 'auto' ? { approvals_reviewer: 'auto_review' } : {}),
   };
 
-  if (writablePaths && defaultPermissions === ':workspace') {
-    addCodexWorkspaceWritablePathsProfile(config, writablePaths.paths);
-  }
+  const codexCliConfigOverrides =
+    writablePaths && defaultPermissions === ':workspace'
+      ? [codexWorkspaceExtraWritesProfileConfigOverride(writablePaths.paths)]
+      : undefined;
 
   return {
     approvalPolicy: codexApprovalPolicy(policy),
     codexOptions: { config },
+    ...(codexCliConfigOverrides ? { codexCliConfigOverrides } : {}),
     ...(writablePaths ? { writablePaths } : {}),
   };
 }
@@ -364,6 +372,7 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 
 interface MappedCodexOptions {
   codexOptions?: CodexConstructorOptions;
+  codexCliConfigOverrides?: string[];
   threadOptions: CodexThreadOptions;
   runOptions: CodexRunOptions;
   cleanupAbort: () => void;
@@ -416,6 +425,9 @@ export function mapAgentOptionsToCodexOptions(
 
   return {
     codexOptions: permissions.codexOptions,
+    ...(permissions.codexCliConfigOverrides
+      ? { codexCliConfigOverrides: permissions.codexCliConfigOverrides }
+      : {}),
     threadOptions,
     runOptions: {
       signal,
@@ -670,6 +682,89 @@ function firstString(
   return undefined;
 }
 
+interface CodexConfigOverrideWrapper {
+  path: string;
+  cleanup: () => Promise<void>;
+}
+
+function resolveCodexBinPath(): string {
+  return requireFromHere.resolve('@openai/codex/bin/codex.js');
+}
+
+function codexWrapperScript(
+  codexBinPath: string,
+  configOverrides: readonly string[],
+): string {
+  return `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+
+const codexBinPath = ${JSON.stringify(codexBinPath)};
+const configOverrides = ${JSON.stringify(configOverrides)};
+const [subcommand, ...rest] = process.argv.slice(2);
+const injected = configOverrides.flatMap((override) => ['--config', override]);
+const args = subcommand
+  ? [codexBinPath, subcommand, ...injected, ...rest]
+  : [codexBinPath, ...injected];
+const child = spawn(process.execPath, args, {
+  env: process.env,
+  stdio: 'inherit',
+});
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => child.kill(signal));
+}
+
+child.on('exit', (code, signal) => {
+  if (signal) {
+    process.exit(1);
+  }
+  process.exit(code ?? 0);
+});
+
+child.on('error', (error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+}
+
+export async function createCodexConfigOverrideWrapper(
+  configOverrides: readonly string[],
+): Promise<CodexConfigOverrideWrapper | undefined> {
+  if (configOverrides.length === 0) {
+    return undefined;
+  }
+
+  const codexBinPath = resolveCodexBinPath();
+  const dir = await mkdtemp(join(tmpdir(), 'cligent-codex-config-'));
+  const scriptPath = join(dir, 'codex-wrapper.mjs');
+  const wrapperPath =
+    process.platform === 'win32' ? join(dir, 'codex-wrapper.cmd') : scriptPath;
+
+  await writeFile(
+    scriptPath,
+    codexWrapperScript(codexBinPath, configOverrides),
+    'utf8',
+  );
+
+  if (process.platform === 'win32') {
+    await writeFile(
+      wrapperPath,
+      `@echo off\r\n"${process.execPath}" "${scriptPath}" %*\r\n`,
+      'utf8',
+    );
+  } else {
+    await chmod(scriptPath, 0o700);
+  }
+
+  return {
+    path: wrapperPath,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 export async function loadCodexSdk(): Promise<CodexSdk> {
   const mod = (await import('@openai/codex-sdk')) as {
     Codex?: unknown;
@@ -715,33 +810,66 @@ export class CodexAdapter implements AgentAdapter {
       );
     }
 
-    const { codexOptions, threadOptions, runOptions, cleanupAbort } =
-      mapAgentOptionsToCodexOptions(options);
+    const {
+      codexOptions,
+      codexCliConfigOverrides,
+      threadOptions,
+      runOptions,
+      cleanupAbort,
+    } = mapAgentOptionsToCodexOptions(options);
+
+    const codexConfigWrapper = await createCodexConfigOverrideWrapper(
+      codexCliConfigOverrides ?? [],
+    );
+    const effectiveCodexOptions = codexConfigWrapper
+      ? {
+          ...codexOptions,
+          codexPathOverride: codexConfigWrapper.path,
+        }
+      : codexOptions;
+    let cleanedUp = false;
+    const cleanupCodexRun = async (): Promise<void> => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      cleanupAbort();
+      await codexConfigWrapper?.cleanup();
+    };
 
     let codex: CodexClient;
     try {
-      codex = new sdk.Codex(codexOptions);
+      codex = new sdk.Codex(effectiveCodexOptions);
     } catch (err) {
+      await cleanupCodexRun();
       throw new Error(
         `CodexAdapter failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
     let thread: CodexThread;
-    if (options?.resume) {
-      if (typeof codex.resumeThread !== 'function') {
-        throw new Error('Codex SDK does not support resumeThread() in this version');
+    let streamResult:
+      | { events: AsyncIterable<unknown> }
+      | AsyncIterable<unknown>
+      | undefined;
+    try {
+      if (options?.resume) {
+        if (typeof codex.resumeThread !== 'function') {
+          throw new Error('Codex SDK does not support resumeThread() in this version');
+        }
+        thread = codex.resumeThread(options.resume, threadOptions);
+      } else {
+        thread = codex.startThread(threadOptions);
       }
-      thread = codex.resumeThread(options.resume, threadOptions);
-    } else {
-      thread = codex.startThread(threadOptions);
+
+      streamResult = await (thread.runStreamed?.(prompt, runOptions) as
+        | Promise<{ events: AsyncIterable<unknown> } | AsyncIterable<unknown>>
+        | undefined);
+    } catch (err) {
+      await cleanupCodexRun();
+      throw err;
     }
 
-    const streamResult = await (thread.runStreamed?.(prompt, runOptions) as
-      | Promise<{ events: AsyncIterable<unknown> } | AsyncIterable<unknown>>
-      | undefined);
-
     if (!streamResult) {
+      await cleanupCodexRun();
       throw new Error('Codex SDK does not support runStreamed() in this version');
     }
 
@@ -1026,7 +1154,7 @@ export class CodexAdapter implements AgentAdapter {
         sessionId,
       );
     } finally {
-      cleanupAbort();
+      await cleanupCodexRun();
     }
   }
 }
