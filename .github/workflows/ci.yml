@@ -55,7 +55,7 @@ jobs:
       - run: npm run build
 
       - name: Install agent CLIs
-        run: npm install -g @google/gemini-cli@0.41.2 opencode-ai@1.14.41
+        run: npm install -g @google/gemini-cli@0.45.2 opencode-ai@1.16.2
 
       - name: Install glow
         # TMUX-051 makes glow a hard launcher requirement and TTMUX-050
