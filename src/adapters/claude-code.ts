@@ -7,6 +7,7 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
+  PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
@@ -18,8 +19,6 @@ type ClaudePermissionMode =
   | 'bypassPermissions'
   | 'acceptEdits'
   | 'default';
-
-type ClaudeCapability = 'fileWrite' | 'shellExecute' | 'networkAccess';
 
 type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -191,7 +190,7 @@ function normalizePermissionLevel(value: PermissionLevel | undefined): Permissio
 
 function normalizePermissionPolicy(
   policy: PermissionPolicy | undefined,
-): Record<ClaudeCapability, PermissionLevel> {
+): Record<PermissionCapability, PermissionLevel> {
   return {
     fileWrite: normalizePermissionLevel(policy?.fileWrite),
     shellExecute: normalizePermissionLevel(policy?.shellExecute),
@@ -199,7 +198,7 @@ function normalizePermissionPolicy(
   };
 }
 
-function identifyCapability(toolName: string | undefined): ClaudeCapability | undefined {
+function identifyCapability(toolName: string | undefined): PermissionCapability | undefined {
   if (!toolName) return undefined;
   const identifier = toolName.trim().match(/^[A-Za-z][A-Za-z0-9_]*/)?.[0];
   if (!identifier) return undefined;

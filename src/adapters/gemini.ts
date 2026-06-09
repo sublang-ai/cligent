@@ -17,6 +17,7 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
+  PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
@@ -31,9 +32,6 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   outputTokens: 0,
   toolUses: 0,
 };
-
-type PermissionCapability = Exclude<keyof Required<PermissionPolicy>, 'mode' | 'writablePaths'>;
-type GeminiCapability = PermissionCapability;
 
 type SpawnProcessFn = (
   command: string,
@@ -54,7 +52,7 @@ interface GeminiAdapterDeps {
   ) => Promise<GeminiSettingsOverride>;
 }
 
-const CAPABILITY_TOOL_GROUPS: Record<GeminiCapability, string[]> = {
+const CAPABILITY_TOOL_GROUPS: Record<PermissionCapability, string[]> = {
   fileWrite: ['edit'],
   shellExecute: ['ShellTool'],
   networkAccess: ['webfetch'],
@@ -498,7 +496,7 @@ export function mapPermissionsToGeminiToolConfig(
   const allowed = new Set(options?.allowedTools ?? []);
   const disallowed = new Set(options?.disallowedTools ?? []);
 
-  for (const capability of Object.keys(CAPABILITY_TOOL_GROUPS) as GeminiCapability[]) {
+  for (const capability of Object.keys(CAPABILITY_TOOL_GROUPS) as PermissionCapability[]) {
     const level = normalized[capability];
 
     if (level === 'allow') {

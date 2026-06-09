@@ -8,6 +8,7 @@ import type {
   AgentAdapter,
   BaseEvent,
   TextPayload,
+  PermissionCapability,
   PermissionPolicy,
 } from '../types.js';
 
@@ -63,6 +64,12 @@ describe('core types', () => {
     // @ts-expect-error - 'wat' is not in the mode union
     const bad: PermissionPolicy = { mode: 'wat' };
     void bad;
+  });
+
+  it('PermissionCapability names the permission-level fields only', () => {
+    expectTypeOf<PermissionCapability>().toEqualTypeOf<
+      'fileWrite' | 'shellExecute' | 'networkAccess'
+    >();
   });
 
   it('BaseEvent.type accepts AgentEventType and arbitrary strings', () => {

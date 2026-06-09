@@ -11,6 +11,9 @@ Implement [DR-006](../decisions/006-workspace-writable-paths.md): add typed `Per
 
 In Progress
 
+Task 1 defines the public field and shared canonicalization helper, but no production path invokes that helper yet.
+Invalid `writablePaths` entries can still pass through `Cligent` and be ignored until the adapter mapping tasks wire validation into permission mapping.
+
 ## Deliverables
 
 - [x] `src/types.ts` — `PermissionPolicy.writablePaths?: string[]`.
@@ -27,7 +30,7 @@ In Progress
 
 Each task stops for review before the next task begins.
 
-1. [x] **Core field and validation** — add `PermissionPolicy.writablePaths?: string[]`; add shared canonicalization/validation for workspace-relative writable paths; cover canonicalization, rejection rules, and `Cligent` merge replacement semantics.
+1. [x] **Core field and validation helper** — add `PermissionPolicy.writablePaths?: string[]`; define shared canonicalization/validation for workspace-relative writable paths; cover canonicalization, rejection rules, and `Cligent` merge replacement semantics.
 2. [ ] **Test-observable mapping contract** — add shared reporting types or mapping payloads so each adapter can expose canonicalized `writablePaths` plus `profile` / `sandbox` / `ambient` enforcement.
 3. [ ] **Codex profile mapping** — synthesize or deliver a Codex permission profile for `:workspace` plus extra workspace write grants; reject conflicts with `:read-only`; preserve approval/reviewer behavior.
 4. [ ] **Ambient adapter mappings** — make Claude, Gemini, and OpenCode accept valid `writablePaths` and report ambient enforcement unless an independently active sandbox route is implemented.
@@ -37,6 +40,6 @@ Each task stops for review before the next task begins.
 ## Acceptance criteria
 
 - `npm run build`, `npm run lint`, `npm test`, and targeted smoke/acceptance tests pass at each completed task boundary.
-- Invalid or contradictory `writablePaths` policies fail during permission mapping rather than being ignored.
+- Once adapter mapping tasks are complete, invalid or contradictory `writablePaths` policies fail during permission mapping rather than being ignored.
 - All adapters accept valid non-empty `writablePaths` and report canonicalized paths with their enforcement class.
 - Codex satisfies the non-ambient release bar for `.git` writes under `mode: 'auto'`.

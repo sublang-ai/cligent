@@ -100,6 +100,10 @@ export type AgentEvent =
   | (BaseEvent & { type: `${string}:${string}`; payload: unknown });
 
 export type PermissionLevel = 'allow' | 'ask' | 'deny';
+export type PermissionCapability =
+  | 'fileWrite'
+  | 'shellExecute'
+  | 'networkAccess';
 
 export interface PermissionPolicy {
   /**

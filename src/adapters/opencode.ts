@@ -18,6 +18,7 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
+  PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
   ReasoningEffort,
@@ -138,7 +139,7 @@ function normalizePermissionLevel(value: PermissionLevel | undefined): Permissio
 
 function normalizePermissions(
   policy: PermissionPolicy | undefined,
-): Record<'fileWrite' | 'shellExecute' | 'networkAccess', PermissionLevel> {
+): Record<PermissionCapability, PermissionLevel> {
   return {
     fileWrite: normalizePermissionLevel(policy?.fileWrite),
     shellExecute: normalizePermissionLevel(policy?.shellExecute),

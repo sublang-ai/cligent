@@ -16,6 +16,7 @@ export type {
   DonePayload,
   AgentEvent,
   PermissionLevel,
+  PermissionCapability,
   PermissionPolicy,
   ReasoningEffort,
   AgentAdapter,

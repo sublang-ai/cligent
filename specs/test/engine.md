@@ -100,11 +100,3 @@ When an adapter's generator exhausts without yielding `done` inside `parallel()`
 Verifies: [ENG-016](../user/engine.md#eng-016)
 
 When one task's `AbortSignal` fires in `parallel()`, only that task shall yield `done` (`status: 'interrupted'`); remaining tasks shall continue. When all active tasks share one `AbortController` and it fires, all active tasks (those that have not yet emitted `done`) shall yield `done` (`status: 'interrupted'`).
-
-## Permission Validation
-
-### TENG-015
-
-Verifies: [ENG-022](../user/engine.md#eng-022)
-
-Given a `PermissionPolicy.writablePaths` array, when the shared writable-path validator runs, it shall emit canonical workspace-relative paths for entries such as `./.git/`, `.git/objects`, and `generated/./cache//`, and reject root-equivalent, absolute, parent-traversing, glob, shell-expansion, control-character, or empty-segment entries.
