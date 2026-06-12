@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the optional `@openai/codex-sdk` peer dependency floor to `>=0.138.0`, the first Codex CLI line with `exec --ignore-user-config` support required by permission-managed runs.
+
+### Fixed
+
+- tmux-play's shipped Codex player default now uses `permissions: { mode: auto }` to select Codex's `auto_review + :workspace` profile, and Codex permission-managed runs invoke `exec --ignore-user-config` so a user-level stale or read-only Codex config cannot override Cligent's managed profile.
+
 ## [0.11.0] - 2026-06-09
 
 ### Added

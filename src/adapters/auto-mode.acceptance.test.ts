@@ -12,7 +12,14 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -116,6 +123,56 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
         ctx.skip();
       }
       expectAutoMode('codex', outcome);
+    },
+    PROBE_TIMEOUT_MS,
+  );
+
+  // TADAPT-024: live proof that permission-managed Codex runs ignore a
+  // conflicting CODEX_HOME/config.toml instead of letting stale user config
+  // override the adapter-selected `auto_review + :workspace` profile.
+  gatedIt(codexMissing)(
+    'codex auto mode ignores a hostile user Codex config',
+    async (ctx) => {
+      assertReady('codex', codexMissing);
+      if (codexSandboxPreflight.kind === 'sandbox-init') {
+        process.stderr.write(
+          `codex user-config isolation acceptance: skipping — Codex's workspace sandbox ` +
+            `cannot initialize on this host: ${codexSandboxPreflight.summary}\n`,
+        );
+        ctx.skip();
+      }
+      if (codexSandboxPreflight.kind === 'unknown') {
+        throw new Error(
+          `codex user-config isolation acceptance: refusing to skip — Codex sandbox ` +
+            `preflight failed for a non-sandbox-init reason: ` +
+            codexSandboxPreflight.summary,
+        );
+      }
+      const outcome = await probeCodexHostileUserConfigWithRetry();
+      const sandboxFailure = sandboxInitFailureFromEvents(outcome.managed.events);
+      if (sandboxFailure) {
+        process.stderr.write(
+          `codex user-config isolation acceptance: skipping — sandbox failure surfaced ` +
+            `in probe events: ${sandboxFailure}\n`,
+        );
+        ctx.skip();
+      }
+      expectPhaseUnblocked(
+        'codex hostile user config control',
+        outcome.control.events,
+      );
+      expect(
+        outcome.controlOutsideCreated,
+        `codex: no-policy control did not inherit danger-full-access user config\n${formatEvents(outcome.control.events)}`,
+      ).toBe(true);
+      expectRunCompletedWithoutAdapterError(
+        'codex hostile user config managed',
+        outcome.managed.events,
+      );
+      expect(
+        outcome.managedOutsideCreated,
+        `codex: permission-managed run honored danger-full-access user config and wrote outside the workspace\n${formatEvents(outcome.managed.events)}`,
+      ).toBe(false);
     },
     PROBE_TIMEOUT_MS,
   );
@@ -233,6 +290,13 @@ interface CodexWritablePathsOutcome extends PhaseResult {
   readonly userConfigChanged: boolean;
 }
 
+interface CodexHostileUserConfigOutcome extends PhaseResult {
+  readonly control: PhaseResult;
+  readonly managed: PhaseResult;
+  readonly controlOutsideCreated: boolean;
+  readonly managedOutsideCreated: boolean;
+}
+
 interface CodexSandboxWritablePathsOutcome {
   readonly baseWriteSucceeded: boolean;
   readonly extraWriteSucceeded: boolean;
@@ -299,6 +363,82 @@ async function runCodexWritablePathsGitProbe(): Promise<CodexWritablePathsOutcom
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+async function runCodexHostileUserConfigProbe(): Promise<CodexHostileUserConfigOutcome> {
+  const root = mkdtempSync(join(process.cwd(), 'cligent-codex-home-'));
+  const controlCwd = join(root, 'control-workspace');
+  const managedCwd = join(root, 'managed-workspace');
+  const codexHome = mkdtempSync(join(process.cwd(), 'cligent-codex-home-config-'));
+  mkdirSync(controlCwd);
+  mkdirSync(managedCwd);
+  execFileSync('git', ['init'], { cwd: controlCwd, stdio: 'ignore' });
+  execFileSync('git', ['init'], { cwd: managedCwd, stdio: 'ignore' });
+  writeFileSync(
+    join(codexHome, 'config.toml'),
+    [
+      '# Must affect no-policy runs and be ignored by permission-managed runs.',
+      'sandbox_mode = "danger-full-access"',
+      'approval_policy = "never"',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  const controlFileName = `control_${randomUUID().slice(0, 8)}.txt`;
+  const managedFileName = `managed_${randomUUID().slice(0, 8)}.txt`;
+  const controlFilePath = join(root, controlFileName);
+  const managedFilePath = join(root, managedFileName);
+  const controlCligent = new Cligent(new CodexAdapter(), {
+    cwd: controlCwd,
+  });
+  const managedCligent = new Cligent(new CodexAdapter(), {
+    permissions: { mode: 'auto' },
+    cwd: managedCwd,
+  });
+
+  try {
+    const control = await collect(
+      controlCligent,
+      outsideWorkspaceWritePrompt(`../${controlFileName}`),
+    );
+    const managed = await collect(
+      managedCligent,
+      outsideWorkspaceWritePrompt(`../${managedFileName}`),
+    );
+    return {
+      events: managed.events,
+      control,
+      managed,
+      controlOutsideCreated: existsSync(controlFilePath),
+      managedOutsideCreated: existsSync(managedFilePath),
+    };
+  } finally {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    rmSync(root, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
+  }
+}
+
+async function probeCodexHostileUserConfigWithRetry(): Promise<CodexHostileUserConfigOutcome> {
+  let outcome: CodexHostileUserConfigOutcome | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    outcome = await runCodexHostileUserConfigProbe();
+    const transient =
+      transientFailure(outcome.control.events) ??
+      transientFailure(outcome.managed.events);
+    if (!transient || attempt === MAX_ATTEMPTS) break;
+    process.stderr.write(
+      `codex user-config isolation acceptance attempt ${attempt} hit transient upstream error: ${transient}\n`,
+    );
+  }
+  return outcome!;
 }
 
 async function probeCodexWritablePathsWithRetry(): Promise<CodexWritablePathsOutcome> {
@@ -446,6 +586,15 @@ function deletePrompt(fileName: string): string {
   );
 }
 
+function outsideWorkspaceWritePrompt(relativePath: string): string {
+  const path = shellQuote(relativePath);
+  return (
+    `Run this exact shell command in the current working directory: ` +
+    `printf '%s\\n' outside > ${path} && test -f ${path}. ` +
+    'Do not ask for permission or confirmation. After it succeeds, reply only "outside".'
+  );
+}
+
 function gitMetadataPrompt(): string {
   return (
     `Run this exact shell command in the current working directory: ` +
@@ -570,11 +719,17 @@ function sandboxInitFailureSummary(text: string): boolean {
 // rather than as an `error` event, so it is detected from the probe outcome.
 function sandboxInitFailure(outcome: ProbeOutcome): string | undefined {
   for (const phase of [outcome.create, outcome.delete]) {
-    for (const event of phase.events) {
-      const text = JSON.stringify(event.payload);
-      if (SANDBOX_INIT_MARKERS.some((marker) => marker.test(text))) {
-        return text.replace(/\s+/g, ' ').slice(0, 300);
-      }
+    const failure = sandboxInitFailureFromEvents(phase.events);
+    if (failure) return failure;
+  }
+  return undefined;
+}
+
+function sandboxInitFailureFromEvents(events: readonly CligentEvent[]): string | undefined {
+  for (const event of events) {
+    const text = JSON.stringify(event.payload);
+    if (SANDBOX_INIT_MARKERS.some((marker) => marker.test(text))) {
+      return text.replace(/\s+/g, ' ').slice(0, 300);
     }
   }
   return undefined;
@@ -646,6 +801,20 @@ function expectPhaseUnblocked(
     deniedTools.map((payload) => payload.toolName),
     `${label}: produced denied tool results`,
   ).toEqual([]);
+  expect(errorMessages, `${label}: emitted error events`).toEqual([]);
+  expect(doneStatus, `${label}: terminal done status`).toBe('success');
+}
+
+function expectRunCompletedWithoutAdapterError(
+  label: string,
+  events: readonly CligentEvent[],
+): void {
+  const errorMessages = events
+    .filter((event) => event.type === 'error')
+    .map((event) => (event.payload as ErrorPayload).message);
+  const done = events.find((event) => event.type === 'done');
+  const doneStatus = done ? (done.payload as DonePayload).status : undefined;
+
   expect(errorMessages, `${label}: emitted error events`).toEqual([]);
   expect(doneStatus, `${label}: terminal done status`).toBe('success');
 }

@@ -47,6 +47,8 @@ The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../de
 
 When the resolved `AgentOptions` carries no `permissions` policy, the adapter shall set none of `default_permissions`, `approvals_reviewer`, or `ThreadOptions.approvalPolicy`, leaving Codex's own default posture in effect per [DR-005](../../decisions/005-per-adapter-permission-configuration.md)'s no-project-wide-default rule. The mappings below apply only to a provided `PermissionPolicy`; within a provided policy an omitted capability field is treated as unset, which is distinct from an absent policy.
 
+When the resolved `AgentOptions` carries a `permissions` policy, the adapter shall invoke Codex `exec` with `--ignore-user-config` while preserving the normal `CODEX_HOME` auth and session state. This prevents a user-level legacy `sandbox_mode` or stale `default_permissions` entry from overriding the adapter-selected permission profile for the run. Runs with no `permissions` policy shall continue to inherit Codex's own config.
+
 The `default_permissions` profile shall be selected as follows:
 
 - `PermissionPolicy.mode: 'bypass'` → `:danger-full-access`.

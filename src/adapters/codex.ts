@@ -199,6 +199,7 @@ function asNumber(value: unknown): number | undefined {
 export interface CodexPermissionOptions {
   approvalPolicy?: CodexApprovalPolicy;
   codexOptions?: CodexConstructorOptions;
+  codexCliExecArgs?: string[];
   codexCliConfigOverrides?: string[];
   writablePaths?: WritablePathsPermissionMapping;
 }
@@ -306,6 +307,7 @@ export function mapPermissionsToCodexOptions(
   return {
     approvalPolicy: codexApprovalPolicy(policy),
     codexOptions: { config },
+    codexCliExecArgs: ['--ignore-user-config'],
     ...(codexCliConfigOverrides ? { codexCliConfigOverrides } : {}),
     ...(writablePaths ? { writablePaths } : {}),
   };
@@ -372,6 +374,7 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 
 interface MappedCodexOptions {
   codexOptions?: CodexConstructorOptions;
+  codexCliExecArgs?: string[];
   codexCliConfigOverrides?: string[];
   threadOptions: CodexThreadOptions;
   runOptions: CodexRunOptions;
@@ -425,6 +428,9 @@ export function mapAgentOptionsToCodexOptions(
 
   return {
     codexOptions: permissions.codexOptions,
+    ...(permissions.codexCliExecArgs
+      ? { codexCliExecArgs: permissions.codexCliExecArgs }
+      : {}),
     ...(permissions.codexCliConfigOverrides
       ? { codexCliConfigOverrides: permissions.codexCliConfigOverrides }
       : {}),
@@ -694,16 +700,19 @@ function resolveCodexBinPath(): string {
 function codexWrapperScript(
   codexBinPath: string,
   configOverrides: readonly string[],
+  execArgs: readonly string[],
 ): string {
   return `#!/usr/bin/env node
 import { spawn } from 'node:child_process';
 
 const codexBinPath = ${JSON.stringify(codexBinPath)};
 const configOverrides = ${JSON.stringify(configOverrides)};
+const execArgs = ${JSON.stringify(execArgs)};
 const [subcommand, ...rest] = process.argv.slice(2);
+const injectedExecArgs = subcommand === 'exec' ? execArgs : [];
 const injected = configOverrides.flatMap((override) => ['--config', override]);
 const args = subcommand
-  ? [codexBinPath, subcommand, ...injected, ...rest]
+  ? [codexBinPath, subcommand, ...injectedExecArgs, ...injected, ...rest]
   : [codexBinPath, ...injected];
 const child = spawn(process.execPath, args, {
   env: process.env,
@@ -730,8 +739,9 @@ child.on('error', (error) => {
 
 export async function createCodexConfigOverrideWrapper(
   configOverrides: readonly string[],
+  execArgs: readonly string[] = [],
 ): Promise<CodexConfigOverrideWrapper | undefined> {
-  if (configOverrides.length === 0) {
+  if (configOverrides.length === 0 && execArgs.length === 0) {
     return undefined;
   }
 
@@ -743,7 +753,7 @@ export async function createCodexConfigOverrideWrapper(
 
   await writeFile(
     scriptPath,
-    codexWrapperScript(codexBinPath, configOverrides),
+    codexWrapperScript(codexBinPath, configOverrides, execArgs),
     'utf8',
   );
 
@@ -812,6 +822,7 @@ export class CodexAdapter implements AgentAdapter {
 
     const {
       codexOptions,
+      codexCliExecArgs,
       codexCliConfigOverrides,
       threadOptions,
       runOptions,
@@ -820,6 +831,7 @@ export class CodexAdapter implements AgentAdapter {
 
     const codexConfigWrapper = await createCodexConfigOverrideWrapper(
       codexCliConfigOverrides ?? [],
+      codexCliExecArgs ?? [],
     );
     const effectiveCodexOptions = codexConfigWrapper
       ? {

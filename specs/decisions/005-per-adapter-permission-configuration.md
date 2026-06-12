@@ -82,9 +82,9 @@ The approval/reviewer posture and the local-access surface are independent Codex
 The exact per-capability → profile mapping is [CODEX-004](../user/adapters/codex.md#codex-004).
 Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
 
-**Determinism caveat.** `default_permissions` is authoritative only when no legacy `sandbox_mode` exists in any of the user's Codex config layers, and cligent cannot un-set such a key through the `--config` passthrough.
-On a machine carrying a legacy `sandbox_mode`, cligent's `default_permissions` is silently overridden.
-A default Codex install carries none, so this affects only users who set it manually; tests asserting auto-mode behavior assume a clean Codex config.
+**Determinism caveat.** `default_permissions` is authoritative only when no legacy `sandbox_mode` exists in the active Codex config layers.
+For cligent-managed permission runs, the adapter invokes Codex `exec` with `--ignore-user-config` so the user's `$CODEX_HOME/config.toml` does not silently replace the requested profile; auth and session state still come from `CODEX_HOME`.
+Project-local Codex config layers and future managed configuration routes remain subject to Codex's own precedence rules.
 
 **Inheriting the user's Codex config** — letting Codex's own `default_permissions` / CLI/Desktop config be authoritative instead of cligent picking a profile — is deliberately out of scope.
 It is non-deterministic and would make `mode: 'auto'` machine-dependent.

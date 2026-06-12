@@ -74,14 +74,13 @@ status lines, and tool lifecycle, so the `boss>` prompt and per-player
 text stay readable on the host terminal's background.
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
-Captain and both players so the Claude Code and Codex CLI defaults run in
-each adapter's classifier-, sandbox-, or reviewer-protected auto-mode,
-reducing routine permission prompts during a session. Prompts are not
-eliminated: Claude's `auto` still blocks high-risk actions and falls
-back to prompts after repeated denies, and Codex's `on-request +
-:workspace + auto_review` keeps the same local-access and network limits
-while routing eligible approval requests to a reviewer agent. Remove the
-blocks to fall back to each adapter's SDK
+Captain and both players. That runs each adapter's classifier-, sandbox-,
+or reviewer-protected auto-mode, reducing routine permission prompts
+during a session. Prompts are not eliminated: Claude's `auto`
+still blocks high-risk actions and falls back to prompts after repeated
+denies, and Codex's `on-request + :workspace + auto_review` keeps the
+same network limits while routing eligible approval requests to a
+reviewer agent. Remove the blocks to fall back to each adapter's SDK
 default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `opencode`.
@@ -121,8 +120,9 @@ players:
 - `mode: 'auto'` selects each adapter's classifier-, sandbox-, or reviewer-protected
   auto-mode (claude `permissionMode: auto`, codex `approval_policy:
   on-request + default_permissions: :workspace + approvals_reviewer:
-  auto_review`, gemini `--approval-mode yolo`, opencode `permission:
-  allow` SDK body). `mode: 'bypass'` selects each adapter's
+  auto_review` with user config ignored for that managed run, gemini
+  `--approval-mode yolo`, opencode `permission: allow` SDK body).
+  `mode: 'bypass'` selects each adapter's
   unchecked-bypass mode where the SDK supports one; the
   opencode adapter rejects `bypass` because the cligent opencode path
   drives `opencode serve` via the SDK rather than `opencode run`.

@@ -660,6 +660,7 @@ describe('CodexAdapter', () => {
         approvals_reviewer: 'auto_review',
       },
     });
+    expect(mapped.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(mapped.codexCliConfigOverrides).toEqual([
       'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write", "generated/cache"="write"}}}',
     ]);
@@ -704,6 +705,7 @@ describe('CodexAdapter', () => {
       approvals_reviewer: 'auto_review',
     });
     expect(wrapperPath).toBeDefined();
+    expect(wrapperScript).toContain('--ignore-user-config');
     expect(wrapperScript).toContain(
       'permissions.cligent-workspace-extra-writes={extends=\\"' +
         ':workspace\\", filesystem={\\":workspace_roots\\"={\\".git\\"=\\"write\\"}}}',
@@ -792,11 +794,12 @@ describe('CodexAdapter', () => {
       }),
     );
 
-    expect(capturedCodexOptions).toEqual({
+    expect(capturedCodexOptions).toMatchObject({
       config: {
         default_permissions: ':workspace',
       },
     });
+    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
     expect(capturedThreadOptions).toMatchObject({
       workingDirectory: '/tmp/repo',
       model: 'gpt-5-codex',
@@ -840,12 +843,13 @@ describe('CodexAdapter', () => {
       }),
     );
 
-    expect(capturedCodexOptions).toEqual({
+    expect(capturedCodexOptions).toMatchObject({
       config: {
         default_permissions: ':workspace',
         approvals_reviewer: 'auto_review',
       },
     });
+    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
     expect(capturedThreadOptions).toMatchObject({
       approvalPolicy: 'on-request',
     });
@@ -883,11 +887,12 @@ describe('CodexAdapter', () => {
       }),
     );
 
-    expect(capturedCodexOptions).toEqual({
+    expect(capturedCodexOptions).toMatchObject({
       config: {
         default_permissions: ':danger-full-access',
       },
     });
+    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
     expect(capturedThreadOptions).toMatchObject({
       approvalPolicy: 'never',
     });
@@ -1341,6 +1346,7 @@ describe('CodexAdapter', () => {
         approvals_reviewer: 'auto_review',
       },
     });
+    expect(auto.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(auto).not.toHaveProperty('sandboxMode');
     expect(auto).not.toHaveProperty('networkAccessEnabled');
 
