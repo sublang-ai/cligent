@@ -32,7 +32,6 @@ const USER_ABORT_REASONS = new Set([
   'SIGTERM',
   'EOF',
   'runtime disposed',
-  'tmux-play runtime is disposed',
 ]);
 
 export class NotificationObserver implements RecordObserver {

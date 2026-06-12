@@ -169,9 +169,10 @@ The runtime shall emit a `runtime_error` record when a control-plane failure pre
 ### TMUX-077
 
 Where session mode is running, the session shall register a notification observer with the existing record observers.
+The notification observer shall be registered before any caller-supplied observers.
 When that observer handles `player_finished` with sink `bell`, it shall write raw BEL (`\x07`) to orchestrator stdout regardless of the player result status.
 When that observer handles `turn_finished` with sink `desktop`, it shall send one best-effort desktop notification after the full Boss turn completes.
-When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not a user cancellation such as `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
+When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not one of the user-cancellation reasons `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
 The desktop backend shall launch a detached best-effort `osascript` notification on macOS, a detached best-effort `notify-send` notification on Linux, and no operation on other platforms.
 The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
 The notification observer shall not notify for `runtime_error` records.
