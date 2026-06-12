@@ -35,9 +35,16 @@ Discovery order:
 
 If neither file exists and `--config` is not set, `tmux-play` creates the
 home config with the default `fanout` Captain and two stub players, prints a
-one-line notice, and continues. Existing home configs are preserved, and a
-cwd config takes precedence over the home file. `--config <path>` points at
-a specific YAML file and disables discovery and auto-create behavior.
+one-line notice, and continues. Existing home config values are preserved,
+and a cwd config takes precedence over the home file. `--config <path>`
+points at a specific YAML file and disables discovery and auto-create
+behavior.
+
+When an older home config is loaded through fallback discovery, `tmux-play`
+adds only missing safe defaults to that home YAML: `theme: auto`, resolved
+layout defaults, `captain.options: {}`, and the notification defaults shown
+below. It preserves existing values and does not add model, instruction,
+permissions, or reasoning-effort defaults to old files.
 
 Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 `tmux-play.config.json` are ignored; when one is present without a cwd YAML
@@ -45,6 +52,9 @@ config, `tmux-play` prints a warning to rename or convert it.
 
 ```yaml
 theme: auto
+notifications:
+  player_finished: bell
+  turn_finished: desktop
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
@@ -72,6 +82,16 @@ values are `mocha` (dark terminals), `latte` (light terminals), and
 inside each pane uses the same resolved flavor for speaker prefixes,
 status lines, and tool lifecycle, so the `boss>` prompt and per-player
 text stay readable on the host terminal's background.
+
+The optional top-level `notifications` map accepts only these record keys:
+`player_finished`, `turn_finished`, and `turn_aborted`. Each key accepts one
+sink: `off`, `bell`, or `desktop`. Omitting the block disables
+notifications. The generated home config rings the terminal bell (`\x07`)
+after every player finishes and sends a desktop notification when the full
+Boss turn finishes. `turn_aborted` is off by default; when enabled, user
+cancellations such as ESC, SIGINT, SIGTERM, EOF, and runtime disposal stay
+silent. Desktop notifications are best-effort: `osascript` on macOS,
+`notify-send` on Linux, and no-op elsewhere.
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
 Captain and both players. That runs each adapter's classifier-, sandbox-,

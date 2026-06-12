@@ -40,6 +40,17 @@ export interface CaptainConfig {
 export type CatppuccinFlavorConfig = CatppuccinFlavor | 'auto';
 export type { CatppuccinFlavor };
 
+export const NOTIFICATION_EVENTS = [
+  'player_finished',
+  'turn_finished',
+  'turn_aborted',
+] as const;
+export const NOTIFICATION_SINKS = ['off', 'bell', 'desktop'] as const;
+
+export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
+export type NotificationSink = (typeof NOTIFICATION_SINKS)[number];
+export type NotificationConfig = Record<NotificationEvent, NotificationSink>;
+
 /**
  * Initial tmux session cell grid for {@link
  * https://github.com/charmbracelet/glow tmux} `new-session -x/-y` per
@@ -72,6 +83,12 @@ export interface LayoutConfig {
 export interface TmuxPlayConfig {
   captain: CaptainConfig;
   players: PlayerConfig[];
+  /**
+   * Resolved notification sinks keyed by supported record type. Missing YAML
+   * blocks and missing event keys normalize to `'off'`; snapshots carry the
+   * concrete map so session mode never re-resolves it.
+   */
+  notifications: NotificationConfig;
   /**
    * Catppuccin flavor to apply to the session chrome. `'auto'` (default
    * when omitted) lets the launcher pick via OSC 11 terminal-background
@@ -115,6 +132,11 @@ const LEGACY_CONFIG_FILES = [
 
 const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   theme: 'auto',
+  notifications: {
+    player_finished: 'bell',
+    turn_finished: 'desktop',
+    turn_aborted: 'off',
+  },
   layout: {
     window: { columns: 174, rows: 49 },
     // Multi-player default (TMUX-064): equal-thirds [1, 1, 1] so the
@@ -176,9 +198,11 @@ export async function loadTmuxPlayConfig(
 ): Promise<LoadedTmuxPlayConfig> {
   const cwd = options.cwd ?? process.cwd();
   const configHome = options.configHome ?? defaultConfigHome();
+  const homeConfig = homeConfigPath(configHome);
   let configPath = options.configPath
     ? resolveConfigPath(cwd, options.configPath)
     : findTmuxPlayConfig(cwd, configHome);
+  let createdDefaultConfig = false;
 
   if (!options.configPath && !existsSync(resolve(cwd, TMUX_PLAY_CONFIG_FILE))) {
     const legacyConfig = findLegacyTmuxPlayConfig(cwd);
@@ -188,12 +212,24 @@ export async function loadTmuxPlayConfig(
   }
 
   if (!configPath) {
-    configPath = homeConfigPath(configHome);
+    configPath = homeConfig;
     await writeDefaultTmuxPlayConfig(configPath);
+    createdDefaultConfig = true;
     options.onDefaultConfigCreated?.(configPath);
   }
 
-  const raw = await loadConfigValue(configPath);
+  let raw = await loadConfigValue(configPath);
+  if (
+    !createdDefaultConfig &&
+    !options.configPath &&
+    resolve(configPath) === resolve(homeConfig)
+  ) {
+    const migrated = migrateHomeConfigSafeDefaults(raw);
+    if (migrated.changed) {
+      await writeFile(configPath, stringify(migrated.value));
+      raw = migrated.value;
+    }
+  }
   const config = normalizeTmuxPlayConfig(raw);
   assertJsonSerializable(config, 'config');
 
@@ -250,7 +286,7 @@ function findLegacyTmuxPlayConfig(cwd: string): string | undefined {
 
 async function writeDefaultTmuxPlayConfig(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, stringify(DEFAULT_TMUX_PLAY_CONFIG));
+  await writeFile(path, stringify(defaultHomeConfigValue()));
 }
 
 function normalizeCaptainFrom(from: string, configPath: string): string {
@@ -315,6 +351,7 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set<string>([
   'players',
   'theme',
   'layout',
+  'notifications',
 ]);
 
 function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
@@ -328,12 +365,51 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const captain = normalizeCaptainConfig(input.captain);
   const players = normalizePlayerConfigs(input.players);
   const theme = optionalThemeFlavor(input.theme, 'theme');
+  const notifications = normalizeNotificationConfig(
+    input.notifications,
+    'notifications',
+  );
   // TMUX-064: defaulting at load time so loaded.config.layout is always
   // concrete. The shape depends on players.length (1 → 2 columns, ≥2 → 3
   // columns); validation rejects a mismatched columnWeights length.
   const layout = resolveLayoutConfig(input.layout, players.length, 'layout');
-  const config: TmuxPlayConfig = { captain, players, layout };
+  const config: TmuxPlayConfig = { captain, players, notifications, layout };
   if (theme !== undefined) config.theme = theme;
+  return config;
+}
+
+const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  player_finished: 'off',
+  turn_finished: 'off',
+  turn_aborted: 'off',
+};
+
+const DEFAULT_HOME_NOTIFICATION_CONFIG = {
+  player_finished: 'bell',
+  turn_finished: 'desktop',
+} satisfies Partial<NotificationConfig>;
+
+export function defaultNotificationConfig(): NotificationConfig {
+  return { ...DEFAULT_NOTIFICATION_CONFIG };
+}
+
+function normalizeNotificationConfig(
+  value: unknown,
+  path: string,
+): NotificationConfig {
+  if (value === undefined) {
+    return defaultNotificationConfig();
+  }
+
+  const input = requireObject(value, path);
+  rejectUnknownKeys(input, new Set(NOTIFICATION_EVENTS), path);
+
+  const config = defaultNotificationConfig();
+  for (const event of NOTIFICATION_EVENTS) {
+    if (input[event] !== undefined) {
+      config[event] = requireNotificationSink(input[event], `${path}.${event}`);
+    }
+  }
   return config;
 }
 
@@ -456,6 +532,98 @@ function optionalPositiveInteger(
     throw new Error(`${path} must be a positive integer`);
   }
   return value;
+}
+
+function requireNotificationSink(
+  value: unknown,
+  path: string,
+): NotificationSink {
+  if (
+    typeof value !== 'string' ||
+    !(NOTIFICATION_SINKS as readonly string[]).includes(value)
+  ) {
+    throw new Error(`${path} must be one of: off, bell, desktop`);
+  }
+  return value as NotificationSink;
+}
+
+function defaultHomeConfigValue(): TmuxPlayConfig {
+  const config = structuredCloneJson(DEFAULT_TMUX_PLAY_CONFIG);
+  // The generated YAML documents the non-off defaults requested for first-run
+  // users while omission of `turn_aborted` still normalizes to `off`.
+  delete (config.notifications as Partial<NotificationConfig>).turn_aborted;
+  return config;
+}
+
+function migrateHomeConfigSafeDefaults(
+  value: unknown,
+): { value: unknown; changed: boolean } {
+  if (!isRecord(value)) {
+    return { value, changed: false };
+  }
+
+  let changed = false;
+  const config = value;
+
+  if (!hasOwn(config, 'theme')) {
+    config.theme = 'auto';
+    changed = true;
+  }
+
+  const playerCount = Array.isArray(config.players) ? config.players.length : undefined;
+  const defaultWeights =
+    playerCount === undefined ? undefined : defaultColumnWeights(playerCount);
+
+  if (!hasOwn(config, 'layout')) {
+    config.layout = {
+      window: { ...DEFAULT_LAYOUT_WINDOW },
+      ...(defaultWeights ? { columnWeights: [...defaultWeights] } : {}),
+    };
+    changed = true;
+  } else if (isRecord(config.layout)) {
+    const layout = config.layout;
+    if (!hasOwn(layout, 'window')) {
+      layout.window = { ...DEFAULT_LAYOUT_WINDOW };
+      changed = true;
+    } else if (isRecord(layout.window)) {
+      if (!hasOwn(layout.window, 'columns')) {
+        layout.window.columns = DEFAULT_LAYOUT_WINDOW.columns;
+        changed = true;
+      }
+      if (!hasOwn(layout.window, 'rows')) {
+        layout.window.rows = DEFAULT_LAYOUT_WINDOW.rows;
+        changed = true;
+      }
+    }
+    if (defaultWeights && !hasOwn(layout, 'columnWeights')) {
+      layout.columnWeights = [...defaultWeights];
+      changed = true;
+    }
+  }
+
+  if (isRecord(config.captain) && !hasOwn(config.captain, 'options')) {
+    config.captain.options = {};
+    changed = true;
+  }
+
+  if (!hasOwn(config, 'notifications')) {
+    config.notifications = { ...DEFAULT_HOME_NOTIFICATION_CONFIG };
+    changed = true;
+  }
+
+  return { value: config, changed };
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value)
+  );
 }
 
 const THEME_FLAVORS: ReadonlySet<CatppuccinFlavorConfig> = new Set([

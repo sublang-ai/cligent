@@ -5,7 +5,7 @@
 
 ## Intent
 
-The `tmux-play` CLI, its YAML configuration, Captain extension contract, record set, observer dispatch, tmux topology, programmatic runtime API, and the built-in `fanout` Captain per [DR-004](../decisions/004-tmux-play-captain-architecture.md).
+The `tmux-play` CLI, its YAML configuration, notifications, Captain extension contract, record set, observer dispatch, tmux topology, programmatic runtime API, and the built-in `fanout` Captain per [DR-004](../decisions/004-tmux-play-captain-architecture.md).
 
 ## CLI Invocation
 
@@ -33,7 +33,7 @@ When `--theme-diagnostics` is supplied, the CLI shall run theme-diagnostics mode
 
 ### TMUX-005
 
-A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array. The top-level config may also include an optional `theme` field per [TMUX-060](#tmux-060) and an optional `layout` field per [TMUX-064](#tmux-064).
+A `tmux-play` config shall be YAML with a `captain` object and a non-empty `players` array. The top-level config may also include an optional `theme` field per [TMUX-060](#tmux-060), an optional `layout` field per [TMUX-064](#tmux-064), and an optional `notifications` field per [TMUX-076](#tmux-076).
 
 ### TMUX-006
 
@@ -55,6 +55,16 @@ The weights govern column region widths per [TMUX-044](#tmux-044): each non-righ
 A missing `layout.columnWeights` shall be defaulted by the loader to `[1, 1]` when one player is configured and `[1, 1, 1]` when two or more players are configured, so the shipped defaults are 50/50 for the single-player layout and even thirds (`floor(W / 3)` per column, rightmost absorbing the remainder) for the multi-player layout.
 The loader shall reject values outside these constraints with an error that names the offending path per [TMUX-008](#tmux-008): non-integer or non-positive `layout.window.columns` / `layout.window.rows`; `layout.columnWeights` not an array; any weight that is not a positive integer (rejects NaN, Infinity, decimals like `0.5`, zero, negatives, and non-number types); a `layout.columnWeights` length that does not match the visible column count.
 The snapshot per [TMUX-034](#tmux-034) shall carry the resolved `layout.window.columns`, `layout.window.rows`, and `layout.columnWeights` values verbatim, so session mode never re-resolves defaults.
+
+### TMUX-076
+
+The top-level `notifications` field shall be a map from tmux-play record notification events to sinks.
+The event keys shall be the closed set `player_finished`, `turn_finished`, and `turn_aborted`; `runtime_error` shall not be accepted as a notification event.
+The sink values shall be the closed set `off`, `bell`, and `desktop`.
+When the `notifications` block is missing, the loader shall resolve all notification events to `off`.
+When an event key is missing inside a present `notifications` block, the loader shall resolve that event to `off`.
+When the loader accepts a config, the snapshot per [TMUX-034](#tmux-034) shall carry a resolved notification map with all three event keys.
+When the loader rejects an unknown notification key or invalid sink, the error shall name the offending path per [TMUX-008](#tmux-008).
 
 ### TMUX-007
 
@@ -86,12 +96,15 @@ When `--config` is not supplied, the launcher shall search for `tmux-play.config
 
 ### TMUX-010
 
-When neither location holds a config and `--config` is not supplied, the launcher shall create the home location with a default config, print a one-line notice naming the path on stdout, and continue. Subsequent invocations shall preserve the existing home config without overwriting.
+When neither location holds a config and `--config` is not supplied, the launcher shall create the home location with a default config, print a one-line notice naming the path on stdout, and continue.
+When the launcher loads an existing home config through fallback discovery, it shall add only missing safe defaults to that home YAML: `theme: auto`, the resolved `layout` defaults from [TMUX-064](#tmux-064), `captain.options: {}`, and the default `notifications` entries from [TMUX-011](#tmux-011).
+The migration shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `reasoningEffort` defaults to old home configs.
 
 ### TMUX-011
 
 The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two players whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` player shall use `model: claude-opus-4-8` with `reasoningEffort: xhigh`; the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`. Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance. The default Captain and default players shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052); for Codex this resolves to `on-request + auto_review` with the `:workspace` permission profile because [CODEX-004](adapters/codex.md#codex-004) maps `mode: 'auto'` with unset capability fields to `:workspace`. These defaults run each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
 The default home config shall also include an explicit `layout` block per [TMUX-064](#tmux-064) — `window: { columns: 174, rows: 49 }` and `columnWeights: [1, 1, 1]` — so first-run users see the new knobs and the shipped multi-player layout default surfaces in the YAML rather than being implicit in the code.
+The default home config shall also include `notifications: { player_finished: bell, turn_finished: desktop }` per [TMUX-076](#tmux-076), with omitted `turn_aborted` resolving to `off`.
 
 ### TMUX-012
 
@@ -152,6 +165,16 @@ Turn-bound emissions shall drain before `turn_finished`/`turn_aborted`. `turnId:
 ### TMUX-025
 
 The runtime shall emit a `runtime_error` record when a control-plane failure prevents normal record emission — startup, `Captain.init`, a `handleBossTurn` exception, or observer dispatch. The record shall carry `turnId: number` when an active turn exists at the moment of failure, else `turnId: null`. After emission, the runtime shall abort the active turn if any and run shutdown per [TMUX-019](#tmux-019). When the failure originates in an observer, the record shall additionally be delivered to the remaining observers in registration order before shutdown begins. Individual player or Captain run failures shall surface in the corresponding `player_finished` / `captain_finished` record with `status: 'error'`, not as `runtime_error`.
+
+### TMUX-077
+
+Where session mode is running, the session shall register a notification observer with the existing record observers.
+When that observer handles `player_finished` with sink `bell`, it shall write raw BEL (`\x07`) to orchestrator stdout regardless of the player result status.
+When that observer handles `turn_finished` with sink `desktop`, it shall send one best-effort desktop notification after the full Boss turn completes.
+When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not a user cancellation such as `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
+The desktop backend shall launch a detached best-effort `osascript` notification on macOS, a detached best-effort `notify-send` notification on Linux, and no operation on other platforms.
+The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
+The notification observer shall not notify for `runtime_error` records.
 
 ### TMUX-026
 

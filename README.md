@@ -83,13 +83,13 @@ XState graph, anything. The built-in `fanout` Captain runs every player in
 parallel and synthesizes their answers; swap it for your own using the
 same contract.
 
-See [docs/tmux-play.md](docs/tmux-play.md) for config, layout, and writing
-a Captain.
+See [docs/tmux-play.md](docs/tmux-play.md) for config, layout,
+notifications, and writing a Captain.
 
 ## Documentation
 
 - [docs/guide.md](docs/guide.md) — `Cligent` class, adapters, permissions, session continuity, parallel execution, event types.
-- [docs/tmux-play.md](docs/tmux-play.md) — `tmux-play` config, layout, snapshot, and writing custom Captains.
+- [docs/tmux-play.md](docs/tmux-play.md) — `tmux-play` config, layout, notifications, snapshot, and writing custom Captains.
 
 ## Contributing
 

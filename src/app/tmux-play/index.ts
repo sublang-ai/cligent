@@ -5,6 +5,9 @@ export {
   TMUX_PLAY_CONFIG_SNAPSHOT,
   TMUX_PLAY_CONFIG_FILE,
   TMUX_PLAY_HOME_CONFIG,
+  NOTIFICATION_EVENTS,
+  NOTIFICATION_SINKS,
+  defaultNotificationConfig,
   createTmuxPlayConfigSnapshot,
   findTmuxPlayConfig,
   loadTmuxPlayConfig,
@@ -16,6 +19,9 @@ export type {
   JsonValue,
   LoadedTmuxPlayConfig,
   LoadTmuxPlayConfigOptions,
+  NotificationConfig,
+  NotificationEvent,
+  NotificationSink,
   TmuxPlayConfig,
 } from './config.js';
 
@@ -51,6 +57,15 @@ export type {
 } from './records.js';
 
 export { TmuxPlayRuntime, createTmuxPlayRuntime } from './runtime.js';
+
+export {
+  NotificationObserver,
+  createNotificationObserver,
+} from './notification-observer.js';
+export type {
+  DetachedNotificationSpawner,
+  NotificationObserverOptions,
+} from './notification-observer.js';
 
 export { KNOWN_PLAYER_ADAPTERS, isKnownPlayerAdapter } from './players.js';
 export type {

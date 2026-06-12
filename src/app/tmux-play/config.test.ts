@@ -47,6 +47,11 @@ function validConfig(
         instruction: 'Review changes.',
       },
     ],
+    notifications: {
+      player_finished: 'off',
+      turn_finished: 'off',
+      turn_aborted: 'off',
+    },
     // TMUX-064: multi-player default — equal thirds [1, 1, 1] on the
     // canonical 174x49 grid (174 / 3 = 58 per column).
     layout: {
@@ -67,6 +72,10 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       `    rows: ${config.layout.window.rows}`,
       '  columnWeights:',
       ...config.layout.columnWeights.map((weight) => `    - ${weight}`),
+      'notifications:',
+      `  player_finished: ${config.notifications.player_finished}`,
+      `  turn_finished: ${config.notifications.turn_finished}`,
+      `  turn_aborted: ${config.notifications.turn_aborted}`,
       'captain:',
       `  from: '${config.captain.from}'`,
       `  adapter: ${config.captain.adapter}`,
@@ -151,7 +160,7 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({ cwd, configHome });
 
     expect(loaded.path).toBe(homeConfig);
-    expect(loaded.config).toEqual(validConfig());
+    expect(loaded.config).toEqual({ ...validConfig(), theme: 'auto' });
   });
 
   it('treats an empty XDG_CONFIG_HOME as unset', async () => {
@@ -212,6 +221,11 @@ describe('tmux-play config loading', () => {
       { mode: 'auto' },
       { mode: 'auto' },
     ]);
+    expect(loaded.config.notifications).toEqual({
+      player_finished: 'bell',
+      turn_finished: 'desktop',
+      turn_aborted: 'off',
+    });
     // TMUX-011 (amended) + TMUX-064: the shipped default home YAML carries
     // an explicit `layout` block with the canonical 174x49 grid and the
     // equal-thirds [1, 1, 1] multi-player column weights, so first-run users
@@ -220,11 +234,16 @@ describe('tmux-play config loading', () => {
       window: { columns: 174, rows: 49 },
       columnWeights: [1, 1, 1],
     });
-    expect(readFileSync(homeConfig, 'utf8')).toContain('layout:');
-    expect(readFileSync(homeConfig, 'utf8')).toContain('columnWeights:');
+    const homeSource = readFileSync(homeConfig, 'utf8');
+    expect(homeSource).toContain('layout:');
+    expect(homeSource).toContain('columnWeights:');
+    expect(homeSource).toContain('notifications:');
+    expect(homeSource).toContain('player_finished: bell');
+    expect(homeSource).toContain('turn_finished: desktop');
+    expect(homeSource).not.toContain('turn_aborted:');
   });
 
-  it('preserves an existing home config across runs', async () => {
+  it('preserves existing home config values while adding missing safe defaults', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const cwd = join(workDir, 'project');
     const configHome = join(workDir, 'xdg');
@@ -238,12 +257,14 @@ describe('tmux-play config loading', () => {
         options: {},
       },
     }));
-    const before = readFileSync(homeConfig, 'utf8');
 
     const loaded = await loadTmuxPlayConfig({ cwd, configHome });
+    const after = readFileSync(homeConfig, 'utf8');
 
     expect(loaded.config.captain.adapter).toBe('opencode');
-    expect(readFileSync(homeConfig, 'utf8')).toBe(before);
+    expect(loaded.config.theme).toBe('auto');
+    expect(after).toContain('adapter: opencode');
+    expect(after).toContain('theme: auto');
   });
 
   it('reports legacy cwd configs when no yaml cwd config exists', async () => {
@@ -672,6 +693,188 @@ describe('tmux-play config loading', () => {
     await expect(
       loadTmuxPlayConfig({ configPath: bad }),
     ).rejects.toThrow('theme must be one of: mocha, latte, auto');
+  });
+
+  it('normalizes notification sinks and rejects unknown events or sinks', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'notifications:',
+        '  player_finished: bell',
+        '  turn_finished: desktop',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+
+    expect(loaded.config.notifications).toEqual({
+      player_finished: 'bell',
+      turn_finished: 'desktop',
+      turn_aborted: 'off',
+    });
+
+    const badEvent = join(workDir, 'bad-event.yaml');
+    writeFileSync(
+      badEvent,
+      [
+        'notifications:',
+        '  runtime_error: desktop',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    await expect(loadTmuxPlayConfig({ configPath: badEvent })).rejects.toThrow(
+      'Unknown config field notifications.runtime_error',
+    );
+
+    const badSink = join(workDir, 'bad-sink.yaml');
+    writeFileSync(
+      badSink,
+      [
+        'notifications:',
+        '  turn_finished: toast',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    await expect(loadTmuxPlayConfig({ configPath: badSink })).rejects.toThrow(
+      'notifications.turn_finished must be one of: off, bell, desktop',
+    );
+  });
+
+  it('treats a missing notification block as off and snapshots the resolved map', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const sessionWorkDir = join(workDir, 'session');
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(loaded, sessionWorkDir);
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as TmuxPlayConfig;
+
+    expect(loaded.config.notifications).toEqual({
+      player_finished: 'off',
+      turn_finished: 'off',
+      turn_aborted: 'off',
+    });
+    expect(snapshot.notifications).toEqual(loaded.config.notifications);
+  });
+
+  it('updates old home YAML with only missing safe defaults', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+    mkdirSync(cwd);
+    mkdirSync(join(configHome, 'tmux-play'), { recursive: true });
+    writeFileSync(
+      homeConfig,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: codex',
+        'players:',
+        '  - id: solo',
+        '    adapter: gemini',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd, configHome });
+    const migrated = readFileSync(homeConfig, 'utf8');
+
+    expect(loaded.config.captain.adapter).toBe('codex');
+    expect(loaded.config.captain.options).toEqual({});
+    expect(loaded.config.players.map((player) => player.id)).toEqual(['solo']);
+    expect(loaded.config.theme).toBe('auto');
+    expect(loaded.config.layout).toEqual({
+      window: { columns: 174, rows: 49 },
+      columnWeights: [1, 1],
+    });
+    expect(loaded.config.notifications).toEqual({
+      player_finished: 'bell',
+      turn_finished: 'desktop',
+      turn_aborted: 'off',
+    });
+    expect(migrated).toContain('theme: auto');
+    expect(migrated).toContain('options: {}');
+    expect(migrated).toContain('layout:');
+    expect(migrated).toContain('columnWeights:');
+    expect(migrated).toContain('notifications:');
+    expect(migrated).toContain('player_finished: bell');
+    expect(migrated).toContain('turn_finished: desktop');
+    expect(migrated).not.toContain('model:');
+    expect(migrated).not.toContain('instruction:');
+    expect(migrated).not.toContain('permissions:');
+    expect(migrated).not.toContain('reasoningEffort:');
+  });
+
+  it('preserves an existing partial home notifications block', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+    mkdirSync(cwd);
+    mkdirSync(join(configHome, 'tmux-play'), { recursive: true });
+    writeFileSync(
+      homeConfig,
+      [
+        'notifications:',
+        '  player_finished: off',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        'players:',
+        '  - id: solo',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ cwd, configHome });
+    const migrated = readFileSync(homeConfig, 'utf8');
+
+    expect(loaded.config.notifications).toEqual({
+      player_finished: 'off',
+      turn_finished: 'off',
+      turn_aborted: 'off',
+    });
+    expect(migrated).toContain('player_finished: off');
+    expect(migrated).not.toContain('turn_finished: desktop');
   });
 
   it('defaults the layout block when YAML omits it (multi-player)', async () => {

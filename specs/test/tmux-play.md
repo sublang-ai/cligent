@@ -10,9 +10,9 @@ Verification criteria for the `tmux-play` CLI, configuration, Captain runtime, a
 ## Configuration and Discovery
 
 ### TTMUX-001
-Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011)
+Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-076](../user/tmux-play.md#tmux-076)
 
-Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `reasoningEffort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [TMUX-011](../user/tmux-play.md#tmux-011). The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `columnWeights: [1, 1, 1]` per [TMUX-011](../user/tmux-play.md#tmux-011). A one-line notice naming the path shall be printed to stdout, and a second invocation shall not overwrite the file.
+Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `reasoningEffort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [TMUX-011](../user/tmux-play.md#tmux-011). The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `columnWeights: [1, 1, 1]` per [TMUX-011](../user/tmux-play.md#tmux-011), plus `notifications: { player_finished: bell, turn_finished: desktop }` per [TMUX-076](../user/tmux-play.md#tmux-076). A one-line notice naming the path shall be printed to stdout, and a second invocation shall preserve existing values while adding only missing safe defaults per [TMUX-010](../user/tmux-play.md#tmux-010).
 
 ### TTMUX-002
 Verifies: [TMUX-009](../user/tmux-play.md#tmux-009)
@@ -94,6 +94,23 @@ Given a YAML config that supplies an explicit `layout.columnWeights`, the resolv
 Verifies: [TMUX-003](../user/tmux-play.md#tmux-003), [TMUX-034](../user/tmux-play.md#tmux-034)
 
 Given a snapshot file at the work directory, when session mode runs, the Captain shall be imported once from `captain.from` (a `file://` URL for local paths or a package specifier) and Boss turns shall flow through the runtime per [TTMUX-007](#ttmux-007).
+
+### TTMUX-075
+Verifies: [TMUX-076](../user/tmux-play.md#tmux-076), [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-034](../user/tmux-play.md#tmux-034)
+
+Given a YAML config with `notifications: { player_finished: bell, turn_finished: desktop }`, when `loadTmuxPlayConfig` returns, the loaded config shall carry `notifications: { player_finished: bell, turn_finished: desktop, turn_aborted: off }`.
+Given a YAML config that omits `notifications`, when `loadTmuxPlayConfig` returns and the launcher writes a snapshot, both the loaded config and snapshot shall carry `off` for all three notification events.
+Given a YAML config with an unknown notification key such as `runtime_error` or a sink outside `off | bell | desktop`, the loader shall reject with an error that names the offending `notifications.<key>` path.
+Given an old home YAML loaded through fallback discovery that lacks safe defaults, the loader shall update that home YAML with only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; it shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `reasoningEffort`.
+
+### TTMUX-076
+Verifies: [TMUX-077](../user/tmux-play.md#tmux-077), [TMUX-023](../user/tmux-play.md#tmux-023)
+
+Given a `NotificationObserver` configured with `player_finished: bell`, when it receives `player_finished` records with `status: ok`, `status: error`, and `status: aborted`, orchestrator stdout shall receive one raw BEL byte (`\x07`) for each record.
+Given a `NotificationObserver` configured with `turn_finished: desktop`, when it receives one `turn_finished` record on macOS or Linux, it shall launch exactly one detached best-effort OS notification command (`osascript` on macOS, `notify-send` on Linux); on other platforms it shall launch no command.
+Given a `NotificationObserver` configured with `turn_aborted: bell`, when it receives `turn_aborted` records whose reason is `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`, it shall write no BEL; when it receives a non-user-cancellation reason, it shall notify.
+Given notification sinks throw, spawn fails, or a `runtime_error` record arrives, `NotificationObserver.onRecord` shall not throw.
+Given a `TmuxPlaySession` starts, the runtime observer array shall contain the notification observer registered with the existing presenter, follow, and timing observers before any opt-in test/user observers.
 
 ### TTMUX-073
 Verifies: [TMUX-074](../user/tmux-play.md#tmux-074)

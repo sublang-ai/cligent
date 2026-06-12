@@ -34,6 +34,7 @@ import {
 } from './player-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createFollowObserver } from './follow-observer.js';
+import { createNotificationObserver } from './notification-observer.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
   createTimingObserver,
@@ -219,6 +220,10 @@ export class TmuxPlaySession {
       captainAdapter: config.captain.adapter,
       players: config.players,
     });
+    const notificationObserver = createNotificationObserver({
+      notifications: config.notifications,
+      output,
+    });
 
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
@@ -235,6 +240,7 @@ export class TmuxPlaySession {
         presenter,
         followObserver,
         timingObserver,
+        notificationObserver,
         ...(this.options.observers ?? []),
       ],
       cwd: this.options.cwd,

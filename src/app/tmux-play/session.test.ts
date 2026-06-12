@@ -19,6 +19,7 @@ import {
 } from './session.js';
 import { TmuxPresenter } from './presenter-tmux.js';
 import { FollowObserver } from './follow-observer.js';
+import { NotificationObserver } from './notification-observer.js';
 import type { TimingObserverHandle } from './timing-observer.js';
 
 class FakeReadline extends EventEmitter {
@@ -175,15 +176,15 @@ describe('TmuxPlaySession', () => {
       }),
     );
     // Order: presenter, then the TMUX-069 follow observer (constructed
-    // internally), then the timing observer, then any opt-in observers. The
-    // first two slots are pinned by concrete type (not `expect.any(Object)`),
-    // so the presenter-before-follow ordering is actually asserted: the follow
-    // observer must run after the presenter has written a record's bytes to a
-    // pane, so swapping the two slots fails here.
+    // internally), then timing, then notifications, then any opt-in observers.
+    // The first, second, and notification slots are pinned by concrete type
+    // (not `expect.any(Object)`), so swapping these display-side observers
+    // fails here.
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
       expect.any(TmuxPresenter),
       expect.any(FollowObserver),
       timingObserver,
+      expect.any(NotificationObserver),
       optInObserver,
     ]);
 
