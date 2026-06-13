@@ -4,8 +4,10 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -29,10 +31,18 @@ import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 // via `capture-pane`. It self-skips when `tmux`, `glow`, or the
 // attached-client driver (`expect`) is unavailable, per the spec.
 const TMUX_AVAILABLE = isTmuxAvailable();
+const TMUX_SERVER_AVAILABLE = TMUX_AVAILABLE && canCreateTmuxServer();
 const GLOW_AVAILABLE = isGlowAvailable();
 const EXPECT_AVAILABLE = isCommandAvailable('expect', ['-v']);
 const probeIt =
-  TMUX_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
+  TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
+const macBellProbeIt =
+  process.platform === 'darwin' &&
+  TMUX_SERVER_AVAILABLE &&
+  GLOW_AVAILABLE &&
+  EXPECT_AVAILABLE
+    ? it
+    : it.skip;
 
 const BUILT_SESSION_PATH = join(
   process.cwd(),
@@ -200,6 +210,94 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
     },
     60_000,
   );
+
+  macBellProbeIt(
+    'raises a real tmux bell when the macOS turn-finished desktop notification fires (TTMUX-076)',
+    async () => {
+      if (!existsSync(BUILT_SESSION_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_SESSION_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-bell-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-bell-work-'));
+      const sessionId = `bell-${randomBytes(4).toString('hex')}`;
+      sessionName = `tmux-play-${sessionId}`;
+      const marker = `BELL${randomBytes(3).toString('hex').toUpperCase()}`;
+      const startedPath = join(cwd, 'turn-started');
+      const releasePath = join(cwd, 'turn-release');
+      const bellPath = join(cwd, 'tmux-alert-bell');
+      const fakeBin = join(cwd, 'bin');
+      const driverPath = join(cwd, 'driver.mjs');
+
+      mkdirSync(fakeBin);
+      writeExecutable(join(fakeBin, 'osascript'), '#!/bin/sh\nexit 0\n');
+      writeFileSync(
+        join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
+        JSON.stringify({
+          theme: 'mocha',
+          layout: { window: { columns: 120, rows: 40 }, columnWeights: [1, 1] },
+          notifications: {
+            player_finished: 'off',
+            turn_finished: 'desktop',
+            turn_aborted: 'off',
+          },
+          captain: { from: 'stub-captain', adapter: 'claude', options: {} },
+          players: [],
+        }),
+      );
+      writeFileSync(
+        driverPath,
+        driverSource({
+          sessionUrl: pathToFileURL(BUILT_SESSION_PATH).href,
+          sessionId,
+          workDir,
+          marker,
+          startedPath,
+          releasePath,
+        }),
+      );
+
+      runTmux([
+        'new-session',
+        '-d',
+        '-s',
+        sessionName,
+        '-x',
+        '120',
+        '-y',
+        '40',
+        `PATH=${shellQuote(`${fakeBin}:${process.env.PATH ?? ''}`)} node ${shellQuote(driverPath)}`,
+      ]);
+      runTmux(['set-window-option', '-t', sessionName, 'window-size', 'manual']);
+      runTmux(['resize-window', '-t', sessionName, '-x', '120', '-y', '40']);
+      runTmux(['set-window-option', '-t', sessionName, 'monitor-bell', 'on']);
+      runTmux(['set-option', '-t', sessionName, 'visual-bell', 'off']);
+      runTmux(['set-option', '-t', sessionName, 'bell-action', 'any']);
+      runTmux([
+        'set-hook',
+        '-t',
+        sessionName,
+        'alert-bell',
+        `run-shell ${shellQuote(`printf bell > ${shellQuote(bellPath)}`)}`,
+      ]);
+
+      client = spawn('expect', ['-c', attachScript(sessionName)], {
+        stdio: 'ignore',
+      });
+      await waitForAttachedClient(sessionName, 5_000);
+      await waitForPaneContains(sessionName, 0, 'boss>', 5_000);
+
+      runTmux(['send-keys', '-t', `${sessionName}:0.0`, 'go', 'Enter']);
+      await waitForNonEmptyFile(startedPath, 5_000);
+      await waitForPaneContains(sessionName, 0, marker, 5_000);
+
+      writeFileSync(releasePath, 'release');
+      await waitForNonEmptyFile(bellPath, 5_000);
+    },
+    60_000,
+  );
 });
 
 interface DriverParams {
@@ -281,6 +379,11 @@ function runTmux(args: readonly string[]): void {
   }
 }
 
+function writeExecutable(path: string, content: string): void {
+  writeFileSync(path, content);
+  chmodSync(path, 0o755);
+}
+
 function capturePane(session: string, paneIndex: number): string {
   const result = spawnSync(
     'tmux',
@@ -296,6 +399,26 @@ function capturePane(session: string, paneIndex: number): string {
 function isCommandAvailable(cmd: string, args: readonly string[]): boolean {
   const result = spawnSync(cmd, args, { stdio: 'ignore' });
   return result.error === undefined && result.status === 0;
+}
+
+function canCreateTmuxServer(): boolean {
+  const session = `tmux-play-probe-${randomBytes(4).toString('hex')}`;
+  const created = spawnSync(
+    'tmux',
+    ['new-session', '-d', '-s', session, 'sleep 2'],
+    { stdio: 'ignore' },
+  );
+  if (created.error || created.status !== 0) {
+    return false;
+  }
+
+  const controlled = spawnSync(
+    'tmux',
+    ['set-window-option', '-t', session, 'window-size', 'manual'],
+    { stdio: 'ignore' },
+  );
+  spawnSync('tmux', ['kill-session', '-t', session], { stdio: 'ignore' });
+  return controlled.error === undefined && controlled.status === 0;
 }
 
 async function waitForAttachedClient(
