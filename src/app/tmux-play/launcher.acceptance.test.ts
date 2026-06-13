@@ -1157,7 +1157,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   mouseDispatchIt(
-    'clamps wheel-up scrolling at the top of history instead of overscrolling (TMUX-077)',
+    'clamps wheel-up scrolling at the top of history instead of overscrolling (TMUX-078)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1202,6 +1202,16 @@ describe('tmux-play real-tmux acceptance', () => {
         2_000,
       );
       const captain = paneByTitle(panes, 'Captain · claude');
+      const historyPrefix = 'TMUX077-';
+      const historyScript = [
+        'for (let i = 1; i <= 500; i += 1) {',
+        `  console.log(${JSON.stringify(historyPrefix)} + String(i).padStart(3, "0"));`,
+        '}',
+        'setInterval(() => {}, 1000);',
+      ].join('\n');
+      const historyCommand = ['node', '-e', historyScript]
+        .map(shellQuote)
+        .join(' ');
 
       // The Captain pane is the common user-facing case for this regression.
       // Respawn it with deterministic scrollback; the wheel binding is a tmux
@@ -1211,10 +1221,14 @@ describe('tmux-play real-tmux acceptance', () => {
         '-k',
         '-t',
         `${sessionName}:0.${captain.index}`,
-        'seq 1 500; sleep 600',
+        historyCommand,
       ]);
-      await waitForHistory(sessionName, captain.index, 100, 2_000);
+      await waitForHistory(sessionName, captain.index, 450, 5_000);
 
+      const expectedTopMarkers = Array.from(
+        { length: 8 },
+        (_, idx) => `${historyPrefix}${String(idx + 1).padStart(3, '0')}`,
+      );
       sendAttachedClientMouseWheelUp(
         sessionName,
         captain.left + 2,
@@ -1223,13 +1237,30 @@ describe('tmux-play real-tmux acceptance', () => {
       );
 
       const target = `${sessionName}:0.${captain.index}`;
-      const scrollPosition = Number(
-        displayMessage(target, '#{scroll_position}'),
-      );
-      const historySize = Number(displayMessage(target, '#{history_size}'));
       expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
-      expect(scrollPosition).toBeGreaterThan(0);
-      expect(scrollPosition).toBeLessThanOrEqual(historySize);
+      const topMarkers = visibleCopyModeTopHistoryMarkers(
+        sessionName,
+        captain.index,
+        historyPrefix,
+        expectedTopMarkers.length,
+      );
+      expect(topMarkers.length).toBeGreaterThanOrEqual(3);
+      expect(topMarkers).toEqual(expectedTopMarkers.slice(0, topMarkers.length));
+
+      sendAttachedClientMouseWheelUp(
+        sessionName,
+        captain.left + 2,
+        captain.top + 2,
+        20,
+      );
+      expect(
+        visibleCopyModeTopHistoryMarkers(
+          sessionName,
+          captain.index,
+          historyPrefix,
+          expectedTopMarkers.length,
+        ),
+      ).toEqual(topMarkers);
     },
     60_000,
   );
@@ -2195,6 +2226,49 @@ function capturePane(session: string, paneIndex: number): string {
   return result.stdout;
 }
 
+function captureCopyModeTopRows(
+  session: string,
+  paneIndex: number,
+  rowCount: number,
+): string {
+  const target = `${session}:0.${paneIndex}`;
+  const scrollPositionText = displayMessage(target, '#{scroll_position}');
+  const scrollPosition = Number(scrollPositionText);
+  if (!Number.isInteger(scrollPosition) || scrollPosition < rowCount) {
+    throw new Error(
+      `pane ${paneIndex} scroll_position ${scrollPositionText} is too small to capture ${rowCount} top rows`,
+    );
+  }
+
+  const start = `-${scrollPosition}`;
+  const end = `-${scrollPosition - rowCount + 1}`;
+  const result = spawnSync(
+    'tmux',
+    ['capture-pane', '-t', target, '-p', '-S', start, '-E', end],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `tmux capture-pane ${start}..${end} failed: ${result.stderr.trim()}`,
+    );
+  }
+  return result.stdout;
+}
+
+function visibleCopyModeTopHistoryMarkers(
+  session: string,
+  paneIndex: number,
+  prefix: string,
+  rowCount: number,
+): string[] {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const marker = new RegExp(`^${escaped}\\d{3}`);
+  return captureCopyModeTopRows(session, paneIndex, rowCount)
+    .split('\n')
+    .map((line) => marker.exec(line)?.[0])
+    .filter((value): value is string => value !== undefined);
+}
+
 function showPaneOption(
   session: string,
   paneIndex: number,
@@ -2304,12 +2378,12 @@ function sendAttachedClientMouseWheelUp(
     'after 500',
     ...wheelEvents,
     'after 500',
-    'send -- "\\002d"',
+    `exec tmux detach-client -s ${session}`,
     'expect eof',
   ].join('\n');
   const result = spawnSync('expect', ['-c', script], {
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: 30_000,
   });
   if (result.error) {
     throw new Error(`expect wheel probe failed: ${result.error.message}`);

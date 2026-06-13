@@ -284,8 +284,8 @@ Customizing tmux copy-mode key tables is necessarily server-global because tmux 
 A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
 Under tmux's default root mouse bindings, clicking selects the pane under the cursor and the scroll wheel enters or operates pane copy mode to scroll pane history.
 User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
-The launcher shall not configure `set-clipboard` and shall not add `WheelDownPane` or root-table `WheelUpPane` bindings; terminal policy may still block the OSC 52 fallback.
-The copy-mode `WheelUpPane` bindings are owned by [TMUX-077](#tmux-077).
+The launcher shall not configure `set-clipboard` and shall not add `WheelDownPane` bindings; terminal policy may still block the OSC 52 fallback.
+The copy-mode `WheelUpPane` bindings are owned by [TMUX-078](#tmux-078).
 
 ### TMUX-066
 
@@ -342,7 +342,7 @@ Content that renders to no visible bytes shall not count as new output: when a p
 A write to one pane shall not return any other pane to its tail; a pane that receives no concurrent write shall retain its copy-mode state and scroll position.
 The behavior shall be scoped to the launched tmux-play session and shall not affect panes in any other tmux session on the same server.
 
-### TMUX-077
+### TMUX-078
 
 While a tmux-play session is running, when the Boss scrolls upward with the mouse wheel in any pane that is already in tmux copy-mode, the pane viewport shall stop at the topmost available history line and shall not move past it in a way that repeats the top line.
 The launcher shall bind `WheelUpPane` in both `copy-mode` and `copy-mode-vi` to a session-scoped true branch that performs the normal five-line wheel-up step as five one-line `scroll-up` commands, each guarded by the numeric tmux format `#{e|<|:#{scroll_position},#{history_size}}` against the mouse target pane (`=`).

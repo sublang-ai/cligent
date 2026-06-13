@@ -835,7 +835,7 @@ function configureMouseInteraction(
       'copy-pipe',
       SYSTEM_CLIPBOARD_COPY_COMMAND,
     );
-    // TMUX-077: tmux's stock `send-keys -X -N 5 scroll-up` can leave the
+    // TMUX-078: tmux's stock `send-keys -X -N 5 scroll-up` can leave the
     // copy-mode viewport beyond the oldest history line on some terminals,
     // visually repeating that top line. Keep the familiar five-line wheel
     // step, but express it as five one-line scrolls, each gated by the live
