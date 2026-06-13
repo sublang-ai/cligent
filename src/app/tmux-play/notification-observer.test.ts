@@ -87,13 +87,61 @@ describe('NotificationObserver', () => {
       expect.any(Array),
       expect.any(Object),
     );
-    expect(output.write).toHaveBeenCalledTimes(1);
-    expect(output.write).toHaveBeenCalledWith(
-      '\x1b]9;tmux-play: Boss turn finished\x1b\\',
-    );
-    expect(output.write.mock.calls[0]?.[0]).not.toContain('\x07');
+    expect(output.write).not.toHaveBeenCalled();
     expect(child.on).toHaveBeenCalledWith('error', expect.any(Function));
     expect(child.unref).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write terminal notification bytes for desktop events on macOS', () => {
+    const output = { write: vi.fn() };
+    const child = fakeChild();
+    const spawnDetached = vi.fn(() => child);
+
+    new NotificationObserver({
+      notifications: {
+        player_finished: 'desktop',
+        turn_finished: 'off',
+        turn_aborted: 'off',
+      },
+      output,
+      platform: 'darwin',
+      spawnDetached,
+    }).onRecord(playerFinished('ok'));
+
+    expect(output.write).not.toHaveBeenCalled();
+    expect(spawnDetached).toHaveBeenCalledTimes(1);
+    expect(spawnDetached).toHaveBeenCalledWith(
+      'osascript',
+      [
+        '-e',
+        'display notification "coder finished: ok" with title "tmux-play"',
+      ],
+      { detached: true, stdio: 'ignore' },
+    );
+
+    const abortedOutput = { write: vi.fn() };
+    const abortedSpawn = vi.fn(() => fakeChild());
+    new NotificationObserver({
+      notifications: {
+        player_finished: 'off',
+        turn_finished: 'off',
+        turn_aborted: 'desktop',
+      },
+      output: abortedOutput,
+      platform: 'darwin',
+      spawnDetached: abortedSpawn,
+    }).onRecord(turnAborted('captain failed'));
+
+    expect(abortedOutput.write).not.toHaveBeenCalled();
+    expect(abortedSpawn).toHaveBeenCalledTimes(1);
+    expect(abortedSpawn).toHaveBeenCalledWith(
+      'osascript',
+      [
+        '-e',
+        'display notification "Boss turn aborted: captain failed" with title "tmux-play"',
+      ],
+      { detached: true, stdio: 'ignore' },
+    );
   });
 
   it('uses notify-send for desktop notifications on Linux and no-ops elsewhere', () => {

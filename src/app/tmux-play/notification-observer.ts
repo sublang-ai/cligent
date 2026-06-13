@@ -14,8 +14,8 @@ import type { RecordObserver, TmuxPlayRecord } from './records.js';
 export interface NotificationObserverOptions {
   readonly notifications?: NotificationConfig;
   /**
-   * Used only for silent terminal notification escapes. Bell notifications
-   * are native sound cues and no longer write to stdout.
+   * @deprecated Bell notifications are native sound cues and no longer write
+   * to stdout. This option is retained for source compatibility.
    */
   readonly output?: Pick<Writable, 'write'>;
   readonly platform?: NodeJS.Platform;
@@ -62,13 +62,11 @@ const WINDOWS_COMPLETE_SOUND_SCRIPT =
 
 export class NotificationObserver implements RecordObserver {
   private readonly notifications: NotificationConfig;
-  private readonly output: Pick<Writable, 'write'>;
   private readonly platform: NodeJS.Platform;
   private readonly spawnDetached: DetachedNotificationSpawner;
 
   constructor(options: NotificationObserverOptions = {}) {
     this.notifications = options.notifications ?? defaultNotificationConfig();
-    this.output = options.output ?? process.stdout;
     this.platform = options.platform ?? process.platform;
     this.spawnDetached = options.spawnDetached ?? spawnDetachedNotification;
   }
@@ -83,18 +81,14 @@ export class NotificationObserver implements RecordObserver {
         return;
       }
 
-      this.notify(event, this.notifications[event], messageForRecord(record));
+      this.notify(this.notifications[event], messageForRecord(record));
     } catch {
       // Notifications are deliberately best-effort and must not affect runtime
       // record delivery.
     }
   }
 
-  private notify(
-    event: NotificationEvent,
-    sink: NotificationSink,
-    message: NotificationMessage,
-  ): void {
+  private notify(sink: NotificationSink, message: NotificationMessage): void {
     try {
       if (sink === 'bell') {
         playSoundCue({
@@ -102,13 +96,6 @@ export class NotificationObserver implements RecordObserver {
           spawnDetached: this.spawnDetached,
         });
       } else if (sink === 'desktop') {
-        if (event === 'turn_finished') {
-          sendSilentTerminalTurnFinishedNotification({
-            message,
-            output: this.output,
-            platform: this.platform,
-          });
-        }
         sendDesktopNotification({
           ...message,
           platform: this.platform,
@@ -140,12 +127,6 @@ interface DesktopNotificationOptions extends NotificationMessage {
 interface SoundCueOptions {
   readonly platform: NodeJS.Platform;
   readonly spawnDetached: DetachedNotificationSpawner;
-}
-
-interface SilentTerminalNotificationOptions {
-  readonly message: NotificationMessage;
-  readonly output: Pick<Writable, 'write'>;
-  readonly platform: NodeJS.Platform;
 }
 
 function notificationEvent(
@@ -197,23 +178,6 @@ function sendDesktopNotification(options: DesktopNotificationOptions): void {
   }
 }
 
-function sendSilentTerminalTurnFinishedNotification(
-  options: SilentTerminalNotificationOptions,
-): void {
-  if (options.platform !== 'darwin') {
-    return;
-  }
-
-  try {
-    const message = terminalOscPayload(
-      `${options.message.title}: ${options.message.body}`,
-    );
-    options.output.write(`\x1b]9;${message}\x1b\\`);
-  } catch {
-    // Terminal notification escapes are best-effort like OS notifications.
-  }
-}
-
 function playSoundCue(options: SoundCueOptions): void {
   if (options.platform === 'darwin') {
     spawnBestEffort(options, 'afplay', [MACOS_HERO_SOUND]);
@@ -260,8 +224,4 @@ function spawnDetachedNotification(
 
 function appleScriptString(value: string): string {
   return JSON.stringify(value);
-}
-
-function terminalOscPayload(value: string): string {
-  return value.replace(/[\x00-\x1f\x7f]/g, ' ');
 }

@@ -88,7 +88,10 @@ The optional top-level `notifications` map accepts only these record keys:
 sink: `off`, `bell`, or `desktop`. Omitting the block disables
 notifications. The generated home config plays a sound cue after every player
 finishes without writing terminal BEL (`\x07`) or requesting desktop badging,
-and sends a desktop notification when the full Boss turn finishes.
+and sends a desktop notification when the full Boss turn finishes. `tmux-play`
+does not write BEL or terminal notification escapes for desktop notifications:
+the silent turn-completion path is the OS desktop notification, not a guaranteed
+terminal Dock badge.
 `turn_aborted` is off by default; when enabled, user cancellations such as ESC,
 SIGINT, SIGTERM, EOF, and runtime disposal stay silent. Sound cues are
 best-effort: Hero via `afplay` on macOS, the freedesktop `complete` cue on
