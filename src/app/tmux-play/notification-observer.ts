@@ -14,8 +14,8 @@ import type { RecordObserver, TmuxPlayRecord } from './records.js';
 export interface NotificationObserverOptions {
   readonly notifications?: NotificationConfig;
   /**
-   * @deprecated Bell notifications are native sound cues and no longer write
-   * to stdout. This option is retained for source compatibility.
+   * Used only for the raw terminal BEL emitted on macOS turn completion.
+   * Player bell notifications are native sound cues and do not write stdout.
    */
   readonly output?: Pick<Writable, 'write'>;
   readonly platform?: NodeJS.Platform;
@@ -62,11 +62,13 @@ const WINDOWS_COMPLETE_SOUND_SCRIPT =
 
 export class NotificationObserver implements RecordObserver {
   private readonly notifications: NotificationConfig;
+  private readonly output: Pick<Writable, 'write'>;
   private readonly platform: NodeJS.Platform;
   private readonly spawnDetached: DetachedNotificationSpawner;
 
   constructor(options: NotificationObserverOptions = {}) {
     this.notifications = options.notifications ?? defaultNotificationConfig();
+    this.output = options.output ?? process.stdout;
     this.platform = options.platform ?? process.platform;
     this.spawnDetached = options.spawnDetached ?? spawnDetachedNotification;
   }
@@ -81,14 +83,18 @@ export class NotificationObserver implements RecordObserver {
         return;
       }
 
-      this.notify(this.notifications[event], messageForRecord(record));
+      this.notify(event, this.notifications[event], messageForRecord(record));
     } catch {
       // Notifications are deliberately best-effort and must not affect runtime
       // record delivery.
     }
   }
 
-  private notify(sink: NotificationSink, message: NotificationMessage): void {
+  private notify(
+    event: NotificationEvent,
+    sink: NotificationSink,
+    message: NotificationMessage,
+  ): void {
     try {
       if (sink === 'bell') {
         playSoundCue({
@@ -96,6 +102,12 @@ export class NotificationObserver implements RecordObserver {
           spawnDetached: this.spawnDetached,
         });
       } else if (sink === 'desktop') {
+        if (event === 'turn_finished') {
+          writeTurnFinishedTerminalBell({
+            output: this.output,
+            platform: this.platform,
+          });
+        }
         sendDesktopNotification({
           ...message,
           platform: this.platform,
@@ -127,6 +139,11 @@ interface DesktopNotificationOptions extends NotificationMessage {
 interface SoundCueOptions {
   readonly platform: NodeJS.Platform;
   readonly spawnDetached: DetachedNotificationSpawner;
+}
+
+interface TurnFinishedTerminalBellOptions {
+  readonly output: Pick<Writable, 'write'>;
+  readonly platform: NodeJS.Platform;
 }
 
 function notificationEvent(
@@ -175,6 +192,20 @@ function sendDesktopNotification(options: DesktopNotificationOptions): void {
     ]);
   } else if (options.platform === 'linux') {
     spawnBestEffort(options, 'notify-send', [options.title, options.body]);
+  }
+}
+
+function writeTurnFinishedTerminalBell(
+  options: TurnFinishedTerminalBellOptions,
+): void {
+  if (options.platform !== 'darwin') {
+    return;
+  }
+
+  try {
+    options.output.write('\x07');
+  } catch {
+    // Terminal bell is best-effort like OS notifications.
   }
 }
 

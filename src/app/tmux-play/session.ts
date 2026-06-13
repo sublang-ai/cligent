@@ -222,6 +222,7 @@ export class TmuxPlaySession {
     });
     const notificationObserver = createNotificationObserver({
       notifications: config.notifications,
+      output,
     });
 
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;

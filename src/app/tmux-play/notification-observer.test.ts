@@ -87,12 +87,13 @@ describe('NotificationObserver', () => {
       expect.any(Array),
       expect.any(Object),
     );
-    expect(output.write).not.toHaveBeenCalled();
+    expect(output.write).toHaveBeenCalledTimes(1);
+    expect(output.write).toHaveBeenCalledWith('\x07');
     expect(child.on).toHaveBeenCalledWith('error', expect.any(Function));
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
 
-  it('does not write terminal notification bytes for desktop events on macOS', () => {
+  it('does not write terminal bytes for non-turn-finished desktop events on macOS', () => {
     const output = { write: vi.fn() };
     const child = fakeChild();
     const spawnDetached = vi.fn(() => child);
@@ -145,6 +146,7 @@ describe('NotificationObserver', () => {
   });
 
   it('uses notify-send for desktop notifications on Linux and no-ops elsewhere', () => {
+    const linuxOutput = { write: vi.fn() };
     const linuxChild = fakeChild();
     const linuxSpawn = vi.fn(() => linuxChild);
     new NotificationObserver({
@@ -153,6 +155,7 @@ describe('NotificationObserver', () => {
         turn_finished: 'desktop',
         turn_aborted: 'off',
       },
+      output: linuxOutput,
       platform: 'linux',
       spawnDetached: linuxSpawn,
     }).onRecord({ type: 'turn_finished', turnId: 1, timestamp: 100 });
@@ -162,7 +165,9 @@ describe('NotificationObserver', () => {
       ['tmux-play', 'Boss turn finished'],
       { detached: true, stdio: 'ignore' },
     );
+    expect(linuxOutput.write).not.toHaveBeenCalled();
 
+    const otherOutput = { write: vi.fn() };
     const otherSpawn = vi.fn(() => fakeChild());
     new NotificationObserver({
       notifications: {
@@ -170,11 +175,13 @@ describe('NotificationObserver', () => {
         turn_finished: 'desktop',
         turn_aborted: 'off',
       },
+      output: otherOutput,
       platform: 'win32',
       spawnDetached: otherSpawn,
     }).onRecord({ type: 'turn_finished', turnId: 1, timestamp: 100 });
 
     expect(otherSpawn).not.toHaveBeenCalled();
+    expect(otherOutput.write).not.toHaveBeenCalled();
   });
 
   it('uses native complete sound cues for bell notifications on Linux and Windows', () => {
