@@ -10,11 +10,7 @@ import { ReadStream } from 'node:tty';
 import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
-import {
-  attachTmuxSession,
-  isTmuxAvailable,
-  runTmux,
-} from '../shared/tmux.js';
+import { attachTmuxSession, isTmuxAvailable, runTmux } from '../shared/tmux.js';
 import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
 import {
   captainAccent,
@@ -49,6 +45,7 @@ const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
   'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
   'else exec tmux load-buffer -w -; fi';
+const WHEEL_UP_SCROLL_LINES = 5;
 // TMUX-071: the initial timer text the launcher writes to every pane
 // and to the status-bar option shall be the same `hh:mm:ss` rendering
 // that `TimingObserver` would push for zero elapsed milliseconds, so the
@@ -144,12 +141,7 @@ export async function launchTmuxPlay(
   const workDir = options.workDir ?? mkdtempSync(join(tmpdir(), 'tmux-play-'));
   const playerIds = loaded.config.players.map((player) => player.id);
 
-  prepareLogDirectory(
-    workDir,
-    playerIds,
-    TMUX_PLAY_SESSION_MARKER,
-    sessionId,
-  );
+  prepareLogDirectory(workDir, playerIds, TMUX_PLAY_SESSION_MARKER, sessionId);
   const theme = await resolveThemeDiagnostics({
     launchOption: options.themeFlavor,
     yamlOption: loaded.config.theme,
@@ -294,13 +286,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'pane-border-format',
     paneBorderFormat(c),
   );
-  runTmux(
-    'set',
-    '-t',
-    options.sessionName,
-    'status-left',
-    statusLeftFormat(c),
-  );
+  runTmux('set', '-t', options.sessionName, 'status-left', statusLeftFormat(c));
   runTmux('set', '-t', options.sessionName, 'status-left-length', '136');
   runTmux(
     'set',
@@ -489,7 +475,10 @@ async function probeOsc11Background(): Promise<Osc11ProbeResult> {
       input.on('data', onData);
       input.resume();
       writeSync(ttyFd, OSC11_QUERY);
-      timer = setTimeout(() => finish(extractOsc11Reply(raw)), OSC11_TIMEOUT_MS);
+      timer = setTimeout(
+        () => finish(extractOsc11Reply(raw)),
+        OSC11_TIMEOUT_MS,
+      );
     } catch {
       finish(undefined);
     }
@@ -525,10 +514,7 @@ function normalizedChannel(hex: string): number | undefined {
 // tmux plugin leaves the pane content area as the user's terminal-native
 // canvas, and switching flavor by host bg is what keeps the theme adaptive
 // instead of forcing a dark UI onto a light terminal (or vice versa).
-function applyCatppuccinTheme(
-  sessionName: string,
-  c: CatppuccinPalette,
-): void {
+function applyCatppuccinTheme(sessionName: string, c: CatppuccinPalette): void {
   // 24-bit color enablement so the hex values below actually render. tmux
   // applies terminal-overrides at client attach, and the launcher attaches
   // strictly after this function runs, so the override negotiates correctly.
@@ -546,13 +532,7 @@ function applyCatppuccinTheme(
   // style are not claimed: the window-list formats below are empty strings,
   // so those style options have nothing to color.
   runTmux('set', '-t', sessionName, 'pane-border-style', `fg=${c.overlay0}`);
-  runTmux(
-    'set',
-    '-t',
-    sessionName,
-    'pane-active-border-style',
-    `fg=${c.blue}`,
-  );
+  runTmux('set', '-t', sessionName, 'pane-active-border-style', `fg=${c.blue}`);
   runTmux(
     'set',
     '-t',
@@ -659,7 +639,10 @@ function createPlayerPanes(
     sessionName,
     tailCommand(workDir, players[0]),
   );
-  playerPanes[0] = { player: requirePlayer(players[0]), paneIndex: nextPaneIndex++ };
+  playerPanes[0] = {
+    player: requirePlayer(players[0]),
+    paneIndex: nextPaneIndex++,
+  };
 
   if (players.length < 2) {
     return playerPanes;
@@ -808,12 +791,7 @@ function disablePlayerPaneInput(
   playerPanes: readonly PlayerPane[],
 ): void {
   for (const pane of playerPanes) {
-    runTmux(
-      'select-pane',
-      '-t',
-      paneTarget(sessionName, pane.paneIndex),
-      '-d',
-    );
+    runTmux('select-pane', '-t', paneTarget(sessionName, pane.paneIndex), '-d');
   }
 }
 
@@ -822,6 +800,8 @@ function configureMouseInteraction(
   paneCount: number,
 ): void {
   runTmux('set-option', '-t', sessionName, 'mouse', 'on');
+  const condition = `#{==:#{session_name},${sessionName}}`;
+  const clampedWheelUp = clampedWheelUpCommand();
   for (const table of ['copy-mode', 'copy-mode-vi']) {
     runTmux(
       'bind-key',
@@ -854,6 +834,25 @@ function configureMouseInteraction(
       '-X',
       'copy-pipe',
       SYSTEM_CLIPBOARD_COPY_COMMAND,
+    );
+    // TMUX-077: tmux's stock `send-keys -X -N 5 scroll-up` can leave the
+    // copy-mode viewport beyond the oldest history line on some terminals,
+    // visually repeating that top line. Keep the familiar five-line wheel
+    // step, but express it as five one-line scrolls, each gated by the live
+    // numeric `#{scroll_position} < #{history_size}` check for the mouse
+    // target pane (`=`). Once the pane reaches the top of history, further
+    // wheel-up events become no-ops instead of pushing the viewport past the
+    // clamp.
+    runTmux(
+      'bind-key',
+      '-T',
+      table,
+      'WheelUpPane',
+      'if-shell',
+      '-F',
+      condition,
+      clampedWheelUp,
+      'send-keys -X -N 5 scroll-up',
     );
   }
   // TMUX-068 (supersedes TMUX-066 and TMUX-067): a left-click in any
@@ -900,7 +899,6 @@ function configureMouseInteraction(
   // first and clears any prior selection, then `MouseDrag1Pane`
   // (tmux's stock binding) enters `copy-mode -M` on the dragged pane
   // and begins a fresh selection.
-  const condition = `#{==:#{session_name},${sessionName}}`;
   const clearCmds: string[] = [];
   for (let i = 0; i < paneCount; i++) {
     const target = paneTarget(sessionName, i);
@@ -933,6 +931,15 @@ function configureMouseInteraction(
       'select-pane',
     );
   }
+}
+
+function clampedWheelUpCommand(): string {
+  return Array.from(
+    { length: WHEEL_UP_SCROLL_LINES },
+    () =>
+      "if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' " +
+      "'send-keys -t= -X scroll-up'",
+  ).join(' ; ');
 }
 
 // TMUX-063: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at
@@ -1041,12 +1048,12 @@ type ForwardTable = (typeof FORWARD_KEY_TABLES)[number];
 //     (vi convention).
 const STOCK_FALSE_BRANCH: Record<ForwardKey, Record<ForwardTable, string>> = {
   'C-c': {
-    'root': 'send-keys C-c',
+    root: 'send-keys C-c',
     'copy-mode': 'send-keys -X cancel',
     'copy-mode-vi': 'send-keys -X cancel',
   },
   Escape: {
-    'root': 'send-keys Escape',
+    root: 'send-keys Escape',
     'copy-mode': 'send-keys -X cancel',
     'copy-mode-vi': 'send-keys -X clear-selection',
   },
@@ -1160,11 +1167,16 @@ function configureLayoutHooks(
   }
 }
 
-function tailCommand(workDir: string, player: PlayerConfig | undefined): string {
+function tailCommand(
+  workDir: string,
+  player: PlayerConfig | undefined,
+): string {
   if (!player) {
     throw new Error('tmux-play requires at least one player pane');
   }
-  return ['tail', '-f', logFilePath(workDir, player.id)].map(shellQuote).join(' ');
+  return ['tail', '-f', logFilePath(workDir, player.id)]
+    .map(shellQuote)
+    .join(' ');
 }
 
 function requirePlayer(player: PlayerConfig | undefined): PlayerConfig {

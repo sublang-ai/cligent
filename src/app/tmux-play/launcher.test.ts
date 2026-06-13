@@ -328,15 +328,40 @@ describe('launchTmuxPlay', () => {
         expect.stringContaining('tmux load-buffer -w -'),
       );
     }
-    expect(runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')))
-      .toBe(false);
+    expect(
+      runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')),
+    ).toBe(false);
+    const clampedWheelUp = Array.from(
+      { length: 5 },
+      () =>
+        "if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' " +
+        "'send-keys -t= -X scroll-up'",
+    ).join(' ; ');
+    for (const table of ['copy-mode', 'copy-mode-vi']) {
+      expect(runTmuxMock).toHaveBeenCalledWith(
+        'bind-key',
+        '-T',
+        table,
+        'WheelUpPane',
+        'if-shell',
+        '-F',
+        '#{==:#{session_name},tmux-play-mouse-boundary}',
+        clampedWheelUp,
+        'send-keys -X -N 5 scroll-up',
+      );
+    }
+    expect(
+      runTmuxMock.mock.calls.some(
+        (call) =>
+          call[0] === 'bind-key' && call.some((arg) => arg === 'WheelDownPane'),
+      ),
+    ).toBe(false);
     expect(
       runTmuxMock.mock.calls.some(
         (call) =>
           call[0] === 'bind-key' &&
-          call.some(
-            (arg) => typeof arg === 'string' && /^Wheel/.test(arg),
-          ),
+          call[2] === 'root' &&
+          call.some((arg) => arg === 'WheelUpPane'),
       ),
     ).toBe(false);
   });
@@ -428,9 +453,7 @@ describe('launchTmuxPlay', () => {
     for (const call of runTmuxMock.mock.calls) {
       if (
         call[0] !== 'bind-key' ||
-        !call.some(
-          (arg) => typeof arg === 'string' && arg === 'MouseDown1Pane',
-        )
+        !call.some((arg) => typeof arg === 'string' && arg === 'MouseDown1Pane')
       ) {
         continue;
       }
@@ -670,9 +693,7 @@ describe('launchTmuxPlay', () => {
     for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
       const bindings = runTmuxMock.mock.calls.filter(
         (call) =>
-          call[0] === 'bind-key' &&
-          call[2] === table &&
-          call[3] === 'Escape',
+          call[0] === 'bind-key' && call[2] === table && call[3] === 'Escape',
       );
       expect(bindings).toHaveLength(1);
     }
@@ -779,10 +800,14 @@ describe('launchTmuxPlay', () => {
     const lastThemeIndex = Math.max(
       ...themeOptions.map((o) => commandIndexOf(o)),
     );
-    expect(commandIndexOf('pane-border-format')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('pane-border-format')).toBeGreaterThan(
+      lastThemeIndex,
+    );
     expect(commandIndexOf('status-left')).toBeGreaterThan(lastThemeIndex);
     expect(commandIndexOf('status-right')).toBeGreaterThan(lastThemeIndex);
-    expect(commandIndexOf('window-status-format')).toBeGreaterThan(lastThemeIndex);
+    expect(commandIndexOf('window-status-format')).toBeGreaterThan(
+      lastThemeIndex,
+    );
     expect(commandIndexOf('window-status-current-format')).toBeGreaterThan(
       lastThemeIndex,
     );
@@ -855,21 +880,18 @@ describe('launchTmuxPlay', () => {
     );
     expect(
       JSON.parse(
-        readFileSync(
-          join(attachedWorkDir, TMUX_PLAY_CONFIG_SNAPSHOT),
-          'utf8',
-        ),
+        readFileSync(join(attachedWorkDir, TMUX_PLAY_CONFIG_SNAPSHOT), 'utf8'),
       ).theme,
     ).toBe('latte');
   });
 
   it('parses OSC 11 RGB replies with BEL or ST terminators', () => {
-    expect(
-      parseOsc11BackgroundFlavor('\x1b]11;rgb:00/00/00\x07'),
-    ).toBe('mocha');
-    expect(
-      parseOsc11BackgroundFlavor('\x1b]11;rgb:eeee/eeee/eeee\x1b\\'),
-    ).toBe('latte');
+    expect(parseOsc11BackgroundFlavor('\x1b]11;rgb:00/00/00\x07')).toBe(
+      'mocha',
+    );
+    expect(parseOsc11BackgroundFlavor('\x1b]11;rgb:eeee/eeee/eeee\x1b\\')).toBe(
+      'latte',
+    );
   });
 
   it('reports theme diagnostics without tmux or glow availability', async () => {
@@ -1057,7 +1079,9 @@ describe('launchTmuxPlay', () => {
     );
     expect(setValue('tmux-play-timers', 'status-right-length')).toBe('32');
     expect(setValue('tmux-play-timers', 'window-status-format')).toBe('');
-    expect(setValue('tmux-play-timers', 'window-status-current-format')).toBe('');
+    expect(setValue('tmux-play-timers', 'window-status-current-format')).toBe(
+      '',
+    );
     expect(setValue('tmux-play-timers', 'window-status-separator')).toBe('');
   });
 
@@ -1409,10 +1433,7 @@ function writeConfig(dir: string, playerIds: readonly string[]): string {
       '  adapter: claude',
       '  options: {}',
       'players:',
-      ...playerIds.flatMap((id) => [
-        `  - id: ${id}`,
-        '    adapter: codex',
-      ]),
+      ...playerIds.flatMap((id) => [`  - id: ${id}`, '    adapter: codex']),
       '',
     ].join('\n'),
   );
@@ -1441,7 +1462,8 @@ function splitWindowCalls(
 
 function setValue(sessionName: string, option: string): string {
   const call = runTmuxMock.mock.calls.find(
-    (args) => args[0] === 'set' && args[2] === sessionName && args[3] === option,
+    (args) =>
+      args[0] === 'set' && args[2] === sessionName && args[3] === option,
   );
   const value = call?.[4];
   if (typeof value !== 'string') {

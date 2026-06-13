@@ -82,10 +82,7 @@ const attachedClientIt =
   TMUX_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
 const mouseDispatchIt = attachedClientIt;
 
-const BUILT_CLI_PATH = join(
-  process.cwd(),
-  'dist/app/tmux-play/cli.js',
-);
+const BUILT_CLI_PATH = join(process.cwd(), 'dist/app/tmux-play/cli.js');
 
 describe('tmux-play real-tmux acceptance', () => {
   let sessionName: string | undefined;
@@ -167,9 +164,7 @@ describe('tmux-play real-tmux acceptance', () => {
         const captainRegion = coder.left - captain.left;
         const coderRegion = reviewer.left - coder.left;
         const reviewerRegion = width - reviewer.left;
-        expect(
-          { width, captainRegion, coderRegion, reviewerRegion },
-        ).toEqual({
+        expect({ width, captainRegion, coderRegion, reviewerRegion }).toEqual({
           width,
           captainRegion: captainExpected,
           coderRegion: coderExpected,
@@ -205,8 +200,9 @@ describe('tmux-play real-tmux acceptance', () => {
       sessionName = result.sessionName;
 
       // TTMUX-030: 174x49 grid
-      expect(displayMessage(sessionName, '#{window_width}x#{window_height}'))
-        .toBe('174x49');
+      expect(
+        displayMessage(sessionName, '#{window_width}x#{window_height}'),
+      ).toBe('174x49');
 
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
@@ -266,6 +262,17 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('clip.exe');
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
+      for (const table of ['copy-mode', 'copy-mode-vi']) {
+        const wheelUp = keyBinding(table, 'WheelUpPane');
+        expect(wheelUp).toContain('if-shell');
+        expect(wheelUp).toContain('session_name');
+        expect(wheelUp).toContain(sessionName);
+        expect(wheelUp).toContain('scroll_position');
+        expect(wheelUp).toContain('history_size');
+        expect(wheelUp).toContain('send-keys -t= -X scroll-up');
+        expect(wheelUp).toContain('send-keys -X -N 5 scroll-up');
+      }
+      expect(keyBinding('root', 'WheelUpPane')).not.toContain(sessionName);
 
       // TTMUX-068 (supersedes TTMUX-066 / TTMUX-067): the launcher
       // installs a session-scoped MouseDown1Pane override that
@@ -299,9 +306,7 @@ describe('tmux-play real-tmux acceptance', () => {
         // assert the absence of the trailing `send-keys -M` forward
         // (which is the root-table-only behavior) rather than the
         // word `send-keys` itself.
-        expect(keyBinding(table, 'MouseDown1Pane')).not.toContain(
-          ' -M',
-        );
+        expect(keyBinding(table, 'MouseDown1Pane')).not.toContain(' -M');
       }
 
       // TTMUX-068 behavioral probe: pin the observable consequence,
@@ -361,10 +366,7 @@ describe('tmux-play real-tmux acceptance', () => {
         ),
       ).toBe('1');
       expect(
-        displayMessage(
-          `${sessionName}:0.${coder.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       expect(
         displayMessage(
@@ -373,16 +375,10 @@ describe('tmux-play real-tmux acceptance', () => {
         ),
       ).toBe('0');
       expect(
-        displayMessage(
-          `${sessionName}:0.${reviewer.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${reviewer.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       expect(
-        displayMessage(
-          `${sessionName}:0.${captain.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${captain.index}`, '#{pane_in_mode}'),
       ).toBe('0');
 
       // Execute the per-pane clear-selection loop the binding would
@@ -412,22 +408,13 @@ describe('tmux-play real-tmux acceptance', () => {
         ),
       ).toBe('0');
       expect(
-        displayMessage(
-          `${sessionName}:0.${coder.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       expect(
-        displayMessage(
-          `${sessionName}:0.${reviewer.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${reviewer.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       expect(
-        displayMessage(
-          `${sessionName}:0.${captain.index}`,
-          '#{pane_in_mode}',
-        ),
+        displayMessage(`${sessionName}:0.${captain.index}`, '#{pane_in_mode}'),
       ).toBe('0');
 
       // Clean up the copy-mode state we set on panes 1 and 2 so the
@@ -548,12 +535,7 @@ describe('tmux-play real-tmux acceptance', () => {
       const probe = `probe-${randomBytes(4).toString('hex')}`;
       const sendResult = spawnSync(
         'tmux',
-        [
-          'send-keys',
-          '-t',
-          `${sessionName}:0.${coder.index}`,
-          probe,
-        ],
+        ['send-keys', '-t', `${sessionName}:0.${coder.index}`, probe],
         { stdio: 'ignore' },
       );
       expect(sendResult.status).toBe(0);
@@ -649,7 +631,9 @@ describe('tmux-play real-tmux acceptance', () => {
       ]) {
         runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', motion]);
       }
-      expect(Number(displayMessage(coderTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+      expect(
+        Number(displayMessage(coderTarget, '#{scroll_position}')),
+      ).toBeGreaterThan(0);
       expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
       expect(displayMessage(coderTarget, '#{selection_present}')).toBe('1');
       expect(displayMessage(captainTarget, '#{pane_in_mode}')).toBe('0');
@@ -683,7 +667,9 @@ describe('tmux-play real-tmux acceptance', () => {
             'scroll-up',
           ]);
         }
-        expect(Number(displayMessage(captainTarget, '#{scroll_position}'))).toBeGreaterThan(0);
+        expect(
+          Number(displayMessage(captainTarget, '#{scroll_position}')),
+        ).toBeGreaterThan(0);
         expect(displayMessage(captainTarget, '#{pane_in_mode}')).toBe('1');
         runOrThrow('tmux', ['select-pane', '-t', reviewerTarget]);
 
@@ -818,7 +804,9 @@ describe('tmux-play real-tmux acceptance', () => {
         }
         // Guard: a setup that failed to scroll back would pass the
         // pane_in_mode assertions vacuously, so require real scroll-back.
-        expect(Number(displayMessage(target, '#{scroll_position}'))).toBeGreaterThan(0);
+        expect(
+          Number(displayMessage(target, '#{scroll_position}')),
+        ).toBeGreaterThan(0);
         expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
       };
 
@@ -828,7 +816,10 @@ describe('tmux-play real-tmux acceptance', () => {
       // runtime's RecordDispatcher in that order. The follow must run after the
       // presenter has put new bytes on a pane — so a captured marker proves the
       // production write path end-to-end rather than the observer in isolation.
-      const playerLogStreams = openAppendLogStreams(workDir, ['coder', 'reviewer']);
+      const playerLogStreams = openAppendLogStreams(workDir, [
+        'coder',
+        'reviewer',
+      ]);
       const presenter = createTmuxPresenter({
         boss: { write: () => undefined },
         players: playerLogStreams,
@@ -900,7 +891,10 @@ describe('tmux-play real-tmux acceptance', () => {
         // (reviewer) pane — no output this turn — stays scrolled in place.
         scrollBack(coderTarget);
         scrollBack(reviewerTarget);
-        const reviewerScroll = displayMessage(reviewerTarget, '#{scroll_position}');
+        const reviewerScroll = displayMessage(
+          reviewerTarget,
+          '#{scroll_position}',
+        );
 
         await runtime.runBossTurn('coder');
 
@@ -927,7 +921,9 @@ describe('tmux-play real-tmux acceptance', () => {
         await runtime.runBossTurn('idle');
 
         expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
-        expect(displayMessage(coderTarget, '#{scroll_position}')).toBe(coderScroll);
+        expect(displayMessage(coderTarget, '#{scroll_position}')).toBe(
+          coderScroll,
+        );
       } finally {
         await runtime.dispose();
         await closeLogStreams(playerLogStreams.values());
@@ -1160,6 +1156,84 @@ describe('tmux-play real-tmux acceptance', () => {
     60_000,
   );
 
+  mouseDispatchIt(
+    'clamps wheel-up scrolling at the top of history instead of overscrolling (TMUX-077)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `wheel-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      const panes = await waitForRegions(
+        sessionName,
+        [Math.floor(80 / 3), Math.floor(80 / 3), 80 - 2 * Math.floor(80 / 3)],
+        2_000,
+      );
+      const captain = paneByTitle(panes, 'Captain · claude');
+
+      // The Captain pane is the common user-facing case for this regression.
+      // Respawn it with deterministic scrollback; the wheel binding is a tmux
+      // key-table behavior independent of the process running inside the pane.
+      runOrThrow('tmux', [
+        'respawn-pane',
+        '-k',
+        '-t',
+        `${sessionName}:0.${captain.index}`,
+        'seq 1 500; sleep 600',
+      ]);
+      await waitForHistory(sessionName, captain.index, 100, 2_000);
+
+      sendAttachedClientMouseWheelUp(
+        sessionName,
+        captain.left + 2,
+        captain.top + 2,
+        160,
+      );
+
+      const target = `${sessionName}:0.${captain.index}`;
+      const scrollPosition = Number(
+        displayMessage(target, '#{scroll_position}'),
+      );
+      const historySize = Number(displayMessage(target, '#{history_size}'));
+      expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
+      expect(scrollPosition).toBeGreaterThan(0);
+      expect(scrollPosition).toBeLessThanOrEqual(historySize);
+    },
+    60_000,
+  );
+
   acceptanceIt(
     'honors an explicit YAML layout override end-to-end (TMUX-064)',
     async () => {
@@ -1210,8 +1284,9 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      expect(displayMessage(sessionName, '#{window_width}x#{window_height}'))
-        .toBe('200x50');
+      expect(
+        displayMessage(sessionName, '#{window_width}x#{window_height}'),
+      ).toBe('200x50');
 
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
@@ -1302,9 +1377,7 @@ describe('tmux-play real-tmux acceptance', () => {
       );
       expect(paneBorderFormat).toContain('#{pane_title}');
       expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_TEXT_OPTION}}`);
-      expect(paneBorderFormat).toContain(
-        `#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`,
-      );
+      expect(paneBorderFormat).toContain(`#{${TMUX_PANE_TIMER_ACCENT_OPTION}}`);
       expect(paneBorderFormat).toContain(
         `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
       );
@@ -1345,10 +1418,12 @@ describe('tmux-play real-tmux acceptance', () => {
         `#{==:#{${TMUX_STATUS_TIMER_RUNNING_OPTION}},1}`,
       );
       expect(showSessionOption(sessionName, 'window-status-format')).toBe('');
-      expect(showSessionOption(sessionName, 'window-status-current-format')).toBe(
+      expect(
+        showSessionOption(sessionName, 'window-status-current-format'),
+      ).toBe('');
+      expect(showSessionOption(sessionName, 'window-status-separator')).toBe(
         '',
       );
-      expect(showSessionOption(sessionName, 'window-status-separator')).toBe('');
 
       const observer = new TimingObserver({
         sessionName,
@@ -1383,9 +1458,9 @@ describe('tmux-play real-tmux acceptance', () => {
           running: '1',
           accent: '#a6e3a1',
         });
-        expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
-          '00:00:09',
-        );
+        expect(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
+        ).toBe('00:00:09');
         expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
         ).toBe('1');
@@ -1422,9 +1497,9 @@ describe('tmux-play real-tmux acceptance', () => {
           running: '0',
           accent: '#a6e3a1',
         });
-        expect(showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION)).toBe(
-          '00:00:12',
-        );
+        expect(
+          showSessionOption(sessionName, TMUX_STATUS_TIMER_TEXT_OPTION),
+        ).toBe('00:00:12');
         expect(
           showSessionOption(sessionName, TMUX_STATUS_TIMER_RUNNING_OPTION),
         ).toBe('0');
@@ -1473,7 +1548,11 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.onRecord(turnFinished(237_000));
 
         expect(
-          showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
+          showPaneOption(
+            sessionName,
+            captain.index,
+            TMUX_PANE_TIMER_TEXT_OPTION,
+          ),
         ).toBe('00:01:12');
         expect(
           showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
@@ -1502,7 +1581,11 @@ describe('tmux-play real-tmux acceptance', () => {
         observer.onRecord(turnFinished(7_700_000));
 
         expect(
-          showPaneOption(sessionName, captain.index, TMUX_PANE_TIMER_TEXT_OPTION),
+          showPaneOption(
+            sessionName,
+            captain.index,
+            TMUX_PANE_TIMER_TEXT_OPTION,
+          ),
         ).toBe('01:02:52');
         expect(
           showPaneOption(sessionName, coder.index, TMUX_PANE_TIMER_TEXT_OPTION),
@@ -1539,7 +1622,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
     writeFileSync(
       configPath,
       [
-        "captain:",
+        'captain:',
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  options: {}',
@@ -1745,7 +1828,10 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
     );
 
     const loaded = await loadTmuxPlayConfig({ cwd, configPath });
-    const captured: Record<'claude' | 'codex' | 'gemini' | 'opencode', AgentOptions[]> = {
+    const captured: Record<
+      'claude' | 'codex' | 'gemini' | 'opencode',
+      AgentOptions[]
+    > = {
       claude: [],
       codex: [],
       gemini: [],
@@ -1862,10 +1948,7 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
     const openAi = capturedByModel(captured.opencode, 'openai/gpt-5');
     expect(openAi.reasoningEffort).toBe('medium');
     expect(
-      mapReasoningEffortToOpenCodeVariant(
-        openAi.model,
-        openAi.reasoningEffort,
-      ),
+      mapReasoningEffortToOpenCodeVariant(openAi.model, openAi.reasoningEffort),
     ).toBe('medium');
 
     const openUnknown = capturedByModel(
@@ -1996,9 +2079,7 @@ function displayMessage(session: string, format: string): string {
     { encoding: 'utf8' },
   );
   if (result.status !== 0) {
-    throw new Error(
-      `tmux display-message failed: ${result.stderr.trim()}`,
-    );
+    throw new Error(`tmux display-message failed: ${result.stderr.trim()}`);
   }
   return result.stdout.trim();
 }
@@ -2078,16 +2159,8 @@ function listPanes(session: string): readonly PaneRow[] {
     .split('\n')
     .filter(Boolean)
     .map((line): PaneRow => {
-      const [
-        index,
-        left,
-        top,
-        width,
-        height,
-        title,
-        inputOff,
-        active,
-      ] = line.split(FIELD_SEP);
+      const [index, left, top, width, height, title, inputOff, active] =
+        line.split(FIELD_SEP);
       return {
         index: Number(index),
         left: Number(left),
@@ -2216,6 +2289,38 @@ function sendAttachedClientMouseDown(
   }
 }
 
+function sendAttachedClientMouseWheelUp(
+  session: string,
+  x: number,
+  y: number,
+  count: number,
+): void {
+  const wheelEvents = Array.from(
+    { length: count },
+    () => `send -- "\\033\\[<64;${x};${y}M"`,
+  );
+  const script = [
+    `spawn tmux attach-session -t ${session}`,
+    'after 500',
+    ...wheelEvents,
+    'after 500',
+    'send -- "\\002d"',
+    'expect eof',
+  ].join('\n');
+  const result = spawnSync('expect', ['-c', script], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (result.error) {
+    throw new Error(`expect wheel probe failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `expect wheel probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
+    );
+  }
+}
+
 function expandedPaneBorder(session: string, paneIndex: number): string {
   return displayMessage(`${session}:0.${paneIndex}`, '#{E:pane-border-format}');
 }
@@ -2232,20 +2337,18 @@ function expectPaneTimer(
   expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_TEXT_OPTION)).toBe(
     expected.text,
   );
-  expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_RUNNING_OPTION)).toBe(
-    expected.running,
-  );
-  expect(showPaneOption(session, paneIndex, TMUX_PANE_TIMER_ACCENT_OPTION)).toBe(
-    expected.accent,
-  );
+  expect(
+    showPaneOption(session, paneIndex, TMUX_PANE_TIMER_RUNNING_OPTION),
+  ).toBe(expected.running);
+  expect(
+    showPaneOption(session, paneIndex, TMUX_PANE_TIMER_ACCENT_OPTION),
+  ).toBe(expected.accent);
 }
 
 function runOrThrow(cmd: string, args: readonly string[]): void {
   const result = spawnSync(cmd, args, { encoding: 'utf8' });
   if (result.status !== 0) {
-    throw new Error(
-      `${cmd} ${args.join(' ')} failed: ${result.stderr.trim()}`,
-    );
+    throw new Error(`${cmd} ${args.join(' ')} failed: ${result.stderr.trim()}`);
   }
 }
 
@@ -2266,7 +2369,10 @@ async function waitForRegions(
     lastSeen = panes;
     if (
       panes.length === expectedRegions.length &&
-      panes.every((pane, idx) => regionWidthFor(pane, panes, idx) === expectedRegions[idx])
+      panes.every(
+        (pane, idx) =>
+          regionWidthFor(pane, panes, idx) === expectedRegions[idx],
+      )
     ) {
       return panes;
     }
@@ -2359,7 +2465,9 @@ async function waitForFileContains(
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`${path} did not contain ${needle}; last content:\n${content}`);
+  throw new Error(
+    `${path} did not contain ${needle}; last content:\n${content}`,
+  );
 }
 
 function regionWidthFor(

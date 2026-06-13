@@ -173,7 +173,7 @@ Given two or more players and a YAML config that omits `layout.columnWeights`, w
 ### TTMUX-062
 Verifies: [TMUX-062](../user/tmux-play.md#tmux-062)
 
-Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, shall not include a `set-clipboard` option write, and shall not include any `Wheel*` binding.
+Given the launcher constructing a tmux-play session, the tmux command stream shall include `set-option -t <session> mouse on`, shall include `bind-key -T copy-mode MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X stop-selection`, `bind-key -T copy-mode MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, and `bind-key -T copy-mode-vi MouseDown3Pane send-keys -X copy-pipe <system-clipboard-command>`, shall not include a `set-clipboard` option write, and shall not include root-table `WheelUpPane` or any `WheelDownPane` binding.
 The right-click binding argv shall be exactly `copy-pipe`, not `copy-pipe-and-cancel`: `copy-pipe-and-cancel` exits copy-mode and snaps a scrolled-back pane to its live tail, which is the "right-click on a scrolled-back pane jumps to the last line" defect [TMUX-062](../user/tmux-play.md#tmux-062) requires not to occur.
 The `<system-clipboard-command>` shall contain `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, and `tmux load-buffer -w -`.
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux show-options -v -t <session> mouse` shall report `on`, and `tmux list-keys -T copy-mode` plus `tmux list-keys -T copy-mode-vi` shall report the preserve-selection and system-clipboard right-click-copy bindings above; neither table's `MouseDown3Pane` binding shall reference `copy-pipe-and-cancel`.
@@ -228,6 +228,16 @@ A pane in the same session that receives no concurrent output shall keep its `#{
 Activity that renders no pane output shall not return a scrolled pane to its tail: the `turn_started` / `turn_finished` / `captain_prompt` / `captain_telemetry` control records, the `done` and `error` events the presenter suppresses, any event the presenter renders to no visible text, and a buffered `text_delta` that only accumulates into the open block before a flush.
 The probe shall assert the pane's pre-output `#{scroll_position}` is greater than `0` so a setup that failed to scroll back fails loudly rather than passing vacuously at `0 == 0`, and shall not require adapter API keys — it may drive the session runtime with deterministic synthetic records and seed pane history via `respawn-pane`, since the follow is `#{pane_in_mode}`-gated and independent of pane contents.
 The acceptance probe shall run under `*.acceptance.test.ts` and shall self-skip when either `tmux -V` or `glow -v` fails.
+
+### TTMUX-077
+Verifies: [TMUX-077](../user/tmux-play.md#tmux-077)
+
+Given the launcher constructing a tmux-play session whose `sessionName` is `<session>`, the tmux command stream shall include `bind-key -T copy-mode WheelUpPane if-shell -F #{==:#{session_name},<session>} '<trueBranch>' 'send-keys -X -N 5 scroll-up'` and the same binding for `copy-mode-vi`.
+The `<trueBranch>` shall contain five ordered clauses of `if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' 'send-keys -t= -X scroll-up'`, so each wheel tick preserves the stock five-line scroll distance until it reaches the top of history and then stops.
+The command stream shall not include root-table `WheelUpPane` or any `WheelDownPane` binding.
+Given a real tmux server hosting a launched tmux-play session, where a pane is seeded with scrollback, when an attached tmux client sends enough `WheelUpPane` events inside that pane to exceed its history length, `#{pane_in_mode}` shall remain `1`, `#{scroll_position}` shall be greater than `0`, and `#{scroll_position}` shall be less than or equal to `#{history_size}`.
+The probe may use the Boss/Captain pane as the seeded pane because it is the common user-visible case for this defect, and it may respawn that pane with deterministic history because the binding under test is session- and key-table-scoped and independent of the process running inside the pane.
+The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V`, `glow -v`, or an attached-client mouse driver is unavailable.
 
 ## Keyboard Interaction
 
