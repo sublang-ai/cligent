@@ -163,6 +163,19 @@ describe('NotificationObserver', () => {
       ],
       { detached: true, stdio: 'ignore' },
     );
+
+    const otherSpawn = vi.fn(() => fakeChild());
+    new NotificationObserver({
+      notifications: {
+        player_finished: 'bell',
+        turn_finished: 'off',
+        turn_aborted: 'off',
+      },
+      platform: 'freebsd',
+      spawnDetached: otherSpawn,
+    }).onRecord(playerFinished('ok'));
+
+    expect(otherSpawn).not.toHaveBeenCalled();
   });
 
   it('silences configured turn_aborted notifications for user cancellations', () => {
