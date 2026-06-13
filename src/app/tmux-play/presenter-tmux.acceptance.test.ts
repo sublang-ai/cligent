@@ -183,6 +183,48 @@ describe('TmuxPresenter + real glow acceptance', () => {
   );
 
   acceptanceIt(
+    'uses the continuation width for prose rows instead of the speaker-prefix width',
+    () => {
+      const coder = new MemoryWriter();
+      const presenter = createTmuxPresenter({
+        boss: new MemoryWriter(),
+        players: new Map([['coder', coder]]),
+        playerWidths: new Map([['coder', () => 40]]),
+      });
+
+      presenter.onRecord(
+        playerEvent(
+          'coder',
+          textEvent(
+            'I added a copy-mode wheel-up clamp so scrolling stops at the oldest history line, committed with matching specs and tests.',
+          ),
+        ),
+      );
+      presenter.onRecord(playerFinishedOk('coder'));
+
+      const lines = coder
+        .text()
+        .split('\n')
+        .filter((line) => line.trim().length > 0);
+      const oldContinuationLimit = 40 - 'coder> '.length;
+      const continuationLengths = lines
+        .filter((line) => line.startsWith('  '))
+        .map((line) => line.length);
+
+      for (const line of lines) {
+        expect(
+          line.length,
+          `line exceeded pane width: ${JSON.stringify(line)}`,
+        ).toBeLessThanOrEqual(40);
+      }
+      expect(
+        continuationLengths.some((length) => length > oldContinuationLimit),
+        `expected a continuation row wider than the old ${oldContinuationLimit}-cell prefix budget; got ${continuationLengths.join(', ')}`,
+      ).toBe(true);
+    },
+  );
+
+  acceptanceIt(
     'does not stack blank lines between consecutive short text blocks',
     () => {
       const coder = new MemoryWriter();

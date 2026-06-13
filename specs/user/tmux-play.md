@@ -494,7 +494,11 @@ The render width shall be `max(1, paneWidth - 2)`, matching the two-space contin
 
 While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `player_finished` or `captain_finished` record; a `text` event (always a complete block); a `tool_use` or `tool_result` event on the same writer; a `player_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
 
-The render width shall be `max(1, paneWidth - prefixWidth)` where `prefixWidth` is the cell width of the speaker's `<who>> ` first-line prefix. This budget keeps the prefixed first line and the two-space-indented continuations within the pane's display width without triggering a terminal-level rewrap. When no pane-width source is configured for the writer, the render width shall default to `80 - prefixWidth`.
+The render width for text blocks shall be `max(1, paneWidth - 2)`, matching the two-space continuation indent. When no pane-width source is configured for the writer, the render width shall default to `80 - 2`.
+This budget lets continuation rows use the pane width instead of inheriting the first-line speaker-prefix reserve.
+The presenter shall then prefix-fit the first visible rendered row only: if adding the speaker's `<who>> ` first-line prefix would exceed the pane display width, the presenter shall split that first rendered row at a cell-aware word boundary, write the first segment after the colored `<who>> ` prefix, and write the remaining segment as the next two-space-indented continuation row.
+The prefix-fit split shall preserve ANSI escape sequences as zero-width bytes and shall not color the continuation indent.
+All emitted text-block rows shall remain within the pane's display width without relying on terminal-level rewrap.
 
 After successful rendering, no line emitted by the presenter shall retain `glow`'s trailing horizontal line padding.
 Trailing padding includes right-side padding cells emitted by `glow`, including padding followed only by SGR resets; leading whitespace shall be preserved, so `glow`'s left margin and the presenter's existing indentation behavior remain unchanged.

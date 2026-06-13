@@ -391,7 +391,7 @@ describe('TmuxPresenter', () => {
 
   // Render-width budgeting (TMUX-050).
 
-  it('renders at paneWidth minus the visible prefix budget', () => {
+  it('renders text blocks at paneWidth minus the continuation indent', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -401,23 +401,56 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', textEvent('hello world')));
 
-    // `coder> ` is 7 cells, so glow renders into 73. The prefixed line then
-    // fits 73 + 7 = 80 cells, matching the pane width without re-wrap.
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 73, 'mocha');
+    // Text blocks render to the two-space continuation budget so continuation
+    // rows use the full pane width. The first rendered row is split later if
+    // the speaker prefix needs extra cells.
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 78, 'mocha');
   });
 
-  it('budgets prefixWidth from the speaker length, not the player id length', () => {
+  it('splits only the first rendered row to fit the visible speaker prefix', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
       players: new Map(),
-      bossWidth: () => 80,
+      bossWidth: () => 40,
     });
+    renderMarkdownMock.mockImplementation(
+      () =>
+        '  I added a copy-mode wheel-up clamp\n' +
+        '  so scrolling stops at the oldest\n',
+    );
 
-    presenter.onRecord(captainEvent(textEvent('hi')));
+    presenter.onRecord(captainEvent(textEvent('input')));
 
-    // `captain> ` is 9 cells. 80 - 9 = 71.
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 71, 'mocha');
+    const lines = boss.text().trimEnd().split('\n');
+    expect(lines).toEqual([
+      'captain>   I added a copy-mode wheel-up',
+      '  clamp',
+      '    so scrolling stops at the oldest',
+    ]);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  it('keeps the prefix-fit continuation indent outside active ANSI spans', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      players: new Map([['coder', coder]]),
+      playerWidths: new Map([['coder', () => 30]]),
+    });
+    renderMarkdownMock.mockImplementation(
+      () => '\x1b[1m  alpha beta gamma delta\x1b[0m\n',
+    );
+
+    presenter.onRecord(playerEvent('coder', textEvent('input')));
+
+    expect(coder.raw()).toContain('\x1b[0m\n  \x1b[1m');
+    expect(coder.text().split('\n').slice(0, 2)).toEqual([
+      'coder>   alpha beta gamma',
+      '  delta',
+    ]);
   });
 
   it('falls back to an 80-column default render width when no width source is configured', () => {
@@ -430,7 +463,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', textEvent('hi')));
 
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 73, 'mocha'); // 80 - 7
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 78, 'mocha');
   });
 
   // Prefix grammar (TMUX-038).

@@ -320,15 +320,14 @@ export class TmuxPresenter implements RecordObserver {
     this.blocks.delete(writer);
     if (block.text.length === 0) return;
 
-    const prefixWidth = block.who.length + 2; // `<who>` + `> `
     const paneWidth = this.paneWidth(writer);
     const effective = Number.isFinite(paneWidth)
       ? paneWidth
       : DEFAULT_PANE_WIDTH;
-    // Reserve at least one cell so glow has somewhere to render even when the
-    // pane is implausibly narrow; visual fit then depends on glow's behavior
-    // for over-wide content (code/tables overflow by design per the IR).
-    const renderWidth = Math.max(1, effective - prefixWidth);
+    // Render text blocks against the continuation-line budget. The first
+    // visible rendered row gets a narrower prefix-fit split in applyPrefix()
+    // when needed, so only that row pays for the wider `<who>> ` prefix.
+    const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
 
     let rendered: string;
     try {
@@ -344,7 +343,7 @@ export class TmuxPresenter implements RecordObserver {
         : `${block.text}\n`;
     }
 
-    writer.write(this.applyPrefix(block.who, rendered));
+    writer.write(this.applyPrefix(block.who, rendered, effective));
   }
 
   // TMUX-039 unified operational-line shape: `<who>> [<tag> <optional glyph>]
@@ -501,9 +500,14 @@ export class TmuxPresenter implements RecordObserver {
   // one-line paragraph margin is trimmed from each edge — never all edge
   // blanks — so structural blanks `glow` emits for fenced-code frames,
   // table rows, or other multi-line constructs survive. The cell-width
-  // budget passed to glow already reserves prefixWidth so the prefixed
-  // first line and indented continuations fit the pane without re-wrap.
-  private applyPrefix(who: string, rendered: string): string {
+  // budget passed to glow matches the two-space continuation indent. The
+  // first visible rendered line is split below when the wider speaker prefix
+  // needs extra cells to fit without terminal-level rewrap.
+  private applyPrefix(
+    who: string,
+    rendered: string,
+    paneWidth: number,
+  ): string {
     const trimmed = trimOuterMargin(rendered);
     if (trimmed.length === 0) {
       // All-blank rendered output (the source was empty or pure whitespace,
@@ -522,13 +526,18 @@ export class TmuxPresenter implements RecordObserver {
     if (firstIdx === -1) return '';
     const sgr = this.prefixSgr(who);
     const intro = sgr ? `${sgr}${who}> ${SGR_RESET}` : `${who}> `;
+    const firstLineBudget = Math.max(1, paneWidth - (who.length + 2));
     const out: string[] = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
       if (i < firstIdx) {
         out.push(line);
       } else if (i === firstIdx) {
-        out.push(`${intro}${line}`);
+        const [head, tail] = splitLineForPrefix(line, firstLineBudget);
+        out.push(`${intro}${head}`);
+        if (tail.length > 0) {
+          out.push(`${CONTINUATION_INDENT}${tail}`);
+        }
       } else if (!visibleNonblank(line)) {
         // Glow emits structural blank rows as space-padded (and sometimes
         // ANSI-styled) lines, not empty strings. Pass them through verbatim
@@ -552,6 +561,88 @@ export function createTmuxPresenter(
 // True when `line` has visible content after ANSI SGR escapes are stripped.
 function visibleNonblank(line: string): boolean {
   return line.replace(ANSI_PATTERN, '').trim().length > 0;
+}
+
+function visibleCells(line: string): number {
+  let cells = 0;
+  for (const token of iterateDisplay(line)) {
+    if (token.type === 'char') cells += token.cells;
+  }
+  return cells;
+}
+
+function splitLineForPrefix(
+  line: string,
+  firstLineBudget: number,
+): [string, string] {
+  if (visibleCells(line) <= firstLineBudget) {
+    return [line, ''];
+  }
+
+  const split = findPrefixFitSplit(line, firstLineBudget);
+  const head = line.slice(0, split.headEnd);
+  const tail = line.slice(split.tailStart);
+  const activeSgr = activeSgrAt(head);
+  if (!activeSgr) {
+    return [head, tail];
+  }
+  return [`${head}${SGR_RESET}`, `${activeSgr}${tail}`];
+}
+
+function findPrefixFitSplit(
+  line: string,
+  maxCells: number,
+): { headEnd: number; tailStart: number } {
+  let index = 0;
+  let cells = 0;
+  let fallback: { headEnd: number; tailStart: number } | undefined;
+  let whitespace: { headEnd: number; tailStart: number } | undefined;
+  let sawNonWhitespace = false;
+
+  for (const token of iterateDisplay(line)) {
+    if (token.type === 'escape') {
+      index += token.sequence.length;
+      continue;
+    }
+    if (token.type === 'newline') {
+      break;
+    }
+
+    const start = index;
+    const end = start + token.char.length;
+    const nextCells = cells + token.cells;
+    if (nextCells > maxCells) {
+      return whitespace ?? fallback ?? { headEnd: start, tailStart: start };
+    }
+
+    cells = nextCells;
+    fallback = { headEnd: end, tailStart: end };
+    if (/\S/u.test(token.char)) {
+      sawNonWhitespace = true;
+    } else if (sawNonWhitespace) {
+      whitespace = { headEnd: start, tailStart: end };
+    }
+    index = end;
+  }
+
+  return whitespace ?? fallback ?? { headEnd: 0, tailStart: 0 };
+}
+
+function activeSgrAt(text: string): string {
+  let active = '';
+  for (const match of text.matchAll(/\x1B\[([0-9;]*)m/g)) {
+    const sequence = match[0];
+    const params = (match[1] ?? '')
+      .split(';')
+      .filter((part) => part.length > 0)
+      .map((part) => Number.parseInt(part, 10));
+    if (params.length === 0 || params.includes(0)) {
+      active = '';
+    } else {
+      active += sequence;
+    }
+  }
+  return active;
 }
 
 // Glow pads rendered rows out to the requested width. Those right-edge spaces
