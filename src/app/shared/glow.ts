@@ -17,12 +17,13 @@ export function isGlowAvailable(): boolean {
 }
 
 // Renders `text` as Markdown via glow at the requested cell width and
-// returns glow's stdout. `width` is the effective render budget; the
-// caller (the presenter) subtracts the visible `<who>> ` prefix before
-// invoking so prefixed first lines and indented continuations both fit
-// the pane. The style is pinned from tmux-play's resolved Catppuccin
-// flavor because glow's `auto` style picks `notty` when stdout is not a
-// TTY (our case under spawnSync), which strips ANSI styling.
+// returns glow's stdout. `width` is the effective render budget chosen by
+// the caller: text blocks pass the full pane width so glow's built-in
+// document margin plus presenter continuation indentation can still reach the
+// pane edge, while fenced tool bodies pass their continuation-body budget.
+// The style is pinned from tmux-play's resolved Catppuccin flavor because
+// glow's `auto` style picks `notty` when stdout is not a TTY (our case under
+// spawnSync), which strips ANSI styling.
 export function renderMarkdown(
   text: string,
   width: number,

@@ -324,10 +324,13 @@ export class TmuxPresenter implements RecordObserver {
     const effective = Number.isFinite(paneWidth)
       ? paneWidth
       : DEFAULT_PANE_WIDTH;
-    // Render text blocks against the continuation-line budget. The first
-    // visible rendered row gets a narrower prefix-fit split in applyPrefix()
-    // when needed, so only that row pays for the wider `<who>> ` prefix.
-    const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
+    // Glow's built-in dark/light styles keep a two-cell document margin and
+    // wrap ordinary prose to roughly `width - 2` cells after trailing padding
+    // is stripped. Passing the pane width lets continuation rows that reach
+    // glow's wrap limit occupy the pane once our two-space indent is added.
+    // The first visible rendered row gets a narrower prefix-fit split in
+    // applyPrefix() when needed, so only that row pays for `<who>> `.
+    const renderWidth = Math.max(1, effective);
 
     let rendered: string;
     try {

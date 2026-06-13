@@ -196,7 +196,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
         playerEvent(
           'coder',
           textEvent(
-            'I added a copy-mode wheel-up clamp so scrolling stops at the oldest history line, committed with matching specs and tests.',
+            'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau',
           ),
         ),
       );
@@ -206,10 +206,10 @@ describe('TmuxPresenter + real glow acceptance', () => {
         .text()
         .split('\n')
         .filter((line) => line.trim().length > 0);
-      const oldContinuationLimit = 40 - 'coder> '.length;
       const continuationLengths = lines
         .filter((line) => line.startsWith('  '))
         .map((line) => line.length);
+      const maxContinuationLength = Math.max(...continuationLengths);
 
       for (const line of lines) {
         expect(
@@ -218,8 +218,12 @@ describe('TmuxPresenter + real glow acceptance', () => {
         ).toBeLessThanOrEqual(40);
       }
       expect(
-        continuationLengths.some((length) => length > oldContinuationLimit),
-        `expected a continuation row wider than the old ${oldContinuationLimit}-cell prefix budget; got ${continuationLengths.join(', ')}`,
+        maxContinuationLength,
+        `expected a continuation row near the 40-cell pane edge; got ${continuationLengths.join(', ')}`,
+      ).toBeGreaterThanOrEqual(39);
+      expect(
+        lines.some((line) => /^ {4}\S/u.test(line) && line.length >= 39),
+        `expected a near-edge full glow continuation row with preserved glow margin: ${JSON.stringify(lines)}`,
       ).toBe(true);
     },
   );

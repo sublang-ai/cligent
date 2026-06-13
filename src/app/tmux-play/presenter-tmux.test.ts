@@ -391,7 +391,7 @@ describe('TmuxPresenter', () => {
 
   // Render-width budgeting (TMUX-050).
 
-  it('renders text blocks at paneWidth minus the continuation indent', () => {
+  it('renders text blocks at paneWidth so glow margin plus continuation indent fill the row', () => {
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -401,10 +401,10 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', textEvent('hello world')));
 
-    // Text blocks render to the two-space continuation budget so continuation
-    // rows use the full pane width. The first rendered row is split later if
-    // the speaker prefix needs extra cells.
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 78, 'mocha');
+    // Glow's dark/light styles keep a two-cell document margin. Rendering at
+    // the pane width lets rows that reach glow's wrap limit still fill the
+    // pane after the presenter adds its two-space continuation indent.
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hello world\n', 80, 'mocha');
   });
 
   it('splits only the first rendered row to fit the visible speaker prefix', () => {
@@ -463,7 +463,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerEvent('coder', textEvent('hi')));
 
-    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 78, 'mocha');
+    expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 80, 'mocha');
   });
 
   // Prefix grammar (TMUX-038).
