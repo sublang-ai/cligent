@@ -332,7 +332,9 @@ export class TmuxPresenter implements RecordObserver {
 
     let rendered: string;
     try {
-      rendered = renderMarkdown(block.text, renderWidth, this.flavor);
+      rendered = stripGlowRightPadding(
+        renderMarkdown(block.text, renderWidth, this.flavor),
+      );
     } catch {
       // The launcher gate guarantees glow is healthy at startup, so a
       // mid-session render failure is rare. Surface the raw text rather than
@@ -448,7 +450,9 @@ export class TmuxPresenter implements RecordObserver {
       : DEFAULT_PANE_WIDTH;
     const renderWidth = Math.max(1, effective - CONTINUATION_INDENT.length);
     try {
-      const rendered = renderMarkdown(fenced, renderWidth, this.flavor);
+      const rendered = stripGlowRightPadding(
+        renderMarkdown(fenced, renderWidth, this.flavor),
+      );
       return indentLines(rendered, CONTINUATION_INDENT);
     } catch {
       // The raw body never passed through glow, so it carries no outer
@@ -548,6 +552,28 @@ export function createTmuxPresenter(
 // True when `line` has visible content after ANSI SGR escapes are stripped.
 function visibleNonblank(line: string): boolean {
   return line.replace(ANSI_PATTERN, '').trim().length > 0;
+}
+
+// Glow pads rendered rows out to the requested width. Those right-edge spaces
+// make each pane write a rectangular block even after the visible content ends.
+// Strip only trailing horizontal whitespace from successful glow output; keep
+// leading spaces intact so glow's own left margin and the presenter's hanging
+// indent do not change.
+function stripGlowRightPadding(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      let trimmed = line;
+      for (;;) {
+        const next = trimmed.replace(
+          /[ \t]+((?:\x1B\[[0-9;]*m)*)$/u,
+          '$1',
+        );
+        if (next === trimmed) return trimmed;
+        trimmed = next;
+      }
+    })
+    .join('\n');
 }
 
 // Pick a backtick fence safe to wrap `body` for TMUX-049's fenced-code

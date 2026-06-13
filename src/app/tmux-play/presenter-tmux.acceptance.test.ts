@@ -118,6 +118,10 @@ describe('TmuxPresenter + real glow acceptance', () => {
           ok,
           `line missing prefix/indent: ${JSON.stringify(line)}`,
         ).toBe(true);
+        expect(
+          line,
+          `line retained glow right padding: ${JSON.stringify(line)}`,
+        ).not.toMatch(/[ \t]+$/u);
       }
     },
   );
@@ -169,6 +173,12 @@ describe('TmuxPresenter + real glow acceptance', () => {
       const fooLine = lines.find((line) => /foo/.test(line));
       expect(fooLine, 'expected a body line containing foo').toBeDefined();
       expect(fooLine ?? '').toMatch(/^ {2}/);
+      for (const line of lines) {
+        expect(
+          line,
+          `line retained glow right padding: ${JSON.stringify(line)}`,
+        ).not.toMatch(/[ \t]+$/u);
+      }
     },
   );
 

@@ -233,13 +233,12 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('preserves ANSI-wrapped blank rows from glow (background SGRs around whitespace)', () => {
+  it('preserves ANSI-wrapped blank rows from glow without right-padding spaces', () => {
     // Glow code-block padding sometimes ships as `\x1b[<bg>m   \x1b[0m`
     // — a span of background color around spaces, no visible characters.
-    // visibleNonblank strips ANSI before checking content, so the indent
-    // decision must agree: the row passes through verbatim instead of
-    // getting `  ` prepended (which would break the background span by
-    // pushing styled bytes inside an indent prefix).
+    // The indent decision still treats the row as blank, but the right-side
+    // reservation spaces are stripped so a glow-rendered block does not fill
+    // the pane with padded cells after visible content ends.
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -247,6 +246,7 @@ describe('TmuxPresenter', () => {
     });
 
     const ansiPad = '\x1b[48;5;235m   \x1b[0m';
+    const strippedAnsiPad = '\x1b[48;5;235m\x1b[0m';
     renderMarkdownMock.mockImplementation(
       () => `${ansiPad}\nfirst\n${ansiPad}\nsecond\n${ansiPad}\n`,
     );
@@ -255,22 +255,21 @@ describe('TmuxPresenter', () => {
 
     // Outer-margin trim drops one padded blank per edge. The middle
     // ANSI-wrapped pad sits between `first` and `second` and reaches the
-    // writer with its background span intact, NOT prefixed with `  `.
+    // writer without its right-padding spaces, NOT prefixed with `  `.
     expect(coder.raw()).toBe(
       'coder> first\n' +
-        `${ansiPad}\n` +
+        `${strippedAnsiPad}\n` +
         '  second\n',
     );
   });
 
-  it('passes through space-padded blank rows from glow without indenting them', () => {
+  it('keeps space-padded blank rows blank without preserving right padding', () => {
     // Real glow emits "blank" structural rows as space-padded lines (often
     // with a background-color SGR), not as truly empty strings. A blanket
     // `line.length === 0` indent decision treats those as non-blank and
-    // prepends two spaces, contradicting TMUX-050's "blank lines remain
-    // blank (unindented)" invariant. visibleNonblank() — the same check
-    // trimOuterMargin uses — keeps the indent decision consistent with
-    // the trim decision.
+    // prepends two spaces. The presenter now strips glow's right-padding
+    // cells first, then uses visibleNonblank() so the row remains a blank
+    // line without reserving the rest of the pane.
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -284,14 +283,32 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(playerEvent('coder', textEvent('payload')));
 
     // Outer-margin trim drops one padded blank per edge (it already uses
-    // visibleNonblank). The remaining middle padded row passes through
-    // verbatim — no `  ` prepended — while `hello` and `world` carry the
-    // prefix and the continuation indent respectively.
+    // visibleNonblank). The remaining middle padded row is still blank and
+    // unindented, but its padding spaces are gone.
     expect(coder.text()).toBe(
       'coder> hello\n' +
-        '   \n' +
+        '\n' +
         '  world\n',
     );
+  });
+
+  it('strips glow right padding while preserving left indentation', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      players: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementation(
+      () => '  first     \n  second\t \n',
+    );
+
+    presenter.onRecord(playerEvent('coder', textEvent('payload')));
+
+    expect(coder.text()).toBe('coder>   first\n    second\n');
+    for (const line of coder.text().split('\n')) {
+      expect(line).not.toMatch(/[ \t]+$/u);
+    }
   });
 
   it('trims only the outermost one leading and one trailing blank per edge', () => {
@@ -1338,12 +1355,12 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('passes through space-padded blank rows from a tool body without indenting them', () => {
+  it('keeps space-padded blank rows from a tool body blank without right padding', () => {
     // Same invariant as the text-body version, exercised through the
     // tool-result indentLines path. Real glow's fenced-code rendering emits
-    // its frame rows as space-padded (sometimes background-styled) lines;
-    // they must reach the writer as-is so the body's structure reads as
-    // the user would see it in a glow pane outside this presenter.
+    // its frame rows as space-padded (sometimes background-styled) lines.
+    // The structure must survive, but the trailing padding cells should not
+    // reserve the right side of the pane.
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
@@ -1359,14 +1376,41 @@ describe('TmuxPresenter', () => {
     );
 
     // Outer-margin trim removes one padded blank per edge; the remaining
-    // padded rows on either side of `foo` pass through unmodified, only
-    // `foo` itself picks up the two-space indent.
+    // blank rows on either side of `foo` remain unindented and no longer
+    // carry their right-padding spaces; only `foo` itself picks up the
+    // two-space indent.
     expect(coder.text()).toBe(
       'coder> [tool ✓] Cat\n' +
-        '   \n' +
+        '\n' +
         '  foo\n' +
-        '   \n',
+        '\n',
     );
+  });
+
+  it('strips glow right padding from a tool body while preserving body indent', () => {
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss: new MemoryWriter(),
+      players: new Map([['coder', coder]]),
+    });
+
+    renderMarkdownMock.mockImplementation(
+      () => '  ```    \n  output   \n  ```\t \n',
+    );
+
+    presenter.onRecord(
+      playerEvent('coder', toolResultEvent('Cat', 'success', 'payload')),
+    );
+
+    expect(coder.text()).toBe(
+      'coder> [tool ✓] Cat\n' +
+        '    ```\n' +
+        '    output\n' +
+        '    ```\n',
+    );
+    for (const line of coder.text().split('\n')) {
+      expect(line).not.toMatch(/[ \t]+$/u);
+    }
   });
 
   it('preserves a payload trailing blank line through the fence and indent', () => {
