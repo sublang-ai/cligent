@@ -57,6 +57,7 @@ describe('NotificationObserver', () => {
   });
 
   it('sends one detached desktop notification for turn_finished on macOS', () => {
+    const output = { write: vi.fn() };
     const child = fakeChild();
     const spawnDetached = vi.fn(() => child);
     const observer = new NotificationObserver({
@@ -65,6 +66,7 @@ describe('NotificationObserver', () => {
         turn_finished: 'desktop',
         turn_aborted: 'off',
       },
+      output,
       platform: 'darwin',
       spawnDetached,
     });
@@ -80,6 +82,16 @@ describe('NotificationObserver', () => {
       ],
       { detached: true, stdio: 'ignore' },
     );
+    expect(spawnDetached).not.toHaveBeenCalledWith(
+      'afplay',
+      expect.any(Array),
+      expect.any(Object),
+    );
+    expect(output.write).toHaveBeenCalledTimes(1);
+    expect(output.write).toHaveBeenCalledWith(
+      '\x1b]9;tmux-play: Boss turn finished\x1b\\',
+    );
+    expect(output.write.mock.calls[0]?.[0]).not.toContain('\x07');
     expect(child.on).toHaveBeenCalledWith('error', expect.any(Function));
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
@@ -222,7 +234,7 @@ describe('NotificationObserver', () => {
         turn_aborted: 'off',
       },
       output,
-      platform: 'linux',
+      platform: 'darwin',
       spawnDetached,
     });
 
