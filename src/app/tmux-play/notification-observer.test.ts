@@ -10,8 +10,10 @@ import {
 import type { TmuxPlayRecord } from './records.js';
 
 describe('NotificationObserver', () => {
-  it('writes a raw BEL for every player_finished result status', () => {
+  it('plays a sound cue only for every player_finished result status', () => {
     const output = { write: vi.fn() };
+    const child = fakeChild();
+    const spawnDetached = vi.fn(() => child);
     const observer = new NotificationObserver({
       notifications: {
         player_finished: 'bell',
@@ -19,16 +21,39 @@ describe('NotificationObserver', () => {
         turn_aborted: 'off',
       },
       output,
+      platform: 'darwin',
+      spawnDetached,
     });
 
     observer.onRecord(playerFinished('ok'));
     observer.onRecord(playerFinished('error'));
     observer.onRecord(playerFinished('aborted'));
 
-    expect(output.write).toHaveBeenCalledTimes(3);
-    expect(output.write).toHaveBeenNthCalledWith(1, '\x07');
-    expect(output.write).toHaveBeenNthCalledWith(2, '\x07');
-    expect(output.write).toHaveBeenNthCalledWith(3, '\x07');
+    expect(output.write).not.toHaveBeenCalled();
+    expect(spawnDetached).toHaveBeenCalledTimes(3);
+    expect(spawnDetached).toHaveBeenNthCalledWith(
+      1,
+      'afplay',
+      ['/System/Library/Sounds/Hero.aiff'],
+      { detached: true, stdio: 'ignore' },
+    );
+    expect(spawnDetached).toHaveBeenNthCalledWith(
+      2,
+      'afplay',
+      ['/System/Library/Sounds/Hero.aiff'],
+      { detached: true, stdio: 'ignore' },
+    );
+    expect(spawnDetached).toHaveBeenNthCalledWith(
+      3,
+      'afplay',
+      ['/System/Library/Sounds/Hero.aiff'],
+      { detached: true, stdio: 'ignore' },
+    );
+    expect(spawnDetached).not.toHaveBeenCalledWith(
+      'osascript',
+      expect.any(Array),
+      expect.any(Object),
+    );
   });
 
   it('sends one detached desktop notification for turn_finished on macOS', () => {
@@ -92,8 +117,57 @@ describe('NotificationObserver', () => {
     expect(otherSpawn).not.toHaveBeenCalled();
   });
 
+  it('uses native complete sound cues for bell notifications on Linux and Windows', () => {
+    const linuxChild = fakeChild();
+    const linuxSpawn = vi.fn(() => linuxChild);
+    new NotificationObserver({
+      notifications: {
+        player_finished: 'bell',
+        turn_finished: 'off',
+        turn_aborted: 'off',
+      },
+      platform: 'linux',
+      spawnDetached: linuxSpawn,
+    }).onRecord(playerFinished('ok'));
+
+    expect(linuxSpawn).toHaveBeenCalledWith(
+      'sh',
+      [
+        '-c',
+        expect.stringContaining('canberra-gtk-play -i complete -d cligent'),
+      ],
+      { detached: true, stdio: 'ignore' },
+    );
+
+    const windowsChild = fakeChild();
+    const windowsSpawn = vi.fn(() => windowsChild);
+    new NotificationObserver({
+      notifications: {
+        player_finished: 'bell',
+        turn_finished: 'off',
+        turn_aborted: 'off',
+      },
+      platform: 'win32',
+      spawnDetached: windowsSpawn,
+    }).onRecord(playerFinished('ok'));
+
+    expect(windowsSpawn).toHaveBeenCalledWith(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        expect.stringContaining('Windows Notify System Generic.wav'),
+      ],
+      { detached: true, stdio: 'ignore' },
+    );
+  });
+
   it('silences configured turn_aborted notifications for user cancellations', () => {
     const output = { write: vi.fn() };
+    const spawnDetached = vi.fn(() => fakeChild());
     const observer = new NotificationObserver({
       notifications: {
         player_finished: 'off',
@@ -101,6 +175,8 @@ describe('NotificationObserver', () => {
         turn_aborted: 'bell',
       },
       output,
+      platform: 'darwin',
+      spawnDetached,
     });
 
     for (const reason of ['ESC', 'SIGINT', 'SIGTERM', 'EOF', 'runtime disposed']) {
@@ -108,8 +184,13 @@ describe('NotificationObserver', () => {
     }
     observer.onRecord(turnAborted('captain failed'));
 
-    expect(output.write).toHaveBeenCalledTimes(1);
-    expect(output.write).toHaveBeenCalledWith('\x07');
+    expect(output.write).not.toHaveBeenCalled();
+    expect(spawnDetached).toHaveBeenCalledTimes(1);
+    expect(spawnDetached).toHaveBeenCalledWith(
+      'afplay',
+      ['/System/Library/Sounds/Hero.aiff'],
+      { detached: true, stdio: 'ignore' },
+    );
   });
 
   it('never throws on sink failures or unrelated records', () => {

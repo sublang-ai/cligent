@@ -13,6 +13,10 @@ import type { RecordObserver, TmuxPlayRecord } from './records.js';
 
 export interface NotificationObserverOptions {
   readonly notifications?: NotificationConfig;
+  /**
+   * @deprecated Bell notifications are native sound cues and no longer write
+   * to stdout. This option is retained for source compatibility.
+   */
   readonly output?: Pick<Writable, 'write'>;
   readonly platform?: NodeJS.Platform;
   readonly spawnDetached?: DetachedNotificationSpawner;
@@ -33,16 +37,36 @@ const USER_ABORT_REASONS = new Set([
   'EOF',
   'runtime disposed',
 ]);
+const MACOS_HERO_SOUND = '/System/Library/Sounds/Hero.aiff';
+const LINUX_COMPLETE_SOUND_SCRIPT =
+  'if command -v canberra-gtk-play >/dev/null 2>&1; then ' +
+  'canberra-gtk-play -i complete -d cligent >/dev/null 2>&1 && exit 0; ' +
+  'fi; ' +
+  'for sound in ' +
+  '/usr/share/sounds/freedesktop/stereo/complete.oga ' +
+  '/usr/share/sounds/sound-theme-freedesktop/stereo/complete.oga; do ' +
+  '[ -r "$sound" ] || continue; ' +
+  'if command -v paplay >/dev/null 2>&1; then exec paplay "$sound"; ' +
+  'elif command -v pw-play >/dev/null 2>&1; then exec pw-play "$sound"; ' +
+  'fi; ' +
+  'done';
+const WINDOWS_COMPLETE_SOUND_SCRIPT =
+  "$path = Join-Path $env:WINDIR 'Media\\Windows Notify System Generic.wav'; " +
+  'if (Test-Path $path) { ' +
+  '$player = New-Object System.Media.SoundPlayer $path; ' +
+  '$player.PlaySync(); ' +
+  '} else { ' +
+  '[System.Media.SystemSounds]::Asterisk.Play(); ' +
+  'Start-Sleep -Milliseconds 300; ' +
+  '}';
 
 export class NotificationObserver implements RecordObserver {
   private readonly notifications: NotificationConfig;
-  private readonly output: Pick<Writable, 'write'>;
   private readonly platform: NodeJS.Platform;
   private readonly spawnDetached: DetachedNotificationSpawner;
 
   constructor(options: NotificationObserverOptions = {}) {
     this.notifications = options.notifications ?? defaultNotificationConfig();
-    this.output = options.output ?? process.stdout;
     this.platform = options.platform ?? process.platform;
     this.spawnDetached = options.spawnDetached ?? spawnDetachedNotification;
   }
@@ -67,7 +91,10 @@ export class NotificationObserver implements RecordObserver {
   private notify(sink: NotificationSink, message: NotificationMessage): void {
     try {
       if (sink === 'bell') {
-        this.output.write('\x07');
+        playSoundCue({
+          platform: this.platform,
+          spawnDetached: this.spawnDetached,
+        });
       } else if (sink === 'desktop') {
         sendDesktopNotification({
           ...message,
@@ -93,6 +120,11 @@ interface NotificationMessage {
 }
 
 interface DesktopNotificationOptions extends NotificationMessage {
+  readonly platform: NodeJS.Platform;
+  readonly spawnDetached: DetachedNotificationSpawner;
+}
+
+interface SoundCueOptions {
   readonly platform: NodeJS.Platform;
   readonly spawnDetached: DetachedNotificationSpawner;
 }
@@ -146,8 +178,25 @@ function sendDesktopNotification(options: DesktopNotificationOptions): void {
   }
 }
 
+function playSoundCue(options: SoundCueOptions): void {
+  if (options.platform === 'darwin') {
+    spawnBestEffort(options, 'afplay', [MACOS_HERO_SOUND]);
+  } else if (options.platform === 'linux') {
+    spawnBestEffort(options, 'sh', ['-c', LINUX_COMPLETE_SOUND_SCRIPT]);
+  } else if (options.platform === 'win32') {
+    spawnBestEffort(options, 'powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-WindowStyle',
+      'Hidden',
+      '-Command',
+      WINDOWS_COMPLETE_SOUND_SCRIPT,
+    ]);
+  }
+}
+
 function spawnBestEffort(
-  options: DesktopNotificationOptions,
+  options: { readonly spawnDetached: DetachedNotificationSpawner },
   command: string,
   args: readonly string[],
 ): void {

@@ -60,7 +60,7 @@ The snapshot per [TMUX-034](#tmux-034) shall carry the resolved `layout.window.c
 
 The top-level `notifications` field shall be a map from tmux-play record notification events to sinks.
 The event keys shall be the closed set `player_finished`, `turn_finished`, and `turn_aborted`; `runtime_error` shall not be accepted as a notification event.
-The sink values shall be the closed set `off`, `bell`, and `desktop`.
+The sink values shall be the closed set `off`, `bell`, and `desktop`; the `bell` sink shall mean a best-effort native sound cue rather than terminal BEL output.
 When the `notifications` block is missing, the loader shall resolve all notification events to `off`.
 When an event key is missing inside a present `notifications` block, the loader shall resolve that event to `off`.
 When the loader accepts a config, the snapshot per [TMUX-034](#tmux-034) shall carry a resolved notification map with all three event keys.
@@ -170,9 +170,11 @@ The runtime shall emit a `runtime_error` record when a control-plane failure pre
 
 Where session mode is running, the session shall register a notification observer with the existing record observers.
 The notification observer shall be registered before any caller-supplied observers.
-When that observer handles `player_finished` with sink `bell`, it shall write raw BEL (`\x07`) to orchestrator stdout regardless of the player result status.
+When that observer handles `player_finished` with sink `bell`, it shall play one best-effort native sound cue regardless of the player result status.
+When that observer handles `player_finished` with sink `bell`, it shall not write terminal BEL (`\x07`) to orchestrator stdout and shall not launch a desktop notification command, so player completion does not request terminal or desktop badging.
 When that observer handles `turn_finished` with sink `desktop`, it shall send one best-effort desktop notification after the full Boss turn completes.
 When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not one of the user-cancellation reasons `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
+The sound-cue backend shall launch detached best-effort `afplay /System/Library/Sounds/Hero.aiff` on macOS, a detached best-effort freedesktop `complete` sound cue on Linux, a detached best-effort Windows generic notification sound on Windows, and no operation on other platforms.
 The desktop backend shall launch a detached best-effort `osascript` notification on macOS, a detached best-effort `notify-send` notification on Linux, and no operation on other platforms.
 The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
 The notification observer shall not notify for `runtime_error` records.

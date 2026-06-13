@@ -106,9 +106,10 @@ Given an old home YAML loaded through fallback discovery that lacks safe default
 ### TTMUX-076
 Verifies: [TMUX-077](../user/tmux-play.md#tmux-077), [TMUX-023](../user/tmux-play.md#tmux-023)
 
-Given a `NotificationObserver` configured with `player_finished: bell`, when it receives `player_finished` records with `status: ok`, `status: error`, and `status: aborted`, orchestrator stdout shall receive one raw BEL byte (`\x07`) for each record.
+Given a `NotificationObserver` configured with `player_finished: bell`, when it receives `player_finished` records with `status: ok`, `status: error`, and `status: aborted` on macOS, it shall launch one detached best-effort `afplay /System/Library/Sounds/Hero.aiff` sound command for each record, shall write no terminal BEL (`\x07`) or other bytes to orchestrator stdout, and shall launch no desktop notification command.
+Given a `NotificationObserver` configured with `player_finished: bell`, when it receives a `player_finished` record on Linux or Windows, it shall launch one detached best-effort native completion sound command (`complete` through the freedesktop sound stack on Linux; the Windows generic notification sound on Windows).
 Given a `NotificationObserver` configured with `turn_finished: desktop`, when it receives one `turn_finished` record on macOS or Linux, it shall launch exactly one detached best-effort OS notification command (`osascript` on macOS, `notify-send` on Linux); on other platforms it shall launch no command.
-Given a `NotificationObserver` configured with `turn_aborted: bell`, when it receives `turn_aborted` records whose reason is `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`, it shall write no BEL; when it receives a non-user-cancellation reason, it shall notify.
+Given a `NotificationObserver` configured with `turn_aborted: bell`, when it receives `turn_aborted` records whose reason is `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`, it shall launch no sound command; when it receives a non-user-cancellation reason, it shall notify through the configured sink.
 Given notification sinks throw, spawn fails, or a `runtime_error` record arrives, `NotificationObserver.onRecord` shall not throw.
 Given a `TmuxPlaySession` starts, the runtime observer array shall contain the notification observer registered with the existing presenter, follow, and timing observers before any opt-in test/user observers.
 

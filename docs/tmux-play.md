@@ -86,12 +86,15 @@ text stay readable on the host terminal's background.
 The optional top-level `notifications` map accepts only these record keys:
 `player_finished`, `turn_finished`, and `turn_aborted`. Each key accepts one
 sink: `off`, `bell`, or `desktop`. Omitting the block disables
-notifications. The generated home config rings the terminal bell (`\x07`)
-after every player finishes and sends a desktop notification when the full
-Boss turn finishes. `turn_aborted` is off by default; when enabled, user
-cancellations such as ESC, SIGINT, SIGTERM, EOF, and runtime disposal stay
-silent. Desktop notifications are best-effort: `osascript` on macOS,
-`notify-send` on Linux, and no-op elsewhere.
+notifications. The generated home config plays a sound cue after every player
+finishes without writing terminal BEL (`\x07`) or requesting desktop badging,
+and sends a desktop notification when the full Boss turn finishes.
+`turn_aborted` is off by default; when enabled, user cancellations such as ESC,
+SIGINT, SIGTERM, EOF, and runtime disposal stay silent. Sound cues are
+best-effort: Hero via `afplay` on macOS, the freedesktop `complete` cue on
+Linux, the Windows generic notification sound on Windows, and no-op elsewhere.
+Desktop notifications are best-effort: `osascript` on macOS, `notify-send` on
+Linux, and no-op elsewhere.
 
 The shipped default applies `permissions: { mode: 'auto' }` to the
 Captain and both players. That runs each adapter's classifier-, sandbox-,
