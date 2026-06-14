@@ -1422,9 +1422,10 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
-      // TMUX-055: status-left opens with the `spex` brand heading and
+      // TMUX-055: status-left opens with the `Spex` brand heading and
       // not the retired `tmux-play` label.
-      expect(statusLeft).toContain('spex');
+      expect(statusLeft).toContain('Spex');
+      expect(statusLeft).not.toContain('spex');
       expect(statusLeft).not.toContain('Cligent');
       expect(statusLeft).not.toContain('tmux-play');
       // TMUX-055 + TMUX-063: status-left renders the navigation hints,

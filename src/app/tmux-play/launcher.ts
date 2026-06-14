@@ -578,7 +578,7 @@ function paneBorderFormat(c: CatppuccinPalette): string {
 }
 
 function statusLeftFormat(c: CatppuccinPalette): string {
-  return `#[fg=${c.blue},bold]spex#[default] #[fg=${c.subtext0}]${NAVIGATION_HINTS}#[default]`;
+  return `#[fg=${c.blue},bold]Spex#[default] #[fg=${c.subtext0}]${NAVIGATION_HINTS}#[default]`;
 }
 
 function statusRightFormat(c: CatppuccinPalette): string {

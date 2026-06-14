@@ -1037,8 +1037,9 @@ describe('launchTmuxPlay', () => {
     );
 
     const statusLeft = setValue('tmux-play-timers', 'status-left');
-    // TMUX-055: status-left opens with the bold-blue `spex` brand heading.
-    expect(statusLeft).toContain('spex');
+    // TMUX-055: status-left opens with the bold-blue `Spex` brand heading.
+    expect(statusLeft).toContain('Spex');
+    expect(statusLeft).not.toContain('spex');
     expect(statusLeft).not.toContain('Cligent');
     // TMUX-063: status-left advertises direct pane switching and the esc
     // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions

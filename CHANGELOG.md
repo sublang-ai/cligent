@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Raised the optional `@openai/codex-sdk` peer dependency floor to `>=0.138.0`, the first Codex CLI line with `exec --ignore-user-config` support required by permission-managed runs.
-- tmux-play status-left now uses the `spex` brand heading, and its navigation hints use lowercase compact labels consistently (`stop: esc`, `exit: ctrl+c`, etc.).
+- tmux-play status-left now uses the `Spex` brand heading, and its navigation hints use lowercase compact labels consistently (`stop: esc`, `exit: ctrl+c`, etc.).
 - tmux-play desktop notification titles now use `spex`.
 
 ### Fixed
