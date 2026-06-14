@@ -828,15 +828,45 @@ function configureMouseInteraction(
     // copy gesture), but leaves the pane in copy-mode at the same
     // scroll position. Users who want to leave copy-mode after the
     // copy can press `q` as usual.
+    //
+    // TMUX-062 copy-confirmation toast: right-click also surfaces a
+    // brief `Copied!` toast when a selection is present. The toast is a
+    // status-line `display-message` (not a floating `display-popup`) so
+    // it inherits the session's `message-style` (`fg=base,bg=peach` per
+    // TMUX-047) and renders `Copied!` as dark text on the theme's peach
+    // surface — the same band tmux uses for its own status messages,
+    // which is the requested look.
+    //
+    // The binding is a single `if-shell -F '#{selection_present}'` so
+    // the gate is read at click time, BEFORE `copy-pipe` clears the
+    // selection (a check placed after the copy would always read `0`).
+    // Both branches copy; only the selection-present branch toasts, so a
+    // right-click over nothing selected copies silently and never
+    // falsely claims "Copied!". The two-command true branch is passed as
+    // ONE quoted argv token — its internal ` ; ` separates the toast
+    // from the copy when if-shell re-parses the branch, exactly like the
+    // TMUX-065 `C-c` true branch. A standalone `;` argv element would
+    // instead split the bind-key call itself into two top-level tmux
+    // commands (binding only the toast and running a bare `copy-pipe`
+    // against a not-in-mode pane), so the sequence MUST live inside the
+    // branch token. The clipboard command is wrapped in single quotes
+    // inside the branch so tmux passes it to `copy-pipe` as one argument
+    // when re-parsing (it contains spaces, `;`, and double quotes but no
+    // single quotes). `display-message` (no `-d`) auto-dismisses after
+    // the session's `display-time` and touches neither copy-mode state
+    // nor scroll position.
+    const copyCommand = `send-keys -X copy-pipe '${SYSTEM_CLIPBOARD_COPY_COMMAND}'`;
+    const toastThenCopy = `display-message Copied! ; ${copyCommand}`;
     runTmux(
       'bind-key',
       '-T',
       table,
       'MouseDown3Pane',
-      'send-keys',
-      '-X',
-      'copy-pipe',
-      SYSTEM_CLIPBOARD_COPY_COMMAND,
+      'if-shell',
+      '-F',
+      '#{selection_present}',
+      toastThenCopy,
+      copyCommand,
     );
   }
   // TMUX-068 (supersedes TMUX-066 and TMUX-067): a left-click in any

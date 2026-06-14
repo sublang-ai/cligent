@@ -308,15 +308,30 @@ describe('launchTmuxPlay', () => {
           call[2] === table &&
           call[3] === 'MouseDown3Pane',
       );
+      // TMUX-062 copy-confirmation toast: the binding is a single
+      // `if-shell -F '#{selection_present}'` whose true branch toasts
+      // then copies and whose false branch copies silently, so a
+      // right-click over a live selection surfaces a brief peach
+      // status-line `Copied!` (styled by the session `message-style` per
+      // TMUX-047) while an empty right-click never falsely claims it.
+      // The gate is read before `copy-pipe` clears the selection. The
+      // two-command true branch is ONE argv token (its internal ` ; `
+      // is re-parsed by if-shell); a standalone `;` element would split
+      // the bind-key call into two top-level commands. The clipboard
+      // command is single-quoted inside each branch so `copy-pipe`
+      // receives it as one argument on re-parse.
       expect(rightClickCopyCall).toEqual([
         'bind-key',
         '-T',
         table,
         'MouseDown3Pane',
-        'send-keys',
-        '-X',
-        'copy-pipe',
-        expect.any(String),
+        'if-shell',
+        '-F',
+        '#{selection_present}',
+        expect.stringMatching(
+          /^display-message Copied! ; send-keys -X copy-pipe '.+'$/s,
+        ),
+        expect.stringMatching(/^send-keys -X copy-pipe '.+'$/s),
       ]);
       const clipboardCommand = rightClickCopyCall?.at(-1);
       expect(clipboardCommand).toEqual(expect.stringContaining('pbcopy'));

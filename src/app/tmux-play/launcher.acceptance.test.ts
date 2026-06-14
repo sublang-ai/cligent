@@ -256,6 +256,15 @@ describe('tmux-play real-tmux acceptance', () => {
         // `copy-pipe-and-cancel` variant fails the assertion.
         expect(rightClickCopyBinding).toMatch(/\bcopy-pipe\b/);
         expect(rightClickCopyBinding).not.toContain('copy-pipe-and-cancel');
+        // TMUX-062 copy-confirmation toast: the binding is a single
+        // `if-shell -F '#{selection_present}'` whose selection-present
+        // branch fires a `display-message Copied!` toast alongside the
+        // copy and whose empty branch copies silently, so an empty
+        // right-click does not falsely confirm. The toast inherits the
+        // session's peach `message-style` per TMUX-047.
+        expect(rightClickCopyBinding).toContain('display-message');
+        expect(rightClickCopyBinding).toContain('Copied!');
+        expect(rightClickCopyBinding).toContain('selection_present');
         expect(rightClickCopyBinding).toContain('pbcopy');
         expect(rightClickCopyBinding).toContain('wl-copy');
         expect(rightClickCopyBinding).toContain('xclip');
