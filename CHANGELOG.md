@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-14
+
+### Added
+
+- Best-effort sound and desktop notifications for tmux-play. A top-level `notifications` block maps the `player_finished`, `turn_finished`, and `turn_aborted` events to a sink from the closed set `off` / `bell` / `desktop`; the shipped home config defaults to `player_finished: bell` and `turn_finished: desktop`, an omitted `turn_aborted` resolves to `off`, and an unknown key or sink is rejected with the offending path named. The `bell` sink plays one best-effort native sound cue — detached `afplay /System/Library/Sounds/Hero.aiff` on macOS, a freedesktop `complete` cue on Linux, a generic notification sound on Windows, no-op elsewhere — rather than writing a terminal BEL. The `desktop` sink sends one native desktop notification with a lowercase `spex` title; a macOS `turn_finished: desktop` additionally writes exactly one terminal BEL so tmux forwards the turn-completion bell to the outer terminal for Dock badging, while every other desktop path writes no terminal BEL or escape bytes — TMUX-076, TMUX-077
+- Right-click copy-confirmation toast in tmux-play: right-clicking a pane that holds a selection now surfaces a brief `Copied!` toast on the status line (a tmux `display-message` styled by the session's peach `message-style`) alongside the system-clipboard copy, while an empty right-click copies silently with no toast. The copy and toast fire on the button release, so the toast survives for the session's `display-time` instead of being wiped by the release, and the right-click does not change pane focus — TMUX-062
+
 ### Changed
 
 - Raised the optional `@openai/codex-sdk` peer dependency floor to `>=0.138.0`, the first Codex CLI line with `exec --ignore-user-config` support required by permission-managed runs.
@@ -18,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - tmux-play no longer pollutes the Boss/Captain pane's scrollback when the prompt is edited: Node's readline redraws each edit with a clear-to-end-of-display (`CSI 0J`) that, with the prompt at the top of a tmux pane, made tmux scroll the erased rows into history, so typing `abc` and backspacing it away left phantom `boss> abc` / `boss> ab` / `boss> a` rows that appeared when scrolling the pane up. The session now routes readline's redraws through a scrollback-safe wrapper that rewrites that erase into a cursor-preserving, line-scoped clear (visually identical, never history-preserving). This fixes the true cause of the "scrolling the Captain pane up shows stale edit states above the first line" report and supersedes the removed wheel-up clamp (the prior `WheelUpPane` bindings and TMUX-078) that had chased the symptom — stock tmux already clamps wheel-up at the top of history — TMUX-079.
+- tmux-play text blocks now fill the full pane width: continuation rows render to the `paneWidth - 2` budget instead of inheriting the first line's speaker-prefix reserve, the first visible row is prefix-fit split at a cell-aware word boundary when the `<who>> ` prefix would overflow, and `glow`'s document margin and trailing right-padding are compensated and stripped — so prose no longer leaves the right side of each pane empty — TMUX-050
 - tmux-play's shipped Codex player default now uses `permissions: { mode: auto }` to select Codex's `auto_review + :workspace` profile, and Codex permission-managed runs invoke `exec --ignore-user-config` so a user-level stale or read-only Codex config cannot override Cligent's managed profile.
 
 ## [0.11.0] - 2026-06-09
@@ -235,7 +243,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/sublang-ai/cligent/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/sublang-ai/cligent/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/sublang-ai/cligent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/sublang-ai/cligent/compare/v0.8.0...v0.9.0
