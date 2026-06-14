@@ -37,7 +37,7 @@ import type { PlayerConfig } from './players.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 const NAVIGATION_HINTS =
-  'Switch pane: Ctrl+←/→ or Shift+←/→ | Stop: ESC | Exit: Ctrl+C | drag=select | right-click=copy';
+  'switch pane: ctrl+←/→ or shift+←/→ | stop: esc | exit: ctrl+c | drag=select | right-click=copy';
 const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'if command -v pbcopy >/dev/null 2>&1; then exec pbcopy; ' +
   'elif [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then exec wl-copy; ' +
@@ -578,7 +578,7 @@ function paneBorderFormat(c: CatppuccinPalette): string {
 }
 
 function statusLeftFormat(c: CatppuccinPalette): string {
-  return `#[fg=${c.blue},bold]Cligent#[default] #[fg=${c.subtext0}]${NAVIGATION_HINTS}#[default]`;
+  return `#[fg=${c.blue},bold]spex#[default] #[fg=${c.subtext0}]${NAVIGATION_HINTS}#[default]`;
 }
 
 function statusRightFormat(c: CatppuccinPalette): string {

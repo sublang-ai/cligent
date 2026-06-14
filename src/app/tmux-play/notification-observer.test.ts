@@ -78,7 +78,7 @@ describe('NotificationObserver', () => {
       'osascript',
       [
         '-e',
-        'display notification "Boss turn finished" with title "tmux-play"',
+        'display notification "Boss turn finished" with title "spex"',
       ],
       { detached: true, stdio: 'ignore' },
     );
@@ -115,7 +115,7 @@ describe('NotificationObserver', () => {
       'osascript',
       [
         '-e',
-        'display notification "coder finished: ok" with title "tmux-play"',
+        'display notification "coder finished: ok" with title "spex"',
       ],
       { detached: true, stdio: 'ignore' },
     );
@@ -139,7 +139,7 @@ describe('NotificationObserver', () => {
       'osascript',
       [
         '-e',
-        'display notification "Boss turn aborted: captain failed" with title "tmux-play"',
+        'display notification "Boss turn aborted: captain failed" with title "spex"',
       ],
       { detached: true, stdio: 'ignore' },
     );
@@ -162,7 +162,7 @@ describe('NotificationObserver', () => {
 
     expect(linuxSpawn).toHaveBeenCalledWith(
       'notify-send',
-      ['tmux-play', 'Boss turn finished'],
+      ['spex', 'Boss turn finished'],
       { detached: true, stdio: 'ignore' },
     );
     expect(linuxOutput.write).not.toHaveBeenCalled();

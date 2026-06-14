@@ -163,20 +163,20 @@ function messageForRecord(record: TmuxPlayRecord): NotificationMessage {
   switch (record.type) {
     case 'player_finished':
       return {
-        title: 'tmux-play',
+        title: 'spex',
         body: `${record.playerId} finished: ${record.result.status}`,
       };
     case 'turn_finished':
-      return { title: 'tmux-play', body: 'Boss turn finished' };
+      return { title: 'spex', body: 'Boss turn finished' };
     case 'turn_aborted':
       return {
-        title: 'tmux-play',
+        title: 'spex',
         body: record.reason
           ? `Boss turn aborted: ${record.reason}`
           : 'Boss turn aborted',
       };
     default:
-      return { title: 'tmux-play', body: '' };
+      return { title: 'spex', body: '' };
   }
 }
 

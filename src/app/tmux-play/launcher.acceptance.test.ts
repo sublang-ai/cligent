@@ -1422,22 +1422,24 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
-      // TMUX-055: status-left opens with the `Cligent` brand heading and
+      // TMUX-055: status-left opens with the `spex` brand heading and
       // not the retired `tmux-play` label.
-      expect(statusLeft).toContain('Cligent');
+      expect(statusLeft).toContain('spex');
+      expect(statusLeft).not.toContain('Cligent');
       expect(statusLeft).not.toContain('tmux-play');
       // TMUX-055 + TMUX-063: status-left renders the navigation hints,
       // and the hint shape is the exact substring TMUX-063 owns —
-      // including the `or Shift+←/→` tail that makes pane switching
+      // including the `or shift+←/→` tail that makes pane switching
       // work out of the box on hosts where one of Ctrl+arrow or
       // Shift+arrow is intercepted before tmux sees it. Pin the full
       // substring so a regression that drops the tail fails this test
       // instead of passing on the prefix.
-      expect(statusLeft).toContain('Switch pane: Ctrl+←/→ or Shift+←/→');
-      expect(statusLeft).toContain('Stop: ESC');
-      expect(statusLeft).toContain('Exit: Ctrl+C');
+      expect(statusLeft).toContain('switch pane: ctrl+←/→ or shift+←/→');
+      expect(statusLeft).toContain('stop: esc');
+      expect(statusLeft).toContain('exit: ctrl+c');
       expect(statusLeft).toContain('drag=select');
       expect(statusLeft).toContain('right-click=copy');
+      expect(statusLeft).not.toContain('Stop: ESC');
       expect(statusLeft).not.toContain('d=detach');
       expect(statusLeft).not.toContain('o=switch pane');
 

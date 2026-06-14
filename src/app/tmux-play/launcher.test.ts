@@ -1037,16 +1037,18 @@ describe('launchTmuxPlay', () => {
     );
 
     const statusLeft = setValue('tmux-play-timers', 'status-left');
-    // TMUX-055: status-left opens with the bold-blue `Cligent` brand heading.
-    expect(statusLeft).toContain('Cligent');
-    // TMUX-063: status-left advertises direct pane switching and the ESC
+    // TMUX-055: status-left opens with the bold-blue `spex` brand heading.
+    expect(statusLeft).toContain('spex');
+    expect(statusLeft).not.toContain('Cligent');
+    // TMUX-063: status-left advertises direct pane switching and the esc
     // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions
     // (`d=detach`, `o=switch pane`, `[=scroll`) are gone.
-    expect(statusLeft).toContain('Switch pane: Ctrl+←/→ or Shift+←/→');
-    expect(statusLeft).toContain('Stop: ESC');
-    expect(statusLeft).toContain('Exit: Ctrl+C');
+    expect(statusLeft).toContain('switch pane: ctrl+←/→ or shift+←/→');
+    expect(statusLeft).toContain('stop: esc');
+    expect(statusLeft).toContain('exit: ctrl+c');
     expect(statusLeft).toContain('drag=select');
     expect(statusLeft).toContain('right-click=copy');
+    expect(statusLeft).not.toContain('Stop: ESC');
     expect(statusLeft).not.toContain('d=detach');
     expect(statusLeft).not.toContain('o=switch pane');
     expect(statusLeft).not.toContain('[=scroll');
