@@ -178,7 +178,7 @@ When that observer handles `player_finished` or `turn_aborted` with sink `deskto
 When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not one of the user-cancellation reasons `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
 The sound-cue backend shall launch detached best-effort `afplay /System/Library/Sounds/Hero.aiff` on macOS, a detached best-effort freedesktop `complete` sound cue on Linux, a detached best-effort Windows generic notification sound on Windows, and no operation on other platforms.
 The desktop backend shall launch a detached best-effort `osascript` notification on macOS, a detached best-effort `notify-send` notification on Linux, and no operation on other platforms.
-Every desktop notification shall use the title `spex`.
+Every desktop notification shall use the lowercase title `spex`, distinct from the status-left `Spex` heading of [TMUX-055](#tmux-055), and shall not use `Spex`.
 The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
 The notification observer shall not notify for `runtime_error` records.
 
