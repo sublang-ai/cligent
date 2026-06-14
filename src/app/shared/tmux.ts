@@ -70,7 +70,7 @@ export function isolateOrchestratorFromAgents(): void {
 
 export function isTmuxAvailable(): boolean {
   const probe = spawnSync('tmux', ['-V'], { stdio: 'pipe' });
-  return probe.error === undefined;
+  return probe.error === undefined && probe.status === 0;
 }
 
 export function runTmux(...args: string[]): void {

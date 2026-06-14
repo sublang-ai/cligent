@@ -229,16 +229,7 @@ Activity that renders no pane output shall not return a scrolled pane to its tai
 The probe shall assert the pane's pre-output `#{scroll_position}` is greater than `0` so a setup that failed to scroll back fails loudly rather than passing vacuously at `0 == 0`, and shall not require adapter API keys — it may drive the session runtime with deterministic synthetic records and seed pane history via `respawn-pane`, since the follow is `#{pane_in_mode}`-gated and independent of pane contents.
 The acceptance probe shall run under `*.acceptance.test.ts` and shall self-skip when either `tmux -V` or `glow -v` fails.
 
-### TTMUX-077
-Verifies: [TMUX-078](../user/tmux-play.md#tmux-078)
-
-Given the launcher constructing a tmux-play session whose `sessionName` is `<session>`, the tmux command stream shall include `bind-key -T copy-mode WheelUpPane if-shell -F #{==:#{session_name},<session>} '<trueBranch>' 'send-keys -X -N 5 scroll-up'` and the same binding for `copy-mode-vi`.
-The `<trueBranch>` shall contain five ordered clauses of `if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' 'send-keys -t= -X scroll-up'`, so each wheel tick preserves the stock five-line scroll distance until it reaches the top of history and then stops.
-The command stream shall not include root-table `WheelUpPane` binding.
-Given a real tmux server hosting a launched tmux-play session, where the Boss/Captain pane is seeded with deterministic history lines `TMUX077-001`, `TMUX077-002`, and so on, when an attached tmux client sends enough `WheelUpPane` events inside that pane to exceed its history length, the captured displayed copy-mode top viewport rows shall show the oldest history lines as consecutive rows, beginning with `TMUX077-001`, `TMUX077-002`, `TMUX077-003`, and not a repeated `TMUX077-001` row.
-When the attached tmux client sends additional `WheelUpPane` events after reaching that top viewport, the same visible top rows shall remain unchanged.
-The probe may respawn the Boss/Captain pane with deterministic history because it is the common user-visible case for this defect and because the binding under test is session- and key-table-scoped and independent of the process running inside the pane.
-The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, and shall self-skip when either `tmux -V`, `glow -v`, or an attached-client mouse driver is unavailable.
+_The retired TTMUX-077 wheel-up clamp probe is removed together with its requirement TMUX-078; the Boss/Captain phantom-scrollback behavior it tried to assert through wheel events is now owned at the source by [TTMUX-078](#ttmux-078) / [TMUX-079](../user/tmux-play.md#tmux-079)._
 
 ## Keyboard Interaction
 
@@ -301,6 +292,15 @@ Given a config with captain adapter `claude` and players `coder` (adapter `codex
 Verifies: [TMUX-037](../user/tmux-play.md#tmux-037)
 
 Given session mode is running, when the user enters a Boss prompt, the captured Boss/Captain pane content shall contain the prompt text exactly once.
+
+### TTMUX-078
+Verifies: [TMUX-079](../user/tmux-play.md#tmux-079)
+
+Given the scrollback-safe output rewrite, when it is applied to a string carrying a `clearScreenDown` escape (`\x1b[0J`, and the parameterless `\x1b[J`), the result shall contain no erase-in-display escape, shall begin with a cursor save (`\x1b7`) and end with a cursor restore (`\x1b8`), shall clear the cursor row to its end (`\x1b[0K`) and clear each row below with a cursor-down-plus-whole-line-erase (`\x1b[1B\x1b[2K`), and shall preserve the bytes surrounding the escape (a readline refresh such as `\x1b[1G\x1b[0Jboss> \x1b[7G` keeps its leading `\x1b[1G` and trailing `boss> \x1b[7G`).
+The number of whole-line erases shall scale with the pane height passed in — one per row below the cursor — and shall fall back to clearing only the cursor row when the height is unavailable or non-positive; the erase-above and erase-all forms (`\x1b[1J`, `\x1b[2J`, `\x1b[3J`) shall pass through unchanged.
+The output wrapper shall rewrite only string writes (reading the underlying stream's current `rows` per write so a resize is honored) and pass non-string chunks through untouched, while delegating every non-`write` property — `columns`, `rows`, `isTTY`, event registration — to the underlying stream.
+Given a real tmux server hosting a launched tmux-play session whose Boss/Captain pane is running the real session readline with a local no-op Captain and sits at the top of its mostly-empty pane, when the Boss types `abc` and then backspaces it away (no submission), the pane's `#{history_size}` shall not increase across the edits and the pane scrollback shall contain none of the phantom rows `boss> abc`, `boss> ab`, `boss> a`; a wheel-up or `scroll-up` after the edits shall not reveal any prompt row above the pane's first line.
+The acceptance probe shall run under `*.acceptance.test.ts`, shall not require adapter API keys, shall not respawn pane 0 (the defect depends on pane 0's real readline process), and shall self-skip when `tmux -V` or `glow -v` fails.
 
 ### TTMUX-025
 Verifies: [TMUX-038](../user/tmux-play.md#tmux-038)

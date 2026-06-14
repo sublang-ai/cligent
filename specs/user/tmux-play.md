@@ -285,8 +285,8 @@ Customizing tmux copy-mode key tables is necessarily server-global because tmux 
 A future cleanup hook may reduce the binding lifetime, but safe cleanup must preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions.
 Under tmux's default root mouse bindings, clicking selects the pane under the cursor and the scroll wheel enters or operates pane copy mode to scroll pane history.
 User `Mouse*` / `Wheel*` rebindings may alter those default consequences.
-The launcher shall not configure `set-clipboard` and shall not add `WheelDownPane` bindings; terminal policy may still block the OSC 52 fallback.
-The copy-mode `WheelUpPane` bindings are owned by [TMUX-078](#tmux-078).
+The launcher shall not configure `set-clipboard` and shall not add `WheelUpPane` or `WheelDownPane` bindings; terminal policy may still block the OSC 52 fallback.
+The launcher relies on tmux's stock wheel handling, which already enters copy-mode and clamps the viewport at the oldest history line so a wheel-up cannot scroll past the top of history; the Boss/Captain pane no longer surfaces phantom rows above its first line because [TMUX-079](#tmux-079) stops the readline prompt from polluting that pane's scrollback in the first place.
 
 ### TMUX-066
 
@@ -343,13 +343,7 @@ Content that renders to no visible bytes shall not count as new output: when a p
 A write to one pane shall not return any other pane to its tail; a pane that receives no concurrent write shall retain its copy-mode state and scroll position.
 The behavior shall be scoped to the launched tmux-play session and shall not affect panes in any other tmux session on the same server.
 
-### TMUX-078
-
-While a tmux-play session is running, when the Boss scrolls upward with the mouse wheel in any pane that is already in tmux copy-mode, the pane viewport shall stop at the topmost available history line and shall not move past it in a way that repeats the top line.
-The launcher shall bind `WheelUpPane` in both `copy-mode` and `copy-mode-vi` to a session-scoped true branch that performs the normal five-line wheel-up step as five one-line `scroll-up` commands, each guarded by the numeric tmux format `#{e|<|:#{scroll_position},#{history_size}}` against the mouse target pane (`=`).
-When `#{scroll_position}` is already at `#{history_size}`, the true branch shall be a no-op so additional wheel-up events leave the viewport at the topmost line.
-The false branch shall reproduce tmux's stock copy-mode wheel-up behavior (`send-keys -X -N 5 scroll-up`) so other tmux sessions on the same server retain stock scrolling.
-The launcher shall not bind root-table `WheelUpPane`; tmux's stock root wheel behavior shall continue to enter copy-mode for a pane that is not already in a mode.
+_The retired wheel-up clamp once tracked here as TMUX-078 is removed: it chased a symptom — phantom rows appearing above the Boss/Captain pane's first line when scrolling up — that was really the readline prompt polluting the pane's scrollback. Stock tmux already clamps wheel-up at the top of history, and the true cause is fixed at the source by [TMUX-079](#tmux-079)._
 
 ## Keyboard Interaction
 
@@ -426,6 +420,16 @@ When the turn ends — by normal completion, ESC abort per [TMUX-057](#tmux-057)
 An empty or whitespace-only Boss submission shall paint a fresh ready `boss> ` prompt only while no Boss turn is active or queued; submitted while a turn is active or queued, it shall paint no `boss> ` prompt amid the turn's streaming output.
 While a Boss turn is active, edit-buffer bytes the Boss types — or pastes per [TMUX-058](#tmux-058) — shall be preserved per [TMUX-057](#tmux-057) and surfaced on the restored prompt, and shall not render as a `boss> `-prefixed line until the prompt is restored.
 Where stdin is not a TTY, no keypress handling is installed (per [TMUX-057](#tmux-057)) and there is no live (raw-mode, echoing) editing prompt whose `boss> ` chrome a keystroke could repaint mid-turn, so this item's active-turn suspension shall be a no-op; any static `boss> ` string the underlying readline writes between turns is unchanged by this item.
+
+### TMUX-079
+
+Where session mode is running with TTY stdout, editing the live Boss/Captain readline prompt — typing characters and deleting them, or any edit that triggers a line refresh — shall not push any line into the Boss/Captain pane's tmux scrollback history, so scrolling that pane up afterward reveals no phantom intermediate prompt rows (for example `boss> abc`, `boss> ab`, `boss> a` left behind after typing `abc` and backspacing it away).
+The cause this item removes is the interaction between Node's readline and tmux: readline redraws the line in place by emitting a clear-to-end-of-display (`clearScreenDown`, `CSI 0J`) before rewriting the prompt and edit buffer; when the prompt sits above the pane's bottom row — the common case for the Boss/Captain pane, which is mostly empty between turns — that erase covers on-screen rows from the cursor down, and tmux preserves the erased non-blank content by scrolling it into scrollback rather than blanking it, so every intermediate edit state lands in history.
+The session shall route the readline's own writes through a scrollback-safe wrapper that rewrites each `clearScreenDown` (`CSI 0J`, and the parameterless `CSI J`) into a cursor-preserving, line-scoped clear — save cursor, erase the cursor's row to its end, erase each row below to the bottom of the pane with whole-line erases reached by cursor-down (which stops at the bottom margin instead of scrolling), then restore the cursor — which reproduces the erase's visible effect exactly while never scrolling a line into history, because line-scoped erases are not history-preserving.
+The wrapper shall rewrite only `clearScreenDown`; the erase-above and erase-all forms (`CSI 1J`, `CSI 2J`, `CSI 3J`), which readline's line refresh does not emit, shall pass through unchanged so any deliberate full clear keeps its stock semantics.
+Only the readline's output shall be wrapped; the presenter's streaming turn output shall keep writing to the raw pane so legitimate content still scrolls into the pane's scrollback as before.
+Where stdout is not a TTY, the readline runs in non-terminal mode and emits no redraw escapes to rewrite, so this item shall be a no-op.
+Because stock tmux already clamps a wheel-up at the oldest history line, removing this pollution at the source is sufficient: the launcher needs no `WheelUpPane` override (see [TMUX-062](#tmux-062)) to keep the Boss from scrolling past the pane's first line.
 
 ### TMUX-038
 

@@ -57,6 +57,15 @@ jobs:
       - name: Install agent CLIs
         run: npm install -g @google/gemini-cli@0.45.2 opencode-ai@1.16.2
 
+      - name: Install attached-client driver
+        # Real-tmux mouse/key acceptance probes drive an attached client via
+        # expect. Without it, those probes self-skip and CI can miss tmux
+        # status/message regressions such as WheelUpPane parser errors.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect
+          expect -v
+
       - name: Install glow
         # TMUX-051 makes glow a hard launcher requirement and TTMUX-050
         # adds a real-glow acceptance probe; without this step the launcher

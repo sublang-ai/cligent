@@ -28,7 +28,7 @@ describe('tmux helpers', () => {
   });
 
   it('checks tmux availability through tmux -V', () => {
-    spawnSyncMock.mockReturnValue({});
+    spawnSyncMock.mockReturnValue({ status: 0 });
 
     expect(isTmuxAvailable()).toBe(true);
     expect(spawnSyncMock).toHaveBeenCalledWith('tmux', ['-V'], {
@@ -38,6 +38,12 @@ describe('tmux helpers', () => {
 
   it('returns false when tmux probe cannot spawn', () => {
     spawnSyncMock.mockReturnValue({ error: new Error('spawn ENOENT') });
+
+    expect(isTmuxAvailable()).toBe(false);
+  });
+
+  it('returns false when tmux probe exits nonzero', () => {
+    spawnSyncMock.mockReturnValue({ status: 1 });
 
     expect(isTmuxAvailable()).toBe(false);
   });

@@ -331,25 +331,16 @@ describe('launchTmuxPlay', () => {
     expect(
       runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')),
     ).toBe(false);
-    const clampedWheelUp = Array.from(
-      { length: 5 },
-      () =>
-        "if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' " +
-        "'send-keys -t= -X scroll-up'",
-    ).join(' ; ');
-    for (const table of ['copy-mode', 'copy-mode-vi']) {
-      expect(runTmuxMock).toHaveBeenCalledWith(
-        'bind-key',
-        '-T',
-        table,
-        'WheelUpPane',
-        'if-shell',
-        '-F',
-        '#{==:#{session_name},tmux-play-mouse-boundary}',
-        clampedWheelUp,
-        'send-keys -X -N 5 scroll-up',
-      );
-    }
+    // TMUX-079 / TMUX-062: the launcher binds no `WheelUpPane` override in any
+    // key table — stock tmux already clamps wheel-up at the top of history, and
+    // the Boss-pane phantom-scrollback report it once chased is fixed at the
+    // source (readline redraws no longer pollute pane history).
+    expect(
+      runTmuxMock.mock.calls.some(
+        (call) =>
+          call[0] === 'bind-key' && call.some((arg) => arg === 'WheelUpPane'),
+      ),
+    ).toBe(false);
     expect(
       runTmuxMock.mock.calls.some(
         (call) =>
@@ -361,7 +352,7 @@ describe('launchTmuxPlay', () => {
         (call) =>
           call[0] === 'bind-key' &&
           call[2] === 'root' &&
-          call.some((arg) => arg === 'WheelUpPane'),
+          call.some((arg) => arg === 'WheelDownPane'),
       ),
     ).toBe(false);
   });

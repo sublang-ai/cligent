@@ -71,15 +71,16 @@ interface PaneRow {
 }
 
 // TTMUX-030..036 and TTMUX-039 all drive `launchTmuxPlay`, which gates on
-// `glow` per TMUX-051 in addition to `tmux`. Skip both ways so a runner
-// with one tool but not the other reports a clean skip, not a launcher
-// throw masquerading as a test failure.
+// `glow` per TMUX-051 in addition to `tmux`. Skip when the runner cannot
+// create a tmux server; otherwise a sandbox or stale socket directory reports
+// a setup failure before the acceptance behavior under test can run.
 const TMUX_AVAILABLE = isTmuxAvailable();
+const TMUX_SERVER_AVAILABLE = TMUX_AVAILABLE && canCreateTmuxServer();
 const GLOW_AVAILABLE = isGlowAvailable();
-const acceptanceIt = TMUX_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
+const acceptanceIt = TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
 const EXPECT_AVAILABLE = isCommandAvailable('expect', ['-v']);
 const attachedClientIt =
-  TMUX_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
+  TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
 const mouseDispatchIt = attachedClientIt;
 
 const BUILT_CLI_PATH = join(process.cwd(), 'dist/app/tmux-play/cli.js');
@@ -262,17 +263,19 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('clip.exe');
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
-      for (const table of ['copy-mode', 'copy-mode-vi']) {
+      // TMUX-079 / TMUX-062: the launcher installs no session-scoped
+      // `WheelUpPane` override in any key table. Stock tmux wheel-up already
+      // clamps the viewport at the oldest history line, and the Boss-pane
+      // phantom-scrollback report it once chased is fixed at the source
+      // (readline redraws no longer pollute pane history), so the live
+      // wheel-up binding for this session is plain stock — not gated on the
+      // session name and carrying none of the retired clamp's format checks.
+      for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
         const wheelUp = keyBinding(table, 'WheelUpPane');
-        expect(wheelUp).toContain('if-shell');
-        expect(wheelUp).toContain('session_name');
-        expect(wheelUp).toContain(sessionName);
-        expect(wheelUp).toContain('scroll_position');
-        expect(wheelUp).toContain('history_size');
-        expect(wheelUp).toContain('send-keys -t= -X scroll-up');
-        expect(wheelUp).toContain('send-keys -X -N 5 scroll-up');
+        expect(wheelUp).not.toContain(sessionName);
+        expect(wheelUp).not.toContain('scroll_position');
+        expect(wheelUp).not.toContain('refresh-client');
       }
-      expect(keyBinding('root', 'WheelUpPane')).not.toContain(sessionName);
 
       // TTMUX-068 (supersedes TTMUX-066 / TTMUX-067): the launcher
       // installs a session-scoped MouseDown1Pane override that
@@ -1156,8 +1159,8 @@ describe('tmux-play real-tmux acceptance', () => {
     60_000,
   );
 
-  mouseDispatchIt(
-    'clamps wheel-up scrolling at the top of history instead of overscrolling (TMUX-078)',
+  acceptanceIt(
+    'does not pollute the Boss/Captain pane scrollback when the prompt is edited (TMUX-079)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1167,19 +1170,31 @@ describe('tmux-play real-tmux acceptance', () => {
 
       cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
       workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      writeFileSync(
+        join(cwd, 'captain.mjs'),
+        [
+          'export default function createCaptain() {',
+          '  return { async handleBossTurn() {} };',
+          '}',
+          '',
+        ].join('\n'),
+      );
       const configPath = join(cwd, 'tmux-play.config.yaml');
-      writeFileSync(configPath, defaultYamlConfig());
+      writeFileSync(configPath, liveReadlineYamlConfig());
 
       const result = await launchTmuxPlay({
         cwd,
         configPath,
-        sessionId: `wheel-${randomBytes(4).toString('hex')}`,
+        sessionId: `scrollback-${randomBytes(4).toString('hex')}`,
         workDir,
         selfBin: BUILT_CLI_PATH,
         attach: false,
       });
       sessionName = result.sessionName;
 
+      // A short window keeps the readline prompt at the top of a mostly-empty
+      // pane — the geometry where, before TMUX-079, readline's per-edit
+      // clear-to-end-of-display made tmux scroll the erased rows into history.
       runOrThrow('tmux', [
         'set-window-option',
         '-t',
@@ -1194,73 +1209,50 @@ describe('tmux-play real-tmux acceptance', () => {
         '-x',
         '80',
         '-y',
-        '24',
+        '10',
       ]);
       const panes = await waitForRegions(
         sessionName,
-        [Math.floor(80 / 3), Math.floor(80 / 3), 80 - 2 * Math.floor(80 / 3)],
+        [Math.floor(80 / 2), 80 - Math.floor(80 / 2)],
         2_000,
       );
       const captain = paneByTitle(panes, 'Captain · claude');
-      const historyPrefix = 'TMUX077-';
-      const historyScript = [
-        'for (let i = 1; i <= 500; i += 1) {',
-        `  console.log(${JSON.stringify(historyPrefix)} + String(i).padStart(3, "0"));`,
-        '}',
-        'setInterval(() => {}, 1000);',
-      ].join('\n');
-      const historyCommand = ['node', '-e', historyScript]
-        .map(shellQuote)
-        .join(' ');
-
-      // The Captain pane is the common user-facing case for this regression.
-      // Respawn it with deterministic scrollback; the wheel binding is a tmux
-      // key-table behavior independent of the process running inside the pane.
-      runOrThrow('tmux', [
-        'respawn-pane',
-        '-k',
-        '-t',
-        `${sessionName}:0.${captain.index}`,
-        historyCommand,
-      ]);
-      await waitForHistory(sessionName, captain.index, 450, 5_000);
-
-      const expectedTopMarkers = Array.from(
-        { length: 8 },
-        (_, idx) => `${historyPrefix}${String(idx + 1).padStart(3, '0')}`,
-      );
-      sendAttachedClientMouseWheelUp(
-        sessionName,
-        captain.left + 2,
-        captain.top + 2,
-        160,
-      );
-
       const target = `${sessionName}:0.${captain.index}`;
-      expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
-      const topMarkers = visibleCopyModeTopHistoryMarkers(
+      await waitForPaneContains(sessionName, captain.index, 'boss>', 5_000);
+
+      const historyBefore = Number(displayMessage(target, '#{history_size}'));
+
+      // Type `abc`, then backspace it away without submitting.
+      runOrThrow('tmux', ['send-keys', '-t', target, '-l', 'abc']);
+      await waitForPaneContains(sessionName, captain.index, 'boss> abc', 5_000);
+      runOrThrow('tmux', [
+        'send-keys',
+        '-t',
+        target,
+        'BSpace',
+        'BSpace',
+        'BSpace',
+      ]);
+      await waitForPaneMatch(
         sessionName,
         captain.index,
-        historyPrefix,
-        expectedTopMarkers.length,
+        (text) => !text.includes('boss> a'),
+        5_000,
+        'boss prompt did not return to empty after backspacing',
       );
-      expect(topMarkers.length).toBeGreaterThanOrEqual(3);
-      expect(topMarkers).toEqual(expectedTopMarkers.slice(0, topMarkers.length));
 
-      sendAttachedClientMouseWheelUp(
-        sessionName,
-        captain.left + 2,
-        captain.top + 2,
-        20,
+      // The edit cycle adds nothing to the pane's scrollback, and none of the
+      // intermediate edit states (`boss> abc`, `boss> ab`, `boss> a`) survive
+      // in history — so a later scroll-up reveals no phantom rows above the
+      // first line. Before TMUX-079 the three backspaces grew `#{history_size}`
+      // by three and left those exact rows in scrollback.
+      expect(Number(displayMessage(target, '#{history_size}'))).toBe(
+        historyBefore,
       );
-      expect(
-        visibleCopyModeTopHistoryMarkers(
-          sessionName,
-          captain.index,
-          historyPrefix,
-          expectedTopMarkers.length,
-        ),
-      ).toEqual(topMarkers);
+      const scrollback = capturePaneWithHistory(sessionName, captain.index, 20);
+      for (const phantom of ['boss> abc', 'boss> ab', 'boss> a']) {
+        expect(scrollback).not.toContain(phantom);
+      }
     },
     60_000,
   );
@@ -2106,6 +2098,21 @@ function defaultYamlConfig(): string {
   ].join('\n');
 }
 
+// A config whose captain is a local no-op module, so the Boss/Captain pane runs
+// the real session readline without needing adapter API keys (TTMUX-078).
+function liveReadlineYamlConfig(): string {
+  return [
+    'captain:',
+    '  from: ./captain.mjs',
+    '  adapter: claude',
+    '  options: {}',
+    'players:',
+    '  - id: coder',
+    '    adapter: codex',
+    '',
+  ].join('\n');
+}
+
 function displayMessage(session: string, format: string): string {
   const result = spawnSync(
     'tmux',
@@ -2229,47 +2236,29 @@ function capturePane(session: string, paneIndex: number): string {
   return result.stdout;
 }
 
-function captureCopyModeTopRows(
+// Capture the visible pane plus `historyLines` rows of scrollback, so a test
+// can assert what is — or is not — in the pane's tmux history.
+function capturePaneWithHistory(
   session: string,
   paneIndex: number,
-  rowCount: number,
+  historyLines: number,
 ): string {
-  const target = `${session}:0.${paneIndex}`;
-  const scrollPositionText = displayMessage(target, '#{scroll_position}');
-  const scrollPosition = Number(scrollPositionText);
-  if (!Number.isInteger(scrollPosition) || scrollPosition < rowCount) {
-    throw new Error(
-      `pane ${paneIndex} scroll_position ${scrollPositionText} is too small to capture ${rowCount} top rows`,
-    );
-  }
-
-  const start = `-${scrollPosition}`;
-  const end = `-${scrollPosition - rowCount + 1}`;
   const result = spawnSync(
     'tmux',
-    ['capture-pane', '-t', target, '-p', '-S', start, '-E', end],
+    [
+      'capture-pane',
+      '-t',
+      `${session}:0.${paneIndex}`,
+      '-p',
+      '-S',
+      `-${historyLines}`,
+    ],
     { encoding: 'utf8' },
   );
   if (result.status !== 0) {
-    throw new Error(
-      `tmux capture-pane ${start}..${end} failed: ${result.stderr.trim()}`,
-    );
+    throw new Error(`tmux capture-pane -S failed: ${result.stderr.trim()}`);
   }
   return result.stdout;
-}
-
-function visibleCopyModeTopHistoryMarkers(
-  session: string,
-  paneIndex: number,
-  prefix: string,
-  rowCount: number,
-): string[] {
-  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const marker = new RegExp(`^${escaped}\\d{3}`);
-  return captureCopyModeTopRows(session, paneIndex, rowCount)
-    .split('\n')
-    .map((line) => marker.exec(line)?.[0])
-    .filter((value): value is string => value !== undefined);
 }
 
 function showPaneOption(
@@ -2366,38 +2355,6 @@ function sendAttachedClientMouseDown(
   }
 }
 
-function sendAttachedClientMouseWheelUp(
-  session: string,
-  x: number,
-  y: number,
-  count: number,
-): void {
-  const wheelEvents = Array.from(
-    { length: count },
-    () => `send -- "\\033\\[<64;${x};${y}M"`,
-  );
-  const script = [
-    `spawn tmux attach-session -t ${session}`,
-    'after 500',
-    ...wheelEvents,
-    'after 500',
-    `exec tmux detach-client -s ${session}`,
-    'expect eof',
-  ].join('\n');
-  const result = spawnSync('expect', ['-c', script], {
-    encoding: 'utf8',
-    timeout: 30_000,
-  });
-  if (result.error) {
-    throw new Error(`expect wheel probe failed: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    throw new Error(
-      `expect wheel probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
-    );
-  }
-}
-
 function expandedPaneBorder(session: string, paneIndex: number): string {
   return displayMessage(`${session}:0.${paneIndex}`, '#{E:pane-border-format}');
 }
@@ -2432,6 +2389,30 @@ function runOrThrow(cmd: string, args: readonly string[]): void {
 function isCommandAvailable(cmd: string, args: readonly string[]): boolean {
   const result = spawnSync(cmd, args, { stdio: 'ignore' });
   return result.error === undefined && result.status === 0;
+}
+
+function canCreateTmuxServer(): boolean {
+  const name = `cligent-accept-${randomBytes(4).toString('hex')}`;
+  const env = process.env;
+  const create = spawnSync(
+    'tmux',
+    ['-L', name, '-f', '/dev/null', 'new-session', '-d', '-s', name, 'sleep 5'],
+    { encoding: 'utf8', env },
+  );
+  const list = spawnSync('tmux', ['-L', name, 'list-sessions'], {
+    encoding: 'utf8',
+    env,
+  });
+  spawnSync('tmux', ['-L', name, 'kill-server'], { stdio: 'ignore', env });
+  return (
+    create.error === undefined &&
+    create.status === 0 &&
+    create.stderr.trim() === '' &&
+    list.error === undefined &&
+    list.status === 0 &&
+    list.stderr.trim() === '' &&
+    list.stdout.includes(`${name}:`)
+  );
 }
 
 async function waitForRegions(
@@ -2493,17 +2474,33 @@ async function waitForPaneContains(
   needle: string,
   timeoutMs: number,
 ): Promise<string> {
+  return waitForPaneMatch(
+    session,
+    paneIndex,
+    (text) => text.includes(needle),
+    timeoutMs,
+    `pane ${paneIndex} did not show ${needle}`,
+  );
+}
+
+async function waitForPaneMatch(
+  session: string,
+  paneIndex: number,
+  predicate: (text: string) => boolean,
+  timeoutMs: number,
+  describePredicate = `pane ${paneIndex} did not reach the expected state`,
+): Promise<string> {
   const start = Date.now();
   let last = '';
   while (Date.now() - start < timeoutMs) {
     last = capturePane(session, paneIndex);
-    if (last.includes(needle)) {
+    if (predicate(last)) {
       return last;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(
-    `pane ${paneIndex} did not show ${needle} within ${timeoutMs}ms; last capture:\n${last}`,
+    `${describePredicate} within ${timeoutMs}ms; last capture:\n${last}`,
   );
 }
 

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- tmux-play no longer pollutes the Boss/Captain pane's scrollback when the prompt is edited: Node's readline redraws each edit with a clear-to-end-of-display (`CSI 0J`) that, with the prompt at the top of a tmux pane, made tmux scroll the erased rows into history, so typing `abc` and backspacing it away left phantom `boss> abc` / `boss> ab` / `boss> a` rows that appeared when scrolling the pane up. The session now routes readline's redraws through a scrollback-safe wrapper that rewrites that erase into a cursor-preserving, line-scoped clear (visually identical, never history-preserving). This fixes the true cause of the "scrolling the Captain pane up shows stale edit states above the first line" report and supersedes the removed wheel-up clamp (the prior `WheelUpPane` bindings and TMUX-078) that had chased the symptom — stock tmux already clamps wheel-up at the top of history — TMUX-079.
 - tmux-play's shipped Codex player default now uses `permissions: { mode: auto }` to select Codex's `auto_review + :workspace` profile, and Codex permission-managed runs invoke `exec --ignore-user-config` so a user-level stale or read-only Codex config cannot override Cligent's managed profile.
 
 ## [0.11.0] - 2026-06-09

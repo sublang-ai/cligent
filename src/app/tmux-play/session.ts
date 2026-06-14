@@ -34,6 +34,7 @@ import {
 } from './player-colors.js';
 import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createFollowObserver } from './follow-observer.js';
+import { wrapScrollbackSafeOutput } from './scrollback-safe-output.js';
 import { createNotificationObserver } from './notification-observer.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
@@ -249,9 +250,18 @@ export class TmuxPlaySession {
 
     const input = this.options.input ?? process.stdin;
     this.terminalInput = isTty(input);
+    // TMUX-079: route the readline's redraws through a scrollback-safe wrapper
+    // so its per-edit `clearScreenDown` does not scroll the Boss prompt's
+    // intermediate edit states into the pane's tmux history. The presenter
+    // keeps writing to the raw `output`, so streamed turn output still scrolls
+    // into history as before. Only meaningful when output is a TTY (a real tmux
+    // pane); a non-terminal readline emits no redraw escapes to rewrite.
+    const readlineOutput = isTty(output)
+      ? wrapScrollbackSafeOutput(output)
+      : output;
     this.readline = (this.options.createReadline ?? createInterface)({
       input,
-      output,
+      output: readlineOutput,
       escapeCodeTimeout: READLINE_ESCAPE_CODE_TIMEOUT_MS,
     });
     // TMUX-038: color the `boss> ` prefix with the boss role color from

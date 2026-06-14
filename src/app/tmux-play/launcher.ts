@@ -45,7 +45,6 @@ const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
   'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
   'else exec tmux load-buffer -w -; fi';
-const WHEEL_UP_SCROLL_LINES = 5;
 // TMUX-071: the initial timer text the launcher writes to every pane
 // and to the status-bar option shall be the same `hh:mm:ss` rendering
 // that `TimingObserver` would push for zero elapsed milliseconds, so the
@@ -801,7 +800,11 @@ function configureMouseInteraction(
 ): void {
   runTmux('set-option', '-t', sessionName, 'mouse', 'on');
   const condition = `#{==:#{session_name},${sessionName}}`;
-  const clampedWheelUp = clampedWheelUpCommand();
+  // The launcher binds no `WheelUpPane` override (see TMUX-062): tmux's stock
+  // root and copy-mode wheel-up handling already clamps the viewport at the
+  // oldest history line, so a wheel-up cannot scroll past the top. The earlier
+  // overscroll/phantom-line reports came from the Boss pane's scrollback being
+  // polluted by readline redraws, fixed at the source by TMUX-079.
   for (const table of ['copy-mode', 'copy-mode-vi']) {
     runTmux(
       'bind-key',
@@ -834,25 +837,6 @@ function configureMouseInteraction(
       '-X',
       'copy-pipe',
       SYSTEM_CLIPBOARD_COPY_COMMAND,
-    );
-    // TMUX-078: tmux's stock `send-keys -X -N 5 scroll-up` can leave the
-    // copy-mode viewport beyond the oldest history line on some terminals,
-    // visually repeating that top line. Keep the familiar five-line wheel
-    // step, but express it as five one-line scrolls, each gated by the live
-    // numeric `#{scroll_position} < #{history_size}` check for the mouse
-    // target pane (`=`). Once the pane reaches the top of history, further
-    // wheel-up events become no-ops instead of pushing the viewport past the
-    // clamp.
-    runTmux(
-      'bind-key',
-      '-T',
-      table,
-      'WheelUpPane',
-      'if-shell',
-      '-F',
-      condition,
-      clampedWheelUp,
-      'send-keys -X -N 5 scroll-up',
     );
   }
   // TMUX-068 (supersedes TMUX-066 and TMUX-067): a left-click in any
@@ -931,15 +915,6 @@ function configureMouseInteraction(
       'select-pane',
     );
   }
-}
-
-function clampedWheelUpCommand(): string {
-  return Array.from(
-    { length: WHEEL_UP_SCROLL_LINES },
-    () =>
-      "if -F -t= '#{e|<|:#{scroll_position},#{history_size}}' " +
-      "'send-keys -t= -X scroll-up'",
-  ).join(' ; ');
 }
 
 // TMUX-063: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at

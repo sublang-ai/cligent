@@ -406,19 +406,28 @@ function canCreateTmuxServer(): boolean {
   const created = spawnSync(
     'tmux',
     ['new-session', '-d', '-s', session, 'sleep 2'],
-    { stdio: 'ignore' },
+    { encoding: 'utf8' },
   );
-  if (created.error || created.status !== 0) {
+  if (
+    created.error ||
+    created.status !== 0 ||
+    created.stderr.trim().length > 0
+  ) {
+    spawnSync('tmux', ['kill-session', '-t', session], { stdio: 'ignore' });
     return false;
   }
 
   const controlled = spawnSync(
     'tmux',
     ['set-window-option', '-t', session, 'window-size', 'manual'],
-    { stdio: 'ignore' },
+    { encoding: 'utf8' },
   );
   spawnSync('tmux', ['kill-session', '-t', session], { stdio: 'ignore' });
-  return controlled.error === undefined && controlled.status === 0;
+  return (
+    controlled.error === undefined &&
+    controlled.status === 0 &&
+    controlled.stderr.trim().length === 0
+  );
 }
 
 async function waitForAttachedClient(
