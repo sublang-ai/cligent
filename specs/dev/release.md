@@ -48,10 +48,11 @@ Releases shall be triggered by pushing a git tag matching the pattern `vMAJOR.MI
 The release workflow on GitHub shall:
 
 1. Verify tag version matches `package.json` version
-2. Build and validate the package
-3. Extract release notes from `CHANGELOG.md`
-4. Publish to npm with provenance attestation
-5. Create a GitHub release with the extracted notes
+2. Require the CI workflow run for the tagged commit (its `push` to `main`) to have concluded successfully, waiting for it if still in progress and refusing to publish if it concluded unsuccessfully or never ran (e.g., a tag that does not point at a commit on `main`)
+3. Build and validate the package
+4. Extract release notes from `CHANGELOG.md`
+5. Publish to npm with provenance attestation
+6. Create a GitHub release with the extracted notes
 
 ### RELEASE-008
 

@@ -79,8 +79,15 @@ const TMUX_SERVER_AVAILABLE = TMUX_AVAILABLE && canCreateTmuxServer();
 const GLOW_AVAILABLE = isGlowAvailable();
 const acceptanceIt = TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE ? it : it.skip;
 const EXPECT_AVAILABLE = isCommandAvailable('expect', ['-v']);
+// `expect` alone is not enough: a headless CI runner cannot host an attached
+// client, so verify a client can actually attach before running the
+// attached-client probes — otherwise they fail with "no client attached"
+// instead of self-skipping.
+const ATTACHED_CLIENT_SUPPORTED = EXPECT_AVAILABLE && canAttachClient();
 const attachedClientIt =
-  TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE && EXPECT_AVAILABLE ? it : it.skip;
+  TMUX_SERVER_AVAILABLE && GLOW_AVAILABLE && ATTACHED_CLIENT_SUPPORTED
+    ? it
+    : it.skip;
 const mouseDispatchIt = attachedClientIt;
 
 const BUILT_CLI_PATH = join(process.cwd(), 'dist/app/tmux-play/cli.js');
@@ -2813,6 +2820,54 @@ function canCreateTmuxServer(): boolean {
     list.stderr.trim() === '' &&
     list.stdout.includes(`${name}:`)
   );
+}
+
+// Whether an interactive tmux client can actually attach in this environment.
+// `expect` being installed is necessary but not sufficient: a headless CI
+// runner has no controlling terminal for a client, so the `expect`-driven
+// attach never registers a client (`list-clients` stays empty) and the
+// attached-client probes would FAIL with "no client attached" rather than
+// meaningfully run. Drive a throwaway `expect` attach against a private-socket
+// session and confirm a client registers, polling briefly so a slow-but-
+// working attach is not mistaken for an unattachable one. Skip the
+// attached-client probes when this returns false.
+function canAttachClient(): boolean {
+  const name = `cligent-attach-${randomBytes(4).toString('hex')}`;
+  const env = process.env;
+  const create = spawnSync(
+    'tmux',
+    ['-L', name, '-f', '/dev/null', 'new-session', '-d', '-s', name, 'sleep 10'],
+    { encoding: 'utf8', env },
+  );
+  if (create.error || create.status !== 0) {
+    spawnSync('tmux', ['-L', name, 'kill-server'], { stdio: 'ignore', env });
+    return false;
+  }
+  try {
+    const script = [
+      `spawn -noecho tmux -L ${name} attach-session -t ${name}`,
+      'set ok 0',
+      'for {set i 0} {$i < 30} {incr i} {',
+      '  after 100',
+      `  if {![catch {exec tmux -L ${name} list-clients -t ${name} -F connected} out] && [string match *connected* $out]} {`,
+      '    set ok 1',
+      '    break',
+      '  }',
+      '}',
+      'send_user "ATTACH_PROBE=$ok\\n"',
+      `catch {exec tmux -L ${name} detach-client -s ${name}}`,
+      'expect eof',
+    ].join('\n');
+    const result = spawnSync('expect', ['-c', script], {
+      encoding: 'utf8',
+      timeout: 8_000,
+    });
+    return !result.error && /ATTACH_PROBE=1/.test(result.stdout ?? '');
+  } catch {
+    return false;
+  } finally {
+    spawnSync('tmux', ['-L', name, 'kill-server'], { stdio: 'ignore', env });
+  }
 }
 
 async function waitForRegions(

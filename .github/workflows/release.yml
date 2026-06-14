@@ -7,6 +7,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  actions: read
 
 jobs:
   release:
@@ -28,6 +29,40 @@ jobs:
             echo "::error::Tag $TAG does not match package.json version $PKG_VERSION"
             exit 1
           fi
+
+      - name: Require passing CI for this commit
+        # Do not publish a commit whose CI did not pass. The tagged commit is
+        # also pushed to `main`, which triggers the CI workflow; wait for that
+        # run to conclude and refuse to release unless it succeeded (or if it
+        # never ran — e.g. the tag points at a commit that was never on `main`).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${GITHUB_SHA}"
+          echo "Requiring a successful CI run for ${SHA} before publishing..."
+          for i in $(seq 1 60); do
+            run=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&per_page=1" \
+              --jq '.workflow_runs[0] // {} | [.status // "none", .conclusion // "none"] | @tsv' \
+              2>/dev/null || echo "")
+            status=$(printf '%s' "$run" | cut -f1)
+            conclusion=$(printf '%s' "$run" | cut -f2)
+            if [ -z "$status" ] || [ "$status" = "none" ]; then
+              echo "No CI run found yet for ${SHA} (attempt ${i}); waiting..."
+            elif [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI passed for ${SHA}."
+                exit 0
+              fi
+              echo "::error::CI for ${SHA} concluded '${conclusion}'; refusing to publish."
+              exit 1
+            else
+              echo "CI status=${status} for ${SHA} (attempt ${i}); waiting..."
+            fi
+            sleep 10
+          done
+          echo "::error::Timed out waiting for CI to complete for ${SHA}."
+          exit 1
 
       - name: Upgrade npm for trusted-publisher OIDC support
         run: npm install -g npm@11.8.0
