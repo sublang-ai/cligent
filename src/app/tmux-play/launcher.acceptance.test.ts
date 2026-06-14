@@ -265,6 +265,18 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('display-message');
         expect(rightClickCopyBinding).toContain('Copied!');
         expect(rightClickCopyBinding).toContain('selection_present');
+        // The toast lives ONLY in the selection-present branch: `Copied!`
+        // shall appear exactly once in the live binding body, so a
+        // regression that leaks the toast into the no-selection branch (a
+        // false "Copied!" on an empty right-click) makes the count 2 and
+        // fails here. The rendered status-line toast itself is transient
+        // and not robustly capturable in this harness — both branches copy
+        // identically (no distinguishing side effect), the real binding's
+        // copy targets the host clipboard, and `show-messages` only echoes
+        // the command text (which always contains `Copied!`) — so the live
+        // binding body is the verification surface for the toast's presence
+        // and its selection gating.
+        expect((rightClickCopyBinding.match(/Copied!/g) ?? []).length).toBe(1);
         expect(rightClickCopyBinding).toContain('pbcopy');
         expect(rightClickCopyBinding).toContain('wl-copy');
         expect(rightClickCopyBinding).toContain('xclip');
@@ -696,7 +708,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'copies and clears a scrolled selection without leaving copy-mode (TMUX-062)',
+    "runs the right-click binding's selection-gated if-shell branches: the selection-present branch copies and clears without leaving copy-mode, the no-selection branch copies nothing (TMUX-062)",
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -743,14 +755,34 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(displayMessage(target, '#{selection_present}')).toBe('1');
       expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
 
+      // TMUX-062: drive the copy through the right-click binding's actual
+      // selection-present `if-shell` branch rather than a bare `copy-pipe`,
+      // so the test reparses and executes the true-branch command string
+      // `display-message Copied! ; send-keys -X copy-pipe <sink>` exactly
+      // as tmux does when the binding fires. This catches a branch that is
+      // shaped right but does not run (a malformed branch is reparsed only
+      // at fire time, never validated by `bind-key`), which a string-only
+      // assertion cannot. The clipboard sink is swapped for a test pipe so
+      // the copied bytes are observable; the live binding's real clipboard
+      // command is pinned separately by the binding-shape probe above.
+      // `display-message` against a session with no attached client is a
+      // harmless no-op that still parses and returns 0.
+      //
+      // The branch's `send-keys -X copy-pipe` carries no `-t` — exactly as
+      // the installed binding does, since a real mouse click makes the
+      // moused pane the target. So make the scrolled, selection-holding
+      // pane the active pane first; the `if-shell` then evaluates
+      // `#{selection_present}` and runs its branch `send-keys` against it
+      // with no `-t`, reproducing the installed command shape verbatim.
+      runOrThrow('tmux', ['select-pane', '-t', target]);
       const copiedPath = join(cwd, 'right-click-copy.txt');
+      const copySink = `send-keys -X copy-pipe 'cat > ${copiedPath}'`;
       runOrThrow('tmux', [
-        'send-keys',
-        '-t',
-        target,
-        '-X',
-        'copy-pipe',
-        `cat > ${shellQuote(copiedPath)}`,
+        'if-shell',
+        '-F',
+        '#{selection_present}',
+        `display-message Copied! ; ${copySink}`,
+        copySink,
       ]);
 
       const copiedText = await waitForNonEmptyFile(copiedPath, 2_000);
@@ -758,6 +790,32 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(displayMessage(target, '#{selection_present}')).toBe('0');
       expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
       expect(displayMessage(target, '#{scroll_position}')).toBe(scrollBefore);
+
+      // The no-selection path takes the `if-shell` false branch: the same
+      // copy runs but with nothing selected it pipes no bytes, and no
+      // `display-message` toast fires — so a right-click over nothing
+      // selected copies silently and never falsely claims "Copied!". The
+      // copy above cleared the selection, so the pane is now in copy-mode
+      // with `#{selection_present}` 0 — rerun the binding shape against it.
+      // The negative assertion is robust regardless of pipe timing: the
+      // sink can only ever receive the selected line when a selection
+      // exists, which it does not here.
+      expect(displayMessage(target, '#{selection_present}')).toBe('0');
+      const noSelectionPath = join(cwd, 'right-click-no-selection.txt');
+      const noSelectionSink = `send-keys -X copy-pipe 'cat > ${noSelectionPath}'`;
+      runOrThrow('tmux', [
+        'if-shell',
+        '-F',
+        '#{selection_present}',
+        `display-message Copied! ; ${noSelectionSink}`,
+        noSelectionSink,
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const noSelectionContent = existsSync(noSelectionPath)
+        ? readFileSync(noSelectionPath, 'utf8')
+        : '';
+      expect(noSelectionContent).not.toContain(selectedLine);
+      expect(noSelectionContent.trim()).toBe('');
     },
     60_000,
   );

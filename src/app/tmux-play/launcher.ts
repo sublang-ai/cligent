@@ -833,9 +833,10 @@ function configureMouseInteraction(
     // brief `Copied!` toast when a selection is present. The toast is a
     // status-line `display-message` (not a floating `display-popup`) so
     // it inherits the session's `message-style` (`fg=base,bg=peach` per
-    // TMUX-047) and renders `Copied!` as dark text on the theme's peach
-    // surface — the same band tmux uses for its own status messages,
-    // which is the requested look.
+    // TMUX-047) and renders `Copied!` in the flavor's base-on-peach
+    // styling — the same band tmux uses for its own status messages,
+    // which is the requested look (dark text on Mocha's light peach,
+    // light text on Latte's vivid peach).
     //
     // The binding is a single `if-shell -F '#{selection_present}'` so
     // the gate is read at click time, BEFORE `copy-pipe` clears the
