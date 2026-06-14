@@ -838,8 +838,32 @@ function configureMouseInteraction(
     // which is the requested look (dark text on Mocha's light peach,
     // light text on Latte's vivid peach).
     //
-    // The binding is a single `if-shell -F '#{selection_present}'` so
-    // the gate is read at click time, BEFORE `copy-pipe` clears the
+    // The copy + toast fire on the button RELEASE (`MouseUp3Pane`), not
+    // the press (`MouseDown3Pane`). tmux clears a status-line message on
+    // the next key event, and a right-click is a press immediately
+    // followed by a release; a toast painted on the press is wiped by
+    // that release before the user can see it (the "toast disappears as
+    // the right-click releases" defect). Binding the toast to the
+    // release — the last event in the gesture, exactly like the
+    // `MouseDragEnd1Pane` drag-copy toast idiom — leaves no later event
+    // to clear it, so it stays up for the session's `display-time`.
+    //
+    // tmux only delivers a `MouseUp*` event to a key table when the
+    // matching `MouseDown*` was consumed by a binding in that table; an
+    // unbound press makes the paired release vanish (verified: stock
+    // copy-mode binds no `MouseDown3Pane`, and the release never fires
+    // without a press binding). So `MouseDown3Pane` is bound here purely
+    // so the paired `MouseUp3Pane` is delivered with the selection still
+    // intact. The press binding is the focus-neutral no-op
+    // `refresh-client`: it consumes the press without any other effect.
+    // `select-pane -t=` would also work, but it focuses the clicked pane,
+    // making right-click-to-copy double as a pane switch — an extra
+    // side effect this gesture does not need, so it is deliberately
+    // avoided (verified: `refresh-client` delivers the release and the
+    // copy fires while pane focus stays put).
+    //
+    // The release binding is a single `if-shell -F '#{selection_present}'`
+    // so the gate is read at release time, BEFORE `copy-pipe` clears the
     // selection (a check placed after the copy would always read `0`).
     // Both branches copy; only the selection-present branch toasts, so a
     // right-click over nothing selected copies silently and never
@@ -858,11 +882,12 @@ function configureMouseInteraction(
     // nor scroll position.
     const copyCommand = `send-keys -X copy-pipe '${SYSTEM_CLIPBOARD_COPY_COMMAND}'`;
     const toastThenCopy = `display-message Copied! ; ${copyCommand}`;
+    runTmux('bind-key', '-T', table, 'MouseDown3Pane', 'refresh-client');
     runTmux(
       'bind-key',
       '-T',
       table,
-      'MouseDown3Pane',
+      'MouseUp3Pane',
       'if-shell',
       '-F',
       '#{selection_present}',

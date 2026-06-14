@@ -302,13 +302,37 @@ describe('launchTmuxPlay', () => {
         '-X',
         'stop-selection',
       );
-      const rightClickCopyCall = runTmuxMock.mock.calls.find(
+      // TMUX-062: the copy + toast fire on the button RELEASE, not the
+      // press. tmux clears a status-line message on the next key event,
+      // and a right-click is a press immediately followed by a release;
+      // a toast painted on `MouseDown3Pane` is wiped by the release
+      // before it can be seen. `MouseDown3Pane` is therefore the
+      // focus-neutral no-op `refresh-client` — required only so tmux
+      // delivers the paired `MouseUp3Pane` to this table (an unbound
+      // press drops the release) and deliberately NOT `select-pane`,
+      // which would make right-click-to-copy also switch panes. The real
+      // copy + toast live on `MouseUp3Pane`, the last event in the
+      // gesture, so no later event clears it.
+      const rightClickPressCall = runTmuxMock.mock.calls.find(
         (call) =>
           call[0] === 'bind-key' &&
           call[2] === table &&
           call[3] === 'MouseDown3Pane',
       );
-      // TMUX-062 copy-confirmation toast: the binding is a single
+      expect(rightClickPressCall).toEqual([
+        'bind-key',
+        '-T',
+        table,
+        'MouseDown3Pane',
+        'refresh-client',
+      ]);
+      const rightClickCopyCall = runTmuxMock.mock.calls.find(
+        (call) =>
+          call[0] === 'bind-key' &&
+          call[2] === table &&
+          call[3] === 'MouseUp3Pane',
+      );
+      // TMUX-062 copy-confirmation toast: the release binding is a single
       // `if-shell -F '#{selection_present}'` whose true branch toasts
       // then copies and whose false branch copies silently, so a
       // right-click over a live selection surfaces a brief peach
@@ -324,7 +348,7 @@ describe('launchTmuxPlay', () => {
         'bind-key',
         '-T',
         table,
-        'MouseDown3Pane',
+        'MouseUp3Pane',
         'if-shell',
         '-F',
         '#{selection_present}',
@@ -333,6 +357,14 @@ describe('launchTmuxPlay', () => {
         ),
         expect.stringMatching(/^send-keys -X copy-pipe '.+'$/s),
       ]);
+      // The press no-op never carries the copy or toast — those belong
+      // only on the release, so a regression that re-paints the toast on
+      // the press (where the release would wipe it) fails here. It also
+      // stays focus-neutral: no `select-pane`, so right-click-to-copy
+      // does not double as a pane switch.
+      expect(rightClickPressCall).not.toContain('copy-pipe');
+      expect(rightClickPressCall?.join(' ')).not.toContain('Copied!');
+      expect(rightClickPressCall).not.toContain('select-pane');
       const clipboardCommand = rightClickCopyCall?.at(-1);
       expect(clipboardCommand).toEqual(expect.stringContaining('pbcopy'));
       expect(clipboardCommand).toEqual(expect.stringContaining('wl-copy'));

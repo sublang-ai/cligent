@@ -249,14 +249,29 @@ describe('tmux-play real-tmux acceptance', () => {
         'stop-selection',
       );
       for (const table of ['copy-mode', 'copy-mode-vi']) {
-        const rightClickCopyBinding = keyBinding(table, 'MouseDown3Pane');
+        // TMUX-062: the copy + toast fire on the button RELEASE
+        // (`MouseUp3Pane`), not the press. tmux clears a status-line
+        // message on the next key event, and a right-click is a press
+        // immediately followed by a release; a toast painted on the press
+        // is wiped by that release before it can be seen. The press is the
+        // focus-neutral no-op `refresh-client` — required only so tmux
+        // delivers the paired release to this table (an unbound press
+        // drops the release) — carrying neither the copy nor the toast,
+        // and deliberately not `select-pane` (which would also switch
+        // panes on a right-click).
+        const rightClickPressBinding = keyBinding(table, 'MouseDown3Pane');
+        expect(rightClickPressBinding).toContain('refresh-client');
+        expect(rightClickPressBinding).not.toContain('copy-pipe');
+        expect(rightClickPressBinding).not.toContain('Copied!');
+        expect(rightClickPressBinding).not.toContain('select-pane');
+        const rightClickCopyBinding = keyBinding(table, 'MouseUp3Pane');
         // TMUX-062: `copy-pipe` (not `copy-pipe-and-cancel`) preserves
         // the clicked pane's scroll position after copy. Pin the
         // primitive precisely so a regression to the scroll-snapping
         // `copy-pipe-and-cancel` variant fails the assertion.
         expect(rightClickCopyBinding).toMatch(/\bcopy-pipe\b/);
         expect(rightClickCopyBinding).not.toContain('copy-pipe-and-cancel');
-        // TMUX-062 copy-confirmation toast: the binding is a single
+        // TMUX-062 copy-confirmation toast: the release binding is a single
         // `if-shell -F '#{selection_present}'` whose selection-present
         // branch fires a `display-message Copied!` toast alongside the
         // copy and whose empty branch copies silently, so an empty
@@ -816,6 +831,206 @@ describe('tmux-play real-tmux acceptance', () => {
         : '';
       expect(noSelectionContent).not.toContain(selectedLine);
       expect(noSelectionContent.trim()).toBe('');
+    },
+    60_000,
+  );
+
+  mouseDispatchIt(
+    'copies and clears the selection through a real attached-client right-click press+release, proving the copy fires on the button release without leaving copy-mode (TMUX-062)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `rclick-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // Pin the attached client to a known grid so the synthetic SGR
+      // coordinate lands inside the Coder pane.
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      const captainExpected = Math.floor(80 / 3);
+      const coderExpected = Math.floor(80 / 3);
+      const reviewerExpected = 80 - captainExpected - coderExpected;
+      const panes = await waitForRegions(
+        sessionName,
+        [captainExpected, coderExpected, reviewerExpected],
+        2_000,
+      );
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const coderTarget = `${sessionName}:0.${coder.index}`;
+
+      // Seed deterministic scrollback so the pane can be scrolled to a
+      // known, non-zero position that the copy must preserve.
+      runOrThrow('tmux', [
+        'respawn-pane',
+        '-k',
+        '-t',
+        coderTarget,
+        'seq 1 500; sleep 600',
+      ]);
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+
+      runOrThrow('tmux', ['copy-mode', '-t', coderTarget]);
+      for (let i = 0; i < 6; i += 1) {
+        runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', 'scroll-up']);
+      }
+      runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', 'select-line']);
+
+      const scrollBefore = displayMessage(coderTarget, '#{scroll_position}');
+      expect(Number(scrollBefore)).toBeGreaterThan(0);
+      expect(displayMessage(coderTarget, '#{selection_present}')).toBe('1');
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+
+      // Drive a real right-click (press then release) through an attached
+      // client, inside the scrolled, selection-holding Coder pane. This
+      // exercises tmux's actual mouse-event dispatch and key-table routing:
+      // the press fires the focus-neutral no-op `refresh-client` (so tmux
+      // delivers the paired release to copy-mode), and the release fires the
+      // live `if-shell '#{selection_present}'` copy + toast binding.
+      sendAttachedClientRightClick(sessionName, coder.left + 2, coder.top + 2);
+
+      // The live `copy-pipe` cleared the selection as visible
+      // copy-confirmation — proof the release was delivered and the copy ran
+      // end-to-end over real tmux mouse routing. Had the release been dropped
+      // (the `MouseDown3Pane` press no-op removed, so tmux never delivers the
+      // paired release, or `MouseUp3Pane` left unbound), the copy would never
+      // run and the selection would survive (selection_present 1). This does
+      // not by itself prove the copy is on the release rather than the press —
+      // a copy moved onto the press would also clear the selection — which the
+      // static binding checks and the toast-persistence probe cover instead.
+      expect(displayMessage(coderTarget, '#{selection_present}')).toBe('0');
+      // `copy-pipe` (not `copy-pipe-and-cancel`) kept the pane in copy-mode
+      // at its pre-copy scroll position, so a Boss reviewing history does
+      // not lose their place after copying.
+      expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('1');
+      expect(displayMessage(coderTarget, '#{scroll_position}')).toBe(
+        scrollBefore,
+      );
+    },
+    60_000,
+  );
+
+  mouseDispatchIt(
+    'keeps the Copied! toast on the status line after the right-click release (TMUX-062)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `toast-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      // A generous display-time keeps the toast up long enough that the
+      // nested-client capture races neither it nor its auto-dismiss: a toast
+      // that survives the release stays visible here for seconds, while one
+      // wiped by the release is simply never captured.
+      runOrThrow('tmux', [
+        'set-option',
+        '-t',
+        sessionName,
+        'display-time',
+        '4000',
+      ]);
+      const captainExpected = Math.floor(80 / 3);
+      const coderExpected = Math.floor(80 / 3);
+      const reviewerExpected = 80 - captainExpected - coderExpected;
+      const panes = await waitForRegions(
+        sessionName,
+        [captainExpected, coderExpected, reviewerExpected],
+        2_000,
+      );
+      const coder = paneByTitle(panes, 'Coder · codex');
+      const coderTarget = `${sessionName}:0.${coder.index}`;
+
+      runOrThrow('tmux', [
+        'respawn-pane',
+        '-k',
+        '-t',
+        coderTarget,
+        'seq 1 500; sleep 600',
+      ]);
+      await waitForHistory(sessionName, coder.index, 100, 2_000);
+      runOrThrow('tmux', ['copy-mode', '-t', coderTarget]);
+      for (let i = 0; i < 6; i += 1) {
+        runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', 'scroll-up']);
+      }
+      runOrThrow('tmux', ['send-keys', '-t', coderTarget, '-X', 'select-line']);
+      expect(displayMessage(coderTarget, '#{selection_present}')).toBe('1');
+
+      // Render the inner client inside an outer tmux pane so its status line
+      // is capturable, dispatch a real right-click press+release into the
+      // scrolled, selection-holding Coder pane, and assert the `Copied!`
+      // toast is on the rendered status line AFTER the release. A binding
+      // that painted the toast on the press would have it wiped by the
+      // release, so the capture would never show `Copied!` and this fails.
+      const status = await captureStatusLineAfterRightClick({
+        session: sessionName,
+        x: coder.left + 2,
+        y: coder.top + 2,
+        columns: 80,
+        rows: 24,
+        readyNeedle: 'switch pane',
+      });
+      expect(status).toContain('Copied!');
     },
     60_000,
   );
@@ -2419,6 +2634,124 @@ function sendAttachedClientMouseDown(
     throw new Error(
       `expect mouse probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
     );
+  }
+}
+
+function sendAttachedClientRightClick(
+  session: string,
+  x: number,
+  y: number,
+): void {
+  // SGR mouse: right button is code 2; `M` is press, `m` is release. A real
+  // right-click delivers BOTH, in that order — exactly the sequence whose
+  // release-clears-the-toast quirk TMUX-062 addresses by binding the copy +
+  // toast to the release. Sending only the press would not exercise the
+  // press-then-release routing this probe exists to verify.
+  const script = [
+    `spawn tmux attach-session -t ${session}`,
+    'after 500',
+    `send -- "\\033\\[<2;${x};${y}M"`,
+    'after 200',
+    `send -- "\\033\\[<2;${x};${y}m"`,
+    'after 400',
+    'send -- "\\002d"',
+    'expect eof',
+  ].join('\n');
+  const result = spawnSync('expect', ['-c', script], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (result.error) {
+    throw new Error(`expect right-click probe failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `expect right-click probe failed: ${result.stderr.trim() || `exit ${result.status}`}`,
+    );
+  }
+}
+
+// Render the launched (inner) session inside an outer tmux pane that attaches
+// to it, so the inner client's status line — where the `Copied!` toast lives —
+// is capturable via `capture-pane` of the outer pane. Dispatch a real
+// right-click press+release into the inner pane through the attached client's
+// stdin, then return the outer pane's rendered text once the toast appears.
+// A toast wiped by the release (e.g. if it were painted on the press) never
+// appears, so the caller's `waitForPaneMatch` times out and the test fails.
+async function captureStatusLineAfterRightClick(options: {
+  readonly session: string;
+  readonly x: number;
+  readonly y: number;
+  readonly columns: number;
+  readonly rows: number;
+  readonly readyNeedle: string;
+}): Promise<string> {
+  const outer = `tmux-play-toast-${randomBytes(4).toString('hex')}`;
+  const target = `${outer}:0.0`;
+  try {
+    runOrThrow('tmux', [
+      'new-session',
+      '-d',
+      '-s',
+      outer,
+      '-x',
+      String(options.columns),
+      '-y',
+      String(options.rows),
+      'sleep 120',
+    ]);
+    runOrThrow('tmux', ['set-option', '-t', outer, 'status', 'off']);
+    runOrThrow('tmux', [
+      'set-window-option',
+      '-t',
+      outer,
+      'window-size',
+      'manual',
+    ]);
+    runOrThrow('tmux', [
+      'resize-window',
+      '-t',
+      outer,
+      '-x',
+      String(options.columns),
+      '-y',
+      String(options.rows),
+    ]);
+    runOrThrow('tmux', [
+      'respawn-pane',
+      '-k',
+      '-t',
+      target,
+      `sh -lc 'unset TMUX TMUX_PANE; exec tmux attach -t ${options.session}'`,
+    ]);
+    await waitForPaneContains(outer, 0, options.readyNeedle, 5_000);
+
+    // Inject the SGR right-click (button 2; `M` press, `m` release) into the
+    // attached client's stdin so the inner client dispatches the mouse event.
+    runOrThrow('tmux', [
+      'send-keys',
+      '-l',
+      '-t',
+      target,
+      `\x1b[<2;${options.x};${options.y}M`,
+    ]);
+    runOrThrow('tmux', [
+      'send-keys',
+      '-l',
+      '-t',
+      target,
+      `\x1b[<2;${options.x};${options.y}m`,
+    ]);
+
+    return await waitForPaneMatch(
+      outer,
+      0,
+      (text) => text.includes('Copied!'),
+      5_000,
+      'nested client status line never showed the Copied! toast after the right-click release',
+    );
+  } finally {
+    spawnSync('tmux', ['kill-session', '-t', outer], { stdio: 'ignore' });
   }
 }
 
