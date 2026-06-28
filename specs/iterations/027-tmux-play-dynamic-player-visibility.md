@@ -74,13 +74,13 @@ Out of scope (per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.
 
 Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` green at its boundary.
 
-1. [ ] **Spec — layout weights, migration, default config (docs-only).**
+1. [x] **Spec — layout weights, migration, default config (docs-only).**
    Amend [TMUX-064](../user/tmux-play.md#tmux-064) so `layout.columnWeights` is a two-/three-element compatibility alias and the canonical fields are `layout.singlePlayerColumnWeights` (default `[1, 1]`) and `layout.multiPlayerColumnWeights` (default `[1, 1, 1]`), with strict positive-integer validation, the both-present-rejection rule, and the resolution precedence (explicit preset → matching alias → shape default).
    Amend [TMUX-028](../user/tmux-play.md#tmux-028) so visible-column shape derives from the current visible set rather than the configured roster size.
    Amend [TMUX-010](../user/tmux-play.md#tmux-010) for the home-config rewrite of `columnWeights` to the canonical field (two-element → single, three-element → multi), the both-present rejection, the no-rewrite of `--config` / cwd configs, and replace the stale "resolved `layout` defaults from TMUX-064" wording with the dynamic-visibility layout fields.
    Amend [TMUX-011](../user/tmux-play.md#tmux-011) so the default home config uses `layout.multiPlayerColumnWeights: [1, 1, 1]`.
-   Add [TTMUX-079](../test/tmux-play.md#ttmux-079) (weight vocabulary, alias, conflict, precedence) and [TTMUX-081](../test/tmux-play.md#ttmux-081) (migration rewrite + default config).
-   Update the `specs/map.md` TMUX / TTMUX package summaries.
+   Add [TTMUX-079](../test/tmux-play.md#ttmux-079) (weight vocabulary, alias, conflict, precedence) and [TTMUX-081](../test/tmux-play.md#ttmux-081) (migration rewrite + default config), and reconcile [TTMUX-064](../test/tmux-play.md#ttmux-064) to the new snapshot shape (resolved `singlePlayerColumnWeights` / `multiPlayerColumnWeights`) and validation rules.
+   Update the `specs/map.md` TMUX package summary.
 
 2. [ ] **Spec — visibility API, record, observer (docs-only).**
    Add [TMUX-080](../user/tmux-play.md#tmux-080) (`layout.initialVisible`: optional non-empty duplicate-free subset of configured player IDs; default all players in `players` order; array order is startup pane order; weight shape derives from this set; no zero-player layout).
