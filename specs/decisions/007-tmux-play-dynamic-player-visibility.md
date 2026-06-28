@@ -20,7 +20,7 @@ The existing topology is static.
 The launcher creates one read-only player pane per configured player, and each pane tails that player's log.
 Player liveness and output durability are already independent of pane liveness: session mode writes each player's rendered output to that player's log stream, and a pane is only a `tail -f` view of that log.
 
-The simplest first implementation should serve workflow-driven visible subsets without introducing a mutable runtime player registry or a pane-preservation subsystem.
+This decision serves workflow-driven visible subsets without introducing a mutable runtime player registry or a pane-preservation subsystem.
 
 ## Decision
 
@@ -43,7 +43,7 @@ When `layout.initialVisible` is present, its array order is the startup player p
 When `layout.initialVisible` is omitted, configured `players` order remains the startup player pane order.
 The startup layout weight shape derives from the same initial visible set.
 
-The first implementation does not support a zero-player visible layout.
+This decision does not support a zero-player visible layout.
 A Captain that wants a Captain-only planning phase should leave the previous visible set in place until at least one player should be shown.
 
 ### Captain Control API
@@ -86,7 +86,7 @@ It does not inspect tmux state or mutate presentation state directly.
 The runtime record taxonomy from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation) is extended by `player_view_changed`.
 
 When a Captain awaits `setVisiblePlayers(next)` and then calls `callPlayer()` for a newly visible player, the layout reconciliation attempt is ordered before that player's later `player_prompt` / `player_event` records are presented.
-The v1 design relies on the ordered, awaited observer dispatch from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation) to provide that sequencing.
+This design relies on the ordered, awaited observer dispatch from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation) to provide that sequencing.
 When reconciliation succeeds, the newly visible pane exists before that player's later records are presented.
 When reconciliation fails and the display-only observer swallows or surfaces the failure, later player output still reaches the player's log stream, but the pane may be absent or incomplete until a later successful visibility change.
 Any future asynchronous or coalesced layout reconciliation must preserve the same successful-reconciliation-before-player-output guarantee for awaited `setVisiblePlayers()` calls.
@@ -105,7 +105,7 @@ It updates that list only after reconciliation completes successfully, where suc
 An incomplete best-effort reconciliation does not advance the tracked list, even if the observer handler returns without throwing.
 When a `player_view_changed` record repeats that list in the same order, the observer treats it as a no-op and issues no tmux commands.
 
-The observer uses full player-area rebuild for the first implementation.
+The observer uses full player-area rebuild.
 On each accepted visibility change it:
 
 - enumerates panes in the main tmux window and kills every pane except the Boss/Captain pane
@@ -113,16 +113,16 @@ On each accepted visibility change it:
 - runs each recreated pane as a bounded recent log view, `tail -n 200 -f <player>.log`
 - reapplies player pane titles, timer options, read-only input, mouse-selection bindings, layout hooks, and Boss-pane focus
 
-Full rebuild is chosen over incremental pane add/remove for v1.
+Full rebuild is chosen over incremental pane add/remove.
 It reuses the launcher topology algorithm from the same single-Boss-pane starting condition and avoids a `playerId -> paneId` registry, custom middle-column insertion logic, and pane-survivor bookkeeping.
-The `200`-line replay count is fixed for v1 and is not a YAML or Captain API option in this decision.
+The `200`-line replay count is fixed by this decision and is not a YAML or Captain API option.
 Because rebuild is kill-first, a mid-rebuild tmux failure may leave the player area partially reconstructed.
 The observer continues best-effort reconstruction for remaining panes when it can do so without throwing, surfaces a best-effort status when practical, and relies on the per-player logs as the durable output record.
 A later successful visibility change is the recovery mechanism for an incomplete displayed layout.
 
 The rebuild runs on the ordered observer dispatch path.
 Mid-turn `setVisiblePlayers()` calls can therefore stall subsequent record delivery until the player area has been reconciled.
-That stall is an accepted v1 cost of keeping the successful-reconciliation-before-player-output guarantee simple.
+That stall is an accepted cost of keeping the successful-reconciliation-before-player-output guarantee simple.
 Captains should prefer calling `setVisiblePlayers()` at deliberate workflow phase boundaries rather than in tight streaming loops.
 
 ### Layout Weights
@@ -158,6 +158,26 @@ TMUX-064 currently derives `layout.columnWeights` length from the configured pla
 The loader keeps strict positive-integer validation for every weight.
 It does not relax weight validation to arbitrary arrays whose meaning changes at runtime.
 
+### Config Migration
+
+Legacy configs that contain only `layout.columnWeights` remain valid through the compatibility alias above.
+The alias preserves behavior; the home-config migration keeps the user-editable fallback file on the canonical shape-specific vocabulary so later edits are less ambiguous.
+This decision amends [TMUX-010](../user/tmux-play.md#tmux-010)'s home-config migration rule.
+TMUX-010 currently describes fallback home migration as adding only missing safe defaults and preserving existing values; dynamic visibility permits this narrow key rewrite because the weight array value is preserved under its canonical field.
+Future TMUX item updates must also replace TMUX-010's stale reference to "resolved `layout` defaults from TMUX-064" with the dynamic-visibility layout fields from this decision.
+When tmux-play loads an existing home config through fallback discovery, it updates the home YAML to the canonical shape-specific field when that rewrite is unambiguous:
+
+- a two-element `layout.columnWeights` becomes `layout.singlePlayerColumnWeights`
+- a three-element `layout.columnWeights` becomes `layout.multiPlayerColumnWeights`
+
+The migration transforms the config in memory and writes one final YAML form.
+It must not leave an on-disk file containing both `layout.columnWeights` and the matching canonical field, because that state is rejected by validation.
+When a config already contains both `layout.columnWeights` and the matching canonical field, migration does not attempt to resolve the conflict and the loader rejects the config.
+It also does not rewrite explicit `--config` files or cwd project configs; those remain valid through the alias rule but are not mutated automatically.
+
+Newly-created default home configs use the canonical shape-specific field directly.
+For the shipped default roster with two visible players, [TMUX-011](../user/tmux-play.md#tmux-011)'s default layout moves from `layout.columnWeights: [1, 1, 1]` to `layout.multiPlayerColumnWeights: [1, 1, 1]`.
+
 ### Out of Scope
 
 - creating new player identities after session start
@@ -177,11 +197,11 @@ Their hidden panes do not remain live.
 When a hidden player becomes visible again, tmux-play reconstructs a new read-only pane from the recent log tail.
 The full backlog remains available in the log file, not in tmux pane scrollback.
 
-The first implementation may produce a brief visual rebuild when the visible set changes.
+This design may produce a brief visual rebuild when the visible set changes.
 That is acceptable for workflow phase transitions, which are expected to be infrequent and deliberate.
 
 The API and record shape leave room for a later presentation-only upgrade.
 If hidden-pane view continuity becomes important, the `LayoutObserver` can replace full rebuild with incremental pane preservation or a bench-window `break-pane` / `join-pane` strategy behind the same `setVisiblePlayers` API and `player_view_changed` record.
-Such an upgrade should introduce stable pane-ID bookkeeping then, not as a prerequisite for the simpler first pass.
+Such an upgrade should introduce stable pane-ID bookkeeping then, not as a prerequisite for this simpler design.
 
-Future implementation work must update the TMUX user and test items to specify `layout.initialVisible`, the `setVisiblePlayers` contract, the `player_view_changed` record, full-rebuild pane semantics, strict per-visible-count weight validation, and the hidden-pane scrollback limitation.
+Future implementation work must update the TMUX user and test items to specify `layout.initialVisible`, the `setVisiblePlayers` contract, the `player_view_changed` record, full-rebuild pane semantics, strict per-visible-count weight validation, the home-config migration and TMUX-010 amendment, the TMUX-011 default-config canonical layout field, and the hidden-pane scrollback limitation.
