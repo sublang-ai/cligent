@@ -52,10 +52,13 @@ function validConfig(
       turn_finished: 'off',
       turn_aborted: 'off',
     },
-    // TMUX-064: multi-player default — equal thirds [1, 1, 1] on the
-    // canonical 174x49 grid (174 / 3 = 58 per column).
+    // TMUX-064: resolved layout carries both canonical shape arrays plus the
+    // active (multi-player roster) weights. writeYamlConfig emits only the
+    // `columnWeights` alias, which resolves back to this same shape.
     layout: {
       window: { columns: 174, rows: 49 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
     },
     ...overrides,
@@ -232,11 +235,16 @@ describe('tmux-play config loading', () => {
     // see the knobs.
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
     });
     const homeSource = readFileSync(homeConfig, 'utf8');
     expect(homeSource).toContain('layout:');
-    expect(homeSource).toContain('columnWeights:');
+    // TMUX-011/TTMUX-081: the authored default YAML uses the canonical
+    // `multiPlayerColumnWeights` field and carries no `columnWeights` key.
+    expect(homeSource).toContain('multiPlayerColumnWeights:');
+    expect(homeSource).not.toMatch(/^\s*columnWeights:/m);
     expect(homeSource).toContain('notifications:');
     expect(homeSource).toContain('player_finished: bell');
     expect(homeSource).toContain('turn_finished: desktop');
@@ -823,6 +831,8 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.theme).toBe('auto');
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1],
     });
     expect(loaded.config.notifications).toEqual({
@@ -833,7 +843,7 @@ describe('tmux-play config loading', () => {
     expect(migrated).toContain('theme: auto');
     expect(migrated).toContain('options: {}');
     expect(migrated).toContain('layout:');
-    expect(migrated).toContain('columnWeights:');
+    expect(migrated).toContain('multiPlayerColumnWeights:');
     expect(migrated).toContain('notifications:');
     expect(migrated).toContain('player_finished: bell');
     expect(migrated).toContain('turn_finished: desktop');
@@ -900,6 +910,8 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
     });
   });
@@ -925,6 +937,8 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1],
     });
   });
@@ -960,6 +974,8 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 200, rows: 50 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [3, 5, 5],
       columnWeights: [3, 5, 5],
     });
   });
@@ -1098,7 +1114,7 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('rejects length-mismatched layout.columnWeights against the visible column count', async () => {
+  it('accepts a two- or three-element columnWeights alias regardless of player count (TTMUX-079)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const twoPlayersTwoWeights = join(workDir, 'two-players-two-weights.yaml');
     const onePlayerThreeWeights = join(workDir, 'one-player-three-weights.yaml');
@@ -1140,12 +1156,309 @@ describe('tmux-play config loading', () => {
       ].join('\n'),
     );
 
+    // A two-element columnWeights aliases singlePlayerColumnWeights; the
+    // multi-player default still applies, so a two-player roster stays valid.
+    const twoWeights = await loadTmuxPlayConfig({
+      configPath: twoPlayersTwoWeights,
+    });
+    expect(twoWeights.config.layout.singlePlayerColumnWeights).toEqual([4, 6]);
+    expect(twoWeights.config.layout.multiPlayerColumnWeights).toEqual([1, 1, 1]);
+    expect(twoWeights.config.layout.columnWeights).toEqual([1, 1, 1]);
+
+    // A three-element columnWeights aliases multiPlayerColumnWeights; a
+    // one-player roster stays valid and renders the single-player default.
+    const threeWeights = await loadTmuxPlayConfig({
+      configPath: onePlayerThreeWeights,
+    });
+    expect(threeWeights.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
+    expect(threeWeights.config.layout.singlePlayerColumnWeights).toEqual([1, 1]);
+    expect(threeWeights.config.layout.columnWeights).toEqual([1, 1]);
+  });
+
+  it('rejects a columnWeights alias whose length is not 2 or 3 (TTMUX-079)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const body = (weights: number[]): string =>
+      [
+        'layout:',
+        '  columnWeights:',
+        ...weights.map((w) => `    - ${w}`),
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n');
+    const oneWeight = join(workDir, 'one-weight.yaml');
+    const fourWeights = join(workDir, 'four-weights.yaml');
+    writeFileSync(oneWeight, body([4]));
+    writeFileSync(fourWeights, body([1, 2, 3, 4]));
+
+    await expect(loadTmuxPlayConfig({ configPath: oneWeight })).rejects.toThrow(
+      'layout.columnWeights length must be 2',
+    );
     await expect(
-      loadTmuxPlayConfig({ configPath: twoPlayersTwoWeights }),
-    ).rejects.toThrow('layout.columnWeights length must be 3');
-    await expect(
-      loadTmuxPlayConfig({ configPath: onePlayerThreeWeights }),
+      loadTmuxPlayConfig({ configPath: fourWeights }),
     ).rejects.toThrow('layout.columnWeights length must be 2');
+  });
+
+  it('resolves explicit canonical column-weight fields (TTMUX-079)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  singlePlayerColumnWeights:',
+        '    - 2',
+        '    - 3',
+        '  multiPlayerColumnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    expect(loaded.config.layout.singlePlayerColumnWeights).toEqual([2, 3]);
+    expect(loaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
+    // Two players -> the active shape is multi.
+    expect(loaded.config.layout.columnWeights).toEqual([4, 6, 6]);
+  });
+
+  it('rejects a columnWeights alias alongside the same-shape canonical field, accepts different shapes (TTMUX-079)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const conflict = join(workDir, 'conflict.yaml');
+    const distinct = join(workDir, 'distinct.yaml');
+    writeFileSync(
+      conflict,
+      [
+        'layout:',
+        '  multiPlayerColumnWeights:',
+        '    - 1',
+        '    - 1',
+        '    - 1',
+        '  columnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+    // A two-element alias targets the single shape, so it coexists with an
+    // explicit multi-player canonical field.
+    writeFileSync(
+      distinct,
+      [
+        'layout:',
+        '  multiPlayerColumnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 6',
+        '  columnWeights:',
+        '    - 2',
+        '    - 3',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath: conflict })).rejects.toThrow(
+      'layout.columnWeights conflicts with layout.multiPlayerColumnWeights',
+    );
+    const distinctLoaded = await loadTmuxPlayConfig({ configPath: distinct });
+    expect(distinctLoaded.config.layout.singlePlayerColumnWeights).toEqual([2, 3]);
+    expect(distinctLoaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
+  });
+
+  it('rejects a canonical column-weight field of the wrong length (TTMUX-079)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const badSingle = join(workDir, 'bad-single.yaml');
+    const badMulti = join(workDir, 'bad-multi.yaml');
+    writeFileSync(
+      badSingle,
+      [
+        'layout:',
+        '  singlePlayerColumnWeights:',
+        '    - 1',
+        '    - 1',
+        '    - 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: solo',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      badMulti,
+      [
+        'layout:',
+        '  multiPlayerColumnWeights:',
+        '    - 1',
+        '    - 1',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath: badSingle })).rejects.toThrow(
+      'layout.singlePlayerColumnWeights length must be 2',
+    );
+    await expect(loadTmuxPlayConfig({ configPath: badMulti })).rejects.toThrow(
+      'layout.multiPlayerColumnWeights length must be 3',
+    );
+  });
+
+  it('migrates a legacy home columnWeights to its canonical field (TTMUX-081)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    mkdirSync(cwd);
+    const homeFor = (name: string, weights: number[], playerIds: string[]): string => {
+      const configHome = join(workDir, name);
+      const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+      mkdirSync(join(configHome, 'tmux-play'), { recursive: true });
+      writeFileSync(
+        homeConfig,
+        [
+          'layout:',
+          '  columnWeights:',
+          ...weights.map((w) => `    - ${w}`),
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          'players:',
+          ...playerIds.flatMap((id) => [`  - id: ${id}`, '    adapter: codex']),
+          '',
+        ].join('\n'),
+      );
+      return homeConfig;
+    };
+
+    // Three-element legacy weights migrate to multiPlayerColumnWeights.
+    const multiHome = homeFor('multi', [4, 6, 6], ['coder', 'reviewer']);
+    const multiLoaded = await loadTmuxPlayConfig({ cwd, configHome: join(workDir, 'multi') });
+    const multiOnDisk = readFileSync(multiHome, 'utf8');
+    expect(multiOnDisk).toContain('multiPlayerColumnWeights:');
+    expect(multiOnDisk).not.toMatch(/^\s*columnWeights:/m);
+    expect(multiLoaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
+
+    // Two-element legacy weights migrate to singlePlayerColumnWeights.
+    const singleHome = homeFor('single', [2, 3], ['solo']);
+    const singleLoaded = await loadTmuxPlayConfig({ cwd, configHome: join(workDir, 'single') });
+    const singleOnDisk = readFileSync(singleHome, 'utf8');
+    expect(singleOnDisk).toContain('singlePlayerColumnWeights:');
+    expect(singleOnDisk).not.toMatch(/^\s*columnWeights:/m);
+    expect(singleLoaded.config.layout.singlePlayerColumnWeights).toEqual([2, 3]);
+    expect(singleLoaded.config.layout.columnWeights).toEqual([2, 3]);
+  });
+
+  it('does not migrate a home columnWeights that conflicts with a canonical field (TTMUX-081)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+    mkdirSync(cwd);
+    mkdirSync(join(configHome, 'tmux-play'), { recursive: true });
+    writeFileSync(
+      homeConfig,
+      [
+        'layout:',
+        '  multiPlayerColumnWeights:',
+        '    - 1',
+        '    - 1',
+        '    - 1',
+        '  columnWeights:',
+        '    - 4',
+        '    - 6',
+        '    - 6',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ cwd, configHome })).rejects.toThrow(
+      'layout.columnWeights conflicts with layout.multiPlayerColumnWeights',
+    );
+    // Migration left the conflicting file untouched: both keys still present.
+    const onDisk = readFileSync(homeConfig, 'utf8');
+    expect(onDisk).toContain('multiPlayerColumnWeights:');
+    expect(onDisk).toMatch(/^\s*columnWeights:/m);
+  });
+
+  it('does not rewrite an explicit-path config that uses the columnWeights alias (TTMUX-081)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const source = [
+      'layout:',
+      '  columnWeights:',
+      '    - 4',
+      '    - 6',
+      '    - 6',
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '  - id: reviewer',
+      '    adapter: claude',
+      '',
+    ].join('\n');
+    writeFileSync(configPath, source);
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    // The explicit-path config is not mutated but still resolves via the alias.
+    expect(readFileSync(configPath, 'utf8')).toBe(source);
+    expect(loaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
   });
 
   it('rejects unknown sub-fields under layout and layout.window', async () => {
@@ -1394,6 +1707,8 @@ describe('tmux-play config loading', () => {
 
     expect(snapshot.layout).toEqual({
       window: { columns: 200, rows: 50 },
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 2, 3],
       columnWeights: [1, 2, 3],
     });
   });

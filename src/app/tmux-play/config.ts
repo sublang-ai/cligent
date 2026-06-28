@@ -69,14 +69,23 @@ export interface LayoutWindowConfig {
  * defaults at normalization time so the snapshot per TMUX-034 always
  * carries concrete values for session mode to consume.
  *
- * `columnWeights` length matches the visible column count derived
- * from the configured players: `2` with one player, `3` with two or
- * more. Default weights are `[1, 1]` (single-player 50/50 split) and
- * `[1, 1, 1]` (multi-player even thirds: Boss/Captain and each player
- * column each take floor(W / 3)).
+ * `singlePlayerColumnWeights` (length 2) and `multiPlayerColumnWeights`
+ * (length 3) are the canonical shape-specific weights; both are always
+ * resolved so the snapshot can render either visible-column shape. The
+ * YAML `columnWeights` alias (a two-/three-element compatibility field)
+ * and the shape defaults (`[1, 1]` / `[1, 1, 1]`) feed these per the
+ * TMUX-064 resolution precedence: explicit canonical field, then the
+ * matching alias, then the default.
+ *
+ * `columnWeights` is the active shape's resolved weights, selected here
+ * by the configured player count (one player -> single, two or more ->
+ * multi). IR-027 Task 5 re-selects the active weights from the visible
+ * set rather than the roster; until then the launcher reads this field.
  */
 export interface LayoutConfig {
   window: LayoutWindowConfig;
+  singlePlayerColumnWeights: number[];
+  multiPlayerColumnWeights: number[];
   columnWeights: number[];
 }
 
@@ -139,10 +148,16 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   },
   layout: {
     window: { columns: 174, rows: 49 },
-    // Multi-player default (TMUX-064): equal-thirds [1, 1, 1] so the
-    // Boss/Captain input column and each player column each take
-    // floor(W / 3) of the window width, with the rightmost column
-    // absorbing the remainder (zero at the default W = 174).
+    // Canonical shape-specific weights (TMUX-064). The shipped multi-player
+    // default is equal-thirds [1, 1, 1] (Boss/Captain and each player column
+    // each take floor(W / 3), rightmost absorbing the remainder); the
+    // single-player default [1, 1] is resolved too so the snapshot can render
+    // either shape. `columnWeights` is the active (two-player roster -> multi)
+    // resolved weights. `defaultHomeConfigValue` strips the resolved-only
+    // fields so the authored YAML surfaces only `multiPlayerColumnWeights`
+    // per TMUX-011.
+    singlePlayerColumnWeights: [1, 1],
+    multiPlayerColumnWeights: [1, 1, 1],
     columnWeights: [1, 1, 1],
   },
   captain: {
@@ -413,42 +428,117 @@ function normalizeNotificationConfig(
   return config;
 }
 
-function visibleColumnCount(playerCount: number): number {
-  return playerCount === 1 ? 2 : 3;
-}
-
-function defaultColumnWeights(playerCount: number): number[] {
-  return playerCount === 1 ? [1, 1] : [1, 1, 1];
-}
+const SINGLE_PLAYER_SHAPE_LENGTH = 2;
+const MULTI_PLAYER_SHAPE_LENGTH = 3;
+const DEFAULT_SINGLE_PLAYER_WEIGHTS: readonly number[] = [1, 1];
+const DEFAULT_MULTI_PLAYER_WEIGHTS: readonly number[] = [1, 1, 1];
 
 const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 174, rows: 49 };
+
+// Active-shape weights keyed to the configured roster (IR-027 Task 3): one
+// player -> single-player shape, two or more -> multi-player shape. Task 5
+// re-keys this to the visible set.
+function activeColumnWeights(
+  playerCount: number,
+  single: readonly number[],
+  multi: readonly number[],
+): number[] {
+  return playerCount === 1 ? [...single] : [...multi];
+}
 
 function resolveLayoutConfig(
   value: unknown,
   playerCount: number,
   path: string,
 ): LayoutConfig {
-  const expectedColumns = visibleColumnCount(playerCount);
-  const defaultWeights = defaultColumnWeights(playerCount);
-
   if (value === undefined) {
     return {
       window: { ...DEFAULT_LAYOUT_WINDOW },
-      columnWeights: [...defaultWeights],
+      singlePlayerColumnWeights: [...DEFAULT_SINGLE_PLAYER_WEIGHTS],
+      multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
+      columnWeights: activeColumnWeights(
+        playerCount,
+        DEFAULT_SINGLE_PLAYER_WEIGHTS,
+        DEFAULT_MULTI_PLAYER_WEIGHTS,
+      ),
     };
   }
 
   const input = requireObject(value, path);
-  const allowed = new Set(['window', 'columnWeights']);
+  const allowed = new Set([
+    'window',
+    'singlePlayerColumnWeights',
+    'multiPlayerColumnWeights',
+    'columnWeights',
+  ]);
   rejectUnknownKeys(input, allowed, path);
 
-  return {
-    window: resolveLayoutWindow(input.window, `${path}.window`),
-    columnWeights: resolveColumnWeights(
+  const window = resolveLayoutWindow(input.window, `${path}.window`);
+
+  // Canonical shape-specific fields, each validated to its fixed length
+  // (TMUX-064) independent of the configured player count.
+  const explicitSingle = resolveCanonicalWeights(
+    input.singlePlayerColumnWeights,
+    SINGLE_PLAYER_SHAPE_LENGTH,
+    `${path}.singlePlayerColumnWeights`,
+  );
+  const explicitMulti = resolveCanonicalWeights(
+    input.multiPlayerColumnWeights,
+    MULTI_PLAYER_SHAPE_LENGTH,
+    `${path}.multiPlayerColumnWeights`,
+  );
+
+  // `columnWeights` is a two-/three-element alias selecting a shape by its
+  // length (TMUX-064).
+  let aliasSingle: number[] | undefined;
+  let aliasMulti: number[] | undefined;
+  if (input.columnWeights !== undefined) {
+    const aliasWeights = parseWeightArray(
       input.columnWeights,
-      defaultWeights,
-      expectedColumns,
       `${path}.columnWeights`,
+    );
+    if (aliasWeights.length === SINGLE_PLAYER_SHAPE_LENGTH) {
+      aliasSingle = aliasWeights;
+    } else if (aliasWeights.length === MULTI_PLAYER_SHAPE_LENGTH) {
+      aliasMulti = aliasWeights;
+    } else {
+      throw new Error(
+        `${path}.columnWeights length must be 2 (aliasing singlePlayerColumnWeights) ` +
+          `or 3 (aliasing multiPlayerColumnWeights), got ${aliasWeights.length}`,
+      );
+    }
+  }
+
+  // A `columnWeights` alias and the canonical field for the same shape are a
+  // conflict the loader rejects rather than silently picking one (TMUX-064).
+  if (aliasSingle && explicitSingle) {
+    throw new Error(
+      `${path}.columnWeights conflicts with ${path}.singlePlayerColumnWeights; ` +
+        'set only one for the single-player shape',
+    );
+  }
+  if (aliasMulti && explicitMulti) {
+    throw new Error(
+      `${path}.columnWeights conflicts with ${path}.multiPlayerColumnWeights; ` +
+        'set only one for the multi-player shape',
+    );
+  }
+
+  // Resolution precedence (TMUX-064): explicit canonical field, then the
+  // matching alias, then the shape default.
+  const singlePlayerColumnWeights =
+    explicitSingle ?? aliasSingle ?? [...DEFAULT_SINGLE_PLAYER_WEIGHTS];
+  const multiPlayerColumnWeights =
+    explicitMulti ?? aliasMulti ?? [...DEFAULT_MULTI_PLAYER_WEIGHTS];
+
+  return {
+    window,
+    singlePlayerColumnWeights,
+    multiPlayerColumnWeights,
+    columnWeights: activeColumnWeights(
+      playerCount,
+      singlePlayerColumnWeights,
+      multiPlayerColumnWeights,
     ),
   };
 }
@@ -476,26 +566,9 @@ function resolveLayoutWindow(
   return { columns, rows };
 }
 
-function resolveColumnWeights(
-  value: unknown,
-  defaults: readonly number[],
-  expectedLength: number,
-  path: string,
-): number[] {
-  if (value === undefined) {
-    return [...defaults];
-  }
+function parseWeightArray(value: unknown, path: string): number[] {
   if (!Array.isArray(value)) {
     throw new Error(`${path} must be an array of positive integers`);
-  }
-  if (value.length !== expectedLength) {
-    const role =
-      expectedLength === 2
-        ? '1 visible column for the Boss/Captain pane and 1 for the single player pane'
-        : '1 visible column for the Boss/Captain pane and 2 for the player columns';
-    throw new Error(
-      `${path} length must be ${expectedLength} (${role}), got ${value.length}`,
-    );
   }
   const result: number[] = [];
   for (let i = 0; i < value.length; i++) {
@@ -517,6 +590,23 @@ function resolveColumnWeights(
     result.push(weight);
   }
   return result;
+}
+
+function resolveCanonicalWeights(
+  value: unknown,
+  expectedLength: number,
+  path: string,
+): number[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const weights = parseWeightArray(value, path);
+  if (weights.length !== expectedLength) {
+    throw new Error(
+      `${path} length must be ${expectedLength}, got ${weights.length}`,
+    );
+  }
+  return weights;
 }
 
 function optionalPositiveInteger(
@@ -552,6 +642,12 @@ function defaultHomeConfigValue(): TmuxPlayConfig {
   // The generated YAML documents the non-off defaults requested for first-run
   // users while omission of `turn_aborted` still normalizes to `off`.
   delete (config.notifications as Partial<NotificationConfig>).turn_aborted;
+  // TMUX-011: the authored default YAML surfaces only the canonical
+  // `multiPlayerColumnWeights`; the resolved single-player array and the
+  // active `columnWeights` are filled back in on load, not written to disk.
+  const layout = config.layout as Partial<LayoutConfig>;
+  delete layout.singlePlayerColumnWeights;
+  delete layout.columnWeights;
   return config;
 }
 
@@ -570,14 +666,10 @@ function migrateHomeConfigSafeDefaults(
     changed = true;
   }
 
-  const playerCount = Array.isArray(config.players) ? config.players.length : undefined;
-  const defaultWeights =
-    playerCount === undefined ? undefined : defaultColumnWeights(playerCount);
-
   if (!hasOwn(config, 'layout')) {
     config.layout = {
       window: { ...DEFAULT_LAYOUT_WINDOW },
-      ...(defaultWeights ? { columnWeights: [...defaultWeights] } : {}),
+      multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
     };
     changed = true;
   } else if (isRecord(config.layout)) {
@@ -595,8 +687,31 @@ function migrateHomeConfigSafeDefaults(
         changed = true;
       }
     }
-    if (defaultWeights && !hasOwn(layout, 'columnWeights')) {
-      layout.columnWeights = [...defaultWeights];
+    // TMUX-010: rewrite a legacy `columnWeights` to its canonical shape field,
+    // writing one final form that never holds both. Skip the rewrite when the
+    // matching canonical field already exists (a conflict the loader rejects)
+    // or the length is not 2/3 (also rejected on load); leave those for the
+    // loader to surface. When a layout block carries no weight field at all,
+    // add the shipped `multiPlayerColumnWeights` default.
+    if (hasOwn(layout, 'columnWeights') && Array.isArray(layout.columnWeights)) {
+      const cw = layout.columnWeights as unknown[];
+      const canonical =
+        cw.length === SINGLE_PLAYER_SHAPE_LENGTH
+          ? 'singlePlayerColumnWeights'
+          : cw.length === MULTI_PLAYER_SHAPE_LENGTH
+            ? 'multiPlayerColumnWeights'
+            : undefined;
+      if (canonical && !hasOwn(layout, canonical)) {
+        layout[canonical] = cw;
+        delete layout.columnWeights;
+        changed = true;
+      }
+    } else if (
+      !hasOwn(layout, 'columnWeights') &&
+      !hasOwn(layout, 'singlePlayerColumnWeights') &&
+      !hasOwn(layout, 'multiPlayerColumnWeights')
+    ) {
+      layout.multiPlayerColumnWeights = [...DEFAULT_MULTI_PLAYER_WEIGHTS];
       changed = true;
     }
   }

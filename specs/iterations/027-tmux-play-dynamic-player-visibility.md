@@ -90,7 +90,7 @@ Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, a
    Add [TTMUX-080](../test/tmux-play.md#ttmux-080), [TTMUX-082](../test/tmux-play.md#ttmux-082), [TTMUX-083](../test/tmux-play.md#ttmux-083), [TTMUX-084](../test/tmux-play.md#ttmux-084), [TTMUX-085](../test/tmux-play.md#ttmux-085).
    Refresh the `specs/map.md` summaries for these items.
 
-3. [ ] **Config — weight vocabulary + migration + default.**
+3. [x] **Config — weight vocabulary + migration + default.**
    In `src/app/tmux-play/config.ts` add `layout.singlePlayerColumnWeights` / `layout.multiPlayerColumnWeights`, keep `layout.columnWeights` as a two-/three-element alias, reject a config carrying both an alias and its matching canonical field, and resolve weights by precedence (explicit preset → matching alias → shape default) with the existing strict positive-integer validation.
    Extend `migrateHomeConfigSafeDefaults` to rewrite a home config's `columnWeights` into the canonical field as one final YAML form (no on-disk state with both fields), leaving `--config` / cwd configs untouched.
    Update `DEFAULT_TMUX_PLAY_CONFIG` / default home YAML to `multiPlayerColumnWeights: [1, 1, 1]`.
