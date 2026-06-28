@@ -62,10 +62,10 @@ Out of scope (per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.
 - [x] `src/app/tmux-play/config.test.ts` — TTMUX-079 / TTMUX-080 / TTMUX-081 loader, migration, and default cases.
 - [x] `src/app/tmux-play/launcher.ts` — startup panes from the resolved initial visible set; extracted reusable player-area build routine.
 - [x] `src/app/tmux-play/launcher.test.ts` + `launcher.acceptance.test.ts` — TTMUX-082 startup-visibility geometry / ordering.
-- [ ] `src/app/tmux-play/contract.ts` — `setVisiblePlayers` on `CaptainSession` and `CaptainContext`.
-- [ ] `src/app/tmux-play/records.ts` — `PlayerViewChangedRecord` added to `TmuxPlayRecord`.
-- [ ] `src/app/tmux-play/runtime.ts` — validate IDs, emit `player_view_changed`, reject-before-emit, scope-correct `turnId`; wire both contract scopes.
-- [ ] `src/__tests__` / `runtime` tests — TTMUX-083 / TTMUX-084 emission, validation, and non-participating-observer coverage.
+- [x] `src/app/tmux-play/contract.ts` — `setVisiblePlayers` on `CaptainSession` and `CaptainContext`.
+- [x] `src/app/tmux-play/records.ts` — `PlayerViewChangedRecord` added to `TmuxPlayRecord`.
+- [x] `src/app/tmux-play/runtime.ts` — validate IDs, emit `player_view_changed`, reject-before-emit, scope-correct `turnId`; wire both contract scopes.
+- [x] `src/__tests__` / `runtime` tests — TTMUX-083 / TTMUX-084 emission, validation, and non-participating-observer coverage.
 - [ ] `src/app/tmux-play/layout-observer.ts` (new) + registration in `src/app/tmux-play/session.ts` — full player-area rebuild observer.
 - [ ] `src/app/tmux-play/layout-observer` tests + `launcher.acceptance.test.ts` — TTMUX-085 real-tmux rebuild + hidden-pane reconstruction.
 - [ ] `docs/tmux-play.md` — Config section documents `initialVisible` and the shape-specific weights / alias.
@@ -107,7 +107,7 @@ Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, a
    In `src/app/tmux-play/launcher.ts` build the startup player panes for the resolved initial visible set in `initialVisible` order (not the whole roster), deriving geometry from that set, and extract the single-Boss-pane → N-player-panes build (split sequence, `tail` command, titles, timer options, read-only input, mouse bindings, layout hooks, Boss focus) into a reusable routine the `LayoutObserver` will call.
    Update `launcher.test.ts` and `launcher.acceptance.test.ts` for TTMUX-082 (startup geometry and ordering for a configured `initialVisible` subset, and the all-visible default).
 
-6. [ ] **Contract + runtime — `setVisiblePlayers` + `player_view_changed`.**
+6. [x] **Contract + runtime — `setVisiblePlayers` + `player_view_changed`.**
    Add `setVisiblePlayers(playerIds): Promise<void>` to `CaptainSession` and `CaptainContext` in `contract.ts`.
    Add `PlayerViewChangedRecord` to the `TmuxPlayRecord` union in `records.ts` (and the sub-export record types).
    In `runtime.ts` validate `playerIds` is a non-empty, duplicate-free subset of configured IDs and reject before emitting any record (visible set unchanged on failure); on success emit exactly one `player_view_changed` carrying `visiblePlayerIds` and the scope-correct `turnId` (active turn ID for `CaptainContext`; active turn ID or `null` for `CaptainSession`), on the ordered, awaited dispatch path.

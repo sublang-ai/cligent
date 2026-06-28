@@ -96,6 +96,8 @@ export class TmuxPlayRuntime {
       players: this.playerHandles,
       emitStatus: (message, data) => this.emitSessionStatus(message, data),
       emitTelemetry: (event) => this.emitSessionTelemetry(event),
+      setVisiblePlayers: (playerIds) =>
+        this.setSessionVisiblePlayers(playerIds),
     };
 
     for (const observer of options.observers ?? []) {
@@ -234,6 +236,9 @@ export class TmuxPlayRuntime {
       callPlayer: (playerId, prompt) => this.callPlayer(turn, signal, playerId, prompt),
       callCaptain: (prompt, options) =>
         this.callCaptain(turn, signal, prompt, options),
+      // TMUX-081: a turn-scoped call carries this turn's id.
+      setVisiblePlayers: (playerIds) =>
+        this.setVisiblePlayers(playerIds, turn.id),
     };
   }
 
@@ -354,6 +359,56 @@ export class TmuxPlayRuntime {
     return this.dispatcher.emitTelemetry(
       telemetryRecord(event, this.activeTurn?.turn.id ?? null),
     );
+  }
+
+  // TMUX-081 / TMUX-082: validate the requested visible set and, when valid,
+  // emit exactly one `player_view_changed` on the ordered, awaited dispatch
+  // path. The runtime validates and emits only; pane reconciliation is the
+  // TMUX-083 layout observer's job. Validation throwing here rejects the
+  // returned Promise before any record is emitted, so a rejected call leaves
+  // the layout observer's tracked visible set unchanged.
+  private async setVisiblePlayers(
+    playerIds: readonly string[],
+    turnId: number | null,
+  ): Promise<void> {
+    const visiblePlayerIds = this.validatedVisiblePlayerIds(playerIds);
+    await this.dispatcher.emit({
+      ...makeRecordBase('player_view_changed', turnId),
+      visiblePlayerIds,
+    });
+  }
+
+  private async setSessionVisiblePlayers(
+    playerIds: readonly string[],
+  ): Promise<void> {
+    const error = this.sessionEmissionError();
+    if (error) {
+      throw error;
+    }
+    // TMUX-021 / TMUX-081: a session-scoped call carries the active turn id
+    // when a turn is in flight, otherwise `null`.
+    await this.setVisiblePlayers(playerIds, this.activeTurn?.turn.id ?? null);
+  }
+
+  private validatedVisiblePlayerIds(playerIds: readonly string[]): string[] {
+    if (playerIds.length === 0) {
+      throw new Error(
+        'setVisiblePlayers requires at least one player id: tmux-play has no zero-player visible layout',
+      );
+    }
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const id of playerIds) {
+      if (!this.playersById.has(id)) {
+        throw new Error(`setVisiblePlayers: unknown player id "${id}"`);
+      }
+      if (seen.has(id)) {
+        throw new Error(`setVisiblePlayers: duplicate player id "${id}"`);
+      }
+      seen.add(id);
+      result.push(id);
+    }
+    return result;
   }
 
   private sessionEmissionError(): Error | undefined {

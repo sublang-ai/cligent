@@ -25,6 +25,14 @@ export interface CaptainSession {
     data?: Record<string, unknown>,
   ): Promise<void>;
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
+  /**
+   * TMUX-081: change which configured players have panes in the main tmux
+   * window, for phase setup in `init()` or between Boss turns. `playerIds`
+   * must be a non-empty, duplicate-free subset of the configured player ids;
+   * an invalid argument rejects before any record is emitted, leaving the
+   * visible set unchanged. An accepted call emits one `player_view_changed`.
+   */
+  setVisiblePlayers(playerIds: readonly string[]): Promise<void>;
 }
 
 /**
@@ -52,6 +60,13 @@ export interface CaptainContext {
     prompt: string,
     options?: CallCaptainOptions,
   ): Promise<CaptainRunResult>;
+  /**
+   * TMUX-081: turn-scoped variant of {@link CaptainSession.setVisiblePlayers}
+   * for mid-turn workflow transitions. Same validation and rejection
+   * semantics; an accepted call emits one `player_view_changed` carrying the
+   * active turn id.
+   */
+  setVisiblePlayers(playerIds: readonly string[]): Promise<void>;
 }
 
 export interface CaptainTelemetry {

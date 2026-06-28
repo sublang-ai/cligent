@@ -74,6 +74,18 @@ export interface CaptainTelemetryRecord
   readonly payload: unknown;
 }
 
+/**
+ * TMUX-082: emitted once per accepted {@link CaptainSession.setVisiblePlayers}
+ * / {@link CaptainContext.setVisiblePlayers} call. Carries the requested
+ * visible player ids in order; the TMUX-083 layout observer consumes it to
+ * reconcile the visible player panes. Carries the active turn id when emitted
+ * during a turn, else `null` (session-scoped between-turn calls).
+ */
+export interface PlayerViewChangedRecord
+  extends BaseRecord<'player_view_changed', number | null> {
+  readonly visiblePlayerIds: readonly string[];
+}
+
 export interface RuntimeErrorRecord
   extends BaseRecord<'runtime_error', number | null> {
   readonly message: string;
@@ -93,12 +105,14 @@ export type TmuxPlayRecord =
   | CaptainFinishedRecord
   | CaptainStatusRecord
   | CaptainTelemetryRecord
+  | PlayerViewChangedRecord
   | RuntimeErrorRecord;
 
 export type TmuxPlayRecordType = TmuxPlayRecord['type'];
 export type NullableTurnIdRecordType =
   | 'captain_status'
   | 'captain_telemetry'
+  | 'player_view_changed'
   | 'runtime_error';
 export type TurnBoundRecordType = Exclude<
   TmuxPlayRecordType,

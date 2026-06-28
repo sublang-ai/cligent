@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createEvent } from '../../events.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
 import type { Captain, CaptainSession, PlayerRunResult } from './contract.js';
-import type { TmuxPlayRecord } from './records.js';
+import type { PlayerViewChangedRecord, TmuxPlayRecord } from './records.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime } from './runtime.js';
+import { createTmuxPresenter } from './presenter-tmux.js';
+import { createFollowObserver } from './follow-observer.js';
+import { createTimingObserver } from './timing-observer.js';
+import {
+  createNotificationObserver,
+  type DetachedNotificationSpawner,
+} from './notification-observer.js';
 
 type RunScript = (
   prompt: string,
@@ -761,5 +768,203 @@ describe('TmuxPlayRuntime', () => {
     await runtime.dispose();
 
     expect(order).toEqual(['session-aborted', 'dispose']);
+  });
+
+  it('emits one player_view_changed with the active turn id for a CaptainContext call (TTMUX-083)', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let manifest: readonly { id: string }[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        await context.setVisiblePlayers(['reviewer', 'coder']);
+        manifest = context.players.map((player) => ({ id: player.id }));
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [
+        { id: 'coder', adapter: 'codex' },
+        { id: 'reviewer', adapter: 'claude' },
+      ],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+
+    const views = records.filter(
+      (record): record is PlayerViewChangedRecord =>
+        record.type === 'player_view_changed',
+    );
+    expect(views).toHaveLength(1);
+    expect(views[0]?.visiblePlayerIds).toEqual(['reviewer', 'coder']);
+    expect(views[0]?.turnId).toBe(1);
+    // The configured roster / players manifest is unchanged by the call.
+    expect(manifest).toEqual([{ id: 'coder' }, { id: 'reviewer' }]);
+  });
+
+  it('carries the active turn id or null for a CaptainSession call by turn state (TTMUX-083)', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let session: CaptainSession | undefined;
+    const captain: Captain = {
+      async init(s) {
+        session = s;
+        // Between turns (init): no active turn -> turnId null.
+        await s.setVisiblePlayers(['coder']);
+      },
+      async handleBossTurn() {
+        // During a turn, via the retained session ref -> active turn id.
+        await session?.setVisiblePlayers(['coder', 'reviewer']);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [
+        { id: 'coder', adapter: 'codex' },
+        { id: 'reviewer', adapter: 'claude' },
+      ],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+
+    const views = records.filter(
+      (record): record is PlayerViewChangedRecord =>
+        record.type === 'player_view_changed',
+    );
+    expect(views).toHaveLength(2);
+    expect(views[0]?.turnId).toBeNull();
+    expect(views[0]?.visiblePlayerIds).toEqual(['coder']);
+    expect(views[1]?.turnId).toBe(1);
+    expect(views[1]?.visiblePlayerIds).toEqual(['coder', 'reviewer']);
+  });
+
+  it('rejects an invalid setVisiblePlayers without emitting a record and lets the Captain continue (TTMUX-083)', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const errors: string[] = [];
+    const badInputs: string[][] = [[], ['coder', 'coder'], ['ghost']];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        for (const bad of badInputs) {
+          try {
+            await context.setVisiblePlayers(bad);
+            errors.push('NO ERROR');
+          } catch (error) {
+            errors.push((error as Error).message);
+          }
+        }
+        // The Captain continues after catching: a valid call still emits.
+        await context.setVisiblePlayers(['coder']);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [
+        { id: 'coder', adapter: 'codex' },
+        { id: 'reviewer', adapter: 'claude' },
+      ],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toContain('at least one player');
+    expect(errors[1]).toContain('duplicate player id "coder"');
+    expect(errors[2]).toContain('unknown player id "ghost"');
+    // Only the single valid call produced a record.
+    const views = records.filter(
+      (record): record is PlayerViewChangedRecord =>
+        record.type === 'player_view_changed',
+    );
+    expect(views).toHaveLength(1);
+    expect(views[0]?.visiblePlayerIds).toEqual(['coder']);
+  });
+
+  it('the presenter, follow, timing, and notification observers ignore player_view_changed (TTMUX-084)', () => {
+    const record = (turnId: number | null): PlayerViewChangedRecord => ({
+      type: 'player_view_changed',
+      turnId,
+      timestamp: 0,
+      visiblePlayerIds: ['coder', 'reviewer'],
+    });
+
+    // Presenter: writes nothing to the Boss or player panes.
+    const bossWrites: string[] = [];
+    const playerWrites: string[] = [];
+    const presenter = createTmuxPresenter({
+      boss: { write: (value) => bossWrites.push(value) },
+      players: new Map([['coder', { write: (value) => playerWrites.push(value) }]]),
+    });
+
+    // Follow: returns no pane to its live tail.
+    const followed: string[] = [];
+    const follow = createFollowObserver({
+      sessionName: 'sess',
+      captainAdapter: 'claude',
+      players: [{ id: 'coder', adapter: 'codex' }],
+      tmux: {
+        queryPaneTargetsByTitle: () => new Map(),
+        followPane: (target) => followed.push(target),
+      },
+    });
+
+    // Timing: changes no timer option and starts no interval.
+    const timerOps: string[] = [];
+    const intervals: number[] = [];
+    const timing = createTimingObserver({
+      sessionName: 'sess',
+      captainAdapter: 'claude',
+      players: [{ id: 'coder', adapter: 'codex' }],
+      now: () => 0,
+      tmux: {
+        queryPaneTargetsByTitle: () => new Map(),
+        setSessionOption: (_session, option) => timerOps.push(option),
+        setPaneOption: (_pane, option) => timerOps.push(option),
+      },
+      scheduler: {
+        setInterval: (_callback, ms) => {
+          intervals.push(ms);
+          return 0;
+        },
+        clearInterval: () => undefined,
+      },
+    });
+
+    // Notification: emits no sound / desktop / terminal BEL.
+    const outputWrites: string[] = [];
+    const spawnDetached = vi.fn();
+    const notification = createNotificationObserver({
+      notifications: {
+        player_finished: 'bell',
+        turn_finished: 'desktop',
+        turn_aborted: 'desktop',
+      },
+      output: {
+        write: (value) => {
+          outputWrites.push(String(value));
+          return true;
+        },
+      },
+      platform: 'darwin',
+      spawnDetached: spawnDetached as unknown as DetachedNotificationSpawner,
+    });
+
+    for (const observer of [presenter, follow, timing, notification]) {
+      observer.onRecord(record(1));
+      observer.onRecord(record(null));
+    }
+
+    expect(bossWrites).toEqual([]);
+    expect(playerWrites).toEqual([]);
+    expect(followed).toEqual([]);
+    expect(timerOps).toEqual([]);
+    expect(intervals).toEqual([]);
+    expect(outputWrites).toEqual([]);
+    expect(spawnDetached).not.toHaveBeenCalled();
   });
 });

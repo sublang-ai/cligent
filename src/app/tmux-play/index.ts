@@ -50,6 +50,7 @@ export {
 export type {
   CaptainStatusRecord,
   CaptainTelemetryRecord,
+  PlayerViewChangedRecord,
   RecordObserver,
   RuntimeErrorRecord,
   TmuxPlayRecord,
