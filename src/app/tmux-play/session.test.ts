@@ -20,6 +20,7 @@ import {
 import { TmuxPresenter } from './presenter-tmux.js';
 import { FollowObserver } from './follow-observer.js';
 import { NotificationObserver } from './notification-observer.js';
+import { LayoutObserver } from './layout-observer.js';
 import type { TimingObserverHandle } from './timing-observer.js';
 
 class FakeReadline extends EventEmitter {
@@ -175,12 +176,13 @@ describe('TmuxPlaySession', () => {
         players: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
       }),
     );
-    // Order: presenter, then the TMUX-069 follow observer (constructed
-    // internally), then timing, then notifications, then any opt-in observers.
-    // The first, second, and notification slots are pinned by concrete type
-    // (not `expect.any(Object)`), so swapping these display-side observers
-    // fails here.
+    // Order: the TMUX-083 layout observer first, then the presenter, the
+    // TMUX-069 follow observer (constructed internally), timing, notifications,
+    // and finally any opt-in observers. The concrete-type slots are pinned (not
+    // `expect.any(Object)`), so swapping these display-side observers fails
+    // here.
     expect(createRuntime.mock.calls[0]?.[0].observers).toEqual([
+      expect.any(LayoutObserver),
       expect.any(TmuxPresenter),
       expect.any(FollowObserver),
       timingObserver,
@@ -869,6 +871,13 @@ function makeWorkDir(
         reasoningEffort: 'low',
       },
     ],
+    layout: {
+      window: { columns: 174, rows: 49 },
+      initialVisible: ['coder'],
+      singlePlayerColumnWeights: [1, 1],
+      multiPlayerColumnWeights: [1, 1, 1],
+      columnWeights: [1, 1],
+    },
   };
   if (overrides.theme !== undefined) {
     snapshot.theme = overrides.theme;

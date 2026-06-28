@@ -36,6 +36,7 @@ import { ObserverDispatchError, type RecordObserver } from './records.js';
 import { createFollowObserver } from './follow-observer.js';
 import { wrapScrollbackSafeOutput } from './scrollback-safe-output.js';
 import { createNotificationObserver } from './notification-observer.js';
+import { createLayoutObserver } from './layout-observer.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 import {
   createTimingObserver,
@@ -225,6 +226,25 @@ export class TmuxPlaySession {
       notifications: config.notifications,
       output,
     });
+    // TMUX-083: reconcile the visible player panes on each accepted
+    // `player_view_changed` via a full player-area rebuild. Display-only and
+    // failure-swallowing; registered first so its rebuild runs before later
+    // records for a newly visible player are presented.
+    const layoutObserver = createLayoutObserver({
+      sessionName: this.sessionName(),
+      workDir: this.options.workDir,
+      players: config.players,
+      layout: config.layout,
+      captainAdapter: config.captain.adapter,
+      themeFlavor,
+      initialVisible: config.layout.initialVisible,
+      onError: (error) =>
+        output.write(
+          `[layout] visibility update failed: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        ),
+    });
 
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
@@ -238,6 +258,7 @@ export class TmuxPlaySession {
       },
       players: runtimePlayers(config.players),
       observers: [
+        layoutObserver,
         presenter,
         followObserver,
         timingObserver,

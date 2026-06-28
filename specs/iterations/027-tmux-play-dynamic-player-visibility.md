@@ -17,10 +17,13 @@ This IR changes only which existing players have panes; it does not create, dele
 
 ## Status
 
-Proposed
+Complete
 
-No task in this IR has been implemented.
-This record is the decomposition of DR-007 into one-commit tasks.
+All seven tasks are implemented: the spec foundation, the config weight
+vocabulary and `layout.initialVisible`, the launcher startup-from-visible-set
+refactor with a reusable player-area routine, the `setVisiblePlayers` contract
+and `player_view_changed` runtime emission, and the full-rebuild
+`LayoutObserver` registered in session mode.
 
 ## Scope
 
@@ -66,9 +69,9 @@ Out of scope (per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.
 - [x] `src/app/tmux-play/records.ts` — `PlayerViewChangedRecord` added to `TmuxPlayRecord`.
 - [x] `src/app/tmux-play/runtime.ts` — validate IDs, emit `player_view_changed`, reject-before-emit, scope-correct `turnId`; wire both contract scopes.
 - [x] `src/__tests__` / `runtime` tests — TTMUX-083 / TTMUX-084 emission, validation, and non-participating-observer coverage.
-- [ ] `src/app/tmux-play/layout-observer.ts` (new) + registration in `src/app/tmux-play/session.ts` — full player-area rebuild observer.
-- [ ] `src/app/tmux-play/layout-observer` tests + `launcher.acceptance.test.ts` — TTMUX-085 real-tmux rebuild + hidden-pane reconstruction.
-- [ ] `docs/tmux-play.md` — Config section documents `initialVisible` and the shape-specific weights / alias.
+- [x] `src/app/tmux-play/layout-observer.ts` (new) + registration in `src/app/tmux-play/session.ts` — full player-area rebuild observer.
+- [x] `src/app/tmux-play/layout-observer` tests + `launcher.acceptance.test.ts` — TTMUX-085 real-tmux rebuild + hidden-pane reconstruction.
+- [x] `docs/tmux-play.md` — Config section documents `initialVisible` and the shape-specific weights / alias.
 
 ## Tasks
 
@@ -113,7 +116,7 @@ Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, a
    In `runtime.ts` validate `playerIds` is a non-empty, duplicate-free subset of configured IDs and reject before emitting any record (visible set unchanged on failure); on success emit exactly one `player_view_changed` carrying `visiblePlayerIds` and the scope-correct `turnId` (active turn ID for `CaptainContext`; active turn ID or `null` for `CaptainSession`), on the ordered, awaited dispatch path.
    Cover TTMUX-083 emission/validation and TTMUX-084 (existing presenter / follow / timing / notification observers ignore the record) in runtime/observer unit tests.
 
-7. [ ] **Presentation — `LayoutObserver` full rebuild.**
+7. [x] **Presentation — `LayoutObserver` full rebuild.**
    Add `src/app/tmux-play/layout-observer.ts`: consume `player_view_changed`; perform the full player-area rebuild reusing Task 5's routine from the single-Boss-pane condition (kill every main-window pane except Boss/Captain, recreate `visiblePlayerIds` in order, run each as `tail -n 200 -f <player>.log`, reapply titles / timer options / read-only input / mouse bindings / layout hooks / Boss focus); initialize the tracked visible list from the startup visible set and advance it only on fully successful reconciliation; treat a repeated list as a no-op issuing no tmux commands; swallow or surface tmux failures as best-effort status without aborting a turn.
    Register it among the session-mode observers in `session.ts` so its rebuild runs before the newly visible player's later records are presented.
    Add `layout-observer` unit coverage and a real-tmux TTMUX-085 acceptance probe (rebuild kills non-Boss panes, recreates the requested set in order, replays the bounded log tail, reapplies pane config, no-ops on a repeated set, reconstructs a re-shown hidden player's pane from its log tail) in `launcher.acceptance.test.ts`.

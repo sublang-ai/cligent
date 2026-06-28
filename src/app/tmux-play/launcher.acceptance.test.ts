@@ -18,6 +18,8 @@ import { isGlowAvailable } from '../shared/glow.js';
 import { shellQuote } from '../shared/shell.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { launchTmuxPlay } from './launcher.js';
+import { createLayoutObserver } from './layout-observer.js';
+import { readConfigSnapshot } from './session.js';
 import {
   mapAgentOptionsToClaudeQueryOptions,
   mapPermissionsToClaudeOptions,
@@ -659,6 +661,101 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(captain.active).toBe('1');
       expect(analyst.active).toBe('0');
       expect(coder.active).toBe('0');
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'rebuilds the visible player panes on a player_view_changed via the layout observer (TTMUX-085)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(
+        configPath,
+        [
+          'layout:',
+          '  initialVisible:',
+          '    - coder',
+          '    - reviewer',
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          '  options: {}',
+          'players:',
+          '  - id: coder',
+          '    adapter: codex',
+          '  - id: reviewer',
+          '    adapter: claude',
+          '  - id: analyst',
+          '    adapter: codex',
+          '',
+        ].join('\n'),
+      );
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // Startup visible set: Boss + coder + reviewer; analyst is hidden.
+      expect(listPanes(sessionName)).toHaveLength(3);
+      expect(listPanes(sessionName).map((pane) => pane.title)).not.toContain(
+        'Analyst · codex',
+      );
+
+      // Drive a layout observer built from the live session's snapshot.
+      const config = await readConfigSnapshot(workDir);
+      const observer = createLayoutObserver({
+        sessionName,
+        workDir,
+        players: config.players,
+        layout: config.layout,
+        captainAdapter: config.captain.adapter,
+        themeFlavor: config.theme === 'latte' ? 'latte' : 'mocha',
+        initialVisible: config.layout.initialVisible,
+      });
+      const viewChanged = (visiblePlayerIds: string[]) => ({
+        type: 'player_view_changed' as const,
+        turnId: 1,
+        timestamp: 0,
+        visiblePlayerIds,
+      });
+
+      // TMUX-083: show only analyst (hidden at startup). The player area
+      // rebuilds to a single read-only pane reconstructed from analyst.log;
+      // coder / reviewer panes are killed and the Boss/Captain pane keeps focus.
+      observer.onRecord(viewChanged(['analyst']));
+      let panes = listPanes(sessionName);
+      expect(panes).toHaveLength(2);
+      expect(paneByTitle(panes, 'Analyst · codex').inputOff).toBe('1');
+      expect(paneByTitle(panes, 'Captain · claude').active).toBe('1');
+      expect(panes.map((pane) => pane.title)).not.toContain('Coder · codex');
+      expect(panes.map((pane) => pane.title)).not.toContain('Reviewer · claude');
+
+      // A record repeating the tracked set issues no rebuild (still Boss + analyst).
+      observer.onRecord(viewChanged(['analyst']));
+      panes = listPanes(sessionName);
+      expect(panes).toHaveLength(2);
+      expect(paneByTitle(panes, 'Analyst · codex').title).toBe('Analyst · codex');
+
+      // Re-show a previously hidden player (coder): its pane is reconstructed
+      // from coder.log, and analyst's pane is gone.
+      observer.onRecord(viewChanged(['coder']));
+      panes = listPanes(sessionName);
+      expect(panes).toHaveLength(2);
+      expect(paneByTitle(panes, 'Coder · codex').inputOff).toBe('1');
+      expect(panes.map((pane) => pane.title)).not.toContain('Analyst · codex');
     },
     60_000,
   );

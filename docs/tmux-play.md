@@ -170,11 +170,47 @@ players:
 
 ## Layout
 
-Boss/Captain occupies the left pane; players fill the right in config
-order. Sessions start on a 174x49 grid. Columns are evenly sized: every
-visible column gets 1/N of the window width, where N is the column count
-(2 with a single player, 3 with two or more). With ≥2 players the first
-column holds `ceil(playerCount / 2)` players from top to bottom.
+Boss/Captain occupies the left pane; the visible players fill the right in
+order. Sessions start on a 174×49 grid. The visible columns derive from the
+*visible* player set (see `layout.initialVisible` below), not the full
+roster: two columns with one visible player, three with two or more, and the
+first player column holds `ceil(visibleCount / 2)` players from top to bottom.
+
+The optional top-level `layout` block tunes the window grid, the per-column
+weights, and which players are visible at startup:
+
+```yaml
+layout:
+  window:
+    columns: 174                       # initial cell grid (default 174 × 49)
+    rows: 49
+  multiPlayerColumnWeights: [1, 1, 1]  # Boss + 2 player columns (3-column shape)
+  singlePlayerColumnWeights: [1, 1]    # Boss + 1 player column (2-column shape)
+  initialVisible:                      # panes shown at startup (default: all, in order)
+    - claude
+    - codex
+```
+
+- `window.columns` / `window.rows` set the initial tmux grid (default
+  `174 × 49`); each defaults independently when only one is supplied.
+- `singlePlayerColumnWeights` (length 2) and `multiPlayerColumnWeights`
+  (length 3) are the canonical per-column weights, selected by the visible
+  column shape. A non-rightmost column `i` takes `floor(W * w_i / sum(w))`
+  cells of a `W`-cell window; the rightmost column absorbs the remainder.
+  Weights are positive integers — scale a fractional ratio yourself (write
+  `[1, 3]` for a `0.5 : 1.5` split). Defaults are `[1, 1]` and `[1, 1, 1]`.
+- `columnWeights` is a backward-compatible alias: a two-element value feeds
+  `singlePlayerColumnWeights`, a three-element value feeds
+  `multiPlayerColumnWeights`. Setting `columnWeights` together with the
+  matching canonical field is rejected; a home config that still uses
+  `columnWeights` is migrated to the canonical field in place.
+- `initialVisible` is an optional, non-empty, duplicate-free subset of the
+  configured player IDs naming the players whose panes appear at startup, in
+  that order. Omitting it shows every configured player in `players` order.
+  Hidden players stay live and keep accumulating output to their per-player
+  logs; a Captain can change the visible set during the session via
+  `setVisiblePlayers`, and a re-shown player's pane is rebuilt from the recent
+  tail of its log.
 
 tmux-play enables tmux mouse mode for the session, so dragging selects within
 one pane. Releasing the mouse keeps the selection highlighted in copy mode;

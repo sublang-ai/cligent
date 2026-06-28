@@ -276,6 +276,13 @@ describe('tmux-play built CLI smoke', () => {
             options: {},
           },
           players: [{ id: 'coder', adapter: 'codex' }],
+          layout: {
+            window: { columns: 174, rows: 49 },
+            initialVisible: ['coder'],
+            singlePlayerColumnWeights: [1, 1],
+            multiPlayerColumnWeights: [1, 1, 1],
+            columnWeights: [1, 1],
+          },
         },
         null,
         2,
