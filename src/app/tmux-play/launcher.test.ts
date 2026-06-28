@@ -279,6 +279,149 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  it('builds startup panes only for the initial visible subset, in order (TTMUX-082)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = join(tempDir, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  initialVisible:',
+        '    - analyst',
+        '    - coder',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: codex',
+        '  - id: analyst',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    const workDir = join(tempDir, 'work');
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'vis1',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    // Two visible players -> the three-column multi-player shape, with exactly
+    // two splits in `initialVisible` order: analyst (Boss -> first column) then
+    // coder (first column -> second column).
+    const splits = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'split-window',
+    );
+    expect(splits).toEqual([
+      [
+        'split-window',
+        '-h',
+        '-l',
+        '116',
+        '-t',
+        'tmux-play-vis1',
+        tailCommand(workDir, 'analyst'),
+      ],
+      [
+        'split-window',
+        '-h',
+        '-l',
+        '58',
+        '-t',
+        'tmux-play-vis1:0.1',
+        tailCommand(workDir, 'coder'),
+      ],
+    ]);
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-vis1:0.1',
+      '-T',
+      'Analyst · codex',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-vis1:0.2',
+      '-T',
+      'Coder · codex',
+    );
+    // The hidden reviewer gets no pane and no title.
+    expect(
+      runTmuxMock.mock.calls.some(
+        (call) => call.at(-1) === 'Reviewer · codex',
+      ),
+    ).toBe(false);
+  });
+
+  it('uses the single-player column shape when one player is initially visible (TTMUX-082)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = join(tempDir, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  initialVisible:',
+        '    - reviewer',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '  - id: reviewer',
+        '    adapter: codex',
+        '  - id: analyst',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    const workDir = join(tempDir, 'work');
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'vis2',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    // One visible player -> the two-column single-player shape (`[1, 1]`):
+    // a single Boss -> player split of floor(174 / 2) = 87 cells, no second
+    // column.
+    const splits = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'split-window',
+    );
+    expect(splits).toEqual([
+      [
+        'split-window',
+        '-h',
+        '-l',
+        '87',
+        '-t',
+        'tmux-play-vis2',
+        tailCommand(workDir, 'reviewer'),
+      ],
+    ]);
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      'tmux-play-vis2:0.1',
+      '-T',
+      'Reviewer · codex',
+    );
+  });
+
   it('preserves mouse selection and copies it to the system clipboard on right-click without changing clipboard policy', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);

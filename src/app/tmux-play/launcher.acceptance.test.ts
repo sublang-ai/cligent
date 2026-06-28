@@ -592,6 +592,77 @@ describe('tmux-play real-tmux acceptance', () => {
     60_000,
   );
 
+  acceptanceIt(
+    'builds startup panes only for the initial visible subset on a real tmux server (TTMUX-082)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(
+        configPath,
+        [
+          'layout:',
+          '  initialVisible:',
+          '    - analyst',
+          '    - coder',
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          '  options: {}',
+          'players:',
+          '  - id: coder',
+          '    adapter: codex',
+          '  - id: reviewer',
+          '    adapter: claude',
+          '  - id: analyst',
+          '    adapter: codex',
+          '',
+        ].join('\n'),
+      );
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      // TMUX-080 / TMUX-083: only the Boss/Captain pane plus the two visible
+      // players have panes; the hidden `reviewer` has none.
+      const panes = listPanes(sessionName);
+      expect(panes).toHaveLength(3);
+      expect(panes.map((pane) => pane.title)).not.toContain('Reviewer · claude');
+
+      const captain = paneByTitle(panes, 'Captain · claude');
+      const analyst = paneByTitle(panes, 'Analyst · codex');
+      const coder = paneByTitle(panes, 'Coder · codex');
+
+      // Two visible players -> the three-column multi-player shape (58/58/58),
+      // panes placed in `initialVisible` order: analyst first, coder second.
+      expect(captain.left).toBe(0);
+      expect(analyst.left).toBe(58);
+      expect(coder.left).toBe(116);
+
+      // Visible player panes are read-only; the Boss/Captain pane keeps focus.
+      expect(captain.inputOff).toBe('0');
+      expect(analyst.inputOff).toBe('1');
+      expect(coder.inputOff).toBe('1');
+      expect(captain.active).toBe('1');
+      expect(analyst.active).toBe('0');
+      expect(coder.active).toBe('0');
+    },
+    60_000,
+  );
+
   attachedClientIt(
     'forwards single-press Ctrl+C and Escape to pane 0 through root and copy-mode key tables (TMUX-065, TMUX-070)',
     async () => {

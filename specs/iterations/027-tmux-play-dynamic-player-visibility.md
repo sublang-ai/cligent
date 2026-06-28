@@ -60,8 +60,8 @@ Out of scope (per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.
 - [x] `specs/map.md` — IR-027 indexed (done in this authoring step); TMUX / TTMUX package summaries refreshed to mention dynamic player visibility.
 - [x] `src/app/tmux-play/config.ts` — `layout.singlePlayerColumnWeights` / `layout.multiPlayerColumnWeights`, `columnWeights` alias + conflict rejection + resolution precedence, `layout.initialVisible`, visible-shape-driven weight validation, home-config migration rewrite, default-config update, snapshot inclusion.
 - [x] `src/app/tmux-play/config.test.ts` — TTMUX-079 / TTMUX-080 / TTMUX-081 loader, migration, and default cases.
-- [ ] `src/app/tmux-play/launcher.ts` — startup panes from the resolved initial visible set; extracted reusable player-area build routine.
-- [ ] `src/app/tmux-play/launcher.test.ts` + `launcher.acceptance.test.ts` — TTMUX-082 startup-visibility geometry / ordering.
+- [x] `src/app/tmux-play/launcher.ts` — startup panes from the resolved initial visible set; extracted reusable player-area build routine.
+- [x] `src/app/tmux-play/launcher.test.ts` + `launcher.acceptance.test.ts` — TTMUX-082 startup-visibility geometry / ordering.
 - [ ] `src/app/tmux-play/contract.ts` — `setVisiblePlayers` on `CaptainSession` and `CaptainContext`.
 - [ ] `src/app/tmux-play/records.ts` — `PlayerViewChangedRecord` added to `TmuxPlayRecord`.
 - [ ] `src/app/tmux-play/runtime.ts` — validate IDs, emit `player_view_changed`, reject-before-emit, scope-correct `turnId`; wire both contract scopes.
@@ -103,7 +103,7 @@ Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, a
    Carry `initialVisible` and the resolved visible set in the config snapshot for session mode.
    Cover TTMUX-080 in `config.test.ts`.
 
-5. [ ] **Launcher — startup panes from the initial visible set.**
+5. [x] **Launcher — startup panes from the initial visible set.**
    In `src/app/tmux-play/launcher.ts` build the startup player panes for the resolved initial visible set in `initialVisible` order (not the whole roster), deriving geometry from that set, and extract the single-Boss-pane → N-player-panes build (split sequence, `tail` command, titles, timer options, read-only input, mouse bindings, layout hooks, Boss focus) into a reusable routine the `LayoutObserver` will call.
    Update `launcher.test.ts` and `launcher.acceptance.test.ts` for TTMUX-082 (startup geometry and ordering for a configured `initialVisible` subset, and the all-visible default).
 

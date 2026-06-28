@@ -237,7 +237,7 @@ interface BuildTmuxSessionOptions {
 function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   const players = options.loaded.config.players;
   const layout = options.loaded.config.layout;
-  const sizes = computeLayoutSizes(layout, players.length);
+  const visiblePlayers = resolveVisiblePlayers(players, layout.initialVisible);
   const bossCommand = buildSessionCommand(options);
   const c = options.palette;
 
@@ -245,31 +245,29 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     'new-session',
     '-d',
     '-x',
-    String(sizes.windowColumns),
+    String(layout.window.columns),
     '-y',
-    String(sizes.windowRows),
+    String(layout.window.rows),
     '-s',
     options.sessionName,
     bossCommand,
   );
-  const playerPanes = createPlayerPanes(
-    options.sessionName,
-    options.workDir,
-    players,
-    sizes,
-  );
-  setPaneTitles(
-    options.sessionName,
-    playerPanes,
-    options.loaded.config.captain.adapter,
-  );
-  setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
-  disablePlayerPaneInput(options.sessionName, playerPanes);
-  configureMouseInteraction(options.sessionName, playerPanes.length + 1);
+  // TMUX-080 / TMUX-083: the player area is built from the resolved initial
+  // visible set (not the whole roster) by a routine the layout observer reuses
+  // on a visibility change. Its splits run first so they stay the calls right
+  // after `new-session`; the session-wide chrome and key bindings below run
+  // once and persist across a later rebuild; Boss focus is the final command.
+  buildPlayerArea({
+    sessionName: options.sessionName,
+    workDir: options.workDir,
+    visiblePlayers,
+    layout,
+    captainAdapter: options.loaded.config.captain.adapter,
+    themeFlavor: options.themeFlavor,
+  });
   configureBossPaneSwitchKeys(options.sessionName);
   configureBossPaneForwardKey(options.sessionName, 'C-c');
   configureBossPaneForwardKey(options.sessionName, 'Escape');
-  configureLayoutHooks(options.sessionName, layout.columnWeights);
   applyCatppuccinTheme(options.sessionName, c);
   runTmux(
     'set-window-option',
@@ -299,6 +297,73 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   runTmux('set', '-t', options.sessionName, 'window-status-current-format', '');
   runTmux('set', '-t', options.sessionName, 'window-status-separator', '');
   selectBossPane(options.sessionName);
+}
+
+interface PlayerAreaOptions {
+  readonly sessionName: string;
+  readonly workDir: string;
+  readonly visiblePlayers: readonly PlayerConfig[];
+  readonly layout: LayoutConfig;
+  readonly captainAdapter: string;
+  readonly themeFlavor: CatppuccinFlavor;
+}
+
+// TMUX-083: build the player area from a single Boss/Captain pane — the split
+// sequence, per-pane `tail` view, titles, timer options, read-only input,
+// mouse bindings, and weighted resize hooks for the visible set. The launcher
+// runs this at startup with the initial visible set; the layout observer
+// reruns it after killing the prior player panes on a visibility change. Boss
+// focus is applied by the caller so it stays the final command of a rebuild.
+function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
+  const weights = activeColumnWeightsFor(
+    options.layout,
+    options.visiblePlayers.length,
+  );
+  const sizes = computeLayoutSizes(
+    options.layout.window,
+    weights,
+    options.visiblePlayers.length,
+  );
+  const playerPanes = createPlayerPanes(
+    options.sessionName,
+    options.workDir,
+    options.visiblePlayers,
+    sizes,
+  );
+  setPaneTitles(options.sessionName, playerPanes, options.captainAdapter);
+  setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
+  disablePlayerPaneInput(options.sessionName, playerPanes);
+  configureMouseInteraction(options.sessionName, playerPanes.length + 1);
+  configureLayoutHooks(options.sessionName, weights);
+  return playerPanes;
+}
+
+// Active-shape column weights for the visible-column count: one visible player
+// -> single-player shape, two or more -> multi-player shape (TMUX-028).
+function activeColumnWeightsFor(
+  layout: LayoutConfig,
+  visibleCount: number,
+): readonly number[] {
+  return visibleCount === 1
+    ? layout.singlePlayerColumnWeights
+    : layout.multiPlayerColumnWeights;
+}
+
+// Map the resolved visible player ids to their PlayerConfig in visible order
+// (TMUX-080). Config validation guarantees the ids are a subset of the roster;
+// the guard keeps the launcher honest if a caller passes an unknown id.
+function resolveVisiblePlayers(
+  players: readonly PlayerConfig[],
+  visibleIds: readonly string[],
+): PlayerConfig[] {
+  const byId = new Map(players.map((player) => [player.id, player]));
+  return visibleIds.map((id) => {
+    const player = byId.get(id);
+    if (!player) {
+      throw new Error(`tmux-play: visible player id "${id}" is not configured`);
+    }
+    return player;
+  });
 }
 
 // Catppuccin palette family: https://catppuccin.com/palette/
@@ -1145,20 +1210,20 @@ interface LayoutSizes {
 // not `floor(W * w_2 / sum)`, so first-column region = total - boss -
 // second equals `floor(W * w_1 / sum)` exactly.
 function computeLayoutSizes(
-  layout: LayoutConfig,
-  playerCount: number,
+  window: LayoutConfig['window'],
+  weights: readonly number[],
+  visibleCount: number,
 ): LayoutSizes {
-  const W = layout.window.columns;
-  const weights = layout.columnWeights;
+  const W = window.columns;
   const sum = weights.reduce((acc, value) => acc + value, 0);
   const bossColumnSize = Math.floor((W * (weights[0] ?? 1)) / sum);
   const playerAreaSize = W - bossColumnSize;
-  if (playerCount < 2) {
+  if (visibleCount < 2) {
     // Single-player layout has no second column; the second-split branch is
     // unused, but emitting a sentinel keeps the type total.
     return {
       windowColumns: W,
-      windowRows: layout.window.rows,
+      windowRows: window.rows,
       playerAreaSize,
       secondColumnSize: 0,
     };
@@ -1167,7 +1232,7 @@ function computeLayoutSizes(
   const secondColumnSize = playerAreaSize - firstColumnSize;
   return {
     windowColumns: W,
-    windowRows: layout.window.rows,
+    windowRows: window.rows,
     playerAreaSize,
     secondColumnSize,
   };
