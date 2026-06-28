@@ -37,6 +37,7 @@ meta.md     The spec of specs
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; no project-wide default |
 | DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode `ambient`), with Codex profile enforcement the release bar |
+| DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
 
 ## Iterations
 
