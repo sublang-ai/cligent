@@ -70,7 +70,12 @@ export class LayoutObserver implements RecordObserver {
       // aborted, and leave the tracked list unchanged so a later successful
       // visibility change recovers. The per-player logs remain the durable
       // output record (TMUX-084).
-      this.options.onError?.(error);
+      try {
+        this.options.onError?.(error);
+      } catch {
+        // Surfacing the failure must not itself throw into record dispatch and
+        // re-break the display-only / non-aborting guarantee.
+      }
     }
   }
 

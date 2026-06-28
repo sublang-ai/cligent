@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
+  appendFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -749,13 +750,30 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(panes).toHaveLength(2);
       expect(paneByTitle(panes, 'Analyst · codex').title).toBe('Analyst · codex');
 
-      // Re-show a previously hidden player (coder): its pane is reconstructed
-      // from coder.log, and analyst's pane is gone.
+      // Re-show a previously hidden player (coder). Seed coder.log while it is
+      // hidden so the rebuilt pane must replay it from the log tail, not show
+      // an empty pane (TMUX-084: the backlog lives in the log, not scrollback).
+      const replayMarker = `coder-replay-${randomBytes(4).toString('hex')}`;
+      appendFileSync(join(workDir, 'coder.log'), `${replayMarker}\n`);
       observer.onRecord(viewChanged(['coder']));
       panes = listPanes(sessionName);
       expect(panes).toHaveLength(2);
-      expect(paneByTitle(panes, 'Coder · codex').inputOff).toBe('1');
+      const coderPane = paneByTitle(panes, 'Coder · codex');
+      expect(coderPane.inputOff).toBe('1');
       expect(panes.map((pane) => pane.title)).not.toContain('Analyst · codex');
+
+      // TMUX-083 / TTMUX-085: the reconstructed pane renders the recent tail of
+      // coder.log via the bounded `tail -n 200 -f` replay. Poll capture-pane
+      // since `tail -f` paints the pane asynchronously after the split.
+      let captured = '';
+      for (let attempt = 0; attempt < 50; attempt++) {
+        captured = capturePane(sessionName, coderPane.index);
+        if (captured.includes(replayMarker)) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(captured).toContain(replayMarker);
     },
     60_000,
   );

@@ -158,4 +158,20 @@ describe('LayoutObserver', () => {
     observer.onRecord(viewChanged(['coder', 'reviewer']));
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
+
+  it('swallows a throwing onError so the failure reporter cannot abort dispatch (TMUX-083)', () => {
+    runTmuxMock.mockImplementation((...args: unknown[]) => {
+      if (args[0] === 'kill-pane') {
+        throw new Error('boom');
+      }
+    });
+    const observer = makeObserver({
+      onError: () => {
+        throw new Error('reporter exploded');
+      },
+    });
+    // The rebuild fails and the onError reporter also throws; neither may
+    // escape onRecord into the dispatcher.
+    expect(() => observer.onRecord(viewChanged(['analyst']))).not.toThrow();
+  });
 });
