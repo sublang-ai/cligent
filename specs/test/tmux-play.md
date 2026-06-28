@@ -519,6 +519,14 @@ Given a YAML config that sets both `layout.columnWeights` and the canonical fiel
 Given a two-element `layout.columnWeights` alongside an explicit `layout.multiPlayerColumnWeights` (or a three-element `columnWeights` alongside `singlePlayerColumnWeights`) — aliases targeting different shapes — the loader shall accept the config and resolve each shape from its own source.
 Given a `layout.columnWeights` whose length is neither `2` nor `3`, a `layout.singlePlayerColumnWeights` not of length `2`, a `layout.multiPlayerColumnWeights` not of length `3`, or any non-positive-integer weight in any of these fields, the loader shall reject the config with an error naming the offending path per [TMUX-008](../user/tmux-play.md#tmux-008).
 
+### TTMUX-080
+Verifies: [TMUX-080](../user/tmux-play.md#tmux-080), [TMUX-064](../user/tmux-play.md#tmux-064), [TMUX-028](../user/tmux-play.md#tmux-028)
+
+Given a YAML config whose `layout.initialVisible` names a non-empty, duplicate-free subset of configured player IDs, when the config is loaded the resolved startup-visible set shall equal that list in its given order, and the snapshot per [TMUX-034](../user/tmux-play.md#tmux-034) shall carry that list.
+Given a config that omits `layout.initialVisible`, the resolved startup-visible set shall be every configured player in `players` order.
+Given a `layout.initialVisible` that is empty, contains a duplicate, or names an ID absent from `players`, the loader shall reject the config with an error naming the offending path per [TMUX-008](../user/tmux-play.md#tmux-008).
+Given a `layout.initialVisible` that selects a single player from a multi-player roster, the resolved visible-column shape shall be the two-column single-player shape and the resolved weights shall come from `singlePlayerColumnWeights` per [TMUX-064](../user/tmux-play.md#tmux-064); given one that selects two or more, the shape shall be the three-column multi-player shape and the weights shall come from `multiPlayerColumnWeights`.
+
 ### TTMUX-081
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-064](../user/tmux-play.md#tmux-064)
 
@@ -527,6 +535,38 @@ Given an existing home config loaded through fallback discovery that carries a l
 The migration shall write exactly one final YAML form; at no point shall the on-disk file contain both `layout.columnWeights` and the matching canonical field.
 Given an existing home config that already carries both `layout.columnWeights` and the matching canonical field, the launcher shall not rewrite it to resolve the conflict and the load shall be rejected per [TMUX-064](../user/tmux-play.md#tmux-064) with an error naming the conflicting `layout` paths.
 Given an explicit `--config` file or a cwd project config that carries a legacy `layout.columnWeights`, the launcher shall not mutate that file; the config shall remain valid through the [TMUX-064](../user/tmux-play.md#tmux-064) alias.
+
+## Dynamic Player Visibility
+
+### TTMUX-082
+Verifies: [TMUX-080](../user/tmux-play.md#tmux-080), [TMUX-028](../user/tmux-play.md#tmux-028), [TMUX-064](../user/tmux-play.md#tmux-064)
+
+Given a YAML config with three configured players and `layout.initialVisible: [b, a]` (a two-player subset in that order), when `launchTmuxPlay({ attach: false })` builds the session on a real tmux server, the main window shall contain the Boss/Captain pane plus exactly two player panes created in the order `b` then `a`, each tailing its own `<player>.log`, and the third configured player shall have no pane.
+Given a config that omits `layout.initialVisible`, the launcher shall create one player pane per configured player in `players` order, reproducing the prior startup topology.
+The startup column geometry shall follow the visible-column shape of the startup-visible set per [TMUX-028](../user/tmux-play.md#tmux-028) — a two-player visible set yields the three-column multi-player shape, a one-player visible set yields the two-column single-player shape — using the resolved weights per [TMUX-064](../user/tmux-play.md#tmux-064).
+
+### TTMUX-083
+Verifies: [TMUX-081](../user/tmux-play.md#tmux-081), [TMUX-082](../user/tmux-play.md#tmux-082)
+
+Given a running runtime driven headlessly per [TMUX-029](../user/tmux-play.md#tmux-029) and a Captain that calls `setVisiblePlayers` with a non-empty, duplicate-free subset of configured player IDs, the call shall resolve and the runtime shall emit exactly one `player_view_changed` record whose `visiblePlayerIds` equals the requested list in order.
+A call from `CaptainContext` during a turn shall carry that turn's `turnId: number`; a call from `CaptainSession` outside a turn shall carry `turnId: null`.
+Given a call whose argument is empty, contains a duplicate, or names an unknown player ID, the returned Promise shall reject, no `player_view_changed` record shall be emitted, and the tracked visible set shall be unchanged; a Captain that catches the rejection shall be able to continue the turn.
+Across an accepted call, the runtime shall not alter the configured `players` roster, the `players` manifest exposed to the Captain, or any player's `Cligent` continuity.
+
+### TTMUX-084
+Verifies: [TMUX-082](../user/tmux-play.md#tmux-082)
+
+Given the presenter, follow, timing, and notification observers registered in session mode, when a `player_view_changed` record is dispatched the presenter shall write no bytes to the Boss/Captain-pane writer, the follow observer shall issue no copy-mode-exit / live-tail command, the timing observer shall not change any pane or status timer option, and the notification observer shall emit no sound, desktop notification, or terminal BEL.
+This shall hold whether the record carries a `turnId: number` or `turnId: null`.
+
+### TTMUX-085
+Verifies: [TMUX-083](../user/tmux-play.md#tmux-083), [TMUX-084](../user/tmux-play.md#tmux-084)
+
+Given a real tmux server with a Boss/Captain pane plus player panes for an initial visible set, when the layout observer handles a `player_view_changed` whose `visiblePlayerIds` differs from the tracked set, the observer shall kill every main-window pane except the Boss/Captain pane and recreate one read-only pane per requested player in `visiblePlayerIds` order, each running `tail -n 200 -f <player>.log`, with pane titles, timer options, read-only input, mouse-selection bindings, layout hooks, and Boss-pane focus reapplied.
+Given a `player_view_changed` whose `visiblePlayerIds` equals the tracked set in the same order, the observer shall issue no tmux commands.
+Given a player that was hidden and is then named in a later `visiblePlayerIds`, its recreated pane shall display the recent tail of its `<player>.log` — the durable backlog living in the log file, not in tmux pane scrollback — per [TMUX-084](../user/tmux-play.md#tmux-084).
+Given a tmux command failure mid-rebuild, the observer shall not throw into record dispatch and shall not abort the Boss turn, and the tracked visible set shall not advance for an incomplete reconciliation.
+Given an awaited `setVisiblePlayers(next)` followed by a `callPlayer()` for a newly visible player, the successful pane rebuild shall complete before that player's `player_prompt` / `player_event` records are presented, per [TMUX-083](../user/tmux-play.md#tmux-083)'s ordered-dispatch guarantee.
 
 ## Boss Input Keybindings
 

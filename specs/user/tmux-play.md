@@ -60,6 +60,16 @@ To express a fractional ratio, the config author shall scale it to positive inte
 The loader shall reject values outside these constraints with an error that names the offending path per [TMUX-008](#tmux-008): non-integer or non-positive `layout.window.columns` / `layout.window.rows`; a `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, or `columnWeights` that is not an array; any weight that is not a positive integer (rejects NaN, Infinity, decimals like `0.5`, zero, negatives, and non-number types); a `singlePlayerColumnWeights` whose length is not `2` or a `multiPlayerColumnWeights` whose length is not `3`; a `layout.columnWeights` length other than `2` or `3`; and a `layout.columnWeights` present alongside the canonical field for the same shape.
 The snapshot per [TMUX-034](#tmux-034) shall carry the resolved `layout.window.columns`, `layout.window.rows`, `layout.singlePlayerColumnWeights`, and `layout.multiPlayerColumnWeights` values verbatim, so session mode never re-resolves defaults and can render either visible-column shape after a runtime visibility change.
 
+### TMUX-080
+
+`layout.initialVisible` shall be an optional array of player IDs drawn from the configured `players` roster per [TMUX-007](#tmux-007), naming the players whose panes the launcher creates at session startup.
+When present, `layout.initialVisible` shall be non-empty and duplicate-free and shall name only configured player IDs; the loader shall reject an empty array, a duplicate, or an unknown ID with an error that names the offending path per [TMUX-008](#tmux-008).
+When `layout.initialVisible` is omitted, the startup-visible set shall be every configured player in `players` order, preserving the prior all-players-visible behavior.
+When `layout.initialVisible` is present, its array order shall be the startup player-pane order; when it is omitted, configured `players` order shall be the startup player-pane order.
+The startup visible-column shape per [TMUX-028](#tmux-028), and thus the weight preset selected per [TMUX-064](#tmux-064), shall derive from the size of the startup-visible set rather than the configured roster size.
+`tmux-play` shall not support a zero-player visible layout: an empty visible set is rejected at load here, and `setVisiblePlayers` per [TMUX-081](#tmux-081) shall likewise reject an empty set at runtime.
+The snapshot per [TMUX-034](#tmux-034) shall carry the resolved startup-visible player ID list so session mode and the [TMUX-083](#tmux-083) layout observer share the launcher's startup visible set.
+
 ### TMUX-076
 
 The top-level `notifications` field shall be a map from tmux-play record notification events to sinks.
@@ -133,11 +143,19 @@ The runtime shall own every player and Captain `Cligent` instance. Captains shal
 
 ### TMUX-016
 
-`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt, options?)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033). `callCaptain`'s optional `options` is a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072); `callPlayer` takes no such option.
+`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt, options?)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033). `callCaptain`'s optional `options` is a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072); `callPlayer` takes no such option. `CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081), a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
 
 ### TMUX-017
 
-`CaptainSession` shall expose a session-scoped `signal: AbortSignal`, a readonly `players` manifest, and `emitStatus(message, data?)` and `emitTelemetry({ topic, payload })` methods. Captains may retain the session reference from `init` and emit at any point during the session — within `init`, during turns, or between turns.
+`CaptainSession` shall expose a session-scoped `signal: AbortSignal`, a readonly `players` manifest, and `emitStatus(message, data?)` and `emitTelemetry({ topic, payload })` methods. Captains may retain the session reference from `init` and emit at any point during the session — within `init`, during turns, or between turns. `CaptainSession` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081) for visibility phase setup in `init()` or between Boss turns.
+
+### TMUX-081
+
+When a Captain calls `setVisiblePlayers(playerIds)` on [TMUX-016](#tmux-016)'s `CaptainContext` or [TMUX-017](#tmux-017)'s `CaptainSession`, the runtime shall validate that `playerIds` is a non-empty, duplicate-free subset of the configured player IDs.
+When validation fails, the returned Promise shall reject before any record is emitted, and the visible set shall remain unchanged; a Captain may catch the rejection and continue, and an uncaught rejection shall follow the normal Captain failure path per [TMUX-025](#tmux-025).
+When validation succeeds, the runtime shall emit exactly one `player_view_changed` record per [TMUX-082](#tmux-082) carrying the requested visible player IDs in order.
+A call from `CaptainContext` shall carry the active turn ID; a call from `CaptainSession` shall carry the active turn ID when a turn is active and `null` otherwise, matching [TMUX-021](#tmux-021)'s convention for `captain_status` and `captain_telemetry`.
+`setVisiblePlayers` shall change only which configured players have panes in the main tmux window; it shall not alter the configured `players` roster, the runtime player map, per-player log streams, the `players` manifest exposed through `CaptainContext` / `CaptainSession`, or any player's `Cligent` continuity.
 
 ### TMUX-018
 
@@ -151,11 +169,11 @@ On session shutdown the runtime shall (1) unwind the active turn, (2) abort `Cap
 
 ### TMUX-020
 
-The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_status`, `captain_telemetry`, `runtime_error`. Each record shall carry a stable player ID where applicable.
+The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_status`, `captain_telemetry`, `player_view_changed`, `runtime_error`. Each record shall carry a stable player ID where applicable.
 
 ### TMUX-021
 
-Turn-bound records shall carry `turnId: number`. `captain_status` and `captain_telemetry` emitted outside an active turn shall carry `turnId: null`.
+Turn-bound records shall carry `turnId: number`. `captain_status`, `captain_telemetry`, and `player_view_changed` emitted outside an active turn shall carry `turnId: null`, and shall carry `turnId: number` when emitted during an active turn.
 
 ### TMUX-022
 
@@ -189,6 +207,30 @@ Every desktop notification shall use the lowercase title `spex`, distinct from t
 The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
 The notification observer shall not notify for `runtime_error` records.
 
+### TMUX-082
+
+A `player_view_changed` record shall carry `type: 'player_view_changed'`, a `turnId: number | null` per [TMUX-021](#tmux-021), a `timestamp`, and a `visiblePlayerIds: readonly string[]` listing the requested visible players in order.
+The runtime shall emit exactly one `player_view_changed` record for each accepted `setVisiblePlayers` call per [TMUX-081](#tmux-081) and shall emit none for a rejected call.
+The runtime shall validate and emit only; it shall not inspect or mutate tmux panes, which is the [TMUX-083](#tmux-083) layout observer's responsibility.
+Observers that do not participate in layout reconciliation shall ignore `player_view_changed`: the tmux presenter shall write no Boss/Captain-pane content for it per [TMUX-040](#tmux-040), the follow observer shall return no pane to its live tail for it per [TMUX-069](#tmux-069), the timing observer shall not alter any timer for it per [TMUX-071](#tmux-071), and the notification observer shall not notify for it per [TMUX-077](#tmux-077).
+`player_view_changed` shall export from the `@sublang/cligent/tmux-play` record types per [TMUX-029](#tmux-029).
+
+### TMUX-083
+
+Where session mode is running, the session shall register a layout observer with the other record observers per [TMUX-023](#tmux-023); the layout observer shall consume `player_view_changed` records per [TMUX-082](#tmux-082) and own every tmux operation that reconciles the visible player panes.
+The layout observer shall be display-only: it shall swallow or surface tmux failures as best-effort status, and a tmux failure shall not abort a Boss turn.
+On each accepted visibility change the observer shall perform a full player-area rebuild: enumerate the panes in the main tmux window and kill every pane except the Boss/Captain pane; recreate panes for the record's `visiblePlayerIds` in order using the same split sequence as launcher startup per [TMUX-028](#tmux-028); run each recreated pane as a bounded recent-log view `tail -n 200 -f <player>.log`; and reapply player pane titles, timer options, read-only input, mouse-selection bindings, layout hooks, and Boss-pane focus.
+The observer shall track the current visible player ID list, initialized from the launcher's startup-visible set per [TMUX-080](#tmux-080), and shall advance that list only after a reconciliation in which every requested player pane was recreated and configured; an incomplete best-effort reconciliation shall not advance the tracked list even when the handler returns without throwing.
+When a `player_view_changed` record repeats the tracked list in the same order, the observer shall treat it as a no-op and issue no tmux commands.
+Because observer dispatch is ordered and awaited per [TMUX-023](#tmux-023), when a Captain awaits `setVisiblePlayers(next)` and then calls `callPlayer()` for a newly visible player, a successful rebuild shall complete before that player's later `player_prompt` / `player_event` records are presented; when the rebuild fails, later player output shall still reach the player's log stream and a later successful visibility change shall be the recovery path.
+The `200`-line replay count shall be fixed and shall not be a YAML or Captain-API option.
+
+### TMUX-084
+
+While a configured player is hidden — not in the startup-visible set per [TMUX-080](#tmux-080), or dropped from a later `visiblePlayerIds` per [TMUX-082](#tmux-082) — the player shall remain a live runtime entity and its output shall continue to accumulate in its per-player log stream when it is called, but its tmux pane shall not remain live.
+When a hidden player becomes visible again, the [TMUX-083](#tmux-083) layout observer shall reconstruct a new read-only pane from the recent `tail -n 200` log view, and the player's full backlog shall remain available in its log file rather than in tmux pane scrollback.
+`tmux-play` shall not preserve a hidden pane's tmux scrollback, copy-mode state, active selection, or exact viewport across a hide/show cycle.
+
 ### TMUX-026
 
 When SIGINT, SIGTERM, or stdin EOF reaches the session, the runtime shall abort the active turn, run shutdown per [TMUX-019](#tmux-019), kill the tmux session, and remove launcher-owned work directories.
@@ -203,7 +245,7 @@ The Boss/Captain pane shall occupy the left column. Player panes shall fill the 
 
 With two or more visible players, `tmux-play` shall use two player columns; with a single visible player, `tmux-play` shall use one player column.
 The visible columns from left to right shall be the Boss/Captain pane followed by each player column, and the first player column shall hold `ceil(visiblePlayerCount / 2)` visible players from top to bottom.
-The visible player set is the startup-visible subset per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.md) — defaulting to all configured players — and may change during the session; the configured `players` roster does not by itself fix the visible-column count.
+The visible player set is the startup-visible subset per [TMUX-080](#tmux-080) — defaulting to all configured players — and may change during the session via `player_view_changed` per [TMUX-082](#tmux-082); the configured `players` roster does not by itself fix the visible-column count.
 Each visible column's share of the window width shall derive from [TMUX-064](#tmux-064)'s resolved column weights for the current visible-column shape (the two-column shape uses `singlePlayerColumnWeights`, the three-column shape uses `multiPlayerColumnWeights`), applied left-to-right: with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` (where `w_0` is the Boss/Captain column), each non-rightmost column `i < N-1` shall occupy `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column shall absorb the remainder.
 The defaults are `[1, 1]` for one visible player (Boss/Captain and the player each occupy 1/2 of the window width, matching the prior behavior) and `[1, 1, 1]` for two or more visible players (Boss/Captain and each player column each occupy 1/3 of the window width, rightmost absorbing the remainder).
 
