@@ -69,6 +69,11 @@ export interface LayoutWindowConfig {
  * defaults at normalization time so the snapshot per TMUX-034 always
  * carries concrete values for session mode to consume.
  *
+ * `initialVisible` (TMUX-080) is the resolved startup-visible player IDs
+ * in pane order, defaulting to every configured player in `players`
+ * order when `layout.initialVisible` is omitted. The visible-column
+ * shape derives from this set's size, not the configured roster size.
+ *
  * `singlePlayerColumnWeights` (length 2) and `multiPlayerColumnWeights`
  * (length 3) are the canonical shape-specific weights; both are always
  * resolved so the snapshot can render either visible-column shape. The
@@ -78,12 +83,13 @@ export interface LayoutWindowConfig {
  * matching alias, then the default.
  *
  * `columnWeights` is the active shape's resolved weights, selected here
- * by the configured player count (one player -> single, two or more ->
- * multi). IR-027 Task 5 re-selects the active weights from the visible
- * set rather than the roster; until then the launcher reads this field.
+ * by the resolved initial visible set size (one visible player ->
+ * single, two or more -> multi). IR-027 Task 5 wires the launcher to
+ * render that visible set; until then the launcher reads this field.
  */
 export interface LayoutConfig {
   window: LayoutWindowConfig;
+  initialVisible: string[];
   singlePlayerColumnWeights: number[];
   multiPlayerColumnWeights: number[];
   columnWeights: number[];
@@ -148,6 +154,10 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
   },
   layout: {
     window: { columns: 174, rows: 49 },
+    // Resolved startup-visible set (TMUX-080): all configured players in
+    // order. `defaultHomeConfigValue` strips it so the authored YAML omits it
+    // (every player visible by default).
+    initialVisible: ['claude', 'codex'],
     // Canonical shape-specific weights (TMUX-064). The shipped multi-player
     // default is equal-thirds [1, 1, 1] (Boss/Captain and each player column
     // each take floor(W / 3), rightmost absorbing the remainder); the
@@ -384,10 +394,15 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
     input.notifications,
     'notifications',
   );
-  // TMUX-064: defaulting at load time so loaded.config.layout is always
-  // concrete. The shape depends on players.length (1 → 2 columns, ≥2 → 3
-  // columns); validation rejects a mismatched columnWeights length.
-  const layout = resolveLayoutConfig(input.layout, players.length, 'layout');
+  // TMUX-064 / TMUX-080: defaulting at load time so loaded.config.layout is
+  // always concrete. The visible-column shape depends on the resolved initial
+  // visible set size (1 → 2 columns, ≥2 → 3 columns); `layout.initialVisible`
+  // is validated against the configured player ids.
+  const layout = resolveLayoutConfig(
+    input.layout,
+    players.map((player) => player.id),
+    'layout',
+  );
   const config: TmuxPlayConfig = { captain, players, notifications, layout };
   if (theme !== undefined) config.theme = theme;
   return config;
@@ -435,29 +450,29 @@ const DEFAULT_MULTI_PLAYER_WEIGHTS: readonly number[] = [1, 1, 1];
 
 const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 174, rows: 49 };
 
-// Active-shape weights keyed to the configured roster (IR-027 Task 3): one
-// player -> single-player shape, two or more -> multi-player shape. Task 5
-// re-keys this to the visible set.
+// Active-shape weights keyed to the visible-column count (IR-027 Task 4): one
+// visible player -> single-player shape, two or more -> multi-player shape.
 function activeColumnWeights(
-  playerCount: number,
+  visibleCount: number,
   single: readonly number[],
   multi: readonly number[],
 ): number[] {
-  return playerCount === 1 ? [...single] : [...multi];
+  return visibleCount === 1 ? [...single] : [...multi];
 }
 
 function resolveLayoutConfig(
   value: unknown,
-  playerCount: number,
+  playerIds: readonly string[],
   path: string,
 ): LayoutConfig {
   if (value === undefined) {
     return {
       window: { ...DEFAULT_LAYOUT_WINDOW },
+      initialVisible: [...playerIds],
       singlePlayerColumnWeights: [...DEFAULT_SINGLE_PLAYER_WEIGHTS],
       multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
       columnWeights: activeColumnWeights(
-        playerCount,
+        playerIds.length,
         DEFAULT_SINGLE_PLAYER_WEIGHTS,
         DEFAULT_MULTI_PLAYER_WEIGHTS,
       ),
@@ -467,6 +482,7 @@ function resolveLayoutConfig(
   const input = requireObject(value, path);
   const allowed = new Set([
     'window',
+    'initialVisible',
     'singlePlayerColumnWeights',
     'multiPlayerColumnWeights',
     'columnWeights',
@@ -474,6 +490,11 @@ function resolveLayoutConfig(
   rejectUnknownKeys(input, allowed, path);
 
   const window = resolveLayoutWindow(input.window, `${path}.window`);
+  const initialVisible = resolveInitialVisible(
+    input.initialVisible,
+    playerIds,
+    `${path}.initialVisible`,
+  );
 
   // Canonical shape-specific fields, each validated to its fixed length
   // (TMUX-064) independent of the configured player count.
@@ -533,14 +554,52 @@ function resolveLayoutConfig(
 
   return {
     window,
+    initialVisible,
     singlePlayerColumnWeights,
     multiPlayerColumnWeights,
     columnWeights: activeColumnWeights(
-      playerCount,
+      initialVisible.length,
       singlePlayerColumnWeights,
       multiPlayerColumnWeights,
     ),
   };
+}
+
+function resolveInitialVisible(
+  value: unknown,
+  playerIds: readonly string[],
+  path: string,
+): string[] {
+  // TMUX-080: omitted -> every configured player visible, in `players` order.
+  if (value === undefined) {
+    return [...playerIds];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array of configured player ids`);
+  }
+  if (value.length === 0) {
+    throw new Error(
+      `${path} must name at least one player; tmux-play has no zero-player visible layout`,
+    );
+  }
+  const known = new Set(playerIds);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const id: unknown = value[i];
+    if (typeof id !== 'string') {
+      throw new Error(`${path}[${i}] must be a string player id`);
+    }
+    if (!known.has(id)) {
+      throw new Error(`${path}[${i}] "${id}" is not a configured player id`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`${path}[${i}] "${id}" is a duplicate player id`);
+    }
+    seen.add(id);
+    result.push(id);
+  }
+  return result;
 }
 
 function resolveLayoutWindow(
@@ -646,6 +705,7 @@ function defaultHomeConfigValue(): TmuxPlayConfig {
   // `multiPlayerColumnWeights`; the resolved single-player array and the
   // active `columnWeights` are filled back in on load, not written to disk.
   const layout = config.layout as Partial<LayoutConfig>;
+  delete layout.initialVisible;
   delete layout.singlePlayerColumnWeights;
   delete layout.columnWeights;
   return config;

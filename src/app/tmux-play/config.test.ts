@@ -57,6 +57,7 @@ function validConfig(
     // `columnWeights` alias, which resolves back to this same shape.
     layout: {
       window: { columns: 174, rows: 49 },
+      initialVisible: ['coder', 'reviewer'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
@@ -235,6 +236,7 @@ describe('tmux-play config loading', () => {
     // see the knobs.
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      initialVisible: ['claude', 'codex'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
@@ -831,6 +833,7 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.theme).toBe('auto');
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      initialVisible: ['solo'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1],
@@ -910,6 +913,7 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      initialVisible: ['coder', 'reviewer'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1, 1],
@@ -937,6 +941,7 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 174, rows: 49 },
+      initialVisible: ['solo'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
       columnWeights: [1, 1],
@@ -974,6 +979,7 @@ describe('tmux-play config loading', () => {
 
     expect(loaded.config.layout).toEqual({
       window: { columns: 200, rows: 50 },
+      initialVisible: ['coder', 'reviewer'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [3, 5, 5],
       columnWeights: [3, 5, 5],
@@ -1461,6 +1467,110 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
   });
 
+  it('resolves layout.initialVisible as a validated, ordered subset (TTMUX-080)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const sessionWorkDir = join(workDir, 'session');
+    const captain = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+    ];
+    const players = [
+      'players:',
+      '  - id: alpha',
+      '    adapter: codex',
+      '  - id: beta',
+      '    adapter: claude',
+      '  - id: gamma',
+      '    adapter: codex',
+      '',
+    ];
+    const withLayout = (layout: string[]): string =>
+      [...layout, ...captain, ...players].join('\n');
+    const noLayout = (): string => [...captain, ...players].join('\n');
+
+    // A subset in explicit order; the snapshot carries the resolved set, and
+    // two visible players keep the multi-player shape active.
+    const subsetPath = join(workDir, 'subset.yaml');
+    writeFileSync(
+      subsetPath,
+      withLayout(['layout:', '  initialVisible:', '    - gamma', '    - alpha']),
+    );
+    const subset = await loadTmuxPlayConfig({ configPath: subsetPath });
+    expect(subset.config.layout.initialVisible).toEqual(['gamma', 'alpha']);
+    expect(subset.config.layout.columnWeights).toEqual([1, 1, 1]);
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(subset, sessionWorkDir);
+    const snapshot = JSON.parse(
+      readFileSync(snapshotPath, 'utf8'),
+    ) as TmuxPlayConfig;
+    expect(snapshot.layout.initialVisible).toEqual(['gamma', 'alpha']);
+
+    // Omitted -> every configured player in `players` order.
+    const omittedPath = join(workDir, 'omitted.yaml');
+    writeFileSync(omittedPath, noLayout());
+    const omitted = await loadTmuxPlayConfig({ configPath: omittedPath });
+    expect(omitted.config.layout.initialVisible).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+    ]);
+
+    // A single visible player selects the single-player column shape.
+    const singlePath = join(workDir, 'single.yaml');
+    writeFileSync(
+      singlePath,
+      withLayout(['layout:', '  initialVisible:', '    - beta']),
+    );
+    const single = await loadTmuxPlayConfig({ configPath: singlePath });
+    expect(single.config.layout.initialVisible).toEqual(['beta']);
+    expect(single.config.layout.columnWeights).toEqual([1, 1]);
+  });
+
+  it('rejects a malformed layout.initialVisible (TTMUX-080)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const captain = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+    ];
+    const players = [
+      'players:',
+      '  - id: alpha',
+      '    adapter: codex',
+      '  - id: beta',
+      '    adapter: claude',
+      '',
+    ];
+    const withInitial = (entries: string[]): string =>
+      ['layout:', '  initialVisible:', ...entries, ...captain, ...players].join(
+        '\n',
+      );
+
+    const emptyPath = join(workDir, 'empty.yaml');
+    writeFileSync(
+      emptyPath,
+      ['layout:', '  initialVisible: []', ...captain, ...players].join('\n'),
+    );
+    const dupPath = join(workDir, 'dup.yaml');
+    writeFileSync(dupPath, withInitial(['    - alpha', '    - alpha']));
+    const unknownPath = join(workDir, 'unknown.yaml');
+    writeFileSync(unknownPath, withInitial(['    - alpha', '    - ghost']));
+
+    await expect(loadTmuxPlayConfig({ configPath: emptyPath })).rejects.toThrow(
+      'layout.initialVisible must name at least one player',
+    );
+    await expect(loadTmuxPlayConfig({ configPath: dupPath })).rejects.toThrow(
+      'layout.initialVisible[1] "alpha" is a duplicate player id',
+    );
+    await expect(
+      loadTmuxPlayConfig({ configPath: unknownPath }),
+    ).rejects.toThrow(
+      'layout.initialVisible[1] "ghost" is not a configured player id',
+    );
+  });
+
   it('rejects unknown sub-fields under layout and layout.window', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const bogusUnderLayout = join(workDir, 'bogus-layout.yaml');
@@ -1707,6 +1817,7 @@ describe('tmux-play config loading', () => {
 
     expect(snapshot.layout).toEqual({
       window: { columns: 200, rows: 50 },
+      initialVisible: ['coder', 'reviewer'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 2, 3],
       columnWeights: [1, 2, 3],

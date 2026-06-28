@@ -58,8 +58,8 @@ Out of scope (per [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.
 - [x] `specs/user/tmux-play.md` — amend TMUX-064 (weight vocabulary), TMUX-028 (visible-column shape from the visible set), TMUX-010 (migration rewrite), TMUX-011 (default canonical weight field), TMUX-016 / TMUX-017 (`setVisiblePlayers`), TMUX-020 / TMUX-021 (`player_view_changed` enumeration + `turnId`); add TMUX-080 (`layout.initialVisible`), TMUX-081 (`setVisiblePlayers` validation / rejection / scope-`turnId`), TMUX-082 (`player_view_changed` record + non-participating-observer rule), TMUX-083 (`LayoutObserver` full-rebuild semantics), TMUX-084 (hidden-pane scrollback limitation).
 - [x] `specs/test/tmux-play.md` — add TTMUX-079 (weight vocabulary + alias + conflict + precedence), TTMUX-080 (`initialVisible` loader + shape derivation), TTMUX-081 (home-config migration rewrite + default config), TTMUX-082 (launcher startup panes for the initial visible set), TTMUX-083 (`setVisiblePlayers` accept/reject + `player_view_changed` emission), TTMUX-084 (non-participating observers ignore `player_view_changed`), TTMUX-085 (`LayoutObserver` real-tmux full rebuild + hidden-pane reconstruction).
 - [x] `specs/map.md` — IR-027 indexed (done in this authoring step); TMUX / TTMUX package summaries refreshed to mention dynamic player visibility.
-- [ ] `src/app/tmux-play/config.ts` — `layout.singlePlayerColumnWeights` / `layout.multiPlayerColumnWeights`, `columnWeights` alias + conflict rejection + resolution precedence, `layout.initialVisible`, visible-shape-driven weight validation, home-config migration rewrite, default-config update, snapshot inclusion.
-- [ ] `src/app/tmux-play/config.test.ts` — TTMUX-079 / TTMUX-080 / TTMUX-081 loader, migration, and default cases.
+- [x] `src/app/tmux-play/config.ts` — `layout.singlePlayerColumnWeights` / `layout.multiPlayerColumnWeights`, `columnWeights` alias + conflict rejection + resolution precedence, `layout.initialVisible`, visible-shape-driven weight validation, home-config migration rewrite, default-config update, snapshot inclusion.
+- [x] `src/app/tmux-play/config.test.ts` — TTMUX-079 / TTMUX-080 / TTMUX-081 loader, migration, and default cases.
 - [ ] `src/app/tmux-play/launcher.ts` — startup panes from the resolved initial visible set; extracted reusable player-area build routine.
 - [ ] `src/app/tmux-play/launcher.test.ts` + `launcher.acceptance.test.ts` — TTMUX-082 startup-visibility geometry / ordering.
 - [ ] `src/app/tmux-play/contract.ts` — `setVisiblePlayers` on `CaptainSession` and `CaptainContext`.
@@ -97,7 +97,7 @@ Each task is one commit and keeps `npm run build`, `npm run lint`, `npm test`, a
    Cover TTMUX-079 / TTMUX-081 in `config.test.ts`.
    (Weight shape stays keyed to the configured roster in this task; Task 4 re-keys it to the visible set.)
 
-4. [ ] **Config — `layout.initialVisible` + visible-set shape.**
+4. [x] **Config — `layout.initialVisible` + visible-set shape.**
    Add `layout.initialVisible` to `config.ts`: validate it is a non-empty, duplicate-free subset of configured player IDs; default to every configured player in `players` order; preserve array order; reject malformed entries per [TMUX-008](../user/tmux-play.md#tmux-008).
    Re-key the visible-column shape (and thus the weight length / preset selection) to the resolved initial visible set instead of the roster size.
    Carry `initialVisible` and the resolved visible set in the config snapshot for session mode.
