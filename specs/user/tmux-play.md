@@ -45,7 +45,7 @@ The top-level `theme` field shall be one of the closed set `'mocha' | 'latte' | 
 
 ### TMUX-064
 
-The top-level `layout` field shall be an optional object with the optional sub-fields `window`, `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, and `columnWeights`.
+The top-level `layout` field shall be an optional object with the optional sub-fields `window`, `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, `columnWeights`, and `initialVisible` (defined in [TMUX-080](#tmux-080)).
 `layout.window` shall be an optional object with two optional positive-integer fields `columns` and `rows`, supplying the initial cell grid for [TMUX-035](#tmux-035) (`new-session -x/-y`) and the pre-attach CSI 8 sequence for [TMUX-043](#tmux-043).
 When `layout.window` is missing entirely, the loader shall default it to `{ columns: 174, rows: 49 }`.
 When `layout.window` is present but partial — only `columns` or only `rows` supplied — each missing sub-field shall default independently to its full-default value (`174` for `columns`, `49` for `rows`) and each supplied sub-field shall be preserved verbatim; a partial `layout.window` shall not fall back wholesale to the full default (e.g., `{ columns: 200 }` shall resolve to `{ columns: 200, rows: 49 }`, not to `{ columns: 174, rows: 49 }`).
