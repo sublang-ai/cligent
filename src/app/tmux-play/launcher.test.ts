@@ -37,6 +37,7 @@ vi.mock('../shared/glow.js', () => ({
 }));
 
 import {
+  buildPlayerArea,
   launchTmuxPlay,
   parseOsc11BackgroundFlavor,
   TMUX_PLAY_SESSION_MARKER,
@@ -420,6 +421,41 @@ describe('launchTmuxPlay', () => {
       '-T',
       'Reviewer · codex',
     );
+  });
+
+  it('buildPlayerArea recreates panes with a bounded tail when replayLines is set (TMUX-083 reuse surface)', () => {
+    // The layout observer (Task 7) reuses this exported routine on a visibility
+    // change, passing replayLines so a re-shown hidden player's pane renders a
+    // bounded `tail -n 200 -f` recent-log view rather than the startup `tail -f`.
+    runTmuxMock.mockReset();
+    buildPlayerArea({
+      sessionName: 'tmux-play-reuse',
+      workDir: '/work dir',
+      visiblePlayers: [
+        { id: 'alpha', adapter: 'codex' },
+        { id: 'beta', adapter: 'codex' },
+      ],
+      layout: {
+        window: { columns: 174, rows: 49 },
+        initialVisible: ['alpha', 'beta'],
+        singlePlayerColumnWeights: [1, 1],
+        multiPlayerColumnWeights: [1, 1, 1],
+        columnWeights: [1, 1, 1],
+      },
+      captainAdapter: 'claude',
+      themeFlavor: 'mocha',
+      replayLines: 200,
+    });
+
+    const splits = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'split-window',
+    );
+    expect(splits).toHaveLength(2);
+    for (const split of splits) {
+      expect(String(split.at(-1))).toContain('tail -n 200 -f');
+      // Not the unbounded startup form.
+      expect(String(split.at(-1))).not.toMatch(/tail -f/);
+    }
   });
 
   it('preserves mouse selection and copies it to the system clipboard on right-click without changing clipboard policy', async () => {

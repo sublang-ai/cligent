@@ -299,13 +299,21 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   selectBossPane(options.sessionName);
 }
 
-interface PlayerAreaOptions {
+export interface PlayerAreaOptions {
   readonly sessionName: string;
   readonly workDir: string;
   readonly visiblePlayers: readonly PlayerConfig[];
   readonly layout: LayoutConfig;
   readonly captainAdapter: string;
   readonly themeFlavor: CatppuccinFlavor;
+  /**
+   * Lines of the per-player log to replay when (re)creating a pane. Omitted
+   * for startup panes, which follow live from session start with an unbounded
+   * `tail -f`. The TMUX-083 layout observer passes `200` so a re-shown hidden
+   * player's pane renders a bounded recent-log view (`tail -n 200 -f`); the
+   * full backlog stays in the log file, not pane scrollback (TMUX-084).
+   */
+  readonly replayLines?: number;
 }
 
 // TMUX-083: build the player area from a single Boss/Captain pane — the split
@@ -314,7 +322,7 @@ interface PlayerAreaOptions {
 // runs this at startup with the initial visible set; the layout observer
 // reruns it after killing the prior player panes on a visibility change. Boss
 // focus is applied by the caller so it stays the final command of a rebuild.
-function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
+export function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
   const weights = activeColumnWeightsFor(
     options.layout,
     options.visiblePlayers.length,
@@ -329,6 +337,7 @@ function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
     options.workDir,
     options.visiblePlayers,
     sizes,
+    options.replayLines,
   );
   setPaneTitles(options.sessionName, playerPanes, options.captainAdapter);
   setTimerOptions(options.sessionName, playerPanes, options.themeFlavor);
@@ -352,7 +361,7 @@ function activeColumnWeightsFor(
 // Map the resolved visible player ids to their PlayerConfig in visible order
 // (TMUX-080). Config validation guarantees the ids are a subset of the roster;
 // the guard keeps the launcher honest if a caller passes an unknown id.
-function resolveVisiblePlayers(
+export function resolveVisiblePlayers(
   players: readonly PlayerConfig[],
   visibleIds: readonly string[],
 ): PlayerConfig[] {
@@ -689,6 +698,7 @@ function createPlayerPanes(
   workDir: string,
   players: readonly PlayerConfig[],
   sizes: LayoutSizes,
+  replayLines?: number,
 ): PlayerPane[] {
   const firstColumnCount = Math.ceil(players.length / 2);
   const playerPanes: PlayerPane[] = [];
@@ -701,7 +711,7 @@ function createPlayerPanes(
     String(sizes.playerAreaSize),
     '-t',
     sessionName,
-    tailCommand(workDir, players[0]),
+    tailCommand(workDir, players[0], replayLines),
   );
   playerPanes[0] = {
     player: requirePlayer(players[0]),
@@ -723,7 +733,7 @@ function createPlayerPanes(
     String(sizes.secondColumnSize),
     '-t',
     paneTarget(sessionName, playerPanes[0].paneIndex),
-    tailCommand(workDir, players[firstColumnCount]),
+    tailCommand(workDir, players[firstColumnCount], replayLines),
   );
   playerPanes[firstColumnCount] = {
     player: requirePlayer(players[firstColumnCount]),
@@ -737,7 +747,7 @@ function createPlayerPanes(
       '-v',
       '-t',
       paneTarget(sessionName, firstColumnLastPane),
-      tailCommand(workDir, players[i]),
+      tailCommand(workDir, players[i], replayLines),
     );
     firstColumnLastPane = nextPaneIndex++;
     playerPanes[i] = {
@@ -753,7 +763,7 @@ function createPlayerPanes(
       '-v',
       '-t',
       paneTarget(sessionName, secondColumnLastPane),
-      tailCommand(workDir, players[i]),
+      tailCommand(workDir, players[i], replayLines),
     );
     secondColumnLastPane = nextPaneIndex++;
     playerPanes[i] = {
@@ -765,7 +775,7 @@ function createPlayerPanes(
   return playerPanes;
 }
 
-interface PlayerPane {
+export interface PlayerPane {
   readonly player: PlayerConfig;
   readonly paneIndex: number;
 }
@@ -1266,13 +1276,22 @@ function configureLayoutHooks(
 function tailCommand(
   workDir: string,
   player: PlayerConfig | undefined,
+  replayLines?: number,
 ): string {
   if (!player) {
     throw new Error('tmux-play requires at least one player pane');
   }
-  return ['tail', '-f', logFilePath(workDir, player.id)]
-    .map(shellQuote)
-    .join(' ');
+  // TMUX-083 / TMUX-084: startup panes follow live from session start with an
+  // unbounded `tail -f`. When the layout observer recreates a re-shown hidden
+  // player's pane it passes `replayLines` (200) for a bounded `tail -n 200 -f`
+  // recent-log view, since the full backlog lives in the log file, not pane
+  // scrollback.
+  const path = logFilePath(workDir, player.id);
+  const args =
+    replayLines === undefined
+      ? ['tail', '-f', path]
+      : ['tail', '-n', String(replayLines), '-f', path];
+  return args.map(shellQuote).join(' ');
 }
 
 function requirePlayer(player: PlayerConfig | undefined): PlayerConfig {
