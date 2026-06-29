@@ -233,6 +233,11 @@ tmux.
 A Captain module default-exports a factory. Captains call players via
 `context`, and may retain the `CaptainSession` from `init()` to
 `emitStatus`/`emitTelemetry` from `init`, during turns, or between turns.
+Both `session` and per-turn `context` expose `setVisiblePlayers(playerIds)`;
+pass a non-empty, duplicate-free subset of configured player IDs to choose
+which player panes are visible. The roster stays unchanged, hidden players
+keep their logs, and awaiting the call lets the pane rebuild finish before
+later player output is presented.
 
 ```js
 export default function createCaptain(options = {}) {

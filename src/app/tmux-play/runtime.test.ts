@@ -885,6 +885,61 @@ describe('TmuxPlayRuntime', () => {
     expect(views[0]?.visiblePlayerIds).toEqual(['coder']);
   });
 
+  it('awaits player_view_changed observers before later player records are emitted (TTMUX-085)', async () => {
+    const order: string[] = [];
+    const viewStarted = deferred();
+    const rebuildFinished = deferred();
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        order.push('captain:before-set-visible');
+        await context.setVisiblePlayers(['reviewer']);
+        order.push('captain:after-set-visible');
+        await context.callPlayer('reviewer', 'start visible reviewer');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [
+        { id: 'coder', adapter: 'codex' },
+        { id: 'reviewer', adapter: 'claude' },
+      ],
+      observers: [
+        {
+          async onRecord(record) {
+            if (record.type === 'player_view_changed') {
+              order.push('layout:start');
+              viewStarted.resolve(undefined);
+              await rebuildFinished.promise;
+              order.push('layout:done');
+            }
+            if (record.type === 'player_prompt') {
+              order.push(`player_prompt:${record.playerId}`);
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const turn = runtime.runBossTurn('go');
+    await viewStarted.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(order).toEqual(['captain:before-set-visible', 'layout:start']);
+
+    rebuildFinished.resolve(undefined);
+    await turn;
+
+    expect(order).toEqual([
+      'captain:before-set-visible',
+      'layout:start',
+      'layout:done',
+      'captain:after-set-visible',
+      'player_prompt:reviewer',
+    ]);
+  });
+
   it('the presenter, follow, timing, and notification observers ignore player_view_changed (TTMUX-084)', () => {
     const record = (turnId: number | null): PlayerViewChangedRecord => ({
       type: 'player_view_changed',

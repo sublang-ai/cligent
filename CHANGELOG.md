@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-29
+
+### Added
+
+- Dynamic player visibility for tmux-play: a Captain can change which configured players occupy the main tmux window across a session via `setVisiblePlayers(playerIds)`, exposed on both `CaptainSession` (for `init()` and between-turn phase setup) and the turn-scoped `CaptainContext`. The full roster stays static — visibility changes only which existing players have panes, never the runtime player map, per-player log streams, the `players` manifest, or any player's `Cligent` continuity. Hidden players stay live and keep accumulating output to their per-player logs, and a re-shown player's pane is rebuilt from the recent tail (`tail -n 200 -f`) of its log. The runtime validates a non-empty, duplicate-free subset of the configured IDs and, only on success, emits exactly one `player_view_changed` record (carrying `visiblePlayerIds` in order, exported from `@sublang/cligent/tmux-play`) that a session-mode layout observer reconciles with a full player-area rebuild. Non-layout observers (presenter, follow, timing, notification) ignore the record, so a visibility change writes no Boss/Captain-pane content and the rebuild path is display-only — a tmux rebuild failure never aborts the Boss turn — DR-007, IR-027, TMUX-081, TMUX-082, TMUX-083
+- `layout.initialVisible` in tmux-play YAML — an optional, non-empty, duplicate-free subset of the configured player IDs naming the panes the launcher creates at startup, in that order; omitting it shows every configured player in `players` order (prior behavior). The startup visible-column shape, and thus the weight preset selected, now derives from the visible-set size rather than the configured roster size — TMUX-080, TMUX-028
+- Shape-specific column weights `layout.singlePlayerColumnWeights` (length 2) and `layout.multiPlayerColumnWeights` (length 3) select the per-column widths by the visible-column shape — one visible player picks the two-column weights, two or more pick the three-column weights — with the shipped defaults unchanged at 50/50 and even thirds — TMUX-064, TMUX-044
+
+### Changed
+
+- `layout.columnWeights` is now a backward-compatible alias for the shape-specific weight fields: a two-element value feeds `singlePlayerColumnWeights`, a three-element value feeds `multiPlayerColumnWeights`. Setting `columnWeights` together with the matching canonical field is rejected with the offending path named, and a home config that still carries `columnWeights` is migrated in place to the canonical field — writing one final YAML form that never holds both — while `--config` files and cwd project configs are left unmutated and stay valid through the alias. The shipped default home config and the home-migration safe defaults now write `multiPlayerColumnWeights: [1, 1, 1]` rather than `columnWeights` — TMUX-064, TMUX-010, TMUX-011
+- The release workflow now refuses to publish unless the tagged commit's CI run (its `push` to `main`) concluded successfully, waiting for it if still in progress and failing if it concluded unsuccessfully or never ran. Relatedly, the attached-client acceptance probes self-skip in headless CI via a `canAttachClient()` precheck instead of failing when no client can attach — the gap that let the 0.12.0 publish go out on a red CI run — RELEASE-007
+
 ## [0.12.0] - 2026-06-14
 
 ### Added
@@ -243,7 +256,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/sublang-ai/cligent/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sublang-ai/cligent/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/sublang-ai/cligent/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/sublang-ai/cligent/compare/v0.9.0...v0.10.0
