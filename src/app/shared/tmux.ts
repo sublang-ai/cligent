@@ -12,7 +12,7 @@ import { join } from 'node:path';
 // player that runs `tmux` (e.g. while debugging tmux itself) would inherit
 // those handles and could reach — or even `kill-server` — the session hosting
 // the run. That is not hypothetical: a coder player's `tmux kill-server` once
-// took down a live playbook-code-dev run, surfacing to the user as
+// took down a live playbook run, surfacing to the user as
 // `[server exited]` / `tmux attach-session failed: exit 1`.
 //
 // `isolateOrchestratorFromAgents` (below) strips those handles from
