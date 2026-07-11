@@ -8,6 +8,12 @@ import type { PermissionPolicy, ReasoningEffort } from '../../types.js';
 export interface Captain {
   init?(session: CaptainSession): Promise<void>;
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
+  /**
+   * TMUX-085: final live-session hook. Runs once after the active turn
+   * unwinds, while CaptainSession emissions are still accepted, and before
+   * the session signal aborts. Use dispose() for post-close resource release.
+   */
+  prepareDispose?(): Promise<void>;
   dispose?(): Promise<void>;
 }
 

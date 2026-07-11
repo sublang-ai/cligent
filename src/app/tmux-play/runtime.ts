@@ -75,6 +75,8 @@ export class TmuxPlayRuntime {
   private turnTail: Promise<void> = Promise.resolve();
   private activeTurn: ActiveTurn | undefined = undefined;
   private disposed = false;
+  private disposePromise: Promise<void> | undefined;
+  private captainPrepared = false;
   private captainDisposed = false;
   private sessionEmissionsClosed = false;
 
@@ -131,11 +133,18 @@ export class TmuxPlayRuntime {
     try {
       await this.captain.init?.(this.session);
     } catch (error) {
-      await this.emitRuntimeError(null, error);
-      await this.shutdownSessionEmissions();
-      await this.disposeCaptain();
-      this.detachObservers();
-      throw error;
+      const failures: unknown[] = [error];
+      try {
+        await this.emitRuntimeError(null, error);
+      } catch (reportingError) {
+        collectFailure(failures, reportingError);
+      }
+      try {
+        await this.dispose();
+      } catch (cleanupError) {
+        collectFailure(failures, cleanupError);
+      }
+      throwFailures(failures, 'tmux-play initialization failed');
     }
   }
 
@@ -153,13 +162,24 @@ export class TmuxPlayRuntime {
     return result;
   }
 
-  async dispose(): Promise<void> {
-    if (this.disposed) {
-      return;
+  dispose(): Promise<void> {
+    if (!this.disposePromise) {
+      this.disposed = true;
+      // Install the shared promise before any abort listener can re-enter
+      // dispose() synchronously from performDispose().
+      this.disposePromise = Promise.resolve().then(() => this.performDispose());
     }
-    this.disposed = true;
+    return this.disposePromise;
+  }
+
+  private async performDispose(): Promise<void> {
+    const failures: unknown[] = [];
     this.abortActiveTurn('runtime disposed');
-    this.removeExternalAbort?.();
+    try {
+      this.removeExternalAbort?.();
+    } catch (error) {
+      collectFailure(failures, error);
+    }
 
     try {
       await this.turnTail;
@@ -167,17 +187,48 @@ export class TmuxPlayRuntime {
       // The original runBossTurn caller observes the turn failure.
     }
 
+    let dispatchFailureBeforePrepare: unknown;
+    try {
+      await this.dispatcher.drain();
+    } catch (error) {
+      // Preserve the legacy handling for an earlier dispatcher failure. A
+      // new failure caused by prepareDispose is still surfaced below.
+      dispatchFailureBeforePrepare = error;
+    }
+
+    try {
+      await this.prepareCaptain();
+    } catch (error) {
+      collectFailure(failures, error);
+      if (!(error instanceof ObserverDispatchError)) {
+        try {
+          await this.emitRuntimeError(null, error);
+        } catch (reportingError) {
+          collectFailure(failures, reportingError);
+        }
+      }
+    }
+
     try {
       await this.shutdownSessionEmissions();
-    } catch {
-      // The active turn caller observes dispatcher failures. Cleanup still
-      // needs to release Captain resources and detach observers.
+    } catch (error) {
+      // A caller may also observe this dispatcher failure, but teardown
+      // retains a new pre-close failure so it is never silent.
+      if (!Object.is(error, dispatchFailureBeforePrepare)) {
+        collectFailure(failures, error);
+      }
     }
 
     try {
       await this.disposeCaptain();
+    } catch (error) {
+      collectFailure(failures, error);
     } finally {
       this.detachObservers();
+    }
+
+    if (failures.length > 0) {
+      throwFailures(failures, 'tmux-play disposal failed');
     }
   }
 
@@ -457,6 +508,13 @@ export class TmuxPlayRuntime {
     await this.dispatcher.drain();
   }
 
+  private async prepareCaptain(): Promise<void> {
+    if (!this.captainPrepared) {
+      this.captainPrepared = true;
+      await this.captain.prepareDispose?.();
+    }
+  }
+
   private async disposeCaptain(): Promise<void> {
     if (!this.captainDisposed) {
       this.captainDisposed = true;
@@ -469,6 +527,28 @@ export class TmuxPlayRuntime {
       remove();
     }
   }
+}
+
+function collectFailure(failures: unknown[], error: unknown): void {
+  if (error instanceof AggregateError) {
+    for (const nested of error.errors) {
+      collectFailure(failures, nested);
+    }
+    return;
+  }
+  if (!failures.some((failure) => Object.is(failure, error))) {
+    failures.push(error);
+  }
+}
+
+function throwFailures(failures: readonly unknown[], context: string): never {
+  if (failures.length === 1) {
+    throw failures[0];
+  }
+  throw new AggregateError(
+    failures,
+    `${context}: ${failures.map(errorMessage).join('; ')}`,
+  );
 }
 
 export async function createTmuxPlayRuntime(

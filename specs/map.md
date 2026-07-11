@@ -38,6 +38,7 @@ meta.md     The spec of specs
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; no project-wide default |
 | DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode `ambient`), with Codex profile enforcement the release bar |
 | DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
+| DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md) | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()` |
 
 ## Iterations
 
@@ -72,6 +73,7 @@ meta.md     The spec of specs
 | IR-026 | [026-workspace-writable-paths.md](iterations/026-workspace-writable-paths.md) | Implement DR-006 `PermissionPolicy.writablePaths`: typed workspace-relative write grants, adapter enforcement reporting, and Codex profile-enforced `.git` writes |
 | IR-027 | [027-tmux-play-dynamic-player-visibility.md](iterations/027-tmux-play-dynamic-player-visibility.md) | Implement DR-007 tmux-play dynamic player visibility: `layout.initialVisible`, shape-specific weight presets with `columnWeights` alias + migration, `setVisiblePlayers` on the Captain contracts, the `player_view_changed` record, and a full-rebuild `LayoutObserver` |
 | IR-028 | [028-explicit-player-session-selection.md](iterations/028-explicit-player-session-selection.md) | Add per-call tmux-play player session selection through `CallPlayerOptions.resume`, preserving omission-based auto-resume while allowing explicit tokens and forced-fresh calls; restore Gemini `--resume` forwarding |
+| IR-029 | [029-captain-pre-close-lifecycle.md](iterations/029-captain-pre-close-lifecycle.md) | Add failure-safe two-stage Captain shutdown so final session telemetry emits before the session closes |
 
 ## Packages
 

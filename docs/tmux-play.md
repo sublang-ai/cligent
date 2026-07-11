@@ -233,6 +233,10 @@ tmux.
 A Captain module default-exports a factory. Captains call players via
 `context`, and may retain the `CaptainSession` from `init()` to
 `emitStatus`/`emitTelemetry` from `init`, during turns, or between turns.
+The optional `prepareDispose()` hook is the final point at which those session
+emissions remain live; it runs after the active turn settles and before the
+session signal aborts. Use `dispose()` only for post-close resource release —
+session emissions reject there.
 Both `session` and per-turn `context` expose `setVisiblePlayers(playerIds)`;
 pass a non-empty, duplicate-free subset of configured player IDs to choose
 which player panes are visible. The roster stays unchanged, hidden players
@@ -248,8 +252,10 @@ event-level `sessionId` values are transport correlation and may be synthetic.
 
 ```js
 export default function createCaptain(options = {}) {
+  let captainSession;
   return {
     async init(session) {
+      captainSession = session;
       await session.emitStatus('Captain ready', { players: session.players.length });
       await session.emitTelemetry({ topic: 'captain.ready', payload: { options } });
     },
@@ -263,6 +269,13 @@ export default function createCaptain(options = {}) {
         .map((r) => `${r.playerId}: ${r.finalText ?? r.error ?? '(no final text)'}`)
         .join('\n\n');
       await context.callCaptain(`Boss:\n${turn.prompt}\n\nPlayers:\n${summary}`);
+    },
+
+    async prepareDispose() {
+      await captainSession.emitTelemetry({
+        topic: 'captain.disposed',
+        payload: { complete: true },
+      });
     },
 
     async dispose() {},

@@ -852,6 +852,310 @@ describe('TmuxPlayRuntime', () => {
     expect(order).toEqual(['session-aborted', 'dispose']);
   });
 
+  it('runs prepareDispose once inside the live emission window (TTMUX-086)', async () => {
+    const order: string[] = [];
+    const turnStarted = deferred();
+    let session!: CaptainSession;
+    let prepareCount = 0;
+    let disposeCount = 0;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+        session.signal.addEventListener('abort', () => {
+          order.push('session-aborted');
+        });
+      },
+      async handleBossTurn(_turn, context) {
+        order.push('turn:start');
+        turnStarted.resolve();
+        if (!context.signal.aborted) {
+          await new Promise<void>((resolve) => {
+            context.signal.addEventListener('abort', () => resolve(), {
+              once: true,
+            });
+          });
+        }
+        order.push('turn:unwound');
+      },
+      async prepareDispose() {
+        prepareCount += 1;
+        order.push('prepare:start');
+        expect(session.signal.aborted).toBe(false);
+        await session.emitTelemetry({
+          topic: 'playbook.trace',
+          payload: { type: 'session.disposed' },
+        });
+        order.push('prepare:end');
+      },
+      async dispose() {
+        disposeCount += 1;
+        order.push('dispose');
+        expect(session.signal.aborted).toBe(true);
+        await expect(
+          session.emitTelemetry({ topic: 'late', payload: null }),
+        ).rejects.toThrow('tmux-play session emissions are closed');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              record.type === 'captain_telemetry' &&
+              record.topic === 'playbook.trace'
+            ) {
+              order.push('observer:trace');
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const turn = runtime.runBossTurn('active');
+    await turnStarted.promise;
+    const first = runtime.dispose();
+    const second = runtime.dispose();
+    expect(second).toBe(first);
+    await Promise.all([turn, first, second]);
+    await runtime.dispose();
+
+    expect(order).toEqual([
+      'turn:start',
+      'turn:unwound',
+      'prepare:start',
+      'observer:trace',
+      'prepare:end',
+      'session-aborted',
+      'dispose',
+    ]);
+    expect(prepareCount).toBe(1);
+    expect(disposeCount).toBe(1);
+  });
+
+  it('surfaces every hook failure after completing cleanup (TTMUX-086)', async () => {
+    const prepareError = new Error('prepare failed');
+    const disposeError = new Error('dispose failed');
+    const records: TmuxPlayRecord[] = [];
+    const order: string[] = [];
+    let session!: CaptainSession;
+    let prepareCount = 0;
+    let disposeCount = 0;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+        session.signal.addEventListener('abort', () => {
+          order.push('session-aborted');
+        });
+      },
+      async handleBossTurn() {
+        // no-op
+      },
+      async prepareDispose() {
+        prepareCount += 1;
+        order.push('prepare');
+        throw prepareError;
+      },
+      async dispose() {
+        disposeCount += 1;
+        order.push('dispose');
+        expect(session.signal.aborted).toBe(true);
+        throw disposeError;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        { onRecord: (record) => records.push(record as TmuxPlayRecord) },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const first = runtime.dispose();
+    const failure = await first.catch((error: unknown) => error);
+    const repeatedFailure = await runtime
+      .dispose()
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(repeatedFailure).toBe(failure);
+    expect((failure as AggregateError).errors).toEqual([
+      prepareError,
+      disposeError,
+    ]);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime_error',
+        turnId: null,
+        message: 'prepare failed',
+      }),
+    );
+    expect(order).toEqual(['prepare', 'session-aborted', 'dispose']);
+    expect(prepareCount).toBe(1);
+    expect(disposeCount).toBe(1);
+  });
+
+  it('finishes cleanup when a prepareDispose emission loses an observer (TTMUX-086)', async () => {
+    const remainingRecords: TmuxPlayRecord[] = [];
+    const order: string[] = [];
+    let session!: CaptainSession;
+    let disposeCount = 0;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+        session.signal.addEventListener('abort', () => {
+          order.push('session-aborted');
+        });
+      },
+      async handleBossTurn() {
+        // no-op
+      },
+      async prepareDispose() {
+        order.push('prepare');
+        await session.emitTelemetry({
+          topic: 'final',
+          payload: { complete: true },
+        });
+      },
+      async dispose() {
+        disposeCount += 1;
+        order.push('dispose');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord(record) {
+            if (record.type === 'captain_telemetry') {
+              order.push('observer:failed');
+              throw new Error('observer failed during prepare');
+            }
+          },
+        },
+        {
+          onRecord(record) {
+            remainingRecords.push(record as TmuxPlayRecord);
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const failure = await runtime.dispose().catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      name: 'ObserverDispatchError',
+      cause: expect.objectContaining({
+        message: 'observer failed during prepare',
+      }),
+    });
+    expect(remainingRecords).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime_error',
+        sourceRecordType: 'captain_telemetry',
+        message: 'observer failed during prepare',
+      }),
+    );
+    expect(order).toEqual([
+      'prepare',
+      'observer:failed',
+      'session-aborted',
+      'dispose',
+    ]);
+    expect(session.signal.aborted).toBe(true);
+    expect(disposeCount).toBe(1);
+  });
+
+  it('runs live pre-close cleanup after partial initialization fails (TTMUX-086)', async () => {
+    const initError = new Error('init failed after acquiring resources');
+    const records: TmuxPlayRecord[] = [];
+    const order: string[] = [];
+    let session!: CaptainSession;
+    let prepareCount = 0;
+    let disposeCount = 0;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+        session.signal.addEventListener('abort', () => {
+          order.push('session-aborted');
+        });
+        order.push('init');
+        throw initError;
+      },
+      async handleBossTurn() {
+        // no-op
+      },
+      async prepareDispose() {
+        prepareCount += 1;
+        order.push('prepare');
+        expect(session.signal.aborted).toBe(false);
+        await session.emitTelemetry({
+          topic: 'final-after-init-failure',
+          payload: { complete: true },
+        });
+      },
+      async dispose() {
+        disposeCount += 1;
+        order.push('dispose');
+        expect(session.signal.aborted).toBe(true);
+      },
+    };
+
+    const failure = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord(record) {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'runtime_error') {
+              order.push('observer:runtime_error');
+            } else if (
+              record.type === 'captain_telemetry' &&
+              record.topic === 'final-after-init-failure'
+            ) {
+              order.push('observer:final');
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBe(initError);
+    expect(records).toMatchObject([
+      {
+        type: 'runtime_error',
+        turnId: null,
+        message: 'init failed after acquiring resources',
+      },
+      {
+        type: 'captain_telemetry',
+        turnId: null,
+        topic: 'final-after-init-failure',
+      },
+    ]);
+    expect(order).toEqual([
+      'init',
+      'observer:runtime_error',
+      'prepare',
+      'observer:final',
+      'session-aborted',
+      'dispose',
+    ]);
+    expect(prepareCount).toBe(1);
+    expect(disposeCount).toBe(1);
+  });
+
   it('emits one player_view_changed with the active turn id for a CaptainContext call (TTMUX-083)', async () => {
     const records: TmuxPlayRecord[] = [];
     let manifest: readonly { id: string }[] = [];

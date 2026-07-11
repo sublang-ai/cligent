@@ -135,7 +135,7 @@ Local `captain.from` paths shall resolve against the directory of the originatin
 
 ### TMUX-014
 
-A Captain module shall default-export a factory `(options: unknown) => Captain | Promise<Captain>`. The returned `Captain` shall implement `handleBossTurn(turn, context): Promise<void>` and may implement `init(session): Promise<void>` and `dispose(): Promise<void>` lifecycle hooks.
+A Captain module shall default-export a factory `(options: unknown) => Captain | Promise<Captain>`. The returned `Captain` shall implement `handleBossTurn(turn, context): Promise<void>` and may implement `init(session): Promise<void>`, `prepareDispose(): Promise<void>`, and `dispose(): Promise<void>` lifecycle hooks.
 
 ### TMUX-015
 
@@ -167,7 +167,15 @@ The runtime shall serialize Boss turns: at most one `handleBossTurn` invocation 
 
 ### TMUX-019
 
-On session shutdown the runtime shall (1) unwind the active turn, (2) abort `CaptainSession.signal`, (3) drain accepted session emissions, (4) call `Captain.dispose()` exactly once, and (5) detach observers. Post-shutdown `emitStatus`/`emitTelemetry` calls shall reject.
+On session shutdown the runtime shall (1) unwind the active turn, (2) call `Captain.prepareDispose()` exactly once when implemented, (3) abort `CaptainSession.signal`, (4) drain accepted session emissions, (5) call `Captain.dispose()` exactly once, and (6) detach observers. Post-shutdown `emitStatus`/`emitTelemetry` calls shall reject.
+
+### TMUX-085
+
+When a tmux-play runtime shuts down, after its active Boss turn unwinds and before `CaptainSession.signal` aborts or session emissions close, the runtime shall invoke the optional `Captain.prepareDispose()` hook exactly once.
+Session emissions accepted during `prepareDispose()` shall drain in order before `Captain.dispose()`, and `Captain.dispose()` shall retain [TMUX-019](#tmux-019)'s post-close emission-rejection semantics.
+When `prepareDispose()` rejects, the runtime shall still abort the session signal, drain accepted emissions, invoke `Captain.dispose()` exactly once, and detach observers, then reject disposal with that failure; when independent cleanup steps fail, the rejection shall preserve all failures in an `AggregateError`.
+When `Captain.init()` rejects after partial initialization, the runtime shall run the same pre-close and post-close hooks and cleanup ordering before surfacing the initialization failure.
+Repeated or concurrent disposal calls shall share the same cleanup operation and shall not repeat either Captain hook.
 
 ## Record Types and Observer Dispatch
 

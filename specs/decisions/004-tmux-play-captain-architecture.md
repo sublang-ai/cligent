@@ -111,6 +111,7 @@ The Captain extension contract is exported from `@sublang/cligent/tmux-play`:
 interface Captain {
   init?(session: CaptainSession): Promise<void>;
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
+  prepareDispose?(): Promise<void>;
   dispose?(): Promise<void>;
 }
 
@@ -204,7 +205,7 @@ Captains may own actor-side instrumentation (inspectors, matchers) but should em
 Each Captain module's default export is a factory `(options: unknown) => Captain | Promise<Captain>`.
 The launcher verifies `captain.from` resolves; the session imports and constructs it.
 
-Lifecycle: construct → attach observers → `init(session)` → serve turns → shutdown (see Serialization and Abort) → `dispose()` → detach observers.
+Lifecycle: construct → attach observers → `init(session)` → serve turns → `prepareDispose()` → close the session → `dispose()` → detach observers, as amended by [DR-008](008-captain-pre-close-lifecycle.md).
 Observers straddle the Captain lifetime, so init-time emissions and init failures reach attached observers.
 
 Built-in Captains use the same contract as third-party ones — no internal mode registry or special casing.
@@ -268,10 +269,11 @@ SIGINT, SIGTERM, or EOF aborts the active turn via `context.signal`.
 Session shutdown order:
 
 1. Active turn unwinds; turn-bound emissions drain before `turn_finished` / `turn_aborted`.
-2. Abort `CaptainSession.signal` so producers wired to it (matcher subscriptions, timers) detach.
-3. Drain already-accepted session emissions; post-abort `emit*` calls reject.
-4. `Captain.dispose()`.
-5. Detach observers.
+2. Invoke optional `Captain.prepareDispose()` while session emissions remain live, per [DR-008](008-captain-pre-close-lifecycle.md).
+3. Abort `CaptainSession.signal` so producers wired to it (matcher subscriptions, timers) detach.
+4. Drain already-accepted session emissions; post-abort `emit*` calls reject.
+5. `Captain.dispose()`.
+6. Detach observers.
 
 Aborting before draining detaches producers cleanly and delivers their in-flight records without racing new ones.
 

@@ -71,6 +71,12 @@ Verifies: [TMUX-019](../user/tmux-play.md#tmux-019)
 
 On session shutdown, `Captain.dispose()` shall run exactly once, after the active turn unwinds and after accepted session emissions drain. Post-shutdown `emitStatus`/`emitTelemetry` calls shall reject.
 
+### TTMUX-086
+Verifies: [TMUX-085](../user/tmux-play.md#tmux-085)
+
+When a runtime is disposed repeatedly or concurrently, an implemented `Captain.prepareDispose()` shall run exactly once after the active turn unwinds while `CaptainSession.signal` remains live, its accepted status/telemetry emissions shall reach observers before the signal aborts, and `Captain.dispose()` shall run exactly once afterward with session emissions rejecting.
+When pre-close, its emission observer dispatch, initialization, or final-disposal steps reject, the runtime shall still abort the session signal, drain accepted emissions, invoke the remaining cleanup hook once, and detach observers; the returned rejection shall preserve the originating failure and every independent cleanup failure from those steps, without changing the legacy handling of an earlier dispatcher failure already surfaced by its originating runtime call.
+
 ## CLI and Topology
 
 ### TTMUX-013

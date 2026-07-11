@@ -44,6 +44,9 @@ describe('tmux-play public contract', () => {
         await context.callPlayer('reviewer', turn.prompt, { resume: false });
         await context.callCaptain('summarize');
       },
+      async prepareDispose() {
+        // no-op
+      },
       async dispose() {
         // no-op
       },
