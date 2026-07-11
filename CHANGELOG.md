@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-call player session selection for tmux-play Captains: `context.callPlayer(playerId, prompt, { resume })` accepts an opaque token to override the player's stored automatic continuation, or `false` to force a fresh backend session; omitting the option keeps the existing auto-resume behavior — IR-028, TMUX-016, TMUX-041
+
+### Fixed
+
+- Gemini adapter now forwards `AgentOptions.resume` to the CLI as `--resume <token>`, restoring actual backend continuity instead of only carrying the token through normalized events — GEMINI-007, IR-028
+
 ## [0.13.0] - 2026-06-29
 
 ### Added

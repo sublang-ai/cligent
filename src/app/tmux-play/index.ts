@@ -28,6 +28,7 @@ export type {
 export type {
   BossTurn,
   CallCaptainOptions,
+  CallPlayerOptions,
   Captain,
   CaptainContext,
   CaptainRunResult,

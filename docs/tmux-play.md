@@ -239,6 +239,13 @@ which player panes are visible. The roster stays unchanged, hidden players
 keep their logs, and awaiting the call lets the pane rebuild finish before
 later player output is presented.
 
+`context.callPlayer(playerId, prompt, options?)` also accepts
+`{ resume: <token> }` to select an opaque backend session explicitly, or
+`{ resume: false }` to force a fresh session even when that persistent player
+has an automatic resume token. Omitting `options.resume` preserves the default
+auto-resume behavior. Persist and reuse only `PlayerRunResult.resumeToken`;
+event-level `sessionId` values are transport correlation and may be synthetic.
+
 ```js
 export default function createCaptain(options = {}) {
   return {

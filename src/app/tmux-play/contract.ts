@@ -52,10 +52,23 @@ export interface CallCaptainOptions {
   readonly visibility?: RecordVisibility;
 }
 
+/**
+ * Per-call player session selection. A string resumes that opaque backend
+ * session, `false` forces a fresh session, and omission preserves the
+ * player's runtime-managed auto-resume behavior.
+ */
+export interface CallPlayerOptions {
+  readonly resume?: string | false;
+}
+
 export interface CaptainContext {
   readonly signal: AbortSignal;
   readonly players: readonly PlayerHandle[];
-  callPlayer(playerId: string, prompt: string): Promise<PlayerRunResult>;
+  callPlayer(
+    playerId: string,
+    prompt: string,
+    options?: CallPlayerOptions,
+  ): Promise<PlayerRunResult>;
   callCaptain(
     prompt: string,
     options?: CallCaptainOptions,

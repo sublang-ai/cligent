@@ -709,6 +709,20 @@ describe('GeminiAdapter', () => {
     expect(mapped.toolConfig.disallowedTools).toEqual(['edit', 'never-tool']);
   });
 
+  it('maps an explicit resume token to --resume', () => {
+    const mapped = mapAgentOptionsToGeminiCommand('continue this', {
+      resume: '01234567-89ab-cdef-0123-456789abcdef',
+    });
+
+    expect(mapped.args).toEqual([
+      '--output-format',
+      'stream-json',
+      '--resume',
+      '01234567-89ab-cdef-0123-456789abcdef',
+      'continue this',
+    ]);
+  });
+
   it('passes prompt as final positional argument (not --prompt flag)', () => {
     const mapped = mapAgentOptionsToGeminiCommand('explain this code', undefined);
 

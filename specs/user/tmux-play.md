@@ -143,7 +143,11 @@ The runtime shall own every player and Captain `Cligent` instance. Captains shal
 
 ### TMUX-016
 
-`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt)` and `callCaptain(prompt, options?)` methods. The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033). `callCaptain`'s optional `options` is a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072); `callPlayer` takes no such option. `CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081), a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
+`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt, options?)` and `callCaptain(prompt, options?)` methods.
+The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033).
+`callPlayer`'s optional `options` shall be a `CallPlayerOptions` whose `resume?: string | false` selects the player's backend session for that call: a string explicitly resumes that opaque token and overrides the player's stored auto-resume token, `false` forces a fresh backend session, and omission preserves automatic continuity per [TMUX-041](#tmux-041).
+`callCaptain`'s optional `options` shall be a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072).
+`CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081), a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
 
 ### TMUX-017
 
@@ -692,6 +696,9 @@ The duration text shall always carry exactly two digits per component while `h <
 ### TMUX-041
 
 Within a single tmux-play session, each player's `Cligent` instance shall be created once and reused across every Boss turn. Per [ENG-005](engine.md#eng-005), the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
+When `callPlayer` receives `CallPlayerOptions.resume` as a string, tmux-play shall pass that string through to `Cligent.run()` for the call, overriding any resume token stored on the player's persistent `Cligent`.
+When `CallPlayerOptions.resume` is `false`, tmux-play shall pass `false` through to `Cligent.run()` so the call starts fresh even when the player's persistent `Cligent` stores a prior token.
+When `CallPlayerOptions.resume` is omitted, tmux-play shall preserve the existing automatic continuity behavior above.
 This continuity shall include an ESC-aborted Boss turn when a player's interrupted adapter `done` carries a `resumeToken` per [ENG-009](engine.md#eng-009): the next Boss turn that calls the same player shall pass that token as `resume`. When the interrupted `done` carries no `resumeToken`, tmux-play shall expose the aborted, not-resumable result through [TMUX-033](#tmux-033) and keep the player callable normally after the aborted round without rewriting prompts at the runtime or engine layer.
 
 ### TMUX-042

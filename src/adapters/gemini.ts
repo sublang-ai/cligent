@@ -570,6 +570,10 @@ export function mapAgentOptionsToGeminiCommand(
     args.push('--model', options.model);
   }
 
+  if (options?.resume) {
+    args.push('--resume', options.resume);
+  }
+
   // Note: Gemini CLI does not support a turn-limit flag.
   // options.maxTurns is intentionally not forwarded.
 

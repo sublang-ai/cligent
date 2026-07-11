@@ -526,6 +526,88 @@ describe('TmuxPlayRuntime', () => {
     });
   });
 
+  it('lets an explicit player token override runtime auto-resume', async () => {
+    const playerResumes: (string | undefined)[] = [];
+    let playerRuns = 0;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        await context.callPlayer(
+          'coder',
+          `work ${turn.id}`,
+          turn.id === 2 ? { resume: 'captain-selected-token' } : undefined,
+        );
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(_prompt, options) {
+            playerResumes.push(options?.resume);
+            playerRuns += 1;
+            yield doneEvent(
+              'codex',
+              'done',
+              'success',
+              playerRuns === 1 ? 'runtime-auto-token' : 'selected-next-token',
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('first');
+    await runtime.runBossTurn('second');
+
+    expect(playerResumes).toEqual([undefined, 'captain-selected-token']);
+  });
+
+  it('lets a Captain force a fresh player session', async () => {
+    const playerResumes: (string | undefined)[] = [];
+    const playerResults: PlayerRunResult[] = [];
+    let playerRuns = 0;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        playerResults.push(
+          await context.callPlayer(
+            'coder',
+            `work ${turn.id}`,
+            turn.id === 2 ? { resume: false } : undefined,
+          ),
+        );
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(_prompt, options) {
+            playerResumes.push(options?.resume);
+            playerRuns += 1;
+            yield doneEvent(
+              'codex',
+              'done',
+              'success',
+              playerRuns === 1 ? 'stored-token' : 'fresh-token',
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('first');
+    await runtime.runBossTurn('second');
+
+    expect(playerResults[0]?.resumeToken).toBe('stored-token');
+    expect(playerResumes).toEqual([undefined, undefined]);
+  });
+
   it('resumes a player on the next Boss turn after an ESC-aborted round', async () => {
     const records: TmuxPlayRecord[] = [];
     const playerStarted = deferred();

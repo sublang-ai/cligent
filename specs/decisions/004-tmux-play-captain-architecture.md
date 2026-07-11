@@ -133,10 +133,18 @@ interface CallCaptainOptions {
   readonly visibility?: RecordVisibility;  // default 'visible'
 }
 
+interface CallPlayerOptions {
+  readonly resume?: string | false;         // omit for auto-resume
+}
+
 interface CaptainContext {
   readonly signal: AbortSignal;            // turn-scoped abort
   readonly players: readonly PlayerHandle[];
-  callPlayer(playerId: string, prompt: string): Promise<PlayerRunResult>;
+  callPlayer(
+    playerId: string,
+    prompt: string,
+    options?: CallPlayerOptions,
+  ): Promise<PlayerRunResult>;
   callCaptain(prompt: string, options?: CallCaptainOptions): Promise<CaptainRunResult>;
 }
 
@@ -174,7 +182,9 @@ interface CaptainRunResult {
 ```
 
 Neither context exposes raw `Cligent`; `callPlayer` and `callCaptain` are the only paths to a run, so every run is recorded and bound to `context.signal`.
-`callCaptain` accepts an optional `CallCaptainOptions` whose `visibility` (default `'visible'`) controls only presentation: a `'hidden'` call runs and returns identically, but the runtime tags its `captain_prompt` / `captain_event` / `captain_finished` records so the tmux presenter skips them while non-presenter observers keep the full trace. `callPlayer` takes no such option.
+`callPlayer` accepts an optional `CallPlayerOptions` whose `resume` selects the persistent player's backend session for that call: a string overrides the `Cligent`'s stored token, `false` forces a fresh session, and omission retains automatic resume continuity.
+The continuation handle is the opaque `PlayerRunResult.resumeToken`, not an event's transport-level `sessionId`.
+`callCaptain` accepts an optional `CallCaptainOptions` whose `visibility` (default `'visible'`) controls only presentation: a `'hidden'` call runs and returns identically, but the runtime tags its `captain_prompt` / `captain_event` / `captain_finished` records so the tmux presenter skips them while non-presenter observers keep the full trace.
 
 `emitStatus` emits `captain_status`: free-form, human-readable; routed to the Boss/Captain pane.
 `emitTelemetry` emits `captain_telemetry`: structured, topic-routed; ignored by the tmux pane and consumed by opt-in observers (visualizer, metrics).

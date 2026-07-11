@@ -8,6 +8,7 @@ import {
   KNOWN_PLAYER_ADAPTERS,
   createTmuxPlayRuntime,
   type BossTurn,
+  type CallPlayerOptions,
   type Captain,
   type CaptainContext,
   type CaptainRunResult,
@@ -38,7 +39,9 @@ describe('tmux-play public contract', () => {
         expectTypeOf(turn.id).toEqualTypeOf<number>();
         expectTypeOf(context.players).toEqualTypeOf<readonly PlayerHandle[]>();
 
-        await context.callPlayer('coder', turn.prompt);
+        const resume: CallPlayerOptions = { resume: 'thread-1' };
+        await context.callPlayer('coder', turn.prompt, resume);
+        await context.callPlayer('reviewer', turn.prompt, { resume: false });
         await context.callCaptain('summarize');
       },
       async dispose() {
@@ -50,6 +53,9 @@ describe('tmux-play public contract', () => {
   });
 
   it('exports runtime API option types', () => {
+    expectTypeOf<CallPlayerOptions>().toMatchTypeOf<{
+      resume?: string | false;
+    }>();
     expectTypeOf<RuntimeCaptainConfig>().toMatchTypeOf<{
       adapter: PlayerHandle['adapter'];
       model?: string;

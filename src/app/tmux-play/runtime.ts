@@ -12,6 +12,7 @@ import type {
 import type {
   BossTurn,
   CallCaptainOptions,
+  CallPlayerOptions,
   Captain,
   CaptainContext,
   CaptainRunResult,
@@ -47,6 +48,7 @@ interface RunCligentCallOptions {
   readonly prompt: string;
   readonly instruction?: string;
   readonly signal: AbortSignal;
+  readonly resume?: string | false;
   readonly emitEvent: (event: CligentEvent) => Promise<void>;
 }
 
@@ -233,7 +235,8 @@ export class TmuxPlayRuntime {
     return {
       signal,
       players: this.playerHandles,
-      callPlayer: (playerId, prompt) => this.callPlayer(turn, signal, playerId, prompt),
+      callPlayer: (playerId, prompt, options) =>
+        this.callPlayer(turn, signal, playerId, prompt, options),
       callCaptain: (prompt, options) =>
         this.callCaptain(turn, signal, prompt, options),
       // TMUX-081: a turn-scoped call carries this turn's id.
@@ -247,6 +250,7 @@ export class TmuxPlayRuntime {
     signal: AbortSignal,
     playerId: string,
     prompt: string,
+    options?: CallPlayerOptions,
   ): Promise<PlayerRunResult> {
     const player = this.playersById.get(playerId);
     if (!player) {
@@ -264,6 +268,7 @@ export class TmuxPlayRuntime {
       prompt,
       instruction: player.instruction,
       signal,
+      ...(options?.resume !== undefined ? { resume: options.resume } : {}),
       emitEvent: (event) =>
         this.emit({
           ...makeRecordBase('player_event', turn.id, event.timestamp),
@@ -493,6 +498,7 @@ async function runCligentCall(
     composePrompt(options.instruction, options.prompt),
     {
       abortSignal: options.signal,
+      ...(options.resume !== undefined ? { resume: options.resume } : {}),
     },
   );
   const textParts: string[] = [];
