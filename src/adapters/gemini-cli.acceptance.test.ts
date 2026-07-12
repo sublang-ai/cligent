@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,12 +20,26 @@ describe('Gemini CLI 0.50 argument contract (TADAPT-025)', () => {
       const home = mkdtempSync(join(tmpdir(), 'cligent-gemini-parser-'));
       try {
         const env = isolatedEnvironment(home);
+        const policyPath = join(home, 'cligent-policy.toml');
+        writeFileSync(
+          policyPath,
+          [
+            '[[rule]]',
+            'toolName = "run_shell_command"',
+            'decision = "deny"',
+            'priority = 999',
+            'interactive = false',
+            '',
+          ].join('\n'),
+          'utf8',
+        );
         const result = spawnSync(
           'gemini',
           [
             '--prompt=--cligent-leading-prompt',
             '--model=--cligent-leading-model',
             '--resume=--cligent-leading-resume',
+            `--policy=${policyPath}`,
             '--output-format=cligent-parser-probe',
           ],
           {
@@ -48,6 +62,7 @@ describe('Gemini CLI 0.50 argument contract (TADAPT-025)', () => {
         expect(output).toContain('--prompt');
         expect(output).toContain('--model');
         expect(output).toContain('--resume');
+        expect(output).toContain('--policy');
         expect(output).not.toContain('--max-session-turns');
       } finally {
         rmSync(home, { recursive: true, force: true });

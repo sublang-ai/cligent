@@ -6,9 +6,9 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
@@ -53,13 +53,23 @@ interface GeminiAdapterDeps {
   createSettingsOverride?: (
     settingsConfig: GeminiSettingsConfig,
   ) => Promise<GeminiSettingsOverride>;
+  createPolicyOverride?: (
+    toolConfig: GeminiToolConfig,
+  ) => Promise<GeminiPolicyOverride>;
 }
 
 const CAPABILITY_TOOL_GROUPS: Record<PermissionCapability, string[]> = {
-  fileWrite: ['edit'],
-  shellExecute: ['ShellTool'],
-  networkAccess: ['webfetch'],
+  fileWrite: ['replace', 'write_file'],
+  shellExecute: ['run_shell_command'],
+  networkAccess: ['google_web_search', 'web_fetch'],
 };
+
+const POLICY_PRIORITY = {
+  deny: 999,
+  explicitAllow: 999,
+  explicitAllowCatchAll: 998,
+  capability: 997,
+} as const;
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -278,8 +288,18 @@ export interface GeminiToolConfig {
   allowedTools: string[];
   disallowedTools: string[];
   args: string[];
+  policyRules?: GeminiPolicyRule[];
   approvalMode?: GeminiApprovalMode;
   writablePaths?: WritablePathsPermissionMapping;
+}
+
+export type GeminiPolicyDecision = 'allow' | 'ask_user' | 'deny';
+
+export interface GeminiPolicyRule {
+  toolName: string;
+  decision: GeminiPolicyDecision;
+  priority: number;
+  interactive: false;
 }
 
 export type GeminiThinkingLevel = 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
@@ -305,10 +325,20 @@ interface GeminiSettingsOverride {
   cleanup: () => Promise<void>;
 }
 
+interface GeminiPolicyOverride {
+  args: string[];
+  cleanup: () => Promise<void>;
+}
+
 export const GEMINI_REASONING_EFFORT_ALIAS = 'cligent-reasoning-effort';
 
 const NOOP_SETTINGS_OVERRIDE: GeminiSettingsOverride = {
   env: {},
+  cleanup: async () => {},
+};
+
+const NOOP_POLICY_OVERRIDE: GeminiPolicyOverride = {
+  args: [],
   cleanup: async () => {},
 };
 
@@ -329,6 +359,107 @@ export function buildGeminiToolSettings(
   }
 
   return { tools };
+}
+
+function hasUnpairedUnicodeSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        return true;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function validateGeminiToolNames(
+  option: 'allowedTools' | 'disallowedTools',
+  values: readonly string[] | undefined,
+): void {
+  if (!values) return;
+
+  for (const [index, value] of values.entries()) {
+    if (value.length === 0) {
+      throw new Error(`${option}[${index}] must not be empty`);
+    }
+    if (value.includes('*')) {
+      throw new Error(
+        `${option}[${index}] must not contain Gemini Policy Engine wildcard syntax "*"`,
+      );
+    }
+    if (hasUnpairedUnicodeSurrogate(value)) {
+      throw new Error(
+        `${option}[${index}] must not contain an unpaired Unicode surrogate`,
+      );
+    }
+  }
+}
+
+function escapeTomlBasicString(value: string): string {
+  let escaped = '';
+
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    switch (character) {
+      case '"':
+        escaped += '\\"';
+        break;
+      case '\\':
+        escaped += '\\\\';
+        break;
+      case '\b':
+        escaped += '\\b';
+        break;
+      case '\t':
+        escaped += '\\t';
+        break;
+      case '\n':
+        escaped += '\\n';
+        break;
+      case '\f':
+        escaped += '\\f';
+        break;
+      case '\r':
+        escaped += '\\r';
+        break;
+      default:
+        if (codePoint <= 0x1f || codePoint === 0x7f) {
+          escaped += `\\u${codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
+        } else {
+          escaped += character;
+        }
+    }
+  }
+
+  return escaped;
+}
+
+export function buildGeminiPolicyToml(
+  rules: readonly GeminiPolicyRule[],
+): string | undefined {
+  if (rules.length === 0) return undefined;
+
+  return `${rules
+    .map((rule) =>
+      [
+        '[[rule]]',
+        `toolName = "${escapeTomlBasicString(rule.toolName)}"`,
+        `decision = "${rule.decision}"`,
+        `priority = ${rule.priority}`,
+        'interactive = false',
+      ].join('\n'),
+    )
+    .join('\n\n')}\n`;
 }
 
 export function mapEffortToGeminiModelAlias(
@@ -442,22 +573,245 @@ export function buildGeminiSettings(
   };
 }
 
+function buildGeminiModelAliasSettings(alias: GeminiModelAliasConfig): {
+  modelConfigs: {
+    customAliases: Record<
+      string,
+      {
+        modelConfig: {
+          model: string;
+          generateContentConfig: {
+            thinkingConfig: GeminiThinkingConfig;
+          };
+        };
+      }
+    >;
+  };
+} {
+  return {
+    modelConfigs: {
+      customAliases: {
+        [alias.alias]: {
+          modelConfig: {
+            model: alias.model,
+            generateContentConfig: {
+              thinkingConfig: alias.thinkingConfig,
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function systemSettingsPath(env: NodeJS.ProcessEnv): string {
+  if (env.GEMINI_CLI_SYSTEM_SETTINGS_PATH) {
+    return env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+  }
+  if (process.platform === 'darwin') {
+    return '/Library/Application Support/GeminiCli/settings.json';
+  }
+  if (process.platform === 'win32') {
+    return 'C:\\ProgramData\\gemini-cli\\settings.json';
+  }
+  return '/etc/gemini-cli/settings.json';
+}
+
+function systemDefaultsPath(env: NodeJS.ProcessEnv): string {
+  if (env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH) {
+    return env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+  }
+  return join(dirname(systemSettingsPath(env)), 'system-defaults.json');
+}
+
+function jsonObject(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${path} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function stripJsonComments(content: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index]!;
+    const next = content[index + 1];
+
+    if (lineComment) {
+      if (character === '\n' || character === '\r') {
+        lineComment = false;
+        result += character;
+      } else {
+        result += ' ';
+      }
+      continue;
+    }
+
+    if (blockComment) {
+      if (character === '*' && next === '/') {
+        result += '  ';
+        index += 1;
+        blockComment = false;
+      } else {
+        result += character === '\n' || character === '\r' ? character : ' ';
+      }
+      continue;
+    }
+
+    if (inString) {
+      result += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+    if (character === '/' && next === '/') {
+      result += '  ';
+      index += 1;
+      lineComment = true;
+      continue;
+    }
+    if (character === '/' && next === '*') {
+      result += '  ';
+      index += 1;
+      blockComment = true;
+      continue;
+    }
+
+    result += character;
+  }
+
+  return result;
+}
+
+async function readConfiguredSystemDefaults(
+  env: NodeJS.ProcessEnv,
+): Promise<Record<string, unknown>> {
+  const path = systemDefaultsPath(env);
+  let content: string;
+
+  try {
+    content = await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {};
+    }
+    throw error;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripJsonComments(content)) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Unable to parse Gemini system defaults at ${path}: ${detail}`,
+    );
+  }
+
+  return jsonObject(parsed, `Gemini system defaults at ${path}`);
+}
+
+function mergeGeminiModelAlias(
+  defaults: Record<string, unknown>,
+  alias: GeminiModelAliasConfig,
+): Record<string, unknown> {
+  const existingModelConfigs =
+    defaults.modelConfigs === undefined
+      ? {}
+      : jsonObject(
+          defaults.modelConfigs,
+          'Gemini system defaults modelConfigs',
+        );
+  const existingAliases =
+    existingModelConfigs.customAliases === undefined
+      ? {}
+      : jsonObject(
+          existingModelConfigs.customAliases,
+          'Gemini system defaults modelConfigs.customAliases',
+        );
+  const generatedAlias =
+    buildGeminiModelAliasSettings(alias).modelConfigs.customAliases[
+      alias.alias
+    ]!;
+
+  return {
+    ...defaults,
+    modelConfigs: {
+      ...existingModelConfigs,
+      customAliases: {
+        ...existingAliases,
+        [alias.alias]: generatedAlias,
+      },
+    },
+  };
+}
+
 async function defaultCreateSettingsOverride(
   settingsConfig: GeminiSettingsConfig,
 ): Promise<GeminiSettingsOverride> {
-  const settings = buildGeminiSettings(settingsConfig);
-  if (!settings) {
+  if (!settingsConfig.modelAlias) {
     return NOOP_SETTINGS_OVERRIDE;
   }
 
+  const defaults = await readConfiguredSystemDefaults(process.env);
+  const settings = mergeGeminiModelAlias(defaults, settingsConfig.modelAlias);
   const dir = await mkdtemp(join(tmpdir(), 'cligent-gemini-'));
-  const filePath = join(dir, 'settings.json');
-  await writeFile(filePath, `${JSON.stringify(settings)}\n`, 'utf8');
+  const filePath = join(dir, 'system-defaults.json');
+
+  try {
+    await writeFile(filePath, `${JSON.stringify(settings)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
 
   return {
     env: {
-      GEMINI_CLI_SYSTEM_SETTINGS_PATH: filePath,
+      GEMINI_CLI_SYSTEM_DEFAULTS_PATH: filePath,
     },
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function defaultCreatePolicyOverride(
+  toolConfig: GeminiToolConfig,
+): Promise<GeminiPolicyOverride> {
+  const policy = buildGeminiPolicyToml(toolConfig.policyRules ?? []);
+  if (!policy) return NOOP_POLICY_OVERRIDE;
+
+  const dir = await mkdtemp(join(tmpdir(), 'cligent-gemini-policy-'));
+  const filePath = join(dir, 'policy.toml');
+
+  try {
+    await writeFile(filePath, policy, { encoding: 'utf8', mode: 0o600 });
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+
+  return {
+    args: [`--policy=${filePath}`],
     cleanup: async () => {
       await rm(dir, { recursive: true, force: true });
     },
@@ -467,79 +821,98 @@ async function defaultCreateSettingsOverride(
 export function mapPermissionsToGeminiToolConfig(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
-): GeminiToolConfig {
+): GeminiToolConfig & { policyRules: GeminiPolicyRule[] } {
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
+  validateGeminiToolNames('allowedTools', options?.allowedTools);
+  validateGeminiToolNames('disallowedTools', options?.disallowedTools);
 
-  // ENG-021: session-wide mode takes precedence over per-capability levels.
-  // gemini exposes a single prompt-less SDK setting (`--approval-mode yolo`),
-  // so both 'auto' and 'bypass' map to it — gemini does not differentiate
-  // a sandbox-protected auto-mode from an unchecked bypass beyond yolo
-  // itself. The per-capability allow/deny derivation is skipped to honor
-  // the precedence rule; user-passed allowedTools / disallowedTools are
-  // independent from `permissions` and still apply.
-  if (policy?.mode === 'auto' || policy?.mode === 'bypass') {
-    const allowed = new Set(options?.allowedTools ?? []);
-    const disallowed = new Set(options?.disallowedTools ?? []);
-    if (allowed.size > 0) {
-      for (const tool of disallowed) {
-        allowed.delete(tool);
-      }
-    }
-    const allowedTools = [...allowed].sort();
-    const disallowedTools = [...disallowed].sort();
-    const args: string[] = [];
-    if (allowedTools.length > 0) {
-      args.push('--allowed-tools', allowedTools.join(','));
-    }
-    return {
-      allowedTools,
-      disallowedTools,
-      args,
-      approvalMode: 'yolo',
-      ...(writablePaths ? { writablePaths } : {}),
-    };
-  }
+  const allowedListProvided = options?.allowedTools !== undefined;
+  const capabilityPolicyApplies =
+    policy !== undefined && policy.mode === undefined;
+  const normalized = capabilityPolicyApplies
+    ? normalizePermissions(policy)
+    : undefined;
+  const denied = new Set(options?.disallowedTools ?? []);
 
-  const normalized = normalizePermissions(policy);
-
-  const allowed = new Set(options?.allowedTools ?? []);
-  const disallowed = new Set(options?.disallowedTools ?? []);
-
-  for (const capability of Object.keys(CAPABILITY_TOOL_GROUPS) as PermissionCapability[]) {
-    const level = normalized[capability];
-
-    if (level === 'allow') {
+  if (normalized) {
+    for (const capability of Object.keys(
+      CAPABILITY_TOOL_GROUPS,
+    ) as PermissionCapability[]) {
+      if (normalized[capability] !== 'deny') continue;
       for (const tool of CAPABILITY_TOOL_GROUPS[capability]) {
-        allowed.add(tool);
-      }
-      continue;
-    }
-
-    if (level === 'deny') {
-      for (const tool of CAPABILITY_TOOL_GROUPS[capability]) {
-        disallowed.add(tool);
+        denied.add(tool);
       }
     }
   }
 
-  if (allowed.size > 0) {
-    for (const tool of disallowed) {
-      allowed.delete(tool);
-    }
+  const disallowedTools = [...denied].sort();
+  const explicitAllowed = [...new Set(options?.allowedTools ?? [])]
+    .filter((tool) => !denied.has(tool))
+    .sort();
+  const policyRules: GeminiPolicyRule[] = [];
+
+  // Gemini 0.50 uses a stable priority sort. Serialize same-priority denies
+  // before allows so a deny wins when both target one tool.
+  for (const toolName of disallowedTools) {
+    policyRules.push({
+      toolName,
+      decision: 'deny',
+      priority: POLICY_PRIORITY.deny,
+      interactive: false,
+    });
   }
 
-  const allowedTools = [...allowed].sort();
-  const disallowedTools = [...disallowed].sort();
+  for (const toolName of explicitAllowed) {
+    policyRules.push({
+      toolName,
+      decision: 'allow',
+      priority: POLICY_PRIORITY.explicitAllow,
+      interactive: false,
+    });
+  }
 
-  const args: string[] = [];
-  if (allowedTools.length > 0) {
-    args.push('--allowed-tools', allowedTools.join(','));
+  if (allowedListProvided) {
+    policyRules.push({
+      toolName: '*',
+      decision: 'deny',
+      priority: POLICY_PRIORITY.explicitAllowCatchAll,
+      interactive: false,
+    });
+  }
+
+  const capabilityAllowed = new Set<string>();
+  if (normalized) {
+    for (const capability of Object.keys(
+      CAPABILITY_TOOL_GROUPS,
+    ) as PermissionCapability[]) {
+      const level = normalized[capability];
+      if (level === 'deny') continue;
+
+      for (const toolName of CAPABILITY_TOOL_GROUPS[capability]) {
+        if (denied.has(toolName)) continue;
+        if (level === 'allow' && !allowedListProvided) {
+          capabilityAllowed.add(toolName);
+        }
+        policyRules.push({
+          toolName,
+          decision: level === 'allow' ? 'allow' : 'ask_user',
+          priority: POLICY_PRIORITY.capability,
+          interactive: false,
+        });
+      }
+    }
   }
 
   return {
-    allowedTools,
+    allowedTools: allowedListProvided
+      ? explicitAllowed
+      : [...capabilityAllowed].sort(),
     disallowedTools,
-    args,
+    args: [],
+    policyRules,
+    ...(policy?.mode === 'auto' || policy?.mode === 'bypass'
+      ? { approvalMode: 'yolo' as const }
+      : {}),
     ...(writablePaths ? { writablePaths } : {}),
   };
 }
@@ -650,11 +1023,17 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     settingsConfig: GeminiSettingsConfig,
   ) => Promise<GeminiSettingsOverride>;
 
+  private readonly createPolicyOverride: (
+    toolConfig: GeminiToolConfig,
+  ) => Promise<GeminiPolicyOverride>;
+
   constructor(deps: GeminiAdapterDeps = {}) {
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
     this.probeAvailability = deps.probeAvailability ?? defaultProbeAvailability;
     this.createSettingsOverride =
       deps.createSettingsOverride ?? defaultCreateSettingsOverride;
+    this.createPolicyOverride =
+      deps.createPolicyOverride ?? defaultCreatePolicyOverride;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -671,6 +1050,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let child: ChildProcessWithoutNullStreams | undefined;
     let closePromise: Promise<CloseResult> | undefined;
     let settingsOverride: GeminiSettingsOverride = NOOP_SETTINGS_OVERRIDE;
+    let policyOverride: GeminiPolicyOverride = NOOP_POLICY_OVERRIDE;
 
     const startTime = Date.now();
     let sessionId = options?.resume ?? generateSessionId();
@@ -696,6 +1076,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
     try {
       settingsOverride = await this.createSettingsOverride(mapped.settingsConfig);
+      policyOverride = await this.createPolicyOverride(mapped.toolConfig);
       const spawnOptions: SpawnOptionsWithoutStdio = {
         ...mapped.spawnOptions,
         env: {
@@ -709,7 +1090,11 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
       child = this.spawnProcess(
         mapped.command,
-        mapped.args,
+        [
+          ...mapped.args.slice(0, -1),
+          ...policyOverride.args,
+          ...mapped.args.slice(-1),
+        ],
         spawnOptions,
       );
 
@@ -1132,7 +1517,22 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         }
       }
 
-      await settingsOverride.cleanup();
+      const cleanupResults = await Promise.allSettled([
+        policyOverride.cleanup(),
+        settingsOverride.cleanup(),
+      ]);
+      const cleanupErrors = cleanupResults.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      );
+      if (cleanupErrors.length === 1) {
+        throw cleanupErrors[0];
+      }
+      if (cleanupErrors.length > 1) {
+        throw new AggregateError(
+          cleanupErrors,
+          'Failed to clean up Gemini temporary runtime files',
+        );
+      }
     }
   }
 }

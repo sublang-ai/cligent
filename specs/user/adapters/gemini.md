@@ -88,7 +88,7 @@ A provided empty `PermissionPolicy` shall remain distinct and shall generate `as
 
 ### GEMINI-013
 
-Where a user-provided tool name contains Gemini Policy Engine wildcard syntax `*` or an unpaired Unicode surrogate, the adapter shall reject it before spawn with an error naming the offending option index.
+Where a user-provided tool name is empty, contains Gemini Policy Engine wildcard syntax `*`, or contains an unpaired Unicode surrogate, the adapter shall reject it before spawn with an error naming the offending option index.
 For other accepted names, the adapter shall serialize a valid TOML basic string, including escaping DEL (`U+007F`).
 
 ### GEMINI-014

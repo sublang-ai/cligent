@@ -2,15 +2,25 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { EventEmitter } from 'node:events';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildGeminiPolicyToml,
   buildGeminiSettings,
   buildGeminiToolSettings,
   GEMINI_REASONING_EFFORT_ALIAS,
@@ -633,8 +643,13 @@ describe('GeminiAdapter', () => {
     }
   });
 
-  it('maps permission policy combinations to tool groups', () => {
+  it('maps permission policy combinations to Gemini 0.50 policy rules', () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
+    const toolGroups = {
+      fileWrite: ['replace', 'write_file'],
+      shellExecute: ['run_shell_command'],
+      networkAccess: ['google_web_search', 'web_fetch'],
+    } as const;
 
     for (const fileWrite of levels) {
       for (const shellExecute of levels) {
@@ -646,20 +661,35 @@ describe('GeminiAdapter', () => {
           };
 
           const mapped = mapPermissionsToGeminiToolConfig(policy);
+          const expectedLevels = { fileWrite, shellExecute, networkAccess };
 
-          expect(mapped.allowedTools.includes('edit')).toBe(fileWrite === 'allow');
-          expect(mapped.allowedTools.includes('ShellTool')).toBe(shellExecute === 'allow');
-          expect(mapped.allowedTools.includes('webfetch')).toBe(networkAccess === 'allow');
-
-          expect(mapped.disallowedTools.includes('edit')).toBe(fileWrite === 'deny');
-          expect(mapped.disallowedTools.includes('ShellTool')).toBe(shellExecute === 'deny');
-          expect(mapped.disallowedTools.includes('webfetch')).toBe(networkAccess === 'deny');
+          for (const capability of Object.keys(toolGroups) as Array<
+            keyof typeof toolGroups
+          >) {
+            const level = expectedLevels[capability];
+            for (const toolName of toolGroups[capability]) {
+              const rule = mapped.policyRules.find(
+                (candidate) => candidate.toolName === toolName,
+              );
+              expect(rule).toEqual({
+                toolName,
+                decision:
+                  level === 'allow'
+                    ? 'allow'
+                    : level === 'ask'
+                      ? 'ask_user'
+                      : 'deny',
+                priority: level === 'deny' ? 999 : 997,
+                interactive: false,
+              });
+            }
+          }
         }
       }
     }
   });
 
-  it('builds Gemini settings with tools.exclude for denied capabilities', () => {
+  it('keeps the legacy tool-settings helper compatibility-only', () => {
     const config = mapPermissionsToGeminiToolConfig(
       {
         fileWrite: 'deny',
@@ -675,8 +705,32 @@ describe('GeminiAdapter', () => {
     const settings = buildGeminiToolSettings(config);
     expect(settings).toEqual({
       tools: {
-        core: ['ShellTool', 'custom-tool'],
-        exclude: ['blocked-tool', 'edit', 'webfetch'],
+        core: ['custom-tool'],
+        exclude: [
+          'blocked-tool',
+          'google_web_search',
+          'replace',
+          'web_fetch',
+          'write_file',
+        ],
+      },
+    });
+    expect(config.args).toEqual([]);
+  });
+
+  it('accepts legacy GeminiToolConfig values without policyRules', () => {
+    expect(
+      buildGeminiSettings({
+        toolConfig: {
+          allowedTools: ['legacy-tool'],
+          disallowedTools: ['legacy-blocked'],
+          args: [],
+        },
+      }),
+    ).toEqual({
+      tools: {
+        core: ['legacy-tool'],
+        exclude: ['legacy-blocked'],
       },
     });
   });
@@ -701,13 +755,166 @@ describe('GeminiAdapter', () => {
       '--output-format',
       'stream-json',
       '--model=gemini-2.5-pro',
-      '--allowed-tools',
-      'ShellTool,custom-tool',
       '--prompt=build this',
     ]);
     expect(mapped.args).not.toContain('--max-session-turns');
-    expect(mapped.toolConfig.disallowedTools).toEqual(['edit', 'never-tool']);
+    expect(mapped.args).not.toContain('--allowed-tools');
+    expect(mapped.toolConfig.disallowedTools).toEqual([
+      'never-tool',
+      'replace',
+      'write_file',
+    ]);
+    expect(mapped.toolConfig.allowedTools).toEqual(['custom-tool']);
   });
+
+  it('distinguishes native defaults from an explicit empty policy', () => {
+    const native = mapPermissionsToGeminiToolConfig(undefined);
+    expect(native.policyRules).toEqual([]);
+
+    const explicit = mapPermissionsToGeminiToolConfig({});
+    expect(explicit.policyRules).toHaveLength(5);
+    expect(explicit.policyRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'replace',
+          decision: 'ask_user',
+          interactive: false,
+        }),
+        expect.objectContaining({
+          toolName: 'run_shell_command',
+          decision: 'ask_user',
+          interactive: false,
+        }),
+        expect.objectContaining({
+          toolName: 'web_fetch',
+          decision: 'ask_user',
+          interactive: false,
+        }),
+      ]),
+    );
+  });
+
+  it('keeps explicit allowlists closed and serializes denies before allows', () => {
+    const mapped = mapPermissionsToGeminiToolConfig(
+      {
+        fileWrite: 'deny',
+        shellExecute: 'allow',
+        networkAccess: 'allow',
+      },
+      {
+        allowedTools: ['custom-tool', 'replace', 'safe-tool'],
+        disallowedTools: ['custom-tool'],
+      },
+    );
+
+    expect(mapped.allowedTools).toEqual(['safe-tool']);
+    expect(mapped.policyRules.slice(0, 4)).toEqual([
+      {
+        toolName: 'custom-tool',
+        decision: 'deny',
+        priority: 999,
+        interactive: false,
+      },
+      {
+        toolName: 'replace',
+        decision: 'deny',
+        priority: 999,
+        interactive: false,
+      },
+      {
+        toolName: 'write_file',
+        decision: 'deny',
+        priority: 999,
+        interactive: false,
+      },
+      {
+        toolName: 'safe-tool',
+        decision: 'allow',
+        priority: 999,
+        interactive: false,
+      },
+    ]);
+    expect(mapped.policyRules[4]).toEqual({
+      toolName: '*',
+      decision: 'deny',
+      priority: 998,
+      interactive: false,
+    });
+    expect(mapped.policyRules).toContainEqual({
+      toolName: 'run_shell_command',
+      decision: 'allow',
+      priority: 997,
+      interactive: false,
+    });
+  });
+
+  it('emits a closed catch-all policy for an explicit empty allowlist', () => {
+    const mapped = mapPermissionsToGeminiToolConfig(undefined, {
+      allowedTools: [],
+    });
+
+    expect(mapped.policyRules).toEqual([
+      {
+        toolName: '*',
+        decision: 'deny',
+        priority: 998,
+        interactive: false,
+      },
+    ]);
+  });
+
+  it('escapes accepted tool names as valid TOML basic strings', () => {
+    const toolName = 'tool"\\\n\u0001\u007f\u{1F680}';
+    const mapped = mapPermissionsToGeminiToolConfig(undefined, {
+      disallowedTools: [toolName],
+    });
+
+    expect(buildGeminiPolicyToml(mapped.policyRules)).toContain(
+      'toolName = "tool\\"\\\\\\n\\u0001\\u007F\u{1F680}"',
+    );
+  });
+
+  it.each([
+    ['allowedTools', ['safe', ''], 1, 'must not be empty'],
+    ['disallowedTools', [''], 0, 'must not be empty'],
+    [
+      'allowedTools',
+      ['safe', 'bad*name'],
+      1,
+      'must not contain Gemini Policy Engine wildcard syntax "*"',
+    ],
+    [
+      'disallowedTools',
+      ['bad\ud800name'],
+      0,
+      'must not contain an unpaired Unicode surrogate',
+    ],
+    [
+      'allowedTools',
+      ['bad\udc00name'],
+      0,
+      'must not contain an unpaired Unicode surrogate',
+    ],
+  ] as const)(
+    'rejects invalid %s policy names before spawn',
+    async (option, values, index, detail) => {
+      let spawnCount = 0;
+      const adapter = new GeminiAdapter({
+        spawnProcess: () => {
+          spawnCount += 1;
+          throw new Error('must not spawn');
+        },
+      });
+
+      const runOptions = {
+        [option]: values,
+      } as unknown as AgentOptions<GeminiEffort>;
+      await expect(collect(adapter.run('prompt', runOptions))).rejects.toThrow(
+        `${option}[${index}] ${detail}`,
+      );
+      expect(spawnCount).toBe(0);
+    },
+  );
 
   it('maps an explicit resume token to one joined --resume token', () => {
     const mapped = mapAgentOptionsToGeminiCommand('continue this', {
@@ -772,6 +979,85 @@ describe('GeminiAdapter', () => {
       '--prompt=--leading prompt=value',
     ]);
     expect(invocations[0]?.args).not.toContain('--max-session-turns');
+  });
+
+  it('passes a temporary User-tier policy and cleans it after success', async () => {
+    let policyPath: string | undefined;
+    let policyToml: string | undefined;
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      const policyArg = invocations[0]?.args.find((arg) =>
+        arg.startsWith('--policy='),
+      );
+      policyPath = policyArg?.slice('--policy='.length);
+      policyToml = policyPath ? readFileSync(policyPath, 'utf8') : undefined;
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
+
+    await collect(
+      adapter.run('policy prompt', {
+        permissions: {
+          fileWrite: 'deny',
+          shellExecute: 'allow',
+          networkAccess: 'ask',
+        },
+        allowedTools: ['custom-tool'],
+        disallowedTools: ['blocked-tool'],
+      }),
+    );
+
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]?.args).toContain(`--policy=${policyPath}`);
+    expect(invocations[0]?.args).not.toContain('--policy');
+    expect(invocations[0]?.args).not.toContain('--allowed-tools');
+    expect(invocations[0]?.args.at(-1)).toBe('--prompt=policy prompt');
+    expect(policyToml).toContain('toolName = "blocked-tool"');
+    expect(policyToml).toContain('toolName = "custom-tool"');
+    expect(policyToml).toContain('toolName = "*"');
+    expect(policyToml?.match(/interactive = false/g)).toHaveLength(8);
+    expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
+      process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH,
+    );
+    expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH).toBe(
+      process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH,
+    );
+    expect(policyPath).toBeDefined();
+    expect(existsSync(policyPath!)).toBe(false);
+  });
+
+  it('cleans a temporary policy when spawn fails', async () => {
+    let policyPath: string | undefined;
+    const adapter = new GeminiAdapter({
+      spawnProcess: (_command, args) => {
+        policyPath = args
+          .find((arg) => arg.startsWith('--policy='))
+          ?.slice('--policy='.length);
+        throw new Error('fake spawn failed');
+      },
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { permissions: { fileWrite: 'deny' } }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(policyPath).toBeDefined();
+    expect(existsSync(policyPath!)).toBe(false);
   });
 
   it.each([
@@ -926,7 +1212,7 @@ describe('GeminiAdapter', () => {
     },
   );
 
-  it('combines reasoning aliases with existing tool settings', () => {
+  it('keeps legacy combined settings output available to callers', () => {
     const mapped = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-3-pro',
       effort: 'low',
@@ -939,8 +1225,8 @@ describe('GeminiAdapter', () => {
 
     expect(buildGeminiSettings(mapped.settingsConfig)).toEqual({
       tools: {
-        core: ['ShellTool'],
-        exclude: ['edit'],
+        core: ['run_shell_command'],
+        exclude: ['replace', 'write_file'],
       },
       modelConfigs: {
         customAliases: {
@@ -965,37 +1251,169 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).not.toContain('--');
   });
 
-  it('passes settings override environment to spawned process', async () => {
-    const { spawnProcess, invocations } = makeSpawn((process) => {
-      writeEventsAndClose(
-        process,
-        [
-          JSON.stringify({
-            type: 'result',
-            status: 'success',
-            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
-          }),
-        ],
-        0,
-        null,
+  it('overlays effort onto configured system defaults without replacing system settings', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-defaults-test-'));
+    const configuredDefaults = join(root, 'configured-defaults.json');
+    const originalDefaults = {
+      security: { disableAlwaysAllow: true },
+      modelConfigs: {
+        routing: { enabled: true },
+        customAliases: {
+          existing: { modelConfig: { model: 'gemini-existing' } },
+        },
+      },
+    };
+    writeFileSync(configuredDefaults, JSON.stringify(originalDefaults), 'utf8');
+
+    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+    const previousSettings = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
+    process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = '/admin/gemini/settings.json';
+
+    let temporaryDefaults: string | undefined;
+    let mergedDefaults: Record<string, unknown> | undefined;
+
+    try {
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        temporaryDefaults =
+          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+        mergedDefaults = temporaryDefaults
+          ? (JSON.parse(readFileSync(temporaryDefaults, 'utf8')) as Record<
+              string,
+              unknown
+            >)
+          : undefined;
+        writeEventsAndClose(
+          process,
+          [
+            JSON.stringify({
+              type: 'result',
+              status: 'success',
+              stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            }),
+          ],
+          0,
+          null,
+        );
+      });
+      const adapter = new GeminiAdapter({ spawnProcess });
+
+      await collect(
+        adapter.run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'low',
+        }),
       );
-    });
 
-    const adapter = new GeminiAdapter({
-      spawnProcess,
-      probeAvailability: async () => true,
-      createSettingsOverride: async () => ({
-        env: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: '/tmp/gemini-settings.json' },
-        cleanup: async () => {},
-      }),
-    });
+      expect(invocations).toHaveLength(1);
+      expect(temporaryDefaults).not.toBe(configuredDefaults);
+      expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
+        '/admin/gemini/settings.json',
+      );
+      expect(mergedDefaults).toMatchObject({
+        security: { disableAlwaysAllow: true },
+        modelConfigs: {
+          routing: { enabled: true },
+          customAliases: {
+            existing: { modelConfig: { model: 'gemini-existing' } },
+            [GEMINI_REASONING_EFFORT_ALIAS]: {
+              modelConfig: {
+                model: 'gemini-3-pro',
+                generateContentConfig: {
+                  thinkingConfig: { thinkingLevel: 'LOW' },
+                },
+              },
+            },
+          },
+        },
+      });
+      expect(JSON.parse(readFileSync(configuredDefaults, 'utf8'))).toEqual(
+        originalDefaults,
+      );
+      expect(temporaryDefaults).toBeDefined();
+      expect(existsSync(temporaryDefaults!)).toBe(false);
+    } finally {
+      if (previousDefaults === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
+      }
+      if (previousSettings === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = previousSettings;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
-    await collect(adapter.run('prompt'));
-
-    expect(invocations).toHaveLength(1);
-    expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
-      '/tmp/gemini-settings.json',
+  it('derives system defaults beside system settings when the defaults env is empty', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-system-test-'));
+    const configuredSettings = join(root, 'settings.json');
+    const siblingDefaults = join(root, 'system-defaults.json');
+    writeFileSync(configuredSettings, '{}', 'utf8');
+    writeFileSync(
+      siblingDefaults,
+      '{\n  // Gemini settings accept JSON comments.\n  "siblingMarker": true /* keep */\n}\n',
+      'utf8',
     );
+
+    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+    const previousSettings = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = '';
+    process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = configuredSettings;
+
+    let mergedDefaults: Record<string, unknown> | undefined;
+
+    try {
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        const temporaryDefaults =
+          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+        mergedDefaults = temporaryDefaults
+          ? (JSON.parse(readFileSync(temporaryDefaults, 'utf8')) as Record<
+              string,
+              unknown
+            >)
+          : undefined;
+        writeEventsAndClose(
+          process,
+          [
+            JSON.stringify({
+              type: 'result',
+              status: 'success',
+              stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            }),
+          ],
+          0,
+          null,
+        );
+      });
+      const adapter = new GeminiAdapter({ spawnProcess });
+
+      await collect(
+        adapter.run('prompt', {
+          model: 'gemini-2.5-pro',
+          effort: 'minimal',
+        }),
+      );
+
+      expect(mergedDefaults).toMatchObject({ siblingMarker: true });
+      expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
+        configuredSettings,
+      );
+    } finally {
+      if (previousDefaults === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
+      }
+      if (previousSettings === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = previousSettings;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('trusts the workspace for headless Gemini CLI runs by default', async () => {
@@ -1076,6 +1494,161 @@ describe('GeminiAdapter', () => {
         process.env.GEMINI_CLI_TRUST_WORKSPACE = previousTrust;
       }
     }
+  });
+
+  it('cleans policy and defaults files after a stream error', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-cleanup-error-'));
+    const configuredDefaults = join(root, 'system-defaults.json');
+    writeFileSync(configuredDefaults, '{}', 'utf8');
+    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
+
+    let policyPath: string | undefined;
+    let defaultsPath: string | undefined;
+
+    try {
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        policyPath = invocations[0]?.args
+          .find((arg) => arg.startsWith('--policy='))
+          ?.slice('--policy='.length);
+        defaultsPath =
+          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+        process.stderr.end();
+        process.stdout.destroy(new Error('fake stream failed'));
+        process.emit('close', 1, null);
+      });
+      const adapter = new GeminiAdapter({ spawnProcess });
+
+      const events = await collect(
+        adapter.run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'high',
+          permissions: {},
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(policyPath).toBeDefined();
+      expect(defaultsPath).toBeDefined();
+      expect(existsSync(policyPath!)).toBe(false);
+      expect(existsSync(defaultsPath!)).toBe(false);
+    } finally {
+      if (previousDefaults === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('cleans policy and defaults files after abort', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-cleanup-abort-'));
+    const configuredDefaults = join(root, 'system-defaults.json');
+    writeFileSync(configuredDefaults, '{}', 'utf8');
+    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
+
+    const controller = new AbortController();
+    let policyPath: string | undefined;
+    let defaultsPath: string | undefined;
+
+    try {
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        policyPath = invocations[0]?.args
+          .find((arg) => arg.startsWith('--policy='))
+          ?.slice('--policy='.length);
+        defaultsPath =
+          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+        process.kill = (signal?: NodeJS.Signals | number): boolean => {
+          process.killed = true;
+          process.killSignals.push(signal);
+          queueMicrotask(() => {
+            process.stdout.end();
+            process.stderr.end();
+            process.emit('close', null, 'SIGTERM');
+          });
+          return true;
+        };
+        process.stdout.write(
+          `${JSON.stringify({
+            type: 'init',
+            sessionId: 'cleanup-abort',
+            model: 'gemini-3-pro',
+            cwd: '/repo',
+          })}\n`,
+        );
+      });
+      const adapter = new GeminiAdapter({ spawnProcess });
+      const events: AgentEvent[] = [];
+
+      for await (const event of adapter.run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'high',
+        permissions: {},
+        abortSignal: controller.signal,
+      })) {
+        events.push(event);
+        if (event.type === 'init') controller.abort();
+      }
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(policyPath).toBeDefined();
+      expect(defaultsPath).toBeDefined();
+      expect(existsSync(policyPath!)).toBe(false);
+      expect(existsSync(defaultsPath!)).toBe(false);
+    } finally {
+      if (previousDefaults === undefined) {
+        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
+      } else {
+        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('attempts both cleanups and surfaces cleanup failures', async () => {
+    const cleanupCalls: string[] = [];
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {
+          cleanupCalls.push('defaults');
+          throw new Error('defaults cleanup failed');
+        },
+      }),
+      createPolicyOverride: async () => ({
+        args: [],
+        cleanup: async () => {
+          cleanupCalls.push('policy');
+          throw new Error('policy cleanup failed');
+        },
+      }),
+    });
+
+    await expect(collect(adapter.run('prompt'))).rejects.toThrow(
+      'Failed to clean up Gemini temporary runtime files',
+    );
+    expect(cleanupCalls).toEqual(['policy', 'defaults']);
   });
 
   it('sends SIGTERM on abort and emits interrupted done status', async () => {
@@ -1337,11 +1910,13 @@ describe('GeminiAdapter', () => {
   it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per ENG-021', () => {
     const auto = mapPermissionsToGeminiToolConfig({ mode: 'auto' });
     expect(auto.approvalMode).toBe('yolo');
+    expect(auto.policyRules).toEqual([]);
 
     // gemini exposes no distinct bypass tier beyond yolo, so both modes
     // map to the same SDK setting — recorded in adapter docs and DR-005.
     const bypass = mapPermissionsToGeminiToolConfig({ mode: 'bypass' });
     expect(bypass.approvalMode).toBe('yolo');
+    expect(bypass.policyRules).toEqual([]);
 
     for (const mode of ['auto', 'bypass'] as const) {
       const cmd = mapAgentOptionsToGeminiCommand('hi', {
@@ -1376,9 +1951,30 @@ describe('GeminiAdapter', () => {
     );
     expect(withUserTools.allowedTools).toContain('mytool');
     expect(withUserTools.disallowedTools).toContain('othertool');
-    // The fileWrite: 'deny' from the policy did NOT add 'edit' to
+    // The fileWrite: 'deny' from the policy did NOT add write tools to
     // disallowedTools — mode took precedence.
-    expect(withUserTools.disallowedTools).not.toContain('edit');
+    expect(withUserTools.disallowedTools).not.toContain('replace');
+    expect(withUserTools.disallowedTools).not.toContain('write_file');
+    expect(withUserTools.policyRules).toEqual([
+      {
+        toolName: 'othertool',
+        decision: 'deny',
+        priority: 999,
+        interactive: false,
+      },
+      {
+        toolName: 'mytool',
+        decision: 'allow',
+        priority: 999,
+        interactive: false,
+      },
+      {
+        toolName: '*',
+        decision: 'deny',
+        priority: 998,
+        interactive: false,
+      },
+    ]);
   });
 
   it('accepts writablePaths and reports ambient enforcement', () => {
