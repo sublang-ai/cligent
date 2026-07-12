@@ -1131,49 +1131,16 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   if (instruction !== undefined) common.instruction = instruction;
   if (permissions !== undefined) common.permissions = permissions;
   const configuredEffort = configuredEffortValue(input, 'captain');
-
-  switch (adapter) {
-    case 'claude': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'codex': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'gemini': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'opencode': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-  }
+  const effort = optionalEffort(
+    configuredEffort.value,
+    adapter,
+    configuredEffort.path,
+  );
+  // `adapter` and `effort` were validated together immediately above. Keep the
+  // exported discriminated union without repeating the same runtime branch.
+  return (effort === undefined
+    ? { ...common, adapter }
+    : { ...common, adapter, effort }) as CaptainConfig;
 }
 
 function normalizePlayerConfigs(value: unknown): PlayerConfig[] {
@@ -1218,49 +1185,15 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     ...(permissions === undefined ? {} : { permissions }),
   };
   const configuredEffort = configuredEffortValue(input, path);
-
-  switch (adapter) {
-    case 'claude': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'codex': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'gemini': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-    case 'opencode': {
-      const effort = optionalEffort(
-        configuredEffort.value,
-        adapter,
-        configuredEffort.path,
-      );
-      return effort === undefined
-        ? { ...common, adapter }
-        : { ...common, adapter, effort };
-    }
-  }
+  const effort = optionalEffort(
+    configuredEffort.value,
+    adapter,
+    configuredEffort.path,
+  );
+  // `adapter` and `effort` were validated together immediately above.
+  return (effort === undefined
+    ? { ...common, adapter }
+    : { ...common, adapter, effort }) as PlayerConfig;
 }
 
 function configuredEffortValue(

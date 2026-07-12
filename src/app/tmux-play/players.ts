@@ -157,60 +157,24 @@ export async function resolvePlayers(
   return players;
 }
 
-async function resolvePlayer(
-  config: PlayerConfig,
+async function resolvePlayer<A extends PlayerAdapterName>(
+  config: PlayerConfig<A>,
   cwd: string | undefined,
   adapterImports: PlayerAdapterImports,
-): Promise<ResolvedPlayer> {
-  const commonOptions = {
+): Promise<ResolvedPlayer<A>> {
+  const cligent = await createPlayerCligent(config.adapter, {
     adapterImports,
     cwd,
     model: config.model,
     role: config.id,
     permissions: config.permissions,
-  };
-  const resolvedBase = {
+    effort: config.effort,
+  });
+  return {
     id: config.id,
+    adapter: config.adapter,
     model: config.model,
     instruction: config.instruction,
-  };
-
-  switch (config.adapter) {
-    case 'claude':
-      return {
-        ...resolvedBase,
-        adapter: 'claude',
-        cligent: await createPlayerCligent('claude', {
-          ...commonOptions,
-          effort: config.effort,
-        }),
-      };
-    case 'codex':
-      return {
-        ...resolvedBase,
-        adapter: 'codex',
-        cligent: await createPlayerCligent('codex', {
-          ...commonOptions,
-          effort: config.effort,
-        }),
-      };
-    case 'gemini':
-      return {
-        ...resolvedBase,
-        adapter: 'gemini',
-        cligent: await createPlayerCligent('gemini', {
-          ...commonOptions,
-          effort: config.effort,
-        }),
-      };
-    case 'opencode':
-      return {
-        ...resolvedBase,
-        adapter: 'opencode',
-        cligent: await createPlayerCligent('opencode', {
-          ...commonOptions,
-          effort: config.effort,
-        }),
-      };
-  }
+    cligent,
+  } as ResolvedPlayer<A>;
 }

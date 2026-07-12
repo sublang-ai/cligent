@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import type { Effort } from './effort.js';
+
+export type {
+  ClaudeEffort,
+  CodexEffort,
+  Effort,
+  GeminiEffort,
+  OpenCodeEffort,
+  PortableEffort,
+} from './effort.js';
+
 export type AgentEventType =
   | 'init'
   | 'text'
@@ -132,29 +143,6 @@ export interface PermissionPolicy {
    */
   writablePaths?: string[];
 }
-
-export type PortableEffort =
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max';
-
-/** Accepted effort values for the built-in Claude Code adapter. */
-export type ClaudeEffort = PortableEffort | 'ultracode';
-
-/** Accepted effort values for the built-in Codex adapter. */
-export type CodexEffort = PortableEffort | 'ultra';
-
-/** Accepted effort values for the built-in Gemini adapter. */
-export type GeminiEffort = PortableEffort;
-
-/** Accepted effort values for the built-in OpenCode adapter. */
-export type OpenCodeEffort = PortableEffort;
-
-/** Union of every effort value accepted by a built-in adapter. */
-export type Effort = ClaudeEffort | CodexEffort;
 
 export interface AgentAdapter<E extends string = Effort> {
   readonly agent: AgentType;

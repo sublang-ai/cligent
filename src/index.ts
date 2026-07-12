@@ -20,12 +20,6 @@ export type {
   WritablePathsEnforcement,
   WritablePathsPermissionMapping,
   PermissionPolicy,
-  PortableEffort,
-  ClaudeEffort,
-  CodexEffort,
-  GeminiEffort,
-  OpenCodeEffort,
-  Effort,
   AgentAdapter,
   AgentOptions,
   CligentEvent,
@@ -42,8 +36,14 @@ export {
 } from './effort.js';
 export type {
   BuiltinEffortAgent,
+  ClaudeEffort,
+  CodexEffort,
+  Effort,
   EffortForAgent,
   EffortSupport,
+  GeminiEffort,
+  OpenCodeEffort,
+  PortableEffort,
 } from './effort.js';
 
 export { AdapterRegistry } from './registry.js';

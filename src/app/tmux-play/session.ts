@@ -670,22 +670,13 @@ async function runShutdownStep(
 function runtimeCaptain(
   captain: CaptainConfig,
 ): RunTmuxPlayOptions['captainConfig'] {
-  const base = {
+  return {
+    adapter: captain.adapter,
     model: captain.model,
     instruction: captain.instruction,
     permissions: captain.permissions,
-  };
-
-  switch (captain.adapter) {
-    case 'claude':
-      return { ...base, adapter: 'claude', effort: captain.effort };
-    case 'codex':
-      return { ...base, adapter: 'codex', effort: captain.effort };
-    case 'gemini':
-      return { ...base, adapter: 'gemini', effort: captain.effort };
-    case 'opencode':
-      return { ...base, adapter: 'opencode', effort: captain.effort };
-  }
+    effort: captain.effort,
+  } as RunTmuxPlayOptions['captainConfig'];
 }
 
 function runtimePlayers(
@@ -701,23 +692,14 @@ function runtimePlayer(player: PlayerConfig): RuntimePlayerConfig {
     );
   }
 
-  const base = {
+  return {
     id: player.id,
+    adapter: player.adapter,
     model: player.model,
     instruction: player.instruction,
     permissions: player.permissions,
-  };
-
-  switch (player.adapter) {
-    case 'claude':
-      return { ...base, adapter: 'claude', effort: player.effort };
-    case 'codex':
-      return { ...base, adapter: 'codex', effort: player.effort };
-    case 'gemini':
-      return { ...base, adapter: 'gemini', effort: player.effort };
-    case 'opencode':
-      return { ...base, adapter: 'opencode', effort: player.effort };
-  }
+    effort: player.effort,
+  } as RuntimePlayerConfig;
 }
 
 function deferred<T>(): {

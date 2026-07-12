@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type {
-  AgentType,
-  ClaudeEffort,
-  CodexEffort,
-  Effort,
-  GeminiEffort,
-  OpenCodeEffort,
-} from './types.js';
+import type { AgentType } from './types.js';
 
 export type BuiltinEffortAgent =
   | 'claude-code'
@@ -16,26 +9,10 @@ export type BuiltinEffortAgent =
   | 'gemini'
   | 'opencode';
 
-export type EffortForAgent<A extends AgentType | 'claude'> = A extends
-  | 'claude'
-  | 'claude-code'
-  ? ClaudeEffort
-  : A extends 'codex'
-    ? CodexEffort
-    : A extends 'gemini'
-      ? GeminiEffort
-      : A extends 'opencode'
-        ? OpenCodeEffort
-        : Effort;
-
-export interface EffortSupport {
-  /** Values Cligent accepts for this built-in adapter. */
-  readonly values: readonly Effort[];
-  /** Values that enable provider-native multi-agent orchestration. */
-  readonly orchestrationValues: readonly Effort[];
-  /** Whether the selected model/provider may support only a subset. */
+interface EffortSupportShape {
+  readonly values: readonly string[];
+  readonly orchestrationValues: readonly string[];
   readonly modelDependent: boolean;
-  /** Short user-facing qualification for selectors and validation UIs. */
   readonly notes: string;
 }
 
@@ -102,7 +79,50 @@ export const EFFORT_SUPPORT = Object.freeze({
     notes:
       'Anthropic collapses minimal through high to high and xhigh/max to max; OpenAI collapses max to xhigh; Google collapses minimal through medium to low and high through max to high. Unknown providers and malformed or omitted models receive no effort override.',
   }),
-}) satisfies Readonly<Record<BuiltinEffortAgent, EffortSupport>>;
+}) satisfies Readonly<Record<BuiltinEffortAgent, EffortSupportShape>>;
+
+type EffortValue<A extends BuiltinEffortAgent> =
+  (typeof EFFORT_SUPPORT)[A]['values'][number];
+
+/** Portable effort values shared by every built-in adapter. */
+export type PortableEffort = EffortValue<'gemini'>;
+
+/** Accepted effort values for the built-in Claude Code adapter. */
+export type ClaudeEffort = EffortValue<'claude-code'>;
+
+/** Accepted effort values for the built-in Codex adapter. */
+export type CodexEffort = EffortValue<'codex'>;
+
+/** Accepted effort values for the built-in Gemini adapter. */
+export type GeminiEffort = EffortValue<'gemini'>;
+
+/** Accepted effort values for the built-in OpenCode adapter. */
+export type OpenCodeEffort = EffortValue<'opencode'>;
+
+/** Union of every effort value accepted by a built-in adapter. */
+export type Effort = EffortValue<BuiltinEffortAgent>;
+
+export type EffortForAgent<A extends AgentType | 'claude'> = A extends
+  'claude' | 'claude-code'
+  ? ClaudeEffort
+  : A extends 'codex'
+    ? CodexEffort
+    : A extends 'gemini'
+      ? GeminiEffort
+      : A extends 'opencode'
+        ? OpenCodeEffort
+        : Effort;
+
+export interface EffortSupport {
+  /** Values Cligent accepts for this built-in adapter. */
+  readonly values: readonly Effort[];
+  /** Values that enable provider-native multi-agent orchestration. */
+  readonly orchestrationValues: readonly Effort[];
+  /** Whether the selected model/provider may support only a subset. */
+  readonly modelDependent: boolean;
+  /** Short user-facing qualification for selectors and validation UIs. */
+  readonly notes: string;
+}
 
 function canonicalEffortAgent(
   agent: AgentType | 'claude',
