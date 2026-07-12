@@ -37,6 +37,13 @@ declare const mappedClaudeCanUseTool: MappedClaudeCanUseTool;
 const claudeSdkMirror: LoadedClaudeSdk = installedClaudeSdk;
 const currentClaudeOptions: CurrentClaudeOptions = mappedClaudeOptions;
 const currentClaudeCanUseTool: CurrentClaudeCanUseTool = mappedClaudeCanUseTool;
+type CurrentClaudeSettings = Exclude<
+  NonNullable<CurrentClaudeOptions['settings']>,
+  string
+>;
+const currentClaudeUltracodeSettings: CurrentClaudeSettings = {
+  ultracode: true,
+};
 const unsupportedClaudeOptionKeys: Record<
   Exclude<keyof MappedClaudeOptions, keyof CurrentClaudeOptions>,
   never
@@ -44,6 +51,7 @@ const unsupportedClaudeOptionKeys: Record<
 void claudeSdkMirror;
 void currentClaudeOptions;
 void currentClaudeCanUseTool;
+void currentClaudeUltracodeSettings;
 void unsupportedClaudeOptionKeys;
 
 type InstalledCodexSdk = typeof import('@openai/codex-sdk');

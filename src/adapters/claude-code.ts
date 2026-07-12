@@ -2,16 +2,17 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createEvent, generateSessionId } from '../events.js';
+import { assertSupportedEffort } from '../effort.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
   AgentOptions,
+  ClaudeEffort,
   DonePayload,
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -23,6 +24,11 @@ type ClaudePermissionMode =
   | 'default';
 
 type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+interface ClaudeSettings {
+  ultracode?: boolean;
+  [key: string]: unknown;
+}
 
 // The SDK's permission-callback contract, mirrored locally. It is deliberately
 // NOT imported from `@anthropic-ai/claude-agent-sdk`: that package is an
@@ -58,6 +64,7 @@ interface ClaudeQueryOptions {
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: ClaudeSdkEffort;
+  settings?: ClaudeSettings;
   sessionId?: string;
 }
 
@@ -631,17 +638,33 @@ interface MappedClaudeOptions {
   cleanupAbort: () => void;
 }
 
-export function mapEffortToClaudeEffort(
-  effort: PortableEffort | undefined,
-): ClaudeSdkEffort | undefined {
-  if (effort === undefined) return undefined;
-  // Claude has no 'minimal' tier; use the SDK's lowest effort instead.
-  if (effort === 'minimal') return 'low';
-  return effort;
+interface ClaudeEffortOptions {
+  effort?: ClaudeSdkEffort;
+  settings?: ClaudeSettings;
+}
+
+export function mapEffortToClaudeOptions(
+  effort: ClaudeEffort | undefined,
+): ClaudeEffortOptions {
+  if (effort === undefined) return {};
+
+  assertSupportedEffort(AGENT, effort);
+
+  if (effort === 'ultracode') {
+    return {
+      effort: 'xhigh',
+      settings: { ultracode: true },
+    };
+  }
+
+  return {
+    effort: effort === 'minimal' ? 'low' : effort,
+    settings: { ultracode: false },
+  };
 }
 
 export function mapAgentOptionsToClaudeQueryOptions(
-  options: AgentOptions<PortableEffort> | undefined,
+  options: AgentOptions<ClaudeEffort> | undefined,
 ): MappedClaudeOptions {
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
 
@@ -663,6 +686,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.CLAUDECODE;
 
+  const effortOptions = mapEffortToClaudeOptions(options?.effort);
+
   return {
     queryOptions: {
       cwd: options?.cwd,
@@ -677,13 +702,13 @@ export function mapAgentOptionsToClaudeQueryOptions(
       canUseTool: permissionOptions.canUseTool,
       abortController,
       env,
-      effort: mapEffortToClaudeEffort(options?.effort),
+      ...effortOptions,
     },
     cleanupAbort,
   };
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter<PortableEffort> {
+export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
@@ -703,7 +728,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<PortableEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<PortableEffort>,
+    options?: AgentOptions<ClaudeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: ClaudeAgentSdk;
     try {

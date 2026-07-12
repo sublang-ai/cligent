@@ -32,7 +32,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Add public built-in type aliases, deeply immutable support metadata, lookup and validation helpers, root exports, and focused runtime tests without changing the existing option name.
 3. [x] **Rename and correlate the core effort API.**
    Rename the option and mechanically carry it through existing callers without adding provider-native behavior; preserve correlation through `Cligent`, heterogeneous parallel calls, and custom adapters; preserve exact string pass-through through the legacy registry and engine; and add focused compile-time and runtime conformance tests.
-4. [ ] **Map Claude Code effort.**
+4. [x] **Map Claude Code effort.**
    Map portable values and `ultracode`, make explicit ordinary values disable inherited ultracode, declare the minimum compatible Claude SDK peer floor required by those surfaces, and add focused tests.
 5. [ ] **Map Codex effort.**
    Preserve portable values and native `ultra` through verified thread and config transports, declare the minimum compatible Codex SDK peer floor required by those transports, and add focused plus installed-SDK serialization tests.

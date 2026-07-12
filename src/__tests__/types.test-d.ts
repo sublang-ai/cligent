@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describe, it, expectTypeOf } from 'vitest';
+import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import {
   AdapterRegistry,
   Cligent,
@@ -189,6 +190,17 @@ describe('core types', () => {
     void custom.run('prompt', { effort: 'exhaustive' });
     // @ts-expect-error - custom adapters retain their own vocabulary
     new Cligent(customAdapter, { effort: 'ultra' });
+  });
+
+  it('binds the concrete Claude adapter to Claude effort values', () => {
+    const claude = new Cligent(new ClaudeCodeAdapter(), {
+      effort: 'ultracode',
+    });
+    void claude.run('prompt', { effort: 'max' });
+    // @ts-expect-error - ultra is a Codex-only orchestration value
+    new Cligent(new ClaudeCodeAdapter(), { effort: 'ultra' });
+    // @ts-expect-error - run overrides remain Claude-scoped
+    void claude.run('prompt', { effort: 'ultra' });
   });
 
   it('keeps every heterogeneous parallel task correlated', () => {

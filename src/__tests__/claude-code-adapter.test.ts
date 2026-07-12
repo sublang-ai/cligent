@@ -6,14 +6,15 @@ import { describe, it, expect } from 'vitest';
 import {
   ClaudeCodeAdapter,
   mapAgentOptionsToClaudeQueryOptions,
-  mapEffortToClaudeEffort,
+  mapEffortToClaudeOptions,
   mapPermissionsToClaudeOptions,
 } from '../adapters/claude-code.js';
 import type {
   AgentEvent,
+  AgentOptions,
+  ClaudeEffort,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
 } from '../types.js';
 
 // Derived from the adapter so the mock SDK and the decision assertions cannot
@@ -37,6 +38,7 @@ interface MockSdkInnerOptions {
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: string;
+  settings?: { ultracode?: boolean };
   sessionId?: string;
 }
 
@@ -1089,28 +1091,46 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.inputTokens).toBe(155);
   });
 
-  it('maps effort to SDK effort per CLAUDE-008', () => {
-    const cases: Array<[PortableEffort | undefined, string | undefined]> = [
-      [undefined, undefined],
-      ['minimal', 'low'],
-      ['low', 'low'],
-      ['medium', 'medium'],
-      ['high', 'high'],
-      ['xhigh', 'xhigh'],
-      ['max', 'max'],
+  it('maps every Claude effort to SDK effort and ultracode settings', () => {
+    const cases: Array<
+      [ClaudeEffort | undefined, string | undefined, boolean | undefined]
+    > = [
+      [undefined, undefined, undefined],
+      ['minimal', 'low', false],
+      ['low', 'low', false],
+      ['medium', 'medium', false],
+      ['high', 'high', false],
+      ['xhigh', 'xhigh', false],
+      ['max', 'max', false],
+      ['ultracode', 'xhigh', true],
     ];
 
-    for (const [input, expected] of cases) {
-      expect(mapEffortToClaudeEffort(input)).toBe(expected);
+    for (const [input, expectedEffort, expectedUltracode] of cases) {
+      expect(mapEffortToClaudeOptions(input)).toEqual(
+        input === undefined
+          ? {}
+          : {
+              effort: expectedEffort,
+              settings: { ultracode: expectedUltracode },
+            },
+      );
 
       const mapped = mapAgentOptionsToClaudeQueryOptions(
         input === undefined ? {} : { effort: input },
       );
-      expect(mapped.queryOptions.effort).toBe(expected);
+      if (input === undefined) {
+        expect(mapped.queryOptions).not.toHaveProperty('effort');
+        expect(mapped.queryOptions).not.toHaveProperty('settings');
+      } else {
+        expect(mapped.queryOptions.effort).toBe(expectedEffort);
+        expect(mapped.queryOptions.settings?.ultracode).toBe(
+          expectedUltracode,
+        );
+      }
     }
   });
 
-  it('forwards effort through to the SDK query() invocation', async () => {
+  it('forwards ultracode through the SDK query() native controls', async () => {
     let captured: MockSdkInnerOptions | undefined;
 
     const adapter = new ClaudeCodeAdapter({
@@ -1138,9 +1158,88 @@ describe('ClaudeCodeAdapter', () => {
       ),
     });
 
-    await collect(adapter.run('prompt', { effort: 'max' }));
+    await collect(adapter.run('prompt', { effort: 'ultracode' }));
 
-    expect(captured?.effort).toBe('max');
+    expect(captured?.effort).toBe('xhigh');
+    expect(captured?.settings).toEqual({ ultracode: true });
+  });
+
+  it('rejects Codex and unknown effort values before invoking query()', async () => {
+    let queryCalls = 0;
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(): AsyncIterable<unknown> {
+          queryCalls += 1;
+          return {
+            async *[Symbol.asyncIterator]() {},
+          };
+        },
+      }),
+    });
+
+    for (const effort of ['ultra', 'future-effort']) {
+      const invalid = { effort } as unknown as AgentOptions<ClaudeEffort>;
+      await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+        `effort for adapter "claude-code" must be one of: minimal, low, medium, high, xhigh, max, ultracode`,
+      );
+    }
+    expect(queryCalls).toBe(0);
+  });
+
+  it('keeps permission controls unchanged for ultracode', () => {
+    const permissions: PermissionPolicy = {
+      mode: 'auto',
+      fileWrite: 'deny',
+      shellExecute: 'allow',
+      networkAccess: 'ask',
+    };
+    const ordinary = mapAgentOptionsToClaudeQueryOptions({ permissions });
+    const ultracode = mapAgentOptionsToClaudeQueryOptions({
+      permissions,
+      effort: 'ultracode',
+    });
+
+    expect({
+      permissionMode: ultracode.queryOptions.permissionMode,
+      allowDangerouslySkipPermissions:
+        ultracode.queryOptions.allowDangerouslySkipPermissions,
+      canUseTool: ultracode.queryOptions.canUseTool,
+    }).toEqual({
+      permissionMode: ordinary.queryOptions.permissionMode,
+      allowDangerouslySkipPermissions:
+        ordinary.queryOptions.allowDangerouslySkipPermissions,
+      canUseTool: ordinary.queryOptions.canUseTool,
+    });
+  });
+
+  it('surfaces an upstream ultracode rejection without substitution', async () => {
+    let captured: MockSdkInnerOptions | undefined;
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(options): AsyncIterable<unknown> {
+          captured = options.options;
+          return {
+            async *[Symbol.asyncIterator]() {
+              throw new Error('ultracode is unavailable for this account');
+            },
+          };
+        },
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { effort: 'ultracode' }),
+    );
+
+    expect(captured?.effort).toBe('xhigh');
+    expect(captured?.settings).toEqual({ ultracode: true });
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]?.payload).toMatchObject({
+      code: 'SDK_STREAM_ERROR',
+      message: 'ultracode is unavailable for this account',
+      recoverable: false,
+    });
+    expect(events[1]?.payload).toMatchObject({ status: 'error' });
   });
 
   it('sums cache tokens into inputTokens (camelCase)', async () => {
