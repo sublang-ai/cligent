@@ -42,7 +42,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Validate the portable vocabulary, preserve provider and model variant mappings and no-variant cases, and add focused tests.
 8. [x] **Add canonical tmux-play effort config.**
    Make captain, player, and runtime types adapter-discriminated; validate and forward canonical `effort`; retain in-memory legacy-key compatibility; and add type, loader, and launcher-seam tests.
-9. [ ] **Migrate legacy tmux-play YAML.**
+9. [x] **Migrate legacy tmux-play YAML.**
    Rewrite legacy keys for every loaded YAML only after full validation; reject conflicts without writing; preserve comments, key order, scalar style, config-path symlinks, and owner/group/other permission bits; use optimistic checks followed by same-directory atomic replacement; and add migration tests.
 10. [ ] **Document and close the iteration.**
    Update guides and the Unreleased changelog, run the full verification boundary, and mark only completed tasks and deliverables.

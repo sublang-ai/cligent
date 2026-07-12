@@ -2,13 +2,28 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { parse, stringify } from 'yaml';
+import {
+  isMap,
+  isScalar,
+  isSeq,
+  parseDocument,
+  stringify,
+  type Document,
+  type Pair,
+  type Scalar,
+  type YAMLMap,
+} from 'yaml';
 import { assertSupportedEffort, type EffortForAgent } from '../../effort.js';
 import { normalizeWritablePaths } from '../../permissions.js';
+import {
+  observeConfigFile,
+  replaceObservedConfigFile,
+  type ObservedConfigFile,
+} from './config-file.js';
 import {
   isKnownPlayerAdapter,
   validatePlayerConfigs,
@@ -249,26 +264,30 @@ export async function loadTmuxPlayConfig(
     options.onDefaultConfigCreated?.(configPath);
   }
 
-  let raw = await loadConfigValue(configPath);
-  const legacyEffort = normalizeLegacyEffortKeysInMemory(raw);
-  raw = legacyEffort.value;
-  if (
+  const loadedDocument = await loadConfigDocument(configPath);
+  const legacyEffortChanged = normalizeLegacyEffortKeys(
+    loadedDocument.document,
+  );
+  const homeDefaultsChanged =
     !createdDefaultConfig &&
     !options.configPath &&
     resolve(configPath) === resolve(homeConfig)
-  ) {
-    const migrated = migrateHomeConfigSafeDefaults(raw);
-    // Task 8 keeps the deprecated key compatible in memory. Task 9 performs
-    // its lossless, post-validation disk rename. Until then, never serialize
-    // a document that contained the legacy key: this also guarantees that a
-    // legacy value rejected below leaves its source untouched.
-    if (migrated.changed && !legacyEffort.changed) {
-      await writeFile(configPath, stringify(migrated.value));
-    }
-    raw = migrated.value;
-  }
+      ? migrateHomeConfigSafeDefaults(loadedDocument.document)
+      : false;
+  const raw = configDocumentValue(loadedDocument.document, configPath);
   const config = normalizeTmuxPlayConfig(raw);
   assertJsonSerializable(config, 'config');
+
+  // Every mutation remains in the parsed document until the complete
+  // canonical config validates. Only then may the observed source be replaced.
+  if (legacyEffortChanged || homeDefaultsChanged) {
+    const migratedSource = loadedDocument.document.toString({ lineWidth: 0 });
+    assertMigratedConfigRoundTrip(migratedSource, configPath, config);
+    await replaceObservedConfigFile(
+      loadedDocument.observed,
+      migratedSource,
+    );
+  }
 
   return { path: configPath, config };
 }
@@ -363,7 +382,12 @@ function structuredCloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-async function loadConfigValue(path: string): Promise<unknown> {
+interface LoadedConfigDocument {
+  readonly document: Document.Parsed;
+  readonly observed: ObservedConfigFile;
+}
+
+async function loadConfigDocument(path: string): Promise<LoadedConfigDocument> {
   const ext = extname(path);
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     throw new Error(
@@ -373,11 +397,54 @@ async function loadConfigValue(path: string): Promise<unknown> {
   }
 
   try {
-    const source = await readFile(path, 'utf8');
-    return parse(source) as unknown;
+    const observed = await observeConfigFile(path);
+    const document = parseDocument(observed.source.toString('utf8'));
+    if (document.errors.length > 0) {
+      throw document.errors[0];
+    }
+    return { document, observed };
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Failed to parse tmux-play config ${path}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+function configDocumentValue(
+  document: Document.Parsed,
+  path: string,
+): unknown {
+  try {
+    return document.toJS() as unknown;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to parse tmux-play config ${path}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+function assertMigratedConfigRoundTrip(
+  source: string,
+  path: string,
+  expected: TmuxPlayConfig,
+): void {
+  try {
+    const document = parseDocument(source);
+    if (document.errors.length > 0) {
+      throw document.errors[0];
+    }
+    const actual = normalizeTmuxPlayConfig(document.toJS() as unknown);
+    assertJsonSerializable(actual, 'config');
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error('serialized migration changed the normalized config');
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(
+        `Failed to serialize tmux-play config ${path}: ${error.message}`,
+      );
     }
     throw error;
   }
@@ -724,138 +791,149 @@ function defaultHomeConfigValue(): TmuxPlayConfig {
 }
 
 function migrateHomeConfigSafeDefaults(
-  value: unknown,
-): { value: unknown; changed: boolean } {
-  if (!isRecord(value)) {
-    return { value, changed: false };
-  }
-
+  document: Document.Parsed,
+): boolean {
+  const config = document.contents;
+  if (!isMap(config)) return false;
   let changed = false;
-  const config = value;
 
-  if (!hasOwn(config, 'theme')) {
-    config.theme = 'auto';
+  if (!config.has('theme')) {
+    addYamlMapValue(document, config, 'theme', 'auto');
     changed = true;
   }
 
-  if (!hasOwn(config, 'layout')) {
-    config.layout = {
+  if (!config.has('layout')) {
+    addYamlMapValue(document, config, 'layout', {
       window: { ...DEFAULT_LAYOUT_WINDOW },
       multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
-    };
+    });
     changed = true;
-  } else if (isRecord(config.layout)) {
-    const layout = config.layout;
-    if (!hasOwn(layout, 'window')) {
-      layout.window = { ...DEFAULT_LAYOUT_WINDOW };
+  } else {
+    const layout = config.get('layout', true);
+    if (isMap(layout) && !layout.has('window')) {
+      addYamlMapValue(document, layout, 'window', { ...DEFAULT_LAYOUT_WINDOW });
       changed = true;
-    } else if (isRecord(layout.window)) {
-      if (!hasOwn(layout.window, 'columns')) {
-        layout.window.columns = DEFAULT_LAYOUT_WINDOW.columns;
+    } else if (isMap(layout)) {
+      const window = layout.get('window', true);
+      if (isMap(window) && !window.has('columns')) {
+        addYamlMapValue(
+          document,
+          window,
+          'columns',
+          DEFAULT_LAYOUT_WINDOW.columns,
+        );
         changed = true;
       }
-      if (!hasOwn(layout.window, 'rows')) {
-        layout.window.rows = DEFAULT_LAYOUT_WINDOW.rows;
+      if (isMap(window) && !window.has('rows')) {
+        addYamlMapValue(
+          document,
+          window,
+          'rows',
+          DEFAULT_LAYOUT_WINDOW.rows,
+        );
         changed = true;
       }
     }
+
     // TMUX-010: rewrite a legacy `columnWeights` to its canonical shape field,
     // writing one final form that never holds both. Skip the rewrite when the
     // matching canonical field already exists (a conflict the loader rejects)
     // or the length is not 2/3 (also rejected on load); leave those for the
     // loader to surface. When a layout block carries no weight field at all,
     // add the shipped `multiPlayerColumnWeights` default.
-    if (hasOwn(layout, 'columnWeights') && Array.isArray(layout.columnWeights)) {
-      const cw = layout.columnWeights as unknown[];
+    if (isMap(layout) && layout.has('columnWeights')) {
+      const columnWeights = layout.get('columnWeights', true);
       const canonical =
-        cw.length === SINGLE_PLAYER_SHAPE_LENGTH
+        isSeq(columnWeights) &&
+        columnWeights.items.length === SINGLE_PLAYER_SHAPE_LENGTH
           ? 'singlePlayerColumnWeights'
-          : cw.length === MULTI_PLAYER_SHAPE_LENGTH
+          : isSeq(columnWeights) &&
+              columnWeights.items.length === MULTI_PLAYER_SHAPE_LENGTH
             ? 'multiPlayerColumnWeights'
             : undefined;
-      if (canonical && !hasOwn(layout, canonical)) {
-        layout[canonical] = cw;
-        delete layout.columnWeights;
-        changed = true;
+      if (canonical && !layout.has(canonical)) {
+        const pair = findStringKeyPair(layout, 'columnWeights');
+        if (pair !== undefined) {
+          renameStringKey(pair, canonical);
+          changed = true;
+        }
       }
     } else if (
-      !hasOwn(layout, 'columnWeights') &&
-      !hasOwn(layout, 'singlePlayerColumnWeights') &&
-      !hasOwn(layout, 'multiPlayerColumnWeights')
+      isMap(layout) &&
+      !layout.has('singlePlayerColumnWeights') &&
+      !layout.has('multiPlayerColumnWeights')
     ) {
-      layout.multiPlayerColumnWeights = [...DEFAULT_MULTI_PLAYER_WEIGHTS];
+      addYamlMapValue(
+        document,
+        layout,
+        'multiPlayerColumnWeights',
+        [...DEFAULT_MULTI_PLAYER_WEIGHTS],
+      );
       changed = true;
     }
   }
 
-  if (isRecord(config.captain) && !hasOwn(config.captain, 'options')) {
-    config.captain.options = {};
+  const captain = config.get('captain', true);
+  if (isMap(captain) && !captain.has('options')) {
+    addYamlMapValue(document, captain, 'options', {});
     changed = true;
   }
 
-  if (!hasOwn(config, 'notifications')) {
-    config.notifications = { ...DEFAULT_HOME_NOTIFICATION_CONFIG };
+  if (!config.has('notifications')) {
+    addYamlMapValue(
+      document,
+      config,
+      'notifications',
+      { ...DEFAULT_HOME_NOTIFICATION_CONFIG },
+    );
     changed = true;
   }
 
-  return { value: config, changed };
+  return changed;
 }
 
-interface EffortKeyObject {
-  readonly value: Record<string, unknown>;
+interface EffortKeyMap {
+  readonly value: YAMLMap;
   readonly path: string;
 }
 
-/**
- * Accept the retired key without exposing it in normalized public values.
- *
- * The source tree is scanned for conflicts before cloning or applying home
- * defaults, so a conflicting document cannot be written by the existing
- * safe-default migration. The lossless on-disk rename is deliberately owned
- * by IR-031 Task 9.
- */
-function normalizeLegacyEffortKeysInMemory(value: unknown): {
-  value: unknown;
-  changed: boolean;
-} {
-  const targets = effortKeyObjects(value);
-  let changed = false;
+function normalizeLegacyEffortKeys(document: Document.Parsed): boolean {
+  const renames: Array<Pair<Scalar<string>, unknown>> = [];
 
-  for (const target of targets) {
-    if (!hasOwn(target.value, 'reasoningEffort')) continue;
-    if (hasOwn(target.value, 'effort')) {
+  // Find every conflict before mutating any node. Invalid values and all other
+  // schema failures are checked after the in-memory rename and before writing.
+  for (const target of effortKeyMaps(document)) {
+    const legacy = findStringKeyPair(target.value, 'reasoningEffort');
+    if (legacy === undefined) continue;
+    if (target.value.has('effort')) {
       throw new Error(
         `${target.path}.effort conflicts with deprecated ` +
           `${target.path}.reasoningEffort; set only effort`,
       );
     }
-    changed = true;
+    renames.push(legacy);
   }
 
-  if (!changed) {
-    return { value, changed: false };
+  for (const pair of renames) {
+    renameStringKey(pair, 'effort');
   }
-
-  const normalized = structuredCloneJson(value);
-  for (const target of effortKeyObjects(normalized)) {
-    if (!hasOwn(target.value, 'reasoningEffort')) continue;
-    target.value.effort = target.value.reasoningEffort;
-    delete target.value.reasoningEffort;
-  }
-  return { value: normalized, changed: true };
+  return renames.length > 0;
 }
 
-function effortKeyObjects(value: unknown): EffortKeyObject[] {
-  if (!isRecord(value)) return [];
+function effortKeyMaps(document: Document.Parsed): EffortKeyMap[] {
+  const config = document.contents;
+  if (!isMap(config)) return [];
 
-  const targets: EffortKeyObject[] = [];
-  if (isRecord(value.captain)) {
-    targets.push({ value: value.captain, path: 'captain' });
+  const targets: EffortKeyMap[] = [];
+  const captain = config.get('captain', true);
+  if (isMap(captain)) {
+    targets.push({ value: captain, path: 'captain' });
   }
-  if (Array.isArray(value.players)) {
-    for (let index = 0; index < value.players.length; index++) {
-      const player = value.players[index];
-      if (isRecord(player)) {
+  const players = config.get('players', true);
+  if (isSeq(players)) {
+    for (let index = 0; index < players.items.length; index++) {
+      const player = players.items[index];
+      if (isMap(player)) {
         targets.push({ value: player, path: `players[${index}]` });
       }
     }
@@ -863,16 +941,37 @@ function effortKeyObjects(value: unknown): EffortKeyObject[] {
   return targets;
 }
 
-function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
+function findStringKeyPair(
+  map: YAMLMap,
+  key: string,
+): Pair<Scalar<string>, unknown> | undefined {
+  for (const pair of map.items) {
+    if (
+      isScalar(pair.key) &&
+      typeof pair.key.value === 'string' &&
+      pair.key.value === key
+    ) {
+      return pair as Pair<Scalar<string>, unknown>;
+    }
+  }
+  return undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  );
+function addYamlMapValue(
+  document: Document.Parsed,
+  map: YAMLMap,
+  key: string,
+  value: unknown,
+): void {
+  map.add(document.createPair(key, value));
+}
+
+function renameStringKey(
+  pair: Pair<Scalar<string>, unknown>,
+  key: string,
+): void {
+  pair.key.value = key;
+  pair.key.source = key;
 }
 
 const THEME_FLAVORS: ReadonlySet<CatppuccinFlavorConfig> = new Set([
