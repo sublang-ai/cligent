@@ -39,6 +39,7 @@ vi.mock('../shared/glow.js', () => ({
 import {
   buildPlayerArea,
   launchTmuxPlay,
+  legacyEffortReporter,
   parseOsc11BackgroundFlavor,
   TMUX_PLAY_SESSION_MARKER,
   tmuxPlayThemeDiagnostics,
@@ -1619,6 +1620,23 @@ describe('launchTmuxPlay', () => {
 
     expect(stderr.text()).toContain(
       `Found legacy tmux-play config at ${legacyConfig}; tmux-play now requires tmux-play.config.yaml. Rename or convert it.`,
+    );
+  });
+
+  it('prints an actionable warning when a legacy effort update is skipped', () => {
+    const stderr = new MemoryOutput();
+    const report = legacyEffortReporter(stderr);
+
+    report({
+      configPath: '/workspace/tmux-play.config.yaml',
+      fieldPaths: ['captain.reasoningEffort', 'players[0].reasoningEffort'],
+      outcome: 'skipped',
+    });
+
+    expect(stderr.text()).toBe(
+      'Deprecated reasoningEffort in /workspace/tmux-play.config.yaml at ' +
+        'captain.reasoningEffort, players[0].reasoningEffort; automatic ' +
+        'update was skipped. Rename reasoningEffort to effort manually.\n',
     );
   });
 

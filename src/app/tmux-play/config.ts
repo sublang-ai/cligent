@@ -1,10 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  resolve,
+} from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import {
   isMap,
@@ -19,11 +35,6 @@ import {
 } from 'yaml';
 import { assertSupportedEffort, type EffortForAgent } from '../../effort.js';
 import { normalizeWritablePaths } from '../../permissions.js';
-import {
-  observeConfigFile,
-  replaceObservedConfigFile,
-  type ObservedConfigFile,
-} from './config-file.js';
 import {
   isKnownPlayerAdapter,
   validatePlayerConfigs,
@@ -153,6 +164,13 @@ export interface LoadTmuxPlayConfigOptions {
   configHome?: string;
   onDefaultConfigCreated?: (path: string) => void;
   onLegacyConfigIgnored?: (path: string) => void;
+  onLegacyEffortDeprecated?: (result: LegacyEffortDeprecation) => void;
+}
+
+export interface LegacyEffortDeprecation {
+  readonly configPath: string;
+  readonly fieldPaths: readonly string[];
+  readonly outcome: 'updated' | 'skipped';
 }
 
 export const TMUX_PLAY_CONFIG_FILE = 'tmux-play.config.yaml';
@@ -239,8 +257,16 @@ export function findTmuxPlayConfig(
   return undefined;
 }
 
+interface LoadTmuxPlayConfigInternals {
+  readonly beforeLegacyEffortUpdate?: () => void | Promise<void>;
+}
+
+export function loadTmuxPlayConfig(
+  options?: LoadTmuxPlayConfigOptions,
+): Promise<LoadedTmuxPlayConfig>;
 export async function loadTmuxPlayConfig(
   options: LoadTmuxPlayConfigOptions = {},
+  internals: LoadTmuxPlayConfigInternals = {},
 ): Promise<LoadedTmuxPlayConfig> {
   const cwd = options.cwd ?? process.cwd();
   const configHome = options.configHome ?? defaultConfigHome();
@@ -265,9 +291,6 @@ export async function loadTmuxPlayConfig(
   }
 
   const loadedDocument = await loadConfigDocument(configPath);
-  const legacyEffortChanged = normalizeLegacyEffortKeys(
-    loadedDocument.document,
-  );
   const homeDefaultsChanged =
     !createdDefaultConfig &&
     !options.configPath &&
@@ -277,16 +300,27 @@ export async function loadTmuxPlayConfig(
   const raw = configDocumentValue(loadedDocument.document, configPath);
   const config = normalizeTmuxPlayConfig(raw);
   assertJsonSerializable(config, 'config');
+  const legacyEffortPaths = legacyEffortTargets(loadedDocument.document).map(
+    (target) => target.fieldPath,
+  );
 
-  // Every mutation remains in the parsed document until the complete
-  // canonical config validates. Only then may the observed source be replaced.
-  if (legacyEffortChanged || homeDefaultsChanged) {
-    const migratedSource = loadedDocument.document.toString({ lineWidth: 0 });
-    assertMigratedConfigRoundTrip(migratedSource, configPath, config);
-    await replaceObservedConfigFile(
-      loadedDocument.observed,
-      migratedSource,
-    );
+  // Home safe-default/layout migration remains an independent required write.
+  // The bounded best-effort legacy key update runs afterward.
+  let currentSource = loadedDocument.source;
+  if (homeDefaultsChanged) {
+    currentSource = loadedDocument.document.toString({ lineWidth: 0 });
+    assertSerializedConfigRoundTrip(currentSource, configPath, config);
+    await writeFile(configPath, currentSource, 'utf8');
+  }
+
+  if (legacyEffortPaths.length > 0) {
+    await internals.beforeLegacyEffortUpdate?.();
+    const outcome = await tryUpdateLegacyEffortKeys(configPath, currentSource);
+    options.onLegacyEffortDeprecated?.({
+      configPath,
+      fieldPaths: legacyEffortPaths,
+      outcome,
+    });
   }
 
   return { path: configPath, config };
@@ -384,7 +418,7 @@ function structuredCloneJson<T>(value: T): T {
 
 interface LoadedConfigDocument {
   readonly document: Document.Parsed;
-  readonly observed: ObservedConfigFile;
+  readonly source: string;
 }
 
 async function loadConfigDocument(path: string): Promise<LoadedConfigDocument> {
@@ -397,12 +431,12 @@ async function loadConfigDocument(path: string): Promise<LoadedConfigDocument> {
   }
 
   try {
-    const observed = await observeConfigFile(path);
-    const document = parseDocument(observed.source.toString('utf8'));
+    const source = await readFile(path, 'utf8');
+    const document = parseDocument(source);
     if (document.errors.length > 0) {
       throw document.errors[0];
     }
-    return { document, observed };
+    return { document, source };
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Failed to parse tmux-play config ${path}: ${error.message}`);
@@ -425,7 +459,7 @@ function configDocumentValue(
   }
 }
 
-function assertMigratedConfigRoundTrip(
+function assertSerializedConfigRoundTrip(
   source: string,
   path: string,
   expected: TmuxPlayConfig,
@@ -897,27 +931,102 @@ interface EffortKeyMap {
   readonly path: string;
 }
 
-function normalizeLegacyEffortKeys(document: Document.Parsed): boolean {
-  const renames: Array<Pair<Scalar<string>, unknown>> = [];
+interface LegacyEffortTarget {
+  readonly fieldPath: string;
+  readonly key: Scalar<string>;
+}
 
-  // Find every conflict before mutating any node. Invalid values and all other
-  // schema failures are checked after the in-memory rename and before writing.
+function legacyEffortTargets(
+  document: Document.Parsed,
+): LegacyEffortTarget[] {
+  const targets: LegacyEffortTarget[] = [];
   for (const target of effortKeyMaps(document)) {
     const legacy = findStringKeyPair(target.value, 'reasoningEffort');
     if (legacy === undefined) continue;
-    if (target.value.has('effort')) {
-      throw new Error(
-        `${target.path}.effort conflicts with deprecated ` +
-          `${target.path}.reasoningEffort; set only effort`,
-      );
-    }
-    renames.push(legacy);
+    targets.push({
+      fieldPath: `${target.path}.reasoningEffort`,
+      key: legacy.key,
+    });
+  }
+  return targets;
+}
+
+function rewriteLegacyEffortKeyTokens(source: string): string | undefined {
+  const document = parseDocument(source);
+  if (document.errors.length > 0) return undefined;
+  const edits: Array<{
+    readonly start: number;
+    readonly end: number;
+    readonly value: string;
+  }> = [];
+
+  for (const target of legacyEffortTargets(document)) {
+    const range = target.key.range;
+    if (range === undefined || range === null) return undefined;
+    const token = source.slice(range[0], range[1]);
+    const replacement =
+      token === 'reasoningEffort'
+        ? 'effort'
+        : token === "'reasoningEffort'"
+          ? "'effort'"
+          : token === '"reasoningEffort"'
+            ? '"effort"'
+            : undefined;
+    if (replacement === undefined) return undefined;
+    edits.push({ start: range[0], end: range[1], value: replacement });
   }
 
-  for (const pair of renames) {
-    renameStringKey(pair, 'effort');
+  if (edits.length === 0) return undefined;
+  let rewritten = source;
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    rewritten =
+      rewritten.slice(0, edit.start) +
+      edit.value +
+      rewritten.slice(edit.end);
   }
-  return renames.length > 0;
+  return rewritten;
+}
+
+async function tryUpdateLegacyEffortKeys(
+  configPath: string,
+  expectedSource: string,
+): Promise<'updated' | 'skipped'> {
+  const nextSource = rewriteLegacyEffortKeyTokens(expectedSource);
+  if (nextSource === undefined || nextSource === expectedSource) return 'skipped';
+
+  let tempPath: string | undefined;
+  try {
+    const resolvedPath = await realpath(configPath);
+    const revision = await stat(resolvedPath);
+    if ((await readFile(resolvedPath, 'utf8')) !== expectedSource) {
+      return 'skipped';
+    }
+
+    tempPath = join(
+      dirname(resolvedPath),
+      `.${basename(resolvedPath)}.cligent-effort-${process.pid}-${randomUUID()}.tmp`,
+    );
+    await writeFile(tempPath, nextSource, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: revision.mode & 0o7777,
+    });
+
+    // One final optimistic byte check avoids an edit observed before rename.
+    // The remaining check-to-rename race is intentionally not guaranteed.
+    if ((await readFile(resolvedPath, 'utf8')) !== expectedSource) {
+      return 'skipped';
+    }
+    await rename(tempPath, resolvedPath);
+    tempPath = undefined;
+    return 'updated';
+  } catch {
+    return 'skipped';
+  } finally {
+    if (tempPath !== undefined) {
+      await unlink(tempPath).catch(() => undefined);
+    }
+  }
 }
 
 function effortKeyMaps(document: Document.Parsed): EffortKeyMap[] {
@@ -1021,28 +1130,45 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   if (model !== undefined) common.model = model;
   if (instruction !== undefined) common.instruction = instruction;
   if (permissions !== undefined) common.permissions = permissions;
+  const configuredEffort = configuredEffortValue(input, 'captain');
 
   switch (adapter) {
     case 'claude': {
-      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'codex': {
-      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'gemini': {
-      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'opencode': {
-      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
@@ -1091,33 +1217,70 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     ...(instruction === undefined ? {} : { instruction }),
     ...(permissions === undefined ? {} : { permissions }),
   };
+  const configuredEffort = configuredEffortValue(input, path);
 
   switch (adapter) {
     case 'claude': {
-      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'codex': {
-      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'gemini': {
-      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
     case 'opencode': {
-      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      const effort = optionalEffort(
+        configuredEffort.value,
+        adapter,
+        configuredEffort.path,
+      );
       return effort === undefined
         ? { ...common, adapter }
         : { ...common, adapter, effort };
     }
   }
+}
+
+function configuredEffortValue(
+  input: Record<string, unknown>,
+  objectPath: string,
+): { readonly value: unknown; readonly path: string } {
+  const hasEffort = Object.hasOwn(input, 'effort');
+  const hasLegacy = Object.hasOwn(input, 'reasoningEffort');
+  if (hasEffort && hasLegacy) {
+    throw new Error(
+      `${objectPath}.effort conflicts with deprecated ` +
+        `${objectPath}.reasoningEffort; set only effort`,
+    );
+  }
+  return hasLegacy
+    ? {
+        value: input.reasoningEffort,
+        path: `${objectPath}.reasoningEffort`,
+      }
+    : { value: input.effort, path: `${objectPath}.effort` };
 }
 
 function requireObject(

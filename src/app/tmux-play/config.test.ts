@@ -27,6 +27,7 @@ import {
   findTmuxPlayConfig,
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,
+  type LegacyEffortDeprecation,
   type TmuxPlayConfig,
 } from './config.js';
 
@@ -125,7 +126,7 @@ function writeYamlConfig(path: string, config = validConfig()): void {
 function expectNoMigrationTemps(directory: string): void {
   expect(
     readdirSync(directory).filter((entry) =>
-      entry.includes('.cligent-migrate-'),
+      entry.includes('.cligent-effort-'),
     ),
   ).toEqual([]);
 }
@@ -727,10 +728,12 @@ describe('tmux-play config loading', () => {
       '',
     ].join('\n');
     writeFileSync(configPath, source);
+    const deprecations: LegacyEffortDeprecation[] = [];
 
     const loaded = await loadTmuxPlayConfig({
       cwd: workDir,
       configHome: join(workDir, 'unused-home'),
+      onLegacyEffortDeprecated: (result) => deprecations.push(result),
     });
     const snapshot = createTmuxPlayConfigSnapshot(loaded);
 
@@ -748,6 +751,60 @@ describe('tmux-play config loading', () => {
     expect(readFileSync(configPath, 'utf8')).toBe(
       source.replaceAll('reasoningEffort:', 'effort:'),
     );
+    expect(deprecations).toEqual([
+      {
+        configPath,
+        fieldPaths: [
+          'captain.reasoningEffort',
+          'players[0].reasoningEffort',
+          'players[1].reasoningEffort',
+          'players[2].reasoningEffort',
+        ],
+        outcome: 'updated',
+      },
+    ]);
+    expectNoMigrationTemps(workDir);
+  });
+
+  it('uses legacy effort in memory when a newer source skips the update', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const source = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  reasoningEffort: high',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '',
+    ].join('\n');
+    const newer = source.replace('reasoningEffort: high', 'effort: low');
+    writeFileSync(configPath, source);
+    const deprecations: LegacyEffortDeprecation[] = [];
+    const loadWithSeam = loadTmuxPlayConfig as unknown as (
+      options: Parameters<typeof loadTmuxPlayConfig>[0],
+      internals: { beforeLegacyEffortUpdate: () => void },
+    ) => ReturnType<typeof loadTmuxPlayConfig>;
+
+    const loaded = await loadWithSeam(
+      {
+        configPath,
+        onLegacyEffortDeprecated: (result) => deprecations.push(result),
+      },
+      { beforeLegacyEffortUpdate: () => writeFileSync(configPath, newer) },
+    );
+
+    expect(loaded.config.captain.effort).toBe('high');
+    expect(readFileSync(configPath, 'utf8')).toBe(newer);
+    expect(deprecations).toEqual([
+      {
+        configPath,
+        fieldPaths: ['captain.reasoningEffort'],
+        outcome: 'skipped',
+      },
+    ]);
     expectNoMigrationTemps(workDir);
   });
 
@@ -831,11 +888,7 @@ describe('tmux-play config loading', () => {
     ].join('\n');
     const expected = source
       .replaceAll('reasoningEffort:', 'effort:')
-      .replace('"reasoningEffort":', '"effort":')
-      .replace(
-        'options: {strategy: "careful"}',
-        'options: { strategy: "careful" }',
-      );
+      .replace('"reasoningEffort":', '"effort":');
     writeFileSync(targetPath, source);
     chmodSync(targetPath, 0o640);
     symlinkSync(linkTarget, configPath);
@@ -940,19 +993,26 @@ describe('tmux-play config loading', () => {
     ].join('\n');
     writeFileSync(captainPath, captainSource);
     writeFileSync(playerPath, playerSource);
+    const deprecations: LegacyEffortDeprecation[] = [];
+    const options = (configPath: string) => ({
+      configPath,
+      onLegacyEffortDeprecated: (result: LegacyEffortDeprecation) =>
+        deprecations.push(result),
+    });
 
     await expect(
-      loadTmuxPlayConfig({ configPath: captainPath }),
+      loadTmuxPlayConfig(options(captainPath)),
     ).rejects.toThrow(
       'captain.effort conflicts with deprecated captain.reasoningEffort',
     );
     await expect(
-      loadTmuxPlayConfig({ configPath: playerPath }),
+      loadTmuxPlayConfig(options(playerPath)),
     ).rejects.toThrow(
       'players[0].effort conflicts with deprecated players[0].reasoningEffort',
     );
     expect(readFileSync(captainPath)).toEqual(Buffer.from(captainSource));
     expect(readFileSync(playerPath)).toEqual(Buffer.from(playerSource));
+    expect(deprecations).toEqual([]);
     expectNoMigrationTemps(workDir);
   });
 
@@ -988,7 +1048,9 @@ describe('tmux-play config loading', () => {
 
     await expect(
       loadTmuxPlayConfig({ configPath: invalidPath }),
-    ).rejects.toThrow('captain.effort for adapter "claude" must be one of:');
+    ).rejects.toThrow(
+      'captain.reasoningEffort for adapter "claude" must be one of:',
+    );
     await expect(
       loadTmuxPlayConfig({ configPath: unrelatedPath }),
     ).rejects.toThrow('Unknown config field config.unknownRoot');

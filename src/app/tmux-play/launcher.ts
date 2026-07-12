@@ -31,6 +31,7 @@ import {
   writeTmuxPlayConfigSnapshot,
   type CatppuccinFlavorConfig,
   type LayoutConfig,
+  type LegacyEffortDeprecation,
   type LoadedTmuxPlayConfig,
 } from './config.js';
 import type { PlayerConfig } from './players.js';
@@ -134,6 +135,9 @@ export async function launchTmuxPlay(
         `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
       );
     },
+    onLegacyEffortDeprecated: legacyEffortReporter(
+      options.stderr ?? process.stderr,
+    ),
   });
   const sessionId = options.sessionId ?? randomBytes(4).toString('hex');
   const sessionName = `tmux-play-${sessionId}`;
@@ -214,6 +218,9 @@ export async function tmuxPlayThemeDiagnostics(
         `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
       );
     },
+    onLegacyEffortDeprecated: legacyEffortReporter(
+      options.stderr ?? process.stderr,
+    ),
   });
   return resolveThemeDiagnostics({
     launchOption: options.themeFlavor,
@@ -221,6 +228,19 @@ export async function tmuxPlayThemeDiagnostics(
     allowOsc11: true,
     osc11Probe: options.themeProbe,
   });
+}
+
+export function legacyEffortReporter(
+  stderr: Output,
+): (result: LegacyEffortDeprecation) => void {
+  return (result) => {
+    if (result.outcome === 'updated') return;
+    stderr.write(
+      `Deprecated reasoningEffort in ${result.configPath} at ` +
+        `${result.fieldPaths.join(', ')}; automatic update was skipped. ` +
+        'Rename reasoningEffort to effort manually.\n',
+    );
+  };
 }
 
 interface BuildTmuxSessionOptions {

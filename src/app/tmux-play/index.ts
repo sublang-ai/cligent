@@ -17,6 +17,7 @@ export type {
   CaptainConfig,
   JsonPrimitive,
   JsonValue,
+  LegacyEffortDeprecation,
   LoadedTmuxPlayConfig,
   LoadTmuxPlayConfigOptions,
   NotificationConfig,
