@@ -57,6 +57,17 @@ export interface CallCaptainOptions {
    * the same {@link CaptainRunResult}.
    */
   readonly visibility?: RecordVisibility;
+  /**
+   * Select the Captain's backend session for this call. A string resumes the
+   * named session, `false` forces a fresh session, and omission preserves the
+   * runtime-owned Captain Cligent's automatic continuity.
+   */
+  readonly resume?: string | false;
+  /**
+   * Restrict the tools available during this call. An explicit empty list
+   * requires a tool-free run; omission preserves configured/provider tools.
+   */
+  readonly allowedTools?: readonly string[];
 }
 
 /**

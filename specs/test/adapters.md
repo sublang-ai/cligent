@@ -93,7 +93,15 @@ exact CI target and the managed-server help shall expose `--hostname` and
 ### TADAPT-009
 Verifies: [ENG-017](../user/engine.md#eng-017)
 
-Given `allowedTools` and `disallowedTools` options, each adapter shall restrict tools according to whitelist and precedence semantics per [ENG-017](../user/engine.md#eng-017).
+Given `allowedTools` and `disallowedTools` options, each adapter shall enforce whitelist and precedence semantics or reject before backend invocation when it has no compatible restriction surface, per [ENG-017](../user/engine.md#eng-017).
+
+### TADAPT-029
+Verifies: [ENG-017](../user/engine.md#eng-017), [CLAUDE-009](../user/adapters/claude-code.md#claude-009), [CODEX-011](../user/adapters/codex.md#codex-011), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-016](../user/adapters/gemini.md#gemini-016), [OPENCODE-015](../user/adapters/opencode.md#opencode-015)
+
+Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set: Claude Code receives SDK `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true`; Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set; and OpenCode receives the prompt tool map `{ "*": false }` and reports a configured known empty set.
+Where a non-empty allowlist and disallowed identifiers are provided, when Claude Code, Gemini, and OpenCode run, each adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence, while Claude Code shall also reject ambient MCP additions.
+Where an OpenCode tool-list entry contains `*`, when the adapter runs, it shall reject before prompting instead of interpreting the entry as a provider wildcard.
+Where either tool-list field is explicitly provided to Codex, including an empty array, when the adapter runs, it shall reject before its SDK loader or client is invoked.
 
 ## Effort
 

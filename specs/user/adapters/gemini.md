@@ -149,6 +149,12 @@ For Flash and Flash Lite, `xhigh` and `max` both map to `24576`, the nearest sup
 When effort is omitted, the adapter shall create no effort-specific alias and shall preserve Gemini CLI and user-configuration defaults.
 Where effort is outside the Gemini portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before spawning Gemini with the metadata-backed allowed-values error from [ENG-024](../engine.md#eng-024).
 
+### GEMINI-016
+
+Where `AgentOptions.allowedTools` is provided, the adapter's `init` event shall report the effective allowlist as a configured, known tool set even when that list is empty.
+The configured allowlist shall take precedence over a broader tool list reported by the Gemini stream because [GEMINI-006](#gemini-006)'s catch-all deny makes unlisted tools unavailable.
+Where `allowedTools` is omitted, the adapter shall continue to report the stream tool list when available and otherwise report tool availability as unknown.
+
 ## Abort Handling
 
 ### GEMINI-008

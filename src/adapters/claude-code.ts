@@ -56,8 +56,11 @@ interface ClaudeQueryOptions {
   maxTurns?: number;
   maxBudgetUsd?: number;
   resume?: string;
+  tools?: string[];
   allowedTools?: string[];
   disallowedTools?: string[];
+  settingSources?: Array<'user' | 'project' | 'local'>;
+  strictMcpConfig?: boolean;
   permissionMode?: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: ClaudeCanUseTool;
@@ -687,6 +690,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
   delete env.CLAUDECODE;
 
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
+  const explicitAllowlist = options?.allowedTools !== undefined;
+  const toolFreeIsolation = options?.allowedTools?.length === 0;
 
   return {
     queryOptions: {
@@ -695,8 +700,14 @@ export function mapAgentOptionsToClaudeQueryOptions(
       maxTurns: options?.maxTurns,
       maxBudgetUsd: options?.maxBudgetUsd,
       resume: options?.resume || undefined,
+      tools:
+        options?.allowedTools !== undefined
+          ? [...options.allowedTools]
+          : undefined,
       allowedTools: options?.allowedTools,
       disallowedTools: options?.disallowedTools,
+      settingSources: toolFreeIsolation ? [] : undefined,
+      strictMcpConfig: explicitAllowlist ? true : undefined,
       permissionMode: permissionOptions.permissionMode,
       allowDangerouslySkipPermissions: permissionOptions.allowDangerouslySkipPermissions,
       canUseTool: permissionOptions.canUseTool,

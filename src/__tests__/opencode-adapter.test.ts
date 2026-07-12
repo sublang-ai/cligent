@@ -378,10 +378,71 @@ describe('OpenCodeAdapter', () => {
       },
     });
     expect(mapPermissionsToOpenCodeOptions(undefined)).toEqual({});
+    expect(
+      mapPermissionsToOpenCodeOptions(undefined, { allowedTools: [] }),
+    ).toEqual({ tools: { core: [] } });
+    expect(
+      mapPermissionsToOpenCodeOptions(undefined, {
+        allowedTools: ['edit', 'bash'],
+        disallowedTools: ['bash'],
+      }),
+    ).toEqual({ tools: { core: ['edit'], exclude: ['bash'] } });
+    expect(() =>
+      mapPermissionsToOpenCodeOptions(undefined, { allowedTools: ['*'] }),
+    ).toThrow(/exact tool identifiers, not wildcard patterns/);
+    expect(() =>
+      mapPermissionsToOpenCodeOptions(undefined, {
+        disallowedTools: ['prefix-*'],
+      }),
+    ).toThrow(/exact tool identifiers, not wildcard patterns/);
     expect(mapPermissionsToOpenCodeOptions({}).permission).toEqual({
       edit: 'ask',
       bash: 'ask',
       webfetch: 'ask',
+    });
+  });
+
+  it('reports an explicit empty allowlist as configured and known', async () => {
+    let runOptions: Record<string, unknown> | undefined;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: {
+            sessionId: 'tool-free-session',
+            tools: ['edit', 'bash'],
+          },
+          events: [
+            {
+              type: 'session.idle',
+              sessionId: 'tool-free-session',
+              status: 'success',
+            },
+          ],
+          onRun(options) {
+            runOptions = options;
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('route only', { allowedTools: [] }),
+    );
+    expect(runOptions).toMatchObject({ tools: { core: [] } });
+    const init = events[0] as AgentEvent & {
+      payload: {
+        tools: string[];
+        capabilities: Record<string, unknown>;
+      };
+    };
+    expect(init.payload.tools).toEqual([]);
+    expect(init.payload.capabilities).toMatchObject({
+      toolsKnown: true,
+      toolsSource: 'configured',
     });
   });
 
@@ -1447,8 +1508,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       const body = (call as { body: Record<string, unknown> }).body;
       expect(body).not.toHaveProperty('permission');
       expect(body.tools).toEqual({
-        core: ['edit'],
-        exclude: ['webfetch'],
+        '*': false,
+        edit: true,
+        webfetch: false,
       });
     }
 
@@ -1582,6 +1644,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       expect(call).toEqual(
         expect.objectContaining({
           tools: {
+            '*': false,
             edit: true,
             webfetch: false,
           },
@@ -1612,6 +1675,71 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         permission: askRules,
       },
     ]);
+  });
+
+  it('maps an explicit empty allowlist to wildcard deny prompts', async () => {
+    let v1Prompt: unknown;
+    const v1 = wrapOpencodeClient(
+      makeV1Sdk({
+        onPrompt(args) {
+          v1Prompt = args;
+        },
+      }),
+    );
+    await v1.run?.({ prompt: 'v1 tool-free', tools: { core: [] } });
+    expect(v1Prompt).toMatchObject({ body: { tools: { '*': false } } });
+
+    let v2Prompt: unknown;
+    const v2 = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'v2-tool-free' } };
+          },
+          async promptAsync(args: unknown) {
+            v2Prompt = args;
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+    await v2.run?.({ prompt: 'v2 tool-free', tools: { core: [] } });
+    expect(v2Prompt).toMatchObject({ tools: { '*': false } });
+  });
+
+  it('rejects wildcard allow entries on v1 and v2 prompt paths', async () => {
+    const v1 = wrapOpencodeClient(makeV1Sdk());
+    await expect(
+      v1.run?.({ prompt: 'v1 wildcard', tools: { core: ['*'] } }),
+    ).rejects.toThrow(/exact tool identifiers, not wildcard patterns/);
+
+    const v2 = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'v2-wildcard' } };
+          },
+          async promptAsync() {
+            throw new Error('prompt must not run');
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+    await expect(
+      v2.run?.({ prompt: 'v2 wildcard', tools: { core: ['*'] } }),
+    ).rejects.toThrow(/exact tool identifiers, not wildcard patterns/);
   });
 
   it('maps v1 permission and tools options onto the v2 session and prompt surfaces', async () => {
@@ -1664,6 +1792,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionID: 'v2-session-permissions',
         directory: '/workspace',
         tools: {
+          '*': false,
           edit: true,
           bash: true,
           webfetch: false,
@@ -1810,7 +1939,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         cwd?: string;
         steps?: number;
         permission?: { edit: string; bash: string; webfetch: string };
-        tools?: { core?: string[]; exclude?: string[] };
+        tools?: Record<string, boolean>;
       };
     };
 
@@ -1823,8 +1952,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       webfetch: 'deny',
     });
     expect(promptArgs.body.tools).toEqual({
-      core: ['edit', 'bash'],
-      exclude: ['webfetch'],
+      '*': false,
+      edit: true,
+      bash: true,
+      webfetch: false,
     });
   });
 

@@ -88,7 +88,7 @@ Each task's `overrides.abortSignal` controls only that task. When a task's signa
 
 ### ENG-017
 
-When `allowedTools` is set, adapters shall restrict available tools to that list. When `disallowedTools` is also set, adapters shall further exclude those tools from the allowed set. Tool names shall be matched as exact identifiers unless the adapter explicitly documents pattern support per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#adapter-interface).
+When `allowedTools` is set, adapters shall restrict available tools to that list. An explicit empty `allowedTools` list shall make no tools available and shall remain distinct from omission, which preserves the adapter's native tool surface. When `disallowedTools` is also set, adapters shall further exclude those tools from the allowed set. Tool names shall be matched as exact identifiers unless the adapter explicitly documents pattern support per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#adapter-interface). Where an adapter has no compatible surface for an explicit tool restriction, it shall reject before invoking the backend rather than silently ignore or weaken the restriction.
 
 ## Adapter Thread Safety
 

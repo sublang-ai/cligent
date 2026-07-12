@@ -7,6 +7,7 @@ import {
   KNOWN_PLAYER_ADAPTERS,
   createTmuxPlayRuntime,
   type BossTurn,
+  type CallCaptainOptions,
   type CallPlayerOptions,
   type Captain,
   type CaptainContext,
@@ -40,7 +41,12 @@ describe('tmux-play public contract', () => {
         const resume: CallPlayerOptions = { resume: 'thread-1' };
         await context.callPlayer('coder', turn.prompt, resume);
         await context.callPlayer('reviewer', turn.prompt, { resume: false });
-        await context.callCaptain('summarize');
+        const captainControl: CallCaptainOptions = {
+          visibility: 'hidden',
+          resume: false,
+          allowedTools: [] as const,
+        };
+        await context.callCaptain('summarize', captainControl);
       },
       async prepareDispose() {
         // no-op
@@ -56,6 +62,11 @@ describe('tmux-play public contract', () => {
   it('exports runtime API option types', () => {
     expectTypeOf<CallPlayerOptions>().toMatchTypeOf<{
       resume?: string | false;
+    }>();
+    expectTypeOf<CallCaptainOptions>().toMatchTypeOf<{
+      visibility?: 'visible' | 'hidden';
+      resume?: string | false;
+      allowedTools?: readonly string[];
     }>();
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;

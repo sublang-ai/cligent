@@ -284,6 +284,48 @@ describe('GeminiAdapter', () => {
     expect(done.payload.durationMs).toBe(222);
   });
 
+  it('reports an explicit empty allowlist as configured and known', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            sessionId: 'gemini-tool-free',
+            model: 'gemini-2.5-pro',
+            cwd: '/repo',
+            tools: ['replace', 'run_shell_command'],
+          }),
+          JSON.stringify({
+            type: 'result',
+            sessionId: 'gemini-tool-free',
+            status: 'success',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
+
+    const events = await collect(
+      adapter.run('route only', { allowedTools: [] }),
+    );
+    const init = events[0] as AgentEvent & {
+      payload: {
+        tools: string[];
+        capabilities: Record<string, unknown>;
+      };
+    };
+
+    expect(init.payload.tools).toEqual([]);
+    expect(init.payload.capabilities).toMatchObject({
+      toolsKnown: true,
+      toolsSource: 'configured',
+    });
+  });
+
   it('parses snake_case tool_use fields from Gemini CLI v0.31+', async () => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(

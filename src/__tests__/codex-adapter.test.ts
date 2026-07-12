@@ -213,7 +213,6 @@ describe('CodexAdapter', () => {
       adapter.run('do it', {
         model: 'gpt-5-codex',
         cwd: '/repo',
-        allowedTools: ['bash'],
       }),
     );
 
@@ -233,7 +232,7 @@ describe('CodexAdapter', () => {
     };
     expect(init.payload.model).toBe('gpt-5-codex');
     expect(init.payload.cwd).toBe('/repo');
-    expect(init.payload.tools).toEqual(['bash']);
+    expect(init.payload.tools).toEqual([]);
     expect(events[0].sessionId).toBe('thread-1');
     expect(events[1].sessionId).toBe('thread-1');
 
@@ -807,8 +806,6 @@ describe('CodexAdapter', () => {
           shellExecute: 'ask',
           networkAccess: 'deny',
         },
-        allowedTools: ['bash', 'read_file'],
-        disallowedTools: ['web_fetch'],
       }),
     );
 
@@ -829,6 +826,28 @@ describe('CodexAdapter', () => {
 
     expect(capturedRunPrompt).toBe('implement feature');
     expect(capturedRunOptions?.signal).toBeUndefined();
+  });
+
+  it('rejects explicit tool restrictions before loading the SDK', async () => {
+    let loads = 0;
+    const adapter = new CodexAdapter({
+      loadSdk: async () => {
+        loads++;
+        throw new Error('loader must not run');
+      },
+    });
+
+    for (const options of [
+      { allowedTools: [] },
+      { allowedTools: ['bash'] },
+      { disallowedTools: [] },
+      { disallowedTools: ['web_fetch'] },
+    ]) {
+      await expect(collect(adapter.run('control', options))).rejects.toThrow(
+        'cannot enforce explicit allowedTools or disallowedTools',
+      );
+    }
+    expect(loads).toBe(0);
   });
 
   it('passes auto-review config to the Codex SDK constructor for auto mode', async () => {

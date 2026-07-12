@@ -442,6 +442,26 @@ interface MappedCodexOptions {
   cleanupAbort: () => void;
 }
 
+function assertCodexToolRestrictionsSupported(
+  options: Pick<
+    AgentOptions<CodexEffort>,
+    'allowedTools' | 'disallowedTools'
+  > | undefined,
+): void {
+  if (
+    options?.allowedTools === undefined &&
+    options?.disallowedTools === undefined
+  ) {
+    return;
+  }
+
+  throw new Error(
+    'CodexAdapter cannot enforce explicit allowedTools or disallowedTools ' +
+      'with the supported Codex SDK; omit both tool-list options or select ' +
+      'an adapter with a provider-enforced tool restriction surface.',
+  );
+}
+
 export function mapEffortToCodexEffort(
   effort: AgentOptions<CodexEffort>['effort'],
 ): CodexEffort | undefined {
@@ -453,6 +473,7 @@ export function mapEffortToCodexEffort(
 export function mapAgentOptionsToCodexOptions(
   options: AgentOptions<CodexEffort> | undefined,
 ): MappedCodexOptions {
+  assertCodexToolRestrictionsSupported(options);
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
   const effort = mapEffortToCodexEffort(options?.effort);
 
@@ -899,6 +920,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     prompt: string,
     options?: AgentOptions<CodexEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    assertCodexToolRestrictionsSupported(options);
+
     let sdk: CodexSdk;
     try {
       sdk = await this.loadSdk();

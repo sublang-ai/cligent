@@ -57,6 +57,14 @@ The `canUseTool` callback shall conform to the Claude Agent SDK `CanUseTool` con
 
 The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, non-empty `resume` → SDK `resume`.
 
+### CLAUDE-009
+
+Where `AgentOptions.allowedTools` is provided, the adapter shall pass the effective list to the Claude Agent SDK `tools` option so only those built-in tools are available, shall pass the list to SDK `allowedTools` to preserve automatic permission approval for the selected names, and shall set `strictMcpConfig: true` so ambient MCP configuration cannot add tools outside the explicit list.
+An explicit empty list shall map to `tools: []` and `allowedTools: []`, disabling every built-in tool rather than restoring SDK defaults; it shall additionally map to `settingSources: []` so the SDK loads no user, project, or local filesystem settings or `CLAUDE.md`.
+These fields isolate only the ambient sources covered by their documented SDK controls and shall not be represented as removing provider context outside those surfaces.
+Where `disallowedTools` is also provided, the adapter shall pass it through so those exact identifiers remain unavailable and take precedence over the allowlist per [ENG-017](../engine.md#eng-017).
+Where `allowedTools` is omitted, the adapter shall omit SDK `tools`, `settingSources`, and `strictMcpConfig` and preserve the SDK's native available-tool, MCP, and settings behavior.
+
 ### CLAUDE-008
 
 Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Claude-specific `AgentOptions.effort` vocabulary from [ENG-020](../engine.md#eng-020) and map each value to the Claude Agent SDK query options per [[1]] and [[2]]:

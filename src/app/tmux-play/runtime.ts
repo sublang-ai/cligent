@@ -49,6 +49,7 @@ interface RunCligentCallOptions {
   readonly instruction?: string;
   readonly signal: AbortSignal;
   readonly resume?: string | false;
+  readonly allowedTools?: readonly string[];
   readonly emitEvent: (event: CligentEvent) => Promise<void>;
 }
 
@@ -366,6 +367,10 @@ export class TmuxPlayRuntime {
       prompt,
       instruction: this.captainInstruction,
       signal,
+      ...(options?.resume !== undefined ? { resume: options.resume } : {}),
+      ...(options?.allowedTools !== undefined
+        ? { allowedTools: options.allowedTools }
+        : {}),
       emitEvent: (event) =>
         this.emit({
           ...makeRecordBase('captain_event', turn.id, event.timestamp),
@@ -582,6 +587,9 @@ async function runCligentCall(
     {
       abortSignal: options.signal,
       ...(options.resume !== undefined ? { resume: options.resume } : {}),
+      ...(options.allowedTools !== undefined
+        ? { allowedTools: [...options.allowedTools] }
+        : {}),
     },
   );
   const textParts: string[] = [];

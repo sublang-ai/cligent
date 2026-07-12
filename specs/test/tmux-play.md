@@ -373,6 +373,13 @@ Given the tmux presenter receives a hidden call's records (`captain_event` carry
 
 Given a Boss/Captain pane scrolled back into copy-mode, a hidden call's records — a `captain_event` carrying a tool, text, or `error` event, then a `captain_finished` of any `status` — shall not return that pane to its live tail per [TMUX-069](../user/tmux-play.md#tmux-069): the pane shall keep its `#{scroll_position}` and remain at `#{pane_in_mode}` `1`. A later visible call whose flush writes bytes to that pane shall still return it to its live tail, so interleaved hidden records do not suppress the return owed once visible content reaches the pane.
 
+### TTMUX-091
+Verifies: [TMUX-016](../user/tmux-play.md#tmux-016), [TMUX-072](../user/tmux-play.md#tmux-072), [TMUX-088](../user/tmux-play.md#tmux-088)
+
+Where a Captain's runtime-owned `Cligent` stores an automatic resume token, when it calls `callCaptain(prompt, { resume: false, allowedTools: [] })`, the Captain adapter shall receive no resume token and an explicit empty allowlist while the call retains its normal records, result, and resolved visibility.
+Where `callCaptain` omits the session and tool fields, when the Captain calls it, the Captain adapter shall receive its stored automatic resume token and no per-call allowlist override.
+Where `callCaptain` receives a readonly non-empty allowlist, when the Captain calls it, tmux-play shall pass an equal mutable copy to `Cligent.run()` so caller-owned option data cannot be mutated at the adapter boundary.
+
 ## Player Session Continuity
 
 ### TTMUX-028

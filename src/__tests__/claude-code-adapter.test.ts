@@ -30,8 +30,11 @@ interface MockSdkInnerOptions {
   maxTurns?: number;
   maxBudgetUsd?: number;
   resume?: string;
+  tools?: string[];
   allowedTools?: string[];
   disallowedTools?: string[];
+  settingSources?: Array<'user' | 'project' | 'local'>;
+  strictMcpConfig?: boolean;
   permissionMode?: string;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: AdapterCanUseTool;
@@ -428,8 +431,10 @@ describe('ClaudeCodeAdapter', () => {
       maxTurns: 9,
       maxBudgetUsd: 4.5,
       resume: 'session-abc',
+      tools: ['Bash', 'Write'],
       allowedTools: ['Bash', 'Write'],
       disallowedTools: ['WebFetch'],
+      strictMcpConfig: true,
       permissionMode: 'default',
     });
     expect(captured?.sessionId).toBeUndefined();
@@ -447,6 +452,23 @@ describe('ClaudeCodeAdapter', () => {
     expect(await captured!.canUseTool!('WebFetch', toolInput)).toMatchObject({
       behavior: 'deny',
     });
+  });
+
+  it('uses SDK tool and ambient-source isolation for an empty allowlist', () => {
+    const isolated = mapAgentOptionsToClaudeQueryOptions({
+      allowedTools: [],
+    }).queryOptions;
+
+    expect(isolated.tools).toEqual([]);
+    expect(isolated.allowedTools).toEqual([]);
+    expect(isolated.settingSources).toEqual([]);
+    expect(isolated.strictMcpConfig).toBe(true);
+
+    const native = mapAgentOptionsToClaudeQueryOptions(undefined).queryOptions;
+    expect(native.tools).toBeUndefined();
+    expect(native.allowedTools).toBeUndefined();
+    expect(native.settingSources).toBeUndefined();
+    expect(native.strictMcpConfig).toBeUndefined();
   });
 
   it('treats an empty resume value as absent for SDK query options', async () => {

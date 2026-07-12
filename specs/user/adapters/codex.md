@@ -100,6 +100,11 @@ When effort is omitted, the adapter shall set neither effort transport and shall
 Where effort is outside the Codex-specific accepted vocabulary, including the Claude-specific value `ultracode`, the adapter shall reject it before starting a thread with an error naming the Codex adapter and allowed values.
 Mapping `ultra` shall leave independently mapped permission-profile, approval, sandbox, writable-path, and network controls unchanged, although provider delegation may increase token use, latency, cost, concurrency, and tool activity per [[5]].
 
+### CODEX-011
+
+Where `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is provided, including an empty array, the adapter shall reject before loading or invoking the Codex SDK with an error that states the installed Codex integration cannot enforce explicit tool restrictions.
+Where both fields are omitted, the adapter shall preserve Codex's native available-tool set.
+
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"

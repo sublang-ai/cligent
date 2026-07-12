@@ -243,6 +243,59 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
+  it('forwards fresh and tool-restricted Captain call controls', async () => {
+    const captured: Array<AgentOptions | undefined> = [];
+    const readonlyTools = ['Read'] as const;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        await context.callCaptain('establish continuity');
+        await context.callCaptain('reuse continuity');
+        await context.callCaptain('tool-free control', {
+          resume: false,
+          allowedTools: [],
+        });
+        await context.callCaptain('restricted control', {
+          resume: false,
+          allowedTools: readonlyTools,
+        });
+      },
+    };
+    let call = 0;
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run(_prompt, options) {
+            captured.push(options);
+            call++;
+            yield doneEvent(
+              'claude-code',
+              `captain ${call}`,
+              'success',
+              call <= 2 ? 'captain-session' : undefined,
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('route');
+
+    expect(captured).toHaveLength(4);
+    expect(captured[0]?.resume).toBeUndefined();
+    expect(captured[0]?.allowedTools).toBeUndefined();
+    expect(captured[1]?.resume).toBe('captain-session');
+    expect(captured[1]?.allowedTools).toBeUndefined();
+    expect(captured[2]?.resume).toBeUndefined();
+    expect(captured[2]?.allowedTools).toEqual([]);
+    expect(captured[3]?.resume).toBeUndefined();
+    expect(captured[3]?.allowedTools).toEqual(['Read']);
+    expect(captured[3]?.allowedTools).not.toBe(readonlyTools);
+  });
+
   it('returns an error result and tags records hidden for a failing hidden call', async () => {
     const records: TmuxPlayRecord[] = [];
     const captain: Captain = {

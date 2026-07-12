@@ -128,6 +128,14 @@ Where a provider lacks a 1:1 variant for the requested effort, the adapter shall
 When effort is omitted, the adapter shall not set a prompt-body `variant` and shall preserve OpenCode and user-configuration defaults.
 Where effort is outside the OpenCode portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before prompting the session with the metadata-backed allowed-values error from [ENG-024](../engine.md#eng-024).
 
+### OPENCODE-015
+
+Where `AgentOptions.allowedTools` is provided, the adapter shall map the OpenCode prompt tool wildcard to `false`, each effective allowed identifier to `true`, and each disallowed identifier to `false`, so every unlisted prompt tool is unavailable and explicit denies take precedence.
+An explicit empty allowlist shall therefore map to `{ "*": false }`, disabling all prompt tools rather than omitting the tool map.
+Where an allowed or disallowed tool identifier contains OpenCode's `*` wildcard syntax, the adapter shall reject before prompting because [ENG-017](../engine.md#eng-017) requires exact identifiers and a wildcard allow could reopen the provider registry.
+The adapter's `init` event shall report an explicit allowlist as a configured, known tool set even when the effective set is empty.
+Where `allowedTools` is omitted, the adapter shall preserve OpenCode's native available-tool set subject to any independently provided `disallowedTools`.
+
 ## References
 
 [1]: https://opencode.ai/docs/models/ "OpenCode model configuration"

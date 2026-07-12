@@ -158,7 +158,7 @@ The runtime shall own every player and Captain `Cligent` instance. Captains shal
 `CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt, options?)` and `callCaptain(prompt, options?)` methods.
 The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [TMUX-033](#tmux-033).
 `callPlayer`'s optional `options` shall be a `CallPlayerOptions` whose `resume?: string | false` selects the player's backend session for that call: a string explicitly resumes that opaque token and overrides the player's stored auto-resume token, `false` forces a fresh backend session, and omission preserves automatic continuity per [TMUX-041](#tmux-041).
-`callCaptain`'s optional `options` shall be a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation only per [TMUX-072](#tmux-072).
+`callCaptain`'s optional `options` shall be a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation per [TMUX-072](#tmux-072), whose `resume?: string | false` selects the Captain backend session for the call, and whose `allowedTools?: readonly string[]` restricts the call's tools per [TMUX-088](#tmux-088).
 `CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081), a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
 
 ### TMUX-017
@@ -730,7 +730,7 @@ The verbatim player-prompt rule has one exception: when a player result has `sta
 
 ### TMUX-072
 
-`callCaptain` shall accept an optional second argument `options: CallCaptainOptions` whose only field is `visibility: 'visible' | 'hidden'`, defaulting to `'visible'` when `options` or `visibility` is omitted.
+`callCaptain` shall accept an optional second argument `options: CallCaptainOptions` whose `visibility` field is `'visible' | 'hidden'`, defaulting to `'visible'` when `options` or `visibility` is omitted.
 
 A `'hidden'` call shall run identically to a `'visible'` call and shall return the same `CaptainRunResult` per [TMUX-033](#tmux-033) — same `status`, `turnId`, `finalText`, and `error`. The runtime shall still emit the call's `captain_prompt`, `captain_event*`, and `captain_finished` records in the order of [TMUX-022](#tmux-022), each carrying the resolved `visibility`, so non-presenter observers receive the full trace regardless of the tag.
 
@@ -739,6 +739,12 @@ The tmux presenter shall produce zero Boss/Captain-pane output for a `'hidden'` 
 Because a `'hidden'` call writes no bytes to the Boss/Captain pane, it shall not trigger the live-tail follow of [TMUX-069](#tmux-069): a Boss who has scrolled the Captain pane into copy-mode shall keep that scroll position across a hidden call, since a hidden call's records are no-visible-bytes activity under [TMUX-069](#tmux-069).
 
 `callPlayer` shall not accept this option; player visibility is unchanged.
+
+### TMUX-088
+
+When `CallCaptainOptions.resume` is a string, tmux-play shall pass that string to the Captain `Cligent.run()` call and override its stored automatic resume token; when it is `false`, tmux-play shall pass `false` so the call starts a fresh backend session; when it is omitted, tmux-play shall preserve automatic Captain continuity per [ENG-005](engine.md#eng-005).
+When `CallCaptainOptions.allowedTools` is provided, tmux-play shall copy and pass the exact list to the Captain `Cligent.run()` call; an empty list shall retain its explicit no-tools meaning per [ENG-017](engine.md#eng-017), while omission shall preserve the Captain's configured or adapter-native tool surface.
+The session and tool controls shall not change [TMUX-072](#tmux-072)'s record visibility, result, or presentation semantics.
 
 ## References
 

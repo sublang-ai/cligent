@@ -40,6 +40,7 @@ meta.md     The spec of specs
 | DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
 | DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md) | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()` |
 | DR-009 | [009-adapter-scoped-effort-vocabularies.md](decisions/009-adapter-scoped-effort-vocabularies.md) | One `effort` property with portable base values, provider-native extras, adapter-correlated types, and built-in support metadata |
+| DR-010 | [010-isolated-captain-control-calls.md](decisions/010-isolated-captain-control-calls.md) | Fresh and tool-restricted Captain control calls with fail-closed adapter enforcement |
 
 ## Iterations
 
@@ -79,6 +80,7 @@ meta.md     The spec of specs
 | IR-031 | [031-adapter-scoped-effort-and-config-migration.md](iterations/031-adapter-scoped-effort-and-config-migration.md) | Implement DR-009 adapter-scoped effort, metadata, mappings, and legacy tmux-play YAML migration |
 | IR-032 | [032-agent-runtime-and-package-readiness.md](iterations/032-agent-runtime-and-package-readiness.md) | Refresh all four coding-agent runtimes and harden packaging and live acceptance |
 | IR-033 | [033-effort-surface-simplification.md](iterations/033-effort-surface-simplification.md) | Replace lossless migration with best-effort compatibility, derive effort types from runtime metadata, and consolidate redundant tests |
+| IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls and enforce explicit allowlists across adapters |
 
 ## Packages
 

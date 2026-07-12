@@ -463,13 +463,27 @@ export function mapPermissionsToOpenCodeOptions(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
+  for (const [option, tools] of [
+    ['allowedTools', options?.allowedTools],
+    ['disallowedTools', options?.disallowedTools],
+  ] as const) {
+    if (tools?.some((tool) => tool.includes('*'))) {
+      throw new TypeError(
+        `OpenCode ${option} accepts exact tool identifiers, not wildcard patterns`,
+      );
+    }
+  }
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
-  const core = [...new Set(options?.allowedTools ?? [])];
+  const allowedListProvided = options?.allowedTools !== undefined;
   const exclude = [...new Set(options?.disallowedTools ?? [])];
+  const excluded = new Set(exclude);
+  const core = [...new Set(options?.allowedTools ?? [])].filter(
+    (tool) => !excluded.has(tool),
+  );
   const tools =
-    core.length > 0 || exclude.length > 0
+    allowedListProvided || exclude.length > 0
       ? {
-          ...(core.length > 0 ? { core } : {}),
+          ...(allowedListProvided ? { core } : {}),
           ...(exclude.length > 0 ? { exclude } : {}),
         }
       : undefined;
@@ -594,10 +608,20 @@ function toOpenCodeV2PermissionRuleset(
 
 function toOpenCodeV2Tools(tools: unknown): OpenCodeV2Tools | undefined {
   const record = asRecord(tools);
+  const hasExplicitCore = Object.prototype.hasOwnProperty.call(record, 'core');
   const core = asStringArray(record.core);
   const exclude = asStringArray(record.exclude);
   const mapped: OpenCodeV2Tools = {};
 
+  if (core.some((tool) => tool.includes('*'))) {
+    throw new TypeError(
+      'OpenCode prompt allowlist accepts exact tool identifiers, not wildcard patterns',
+    );
+  }
+
+  if (hasExplicitCore) {
+    mapped['*'] = false;
+  }
   for (const tool of core) {
     mapped[tool] = true;
   }
@@ -606,6 +630,10 @@ function toOpenCodeV2Tools(tools: unknown): OpenCodeV2Tools | undefined {
   }
 
   return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function toOpenCodeV1Tools(tools: unknown): unknown {
+  return toOpenCodeV2Tools(tools);
 }
 
 function throwIfSdkResultError(result: unknown, operation: string): void {
@@ -662,6 +690,7 @@ export function wrapOpencodeClient(
       const cwdVal = asString(options.cwd);
       const permissionObj = options.permission;
       const toolsObj = options.tools;
+      const v1Tools = toOpenCodeV1Tools(toolsObj);
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
       const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
@@ -714,7 +743,7 @@ export function wrapOpencodeClient(
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.steps !== undefined ? { steps: options.steps } : {}),
         ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-        ...(toolsObj !== undefined ? { tools: toolsObj } : {}),
+        ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
       };
 
       const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
@@ -1047,6 +1076,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const runRecord = asRecord(runResult);
         const configuredTools = asStringArray(mappedPermissions.tools?.core ?? []);
         const runTools = asStringArray(runRecord.tools);
+        const configuredAllowlist = options?.allowedTools !== undefined;
 
         yield createEvent(
           'init',
@@ -1054,16 +1084,25 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           {
             model: options?.model ?? asString(runRecord.model) ?? 'unknown',
             cwd: options?.cwd ?? asString(runRecord.cwd) ?? process.cwd(),
-            tools: runTools.length > 0 ? runTools : configuredTools,
+            tools: configuredAllowlist
+              ? configuredTools
+              : runTools.length > 0
+                ? runTools
+                : configuredTools,
             capabilities: {
               mode: this.mode,
-              toolsKnown: runTools.length > 0 || configuredTools.length > 0,
+              toolsKnown:
+                configuredAllowlist ||
+                runTools.length > 0 ||
+                configuredTools.length > 0,
               toolsSource:
-                runTools.length > 0
-                  ? 'sdk'
-                  : configuredTools.length > 0
-                    ? 'configured'
-                    : 'unavailable',
+                configuredAllowlist
+                  ? 'configured'
+                  : runTools.length > 0
+                    ? 'sdk'
+                    : configuredTools.length > 0
+                      ? 'configured'
+                      : 'unavailable',
               ...(mappedPermissions.tools?.exclude
                 ? { disallowedTools: mappedPermissions.tools.exclude }
                 : {}),
@@ -1464,18 +1503,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
     } catch (error) {
       if (!initYielded) {
+        const configuredAllowlist = options?.allowedTools !== undefined;
+        const configuredTools = asStringArray(
+          mappedPermissions.tools?.core ?? [],
+        );
         yield createEvent(
           'init',
           AGENT,
           {
             model: options?.model ?? 'unknown',
             cwd: options?.cwd ?? process.cwd(),
-            tools: asStringArray(mappedPermissions.tools?.core ?? []),
+            tools: configuredTools,
             capabilities: {
               mode: this.mode,
-              toolsKnown: asStringArray(mappedPermissions.tools?.core ?? []).length > 0,
+              toolsKnown:
+                configuredAllowlist || configuredTools.length > 0,
               toolsSource:
-                asStringArray(mappedPermissions.tools?.core ?? []).length > 0
+                configuredAllowlist || configuredTools.length > 0
                   ? 'configured'
                   : 'unavailable',
               ...(mappedPermissions.tools?.exclude

@@ -987,26 +987,34 @@ function buildInitPayload(
   capabilities: Record<string, unknown>;
 } {
   const sourceTools = asStringArray(sourceEvent?.tools);
+  const configuredAllowlist = options?.allowedTools !== undefined;
 
   const tools =
-    sourceTools.length > 0
-      ? sourceTools
-      : toolConfig.allowedTools.length > 0
-        ? toolConfig.allowedTools
-        : [];
+    configuredAllowlist
+      ? toolConfig.allowedTools
+      : sourceTools.length > 0
+        ? sourceTools
+        : toolConfig.allowedTools.length > 0
+          ? toolConfig.allowedTools
+          : [];
 
   return {
     model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
     cwd: options?.cwd ?? asString(sourceEvent?.cwd) ?? process.cwd(),
     tools,
     capabilities: {
-      toolsKnown: sourceTools.length > 0 || toolConfig.allowedTools.length > 0,
+      toolsKnown:
+        configuredAllowlist ||
+        sourceTools.length > 0 ||
+        toolConfig.allowedTools.length > 0,
       toolsSource:
-        sourceTools.length > 0
-          ? 'stream'
-          : toolConfig.allowedTools.length > 0
-            ? 'configured'
-            : 'unavailable',
+        configuredAllowlist
+          ? 'configured'
+          : sourceTools.length > 0
+            ? 'stream'
+            : toolConfig.allowedTools.length > 0
+              ? 'configured'
+              : 'unavailable',
       disallowedTools: toolConfig.disallowedTools,
     },
   };
