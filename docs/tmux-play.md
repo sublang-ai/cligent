@@ -188,31 +188,30 @@ offending path, adapter, and that adapter's allowed values; for example,
 Claude rejects `ultra`, while Codex rejects `ultracode`, and Gemini and
 OpenCode reject both.
 
-### Legacy `reasoningEffort` migration
+### Legacy `reasoningEffort` compatibility
 
-For every discovered home config, cwd config, or explicit `--config` YAML,
-the loader automatically renames direct `captain.reasoningEffort` and
-`players[N].reasoningEffort` keys to `effort`. It performs the write only
-after the complete migrated document validates. Other occurrences, including
-comments, instructions, and opaque `captain.options`, are not renamed.
+During the compatibility period, every discovered home config, cwd config, or
+explicit `--config` YAML can still use direct `captain.reasoningEffort` and
+`players[N].reasoningEffort` keys. The loader accepts their values in memory
+only after the complete document validates, then makes a bounded best-effort
+attempt to change those exact parsed key tokens to `effort`. Other occurrences,
+including comments, instructions, and opaque `captain.options`, are not changed.
 
 If one Captain or player contains both names (even with equal values), if a
 legacy value is invalid for that object's adapter, or if any other part of the
 document is invalid, loading fails without writing and preserves the source
 byte-for-byte.
 
-A successful migration preserves YAML comments, key order, scalar style, the
-config-path symlink (while updating its resolved target), and the target's
-owner/group/other permission bits. The validated result is written through a
-same-directory atomic replacement, and no migration temporary file is left
-behind.
+If the source no longer matches what was validated, or any read, temporary
+write, or replacement step fails, tmux-play skips the disk update and continues
+with the validated in-memory `effort`. The launcher warns with the config path
+and affected fields and asks you to rename the key manually. An observed newer
+source is not overwritten.
 
-If the source contents, observed file revision, or config-path symlink target
-changes before the final replacement checks, migration stops with a retry
-error instead of overwriting the newer source, and cleans its temporary file.
-Retry the command after the concurrent writer finishes. This is an optimistic
-check; unrelated changes after the final check but before the atomic rename
-are outside its guarantee.
+This is a small upgrade convenience, not a lossless migration contract. A
+successful attempt changes only the direct key tokens, but users should not
+rely on preservation of symlink targets, permission metadata, or every
+concurrent-writer race. Rename the keys manually when those properties matter.
 
 ### Permissions
 

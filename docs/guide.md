@@ -208,9 +208,12 @@ failure without substituting a different effort.
 
 The former public option name `reasoningEffort` has been replaced by `effort`.
 Programmatic callers must update the property name. Valid legacy tmux-play YAML
-is migrated automatically only after the complete document validates; a file
-with conflicting keys or an invalid legacy value is rejected without rewriting
-the source.
+is accepted in memory only after the complete document validates. The loader
+then makes a bounded best-effort update of direct legacy key tokens when the
+source still matches. If the source changes or the write fails, the run keeps
+the validated in-memory value and the launcher warns you to rename
+`reasoningEffort` to `effort` manually. Conflicting keys, invalid legacy values,
+or any other config error reject without writing.
 
 ## Session continuity
 
@@ -343,14 +346,19 @@ For adapter-level parallel execution without `Cligent` wrapping, use `runParalle
 
 ```ts
 import { runParallel } from '@sublang/cligent';
-import type { ParallelTask } from '@sublang/cligent';
 
-const tasks: ParallelTask[] = [
-  { adapter: new ClaudeCodeAdapter(), prompt: 'Write unit tests', options: { model: 'claude-opus-4-6' } },
-  { adapter: new CodexAdapter(), prompt: 'Write integration tests', options: { model: 'gpt-5.3-codex' } },
-];
-
-for await (const event of runParallel(tasks)) {
+for await (const event of runParallel([
+  {
+    adapter: new ClaudeCodeAdapter(),
+    prompt: 'Write unit tests',
+    options: { model: 'claude-opus-4-6', effort: 'ultracode' },
+  },
+  {
+    adapter: new CodexAdapter(),
+    prompt: 'Write integration tests',
+    options: { model: 'gpt-5.3-codex', effort: 'ultra' },
+  },
+])) {
   console.log(`[${event.agent}] ${event.type}`);
 }
 ```

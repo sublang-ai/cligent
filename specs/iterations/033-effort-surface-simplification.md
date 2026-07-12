@@ -9,10 +9,10 @@ Reduce the implementation and verification cost of [DR-009](../decisions/009-ada
 
 ## Status
 
-In Progress
+Complete
 
-Bounded legacy-key compatibility, table-derived correlated aliases, and test
-consolidation are complete; documentation and final verification remain open.
+Bounded legacy-key compatibility, table-derived correlated aliases, focused
+verification, and the user-facing upgrade guidance are complete.
 
 ## Deliverables
 
@@ -20,7 +20,7 @@ consolidation are complete; documentation and final verification remain open.
 - [x] Legacy tmux-play YAML runs through a best-effort key-token update with in-memory fallback and an actionable warning when the update is skipped.
 - [x] Built-in effort aliases derive from the runtime support table while direct, custom, and adapter-discriminated APIs retain useful correlation.
 - [x] Runtime, declaration, and launcher tests cover distinct rules and transports without redundant Cartesian permutations.
-- [ ] Guides and the changelog describe the best-effort deprecation path and the verified final surface.
+- [x] Guides and the changelog describe the best-effort deprecation path and the verified final surface.
 
 ## Tasks
 
@@ -34,7 +34,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Derive public built-in effort aliases from the frozen support values, retain direct and custom adapter generics plus adapter-discriminated tmux-play declarations, and collapse internal type-driven switches behind localized validated boundaries.
 4. [x] **Consolidate effort verification.**
    Keep representative declaration contracts, table-driven mapping rules, distinct rejection paths, and each provider transport class while removing repeated compiler restatements and provider-by-model-by-value permutations.
-5. [ ] **Document and close the simplification.**
+5. [x] **Document and close the simplification.**
    Update guides and the Unreleased changelog, run the full verification boundary, and mark only completed tasks and deliverables.
 
 ## Acceptance criteria
