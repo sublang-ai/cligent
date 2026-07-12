@@ -53,7 +53,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
 3. [x] **Preserve OpenCode native permissions.**
    Omit session permission rules for an absent policy while keeping independent
    tool-list restrictions and the distinct explicit-empty-policy behavior.
-4. [ ] **Update the supported validation toolchain.**
+4. [x] **Update the supported validation toolchain.**
    Move test, lint, and affected transitive dependencies to patched releases
    that remain compatible with every configured CI Node line without raising
    the packaged runtime floor, then clear production and full-graph audit
