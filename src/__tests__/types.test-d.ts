@@ -4,6 +4,7 @@
 import { describe, it, expectTypeOf } from 'vitest';
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import { CodexAdapter } from '../adapters/codex.js';
+import { GeminiAdapter } from '../adapters/gemini.js';
 import {
   AdapterRegistry,
   Cligent,
@@ -211,6 +212,15 @@ describe('core types', () => {
     new Cligent(new CodexAdapter(), { effort: 'ultracode' });
     // @ts-expect-error - run overrides remain Codex-scoped
     void codex.run('prompt', { effort: 'ultracode' });
+  });
+
+  it('binds the concrete Gemini adapter to portable effort values', () => {
+    const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
+    void gemini.run('prompt', { effort: 'minimal' });
+    // @ts-expect-error - Gemini does not accept Codex ultra
+    new Cligent(new GeminiAdapter(), { effort: 'ultra' });
+    // @ts-expect-error - Gemini does not accept Claude ultracode
+    void gemini.run('prompt', { effort: 'ultracode' });
   });
 
   it('keeps every heterogeneous parallel task correlated', () => {

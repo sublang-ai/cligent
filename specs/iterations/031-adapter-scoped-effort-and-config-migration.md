@@ -36,7 +36,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Map portable values and `ultracode`, make explicit ordinary values disable inherited ultracode, declare the minimum compatible Claude SDK peer floor required by those surfaces, and add focused tests.
 5. [x] **Map Codex effort.**
    Preserve portable values and native `ultra` through verified thread and config transports, declare the minimum compatible Codex SDK peer floor required by those transports, and add focused plus installed-SDK serialization tests.
-6. [ ] **Map Gemini effort.**
+6. [x] **Map Gemini effort.**
    Validate the portable vocabulary, preserve documented concrete-model mappings and no-alias cases, and add focused tests.
 7. [ ] **Map OpenCode effort.**
    Validate the portable vocabulary, preserve provider and model variant mappings and no-variant cases, and add focused tests.

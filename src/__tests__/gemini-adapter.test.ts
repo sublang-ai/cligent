@@ -21,9 +21,9 @@ import {
 import type {
   AgentEvent,
   AgentOptions,
+  GeminiEffort,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
 } from '../types.js';
 
 class MockGeminiProcess extends EventEmitter {
@@ -738,7 +738,7 @@ describe('GeminiAdapter', () => {
     ['high', 'HIGH'],
     ['xhigh', 'HIGH'],
     ['max', 'HIGH'],
-  ] satisfies Array<[PortableEffort, string]>)(
+  ] satisfies Array<[GeminiEffort, string]>)(
     'maps Gemini 3 effort %s to thinkingLevel %s',
     (effort, thinkingLevel) => {
       const mapped = mapAgentOptionsToGeminiCommand('prompt', {
@@ -759,7 +759,7 @@ describe('GeminiAdapter', () => {
     ['high', 16384],
     ['xhigh', 24576],
     ['max', 24576],
-  ] satisfies Array<[PortableEffort, number]>)(
+  ] satisfies Array<[GeminiEffort, number]>)(
     'maps Gemini 2.5 Flash effort %s to thinkingBudget %s',
     (effort, thinkingBudget) => {
       const mapped = mapAgentOptionsToGeminiCommand('prompt', {
@@ -772,6 +772,70 @@ describe('GeminiAdapter', () => {
       expect(mapped.args).not.toContain('--thinking-budget');
     },
   );
+
+  it('rejects provider-native and unknown effort before spawning', async () => {
+    const { spawnProcess, invocations } = makeSpawn(() => {});
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    for (const effort of ['ultracode', 'ultra', 'future-effort']) {
+      const invalid = { effort } as unknown as AgentOptions<GeminiEffort>;
+      await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+        'effort for adapter "gemini" must be one of: minimal, low, medium, high, xhigh, max',
+      );
+    }
+    expect(invocations).toHaveLength(0);
+  });
+
+  it('surfaces a model rejection for valid effort without substitution', async () => {
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'result',
+            status: 'error',
+            error: {
+              code: 'UNSUPPORTED_THINKING_LEVEL',
+              message: 'HIGH thinking is unavailable for this model',
+            },
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        1,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {},
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'max',
+      }),
+    );
+
+    expect(invocations[0]?.args).toContain(GEMINI_REASONING_EFFORT_ALIAS);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      code: 'UNSUPPORTED_THINKING_LEVEL',
+      message: 'HIGH thinking is unavailable for this model',
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
+  });
 
   it('maps Gemini 2.5 max to the model-family upper bound', () => {
     const pro = mapAgentOptionsToGeminiCommand('prompt', {

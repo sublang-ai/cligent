@@ -12,16 +12,17 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { assertSupportedEffort } from '../effort.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
   AgentOptions,
   DonePayload,
+  GeminiEffort,
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
@@ -332,9 +333,11 @@ export function buildGeminiToolSettings(
 
 export function mapEffortToGeminiModelAlias(
   model: string | undefined,
-  effort: PortableEffort | undefined,
+  effort: GeminiEffort | undefined,
 ): GeminiModelAliasConfig | undefined {
-  if (!model || !effort) return undefined;
+  if (effort === undefined) return undefined;
+  assertSupportedEffort(AGENT, effort);
+  if (!model) return undefined;
 
   if (/^gemini-3/.test(model)) {
     return {
@@ -360,7 +363,7 @@ export function mapEffortToGeminiModelAlias(
 }
 
 function mapEffortToGemini3ThinkingLevel(
-  effort: PortableEffort,
+  effort: GeminiEffort,
 ): GeminiThinkingLevel {
   switch (effort) {
     case 'minimal':
@@ -378,7 +381,7 @@ function mapEffortToGemini3ThinkingLevel(
 
 function mapEffortToGemini25ThinkingBudget(
   model: string,
-  effort: PortableEffort,
+  effort: GeminiEffort,
 ): number {
   switch (effort) {
     case 'minimal':
@@ -551,7 +554,7 @@ export interface GeminiCommandConfig {
 
 export function mapAgentOptionsToGeminiCommand(
   prompt: string,
-  options: AgentOptions<PortableEffort> | undefined,
+  options: AgentOptions<GeminiEffort> | undefined,
 ): GeminiCommandConfig {
   const toolConfig = mapPermissionsToGeminiToolConfig(options?.permissions, {
     allowedTools: options?.allowedTools,
@@ -603,7 +606,7 @@ export function mapAgentOptionsToGeminiCommand(
 
 function buildInitPayload(
   sourceEvent: Record<string, unknown> | undefined,
-  options: AgentOptions<PortableEffort> | undefined,
+  options: AgentOptions<GeminiEffort> | undefined,
   toolConfig: GeminiToolConfig,
 ): {
   model: string;
@@ -637,7 +640,7 @@ function buildInitPayload(
   };
 }
 
-export class GeminiAdapter implements AgentAdapter<PortableEffort> {
+export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
   readonly agent = AGENT;
 
   private readonly spawnProcess: SpawnProcessFn;
@@ -661,7 +664,7 @@ export class GeminiAdapter implements AgentAdapter<PortableEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<PortableEffort>,
+    options?: AgentOptions<GeminiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     const mapped = mapAgentOptionsToGeminiCommand(prompt, options);
 
