@@ -25,8 +25,6 @@ type CodexDefaultPermissions =
   | ':workspace'
   | ':read-only'
   | CodexWorkspaceExtraWritesProfile;
-type CodexApprovalsReviewer = 'auto_review';
-
 type CodexModelReasoningEffort =
   | 'minimal'
   | 'low'
@@ -44,9 +42,7 @@ type CodexConfigValue =
 interface CodexConstructorOptions {
   codexPathOverride?: string;
   config?: {
-    [key: string]: CodexConfigValue | undefined;
-    default_permissions?: CodexDefaultPermissions;
-    approvals_reviewer?: CodexApprovalsReviewer;
+    [key: string]: CodexConfigValue;
   };
   env?: Record<string, string>;
 }
@@ -93,7 +89,6 @@ interface CodexThread {
     prompt: string,
     options?: CodexRunOptions,
   ) => Promise<{ events: AsyncIterable<unknown> }>;
-  run?: (prompt: string, options?: CodexRunOptions) => AsyncIterable<unknown>;
 }
 
 interface CodexClient {

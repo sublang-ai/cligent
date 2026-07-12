@@ -10,5 +10,14 @@
   // and they currently carry pre-existing TS errors that pre-date this
   // config and are out of scope here.
   "include": ["../src/**/*.ts"],
-  "exclude": ["../src/**/*.test.ts"]
+  "exclude": [
+    "../src/**/*.test.ts",
+    // Production builds use these minimal declarations so the adapters stay
+    // type-safe to import when their optional peer SDK is absent. Local/CI
+    // typechecks deliberately resolve the installed SDK declarations instead,
+    // allowing sdk-conformance.test-d.ts to catch upstream API drift.
+    "../src/adapters/claude-agent-sdk.d.ts",
+    "../src/adapters/codex-sdk.d.ts",
+    "../src/adapters/opencode-sdk.d.ts"
+  ]
 }

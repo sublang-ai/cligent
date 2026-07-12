@@ -55,7 +55,10 @@ jobs:
       - run: npm run build
 
       - name: Install agent CLIs
-        run: npm install -g @google/gemini-cli@0.45.2 opencode-ai@1.16.2
+        run: npm install -g @google/gemini-cli@0.50.0 opencode-ai@1.17.18
+
+      - name: Verify agent CLI targets
+        run: node scripts/verify-agent-targets.mjs
 
       - name: Install attached-client driver
         # Real-tmux mouse/key acceptance probes drive an attached client via

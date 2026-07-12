@@ -22,11 +22,10 @@ The readiness contract is specified; implementation tasks remain open.
 ## Deliverables
 
 - [x] Canonical package and acceptance items specify the readiness boundary.
-- [ ] Exact Claude Agent SDK, Codex SDK, and OpenCode SDK development
-  dependencies plus
-  Gemini and OpenCode CI CLI packages name the versions exercised by
-  repository verification.
-- [ ] SDK declaration conformance plus exact installed-CLI version checks make
+- [x] Exact Claude Agent SDK, Codex SDK, and OpenCode SDK development
+  dependencies plus Gemini and OpenCode CI CLI packages name the versions
+  exercised by repository verification.
+- [x] SDK declaration conformance plus exact installed-CLI version checks make
   every validation target observable.
 - [ ] OpenCode preserves its native permission defaults when no
   `PermissionPolicy` is supplied.
@@ -44,7 +43,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Amend package, adapter, and acceptance items for exact conformance targets,
    native-default preservation, supported floors, clean builds, safe live
    probes, and packed-package verification.
-2. [ ] **Refresh exact agent conformance targets.**
+2. [x] **Refresh exact agent conformance targets.**
    Pin exact Claude Agent SDK, Codex SDK, and OpenCode SDK development
    dependencies and exact Gemini and OpenCode CI CLI packages; assert resolved
    versions; compile adapter mirrors against installed SDK declarations; and
