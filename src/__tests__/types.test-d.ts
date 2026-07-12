@@ -36,6 +36,13 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 
+type SupportEffortMap = {
+  [A in keyof typeof EFFORT_SUPPORT]:
+    (typeof EFFORT_SUPPORT)[A]['values'][number];
+};
+
+type AdapterEffort<T> = T extends AgentAdapter<infer E> ? E : never;
+
 describe('core types', () => {
   it('narrows discriminated union on type field', () => {
     const event = {} as AgentEvent;
@@ -126,18 +133,12 @@ describe('core types', () => {
   });
 
   it('exports exact adapter-scoped effort metadata types', () => {
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['claude-code']['values'][number]
-    >().toEqualTypeOf<ClaudeEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['codex']['values'][number]
-    >().toEqualTypeOf<CodexEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['gemini']['values'][number]
-    >().toEqualTypeOf<GeminiEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['opencode']['values'][number]
-    >().toEqualTypeOf<OpenCodeEffort>();
+    expectTypeOf<SupportEffortMap>().toEqualTypeOf<{
+      readonly 'claude-code': ClaudeEffort;
+      readonly codex: CodexEffort;
+      readonly gemini: GeminiEffort;
+      readonly opencode: OpenCodeEffort;
+    }>();
 
     const candidate: unknown = 'ultra';
     if (isEffortSupported('codex', candidate)) {
@@ -152,6 +153,9 @@ describe('core types', () => {
   it('renames the public option and correlates direct adapter calls', () => {
     expectTypeOf<PortableEffort>().toEqualTypeOf<
       'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    >();
+    expectTypeOf<Effort>().toEqualTypeOf<
+      PortableEffort | 'ultracode' | 'ultra'
     >();
     expectTypeOf<ClaudeEffort>().toEqualTypeOf<PortableEffort | 'ultracode'>();
     expectTypeOf<CodexEffort>().toEqualTypeOf<PortableEffort | 'ultra'>();
@@ -195,42 +199,18 @@ describe('core types', () => {
     new Cligent(customAdapter, { effort: 'ultra' });
   });
 
-  it('binds the concrete Claude adapter to Claude effort values', () => {
-    const claude = new Cligent(new ClaudeCodeAdapter(), {
-      effort: 'ultracode',
-    });
-    void claude.run('prompt', { effort: 'max' });
-    // @ts-expect-error - ultra is a Codex-only orchestration value
-    new Cligent(new ClaudeCodeAdapter(), { effort: 'ultra' });
-    // @ts-expect-error - run overrides remain Claude-scoped
-    void claude.run('prompt', { effort: 'ultra' });
-  });
-
-  it('binds the concrete Codex adapter to Codex effort values', () => {
-    const codex = new Cligent(new CodexAdapter(), { effort: 'ultra' });
-    void codex.run('prompt', { effort: 'max' });
-    // @ts-expect-error - ultracode is a Claude-only orchestration value
-    new Cligent(new CodexAdapter(), { effort: 'ultracode' });
-    // @ts-expect-error - run overrides remain Codex-scoped
-    void codex.run('prompt', { effort: 'ultracode' });
-  });
-
-  it('binds the concrete Gemini adapter to portable effort values', () => {
-    const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
-    void gemini.run('prompt', { effort: 'minimal' });
-    // @ts-expect-error - Gemini does not accept Codex ultra
-    new Cligent(new GeminiAdapter(), { effort: 'ultra' });
-    // @ts-expect-error - Gemini does not accept Claude ultracode
-    void gemini.run('prompt', { effort: 'ultracode' });
-  });
-
-  it('binds the concrete OpenCode adapter to portable effort values', () => {
-    const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'max' });
-    void opencode.run('prompt', { effort: 'minimal' });
-    // @ts-expect-error - OpenCode does not accept Codex ultra
-    new Cligent(new OpenCodeAdapter(), { effort: 'ultra' });
-    // @ts-expect-error - OpenCode does not accept Claude ultracode
-    void opencode.run('prompt', { effort: 'ultracode' });
+  it('binds each concrete adapter to its metadata vocabulary', () => {
+    expectTypeOf<{
+      claude: AdapterEffort<ClaudeCodeAdapter>;
+      codex: AdapterEffort<CodexAdapter>;
+      gemini: AdapterEffort<GeminiAdapter>;
+      opencode: AdapterEffort<OpenCodeAdapter>;
+    }>().toEqualTypeOf<{
+      claude: ClaudeEffort;
+      codex: CodexEffort;
+      gemini: GeminiEffort;
+      opencode: OpenCodeEffort;
+    }>();
   });
 
   it('keeps every heterogeneous parallel task correlated', () => {

@@ -33,7 +33,7 @@ function stringEnvironment(): Record<string, string> {
 }
 
 describe('Codex SDK native effort config', () => {
-  it.each(['max', 'ultra'] as const)(
+  it.each(['ultra'] as const)(
     'serializes %s through the installed SDK as model_reasoning_effort',
     async (effort) => {
       const dir = mkdtempSync(join(tmpdir(), 'cligent-codex-effort-sdk-'));

@@ -1146,46 +1146,35 @@ describe('CodexAdapter', () => {
     expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
   });
 
-  it('maps portable effort through the typed SDK thread surface', () => {
-    const cases: Array<[CodexEffort | undefined, string | undefined]> = [
-      [undefined, undefined],
-      ['minimal', 'minimal'],
-      ['low', 'low'],
-      ['medium', 'medium'],
-      ['high', 'high'],
-      ['xhigh', 'xhigh'],
-    ];
-
-    for (const [input, expected] of cases) {
-      expect(mapEffortToCodexEffort(input)).toBe(expected);
-
+  it.each([
+    [undefined, undefined, undefined],
+    ['minimal', 'minimal', undefined],
+    ['low', 'low', undefined],
+    ['medium', 'medium', undefined],
+    ['high', 'high', undefined],
+    ['xhigh', 'xhigh', undefined],
+    ['max', undefined, 'max'],
+    ['ultra', undefined, 'ultra'],
+  ] satisfies Array<
+    [CodexEffort | undefined, string | undefined, string | undefined]
+  >)(
+    'maps Codex effort %s to its supported SDK transport',
+    (effort, threadEffort, configEffort) => {
+      expect(mapEffortToCodexEffort(effort)).toBe(effort);
       const mapped = mapAgentOptionsToCodexOptions(
-        input === undefined ? {} : { effort: input },
+        effort === undefined ? {} : { effort },
       );
-      if (input === undefined) {
+
+      if (threadEffort === undefined) {
         expect(mapped.threadOptions).not.toHaveProperty(
           'modelReasoningEffort',
         );
       } else {
-        expect(mapped.threadOptions.modelReasoningEffort).toBe(expected);
+        expect(mapped.threadOptions.modelReasoningEffort).toBe(threadEffort);
       }
-      expect(
-        mapped.codexOptions?.config?.model_reasoning_effort,
-      ).toBeUndefined();
-    }
-  });
-
-  it.each(['max', 'ultra'] as const)(
-    'passes Codex %s unchanged through constructor config',
-    (effort) => {
-      expect(mapEffortToCodexEffort(effort)).toBe(effort);
-      const mapped = mapAgentOptionsToCodexOptions({ effort });
-      expect(mapped.threadOptions).not.toHaveProperty(
-        'modelReasoningEffort',
+      expect(mapped.codexOptions?.config?.model_reasoning_effort).toBe(
+        configEffort,
       );
-      expect(mapped.codexOptions?.config).toEqual({
-        model_reasoning_effort: effort,
-      });
     },
   );
 

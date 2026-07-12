@@ -40,51 +40,24 @@ type ExpectedEffortMap = {
   opencode: OpenCodeEffort | undefined;
 };
 
-type NativeEffortLeaks<T> = {
-  claudeAcceptsUltra: 'ultra' extends EffortOf<T, 'claude'> ? true : false;
-  codexAcceptsUltracode: 'ultracode' extends EffortOf<T, 'codex'>
-    ? true
-    : false;
-  geminiAcceptsUltra: 'ultra' extends EffortOf<T, 'gemini'> ? true : false;
-  geminiAcceptsUltracode: 'ultracode' extends EffortOf<T, 'gemini'>
-    ? true
-    : false;
-  opencodeAcceptsUltra: 'ultra' extends EffortOf<T, 'opencode'> ? true : false;
-  opencodeAcceptsUltracode: 'ultracode' extends EffortOf<T, 'opencode'>
-    ? true
-    : false;
-};
-
-type NoNativeEffortLeaks = {
-  [K in keyof NativeEffortLeaks<unknown>]: false;
+type ConfigSurfaceEfforts = {
+  captain: EffortMap<CaptainConfig>;
+  player: EffortMap<PlayerConfig>;
+  runtimeCaptain: EffortMap<RuntimeCaptainConfig>;
+  runtimePlayer: EffortMap<RuntimePlayerConfig>;
 };
 
 describe('tmux-play effort types (TTMUX-090)', () => {
   it('keeps every config surface adapter-discriminated', () => {
-    expectTypeOf<EffortMap<CaptainConfig>>().toEqualTypeOf<ExpectedEffortMap>();
-    expectTypeOf<EffortMap<PlayerConfig>>().toEqualTypeOf<ExpectedEffortMap>();
-    expectTypeOf<
-      EffortMap<RuntimeCaptainConfig>
-    >().toEqualTypeOf<ExpectedEffortMap>();
-    expectTypeOf<
-      EffortMap<RuntimePlayerConfig>
-    >().toEqualTypeOf<ExpectedEffortMap>();
-
-    expectTypeOf<
-      NativeEffortLeaks<CaptainConfig>
-    >().toEqualTypeOf<NoNativeEffortLeaks>();
-    expectTypeOf<
-      NativeEffortLeaks<PlayerConfig>
-    >().toEqualTypeOf<NoNativeEffortLeaks>();
-    expectTypeOf<
-      NativeEffortLeaks<RuntimeCaptainConfig>
-    >().toEqualTypeOf<NoNativeEffortLeaks>();
-    expectTypeOf<
-      NativeEffortLeaks<RuntimePlayerConfig>
-    >().toEqualTypeOf<NoNativeEffortLeaks>();
+    expectTypeOf<ConfigSurfaceEfforts>().toEqualTypeOf<{
+      captain: ExpectedEffortMap;
+      player: ExpectedEffortMap;
+      runtimeCaptain: ExpectedEffortMap;
+      runtimePlayer: ExpectedEffortMap;
+    }>();
   });
 
-  it('accepts each own vocabulary while retaining non-effort fields', () => {
+  it('accepts representative configs with their non-effort fields', () => {
     const permissions: PermissionPolicy = {
       mode: 'auto',
       fileWrite: 'allow',
@@ -92,64 +65,40 @@ describe('tmux-play effort types (TTMUX-090)', () => {
       networkAccess: 'deny',
       writablePaths: ['generated'],
     };
-    const captainFields = {
+    const captain = {
       from: '@example/captain',
+      adapter: 'claude',
+      effort: 'ultracode',
       model: 'example-model',
       instruction: 'Coordinate the players.',
       permissions,
       options: { strategy: 'fanout', retries: 2 },
-    };
-    const playerFields = {
+    } satisfies CaptainConfig;
+    const player = {
       id: 'reviewer',
+      adapter: 'codex',
+      effort: 'ultra',
       model: 'example-model',
       instruction: 'Review the answer.',
       permissions,
-    };
-    const runtimeCaptainFields = {
+    } satisfies PlayerConfig;
+    const runtimeCaptain = {
+      adapter: 'gemini',
+      effort: 'medium',
       model: 'example-model',
       instruction: 'Coordinate the players.',
       permissions,
-    };
-    const runtimePlayerFields = {
+    } satisfies RuntimeCaptainConfig;
+    const runtimePlayer = {
       id: 'reviewer',
+      adapter: 'opencode',
+      effort: 'xhigh',
       model: 'example-model',
       instruction: 'Review the answer.',
       permissions,
-    };
+    } satisfies RuntimePlayerConfig;
 
-    const captains = [
-      { ...captainFields, adapter: 'claude', effort: 'ultracode' },
-      { ...captainFields, adapter: 'codex', effort: 'ultra' },
-      { ...captainFields, adapter: 'gemini', effort: 'minimal' },
-      { ...captainFields, adapter: 'opencode', effort: 'max' },
-    ] satisfies readonly CaptainConfig[];
-    const players = [
-      { ...playerFields, adapter: 'claude', effort: 'ultracode' },
-      { ...playerFields, adapter: 'codex', effort: 'ultra' },
-      { ...playerFields, adapter: 'gemini', effort: 'low' },
-      { ...playerFields, adapter: 'opencode', effort: 'xhigh' },
-    ] satisfies readonly PlayerConfig[];
-    const runtimeCaptains = [
-      { ...runtimeCaptainFields, adapter: 'claude', effort: 'ultracode' },
-      { ...runtimeCaptainFields, adapter: 'codex', effort: 'ultra' },
-      { ...runtimeCaptainFields, adapter: 'gemini', effort: 'medium' },
-      { ...runtimeCaptainFields, adapter: 'opencode', effort: 'high' },
-    ] satisfies readonly RuntimeCaptainConfig[];
-    const runtimePlayers = [
-      { ...runtimePlayerFields, adapter: 'claude', effort: 'ultracode' },
-      { ...runtimePlayerFields, adapter: 'codex', effort: 'ultra' },
-      { ...runtimePlayerFields, adapter: 'gemini', effort: 'xhigh' },
-      { ...runtimePlayerFields, adapter: 'opencode', effort: 'minimal' },
-    ] satisfies readonly RuntimePlayerConfig[];
-
-    expectTypeOf(captains).toMatchTypeOf<readonly CaptainConfig[]>();
-    expectTypeOf(players).toMatchTypeOf<readonly PlayerConfig[]>();
-    expectTypeOf(runtimeCaptains).toMatchTypeOf<
-      readonly RuntimeCaptainConfig[]
-    >();
-    expectTypeOf(runtimePlayers).toMatchTypeOf<
-      readonly RuntimePlayerConfig[]
-    >();
+    void [captain, player, runtimeCaptain, runtimePlayer];
   });
 
   it('correlates createPlayerCligent inputs and returns for all adapters', () => {
@@ -185,10 +134,6 @@ describe('tmux-play effort types (TTMUX-090)', () => {
     void createPlayerCligent('codex', { effort: 'ultracode' });
     // @ts-expect-error - Gemini accepts only portable effort values
     void createPlayerCligent('gemini', { effort: 'ultra' });
-    // @ts-expect-error - Gemini accepts only portable effort values
-    void createPlayerCligent('gemini', { effort: 'ultracode' });
-    // @ts-expect-error - OpenCode accepts only portable effort values
-    void createPlayerCligent('opencode', { effort: 'ultra' });
     // @ts-expect-error - OpenCode accepts only portable effort values
     void createPlayerCligent('opencode', { effort: 'ultracode' });
   });

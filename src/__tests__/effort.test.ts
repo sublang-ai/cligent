@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   EFFORT_SUPPORT,
@@ -9,12 +9,6 @@ import {
   getEffortSupport,
   isEffortSupported,
   supportedEffortValues,
-} from '../index.js';
-import type {
-  ClaudeEffort,
-  CodexEffort,
-  GeminiEffort,
-  OpenCodeEffort,
 } from '../index.js';
 
 describe('built-in effort metadata', () => {
@@ -79,21 +73,6 @@ describe('built-in effort metadata', () => {
     expect(EFFORT_SUPPORT.codex.values).toContain('ultra');
   });
 
-  it('keeps metadata element types equal to every public alias', () => {
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['claude-code']['values'][number]
-    >().toEqualTypeOf<ClaudeEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['codex']['values'][number]
-    >().toEqualTypeOf<CodexEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['gemini']['values'][number]
-    >().toEqualTypeOf<GeminiEffort>();
-    expectTypeOf<
-      (typeof EFFORT_SUPPORT)['opencode']['values'][number]
-    >().toEqualTypeOf<OpenCodeEffort>();
-  });
-
   it('resolves the tmux-play claude alias', () => {
     expect(getEffortSupport('claude')).toBe(getEffortSupport('claude-code'));
     expect(supportedEffortValues('claude')).toContain('ultracode');
@@ -105,11 +84,6 @@ describe('built-in effort metadata', () => {
     expect(isEffortSupported('codex', 'ultra')).toBe(true);
     expect(isEffortSupported('codex', 'ultracode')).toBe(false);
     expect(isEffortSupported('gemini', 'ultra')).toBe(false);
-
-    const candidate: unknown = 'ultra';
-    if (isEffortSupported('codex', candidate)) {
-      expectTypeOf(candidate).toEqualTypeOf<CodexEffort>();
-    }
   });
 
   it('names the path, adapter, and allowed values on validation errors', () => {

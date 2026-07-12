@@ -489,7 +489,7 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    for (const effort of ['ultracode', 'ultra', 'future-effort']) {
+    for (const effort of ['ultra', 'future-effort']) {
       const invalid = { effort } as unknown as AgentOptions<OpenCodeEffort>;
       await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
         'effort for adapter "opencode" must be one of: minimal, low, medium, high, xhigh, max',

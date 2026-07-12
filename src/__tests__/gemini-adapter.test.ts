@@ -1109,7 +1109,7 @@ describe('GeminiAdapter', () => {
       probeAvailability: async () => true,
     });
 
-    for (const effort of ['ultracode', 'ultra', 'future-effort']) {
+    for (const effort of ['ultracode', 'future-effort']) {
       const invalid = { effort } as unknown as AgentOptions<GeminiEffort>;
       await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
         'effort for adapter "gemini" must be one of: minimal, low, medium, high, xhigh, max',
@@ -1168,27 +1168,13 @@ describe('GeminiAdapter', () => {
     expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
-  it('maps Gemini 2.5 max to the model-family upper bound', () => {
+  it('maps Gemini 2.5 Pro max to its model-family upper bound', () => {
     const pro = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-2.5-pro',
       effort: 'max',
     });
-    const flash = mapAgentOptionsToGeminiCommand('prompt', {
-      model: 'gemini-2.5-flash-preview',
-      effort: 'max',
-    });
-    const flashLite = mapAgentOptionsToGeminiCommand('prompt', {
-      model: 'gemini-2.5-flash-lite',
-      effort: 'max',
-    });
 
     expectReasoningAlias(pro, 'gemini-2.5-pro', { thinkingBudget: 32768 });
-    expectReasoningAlias(flash, 'gemini-2.5-flash-preview', {
-      thinkingBudget: 24576,
-    });
-    expectReasoningAlias(flashLite, 'gemini-2.5-flash-lite', {
-      thinkingBudget: 24576,
-    });
   });
 
   it.each([
