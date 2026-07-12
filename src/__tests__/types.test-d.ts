@@ -2,6 +2,17 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describe, it, expectTypeOf } from 'vitest';
+import {
+  EFFORT_SUPPORT,
+  assertSupportedEffort,
+  isEffortSupported,
+} from '../index.js';
+import type {
+  ClaudeEffort,
+  CodexEffort,
+  GeminiEffort,
+  OpenCodeEffort,
+} from '../index.js';
 import type {
   AgentEvent,
   AgentEventType,
@@ -101,5 +112,29 @@ describe('core types', () => {
   it('BaseEvent.type accepts AgentEventType and arbitrary strings', () => {
     expectTypeOf<AgentEventType>().toMatchTypeOf<BaseEvent['type']>();
     expectTypeOf<string>().toMatchTypeOf<BaseEvent['type']>();
+  });
+
+  it('exports exact adapter-scoped effort metadata types', () => {
+    expectTypeOf<
+      (typeof EFFORT_SUPPORT)['claude-code']['values'][number]
+    >().toEqualTypeOf<ClaudeEffort>();
+    expectTypeOf<
+      (typeof EFFORT_SUPPORT)['codex']['values'][number]
+    >().toEqualTypeOf<CodexEffort>();
+    expectTypeOf<
+      (typeof EFFORT_SUPPORT)['gemini']['values'][number]
+    >().toEqualTypeOf<GeminiEffort>();
+    expectTypeOf<
+      (typeof EFFORT_SUPPORT)['opencode']['values'][number]
+    >().toEqualTypeOf<OpenCodeEffort>();
+
+    const candidate: unknown = 'ultra';
+    if (isEffortSupported('codex', candidate)) {
+      expectTypeOf(candidate).toEqualTypeOf<CodexEffort>();
+    }
+
+    let asserted: unknown = 'ultracode';
+    assertSupportedEffort('claude-code', asserted);
+    expectTypeOf(asserted).toEqualTypeOf<ClaudeEffort>();
   });
 });

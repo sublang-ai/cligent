@@ -16,7 +16,7 @@ The canonical effort and migration contract is specified; implementation tasks r
 ## Deliverables
 
 - [x] Canonical engine, adapter, tmux-play, and acceptance items specify adapter-scoped effort and legacy-key migration.
-- [ ] Public vocabularies, deeply immutable built-in metadata, helpers, and runtime validation agree on every built-in adapter value.
+- [x] Public vocabularies, deeply immutable built-in metadata, helpers, and runtime validation agree on every built-in adapter value.
 - [ ] Direct `Cligent` and heterogeneous parallel TypeScript surfaces preserve built-in and custom vocabularies; the legacy registry forwards exact custom strings unchanged.
 - [ ] Claude Code supports `ultracode`; Codex supports `ultra`; Gemini and OpenCode retain their portable mappings.
 - [ ] tmux-play uses adapter-discriminated `effort` types and migrates legacy YAML only after complete validation.
@@ -28,7 +28,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
 
 1. [x] **Specify adapter-scoped effort.**
    Amend canonical user and acceptance items for DR-009, index them, and record only supersession and the legacy-registry boundary in the decision record.
-2. [ ] **Add effort vocabularies and metadata.**
+2. [x] **Add effort vocabularies and metadata.**
    Add public built-in type aliases, deeply immutable support metadata, lookup and validation helpers, root exports, and focused runtime tests without changing the existing option name.
 3. [ ] **Rename and correlate the core effort API.**
    Rename the option and mechanically carry it through existing callers without adding provider-native behavior; preserve correlation through `Cligent`, heterogeneous parallel calls, and custom adapters; preserve exact string pass-through through the legacy registry and engine; and add focused compile-time and runtime conformance tests.

@@ -133,13 +133,34 @@ export interface PermissionPolicy {
   writablePaths?: string[];
 }
 
-export type ReasoningEffort =
+export type PortableEffort =
   | 'minimal'
   | 'low'
   | 'medium'
   | 'high'
   | 'xhigh'
   | 'max';
+
+/** Accepted effort values for the built-in Claude Code adapter. */
+export type ClaudeEffort = PortableEffort | 'ultracode';
+
+/** Accepted effort values for the built-in Codex adapter. */
+export type CodexEffort = PortableEffort | 'ultra';
+
+/** Accepted effort values for the built-in Gemini adapter. */
+export type GeminiEffort = PortableEffort;
+
+/** Accepted effort values for the built-in OpenCode adapter. */
+export type OpenCodeEffort = PortableEffort;
+
+/** Union of every effort value accepted by a built-in adapter. */
+export type Effort = ClaudeEffort | CodexEffort;
+
+/**
+ * Existing option vocabulary retained until the core API rename in IR-031
+ * task 3. New code should use the adapter-scoped aliases above.
+ */
+export type ReasoningEffort = PortableEffort;
 
 export interface AgentAdapter {
   readonly agent: AgentType;
