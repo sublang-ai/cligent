@@ -77,6 +77,7 @@ meta.md     The spec of specs
 | IR-029 | [029-captain-pre-close-lifecycle.md](iterations/029-captain-pre-close-lifecycle.md) | Add failure-safe two-stage Captain shutdown so final session telemetry emits before the session closes |
 | IR-030 | [030-gemini-cli-050-compatibility.md](iterations/030-gemini-cli-050-compatibility.md) | Align the Gemini adapter with Gemini CLI 0.50 headless arguments, Policy Engine permissions, and configuration precedence |
 | IR-031 | [031-adapter-scoped-effort-and-config-migration.md](iterations/031-adapter-scoped-effort-and-config-migration.md) | Implement DR-009 adapter-scoped effort, metadata, mappings, and legacy tmux-play YAML migration |
+| IR-032 | [032-agent-runtime-and-package-readiness.md](iterations/032-agent-runtime-and-package-readiness.md) | Refresh all four coding-agent runtimes and harden packaging and live acceptance |
 
 ## Packages
 
@@ -135,7 +136,8 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| dev | [package.md](dev/package.md) | Package/TS config, exports map, dependency constraints |
+| dev | [package.md](dev/package.md) | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints |
+| test | [package.md](test/package.md) | Clean-build, TypeScript-floor, packed-consumer, export, launcher, and dependency-audit acceptance |
 
 ### RELEASE
 

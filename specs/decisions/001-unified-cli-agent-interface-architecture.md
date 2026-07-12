@@ -125,7 +125,8 @@ These solutions address pieces of the problem but none provide a unified, observ
 
 ## Consequences
 
-- **Runtime:** Node.js 18+ (TypeScript library)
+- **Runtime:** Node.js 18.3+ (TypeScript library; see
+  [PKG-002](../dev/package.md#pkg-002))
 - **Per-agent adapters:** Each CLI agent needs an adapter that normalizes its output to a common event structure
 - **SDK-first:** Use official SDKs (Claude Agent SDK, Codex SDK) as primary adapters when available
 - **Parsers as fallback:** Implement stream parsers for CLI streaming output when SDK is unavailable or unsuitable

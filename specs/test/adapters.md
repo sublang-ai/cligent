@@ -70,6 +70,24 @@ Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-0
 
 The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [OPENCODE-006](../user/adapters/opencode.md#opencode-006), emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
 
+### TADAPT-027
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013)
+
+Where no `PermissionPolicy` is supplied, when OpenCode starts fresh and resumed
+runs through each supported SDK path, fresh-session creation and prompt calls
+shall omit permission data and a resumed run shall issue no permission-bearing
+session update. Independent tool-list restrictions shall still reach the
+prompt. Where an empty policy is supplied instead, fresh and resumed runs
+shall carry `ask` rules for `edit`, `bash`, and `webfetch`.
+
+### TADAPT-028
+Verifies: [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [PKG-012](../dev/package.md#pkg-012)
+
+Where the exact OpenCode CLI conformance target is installed, when its version
+and `serve --help` output are inspected, the reported version shall equal the
+exact CI target and the managed-server help shall expose `--hostname` and
+`--port`.
+
 ## Tool Filtering
 
 ### TADAPT-009
@@ -157,9 +175,23 @@ Items in this section verify behavior end-to-end against the real coding-agent S
 ### TADAPT-019
 Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [CLAUDE-005](../user/adapters/claude-code.md#claude-005), [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007)
 
-Given a `Cligent` constructed on each adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to delete a temporary file in a throwaway working directory, the adapter's auto-mode SDK knobs per [DR-005](../decisions/005-per-adapter-permission-configuration.md) and [ENG-021](../user/engine.md#eng-021) shall let both the file write and the file deletion proceed without an interactive approval. After the create run the file shall exist on disk; after the delete run it shall be gone. Neither run's event stream shall contain a `permission_request` event, a `tool_result` with `status: 'denied'`, or an `error` event, and each run shall terminate in a `done` with `status: 'success'`. Filesystem state is the ground-truth check for the write and the delete: adapters normalize file edits differently (e.g., Codex emits `codex:file_change`, OpenCode `opencode:file_part`), so a `tool_use`-count assertion would be adapter-specific. The probe exercises each adapter against its real SDK/CLI; transient upstream-overload failures shall be retried before the assertion. This item is the real-run counterpart to [TADAPT-004](#tadapt-004), which verifies the `PermissionPolicy`-to-SDK-knob mapping in isolation but never confirms the mapped knobs actually suppress approval prompts at the SDK.
+Where a `Cligent` is constructed on each adapter with
+`CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first
+to create and then to update a temporary file in a throwaway working
+directory, the adapter's auto-mode SDK knobs per
+[DR-005](../decisions/005-per-adapter-permission-configuration.md) and
+[ENG-021](../user/engine.md#eng-021) shall let both non-destructive writes
+proceed without interactive approval. The file shall exist with the expected
+contents after each phase; neither stream shall contain `permission_request`,
+a denied tool result, or an error; and each shall terminate with successful
+`done`. Filesystem state shall be the ground-truth assertion because adapters
+normalize file edits differently. The harness shall retry the complete fresh
+probe after, and only after, an explicit upstream-overload, rate-limit,
+service-unavailable, or Gemini upstream invalid-stream failure. It shall make
+at most two retries; any other failure and the third consecutive named
+transient failure shall remain fatal.
 
-Where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`. Codex's `mode: 'auto'` maps to the `:workspace` profile, which runs commands inside a bubblewrap sandbox that some CI runners cannot start; this is distinct from a missing dependency, since the SDK and credential are present and the environment simply cannot host the sandbox under test. The `mode: 'auto'` → SDK-knob mapping stays verified by [TADAPT-004](#tadapt-004); only the real-run write/delete leg is skipped, and only where the sandbox cannot start.
+Where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`. Codex's `mode: 'auto'` maps to the `:workspace` profile, which runs commands inside a sandbox that some hosts cannot initialize; only the real-run create/update leg shall skip for that detected limitation, while mapping remains covered by [TADAPT-004](#tadapt-004).
 
 ### TADAPT-023
 Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [CODEX-010](../dev/adapters/codex.md#codex-010), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)

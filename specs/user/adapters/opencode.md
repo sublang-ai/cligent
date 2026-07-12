@@ -58,15 +58,35 @@ While the SSE stream carries events for all sessions, the adapter shall emit onl
 
 ### OPENCODE-007
 
-The adapter shall map `PermissionPolicy` to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
-On the OpenCode v2 SDK path, the adapter shall apply the equivalent `PermissionRuleset` at `session.create` for fresh sessions and at `session.update` before prompting resumed sessions, because the v2 prompt body no longer accepts the legacy `permission` map.
-When `PermissionPolicy.writablePaths` is non-empty per [ENG-022](../engine.md#eng-022), the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode permission and tool mapping unchanged.
+Where a `PermissionPolicy` is provided, the adapter shall map it to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
+Where the OpenCode v2 SDK path is active, the adapter shall apply the
+equivalent `PermissionRuleset` at `session.create` for fresh sessions and at
+`session.update` before prompting resumed sessions, because the v2 prompt body
+no longer accepts the legacy `permission` map.
+A provided empty `PermissionPolicy` shall remain distinct from absence and map
+the three omitted capabilities to `ask`.
+Where `PermissionPolicy.writablePaths` is non-empty per
+[ENG-022](../engine.md#eng-022), the adapter shall accept valid entries, expose
+`WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with
+`enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
+permission and tool mapping unchanged.
+
+### OPENCODE-013
+
+Where `PermissionPolicy` is absent, the adapter shall omit adapter-generated
+permission data from fresh-session creation, resumed-session updates, and
+prompt requests on every supported SDK path. OpenCode's native permission
+defaults shall remain in effect while independent `allowedTools` or
+`disallowedTools` restrictions still apply to the prompt.
 
 ## Server Lifecycle
 
 ### OPENCODE-008
 
-In managed mode, the adapter shall spawn the server, wait for ready, then connect the SDK client. On completion or abort, the adapter shall gracefully shut down the managed server.
+Where managed mode is configured, the adapter shall spawn `opencode serve`
+with the configured `--hostname` and `--port`, wait for ready, then connect the
+SDK client per [[2]]. When the run completes or aborts, the adapter shall
+gracefully shut down the managed server.
 
 ### OPENCODE-009
 
@@ -111,3 +131,4 @@ Where effort is outside the OpenCode portable vocabulary, including `ultracode` 
 ## References
 
 [1]: https://opencode.ai/docs/models/ "OpenCode model configuration"
+[2]: https://opencode.ai/docs/server/ "OpenCode server"

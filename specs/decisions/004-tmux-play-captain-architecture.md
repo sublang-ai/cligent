@@ -280,7 +280,8 @@ Aborting before draining detaches producers cleanly and delivers their in-flight
 ### Distribution and Extension
 
 `tmux-play` ships in the `@sublang/cligent` npm package as a `bin` entry, replacing the prior `fanout` bin.
-The package is ESM, Node ≥18; there is no compiled binary.
+The package is ESM, Node ≥18.3 per
+[PKG-002](../dev/package.md#pkg-002); there is no compiled binary.
 
 The package separates the runtime API from the CLI:
 
