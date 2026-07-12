@@ -9,12 +9,12 @@ Add end-to-end acceptance tests that exercise the full Fanout pipeline (prompt â
 
 ## Status
 
-In Progress
+Complete
 
 The original direct fanout harness and main-push CI job were delivered, then
 replaced by the stronger tmux-play runtime harness.
-One audit task remains to align that evolved harness with the current
-deterministic fanout acceptance oracle.
+The evolved harness now verifies the complete deterministic fanout acceptance
+oracle as well as the live four-agent result.
 
 ## Design
 
@@ -78,7 +78,7 @@ New `acceptance` job in `.github/workflows/ci.yml`:
    - Set API keys from secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
    - Run `npm run test:acceptance`
 
-4. [ ] **Align the evolved fanout acceptance oracle**
+4. [x] **Align the evolved fanout acceptance oracle**
    - Assert the deterministic Captain prompt contains every player's status
      and final text, while the live Captain result retains the sentinel check.
    - Assert all player prompts precede every player completion before Captain

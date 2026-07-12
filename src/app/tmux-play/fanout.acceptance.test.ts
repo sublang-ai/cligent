@@ -10,7 +10,9 @@ import { describe, expect, it } from 'vitest';
 import createFanoutCaptain from '../../captains/fanout.js';
 import type {
   CaptainFinishedRecord,
+  CaptainPromptRecord,
   PlayerFinishedRecord,
+  PlayerPromptRecord,
   TmuxPlayRecord,
 } from './records.js';
 import type { PlayerAdapterName } from './players.js';
@@ -73,6 +75,13 @@ describe('tmux-play fanout acceptance', () => {
       expect(playerFinished.map((record) => record.playerId).sort()).toEqual([
         ...PLAYER_ADAPTERS,
       ]);
+      const playerPrompts = records.filter(isPlayerPrompt);
+      expect(playerPrompts.map((record) => record.playerId).sort()).toEqual([
+        ...PLAYER_ADAPTERS,
+      ]);
+      expect(types.lastIndexOf('player_prompt')).toBeLessThan(
+        types.indexOf('player_finished'),
+      );
       for (const record of playerFinished) {
         expect(
           record.result.status,
@@ -83,7 +92,25 @@ describe('tmux-play fanout acceptance', () => {
         );
       }
 
-      const captainFinished = records.find(isCaptainFinished);
+      const captainPrompts = records.filter(isCaptainPrompt);
+      expect(captainPrompts).toHaveLength(1);
+      const summaryPrompt = captainPrompts[0]?.prompt ?? '';
+      for (const record of playerFinished) {
+        expect(
+          summaryPrompt,
+          `${record.playerId} summary result section`,
+        ).toContain(
+          [
+            `=== player:${record.playerId} status:${record.result.status} ===`,
+            record.result.finalText,
+            `=== /player:${record.playerId} ===`,
+          ].join('\n'),
+        );
+      }
+
+      const captainFinishedRecords = records.filter(isCaptainFinished);
+      expect(captainFinishedRecords).toHaveLength(1);
+      const captainFinished = captainFinishedRecords[0];
       expect(captainFinished?.result.status).toBe('ok');
       expect(normalized(captainFinished?.result.finalText)).toContain(
         normalized(sentinel),
@@ -249,10 +276,20 @@ function isPlayerFinished(
   return record.type === 'player_finished';
 }
 
+function isPlayerPrompt(record: TmuxPlayRecord): record is PlayerPromptRecord {
+  return record.type === 'player_prompt';
+}
+
 function isCaptainFinished(
   record: TmuxPlayRecord,
 ): record is CaptainFinishedRecord {
   return record.type === 'captain_finished';
+}
+
+function isCaptainPrompt(
+  record: TmuxPlayRecord,
+): record is CaptainPromptRecord {
+  return record.type === 'captain_prompt';
 }
 
 function normalized(value: string | undefined): string {
