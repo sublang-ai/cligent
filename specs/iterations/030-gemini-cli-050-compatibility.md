@@ -11,12 +11,13 @@ Align the Gemini adapter with Gemini CLI 0.50 headless prompts, session argument
 
 In Progress
 
-The CLI 0.50 contract is specified; implementation tasks remain open.
+The CLI 0.50 contract and joined headless/session arguments are implemented;
+Policy Engine permissions and isolated live authentication remain open.
 
 ## Deliverables
 
 - [x] Canonical Gemini user and acceptance items describe the CLI 0.50 contract.
-- [ ] Headless prompt, model, and resume arguments use forms that preserve arbitrary values.
+- [x] Headless prompt, model, and resume arguments use forms that preserve arbitrary values.
 - [ ] Per-run Policy Engine files replace deprecated tool-control surfaces without overriding administrator configuration.
 - [ ] Focused tests cover arguments, policy precedence, temporary-file cleanup, and the installed CLI contract.
 - [ ] Live Gemini acceptance uses an isolated CLI home with explicit API-key authentication and the CLI default model unless `GEMINI_MODEL` is set.
@@ -27,7 +28,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
 
 1. [x] **Specify the Gemini CLI 0.50 contract.**
    Amend the current Gemini user and acceptance items for headless arguments, Policy Engine behavior, native-default preservation, and configuration precedence.
-2. [ ] **Update headless and session arguments.**
+2. [x] **Update headless and session arguments.**
    Forward prompt, model, and resume values in joined option tokens, omit unsupported turn-limit flags, and add focused argument and installed-CLI contract tests.
 3. [ ] **Implement Policy Engine permissions.**
    Generate and clean up per-run User-tier policy files, preserve Admin-tier and system configuration authority, and cover allow, ask, deny, explicit-whitelist, and invalid-name behavior.

@@ -568,13 +568,13 @@ export function mapAgentOptionsToGeminiCommand(
   );
 
   if (modelAlias) {
-    args.push('--model', modelAlias.alias);
+    args.push(`--model=${modelAlias.alias}`);
   } else if (options?.model) {
-    args.push('--model', options.model);
+    args.push(`--model=${options.model}`);
   }
 
   if (options?.resume) {
-    args.push('--resume', options.resume);
+    args.push(`--resume=${options.resume}`);
   }
 
   // Note: Gemini CLI does not support a turn-limit flag.
@@ -586,8 +586,7 @@ export function mapAgentOptionsToGeminiCommand(
     args.push('--approval-mode', toolConfig.approvalMode);
   }
 
-  // Prompt as positional argument (--prompt is deprecated)
-  args.push(prompt);
+  args.push(`--prompt=${prompt}`);
 
   return {
     command: 'gemini',

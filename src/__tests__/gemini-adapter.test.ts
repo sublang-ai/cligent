@@ -108,8 +108,8 @@ async function collect(
 }
 
 function modelArg(args: readonly string[]): string | undefined {
-  const index = args.indexOf('--model');
-  return index === -1 ? undefined : args[index + 1];
+  const prefix = '--model=';
+  return args.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
 }
 
 function expectReasoningAlias(
@@ -700,16 +700,16 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).toEqual([
       '--output-format',
       'stream-json',
-      '--model',
-      'gemini-2.5-pro',
+      '--model=gemini-2.5-pro',
       '--allowed-tools',
       'ShellTool,custom-tool',
-      'build this',
+      '--prompt=build this',
     ]);
+    expect(mapped.args).not.toContain('--max-session-turns');
     expect(mapped.toolConfig.disallowedTools).toEqual(['edit', 'never-tool']);
   });
 
-  it('maps an explicit resume token to --resume', () => {
+  it('maps an explicit resume token to one joined --resume token', () => {
     const mapped = mapAgentOptionsToGeminiCommand('continue this', {
       resume: '01234567-89ab-cdef-0123-456789abcdef',
     });
@@ -717,18 +717,61 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).toEqual([
       '--output-format',
       'stream-json',
-      '--resume',
-      '01234567-89ab-cdef-0123-456789abcdef',
-      'continue this',
+      '--resume=01234567-89ab-cdef-0123-456789abcdef',
+      '--prompt=continue this',
     ]);
   });
 
-  it('passes prompt as final positional argument (not --prompt flag)', () => {
+  it('passes the prompt through one joined headless option token', () => {
     const mapped = mapAgentOptionsToGeminiCommand('explain this code', undefined);
 
-    // Prompt must be the last element, with no --prompt flag
-    expect(mapped.args[mapped.args.length - 1]).toBe('explain this code');
+    expect(mapped.args[mapped.args.length - 1]).toBe(
+      '--prompt=explain this code',
+    );
     expect(mapped.args).not.toContain('--prompt');
+  });
+
+  it('spawns 0.50 joined arguments without a turn-limit flag', async () => {
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {},
+      }),
+    });
+
+    await collect(
+      adapter.run('--leading prompt=value', {
+        model: '--leading model=value',
+        resume: '--leading resume=value',
+        maxTurns: 7,
+      }),
+    );
+
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]?.args).toEqual([
+      '--output-format',
+      'stream-json',
+      '--model=--leading model=value',
+      '--resume=--leading resume=value',
+      '--prompt=--leading prompt=value',
+    ]);
+    expect(invocations[0]?.args).not.toContain('--max-session-turns');
   });
 
   it.each([
@@ -824,7 +867,9 @@ describe('GeminiAdapter', () => {
       }),
     );
 
-    expect(invocations[0]?.args).toContain(GEMINI_REASONING_EFFORT_ALIAS);
+    expect(invocations[0]?.args).toContain(
+      `--model=${GEMINI_REASONING_EFFORT_ALIAS}`,
+    );
     expect(events.map((event) => event.type)).toEqual([
       'init',
       'error',
@@ -912,13 +957,11 @@ describe('GeminiAdapter', () => {
     });
   });
 
-  it('passes leading-dash prompt as positional without -- separator', () => {
-    // Gemini CLI does not support -- as end-of-options marker.
-    // Prompts starting with - are passed as-is; single-word flag-like
-    // prompts (e.g. "--help") may be misinterpreted by the CLI.
-    const mapped = mapAgentOptionsToGeminiCommand('-v explain', undefined);
+  it('preserves a leading-dash prompt inside the joined option token', () => {
+    const mapped = mapAgentOptionsToGeminiCommand('--help', undefined);
 
-    expect(mapped.args[mapped.args.length - 1]).toBe('-v explain');
+    expect(mapped.args[mapped.args.length - 1]).toBe('--prompt=--help');
+    expect(mapped.args).not.toContain('--help');
     expect(mapped.args).not.toContain('--');
   });
 
