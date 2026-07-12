@@ -11,6 +11,10 @@ import type {
   TurnOptions as CurrentCodexTurnOptions,
 } from '@openai/codex-sdk';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import type {
+  EventSessionError as CurrentOpenCodeSessionError,
+  EventSessionIdle as CurrentOpenCodeSessionIdle,
+} from '@opencode-ai/sdk/v2';
 
 import {
   loadClaudeAgentSdk,
@@ -140,6 +144,26 @@ const currentOpenCodePrompt = currentOpenCodeClient.session.promptAsync({
 const currentOpenCodeSubscribe = currentOpenCodeClient.event.subscribe({
   directory: '/tmp/cligent-open-code',
 });
+const currentOpenCodeSessionError: CurrentOpenCodeSessionError = {
+  id: 'conformance-error-event',
+  type: 'session.error',
+  properties: {
+    sessionID: 'conformance-session',
+    error: {
+      name: 'APIError',
+      data: {
+        message: 'effort unavailable',
+        statusCode: 400,
+        isRetryable: false,
+      },
+    },
+  },
+};
+const currentOpenCodeSessionIdle: CurrentOpenCodeSessionIdle = {
+  id: 'conformance-idle-event',
+  type: 'session.idle',
+  properties: { sessionID: 'conformance-session' },
+};
 type CurrentOpenCodeCreateResult = Awaited<typeof currentOpenCodeCreate>;
 type CurrentOpenCodeUpdateResult = Awaited<typeof currentOpenCodeUpdate>;
 type CurrentOpenCodePromptResult = Awaited<typeof currentOpenCodePrompt>;
@@ -148,6 +172,8 @@ void currentOpenCodeCreate;
 void currentOpenCodeUpdate;
 void currentOpenCodePrompt;
 void currentOpenCodeSubscribe;
+void currentOpenCodeSessionError;
+void currentOpenCodeSessionIdle;
 declare const currentOpenCodeCreateResult: CurrentOpenCodeCreateResult;
 declare const currentOpenCodeUpdateResult: CurrentOpenCodeUpdateResult;
 declare const currentOpenCodePromptResult: CurrentOpenCodePromptResult;

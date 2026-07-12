@@ -9,6 +9,10 @@ import type {
 import { PassThrough } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
+import type {
+  EventSessionError,
+  EventSessionIdle,
+} from '@opencode-ai/sdk/v2';
 
 import {
   OpenCodeAdapter,
@@ -18,9 +22,10 @@ import {
 } from '../adapters/opencode.js';
 import type {
   AgentEvent,
+  AgentOptions,
+  OpenCodeEffort,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
 } from '../types.js';
 
 interface MockOpenCodeClient {
@@ -427,7 +432,7 @@ describe('OpenCodeAdapter', () => {
     ['google/gemini-3-pro', 'high', 'high'],
     ['google/gemini-3-pro', 'xhigh', 'high'],
     ['google/gemini-3-pro', 'max', 'high'],
-  ] satisfies Array<[string, PortableEffort, string]>)(
+  ] satisfies Array<[string, OpenCodeEffort, string]>)(
     'maps OpenCode %s effort %s to variant %s per OPENCODE-012',
     (model, effort, variant) => {
       expect(mapEffortToOpenCodeVariant(model, effort)).toBe(
@@ -449,6 +454,83 @@ describe('OpenCodeAdapter', () => {
     expect(
       mapEffortToOpenCodeVariant('someprovider/somemodel', 'max'),
     ).toBeUndefined();
+  });
+
+  it('rejects provider-native and unknown effort before prompting', async () => {
+    let runCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          onRun: () => {
+            runCalls += 1;
+          },
+        }),
+      },
+    );
+
+    for (const effort of ['ultracode', 'ultra', 'future-effort']) {
+      const invalid = { effort } as unknown as AgentOptions<OpenCodeEffort>;
+      await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+        'effort for adapter "opencode" must be one of: minimal, low, medium, high, xhigh, max',
+      );
+    }
+    expect(runCalls).toBe(0);
+  });
+
+  it('surfaces provider rejection of a valid variant without substitution', async () => {
+    let capturedRunOptions: Record<string, unknown> | undefined;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'effort-error-session' },
+          events: [
+            ({
+              id: 'event-effort-error',
+              type: 'session.error',
+              properties: {
+                sessionID: 'effort-error-session',
+                error: {
+                  name: 'APIError',
+                  data: {
+                    message: 'xhigh is unavailable for this model',
+                    statusCode: 400,
+                    isRetryable: false,
+                  },
+                },
+              },
+            } satisfies EventSessionError),
+            ({
+              id: 'event-effort-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'effort-error-session' },
+            } satisfies EventSessionIdle),
+          ],
+          onRun: (options) => {
+            capturedRunOptions = options;
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('prompt', {
+        model: 'openai/gpt-5',
+        effort: 'max',
+      }),
+    );
+
+    expect(capturedRunOptions?.variant).toBe('xhigh');
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      message: 'xhigh is unavailable for this model',
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
   it('forwards effort to the OpenCode prompt variant per OPENCODE-012', async () => {
@@ -1775,20 +1857,26 @@ describe('OpenCode SSE event structure', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'err-session' },
           events: [
-            {
+            ({
+              id: 'event-auth-error',
               type: 'session.error',
               properties: {
                 sessionID: 'err-session',
                 error: {
                   name: 'APIError',
-                  data: { message: 'Invalid Authentication', statusCode: 401 },
+                  data: {
+                    message: 'Invalid Authentication',
+                    statusCode: 401,
+                    isRetryable: false,
+                  },
                 },
               },
-            },
-            {
+            } satisfies EventSessionError),
+            ({
+              id: 'event-auth-idle',
               type: 'session.idle',
               properties: { sessionID: 'err-session' },
-            },
+            } satisfies EventSessionIdle),
           ],
         }),
       },
@@ -1800,6 +1888,7 @@ describe('OpenCode SSE event structure', () => {
 
     const err = events[1] as AgentEvent & { payload: { message: string } };
     expect(err.payload.message).toBe('Invalid Authentication');
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
   it('treats session.status idle as terminal', async () => {

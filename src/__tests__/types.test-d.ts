@@ -5,6 +5,7 @@ import { describe, it, expectTypeOf } from 'vitest';
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import { CodexAdapter } from '../adapters/codex.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
+import { OpenCodeAdapter } from '../adapters/opencode.js';
 import {
   AdapterRegistry,
   Cligent,
@@ -221,6 +222,15 @@ describe('core types', () => {
     new Cligent(new GeminiAdapter(), { effort: 'ultra' });
     // @ts-expect-error - Gemini does not accept Claude ultracode
     void gemini.run('prompt', { effort: 'ultracode' });
+  });
+
+  it('binds the concrete OpenCode adapter to portable effort values', () => {
+    const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'max' });
+    void opencode.run('prompt', { effort: 'minimal' });
+    // @ts-expect-error - OpenCode does not accept Codex ultra
+    new Cligent(new OpenCodeAdapter(), { effort: 'ultra' });
+    // @ts-expect-error - OpenCode does not accept Claude ultracode
+    void opencode.run('prompt', { effort: 'ultracode' });
   });
 
   it('keeps every heterogeneous parallel task correlated', () => {

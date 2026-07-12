@@ -9,6 +9,7 @@ import type {
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { assertSupportedEffort } from '../effort.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   PermissionRuleset,
@@ -19,10 +20,10 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
+  OpenCodeEffort,
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -531,9 +532,11 @@ export function mapPermissionsToOpenCodeOptions(
 
 export function mapEffortToOpenCodeVariant(
   model: string | undefined,
-  effort: PortableEffort | undefined,
+  effort: OpenCodeEffort | undefined,
 ): OpenCodeVariant | undefined {
-  if (!model || !effort) return undefined;
+  if (effort === undefined) return undefined;
+  assertSupportedEffort(AGENT, effort);
+  if (!model) return undefined;
 
   const slashIdx = model.indexOf('/');
   if (slashIdx <= 0) return undefined;
@@ -888,7 +891,7 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
   throw new Error('@opencode-ai/sdk/v2 does not export a recognized client factory');
 }
 
-export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
+export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
   readonly agent = AGENT;
 
   private readonly mode: OpenCodeMode;
@@ -937,7 +940,7 @@ export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<PortableEffort>,
+    options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: OpenCodeSdk;
     try {
@@ -965,6 +968,7 @@ export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
     let doneYielded = false;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
+    let sessionErrorObserved = false;
 
     let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
@@ -1360,6 +1364,9 @@ export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
         }
 
         if (eventType === 'error' || eventType === 'session.error') {
+          if (eventType === 'session.error') {
+            sessionErrorObserved = true;
+          }
           const errorData = eventType === 'session.error'
             ? toErrorPayload(event.error ?? event)
             : toErrorPayload(event);
@@ -1374,7 +1381,9 @@ export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
           (eventType === 'session.status' &&
             asString(asRecord(event.status).type) === 'idle')
         ) {
-          const status = mapDoneStatus(asString(event.status));
+          const status = sessionErrorObserved
+            ? 'error'
+            : mapDoneStatus(asString(event.status));
           // Use event-provided usage if available, otherwise fall back to
           // values accumulated from step-finish parts.
           const eventUsage = mapUsage(event.usage);

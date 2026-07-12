@@ -18,7 +18,7 @@ The canonical effort and migration contract is specified; implementation tasks r
 - [x] Canonical engine, adapter, tmux-play, and acceptance items specify adapter-scoped effort and legacy-key migration.
 - [x] Public vocabularies, deeply immutable built-in metadata, helpers, and runtime validation agree on every built-in adapter value.
 - [x] Direct `Cligent` and heterogeneous parallel TypeScript surfaces preserve built-in and custom vocabularies; the legacy registry forwards exact custom strings unchanged.
-- [ ] Claude Code supports `ultracode`; Codex supports `ultra`; Gemini and OpenCode retain their portable mappings.
+- [x] Claude Code supports `ultracode`; Codex supports `ultra`; Gemini and OpenCode retain their portable mappings.
 - [ ] tmux-play uses adapter-discriminated `effort` types and migrates legacy YAML only after complete validation.
 - [ ] Guides document discovery, migration, provider-native values, no-op or lossy mappings, and availability and resource caveats.
 
@@ -38,7 +38,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Preserve portable values and native `ultra` through verified thread and config transports, declare the minimum compatible Codex SDK peer floor required by those transports, and add focused plus installed-SDK serialization tests.
 6. [x] **Map Gemini effort.**
    Validate the portable vocabulary, preserve documented concrete-model mappings and no-alias cases, and add focused tests.
-7. [ ] **Map OpenCode effort.**
+7. [x] **Map OpenCode effort.**
    Validate the portable vocabulary, preserve provider and model variant mappings and no-variant cases, and add focused tests.
 8. [ ] **Add canonical tmux-play effort config.**
    Make captain, player, and runtime types adapter-discriminated; validate and forward canonical `effort`; retain in-memory legacy-key compatibility; and add type, loader, and launcher-seam tests.
