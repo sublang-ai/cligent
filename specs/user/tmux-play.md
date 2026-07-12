@@ -37,7 +37,7 @@ A `tmux-play` config shall be YAML with a `captain` object and a non-empty `play
 
 ### TMUX-006
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `reasoningEffort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `effort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### TMUX-060
 
@@ -82,7 +82,7 @@ When the loader rejects an unknown notification key or invalid sink, the error s
 
 ### TMUX-007
 
-Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `reasoningEffort` per [TMUX-056](#tmux-056). Player `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple players may share an adapter and model.
+Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `effort` per [TMUX-056](#tmux-056). Player `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple players may share an adapter and model.
 
 ### TMUX-052
 
@@ -93,10 +93,24 @@ A missing `permissions` field shall be treated as no policy override; the adapte
 
 ### TMUX-056
 
-The `captain` object and each `players` entry may include `reasoningEffort`, whose value shall be [ENG-020](engine.md#eng-020)'s closed set: `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
-The loader shall forward an accepted `reasoningEffort` value to the corresponding captain or player `Cligent` constructor as `CligentOptions.reasoningEffort` per [ENG-001](engine.md#eng-001).
-The loader shall reject values outside the closed set with an error that names the offending path (`captain.reasoningEffort` or `players[N].reasoningEffort`) per [TMUX-008](#tmux-008).
-A missing `reasoningEffort` field shall be treated as no reasoning-effort override; the adapter retains its default for that player or captain.
+Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter`: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, and `gemini` and `opencode` accept only [ENG-020](engine.md#eng-020)'s portable set.
+The loader shall forward an accepted value to the corresponding `Cligent` constructor as `CligentOptions.effort` while preserving the adapter/value correlation in the exported captain, player, and runtime configuration types.
+The loader shall reject an unsupported value with an error naming the offending path, adapter, and allowed values before the runtime starts.
+A missing `effort` field shall be treated as no override; the adapter retains its defaults for that player or captain.
+
+### TMUX-086
+
+Where any loaded YAML source contains `captain.reasoningEffort` or `players[N].reasoningEffort` without the canonical key in the same object, the loader shall rename it to `effort` only after the complete migrated configuration validates.
+The replacement shall preserve YAML comments, key order, scalar style, the config-path symlink while updating its resolved target, and the target's owner/group/other permission bits; it shall leave no migration temporary file.
+
+### TMUX-087
+
+Where one captain or player object contains both `effort` and deprecated `reasoningEffort`, or where the migrated value is invalid for that object's adapter, the loader shall reject the configuration before writing and shall preserve the source byte-for-byte.
+
+### TMUX-088
+
+Where the source contents, observed file revision, or config-path symlink target changes after loading but before replacement and the change is observed by the loader's final checks, the loader shall reject migration with a retry error, preserve the observed newer source, and leave no migration temporary file.
+After those optimistic checks, the loader shall replace the resolved target with a same-directory atomic rename. These outcomes cover changes observed before rename; unrelated editor writes in the final check-to-rename interval are outside the guarantee.
 
 ### TMUX-008
 
@@ -112,14 +126,14 @@ When `--config` is not supplied, the launcher shall search for `tmux-play.config
 
 When neither location holds a config and `--config` is not supplied, the launcher shall create the home location with a default config, print a one-line notice naming the path on stdout, and continue.
 When the launcher loads an existing home config through fallback discovery, it shall add only missing safe defaults to that home YAML: `theme: auto`, a `layout` block carrying the default `window` and the shipped `multiPlayerColumnWeights` per [TMUX-011](#tmux-011), `captain.options: {}`, and the default `notifications` entries from [TMUX-011](#tmux-011).
-The migration shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `reasoningEffort` defaults to old home configs.
+The safe-default migration shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `effort` defaults to old home configs.
 Where the existing home YAML carries a legacy `layout.columnWeights`, the migration shall rewrite it in place to its canonical shape-specific field — a two-element `layout.columnWeights` to `layout.singlePlayerColumnWeights`, a three-element `layout.columnWeights` to `layout.multiPlayerColumnWeights` — and write one final YAML form that contains the canonical field and not `layout.columnWeights`, so the file never holds both (a state [TMUX-064](#tmux-064) rejects).
 When the home YAML already contains both `layout.columnWeights` and the matching canonical field, the migration shall not attempt to resolve the conflict; the config is rejected by [TMUX-064](#tmux-064).
-The migration shall not rewrite `--config` files or cwd project configs; those remain valid through the [TMUX-064](#tmux-064) alias and are not mutated.
+The safe-default and `layout.columnWeights` migrations shall not rewrite `--config` files or cwd project configs; those remain valid through the [TMUX-064](#tmux-064) alias. Effort-key migration for every loaded YAML source is governed separately by [TMUX-086](#tmux-086).
 
 ### TMUX-011
 
-The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two players whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` player shall use `model: claude-opus-4-8` with `reasoningEffort: xhigh`; the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`. Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance. The default Captain and default players shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052); for Codex this resolves to `on-request + auto_review` with the `:workspace` permission profile because [CODEX-004](adapters/codex.md#codex-004) maps `mode: 'auto'` with unset capability fields to `:workspace`. These defaults run each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
+The default home config shall wire the built-in `fanout` Captain on the `claude` adapter and two players whose IDs match their adapters: `claude` (claude adapter) and `codex` (codex adapter). The default Captain and default `claude` player shall use `model: claude-opus-4-8` with `effort: xhigh`; the default `codex` player shall use `model: gpt-5.5` with `effort: xhigh`. Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance. The default Captain and default players shall include `permissions: { mode: 'auto' }` per [TMUX-052](#tmux-052); for Codex this resolves to `on-request + auto_review` with the `:workspace` permission profile because [CODEX-004](adapters/codex.md#codex-004) maps `mode: 'auto'` with unset capability fields to `:workspace`. These defaults run each adapter's classifier-, sandbox-, or reviewer-protected auto-mode per [DR-005](../decisions/005-per-adapter-permission-configuration.md), reducing routine in-session permission prompts. The mode does not eliminate prompts or broaden sandbox/network permissions: per the SDK behavior tabulated in [DR-005](../decisions/005-per-adapter-permission-configuration.md), Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, and Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits. This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
 The default home config shall also include an explicit `layout` block per [TMUX-064](#tmux-064) — `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` — so first-run users see the new knobs and the shipped multi-player layout default surfaces in the YAML under its canonical field rather than being implicit in the code.
 The default home config shall also include `notifications: { player_finished: bell, turn_finished: desktop }` per [TMUX-076](#tmux-076), with omitted `turn_aborted` resolving to `off`.
 
@@ -265,7 +279,7 @@ The defaults are `[1, 1]` for one visible player (Boss/Captain and the player ea
 
 ### TMUX-029
 
-The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, a `captainConfig` with `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), optional `model`, optional `instruction`, optional `permissions` per [TMUX-052](#tmux-052), and optional `reasoningEffort` per [TMUX-056](#tmux-056), a non-empty `players` array (each entry with `id`, `adapter`, optional `model`, optional `instruction`, optional `permissions`, and optional `reasoningEffort`, conforming to [TMUX-007](#tmux-007)), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
+The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, an adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, and `effort` per [TMUX-056](#tmux-056), a non-empty adapter-discriminated `players` array conforming to [TMUX-007](#tmux-007), zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`. The factory shall return a runtime that drives Boss turns without tmux. Record types and the observer-registration contract shall export from the same sub-export.
 
 ## Built-in Fanout Captain
 

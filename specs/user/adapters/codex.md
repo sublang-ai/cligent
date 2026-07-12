@@ -83,18 +83,22 @@ The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` 
 
 ### CODEX-007
 
-The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the Codex SDK `modelReasoningEffort` thread option per [[1]]:
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Codex-specific `AgentOptions.effort` vocabulary from [ENG-020](../engine.md#eng-020) and preserve the following native values through the documented effort and configuration surfaces per [[1]], [[3]], and [[5]]:
 
-| `reasoningEffort` | SDK `modelReasoningEffort` |
-| --- | --- |
-| `minimal` | `minimal` |
-| `low` | `low` |
-| `medium` | `medium` |
-| `high` | `high` |
-| `xhigh` | `xhigh` |
-| `max` | `xhigh` |
+| `AgentOptions.effort` | Transport | Native value |
+| --- | --- | --- |
+| `minimal` | SDK `ThreadOptions.modelReasoningEffort` | `minimal` |
+| `low` | SDK `ThreadOptions.modelReasoningEffort` | `low` |
+| `medium` | SDK `ThreadOptions.modelReasoningEffort` | `medium` |
+| `high` | SDK `ThreadOptions.modelReasoningEffort` | `high` |
+| `xhigh` | SDK `ThreadOptions.modelReasoningEffort` | `xhigh` |
+| `max` | Codex constructor `config.model_reasoning_effort` | `max` |
+| `ultra` | Codex constructor `config.model_reasoning_effort` | `ultra` |
 
-When `reasoningEffort` is omitted, the adapter shall not set `modelReasoningEffort` and shall defer to the Codex default.
+The minimum compatible Codex SDK thread option supports `minimal` through `xhigh`; for `max` and `ultra`, the adapter shall use the constructor configuration pass-through so the installed SDK spawns Codex with `--config model_reasoning_effort="<value>"`, and shall leave the thread `modelReasoningEffort` field unset per [[3]] and [[5]].
+When effort is omitted, the adapter shall set neither effort transport and shall leave [CODEX-004](#codex-004)'s independently selected configuration-isolation behavior unchanged, preserving only defaults applicable to that run.
+Where effort is outside the Codex-specific accepted vocabulary, including the Claude-specific value `ultracode`, the adapter shall reject it before starting a thread with an error naming the Codex adapter and allowed values.
+Mapping `ultra` shall leave independently mapped permission-profile, approval, sandbox, writable-path, and network controls unchanged, although provider delegation may increase token use, latency, cost, concurrency, and tool activity per [[5]].
 
 ## References
 
@@ -102,3 +106,4 @@ When `reasoningEffort` is omitted, the adapter shall not set `modelReasoningEffo
 [2]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
 [3]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
 [4]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
+[5]: https://openai.com/index/gpt-5-6/ "Introducing GPT-5.6"

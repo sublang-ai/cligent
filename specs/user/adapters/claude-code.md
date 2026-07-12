@@ -59,20 +59,23 @@ The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK 
 
 ### CLAUDE-008
 
-The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the Claude Agent SDK `effort` query option per [[1]]:
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Claude-specific `AgentOptions.effort` vocabulary from [ENG-020](../engine.md#eng-020) and map each value to the Claude Agent SDK query options per [[1]] and [[2]]:
 
-| `reasoningEffort` | SDK `effort` |
-| --- | --- |
-| `minimal` | `low` |
-| `low` | `low` |
-| `medium` | `medium` |
-| `high` | `high` |
-| `xhigh` | `xhigh` |
-| `max` | `max` |
+| `AgentOptions.effort` | SDK `effort` | SDK `settings.ultracode` |
+| --- | --- | --- |
+| `minimal` | `low` | `false` |
+| `low` | `low` | `false` |
+| `medium` | `medium` | `false` |
+| `high` | `high` | `false` |
+| `xhigh` | `xhigh` | `false` |
+| `max` | `max` | `false` |
+| `ultracode` | `xhigh` | `true` |
 
-The pinned Claude Agent SDK declares `effort` as the closed set `'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
-`minimal` collapses to `low` (the SDK's lowest tier).
-When `reasoningEffort` is omitted, the adapter shall not set `effort` and shall defer to the SDK default.
+The minimum compatible Claude Agent SDK declares model effort as `'low' | 'medium' | 'high' | 'xhigh' | 'max'`, so `minimal` shall collapse to its lowest tier and `ultracode` shall use `xhigh` plus the provider's orchestration setting.
+Every explicit portable effort shall set `settings.ultracode: false` so a per-run downgrade overrides inherited ultracode configuration.
+When effort is omitted, the adapter shall set neither SDK field and shall preserve SDK and user-configuration defaults.
+Where effort is outside the Claude-specific accepted vocabulary, including the Codex-specific value `ultra`, the adapter shall reject it before invoking the SDK with an error naming the Claude adapter and allowed values.
+Mapping `ultracode` shall leave independently mapped permission controls unchanged, although the provider's delegated workflow may increase token use, latency, cost, concurrency, and tool activity per [[2]].
 
 ## Resume Token
 
@@ -85,3 +88,4 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
+[2]: https://code.claude.com/docs/en/workflows#let-claude-decide-with-ultracode "Claude Code workflows: let Claude decide with ultracode"

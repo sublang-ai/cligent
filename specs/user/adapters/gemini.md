@@ -105,18 +105,20 @@ Where Gemini CLI exposes no compatible turn-limit flag, the adapter shall ignore
 
 ### GEMINI-011
 
-The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to a per-run Gemini CLI settings override only when `AgentOptions.model` names a concrete Gemini model ID whose thinking surface is known per [[1]] and [[2]].
-For `model` values matching `^gemini-3`, the override shall create a self-contained custom alias under `modelConfigs.customAliases.<cligent-alias>.modelConfig` with `model` set to the original `AgentOptions.model` value and `generateContentConfig.thinkingConfig.thinkingLevel` set per the Gemini 3 table below; the spawned CLI shall target that custom alias via `--model=<cligent-alias>`.
-For `model` values matching `^gemini-2\.5`, the override shall create the same self-contained alias shape and set `generateContentConfig.thinkingConfig.thinkingBudget` per the Gemini 2.5 table below; the spawned CLI shall target that custom alias via `--model=<cligent-alias>`.
-When `AgentOptions.model` is unset, is a Gemini CLI alias such as `pro`, `flash`, `flash-lite`, `auto`, or `chat-base*`, or is any other non-matching value, the adapter shall not write the custom alias and shall preserve its existing model forwarding behavior: pass `--model=<AgentOptions.model>` when the field is set, and pass no `--model` flag when it is unset.
-In those skip cases, `reasoningEffort` shall be silently ignored for that call.
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), where a portable `AgentOptions.effort` is provided, the adapter shall select its per-run Gemini settings behavior from this model-condition table per [[1]] and [[2]]:
+
+| Model condition | Outcome |
+| --- | --- |
+| concrete ID matching `^gemini-3` | unique self-contained alias with the original model and mapped `thinkingLevel` |
+| concrete ID matching `^gemini-2\.5` | unique self-contained alias with the original model and mapped `thinkingBudget` |
+| model unset, a CLI alias such as `auto`, `pro`, `flash`, `flash-lite`, or `chat-base*`, or another non-matching value | no effort alias; preserve ordinary model forwarding and ignore effort for that call |
 
 The generated alias shall be merged into a temporary copy of configured system defaults selected through `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, preserving pre-existing defaults and leaving `GEMINI_CLI_SYSTEM_SETTINGS_PATH` unchanged so system overrides, Admin policy, user settings, and project settings retain authority.
 The temporary defaults file shall be removed after the run.
 
 Gemini 3 mapping:
 
-| `reasoningEffort` | `thinkingLevel` |
+| `AgentOptions.effort` | `thinkingLevel` |
 | --- | --- |
 | `minimal` | `MINIMAL` |
 | `low` | `LOW` |
@@ -129,7 +131,7 @@ Gemini 3 exposes four thinking levels; `xhigh` and `max` collapse to `HIGH` per 
 
 Gemini 2.5 mapping:
 
-| `reasoningEffort` | `thinkingBudget` |
+| `AgentOptions.effort` | `thinkingBudget` |
 | --- | --- |
 | `minimal` | `1024` |
 | `low` | `4096` |
@@ -141,6 +143,11 @@ Gemini 2.5 mapping:
 The Gemini 2.5 ladder shall stay within each supported model family's documented bounds: Pro `128..32768`, Flash `0..24576`, and Flash Lite `512..24576` per [[1]].
 `max` maps to the model family's upper bound rather than Google's dynamic-thinking sentinel because [ENG-020](../engine.md#eng-020) defines `max` as the greatest reasoning depth.
 For Flash and Flash Lite, `xhigh` and `max` both map to `24576`, the nearest supported ceiling.
+
+### GEMINI-015
+
+When effort is omitted, the adapter shall create no effort-specific alias and shall preserve Gemini CLI and user-configuration defaults.
+Where effort is outside the Gemini portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before spawning Gemini with the metadata-backed allowed-values error from [ENG-024](../engine.md#eng-024).
 
 ## Abort Handling
 

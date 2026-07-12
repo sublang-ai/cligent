@@ -27,10 +27,18 @@ Model, account, and installed-runtime availability remain provider concerns, so 
 
 The alternatives rejected are a global superset accepted by every adapter, normalized ordinal aliases for provider-native orchestration modes, and unchecked opaque strings for built-in adapters.
 
+This decision supersedes the global `ReasoningEffort` field and vocabulary in [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md); all unrelated decisions in those records remain in force.
+Canonical behavior is specified by [ENG-020](../user/engine.md#eng-020) and [TMUX-056](../user/tmux-play.md#tmux-056).
+
+Static TypeScript correlation applies where the adapter identity remains present in the type.
+On the legacy name-based mutable-registry path, `runAgent()` accepts `AgentOptions<string>` and forwards the exact effort string unchanged.
+Dynamic unregister and re-registration prevent compile-time agent-name-to-vocabulary narrowing on that path.
+
 ## Consequences
 
 Users can select the terms they already know from each coding agent without Cligent inventing equivalences.
-TypeScript APIs and tmux-play configuration must preserve the correlation between the selected adapter and its effort vocabulary.
+Statically adapter-bound TypeScript APIs and tmux-play configuration must preserve the correlation between the selected adapter and its effort vocabulary.
 Configuration interfaces can discover built-in values without duplicating validation tables.
 The `reasoningEffort` to `effort` rename is a breaking public API and configuration change that requires automatic legacy-config migration where Cligent owns the configuration loader.
-Provider-native orchestration modes may increase token use, latency, cost, concurrency, and tool activity without broadening configured permissions.
+Cligent shall leave independently configured permission controls unchanged solely because a provider-native orchestration value is selected.
+Provider-native orchestration modes may increase token use, latency, cost, concurrency, and tool activity.

@@ -12,7 +12,7 @@ Verification criteria for the `tmux-play` CLI, configuration, Captain runtime, a
 ### TTMUX-001
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-076](../user/tmux-play.md#tmux-076)
 
-Given an empty home and cwd, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `reasoningEffort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `reasoningEffort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [TMUX-011](../user/tmux-play.md#tmux-011). The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` (and no `columnWeights` key) per [TMUX-011](../user/tmux-play.md#tmux-011), plus `notifications: { player_finished: bell, turn_finished: desktop }` per [TMUX-076](../user/tmux-play.md#tmux-076). A one-line notice naming the path shall be printed to stdout, and a second invocation against that freshly-created home YAML shall leave the file unchanged.
+Where the home and cwd are empty, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `effort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `effort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [TMUX-011](../user/tmux-play.md#tmux-011). The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` (and no `columnWeights` key) per [TMUX-011](../user/tmux-play.md#tmux-011), plus `notifications: { player_finished: bell, turn_finished: desktop }` per [TMUX-076](../user/tmux-play.md#tmux-076). A one-line notice naming the path shall be printed to stdout, and a second invocation against that freshly-created home YAML shall leave the file unchanged.
 
 ### TTMUX-002
 Verifies: [TMUX-009](../user/tmux-play.md#tmux-009)
@@ -107,7 +107,7 @@ Verifies: [TMUX-076](../user/tmux-play.md#tmux-076), [TMUX-010](../user/tmux-pla
 Given a YAML config with `notifications: { player_finished: bell, turn_finished: desktop }`, when `loadTmuxPlayConfig` returns, the loaded config shall carry `notifications: { player_finished: bell, turn_finished: desktop, turn_aborted: off }`.
 Given a YAML config that omits `notifications`, when `loadTmuxPlayConfig` returns and the launcher writes a snapshot, both the loaded config and snapshot shall carry `off` for all three notification events.
 Given a YAML config with an unknown notification key such as `runtime_error` or a sink outside `off | bell | desktop`, the loader shall reject with an error that names the offending `notifications.<key>` path.
-Given an old home YAML loaded through fallback discovery that lacks safe defaults, the loader shall update that home YAML with only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; it shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `reasoningEffort`.
+Where an old home YAML loaded through fallback discovery lacks safe defaults, the loader shall update that home YAML with only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; it shall preserve existing values and shall not synthesize `model`, `instruction`, `permissions`, or an effort default when neither effort key exists.
 
 ### TTMUX-076
 Verifies: [TMUX-077](../user/tmux-play.md#tmux-077), [TMUX-023](../user/tmux-play.md#tmux-023)
@@ -494,17 +494,37 @@ Verifies: [TMUX-052](../user/tmux-play.md#tmux-052), [TMUX-008](../user/tmux-pla
 
 Given a YAML config whose `permissions.mode` is outside the closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path (e.g., `captain.permissions.mode` or `players[0].permissions.mode`). The runtime shall not start, and no `runtime_error` record shall be observable — the failure is a launcher-startup abort that falls outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope, per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
 
-## Reasoning Effort Configuration
+## Effort Configuration
 
 ### TTMUX-057
 Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [ENG-020](../user/engine.md#eng-020), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
 
-Given a YAML config that sets `captain.reasoningEffort` and `players[].reasoningEffort` across players covering the supported adapters, when the launcher/session seam constructs the corresponding `Cligent` instances and invokes adapter seams, the accepted values shall reach the adapter-specific mapped surfaces: Claude SDK `effort`, Codex SDK `modelReasoningEffort`, Gemini per-run settings aliases for concrete `^gemini-3` and `^gemini-2\.5` model IDs, and OpenCode v2 prompt-body top-level `variant`. The Gemini assertion shall also cover the skip cases from [GEMINI-011](../user/adapters/gemini.md#gemini-011): a CLI alias or non-matching concrete model writes no custom alias and preserves `--model <model>`, and an unset model writes no custom alias and passes no `--model` flag.
+Where YAML selects every portable and provider-native `captain.effort` or `players[N].effort` value across the four adapters, when the launcher/session seam constructs and invokes the corresponding `Cligent`, the value shall reach the adapter-specific surface from the cited items without cross-aliasing: Claude SDK effort plus ultracode setting, Codex thread or constructor config transport, Gemini concrete-model alias, or OpenCode prompt variant. The Gemini cases shall also prove that an alias, unmatched model, or unset model creates no effort alias and preserves ordinary model forwarding.
 
 ### TTMUX-058
 Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [TMUX-008](../user/tmux-play.md#tmux-008), [TMUX-025](../user/tmux-play.md#tmux-025)
 
-Given a YAML config whose `captain.reasoningEffort` or `players[0].reasoningEffort` is outside [ENG-020](../user/engine.md#eng-020)'s closed set, when the launcher CLI is invoked, the process shall exit with a nonzero status and write a single `Error: ...` line to stderr that names the offending path. The runtime shall not start, and no `runtime_error` record shall be observable because the failure is a launcher-startup abort outside [TMUX-025](../user/tmux-play.md#tmux-025)'s runtime-existence scope.
+Where a YAML config has `captain.effort` or `players[0].effort` unsupported by that object's adapter, when the launcher CLI is invoked, the process shall exit nonzero and write one error line naming the offending path, adapter, and allowed values. The runtime shall not start and no `runtime_error` record shall be observable because validation is a launcher-startup failure outside [TMUX-025](../user/tmux-play.md#tmux-025).
+
+### TTMUX-087
+Verifies: [TMUX-086](../user/tmux-play.md#tmux-086)
+
+Where a home, cwd, or explicit YAML config contains legacy `reasoningEffort` keys without same-object `effort` keys, when the complete migrated config validates, the loader shall rewrite those keys to `effort`, preserve comments, key order, scalar style, the config-path symlink, and owner/group/other permission bits, and leave no migration temporary file.
+
+### TTMUX-088
+Verifies: [TMUX-087](../user/tmux-play.md#tmux-087)
+
+Where one captain or player contains both effort key names, or a legacy value is invalid for its adapter, when the config is loaded, the loader shall reject before writing and preserve the original source byte-for-byte.
+
+### TTMUX-089
+Verifies: [TMUX-088](../user/tmux-play.md#tmux-088)
+
+Where the source file or its symlink target changes after the loader reads it but before migration commits and the final checks observe that change, the loader shall reject with a retry message, preserve the observed newer source byte-for-byte, and leave no migration temporary file.
+
+### TTMUX-090
+Verifies: [TMUX-029](../user/tmux-play.md#tmux-029), [TMUX-056](../user/tmux-play.md#tmux-056)
+
+Where a TypeScript consumer uses the public tmux-play declarations, the captain and player config types shall accept each adapter's own effort vocabulary and reject another adapter's provider-native value while retaining all non-effort runtime fields.
 
 ## Layout Configuration
 

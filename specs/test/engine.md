@@ -86,3 +86,20 @@ When an adapter's generator exhausts without yielding `done` inside `parallel()`
 Verifies: [ENG-016](../user/engine.md#eng-016)
 
 When one task's `AbortSignal` fires in `parallel()`, only that task shall yield `done` (`status: 'interrupted'`); remaining tasks shall continue. When all active tasks share one `AbortController` and it fires, all active tasks (those that have not yet emitted `done`) shall yield `done` (`status: 'interrupted'`).
+
+## Effort API
+
+### TENG-015
+Verifies: [ENG-020](../user/engine.md#eng-020)
+
+Where a TypeScript consumer uses the public API, the consumer shall be able to import `PortableEffort`, `ClaudeEffort`, `CodexEffort`, `GeminiEffort`, `OpenCodeEffort`, and `Effort`; construct and run every built-in adapter with its own vocabulary; use heterogeneous `Cligent.parallel()` and `runParallel()` tasks without cross-widening; and bind an arbitrary custom adapter vocabulary through direct and parallel calls. On those statically adapter-bound paths, cross-adapter and out-of-vocabulary values shall fail compilation.
+
+### TENG-016
+Verifies: [ENG-024](../user/engine.md#eng-024)
+
+Where a consumer imports the effort metadata and helpers from the public package entry point, `EFFORT_SUPPORT`, each adapter entry, and each nested array shall reject runtime mutation; every values array shall match its public alias and order; orchestration arrays and all four `modelDependent` flags shall match [ENG-024](../user/engine.md#eng-024); Claude and `claude-code` lookups shall agree; predicates and assertions shall narrow and match the exposed values; notes shall name lossy and no-op conditions; and unknown-adapter behavior shall match the cited item.
+
+### TENG-017
+Verifies: [ENG-020](../user/engine.md#eng-020)
+
+Where a custom adapter is registered through the legacy mutable registry, `runAgent()` shall accept `AgentOptions<string>` and forward an adapter-valid custom effort unchanged; its declarations shall not claim name-to-vocabulary narrowing.

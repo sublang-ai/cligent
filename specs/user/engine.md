@@ -11,7 +11,7 @@ This component defines the `Cligent` class, `Cligent.parallel()`, and event help
 
 ### ENG-001
 
-The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOptions` per [DR-003](../decisions/003-role-scoped-session-management.md). `CligentOptions` contains instance-level defaults (`role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `reasoningEffort`, `allowedTools`, `disallowedTools`). Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
+The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOptions` per [DR-003](../decisions/003-role-scoped-session-management.md). `CligentOptions` contains instance-level defaults (`role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `allowedTools`, `disallowedTools`). Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
 
 ### ENG-002
 
@@ -102,13 +102,30 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 
 Adapter-reported `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation). Adapters shall sum provider-specific cache fields (e.g. `cacheReadInputTokens`, `cacheCreationInputTokens`) into the single `inputTokens` value.
 
-## Reasoning Effort
+## Effort
 
 ### ENG-020
 
-`AgentOptions.reasoningEffort` shall accept the closed set `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth, with `undefined` reserved to defer to the adapter or model default.
-The unified set is a strict superset of the per-adapter SDK enums; adapters that lack a 1:1 value shall map to the nearest supported neighbour per their own item.
-Adapters whose backend exposes no per-call reasoning surface shall ignore this field and document the rationale.
+Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), `AgentOptions<E>.effort` shall accept the selected adapter's effort vocabulary `E`, with `undefined` reserved to defer to applicable adapter, model, account, and user-configuration defaults and configuration-isolation rules.
+`PortableEffort` shall be the six-value ladder `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth.
+`ClaudeEffort` shall be `PortableEffort | 'ultracode'`; `CodexEffort` shall be `PortableEffort | 'ultra'`; `GeminiEffort` and `OpenCodeEffort` shall each be `PortableEffort`; and the adapter-neutral built-in `Effort` union shall cover every value in those aliases.
+Where a built-in provider lacks a one-to-one portable value, its adapter item shall map to the nearest supported neighbour in the portable ordering; where mapping depends on a concrete model or provider that is absent or unrecognised, the adapter item may leave the provider override unset and shall document that behavior.
+`AgentAdapter<E>`, `CligentOptions<E>`, `RunOptions<E>`, and `Cligent<E>` shall carry the same vocabulary through constructor defaults, run overrides, direct adapter calls, `Cligent.parallel()`, and `runParallel()` without widening one adapter's values to another adapter's values.
+A custom adapter may bind an arbitrary string-literal vocabulary with any names or number of levels and shall retain that vocabulary through direct and heterogeneous parallel calls.
+On the legacy name-based mutable-registry path, `runAgent()` shall accept `AgentOptions<string>` and forward the exact effort string unchanged; because registrations may be removed and rebound dynamically, that path shall not claim compile-time agent-name-to-vocabulary correlation.
+Built-in adapters shall perform their specified runtime validation on the dynamic path, while custom adapters remain responsible for validating their own dynamic inputs; callers requiring compile-time correlation shall use a statically adapter-bound surface such as direct `AgentAdapter<E>` calls, `Cligent`, `Cligent.parallel()`, or `runParallel()`.
+
+The built-in vocabularies and provider mappings are defined by [CLAUDE-008](adapters/claude-code.md#claude-008), [CODEX-007](adapters/codex.md#codex-007), [GEMINI-011](adapters/gemini.md#gemini-011), and [OPENCODE-012](adapters/opencode.md#opencode-012).
+
+### ENG-024
+
+The exported `EFFORT_SUPPORT` object shall be deeply frozen at runtime and expose each built-in adapter's accepted `values`, provider-native `orchestrationValues`, `modelDependent` flag, and user-facing `notes` without promising model, account, or installed-runtime availability.
+Each `values` array shall equal its adapter's public effort alias in the [ENG-020](#eng-020) order; Claude and Codex `orchestrationValues` shall be exactly `['ultracode']` and `['ultra']`, respectively, while Gemini and OpenCode shall expose empty orchestration arrays; and `modelDependent` shall be `true` for all four built-ins.
+Where a mapping is lossy or ignored without a concrete model or provider, `notes` shall state that condition.
+`getEffortSupport`, `supportedEffortValues`, `isEffortSupported`, and `assertSupportedEffort` shall expose and validate the same values in `EFFORT_SUPPORT`; the alias `claude` shall resolve to `claude-code`; and the predicate and assertion shall narrow known adapter values to that adapter's public effort alias.
+For an unknown adapter, the lookup functions shall return `undefined`, the predicate shall return `false`, and the assertion shall throw an error naming the adapter and validation path.
+For a known adapter and unsupported value, the assertion shall throw an error naming the adapter, validation path, and allowed values.
+Where a metadata-accepted value is unavailable to the selected model, account, or installed runtime and the backend rejects it, the adapter shall expose that upstream failure through its normal error path without substituting another effort.
 
 ## Permission Policy Mode
 

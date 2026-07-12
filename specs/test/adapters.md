@@ -77,12 +77,28 @@ Verifies: [ENG-017](../user/engine.md#eng-017)
 
 Given `allowedTools` and `disallowedTools` options, each adapter shall restrict tools according to whitelist and precedence semantics per [ENG-017](../user/engine.md#eng-017).
 
-## Reasoning Effort
+## Effort
 
 ### TADAPT-018
-Verifies: [ENG-020](../user/engine.md#eng-020), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
+Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
 
-Given each `ReasoningEffort` value in `AgentOptions.reasoningEffort`, the Claude Code adapter shall forward the SDK `effort` value from the [CLAUDE-008](../user/adapters/claude-code.md#claude-008) table and the Codex adapter shall forward the SDK `modelReasoningEffort` value from the [CODEX-007](../user/adapters/codex.md#codex-007) table. Given the same input with Gemini concrete model IDs matching `^gemini-3` or `^gemini-2\.5`, the Gemini adapter shall write the per-run settings alias and `thinkingLevel` / `thinkingBudget` values required by [GEMINI-011](../user/adapters/gemini.md#gemini-011), target that alias with `--model`, and preserve the documented no-alias skip behavior for unset, CLI-alias, and non-matching model values. Given the same input with OpenCode provider/model prefixes, the OpenCode adapter shall set the v2 prompt-body top-level `variant` values required by [OPENCODE-012](../user/adapters/opencode.md#opencode-012) and leave `variant` unset for unrecognised providers. Given `reasoningEffort` is omitted, no adapter shall set the corresponding SDK/CLI field, settings alias, or prompt-body variant.
+Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match this table and the cited adapter item:
+
+| Adapter | Observable mapping |
+| --- | --- |
+| Claude Code | SDK `effort` plus explicit `settings.ultracode`; `ultracode` maps to `xhigh` and `true` |
+| Codex | `minimal` through `xhigh` use thread `modelReasoningEffort`; `max` and `ultra` use constructor `config.model_reasoning_effort` unchanged |
+| Gemini | portable values create documented aliases only for matching concrete model IDs |
+| OpenCode | portable values select the documented top-level prompt `variant` by provider |
+
+When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
+Where Claude `ultracode` or Codex `ultra` is supplied alongside permission options, when the adapter maps the run, its permission-related provider controls shall equal the controls derived from the same permission input without the provider-native effort value.
+Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [ENG-024](../user/engine.md#eng-024).
+
+### TADAPT-026
+Verifies: [ENG-024](../user/engine.md#eng-024), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
+
+Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort.
 
 ## Resume Token
 

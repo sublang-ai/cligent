@@ -87,13 +87,12 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 
 ### OPENCODE-012
 
-The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall map portable `AgentOptions.effort` values from [ENG-020](../engine.md#eng-020) to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
 The prompt-body surface, rather than session creation, shall be used so the value applies to both fresh and resumed sessions.
 Provider dispatch shall use the `provider/model` prefix in `AgentOptions.model`.
 When the provider has no documented built-in variant set, the adapter shall leave `variant` unset and defer to the user's `opencode.jsonc`.
-When `reasoningEffort` is omitted, the adapter shall not set `variant`.
 
-| `reasoningEffort` | Anthropic | OpenAI | Google | Other |
+| `AgentOptions.effort` | Anthropic | OpenAI | Google | Other |
 | --- | --- | --- | --- | --- |
 | `minimal` | `high` | `minimal` | `low` | unset |
 | `low` | `high` | `low` | `low` | unset |
@@ -103,6 +102,11 @@ When `reasoningEffort` is omitted, the adapter shall not set `variant`.
 | `max` | `max` | `xhigh` | `high` | unset |
 
 Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [ENG-020](../engine.md#eng-020).
+
+### OPENCODE-014
+
+When effort is omitted, the adapter shall not set a prompt-body `variant` and shall preserve OpenCode and user-configuration defaults.
+Where effort is outside the OpenCode portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before prompting the session with the metadata-backed allowed-values error from [ENG-024](../engine.md#eng-024).
 
 ## References
 
