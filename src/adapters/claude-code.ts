@@ -11,7 +11,7 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -22,7 +22,7 @@ type ClaudePermissionMode =
   | 'acceptEdits'
   | 'default';
 
-type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 // The SDK's permission-callback contract, mirrored locally. It is deliberately
 // NOT imported from `@anthropic-ai/claude-agent-sdk`: that package is an
@@ -57,7 +57,7 @@ interface ClaudeQueryOptions {
   canUseTool?: ClaudeCanUseTool;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
-  effort?: ClaudeEffort;
+  effort?: ClaudeSdkEffort;
   sessionId?: string;
 }
 
@@ -631,9 +631,9 @@ interface MappedClaudeOptions {
   cleanupAbort: () => void;
 }
 
-export function mapReasoningEffortToClaudeEffort(
-  effort: ReasoningEffort | undefined,
-): ClaudeEffort | undefined {
+export function mapEffortToClaudeEffort(
+  effort: PortableEffort | undefined,
+): ClaudeSdkEffort | undefined {
   if (effort === undefined) return undefined;
   // Claude has no 'minimal' tier; use the SDK's lowest effort instead.
   if (effort === 'minimal') return 'low';
@@ -641,7 +641,7 @@ export function mapReasoningEffortToClaudeEffort(
 }
 
 export function mapAgentOptionsToClaudeQueryOptions(
-  options: AgentOptions | undefined,
+  options: AgentOptions<PortableEffort> | undefined,
 ): MappedClaudeOptions {
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
 
@@ -677,13 +677,13 @@ export function mapAgentOptionsToClaudeQueryOptions(
       canUseTool: permissionOptions.canUseTool,
       abortController,
       env,
-      effort: mapReasoningEffortToClaudeEffort(options?.reasoningEffort),
+      effort: mapEffortToClaudeEffort(options?.effort),
     },
     cleanupAbort,
   };
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter {
+export class ClaudeCodeAdapter implements AgentAdapter<PortableEffort> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
@@ -703,7 +703,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   async *run(
     prompt: string,
-    options?: AgentOptions,
+    options?: AgentOptions<PortableEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: ClaudeAgentSdk;
     try {

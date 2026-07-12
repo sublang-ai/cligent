@@ -26,7 +26,6 @@ export type {
   GeminiEffort,
   OpenCodeEffort,
   Effort,
-  ReasoningEffort,
   AgentAdapter,
   AgentOptions,
   CligentEvent,

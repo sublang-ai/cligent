@@ -13,7 +13,7 @@ import type {
   AgentOptions,
   DonePayload,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -376,8 +376,8 @@ interface MappedCodexOptions {
   cleanupAbort: () => void;
 }
 
-export function mapReasoningEffortToCodexEffort(
-  effort: ReasoningEffort | undefined,
+export function mapEffortToCodexEffort(
+  effort: PortableEffort | undefined,
 ): CodexModelReasoningEffort | undefined {
   if (effort === undefined) return undefined;
   // Codex tops out at 'xhigh'; collapse Claude's 'max' to the nearest value.
@@ -386,7 +386,7 @@ export function mapReasoningEffortToCodexEffort(
 }
 
 export function mapAgentOptionsToCodexOptions(
-  options: AgentOptions | undefined,
+  options: AgentOptions<PortableEffort> | undefined,
 ): MappedCodexOptions {
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
 
@@ -410,7 +410,7 @@ export function mapAgentOptionsToCodexOptions(
   const threadOptions: CodexThreadOptions = {
     workingDirectory: options?.cwd,
     model: options?.model,
-    modelReasoningEffort: mapReasoningEffortToCodexEffort(options?.reasoningEffort),
+    modelReasoningEffort: mapEffortToCodexEffort(options?.effort),
     // The CLI's git-repo gate is an interactive-user safety net; programmatic
     // callers (tmux-play, scripts, tests) choose workingDirectory deliberately
     // and frequently target tmpdirs that are not git repos.
@@ -784,7 +784,7 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
   };
 }
 
-export class CodexAdapter implements AgentAdapter {
+export class CodexAdapter implements AgentAdapter<PortableEffort> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
@@ -804,7 +804,7 @@ export class CodexAdapter implements AgentAdapter {
 
   async *run(
     prompt: string,
-    options?: AgentOptions,
+    options?: AgentOptions<PortableEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: CodexSdk;
     try {

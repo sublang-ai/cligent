@@ -149,7 +149,7 @@ describe('TmuxPlayRuntime', () => {
           agent: 'codex',
           async *run(prompt, options) {
             prompts.push(prompt);
-            expect(options?.reasoningEffort).toBe('low');
+            expect(options?.effort).toBe('low');
             yield textEvent('codex', 'player text');
             yield doneEvent('codex', 'player done');
           },
@@ -158,7 +158,7 @@ describe('TmuxPlayRuntime', () => {
           agent: 'claude-code',
           async *run(prompt, options) {
             prompts.push(prompt);
-            expect(options?.reasoningEffort).toBe('high');
+            expect(options?.effort).toBe('high');
             yield textEvent('claude-code', 'captain text');
             yield doneEvent('claude-code', 'captain done');
           },

@@ -5,7 +5,7 @@ import { Cligent } from '../../cligent.js';
 import type {
   AgentAdapter,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../../types.js';
 
 export const KNOWN_PLAYER_ADAPTERS = [
@@ -23,7 +23,7 @@ export interface PlayerConfig {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: PortableEffort;
 }
 
 export interface ResolvedPlayer {
@@ -39,7 +39,7 @@ export interface CreatePlayerCligentOptions {
   model?: string;
   role?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: PortableEffort;
   adapterImports?: PlayerAdapterImports;
 }
 
@@ -111,7 +111,7 @@ export async function createPlayerCligent(
     model: options.model,
     role: options.role,
     permissions: options.permissions,
-    reasoningEffort: options.reasoningEffort,
+    effort: options.reasoningEffort,
   });
 }
 

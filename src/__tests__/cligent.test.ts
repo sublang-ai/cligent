@@ -204,6 +204,7 @@ describe('Cligent lifecycle', () => {
         writablePaths: ['.git'],
       },
       maxTurns: 5,
+      effort: 'high',
       allowedTools: ['tool-a'],
     });
 
@@ -211,6 +212,7 @@ describe('Cligent lifecycle', () => {
       agent.run('hi', {
         model: 'override-model',
         permissions: { shellExecute: 'allow' },
+        effort: 'ultracode',
         allowedTools: ['tool-b'],
       }),
     );
@@ -224,6 +226,7 @@ describe('Cligent lifecycle', () => {
       writablePaths: ['.git'],
     });
     expect(opts.maxTurns).toBe(5);
+    expect(opts.effort).toBe('ultracode');
     expect(opts.allowedTools).toEqual(['tool-b']);
   });
 

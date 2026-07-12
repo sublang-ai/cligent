@@ -171,7 +171,7 @@ describe('resolvePlayers', () => {
     }
 
     expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
-    expect(captured[0]?.reasoningEffort).toBe('xhigh');
+    expect(captured[0]?.effort).toBe('xhigh');
   });
 
   it('allows multiple players to use the same adapter and model', async () => {

@@ -16,16 +16,31 @@ import {
 } from './protocol.js';
 import type { AdapterRegistry } from './registry.js';
 
-export interface ParallelTask {
-  adapter: AgentAdapter;
+type AnyAgentAdapter = AgentAdapter<string>;
+type AdapterEffort<A extends AnyAgentAdapter> =
+  A extends AgentAdapter<infer E> ? E : never;
+
+export interface ParallelTask<A extends AnyAgentAdapter = AnyAgentAdapter> {
+  adapter: A;
   prompt: string;
-  options?: AgentOptions;
+  options?: AgentOptions<AdapterEffort<A>>;
 }
+
+type CheckedParallelTask<T> = T extends {
+  adapter: infer A extends AnyAgentAdapter;
+  prompt: string;
+}
+  ? Omit<T, 'options'> & { options?: AgentOptions<AdapterEffort<A>> }
+  : never;
+
+type CheckedParallelTasks<T extends readonly ParallelTask[]> = {
+  [K in keyof T]: CheckedParallelTask<T[K]>;
+};
 
 export async function* runAgent(
   agent: AgentType,
   prompt: string,
-  options: AgentOptions | undefined,
+  options: AgentOptions<string> | undefined,
   registry: AdapterRegistry,
 ): AsyncGenerator<AgentEvent, void, void> {
   const adapter = registry.get(agent);
@@ -147,8 +162,8 @@ interface RaceResult {
   isError: boolean;
 }
 
-export async function* runParallel(
-  tasks: ParallelTask[],
+export async function* runParallel<const T extends readonly ParallelTask[]>(
+  tasks: T & CheckedParallelTasks<T>,
 ): AsyncGenerator<AgentEvent, void, void> {
   if (tasks.length === 0) return;
 

@@ -6,14 +6,14 @@ import { describe, it, expect } from 'vitest';
 import {
   ClaudeCodeAdapter,
   mapAgentOptionsToClaudeQueryOptions,
+  mapEffortToClaudeEffort,
   mapPermissionsToClaudeOptions,
-  mapReasoningEffortToClaudeEffort,
 } from '../adapters/claude-code.js';
 import type {
   AgentEvent,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../types.js';
 
 // Derived from the adapter so the mock SDK and the decision assertions cannot
@@ -1089,8 +1089,8 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.inputTokens).toBe(155);
   });
 
-  it('maps reasoningEffort to SDK effort per CLAUDE-008', () => {
-    const cases: Array<[ReasoningEffort | undefined, string | undefined]> = [
+  it('maps effort to SDK effort per CLAUDE-008', () => {
+    const cases: Array<[PortableEffort | undefined, string | undefined]> = [
       [undefined, undefined],
       ['minimal', 'low'],
       ['low', 'low'],
@@ -1101,16 +1101,16 @@ describe('ClaudeCodeAdapter', () => {
     ];
 
     for (const [input, expected] of cases) {
-      expect(mapReasoningEffortToClaudeEffort(input)).toBe(expected);
+      expect(mapEffortToClaudeEffort(input)).toBe(expected);
 
       const mapped = mapAgentOptionsToClaudeQueryOptions(
-        input === undefined ? {} : { reasoningEffort: input },
+        input === undefined ? {} : { effort: input },
       );
       expect(mapped.queryOptions.effort).toBe(expected);
     }
   });
 
-  it('forwards reasoningEffort through to the SDK query() invocation', async () => {
+  it('forwards effort through to the SDK query() invocation', async () => {
     let captured: MockSdkInnerOptions | undefined;
 
     const adapter = new ClaudeCodeAdapter({
@@ -1138,7 +1138,7 @@ describe('ClaudeCodeAdapter', () => {
       ),
     });
 
-    await collect(adapter.run('prompt', { reasoningEffort: 'max' }));
+    await collect(adapter.run('prompt', { effort: 'max' }));
 
     expect(captured?.effort).toBe('max');
   });

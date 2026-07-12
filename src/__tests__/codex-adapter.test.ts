@@ -7,14 +7,14 @@ import { describe, it, expect } from 'vitest';
 import {
   CodexAdapter,
   mapAgentOptionsToCodexOptions,
+  mapEffortToCodexEffort,
   mapPermissionsToCodexOptions,
-  mapReasoningEffortToCodexEffort,
 } from '../adapters/codex.js';
 import type {
   AgentEvent,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../types.js';
 
 interface MockRunOptions {
@@ -1145,8 +1145,8 @@ describe('CodexAdapter', () => {
     expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
   });
 
-  it('maps reasoningEffort to SDK modelReasoningEffort per CODEX-007', () => {
-    const cases: Array<[ReasoningEffort | undefined, string | undefined]> = [
+  it('maps effort to SDK modelReasoningEffort per CODEX-007', () => {
+    const cases: Array<[PortableEffort | undefined, string | undefined]> = [
       [undefined, undefined],
       ['minimal', 'minimal'],
       ['low', 'low'],
@@ -1157,16 +1157,16 @@ describe('CodexAdapter', () => {
     ];
 
     for (const [input, expected] of cases) {
-      expect(mapReasoningEffortToCodexEffort(input)).toBe(expected);
+      expect(mapEffortToCodexEffort(input)).toBe(expected);
 
       const mapped = mapAgentOptionsToCodexOptions(
-        input === undefined ? {} : { reasoningEffort: input },
+        input === undefined ? {} : { effort: input },
       );
       expect(mapped.threadOptions.modelReasoningEffort).toBe(expected);
     }
   });
 
-  it('forwards reasoningEffort to startThread()', async () => {
+  it('forwards effort to startThread()', async () => {
     let captured: MockThreadOptions | undefined;
 
     const adapter = new CodexAdapter({
@@ -1186,7 +1186,7 @@ describe('CodexAdapter', () => {
       }),
     });
 
-    await collect(adapter.run('prompt', { reasoningEffort: 'high' }));
+    await collect(adapter.run('prompt', { effort: 'high' }));
 
     expect(captured?.modelReasoningEffort).toBe('high');
   });

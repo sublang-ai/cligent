@@ -12,15 +12,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   OpenCodeAdapter,
+  mapEffortToOpenCodeVariant,
   mapPermissionsToOpenCodeOptions,
-  mapReasoningEffortToOpenCodeVariant,
   wrapOpencodeClient,
 } from '../adapters/opencode.js';
 import type {
   AgentEvent,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../types.js';
 
 interface MockOpenCodeClient {
@@ -427,10 +427,10 @@ describe('OpenCodeAdapter', () => {
     ['google/gemini-3-pro', 'high', 'high'],
     ['google/gemini-3-pro', 'xhigh', 'high'],
     ['google/gemini-3-pro', 'max', 'high'],
-  ] satisfies Array<[string, ReasoningEffort, string]>)(
-    'maps OpenCode %s reasoningEffort %s to variant %s per OPENCODE-012',
-    (model, reasoningEffort, variant) => {
-      expect(mapReasoningEffortToOpenCodeVariant(model, reasoningEffort)).toBe(
+  ] satisfies Array<[string, PortableEffort, string]>)(
+    'maps OpenCode %s effort %s to variant %s per OPENCODE-012',
+    (model, effort, variant) => {
+      expect(mapEffortToOpenCodeVariant(model, effort)).toBe(
         variant,
       );
     },
@@ -438,20 +438,20 @@ describe('OpenCodeAdapter', () => {
 
   it('leaves OpenCode variant unset for omitted effort and unrecognised providers', () => {
     expect(
-      mapReasoningEffortToOpenCodeVariant('openai/gpt-5', undefined),
+      mapEffortToOpenCodeVariant('openai/gpt-5', undefined),
     ).toBeUndefined();
     expect(
-      mapReasoningEffortToOpenCodeVariant(undefined, 'high'),
+      mapEffortToOpenCodeVariant(undefined, 'high'),
     ).toBeUndefined();
     expect(
-      mapReasoningEffortToOpenCodeVariant('gpt-5', 'high'),
+      mapEffortToOpenCodeVariant('gpt-5', 'high'),
     ).toBeUndefined();
     expect(
-      mapReasoningEffortToOpenCodeVariant('someprovider/somemodel', 'max'),
+      mapEffortToOpenCodeVariant('someprovider/somemodel', 'max'),
     ).toBeUndefined();
   });
 
-  it('forwards reasoningEffort to the OpenCode prompt variant per OPENCODE-012', async () => {
+  it('forwards effort to the OpenCode prompt variant per OPENCODE-012', async () => {
     let capturedRunOptions: Record<string, unknown> | undefined;
 
     const adapter = new OpenCodeAdapter(
@@ -480,7 +480,7 @@ describe('OpenCodeAdapter', () => {
     await collect(
       adapter.run('prompt', {
         model: 'openai/gpt-5',
-        reasoningEffort: 'medium',
+        effort: 'medium',
       }),
     );
 
@@ -523,7 +523,7 @@ describe('OpenCodeAdapter', () => {
     await collect(
       adapter.run('prompt', {
         model: 'someprovider/somemodel',
-        reasoningEffort: 'max',
+        effort: 'max',
       }),
     );
 

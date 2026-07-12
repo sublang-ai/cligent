@@ -99,6 +99,34 @@ describe('runAgent', () => {
     expect(events[2].type).toBe('done');
   });
 
+  it('forwards an exact custom effort string through the mutable registry', async () => {
+    type CustomEffort = 'quick' | 'deep' | 'exhaustive';
+    let captured: AgentOptions<CustomEffort> | undefined;
+    const adapter: AgentAdapter<CustomEffort> = {
+      agent: 'custom-agent',
+      async *run(_prompt, options) {
+        captured = options;
+        yield doneEvent('custom-agent');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    const registry = new AdapterRegistry();
+    registry.register(adapter);
+
+    await collectEvents(
+      runAgent(
+        'custom-agent',
+        'prompt',
+        { effort: 'exhaustive' },
+        registry,
+      ),
+    );
+
+    expect(captured?.effort).toBe('exhaustive');
+  });
+
   it('throws on missing adapter', async () => {
     const registry = new AdapterRegistry();
     await expect(

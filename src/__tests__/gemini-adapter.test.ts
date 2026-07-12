@@ -23,7 +23,7 @@ import type {
   AgentOptions,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../types.js';
 
 class MockGeminiProcess extends EventEmitter {
@@ -738,12 +738,12 @@ describe('GeminiAdapter', () => {
     ['high', 'HIGH'],
     ['xhigh', 'HIGH'],
     ['max', 'HIGH'],
-  ] satisfies Array<[ReasoningEffort, string]>)(
-    'maps Gemini 3 reasoningEffort %s to thinkingLevel %s',
-    (reasoningEffort, thinkingLevel) => {
+  ] satisfies Array<[PortableEffort, string]>)(
+    'maps Gemini 3 effort %s to thinkingLevel %s',
+    (effort, thinkingLevel) => {
       const mapped = mapAgentOptionsToGeminiCommand('prompt', {
         model: 'gemini-3-flash',
-        reasoningEffort,
+        effort,
       });
 
       expectReasoningAlias(mapped, 'gemini-3-flash', { thinkingLevel });
@@ -759,12 +759,12 @@ describe('GeminiAdapter', () => {
     ['high', 16384],
     ['xhigh', 24576],
     ['max', 24576],
-  ] satisfies Array<[ReasoningEffort, number]>)(
-    'maps Gemini 2.5 Flash reasoningEffort %s to thinkingBudget %s',
-    (reasoningEffort, thinkingBudget) => {
+  ] satisfies Array<[PortableEffort, number]>)(
+    'maps Gemini 2.5 Flash effort %s to thinkingBudget %s',
+    (effort, thinkingBudget) => {
       const mapped = mapAgentOptionsToGeminiCommand('prompt', {
         model: 'gemini-2.5-flash',
-        reasoningEffort,
+        effort,
       });
 
       expectReasoningAlias(mapped, 'gemini-2.5-flash', { thinkingBudget });
@@ -776,15 +776,15 @@ describe('GeminiAdapter', () => {
   it('maps Gemini 2.5 max to the model-family upper bound', () => {
     const pro = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-2.5-pro',
-      reasoningEffort: 'max',
+      effort: 'max',
     });
     const flash = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-2.5-flash-preview',
-      reasoningEffort: 'max',
+      effort: 'max',
     });
     const flashLite = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-2.5-flash-lite',
-      reasoningEffort: 'max',
+      effort: 'max',
     });
 
     expectReasoningAlias(pro, 'gemini-2.5-pro', { thinkingBudget: 32768 });
@@ -797,11 +797,11 @@ describe('GeminiAdapter', () => {
   });
 
   it.each([
-    ['unset model', { reasoningEffort: 'high' }, undefined],
-    ['CLI alias', { model: 'flash', reasoningEffort: 'high' }, 'flash'],
+    ['unset model', { effort: 'high' }, undefined],
+    ['CLI alias', { model: 'flash', effort: 'high' }, 'flash'],
     [
       'non-matching concrete model',
-      { model: 'gemini-4-pro', reasoningEffort: 'high' },
+      { model: 'gemini-4-pro', effort: 'high' },
       'gemini-4-pro',
     ],
   ] satisfies Array<[string, AgentOptions, string | undefined]>)(
@@ -820,7 +820,7 @@ describe('GeminiAdapter', () => {
   it('combines reasoning aliases with existing tool settings', () => {
     const mapped = mapAgentOptionsToGeminiCommand('prompt', {
       model: 'gemini-3-pro',
-      reasoningEffort: 'low',
+      effort: 'low',
       permissions: {
         fileWrite: 'deny',
         shellExecute: 'allow',

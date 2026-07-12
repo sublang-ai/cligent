@@ -8,6 +8,7 @@ import type {
   CligentEvent,
   CligentOptions,
   DonePayload,
+  Effort,
   PermissionPolicy,
   RunOptions,
 } from './types.js';
@@ -19,11 +20,26 @@ import {
 } from './protocol.js';
 import { generateSessionId } from './events.js';
 
-export interface CligentParallelTask {
-  agent: Cligent;
+type AnyCligent = Cligent<string>;
+type CligentEffort<C extends AnyCligent> =
+  C extends Cligent<infer E> ? E : never;
+
+export interface CligentParallelTask<C extends AnyCligent = AnyCligent> {
+  agent: C;
   prompt: string;
-  overrides?: RunOptions;
+  overrides?: RunOptions<CligentEffort<C>>;
 }
+
+type CheckedCligentParallelTask<T> = T extends {
+  agent: infer C extends AnyCligent;
+  prompt: string;
+}
+  ? Omit<T, 'overrides'> & { overrides?: RunOptions<CligentEffort<C>> }
+  : never;
+
+type CheckedCligentParallelTasks<T extends readonly CligentParallelTask[]> = {
+  [K in keyof T]: CheckedCligentParallelTask<T[K]>;
+};
 
 function injectRole(event: AgentEvent, role: string | undefined): CligentEvent {
   if (role === undefined) return event as CligentEvent;
@@ -49,10 +65,10 @@ function mergePermissions(
   return { ...defaults, ...overrides };
 }
 
-function mergeOptions(
-  defaults: CligentOptions,
-  overrides: RunOptions | undefined,
-): { merged: RunOptions; role: string | undefined } {
+function mergeOptions<E extends string>(
+  defaults: CligentOptions<E>,
+  overrides: RunOptions<E> | undefined,
+): { merged: RunOptions<E>; role: string | undefined } {
   if (!overrides) {
     return {
       merged: { ...defaults },
@@ -60,13 +76,13 @@ function mergeOptions(
     };
   }
 
-  const merged: RunOptions = {
+  const merged: RunOptions<E> = {
     cwd: overrides.cwd ?? defaults.cwd,
     model: overrides.model ?? defaults.model,
     permissions: mergePermissions(defaults.permissions, overrides.permissions),
     maxTurns: overrides.maxTurns ?? defaults.maxTurns,
     maxBudgetUsd: overrides.maxBudgetUsd ?? defaults.maxBudgetUsd,
-    reasoningEffort: overrides.reasoningEffort ?? defaults.reasoningEffort,
+    effort: overrides.effort ?? defaults.effort,
     allowedTools: overrides.allowedTools ?? defaults.allowedTools,
     disallowedTools: overrides.disallowedTools ?? defaults.disallowedTools,
     abortSignal: overrides.abortSignal,
@@ -79,13 +95,13 @@ function mergeOptions(
   };
 }
 
-export class Cligent {
-  private readonly adapter: AgentAdapter;
-  private readonly defaults: CligentOptions;
+export class Cligent<E extends string = Effort> {
+  private readonly adapter: AgentAdapter<E>;
+  private readonly defaults: CligentOptions<E>;
   private _resumeToken: string | undefined = undefined;
   private _running = false;
 
-  constructor(adapter: AgentAdapter, options?: CligentOptions) {
+  constructor(adapter: AgentAdapter<E>, options?: CligentOptions<NoInfer<E>>) {
     this.adapter = adapter;
     this.defaults = options ?? {};
   }
@@ -104,7 +120,7 @@ export class Cligent {
 
   async *run(
     prompt: string,
-    overrides?: RunOptions,
+    overrides?: RunOptions<E>,
   ): AsyncGenerator<CligentEvent, void, void> {
     if (this._running) {
       throw new Error('Cligent.run() is already active on this instance');
@@ -115,13 +131,13 @@ export class Cligent {
 
     const resume = resolveResume(merged.resume, this._resumeToken);
 
-    const agentOptions: AgentOptions = {
+    const agentOptions: AgentOptions<E> = {
       cwd: merged.cwd,
       model: merged.model,
       permissions: merged.permissions,
       maxTurns: merged.maxTurns,
       maxBudgetUsd: merged.maxBudgetUsd,
-      reasoningEffort: merged.reasoningEffort,
+      effort: merged.effort,
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
       abortSignal: merged.abortSignal,
@@ -259,8 +275,8 @@ export class Cligent {
     }
   }
 
-  static async *parallel(
-    tasks: CligentParallelTask[],
+  static async *parallel<const T extends readonly CligentParallelTask[]>(
+    tasks: T & CheckedCligentParallelTasks<T>,
   ): AsyncGenerator<CligentEvent, void, void> {
     if (tasks.length === 0) return;
 

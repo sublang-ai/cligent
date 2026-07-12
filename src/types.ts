@@ -156,30 +156,24 @@ export type OpenCodeEffort = PortableEffort;
 /** Union of every effort value accepted by a built-in adapter. */
 export type Effort = ClaudeEffort | CodexEffort;
 
-/**
- * Existing option vocabulary retained until the core API rename in IR-031
- * task 3. New code should use the adapter-scoped aliases above.
- */
-export type ReasoningEffort = PortableEffort;
-
-export interface AgentAdapter {
+export interface AgentAdapter<E extends string = Effort> {
   readonly agent: AgentType;
 
   run(
     prompt: string,
-    options?: AgentOptions,
+    options?: AgentOptions<E>,
   ): AsyncGenerator<AgentEvent, void, void>;
 
   isAvailable(): Promise<boolean>;
 }
 
-export interface AgentOptions {
+export interface AgentOptions<E extends string = Effort> {
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;
+  effort?: E;
   resume?: string;
   abortSignal?: AbortSignal;
   allowedTools?: string[];
@@ -188,19 +182,22 @@ export interface AgentOptions {
 
 export type CligentEvent = AgentEvent & { role?: string };
 
-export interface CligentOptions {
+export interface CligentOptions<E extends string = Effort> {
   role?: string;
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;
+  effort?: E;
   allowedTools?: string[];
   disallowedTools?: string[];
 }
 
-export interface RunOptions extends Omit<CligentOptions, 'role'> {
+export interface RunOptions<E extends string = Effort> extends Omit<
+  CligentOptions<E>,
+  'role'
+> {
   abortSignal?: AbortSignal;
   resume?: string | false;
 }

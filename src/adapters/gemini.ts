@@ -21,7 +21,7 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
@@ -330,9 +330,9 @@ export function buildGeminiToolSettings(
   return { tools };
 }
 
-export function mapReasoningEffortToGeminiModelAlias(
+export function mapEffortToGeminiModelAlias(
   model: string | undefined,
-  effort: ReasoningEffort | undefined,
+  effort: PortableEffort | undefined,
 ): GeminiModelAliasConfig | undefined {
   if (!model || !effort) return undefined;
 
@@ -341,7 +341,7 @@ export function mapReasoningEffortToGeminiModelAlias(
       alias: GEMINI_REASONING_EFFORT_ALIAS,
       model,
       thinkingConfig: {
-        thinkingLevel: mapReasoningEffortToGemini3ThinkingLevel(effort),
+        thinkingLevel: mapEffortToGemini3ThinkingLevel(effort),
       },
     };
   }
@@ -351,7 +351,7 @@ export function mapReasoningEffortToGeminiModelAlias(
       alias: GEMINI_REASONING_EFFORT_ALIAS,
       model,
       thinkingConfig: {
-        thinkingBudget: mapReasoningEffortToGemini25ThinkingBudget(model, effort),
+        thinkingBudget: mapEffortToGemini25ThinkingBudget(model, effort),
       },
     };
   }
@@ -359,8 +359,8 @@ export function mapReasoningEffortToGeminiModelAlias(
   return undefined;
 }
 
-function mapReasoningEffortToGemini3ThinkingLevel(
-  effort: ReasoningEffort,
+function mapEffortToGemini3ThinkingLevel(
+  effort: PortableEffort,
 ): GeminiThinkingLevel {
   switch (effort) {
     case 'minimal':
@@ -376,9 +376,9 @@ function mapReasoningEffortToGemini3ThinkingLevel(
   }
 }
 
-function mapReasoningEffortToGemini25ThinkingBudget(
+function mapEffortToGemini25ThinkingBudget(
   model: string,
-  effort: ReasoningEffort,
+  effort: PortableEffort,
 ): number {
   switch (effort) {
     case 'minimal':
@@ -551,7 +551,7 @@ export interface GeminiCommandConfig {
 
 export function mapAgentOptionsToGeminiCommand(
   prompt: string,
-  options: AgentOptions | undefined,
+  options: AgentOptions<PortableEffort> | undefined,
 ): GeminiCommandConfig {
   const toolConfig = mapPermissionsToGeminiToolConfig(options?.permissions, {
     allowedTools: options?.allowedTools,
@@ -559,9 +559,9 @@ export function mapAgentOptionsToGeminiCommand(
   });
 
   const args = ['--output-format', 'stream-json'] as string[];
-  const modelAlias = mapReasoningEffortToGeminiModelAlias(
+  const modelAlias = mapEffortToGeminiModelAlias(
     options?.model,
-    options?.reasoningEffort,
+    options?.effort,
   );
 
   if (modelAlias) {
@@ -603,7 +603,7 @@ export function mapAgentOptionsToGeminiCommand(
 
 function buildInitPayload(
   sourceEvent: Record<string, unknown> | undefined,
-  options: AgentOptions | undefined,
+  options: AgentOptions<PortableEffort> | undefined,
   toolConfig: GeminiToolConfig,
 ): {
   model: string;
@@ -637,7 +637,7 @@ function buildInitPayload(
   };
 }
 
-export class GeminiAdapter implements AgentAdapter {
+export class GeminiAdapter implements AgentAdapter<PortableEffort> {
   readonly agent = AGENT;
 
   private readonly spawnProcess: SpawnProcessFn;
@@ -661,7 +661,7 @@ export class GeminiAdapter implements AgentAdapter {
 
   async *run(
     prompt: string,
-    options?: AgentOptions,
+    options?: AgentOptions<PortableEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     const mapped = mapAgentOptionsToGeminiCommand(prompt, options);
 

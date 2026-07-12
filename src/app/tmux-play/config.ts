@@ -18,7 +18,7 @@ import type { CatppuccinFlavor } from './player-colors.js';
 import type {
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
 } from '../../types.js';
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -33,7 +33,7 @@ export interface CaptainConfig {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: PortableEffort;
   options: JsonValue;
 }
 
@@ -987,7 +987,7 @@ const PERMISSION_LEVELS: ReadonlySet<PermissionLevel> = new Set([
   'ask',
   'deny',
 ]);
-const REASONING_EFFORTS: ReadonlySet<ReasoningEffort> = new Set([
+const REASONING_EFFORTS: ReadonlySet<PortableEffort> = new Set([
   'minimal',
   'low',
   'medium',
@@ -1021,14 +1021,14 @@ function requirePermissionLevel(
 function optionalReasoningEffort(
   value: unknown,
   path: string,
-): ReasoningEffort | undefined {
+): PortableEffort | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string' || !REASONING_EFFORTS.has(value as never)) {
     throw new Error(
       `${path} must be one of: minimal, low, medium, high, xhigh, max`,
     );
   }
-  return value as ReasoningEffort;
+  return value as PortableEffort;
 }
 
 function requireAdapterName(value: unknown, path: string): PlayerAdapterName {

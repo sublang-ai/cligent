@@ -22,7 +22,7 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  ReasoningEffort,
+  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -529,11 +529,11 @@ export function mapPermissionsToOpenCodeOptions(
   };
 }
 
-export function mapReasoningEffortToOpenCodeVariant(
+export function mapEffortToOpenCodeVariant(
   model: string | undefined,
-  reasoningEffort: ReasoningEffort | undefined,
+  effort: PortableEffort | undefined,
 ): OpenCodeVariant | undefined {
-  if (!model || !reasoningEffort) return undefined;
+  if (!model || !effort) return undefined;
 
   const slashIdx = model.indexOf('/');
   if (slashIdx <= 0) return undefined;
@@ -541,19 +541,17 @@ export function mapReasoningEffortToOpenCodeVariant(
   const provider = model.slice(0, slashIdx);
 
   if (provider === 'anthropic') {
-    return reasoningEffort === 'xhigh' || reasoningEffort === 'max'
+    return effort === 'xhigh' || effort === 'max'
       ? 'max'
       : 'high';
   }
 
   if (provider === 'openai') {
-    return reasoningEffort === 'max' ? 'xhigh' : reasoningEffort;
+    return effort === 'max' ? 'xhigh' : effort;
   }
 
   if (provider === 'google') {
-    return reasoningEffort === 'high' ||
-      reasoningEffort === 'xhigh' ||
-      reasoningEffort === 'max'
+    return effort === 'high' || effort === 'xhigh' || effort === 'max'
       ? 'high'
       : 'low';
   }
@@ -890,7 +888,7 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
   throw new Error('@opencode-ai/sdk/v2 does not export a recognized client factory');
 }
 
-export class OpenCodeAdapter implements AgentAdapter {
+export class OpenCodeAdapter implements AgentAdapter<PortableEffort> {
   readonly agent = AGENT;
 
   private readonly mode: OpenCodeMode;
@@ -939,7 +937,7 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   async *run(
     prompt: string,
-    options?: AgentOptions,
+    options?: AgentOptions<PortableEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: OpenCodeSdk;
     try {
@@ -958,9 +956,9 @@ export class OpenCodeAdapter implements AgentAdapter {
         disallowedTools: options?.disallowedTools,
       },
     );
-    const variant = mapReasoningEffortToOpenCodeVariant(
+    const variant = mapEffortToOpenCodeVariant(
       options?.model,
-      options?.reasoningEffort,
+      options?.effort,
     );
 
     const startTime = Date.now();

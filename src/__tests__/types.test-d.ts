@@ -3,20 +3,27 @@
 
 import { describe, it, expectTypeOf } from 'vitest';
 import {
+  AdapterRegistry,
+  Cligent,
   EFFORT_SUPPORT,
   assertSupportedEffort,
   isEffortSupported,
+  runAgent,
+  runParallel,
 } from '../index.js';
 import type {
+  AgentAdapter,
+  AgentOptions,
   ClaudeEffort,
   CodexEffort,
+  Effort,
   GeminiEffort,
   OpenCodeEffort,
+  PortableEffort,
 } from '../index.js';
 import type {
   AgentEvent,
   AgentEventType,
-  AgentAdapter,
   BaseEvent,
   TextPayload,
   PermissionCapability,
@@ -136,5 +143,109 @@ describe('core types', () => {
     let asserted: unknown = 'ultracode';
     assertSupportedEffort('claude-code', asserted);
     expectTypeOf(asserted).toEqualTypeOf<ClaudeEffort>();
+  });
+
+  it('renames the public option and correlates direct adapter calls', () => {
+    expectTypeOf<PortableEffort>().toEqualTypeOf<
+      'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    >();
+    expectTypeOf<ClaudeEffort>().toEqualTypeOf<PortableEffort | 'ultracode'>();
+    expectTypeOf<CodexEffort>().toEqualTypeOf<PortableEffort | 'ultra'>();
+    const options: AgentOptions = { effort: 'ultra' };
+    expectTypeOf(options.effort).toEqualTypeOf<Effort | undefined>();
+    // @ts-expect-error - the public option was renamed to effort
+    const legacy: AgentOptions = { reasoningEffort: 'high' };
+    void legacy;
+
+    const claudeAdapter = {} as AgentAdapter<ClaudeEffort>;
+    const codexAdapter = {} as AgentAdapter<CodexEffort>;
+    void claudeAdapter.run('prompt', { effort: 'ultracode' });
+    void codexAdapter.run('prompt', { effort: 'ultra' });
+    // @ts-expect-error - ultra belongs only to Codex
+    void claudeAdapter.run('prompt', { effort: 'ultra' });
+    // @ts-expect-error - ultracode belongs only to Claude Code
+    void codexAdapter.run('prompt', { effort: 'ultracode' });
+  });
+
+  it('preserves built-in and custom vocabularies through Cligent', () => {
+    const claudeAdapter = {} as AgentAdapter<ClaudeEffort>;
+    const codexAdapter = {} as AgentAdapter<CodexEffort>;
+    const claude = new Cligent(claudeAdapter, { effort: 'ultracode' });
+    const codex = new Cligent(codexAdapter, { effort: 'ultra' });
+    void claude.run('prompt', { effort: 'max' });
+    void codex.run('prompt', { effort: 'max' });
+    // @ts-expect-error - NoInfer prevents constructor options widening Claude
+    new Cligent(claudeAdapter, { effort: 'ultra' });
+    // @ts-expect-error - run overrides remain Claude-scoped
+    void claude.run('prompt', { effort: 'ultra' });
+    // @ts-expect-error - NoInfer prevents constructor options widening Codex
+    new Cligent(codexAdapter, { effort: 'ultracode' });
+    // @ts-expect-error - run overrides remain Codex-scoped
+    void codex.run('prompt', { effort: 'ultracode' });
+
+    type CustomEffort = 'quick' | 'deep' | 'exhaustive';
+    const customAdapter = {} as AgentAdapter<CustomEffort>;
+    const custom = new Cligent(customAdapter, { effort: 'deep' });
+    void custom.run('prompt', { effort: 'exhaustive' });
+    // @ts-expect-error - custom adapters retain their own vocabulary
+    new Cligent(customAdapter, { effort: 'ultra' });
+  });
+
+  it('keeps every heterogeneous parallel task correlated', () => {
+    const claudeAdapter = {} as AgentAdapter<ClaudeEffort>;
+    const codexAdapter = {} as AgentAdapter<CodexEffort>;
+    const customAdapter = {} as AgentAdapter<'quick' | 'deep' | 'exhaustive'>;
+    const claude = new Cligent(claudeAdapter);
+    const codex = new Cligent(codexAdapter);
+    const custom = new Cligent(customAdapter);
+
+    void Cligent.parallel([
+      { agent: claude, prompt: 'Claude', overrides: { effort: 'ultracode' } },
+      { agent: codex, prompt: 'Codex', overrides: { effort: 'ultra' } },
+      { agent: custom, prompt: 'Custom', overrides: { effort: 'deep' } },
+    ]);
+    void Cligent.parallel([
+      {
+        agent: claude,
+        prompt: 'Claude',
+        // @ts-expect-error - overrides stay correlated to this Cligent
+        overrides: { effort: 'ultra' },
+      },
+    ]);
+
+    void runParallel([
+      {
+        adapter: claudeAdapter,
+        prompt: 'Claude',
+        options: { effort: 'ultracode' },
+      },
+      {
+        adapter: codexAdapter,
+        prompt: 'Codex',
+        options: { effort: 'ultra' },
+      },
+      {
+        adapter: customAdapter,
+        prompt: 'Custom',
+        options: { effort: 'exhaustive' },
+      },
+    ]);
+    void runParallel([
+      {
+        adapter: codexAdapter,
+        prompt: 'Codex',
+        // @ts-expect-error - options stay correlated to this adapter
+        options: { effort: 'ultracode' },
+      },
+    ]);
+
+    const registry = new AdapterRegistry();
+    registry.register(customAdapter);
+    void runAgent(
+      'custom-agent',
+      'Custom',
+      { effort: 'any-dynamic-string' },
+      registry,
+    );
   });
 });

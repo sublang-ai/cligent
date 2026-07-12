@@ -3,17 +3,22 @@
 
 import type { AgentType, AgentAdapter } from './types.js';
 
-export class AdapterRegistry {
-  private readonly adapters = new Map<AgentType, AgentAdapter>();
+type DynamicAgentAdapter = AgentAdapter<string>;
 
-  register(adapter: AgentAdapter): void {
+export class AdapterRegistry {
+  private readonly adapters = new Map<AgentType, DynamicAgentAdapter>();
+
+  register<E extends string>(adapter: AgentAdapter<E>): void {
     if (this.adapters.has(adapter.agent)) {
       throw new Error(`Adapter already registered for agent: ${adapter.agent}`);
     }
+    // Registration is intentionally erased to the dynamic string boundary:
+    // runAgent() cannot correlate a mutable name with a vocabulary after an
+    // adapter is unregistered and rebound.
     this.adapters.set(adapter.agent, adapter);
   }
 
-  get(agent: AgentType): AgentAdapter | undefined {
+  get(agent: AgentType): DynamicAgentAdapter | undefined {
     return this.adapters.get(agent);
   }
 
