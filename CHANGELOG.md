@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-12
+
 ### Added
 
 - Adapter-scoped effort vocabularies and discovery metadata: the public API exports `PortableEffort`, per-adapter effort aliases derived from the authoritative `EFFORT_SUPPORT` literal values, and matching lookup/validation helpers; Claude Code accepts `ultracode` through native `xhigh` plus its orchestration setting, Codex accepts native `ultra` through `model_reasoning_effort`, and Gemini/OpenCode retain the portable `minimal | low | medium | high | xhigh | max` set while direct, custom, and heterogeneous calls keep adapter-correlated TypeScript inference — DR-009, IR-031, IR-033, ENG-020, ENG-024
@@ -19,12 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Breaking:** renamed the public `reasoningEffort` option and tmux-play YAML field to `effort`, with adapter-correlated TypeScript declarations and runtime validation that reject provider-native values on the wrong adapter. After a complete document validates, tmux-play accepts direct legacy keys in memory and makes a bounded best-effort update of their exact parsed key tokens; a changed or unwritable source keeps the validated runtime value and produces an actionable manual-rename warning, while conflicting keys, invalid values, or other validation failures reject without writing. This compatibility path intentionally carries no broader lossless formatting, filesystem-metadata, or concurrency guarantee — DR-009, IR-031, IR-033, TMUX-056, TMUX-086
-- Release-candidate conformance targets now pin Claude Code 2.1.207 with Claude Agent SDK 0.3.207, Codex CLI/SDK 0.144.1, Gemini CLI 0.50.0, and OpenCode CLI/SDK 1.17.18. Repository verification checks the exact installed SDK packages, bundled Claude/Codex targets, external CLI reports, and OpenCode managed-server surface — IR-032, PKG-012
-- Distributable readiness now packs and inspects the actual npm tarball, installs it without optional agent peers, imports every public entry point and runs the installed launcher on exact Node 18.3.0, compiles adapter-scoped effort declarations with strict TypeScript 5.4.5, and requires clean production and full dependency audits in CI — IR-032, PKG-002, PKG-011, PKG-013, PKG-014
+- Release-candidate conformance targets now pin Claude Code 2.1.207 with Claude Agent SDK 0.3.207, Codex CLI/SDK 0.144.1, Gemini CLI 0.50.0, and OpenCode CLI/SDK 1.17.18. Repository verification checks the exact installed SDK packages, bundled Claude/Codex targets, external CLI reports, and OpenCode managed-server surface; Claude's optional peer floor is now `>=0.3.154`, while the other agent peer floors remain unchanged — IR-032, PKG-012
+- Gemini CLI 0.50 permissions now use temporary non-interactive User-tier Policy Engine rules instead of deprecated runtime tool controls. Administrator configuration retains precedence, omitted permissions preserve Gemini's native defaults, and isolated live authentication leaves the CLI's default `auto` model routing unchanged unless a model is explicitly selected — IR-030, GEMINI-006, GEMINI-012, GEMINI-014
+- Distributable readiness now cleans `dist` before build, prepack, and the development launcher; packs and inspects the actual npm tarball; installs it without optional agent peers; imports every public entry point and runs the installed launcher on the declared Node `>=18.3.0` floor; compiles adapter-scoped effort declarations with strict TypeScript 5.4.5; and requires clean production and full dependency audits in CI — IR-032, PKG-002, PKG-011, PKG-013, PKG-014
 
 ### Fixed
 
-- Gemini adapter now forwards `AgentOptions.resume` to the CLI as `--resume <token>`, restoring actual backend continuity instead of only carrying the token through normalized events — GEMINI-007, IR-028
+- Gemini adapter now forwards prompt, model, and resume values as joined `--prompt=<value>`, `--model=<value>`, and `--resume=<value>` tokens, preserving leading-dash values and restoring actual backend continuity instead of only carrying resume tokens through normalized events — IR-028, IR-030, GEMINI-003, GEMINI-007
+- OpenCode no longer injects adapter-generated session permission rules when `PermissionPolicy` is absent, preserving the user's native OpenCode defaults while continuing to apply independent tool-list restrictions — IR-032, OPENCODE-007, OPENCODE-013
+- Permission-managed Codex runs now supply active-project trust through a per-run override instead of persisting throwaway `projects.<path>.trust_level` entries in repository or user configuration — IR-032, CODEX-010
 
 ## [0.13.0] - 2026-06-29
 
@@ -272,7 +277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/sublang-ai/cligent/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sublang-ai/cligent/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sublang-ai/cligent/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/sublang-ai/cligent/compare/v0.10.0...v0.11.0
