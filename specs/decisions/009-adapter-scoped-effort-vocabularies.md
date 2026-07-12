@@ -22,8 +22,11 @@ Provider-native values retain their provider terminology and are accepted only b
 
 Built-in adapters bind adapter-specific effort vocabularies through the common adapter contract.
 Custom adapters may bind arbitrary string-literal vocabularies with any names or number of levels.
-Built-in readonly metadata exposes supported values for user interfaces and preflight validation, and runtime validation agrees with that metadata.
+Built-in readonly metadata is the single source for public built-in effort aliases, user-interface discovery, and runtime validation.
 Model, account, and installed-runtime availability remain provider concerns, so an adapter-valid value may still receive an observable upstream rejection.
+
+For the first release using canonical `effort`, tmux-play accepts a direct legacy `reasoningEffort` key and makes a best-effort update of only that parsed key token after complete validation.
+When the source changed or the update cannot be written, the loader continues with the legacy value in memory and emits an actionable manual-rename warning; a later breaking release may remove the compatibility path.
 
 The alternatives rejected are a global superset accepted by every adapter, normalized ordinal aliases for provider-native orchestration modes, and unchecked opaque strings for built-in adapters.
 
@@ -39,6 +42,7 @@ Dynamic unregister and re-registration prevent compile-time agent-name-to-vocabu
 Users can select the terms they already know from each coding agent without Cligent inventing equivalences.
 Statically adapter-bound TypeScript APIs and tmux-play configuration must preserve the correlation between the selected adapter and its effort vocabulary.
 Configuration interfaces can discover built-in values without duplicating validation tables.
-The `reasoningEffort` to `effort` rename is a breaking public API and configuration change that requires automatic legacy-config migration where Cligent owns the configuration loader.
+The `reasoningEffort` to `effort` rename is a breaking programmatic API change, while tmux-play YAML receives one best-effort compatibility release.
+Legacy-key compatibility adds no lossless formatting, symlink, permission-bit, ownership, durability, or race-proof replacement guarantee to the configuration loader.
 Cligent shall leave independently configured permission controls unchanged solely because a provider-native orchestration value is selected.
 Provider-native orchestration modes may increase token use, latency, cost, concurrency, and tool activity.

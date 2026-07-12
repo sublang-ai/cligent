@@ -499,27 +499,22 @@ Given a YAML config whose `permissions.mode` is outside the closed set, when the
 ### TTMUX-057
 Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [ENG-020](../user/engine.md#eng-020), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
 
-Where YAML selects every portable and provider-native `captain.effort` or `players[N].effort` value across the four adapters, when the launcher/session seam constructs and invokes the corresponding `Cligent`, the value shall reach the adapter-specific surface from the cited items without cross-aliasing: Claude SDK effort plus ultracode setting, Codex thread or constructor config transport, Gemini concrete-model alias, or OpenCode prompt variant. The Gemini cases shall also prove that an alias, unmatched model, or unset model creates no effort alias and preserves ordinary model forwarding.
+Where YAML selects representative values covering each distinct adapter transport class, when the launcher/session seam constructs and invokes the corresponding `Cligent`, the value shall reach the adapter-specific surface from the cited items without cross-aliasing: Claude ordinary effort and ultracode, Codex thread and constructor effort, Gemini 3 and Gemini 2.5 concrete-model aliases, and known-provider OpenCode prompt variants. Representative unmatched Gemini and OpenCode models shall create no effort override while preserving ordinary model forwarding.
 
 ### TTMUX-058
 Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [TMUX-008](../user/tmux-play.md#tmux-008), [TMUX-025](../user/tmux-play.md#tmux-025)
 
-Where a YAML config has `captain.effort` or `players[0].effort` unsupported by that object's adapter, when the launcher CLI is invoked, the process shall exit nonzero and write one error line naming the offending path, adapter, and allowed values. The runtime shall not start and no `runtime_error` record shall be observable because validation is a launcher-startup failure outside [TMUX-025](../user/tmux-play.md#tmux-025).
+Where one YAML config has an unsupported `captain.effort` and another has an unsupported `players[0].effort`, when the launcher CLI is invoked, each process shall exit nonzero and write one error line naming the offending path, adapter, and allowed values. The runtime shall not start and no `runtime_error` record shall be observable because validation is a launcher-startup failure outside [TMUX-025](../user/tmux-play.md#tmux-025).
 
 ### TTMUX-087
 Verifies: [TMUX-086](../user/tmux-play.md#tmux-086)
 
-Where a home, cwd, or explicit YAML config contains legacy `reasoningEffort` keys without same-object `effort` keys, when the complete migrated config validates, the loader shall rewrite those keys to `effort`, preserve comments, key order, scalar style, the config-path symlink, and owner/group/other permission bits, and leave no migration temporary file.
+Where a home, cwd, or explicit YAML config contains direct legacy `reasoningEffort` keys without same-object `effort` keys, when the complete config validates and the source remains unchanged, the loader shall expose the values as in-memory `effort`, replace only the parsed key tokens on disk, and invoke its optional callback once with the config, accepted field paths, and successful outcome. Where a deterministic seam changes the source or makes the update fail, the loader shall retain the same in-memory values, preserve that newer or unwritable source, and report a skipped outcome; the launcher shall then emit one actionable stderr warning naming the file and fields and instructing the user to rename them manually.
 
 ### TTMUX-088
 Verifies: [TMUX-087](../user/tmux-play.md#tmux-087)
 
-Where one captain or player contains both effort key names, or a legacy value is invalid for its adapter, when the config is loaded, the loader shall reject before writing and preserve the original source byte-for-byte.
-
-### TTMUX-089
-Verifies: [TMUX-088](../user/tmux-play.md#tmux-088)
-
-Where the source file or its symlink target changes after the loader reads it but before migration commits and the final checks observe that change, the loader shall reject with a retry message, preserve the observed newer source byte-for-byte, and leave no migration temporary file.
+Where one captain or player contains both effort key names, or a legacy value is invalid for its adapter, when the config is loaded, the loader shall reject without invoking the deprecation callback or modifying the source. Text named `reasoningEffort` outside a direct captain/player key shall remain ordinary content and shall not be rewritten or trigger the callback.
 
 ### TTMUX-090
 Verifies: [TMUX-029](../user/tmux-play.md#tmux-029), [TMUX-056](../user/tmux-play.md#tmux-056)

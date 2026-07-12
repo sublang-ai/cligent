@@ -100,17 +100,15 @@ A missing `effort` field shall be treated as no override; the adapter retains it
 
 ### TMUX-086
 
-Where any loaded YAML source contains `captain.reasoningEffort` or `players[N].reasoningEffort` without the canonical key in the same object, the loader shall rename it to `effort` only after the complete migrated configuration validates.
-The replacement shall preserve YAML comments, key order, scalar style, the config-path symlink while updating its resolved target, and the target's owner/group/other permission bits; it shall leave no migration temporary file.
+Where any loaded YAML source contains direct `captain.reasoningEffort` or `players[N].reasoningEffort` keys without canonical `effort` in the same object, the loader shall validate and use each legacy value as that object's in-memory `effort` for the first release carrying the canonical key.
+After the complete configuration validates, the loader shall locate only those parsed key tokens in the source text, replace them with `effort`, re-read the source, and make a best-effort same-directory atomic update only when the re-read bytes still match.
+The loader shall report the config path, accepted field paths, and whether the update succeeded through an optional deprecation callback.
+Where the source changed or the update fails, the loader shall continue with the validated in-memory values and leave an actionable manual rename to the caller; comments, instructions, and opaque `captain.options.reasoningEffort` values are outside this compatibility path.
 
 ### TMUX-087
 
-Where one captain or player object contains both `effort` and deprecated `reasoningEffort`, or where the migrated value is invalid for that object's adapter, the loader shall reject the configuration before writing and shall preserve the source byte-for-byte.
-
-### TMUX-088
-
-Where the source contents, observed file revision, or config-path symlink target changes after loading but before replacement and the change is observed by the loader's final checks, the loader shall reject migration with a retry error, preserve the observed newer source, and leave no migration temporary file.
-After those optimistic checks, the loader shall replace the resolved target with a same-directory atomic rename. These outcomes cover changes observed before rename; unrelated editor writes in the final check-to-rename interval are outside the guarantee.
+Where one captain or player object contains both `effort` and deprecated `reasoningEffort`, or where a legacy value is invalid for that object's adapter, the loader shall reject with an error naming the offending path and shall not invoke the deprecation callback or attempt a write.
+The compatibility update shall promise no preservation beyond changing only the identified key tokens in the generated contents; independent home safe-default and layout migrations remain governed by [TMUX-010](#tmux-010).
 
 ### TMUX-008
 
@@ -129,7 +127,7 @@ When the launcher loads an existing home config through fallback discovery, it s
 The safe-default migration shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `effort` defaults to old home configs.
 Where the existing home YAML carries a legacy `layout.columnWeights`, the migration shall rewrite it in place to its canonical shape-specific field — a two-element `layout.columnWeights` to `layout.singlePlayerColumnWeights`, a three-element `layout.columnWeights` to `layout.multiPlayerColumnWeights` — and write one final YAML form that contains the canonical field and not `layout.columnWeights`, so the file never holds both (a state [TMUX-064](#tmux-064) rejects).
 When the home YAML already contains both `layout.columnWeights` and the matching canonical field, the migration shall not attempt to resolve the conflict; the config is rejected by [TMUX-064](#tmux-064).
-The safe-default and `layout.columnWeights` migrations shall not rewrite `--config` files or cwd project configs; those remain valid through the [TMUX-064](#tmux-064) alias. Effort-key migration for every loaded YAML source is governed separately by [TMUX-086](#tmux-086).
+The safe-default and `layout.columnWeights` migrations shall not rewrite `--config` files or cwd project configs; those remain valid through the [TMUX-064](#tmux-064) alias. Legacy effort-key compatibility for every loaded YAML source is governed separately by [TMUX-086](#tmux-086).
 
 ### TMUX-011
 

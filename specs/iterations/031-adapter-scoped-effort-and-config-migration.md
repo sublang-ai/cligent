@@ -13,6 +13,9 @@ Complete
 
 The adapter-scoped effort surface and lossless legacy config migration are
 implemented, documented, and verified.
+Before release, [IR-033](033-effort-surface-simplification.md) superseded the
+lossless disk-migration boundary with best-effort compatibility and made the
+runtime support table authoritative for built-in aliases.
 
 ## Deliverables
 

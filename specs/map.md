@@ -78,6 +78,7 @@ meta.md     The spec of specs
 | IR-030 | [030-gemini-cli-050-compatibility.md](iterations/030-gemini-cli-050-compatibility.md) | Align the Gemini adapter with Gemini CLI 0.50 headless arguments, Policy Engine permissions, and configuration precedence |
 | IR-031 | [031-adapter-scoped-effort-and-config-migration.md](iterations/031-adapter-scoped-effort-and-config-migration.md) | Implement DR-009 adapter-scoped effort, metadata, mappings, and legacy tmux-play YAML migration |
 | IR-032 | [032-agent-runtime-and-package-readiness.md](iterations/032-agent-runtime-and-package-readiness.md) | Refresh all four coding-agent runtimes and harden packaging and live acceptance |
+| IR-033 | [033-effort-surface-simplification.md](iterations/033-effort-surface-simplification.md) | Replace lossless migration with best-effort compatibility, derive effort types from runtime metadata, and consolidate redundant tests |
 
 ## Packages
 
