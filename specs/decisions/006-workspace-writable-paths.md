@@ -128,6 +128,10 @@ If the resolved local-access profile is `:read-only` with non-empty `writablePat
 
 The Codex adapter shall not rely on SDK `config` passthrough for the filesystem profile definition until an acceptance test proves that the chosen `--config` key shape survives both the SDK serializer and the Codex CLI parser.
 The accepted route is a split delivery: simple scalar settings such as `default_permissions` and `approvals_reviewer` use SDK `config` passthrough, while the generated filesystem profile body is injected as a raw CLI `--config` inline table through a per-run Codex path wrapper.
+For permission-managed mappings that can trigger Codex's project auto-trust path, the same wrapper resolves the caller-selected workspace to Codex's active project root, including native Windows device-prefix simplification and the main repository root referenced by a linked worktree's `.git` file, and supplies that root through a top-level `projects={<path>={trust_level="trusted"}}` inline-table override, preventing Codex from persisting a machine-level `projects.<path>.trust_level` entry while preserving the programmatic caller's existing `skipGitRepoCheck` semantics [[13]][[14]][[15]].
+An omitted or empty caller `cwd`, which the SDK does not forward as `--cd`, shall not receive the trust override because Codex's project auto-trust path is not active.
+Read-only mappings do not trigger Codex auto-trust and shall not receive this override because doing so would unnecessarily enable trust-gated project configuration and executable policy [[14]].
+The project trust override shall not use a quoted path inside a dotted key because Codex 0.144.1 splits override keys on every dot without parsing quoted segments; the whole-table inline value preserves the path as the intended map key [[12]].
 This route preserves the user's normal Codex home, authentication, and configuration layers, and mutates neither machine-level nor repository Codex config.
 If that raw CLI route stops representing the profile definition, the adapter shall use a generated Codex profile file or another explicit Codex CLI route that loads the profile without mutating the user's machine-level Codex config.
 The adapter may still use SDK `config` passthrough for simple scalar settings such as `approval_policy`, `approvals_reviewer`, and `default_permissions`.
@@ -226,3 +230,7 @@ Ambient mappings remain required for portability once the field ships, but they 
 [9]: https://developers.openai.com/codex/agent-approvals-security "Codex: Agent approvals and security"
 [10]: https://developers.openai.com/codex/config-basic "Codex: Config basics"
 [11]: https://code.claude.com/docs/en/sandboxing "Claude Code sandboxing"
+[12]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/utils/cli/src/config_override.rs "Codex 0.144.1 CLI config override parser"
+[13]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/git-utils/src/info.rs#L810-L843 "Codex 0.144.1 project trust-root resolver"
+[14]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L1116-L1173 "Codex 0.144.1 project auto-trust path"
+[15]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/utils/absolute-path/src/lib.rs#L142-L179 "Codex 0.144.1 Windows device-path normalization"

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { mapWritablePathsPermission } from '../permissions.js';
@@ -17,6 +19,10 @@ import type {
   PermissionPolicy,
   WritablePathsPermissionMapping,
 } from '../types.js';
+import {
+  normalizeCodexWindowsDevicePath,
+  trimCodexRustWhitespace,
+} from './codex-path.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
@@ -268,6 +274,65 @@ export function codexWorkspaceExtraWritesProfileConfigOverride(
   );
 }
 
+function codexProjectTrustConfigOverride(cwd: string): string {
+  const projectRoot = codexProjectRoot(cwd);
+  // Codex 0.144.1's CLI override parser splits keys on every dot without
+  // parsing quoted segments. A dotted key such as projects."/path" therefore
+  // retains the quotes in the map key and does not match the active project.
+  // Supplying the whole projects table keeps the path as a TOML string key.
+  return (
+    `projects={` +
+    `${codexTomlString(projectRoot)}={` +
+    `trust_level=${codexTomlString('trusted')}}}`
+  );
+}
+
+function codexProjectRoot(cwd: string): string {
+  // Codex keeps the lexical absolute cwd on non-Windows platforms. Preserve
+  // aliases here so the override matches its exact-cwd/repository-root lookup.
+  const workspace = resolve(
+    process.platform === 'win32' ? normalizeCodexWindowsDevicePath(cwd) : cwd,
+  );
+  let current = workspace;
+
+  while (true) {
+    const dotGit = join(current, '.git');
+    if (existsSync(dotGit)) {
+      try {
+        if (statSync(dotGit).isDirectory()) return current;
+
+        const gitDirValue = trimCodexRustWhitespace(
+          new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+            readFileSync(dotGit),
+          ),
+        );
+        const gitDir = gitDirValue.startsWith('gitdir:')
+          ? trimCodexRustWhitespace(gitDirValue.slice('gitdir:'.length))
+          : '';
+        if (!gitDir) return workspace;
+
+        const worktreesDir = dirname(
+          resolve(
+            current,
+            process.platform === 'win32'
+              ? normalizeCodexWindowsDevicePath(gitDir)
+              : gitDir,
+          ),
+        );
+        if (basename(worktreesDir) !== 'worktrees') return workspace;
+
+        const commonGitDir = dirname(worktreesDir);
+        return dirname(commonGitDir);
+      } catch {
+        return workspace;
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) return workspace;
+    current = parent;
+  }
+}
+
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
@@ -425,6 +490,15 @@ export function mapAgentOptionsToCodexOptions(
           ...(codexConfig ? { config: codexConfig } : {}),
         }
       : undefined;
+  const projectTrustOverride =
+    options?.permissions !== undefined &&
+    options.cwd &&
+    codexDefaultPermissions(options.permissions) !== ':read-only'
+      ? codexProjectTrustConfigOverride(options.cwd)
+      : undefined;
+  const codexCliConfigOverrides = projectTrustOverride
+    ? [projectTrustOverride, ...(permissions.codexCliConfigOverrides ?? [])]
+    : permissions.codexCliConfigOverrides;
 
   const threadOptions: CodexThreadOptions = {
     workingDirectory: options?.cwd,
@@ -447,9 +521,7 @@ export function mapAgentOptionsToCodexOptions(
     ...(permissions.codexCliExecArgs
       ? { codexCliExecArgs: permissions.codexCliExecArgs }
       : {}),
-    ...(permissions.codexCliConfigOverrides
-      ? { codexCliConfigOverrides: permissions.codexCliConfigOverrides }
-      : {}),
+    ...(codexCliConfigOverrides ? { codexCliConfigOverrides } : {}),
     threadOptions,
     runOptions: {
       signal,

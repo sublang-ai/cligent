@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { existsSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -10,6 +20,7 @@ import {
   mapEffortToCodexEffort,
   mapPermissionsToCodexOptions,
 } from '../adapters/codex.js';
+import { normalizeCodexWindowsDevicePath } from '../adapters/codex-path.js';
 import type {
   AgentEvent,
   AgentOptions,
@@ -609,6 +620,8 @@ describe('CodexAdapter', () => {
 
     const agentMapped = mapAgentOptionsToCodexOptions({});
     expect(agentMapped.codexOptions).toBeUndefined();
+    expect(agentMapped.codexCliExecArgs).toBeUndefined();
+    expect(agentMapped.codexCliConfigOverrides).toBeUndefined();
     expect(agentMapped.threadOptions).not.toHaveProperty('approvalPolicy');
     expect(agentMapped.threadOptions).not.toHaveProperty('sandboxMode');
     expect(agentMapped.threadOptions).not.toHaveProperty('networkAccessEnabled');
@@ -697,6 +710,7 @@ describe('CodexAdapter', () => {
 
     await collect(
       adapter.run('implement feature', {
+        cwd: process.cwd(),
         permissions: { mode: 'auto', writablePaths: ['.git'] },
       }),
     );
@@ -707,6 +721,9 @@ describe('CodexAdapter', () => {
     });
     expect(wrapperPath).toBeDefined();
     expect(wrapperScript).toContain('--ignore-user-config');
+    expect(wrapperScript).toContain('projects={');
+    expect(wrapperScript).not.toContain('projects.\\"');
+    expect(wrapperScript).toContain('trust_level=\\"trusted\\"');
     expect(wrapperScript).toContain(
       'permissions.cligent-workspace-extra-writes={extends=\\"' +
         ':workspace\\", filesystem={\\":workspace_roots\\"={\\".git\\"=\\"write\\"}}}',
@@ -1144,6 +1161,194 @@ describe('CodexAdapter', () => {
     const mappedWithCwd = mapAgentOptionsToCodexOptions({ cwd: '/tmp/elsewhere' });
     expect(mappedWithCwd.threadOptions.workingDirectory).toBe('/tmp/elsewhere');
     expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
+  });
+
+  it('supplies managed runs with non-persisted project trust', () => {
+    const projectRoot = process.cwd();
+    const cwd = join(projectRoot, 'src', 'adapters');
+    const unmanaged = mapAgentOptionsToCodexOptions({ cwd });
+    const managed = mapAgentOptionsToCodexOptions({
+      cwd,
+      permissions: { mode: 'auto' },
+    });
+    const emptyManaged = mapAgentOptionsToCodexOptions({
+      cwd,
+      permissions: {},
+    });
+    const readOnlyManaged = mapAgentOptionsToCodexOptions({
+      cwd,
+      permissions: { fileWrite: 'deny' },
+    });
+    const noCwdManaged = mapAgentOptionsToCodexOptions({ permissions: {} });
+    const emptyCwdManaged = mapAgentOptionsToCodexOptions({
+      cwd: '',
+      permissions: {},
+    });
+
+    expect(unmanaged.codexCliConfigOverrides).toBeUndefined();
+    expect(managed.codexCliExecArgs).toEqual(['--ignore-user-config']);
+    expect(managed.codexCliConfigOverrides).toEqual([
+      `projects={${JSON.stringify(projectRoot)}={trust_level="trusted"}}`,
+    ]);
+    expect(emptyManaged.codexCliExecArgs).toEqual(['--ignore-user-config']);
+    expect(emptyManaged.codexCliConfigOverrides).toEqual(
+      managed.codexCliConfigOverrides,
+    );
+    expect(readOnlyManaged.codexCliExecArgs).toEqual(['--ignore-user-config']);
+    expect(readOnlyManaged.codexCliConfigOverrides).toBeUndefined();
+    expect(noCwdManaged.codexCliConfigOverrides).toBeUndefined();
+    expect(emptyCwdManaged.codexCliConfigOverrides).toBeUndefined();
+
+    const managedWritable = mapAgentOptionsToCodexOptions({
+      cwd,
+      permissions: { mode: 'auto', writablePaths: ['.git'] },
+    });
+    expect(managedWritable.codexCliConfigOverrides).toEqual([
+      `projects={${JSON.stringify(projectRoot)}={trust_level="trusted"}}`,
+      'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write"}}}',
+    ]);
+  });
+
+  it('matches Codex Windows device-path simplification', () => {
+    expect(
+      normalizeCodexWindowsDevicePath(
+        String.raw`\\?\D:\c\x\worktrees\2508\swift-base`,
+      ),
+    ).toBe(String.raw`D:\c\x\worktrees\2508\swift-base`);
+    expect(
+      normalizeCodexWindowsDevicePath(
+        String.raw`\\.\D:\c\x\worktrees\2508\swift-base`,
+      ),
+    ).toBe(String.raw`D:\c\x\worktrees\2508\swift-base`);
+    expect(
+      normalizeCodexWindowsDevicePath(
+        String.raw`\\?\UNC\server\share\workspace`,
+      ),
+    ).toBe(String.raw`\\server\share\workspace`);
+    expect(
+      normalizeCodexWindowsDevicePath(
+        String.raw`\\.\UNC\server\share\workspace`,
+      ),
+    ).toBe(String.raw`\\server\share\workspace`);
+    expect(
+      normalizeCodexWindowsDevicePath(String.raw`\\?\GLOBALROOT\Device`),
+    ).toBe(String.raw`\\?\GLOBALROOT\Device`);
+  });
+
+  it('matches Codex project roots through symlinks and non-git fallbacks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-codex-trust-'));
+    const repository = join(root, 'repository.with.dots');
+    const nested = join(repository, 'nested');
+    const repositoryLink = join(root, 'repository-link');
+    const looseWorkspace = join(root, 'loose-workspace');
+    mkdirSync(join(repository, '.git'), { recursive: true });
+    mkdirSync(nested);
+    mkdirSync(looseWorkspace);
+    symlinkSync(
+      repository,
+      repositoryLink,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+
+    try {
+      const linked = mapAgentOptionsToCodexOptions({
+        cwd: join(repositoryLink, 'nested'),
+        permissions: {},
+      });
+      const loose = mapAgentOptionsToCodexOptions({
+        cwd: looseWorkspace,
+        permissions: {},
+      });
+
+      expect(linked.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(repositoryLink)}={trust_level="trusted"}}`,
+      ]);
+      expect(loose.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(looseWorkspace)}={trust_level="trusted"}}`,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('matches Codex trust roots for linked worktrees and malformed git files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-codex-worktree-trust-'));
+    const repository = join(root, 'repository');
+    const worktree = join(root, 'worktree');
+    const worktreeNested = join(worktree, 'nested');
+    const malformedWorktree = join(root, 'malformed-worktree');
+    const malformedNested = join(malformedWorktree, 'nested');
+    const bomWorktree = join(root, 'bom-worktree');
+    const bomNested = join(bomWorktree, 'nested');
+    const nelWorktree = join(root, 'nel-worktree');
+    const nelNested = join(nelWorktree, 'nested');
+    const invalidUtf8Worktree = join(root, 'invalid-utf8-worktree');
+    const invalidUtf8Nested = join(invalidUtf8Worktree, 'nested');
+    const worktreeGitDir = join(repository, '.git', 'worktrees', 'feature');
+    mkdirSync(worktreeGitDir, { recursive: true });
+    mkdirSync(worktreeNested, { recursive: true });
+    mkdirSync(malformedNested, { recursive: true });
+    mkdirSync(bomNested, { recursive: true });
+    mkdirSync(nelNested, { recursive: true });
+    mkdirSync(invalidUtf8Nested, { recursive: true });
+    writeFileSync(join(worktree, '.git'), `gitdir: ${worktreeGitDir}\n`);
+    writeFileSync(join(malformedWorktree, '.git'), 'not-a-gitdir\n');
+    writeFileSync(
+      join(bomWorktree, '.git'),
+      `\uFEFFgitdir: ${worktreeGitDir}\n`,
+    );
+    writeFileSync(
+      join(nelWorktree, '.git'),
+      `\u0085gitdir: ${worktreeGitDir}\u0085`,
+    );
+    writeFileSync(
+      join(invalidUtf8Worktree, '.git'),
+      Buffer.concat([
+        Buffer.from([0xff]),
+        Buffer.from(`gitdir: ${worktreeGitDir}\n`),
+      ]),
+    );
+
+    try {
+      const linked = mapAgentOptionsToCodexOptions({
+        cwd: worktreeNested,
+        permissions: {},
+      });
+      const malformed = mapAgentOptionsToCodexOptions({
+        cwd: malformedNested,
+        permissions: {},
+      });
+      const bom = mapAgentOptionsToCodexOptions({
+        cwd: bomNested,
+        permissions: {},
+      });
+      const nel = mapAgentOptionsToCodexOptions({
+        cwd: nelNested,
+        permissions: {},
+      });
+      const invalidUtf8 = mapAgentOptionsToCodexOptions({
+        cwd: invalidUtf8Nested,
+        permissions: {},
+      });
+
+      expect(linked.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(repository)}={trust_level="trusted"}}`,
+      ]);
+      expect(malformed.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(malformedNested)}={trust_level="trusted"}}`,
+      ]);
+      expect(bom.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(bomNested)}={trust_level="trusted"}}`,
+      ]);
+      expect(nel.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(repository)}={trust_level="trusted"}}`,
+      ]);
+      expect(invalidUtf8.codexCliConfigOverrides).toEqual([
+        `projects={${JSON.stringify(invalidUtf8Nested)}={trust_level="trusted"}}`,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it.each([

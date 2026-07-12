@@ -93,7 +93,7 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
-| dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery without repository/user config mutation |
+| dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery and permission-managed project trust without repository/user config mutation |
 
 ### ENG
 
