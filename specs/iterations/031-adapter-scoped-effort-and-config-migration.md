@@ -9,9 +9,10 @@ Implement [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md): rena
 
 ## Status
 
-In Progress
+Complete
 
-The canonical effort and migration contract is specified; implementation tasks remain open.
+The adapter-scoped effort surface and lossless legacy config migration are
+implemented, documented, and verified.
 
 ## Deliverables
 
@@ -19,8 +20,8 @@ The canonical effort and migration contract is specified; implementation tasks r
 - [x] Public vocabularies, deeply immutable built-in metadata, helpers, and runtime validation agree on every built-in adapter value.
 - [x] Direct `Cligent` and heterogeneous parallel TypeScript surfaces preserve built-in and custom vocabularies; the legacy registry forwards exact custom strings unchanged.
 - [x] Claude Code supports `ultracode`; Codex supports `ultra`; Gemini and OpenCode retain their portable mappings.
-- [ ] tmux-play uses adapter-discriminated `effort` types and migrates legacy YAML only after complete validation.
-- [ ] Guides document discovery, migration, provider-native values, no-op or lossy mappings, and availability and resource caveats.
+- [x] tmux-play uses adapter-discriminated `effort` types and migrates legacy YAML only after complete validation.
+- [x] Guides document discovery, migration, provider-native values, no-op or lossy mappings, and availability and resource caveats.
 
 ## Tasks
 
@@ -44,7 +45,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Make captain, player, and runtime types adapter-discriminated; validate and forward canonical `effort`; retain in-memory legacy-key compatibility; and add type, loader, and launcher-seam tests.
 9. [x] **Migrate legacy tmux-play YAML.**
    Rewrite legacy keys for every loaded YAML only after full validation; reject conflicts without writing; preserve comments, key order, scalar style, config-path symlinks, and owner/group/other permission bits; use optimistic checks followed by same-directory atomic replacement; and add migration tests.
-10. [ ] **Document and close the iteration.**
+10. [x] **Document and close the iteration.**
    Update guides and the Unreleased changelog, run the full verification boundary, and mark only completed tasks and deliverables.
 
 ## Acceptance criteria

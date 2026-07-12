@@ -12,8 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adapter-scoped effort vocabularies and discovery metadata: the public API exports `PortableEffort`, per-adapter effort aliases, `EFFORT_SUPPORT`, and lookup/validation helpers; Claude Code accepts `ultracode` through native `xhigh` plus its orchestration setting, Codex accepts native `ultra` through `model_reasoning_effort`, and Gemini/OpenCode retain the portable `minimal | low | medium | high | xhigh | max` set — DR-009, IR-031, ENG-020, ENG-024
 - Optional tmux-play `Captain.prepareDispose()` lifecycle hook for lossless final session telemetry. It runs exactly once after the active turn unwinds while `CaptainSession` emissions remain live, before the session signal aborts and before legacy post-close `dispose()`. Rejected pre-close hooks still complete abort, drain, final disposal, and observer detachment; independent cleanup failures are preserved in an `AggregateError`, and partially initialized Captains receive the same two-stage cleanup — DR-008, IR-029, TMUX-085
 - Per-call player session selection for tmux-play Captains: `context.callPlayer(playerId, prompt, { resume })` accepts an opaque token to override the player's stored automatic continuation, or `false` to force a fresh backend session; omitting the option keeps the existing auto-resume behavior — IR-028, TMUX-016, TMUX-041
+
+### Changed
+
+- **Breaking:** renamed the public `reasoningEffort` option and tmux-play YAML field to `effort`, with adapter-correlated TypeScript declarations and runtime validation that reject provider-native values on the wrong adapter. tmux-play automatically renames legacy keys in home, cwd, and explicit YAML only after the complete migrated document validates; successful rewrites preserve comments, key order, scalar style, config symlinks, and permission bits, while conflicts, invalid values, or observed concurrent edits leave the source untouched — DR-009, IR-031, TMUX-056, TMUX-086
 
 ### Fixed
 

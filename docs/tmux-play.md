@@ -44,7 +44,7 @@ When an older home config is loaded through fallback discovery, `tmux-play`
 adds only missing safe defaults to that home YAML: `theme: auto`, resolved
 layout defaults, `captain.options: {}`, and the notification defaults shown
 below. It preserves existing values and does not add model, instruction,
-permissions, or reasoning-effort defaults to old files.
+permissions, or an `effort` default to old files.
 
 Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 `tmux-play.config.json` are ignored; when one is present without a cwd YAML
@@ -59,6 +59,7 @@ captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
   model: claude-opus-4-8
+  effort: xhigh
   instruction: Coordinate the players and answer the Boss.
   permissions:
     mode: auto
@@ -66,10 +67,12 @@ captain:
 players:
   - id: claude
     adapter: claude
+    effort: xhigh
     permissions:
       mode: auto
   - id: codex
     adapter: codex
+    effort: xhigh
     permissions:
       mode: auto
 ```
@@ -114,6 +117,102 @@ default; cligent itself ships no project-wide permission posture.
 - Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
+
+### Effort
+
+The Captain and each player accept an optional `effort` value. The selected
+`adapter` determines the accepted vocabulary; provider-native terms are kept
+intact instead of being treated as cross-provider aliases.
+
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  effort: ultracode
+  options: {}
+players:
+  - id: coder
+    adapter: codex
+    effort: ultra
+```
+
+| Adapter    | Accepted values                                                 | Provider transport and qualifications                                                                                                                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultracode` | Portable values use the Claude SDK `effort` field and explicitly set `settings.ultracode: false`. `minimal` maps lossily to `low`. `ultracode` maps to SDK `effort: xhigh` plus `settings.ultracode: true`; it is an exact user-facing Claude term, not a literal single-field pass-through. |
+| `codex`    | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`     | `minimal` through `xhigh` use SDK thread `modelReasoningEffort`. `max` and `ultra` pass through unchanged as constructor `config.model_reasoning_effort`, leaving the thread field unset.                                                                                                    |
+| `gemini`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | A concrete `gemini-3*` model gets a temporary settings alias with `thinkingLevel`; a concrete `gemini-2.5*` model gets `thinkingBudget`. An unset model, a CLI alias, or an unmatched model gets no effort override.                                                                         |
+| `opencode` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | The value maps to the v2 prompt body's `variant`, selected from the `provider/model` prefix. An unknown provider or an omitted or malformed model gets no effort override.                                                                                                                   |
+
+Gemini's model-specific mappings are:
+
+| `effort`  | Gemini 3 `thinkingLevel` | Gemini 2.5 `thinkingBudget`                       |
+| --------- | ------------------------ | ------------------------------------------------- |
+| `minimal` | `MINIMAL`                | `1024`                                            |
+| `low`     | `LOW`                    | `4096`                                            |
+| `medium`  | `MEDIUM`                 | `8192`                                            |
+| `high`    | `HIGH`                   | `16384`                                           |
+| `xhigh`   | `HIGH`                   | `24576`                                           |
+| `max`     | `HIGH`                   | `32768` for Pro; `24576` for Flash and Flash Lite |
+
+Gemini CLI aliases such as `auto`, `pro`, `flash`, and `flash-lite` are not
+resolved by cligent because their target can change between CLI versions.
+They receive no effort override, while ordinary `model` forwarding remains
+unchanged.
+
+OpenCode's provider-specific prompt variants are:
+
+| `effort`  | Anthropic | OpenAI    | Google |
+| --------- | --------- | --------- | ------ |
+| `minimal` | `high`    | `minimal` | `low`  |
+| `low`     | `high`    | `low`     | `low`  |
+| `medium`  | `high`    | `medium`  | `low`  |
+| `high`    | `high`    | `high`    | `high` |
+| `xhigh`   | `max`     | `xhigh`   | `high` |
+| `max`     | `max`     | `xhigh`   | `high` |
+
+Omitting `effort` sets no provider effort, orchestration, alias, or variant
+override and leaves the applicable adapter, model, account, runtime, and user
+configuration defaults in control. A value accepted here means cligent knows
+how to transport or map it; it does not guarantee that the selected model,
+account, or installed agent version makes it available. Backend rejection is
+reported through the adapter's normal error path without silently choosing a
+different value.
+
+`ultracode` and `ultra` may increase token use, latency, cost, concurrency,
+and tool activity because they enable provider-native delegation. Selecting
+either one does not change the independently configured `permissions` block.
+
+The loader validates `captain.effort` and every `players[N].effort` before the
+runtime starts. An unsupported value fails startup with an error naming the
+offending path, adapter, and that adapter's allowed values; for example,
+Claude rejects `ultra`, while Codex rejects `ultracode`, and Gemini and
+OpenCode reject both.
+
+### Legacy `reasoningEffort` migration
+
+For every discovered home config, cwd config, or explicit `--config` YAML,
+the loader automatically renames direct `captain.reasoningEffort` and
+`players[N].reasoningEffort` keys to `effort`. It performs the write only
+after the complete migrated document validates. Other occurrences, including
+comments, instructions, and opaque `captain.options`, are not renamed.
+
+If one Captain or player contains both names (even with equal values), if a
+legacy value is invalid for that object's adapter, or if any other part of the
+document is invalid, loading fails without writing and preserves the source
+byte-for-byte.
+
+A successful migration preserves YAML comments, key order, scalar style, the
+config-path symlink (while updating its resolved target), and the target's
+owner/group/other permission bits. The validated result is written through a
+same-directory atomic replacement, and no migration temporary file is left
+behind.
+
+If the source contents, observed file revision, or config-path symlink target
+changes before the final replacement checks, migration stops with a retry
+error instead of overwriting the newer source, and cleans its temporary file.
+Retry the command after the concurrent writer finishes. This is an optimistic
+check; unrelated changes after the final check but before the atomic rename
+are outside its guarantee.
 
 ### Permissions
 

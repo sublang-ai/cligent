@@ -6,7 +6,7 @@
 ## Install
 
 ```bash
-npm install cligent
+npm install @sublang/cligent
 ```
 
 Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
@@ -21,8 +21,8 @@ npm install @opencode-ai/sdk                  # OpenCode
 ## Quick start
 
 ```ts
-import { Cligent } from 'cligent';
-import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 
 // Cligent — the primary API surface. Wraps an adapter with role identity,
 // session continuity, option merging, and protocol hardening.
@@ -64,8 +64,8 @@ for await (const event of agent.run('Fix the login bug')) {
 - **Protocol hardening** — guarantees exactly one `done` event per call, synthesizes error/done on adapter failures, handles abort racing
 
 ```ts
-import { Cligent } from 'cligent';
-import type { CligentOptions, RunOptions } from 'cligent';
+import { Cligent } from '@sublang/cligent';
+import type { CligentOptions, RunOptions } from '@sublang/cligent';
 
 // Constructor: Cligent(adapter, options?)
 // CligentOptions — instance-level defaults (no abortSignal, no resume).
@@ -97,7 +97,7 @@ Pass an adapter to the `Cligent` constructor (or to `runAgent` via a registry).
 ```ts
 // SDK adapter — wraps @anthropic-ai/claude-agent-sdk.
 // Normalises SDKMessage objects into the Unified Event Stream.
-import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 const agent = new Cligent(new ClaudeCodeAdapter());
 ```
 
@@ -105,7 +105,7 @@ const agent = new Cligent(new ClaudeCodeAdapter());
 
 ```ts
 // SDK adapter — wraps @openai/codex-sdk.
-import { CodexAdapter } from 'cligent/adapters/codex';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 const agent = new Cligent(new CodexAdapter());
 ```
 
@@ -114,7 +114,7 @@ const agent = new Cligent(new CodexAdapter());
 ```ts
 // Child-process adapter — spawns the gemini CLI and parses its NDJSON stream.
 // No SDK peer dependency required.
-import { GeminiAdapter } from 'cligent/adapters/gemini';
+import { GeminiAdapter } from '@sublang/cligent/adapters/gemini';
 const agent = new Cligent(new GeminiAdapter());
 ```
 
@@ -122,9 +122,95 @@ const agent = new Cligent(new GeminiAdapter());
 
 ```ts
 // SDK adapter — wraps @opencode-ai/sdk.
-import { OpenCodeAdapter } from 'cligent/adapters/opencode';
+import { OpenCodeAdapter } from '@sublang/cligent/adapters/opencode';
 const agent = new Cligent(new OpenCodeAdapter());
 ```
+
+## Effort
+
+Set `effort` in constructor defaults or in a `run()` override. The portable
+ladder, from least to greatest reasoning depth, is `minimal`, `low`, `medium`,
+`high`, `xhigh`, and `max`. Provider-native values remain adapter-scoped:
+Claude Code additionally accepts `ultracode`, while Codex additionally accepts
+`ultra`. Gemini and OpenCode accept only the portable ladder. The TypeScript
+API preserves this correlation, including heterogeneous parallel calls, so a
+Claude-specific value is not accepted for a Codex adapter and vice versa.
+
+```ts
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
+
+const claude = new Cligent(new ClaudeCodeAdapter(), {
+  effort: 'ultracode',
+});
+const codex = new Cligent(new CodexAdapter(), {
+  effort: 'ultra',
+});
+
+// The same adapter-specific vocabulary is available per call.
+for await (const event of claude.run('Review this change', {
+  effort: 'high',
+})) {
+  // ...
+}
+```
+
+The mappings have a few important qualifications:
+
+- **Claude Code:** `ultracode` maps to SDK `effort: 'xhigh'` plus
+  `settings.ultracode: true`. Every explicit portable value sets
+  `settings.ultracode: false`, so a run can downgrade inherited ultracode
+  configuration. `minimal` maps to Claude's lowest native tier, `low`.
+  Ultracode requires compatible workflow support and an xhigh-capable model,
+  account, and installed runtime. Its delegated workflow can increase token
+  use, latency, cost, concurrency, and tool activity.
+- **Codex:** `minimal` through `xhigh` use the SDK thread effort field. `max`
+  and `ultra` pass through unchanged as `model_reasoning_effort` constructor
+  configuration; `ultra` enables automatic delegation. Availability still
+  depends on the selected model, account, and installed runtime, and delegation
+  can increase token use, latency, cost, concurrency, and tool activity.
+- **Gemini:** Effort is applied only for concrete `gemini-3*` or `gemini-2.5*`
+  model IDs. Gemini 3 collapses `high`, `xhigh`, and `max` to `HIGH`; Gemini
+  2.5 Flash and Flash Lite collapse `xhigh` and `max` to the same maximum
+  budget. If the model is omitted, is a CLI alias such as `auto` or `flash`,
+  or does not match those model families, the adapter preserves ordinary model
+  forwarding and applies no effort override.
+- **OpenCode:** Variant mappings depend on the `provider/model` prefix and can
+  be lossy. Anthropic collapses `minimal` through `high` to `high` and
+  `xhigh`/`max` to `max`; OpenAI collapses `max` to `xhigh`; Google collapses
+  `minimal` through `medium` to `low` and `high` through `max` to `high`. An
+  unknown provider or malformed or omitted model receives no variant override.
+
+Omitting `effort` sets no effort, orchestration, generated alias, or variant
+override and leaves applicable adapter, model, account, and user-configuration
+defaults in control.
+
+Use the deeply frozen `EFFORT_SUPPORT` metadata to build selectors or inspect
+each built-in adapter's accepted `values`, provider-native
+`orchestrationValues`, `modelDependent` flag, and explanatory `notes`.
+`getEffortSupport`, `supportedEffortValues`, `isEffortSupported`, and
+`assertSupportedEffort` provide matching lookup and validation helpers (`claude`
+is accepted as an alias for `claude-code`):
+
+```ts
+import { EFFORT_SUPPORT, assertSupportedEffort } from '@sublang/cligent';
+
+console.log(EFFORT_SUPPORT.codex.values);
+const requestedEffort: unknown = process.env.CLIGENT_EFFORT;
+assertSupportedEffort('codex', requestedEffort, 'effort');
+```
+
+This metadata describes values that Cligent can route; it does not guarantee
+that a selected model, account, or installed provider runtime supports a value.
+If the backend rejects a metadata-accepted value, Cligent surfaces that upstream
+failure without substituting a different effort.
+
+The former public option name `reasoningEffort` has been replaced by `effort`.
+Programmatic callers must update the property name. Valid legacy tmux-play YAML
+is migrated automatically only after the complete document validates; a file
+with conflicting keys or an invalid legacy value is rejected without rewriting
+the source.
 
 ## Session continuity
 
@@ -156,10 +242,10 @@ agent.run('Use this', { resume: 'other-token' });  // explicit token
 Control what the agent is allowed to do with `PermissionPolicy`:
 
 ```ts
-import { Cligent } from 'cligent';
-import type { PermissionPolicy } from 'cligent';
-import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
-import { CodexAdapter } from 'cligent/adapters/codex';
+import { Cligent } from '@sublang/cligent';
+import type { PermissionPolicy } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 
 // PermissionPolicy controls approval posture, broad capabilities, and
 // additional workspace-relative writable paths.
@@ -223,9 +309,9 @@ for await (const event of codexAgent.run('Build release artifacts', {
 Run multiple `Cligent` instances side-by-side with `Cligent.parallel`:
 
 ```ts
-import { Cligent } from 'cligent';
-import { ClaudeCodeAdapter } from 'cligent/adapters/claude-code';
-import { CodexAdapter } from 'cligent/adapters/codex';
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 
 const coder = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
@@ -256,8 +342,8 @@ aborts all tasks; per-task signals abort only that task.
 For adapter-level parallel execution without `Cligent` wrapping, use `runParallel`:
 
 ```ts
-import { runParallel } from 'cligent';
-import type { ParallelTask } from 'cligent';
+import { runParallel } from '@sublang/cligent';
+import type { ParallelTask } from '@sublang/cligent';
 
 const tasks: ParallelTask[] = [
   { adapter: new ClaudeCodeAdapter(), prompt: 'Write unit tests', options: { model: 'claude-opus-4-6' } },
