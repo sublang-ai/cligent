@@ -9,10 +9,10 @@ Align the Gemini adapter with Gemini CLI 0.50 headless prompts, session argument
 
 ## Status
 
-In Progress
+Complete
 
-The CLI 0.50 contract, joined headless/session arguments, and Policy Engine
-permissions are implemented; isolated live authentication remains open.
+The CLI 0.50 contract, joined headless/session arguments, Policy Engine
+permissions, and isolated live authentication are implemented and verified.
 
 ## Deliverables
 
@@ -20,7 +20,7 @@ permissions are implemented; isolated live authentication remains open.
 - [x] Headless prompt, model, and resume arguments use forms that preserve arbitrary values.
 - [x] Per-run Policy Engine files replace deprecated tool-control surfaces without overriding administrator configuration.
 - [x] Focused tests cover arguments, policy precedence, temporary-file cleanup, and the installed CLI contract.
-- [ ] Live Gemini acceptance uses an isolated CLI home with explicit API-key authentication and the CLI default model unless `GEMINI_MODEL` is set.
+- [x] Live Gemini acceptance uses an isolated CLI home with explicit API-key authentication and the CLI default model unless `GEMINI_MODEL` is set.
 
 ## Tasks
 
@@ -32,7 +32,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    Forward prompt, model, and resume values in joined option tokens, omit unsupported turn-limit flags, and add focused argument and installed-CLI contract tests.
 3. [x] **Implement Policy Engine permissions.**
    Generate and clean up per-run User-tier policy files, preserve Admin-tier and system configuration authority, and cover allow, ask, deny, explicit-whitelist, and invalid-name behavior.
-4. [ ] **Verify isolated live authentication.**
+4. [x] **Verify isolated live authentication.**
    Run Gemini live acceptance with a temporary `GEMINI_CLI_HOME`, explicit API-key gating, and no model override unless `GEMINI_MODEL` is set.
 
 ## Acceptance criteria

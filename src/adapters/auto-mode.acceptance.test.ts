@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Cligent } from '../index.js';
@@ -255,7 +255,11 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     'gemini auto mode auto-approves a temp-file write + delete',
     async () => {
       assertReady('gemini', geminiMissing);
-      const outcome = await probeWithRetry(() => new GeminiAdapter(), GEMINI_MODEL);
+      const outcome = await probeWithRetry(
+        () => new GeminiAdapter(),
+        GEMINI_MODEL,
+        withIsolatedGeminiCliHome,
+      );
       expectAutoMode('gemini', outcome);
     },
     PROBE_TIMEOUT_MS,
@@ -618,10 +622,12 @@ async function collect(cligent: Cligent, prompt: string): Promise<PhaseResult> {
 async function probeWithRetry(
   makeAdapter: () => AgentAdapter,
   model: string | undefined,
+  attemptScope?: (run: () => Promise<ProbeOutcome>) => Promise<ProbeOutcome>,
 ): Promise<ProbeOutcome> {
   let outcome: ProbeOutcome | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    outcome = await runAutoModeProbe(makeAdapter, model);
+    const run = () => runAutoModeProbe(makeAdapter, model);
+    outcome = attemptScope ? await attemptScope(run) : await run();
     const transient =
       transientFailure(outcome.create.events) ??
       transientFailure(outcome.delete.events);
@@ -631,6 +637,51 @@ async function probeWithRetry(
     );
   }
   return outcome!;
+}
+
+// Keep competing auth and model routes inactive so workspace .env discovery
+// cannot override the explicit API key or the harness-selected model policy.
+const GEMINI_ISOLATED_ENV_KEYS = [
+  'GEMINI_MODEL',
+  'GOOGLE_API_KEY',
+  'GOOGLE_GENAI_USE_GCA',
+  'GOOGLE_GENAI_USE_VERTEXAI',
+  'GOOGLE_GEMINI_BASE_URL',
+  'GEMINI_CLI_USE_COMPUTE_ADC',
+  'CLOUD_SHELL',
+] as const;
+
+async function withIsolatedGeminiCliHome<T>(run: () => Promise<T>): Promise<T> {
+  const home = mkdtempSync(join(tmpdir(), 'cligent-gemini-live-'));
+  const previousHome = process.env.GEMINI_CLI_HOME;
+  const previousConflicts = new Map<string, string | undefined>(
+    GEMINI_ISOLATED_ENV_KEYS.map((key) => [key, process.env[key]]),
+  );
+
+  process.env.GEMINI_CLI_HOME = home;
+  for (const key of GEMINI_ISOLATED_ENV_KEYS) {
+    // Keep the key present so Gemini's workspace .env loader cannot restore
+    // a competing auth or model route from the repository under test.
+    process.env[key] = '';
+  }
+
+  try {
+    return await run();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.GEMINI_CLI_HOME;
+    } else {
+      process.env.GEMINI_CLI_HOME = previousHome;
+    }
+    for (const [key, value] of previousConflicts) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 function transientFailure(events: readonly CligentEvent[]): string | undefined {
