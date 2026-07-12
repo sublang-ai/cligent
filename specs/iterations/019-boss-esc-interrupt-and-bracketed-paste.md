@@ -11,10 +11,11 @@ Both behaviors shall reuse Node's `readline` for editing, history, echo, EOF, an
 
 ## Status
 
-In Progress
+Complete
 
-Task 3 implementation is complete, with focused session coverage passing.
-The full `test:acceptance` boundary is not green yet because the Codex `TADAPT-019` real-run probe currently rejects the delete command under its execution policy; the tmux/session acceptance coverage passed in that run.
+The ESC interrupt and bracketed-paste behavior are implemented and verified.
+The current safe create/update adapter acceptance removed the unrelated
+delete-policy blocker recorded during the original run.
 
 ## Scope
 

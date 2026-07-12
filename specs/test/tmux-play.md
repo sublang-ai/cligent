@@ -132,7 +132,7 @@ Given session mode whose inherited environment carries a `TMUX` handle, when it 
 ### TTMUX-016
 Verifies: [TMUX-030](../user/tmux-play.md#tmux-030)
 
-Given the built-in fanout Captain and the four supported adapters as players with valid credentials, when handling a Boss turn that requires a sentinel token in every reply, every `player_finished` shall report `status: 'ok'` with the sentinel in `finalText`, and the `captain_finished` summary shall reference each player's status and contain the sentinel. `runtime_error` and `turn_aborted` shall not appear.
+Given the built-in fanout Captain and the four supported adapters as players with valid credentials, when handling a Boss turn that requires a sentinel token in every reply, every `player_finished` shall report `status: 'ok'` with the sentinel in `finalText`, the single `captain_prompt` shall contain one delimited result section per player that names its status and includes its final text with the sentinel, and `captain_finished` shall report `status: 'ok'` with the sentinel in `finalText`. `runtime_error` and `turn_aborted` shall not appear.
 
 ### TTMUX-017
 Verifies: [TMUX-030](../user/tmux-play.md#tmux-030)

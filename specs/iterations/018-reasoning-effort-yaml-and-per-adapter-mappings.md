@@ -12,7 +12,12 @@ With this IR, all four adapters consume the unified `reasoningEffort` field at r
 
 ## Status
 
-In Progress
+Complete
+
+The original `reasoningEffort` YAML surface and four-adapter mappings were
+implemented and verified.
+The current adapter-scoped `effort` contract supersedes this historical
+surface while retaining legacy YAML compatibility.
 
 ## Scope
 
