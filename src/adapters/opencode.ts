@@ -84,7 +84,7 @@ interface OpenCodeAdapterDeps {
 }
 
 interface OpenCodePermissionOptions {
-  permission: {
+  permission?: {
     edit: PermissionLevel;
     bash: PermissionLevel;
     webfetch: PermissionLevel;
@@ -464,9 +464,22 @@ export function mapPermissionsToOpenCodeOptions(
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
+  const core = [...new Set(options?.allowedTools ?? [])];
+  const exclude = [...new Set(options?.disallowedTools ?? [])];
+  const tools =
+    core.length > 0 || exclude.length > 0
+      ? {
+          ...(core.length > 0 ? { core } : {}),
+          ...(exclude.length > 0 ? { exclude } : {}),
+        }
+      : undefined;
+
+  if (policy === undefined) {
+    return tools ? { tools } : {};
+  }
 
   // ENG-021: session-wide mode takes precedence over per-capability levels.
-  if (policy?.mode === 'bypass') {
+  if (policy.mode === 'bypass') {
     // The cligent opencode adapter spawns `opencode serve` and drives it
     // via the SDK — it does not invoke the `opencode run` CLI, so
     // `--dangerously-skip-permissions` has nowhere to attach. Reject
@@ -486,31 +499,19 @@ export function mapPermissionsToOpenCodeOptions(
     );
   }
 
-  if (policy?.mode === 'auto') {
+  if (policy.mode === 'auto') {
     // SDK equivalent of opencode.json's `"permission": "allow"` global
     // setting: every per-tool permission set to 'allow'. The per-capability
     // path is short-circuited; user-passed allowedTools / disallowedTools
     // (independent from `permissions`) still apply.
-    const core = [...new Set(options?.allowedTools ?? [])];
-    const exclude = [...new Set(options?.disallowedTools ?? [])];
     return {
       permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
       ...(writablePaths ? { writablePaths } : {}),
-      ...(core.length > 0 || exclude.length > 0
-        ? {
-            tools: {
-              ...(core.length > 0 ? { core } : {}),
-              ...(exclude.length > 0 ? { exclude } : {}),
-            },
-          }
-        : {}),
+      ...(tools ? { tools } : {}),
     };
   }
 
   const normalized = normalizePermissions(policy);
-
-  const core = [...new Set(options?.allowedTools ?? [])];
-  const exclude = [...new Set(options?.disallowedTools ?? [])];
 
   return {
     permission: {
@@ -519,14 +520,7 @@ export function mapPermissionsToOpenCodeOptions(
       webfetch: normalized.networkAccess,
     },
     ...(writablePaths ? { writablePaths } : {}),
-    ...(core.length > 0 || exclude.length > 0
-      ? {
-          tools: {
-            ...(core.length > 0 ? { core } : {}),
-            ...(exclude.length > 0 ? { exclude } : {}),
-          },
-        }
-      : {}),
+    ...(tools ? { tools } : {}),
   };
 }
 

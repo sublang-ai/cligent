@@ -365,6 +365,26 @@ describe('OpenCodeAdapter', () => {
     }
   });
 
+  it('distinguishes an absent permission policy from an explicit empty policy', () => {
+    expect(
+      mapPermissionsToOpenCodeOptions(undefined, {
+        allowedTools: ['edit', 'edit'],
+        disallowedTools: ['webfetch', 'webfetch'],
+      }),
+    ).toEqual({
+      tools: {
+        core: ['edit'],
+        exclude: ['webfetch'],
+      },
+    });
+    expect(mapPermissionsToOpenCodeOptions(undefined)).toEqual({});
+    expect(mapPermissionsToOpenCodeOptions({}).permission).toEqual({
+      edit: 'ask',
+      bash: 'ask',
+      webfetch: 'ask',
+    });
+  });
+
   it('runs in managed mode with server spawn, ready wait, and graceful shutdown', async () => {
     const { spawnProcess, invocations } = makeSpawn();
 
@@ -1384,6 +1404,72 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptArgs.path.id).toBe('resumed-session');
   });
 
+  it('preserves native permissions on v1 fresh and resumed runs', async () => {
+    const createCalls: unknown[] = [];
+    const promptCalls: unknown[] = [];
+    let createdSessions = 0;
+    const real = makeV1Sdk({
+      onCreateSession(args) {
+        createCalls.push(args);
+      },
+      onPrompt(args) {
+        promptCalls.push(args);
+      },
+    });
+    real.session = {
+      ...(real.session as Record<string, unknown>),
+      async create(args?: unknown) {
+        createCalls.push(args);
+        createdSessions++;
+        return { id: `v1-native-${createdSessions}` };
+      },
+    };
+    const client = wrapOpencodeClient(real);
+    const toolRestrictions = {
+      allowedTools: ['edit'],
+      disallowedTools: ['webfetch'],
+    };
+    const unmanaged = mapPermissionsToOpenCodeOptions(
+      undefined,
+      toolRestrictions,
+    );
+
+    await client.run?.({ prompt: 'fresh native', ...unmanaged });
+    await client.run?.({
+      prompt: 'resumed native',
+      sessionId: 'v1-existing',
+      ...unmanaged,
+    });
+
+    expect(createCalls).toEqual([undefined]);
+    expect(promptCalls).toHaveLength(2);
+    for (const call of promptCalls) {
+      const body = (call as { body: Record<string, unknown> }).body;
+      expect(body).not.toHaveProperty('permission');
+      expect(body.tools).toEqual({
+        core: ['edit'],
+        exclude: ['webfetch'],
+      });
+    }
+
+    const explicitlyManaged = mapPermissionsToOpenCodeOptions({});
+    await client.run?.({ prompt: 'fresh managed', ...explicitlyManaged });
+    await client.run?.({
+      prompt: 'resumed managed',
+      sessionId: 'v1-existing',
+      ...explicitlyManaged,
+    });
+
+    expect(createCalls).toEqual([undefined, undefined]);
+    for (const call of promptCalls.slice(2)) {
+      expect((call as { body: Record<string, unknown> }).body.permission).toEqual({
+        edit: 'ask',
+        bash: 'ask',
+        webfetch: 'ask',
+      });
+    }
+  });
+
   it('uses the v2 prompt surface so variant reaches fresh and resumed sessions', async () => {
     let createCalls = 0;
     const promptCalls: unknown[] = [];
@@ -1444,6 +1530,88 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptCalls[0]).not.toHaveProperty('body');
     expect(promptCalls[1]).not.toHaveProperty('path');
     expect(promptCalls[1]).not.toHaveProperty('body');
+  });
+
+  it('preserves native permissions on v2 fresh and resumed runs', async () => {
+    const createCalls: unknown[] = [];
+    const updateCalls: unknown[] = [];
+    const promptCalls: unknown[] = [];
+    const real = {
+      session: {
+        async create(args?: unknown) {
+          createCalls.push(args);
+          return { data: { id: `v2-native-${createCalls.length}` } };
+        },
+        async update(args: unknown) {
+          updateCalls.push(args);
+          return {};
+        },
+        async promptAsync(args: unknown) {
+          promptCalls.push(args);
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+    };
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+    const toolRestrictions = {
+      allowedTools: ['edit'],
+      disallowedTools: ['webfetch'],
+    };
+    const unmanaged = mapPermissionsToOpenCodeOptions(
+      undefined,
+      toolRestrictions,
+    );
+
+    await client.run?.({ prompt: 'fresh native', ...unmanaged });
+    await client.run?.({
+      prompt: 'resumed native',
+      sessionId: 'v2-existing',
+      ...unmanaged,
+    });
+
+    expect(createCalls).toEqual([{}]);
+    expect(updateCalls).toEqual([]);
+    expect(promptCalls).toHaveLength(2);
+    for (const call of promptCalls) {
+      expect(call).not.toHaveProperty('permission');
+      expect(call).toEqual(
+        expect.objectContaining({
+          tools: {
+            edit: true,
+            webfetch: false,
+          },
+        }),
+      );
+    }
+
+    const explicitlyManaged = mapPermissionsToOpenCodeOptions({});
+    await client.run?.({ prompt: 'fresh managed', ...explicitlyManaged });
+    await client.run?.({
+      prompt: 'resumed managed',
+      sessionId: 'v2-existing',
+      ...explicitlyManaged,
+    });
+
+    const askRules = [
+      { permission: 'edit', pattern: '*', action: 'ask' },
+      { permission: 'bash', pattern: '*', action: 'ask' },
+      { permission: 'webfetch', pattern: '*', action: 'ask' },
+    ];
+    expect(createCalls).toEqual([
+      {},
+      { permission: askRules },
+    ]);
+    expect(updateCalls).toEqual([
+      {
+        sessionID: 'v2-existing',
+        permission: askRules,
+      },
+    ]);
   });
 
   it('maps v1 permission and tools options onto the v2 session and prompt surfaces', async () => {

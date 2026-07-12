@@ -27,7 +27,7 @@ The readiness contract is specified; implementation tasks remain open.
   exercised by repository verification.
 - [x] SDK declaration conformance plus exact installed-CLI version checks make
   every validation target observable.
-- [ ] OpenCode preserves its native permission defaults when no
+- [x] OpenCode preserves its native permission defaults when no
   `PermissionPolicy` is supplied.
 - [ ] Node and TypeScript consumer floors match emitted runtime and declaration syntax.
 - [ ] Every build and package operation removes stale `dist` output first.
@@ -50,7 +50,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    verify the OpenCode managed-server help surface. Keep optional peer floors
    unchanged; the provider behavior that first requires a newer surface owns
    its corresponding floor change.
-3. [ ] **Preserve OpenCode native permissions.**
+3. [x] **Preserve OpenCode native permissions.**
    Omit session permission rules for an absent policy while keeping independent
    tool-list restrictions and the distinct explicit-empty-policy behavior.
 4. [ ] **Update the supported validation toolchain.**
