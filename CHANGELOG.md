@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Breaking:** renamed the public `reasoningEffort` option and tmux-play YAML field to `effort`, with adapter-correlated TypeScript declarations and runtime validation that reject provider-native values on the wrong adapter. After a complete document validates, tmux-play accepts direct legacy keys in memory and makes a bounded best-effort update of their exact parsed key tokens; a changed or unwritable source keeps the validated runtime value and produces an actionable manual-rename warning, while conflicting keys, invalid values, or other validation failures reject without writing. This compatibility path intentionally carries no broader lossless formatting, filesystem-metadata, or concurrency guarantee — DR-009, IR-031, IR-033, TMUX-056, TMUX-086
+- Release-candidate conformance targets now pin Claude Code 2.1.207 with Claude Agent SDK 0.3.207, Codex CLI/SDK 0.144.1, Gemini CLI 0.50.0, and OpenCode CLI/SDK 1.17.18. Repository verification checks the exact installed SDK packages, bundled Claude/Codex targets, external CLI reports, and OpenCode managed-server surface — IR-032, PKG-012
+- Distributable readiness now packs and inspects the actual npm tarball, installs it without optional agent peers, imports every public entry point and runs the installed launcher on exact Node 18.3.0, compiles adapter-scoped effort declarations with strict TypeScript 5.4.5, and requires clean production and full dependency audits in CI — IR-032, PKG-002, PKG-011, PKG-013, PKG-014
 
 ### Fixed
 

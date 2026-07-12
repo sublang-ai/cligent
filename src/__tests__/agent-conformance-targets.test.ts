@@ -15,6 +15,10 @@ interface WorkflowStep {
 interface Workflow {
   jobs?: {
     acceptance?: {
+      needs?: string | string[];
+      steps?: WorkflowStep[];
+    };
+    distributable?: {
       steps?: WorkflowStep[];
     };
   };
@@ -58,5 +62,29 @@ describe('agent SDK and CLI conformance targets', () => {
     expect(steps[verifyIndex]?.run).toBe(
       'node scripts/verify-agent-targets.mjs',
     );
+  });
+
+  it('gates acceptance on isolated distributable verification', () => {
+    const workflow = parse(
+      readFileSync(
+        new URL('../../.github/workflows/ci.yml', import.meta.url),
+        'utf8',
+      ),
+    ) as Workflow;
+    const steps = workflow.jobs?.distributable?.steps ?? [];
+    const installIndex = steps.findIndex(
+      (step) => step.name === 'Install exact agent CLIs',
+    );
+    const verifyIndex = steps.findIndex(
+      (step) => step.name === 'Verify distributable',
+    );
+
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect(steps[installIndex]?.run).toBe(
+      'npm install -g @google/gemini-cli@0.50.0 opencode-ai@1.17.18',
+    );
+    expect(verifyIndex).toBeGreaterThan(installIndex);
+    expect(steps[verifyIndex]?.run).toBe('npm run test:distributable');
+    expect(workflow.jobs?.acceptance?.needs).toEqual(['ci', 'distributable']);
   });
 });

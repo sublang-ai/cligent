@@ -39,9 +39,29 @@ jobs:
 
       - run: npm test
 
+  distributable:
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install exact agent CLIs
+        run: npm install -g @google/gemini-cli@0.50.0 opencode-ai@1.17.18
+
+      - name: Verify distributable
+        run: npm run test:distributable
+
   acceptance:
     if: github.event_name == 'push'
-    needs: ci
+    needs: [ci, distributable]
     runs-on: ubuntu-latest
 
     steps:

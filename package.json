@@ -73,6 +73,7 @@
     "format": "prettier --config config/prettierrc.json --write .",
     "typecheck": "tsc --noEmit -p config/tsconfig.test.json",
     "test": "vitest run --config config/vitest.config.ts",
+    "test:distributable": "node ./scripts/verify-distributable.mjs",
     "test:package": "node ./scripts/verify-package-output.mjs",
     "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",

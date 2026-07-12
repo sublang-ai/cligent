@@ -15,11 +15,11 @@ the independent readiness defects listed below.
 
 ## Status
 
-In Progress
+Complete
 
-Exact runtime targets, native permission defaults, validation tooling, and
-clean package output are complete; hardened live acceptance and Codex trust
-isolation are verified, while final distributable verification remains open.
+Exact runtime targets, native permission defaults, validation tooling, clean
+package output, live acceptance, Codex trust isolation, and installed-tarball
+verification are complete.
 
 ## Deliverables
 
@@ -36,7 +36,7 @@ isolation are verified, while final distributable verification remains open.
 - [x] Live auto-mode acceptance uses safe create/update probes and bounded
   retries only for explicit transient upstream failures, and permission-managed
   Codex runs do not persist throwaway workspace trust in user config.
-- [ ] Packed-package and dependency-audit checks pass.
+- [x] Packed-package and dependency-audit checks pass.
 
 ## Tasks
 
@@ -71,14 +71,15 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    overload or invalid-stream failures with a fatal bounded limit. Prevent the
    latest Codex target from persisting throwaway workspace trust during these
    permission-managed runs.
-7. [ ] **Verify and document the distributable.**
+7. [x] **Verify and document the distributable.**
    Run dependency audits, inspect and install the tarball in an isolated consumer, exercise public exports and the launcher, and record the completed readiness boundary.
 
 ## Acceptance criteria
 
 - Exact installed SDK and CLI versions equal the versions asserted by the
   repository and CI; installed SDK declarations cover the consumed type
-  surfaces, each exact CLI target reports its version, and the OpenCode target
+  surfaces, bundled Claude/Codex manifest metadata matches the exact targets,
+  each CI-installed external CLI reports its version, and the OpenCode target
   exposes the managed-server options used by the adapter.
 - With no `PermissionPolicy`, OpenCode creates or resumes a session without a
   permission ruleset; independent tool-list restrictions still apply.

@@ -17,6 +17,11 @@ export const EXPECTED_CLI_VERSIONS = Object.freeze({
   opencode: '1.17.18',
 });
 
+export const EXPECTED_BUNDLED_AGENT_VERSIONS = Object.freeze({
+  claudeCode: '2.1.207',
+  codex: '0.144.1',
+});
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 function readJson(path) {
@@ -63,6 +68,49 @@ export function verifySdkTargets() {
     EXPECTED_SDK_VERSIONS['@opencode-ai/sdk'],
     EXPECTED_CLI_VERSIONS.opencode,
     'OpenCode SDK/CLI target alignment',
+  );
+
+  const claudeManifest = readJson(
+    join(
+      repoRoot,
+      'node_modules',
+      '@anthropic-ai',
+      'claude-agent-sdk',
+      'package.json',
+    ),
+  );
+  assertEqual(
+    claudeManifest.claudeCodeVersion,
+    EXPECTED_BUNDLED_AGENT_VERSIONS.claudeCode,
+    'Claude Code bundled target',
+  );
+  assertEqual(
+    readJson(
+      join(
+        repoRoot,
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk',
+        'manifest.json',
+      ),
+    ).version,
+    EXPECTED_BUNDLED_AGENT_VERSIONS.claudeCode,
+    'Claude Code bundled manifest',
+  );
+
+  const codexSdkManifest = readJson(
+    join(repoRoot, 'node_modules', '@openai', 'codex-sdk', 'package.json'),
+  );
+  assertEqual(
+    codexSdkManifest.dependencies?.['@openai/codex'],
+    EXPECTED_BUNDLED_AGENT_VERSIONS.codex,
+    'Codex SDK bundled CLI declaration',
+  );
+  assertEqual(
+    readJson(join(repoRoot, 'node_modules', '@openai', 'codex', 'package.json'))
+      .version,
+    EXPECTED_BUNDLED_AGENT_VERSIONS.codex,
+    'installed Codex CLI package',
   );
 }
 
