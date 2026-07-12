@@ -155,9 +155,9 @@ Capability-based primitives map to vendor-specific controls (not always 1:1):
 
 | Capability | Description | Claude Code | Codex | Gemini | OpenCode |
 | ---------- | ----------- | ----------- | ----- | ------ | -------- |
-| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | `coreTools`/`excludeTools` (edit tools) [^10] | `permission` map for `edit` [^11] |
-| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | `coreTools`/`excludeTools` for `ShellTool` [^10] | `permission` map for `bash` [^11] |
-| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [^8] | `sandbox_mode` + `network_access` + `approval_policy` [^9] | `coreTools`/`excludeTools` for web tools [^10] | `permission` map for `webfetch` [^11] |
+| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `replace` / `write_file` [^10] | `permission` map for `edit` [^11] |
+| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `run_shell_command` [^10] | `permission` map for `bash` [^11] |
+| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [^8] | `sandbox_mode` + `network_access` + `approval_policy` [^9] | Policy Engine rules for `google_web_search` / `web_fetch` [^10] | `permission` map for `webfetch` [^11] |
 
 ```typescript
 type PermissionLevel = 'allow' | 'ask' | 'deny';
@@ -179,7 +179,8 @@ type ReasoningEffort =
   | 'max';
 ```
 
-Adapters translate these primitives to vendor-specific controls where supported (e.g., Claude Code `permissions.allow/ask/deny` [^8], Codex `sandbox_mode` + `approval_policy` with optional `network_access` [^9], Gemini `coreTools`/`excludeTools` [^10], OpenCode `permission` map [^11]). Omitted capabilities default to `'ask'`.
+Adapters translate these primitives to vendor-specific controls where supported.
+Omitted capability fields default to `'ask'` inside a provided policy; omitting the policy leaves adapter-native defaults in effect per [DR-005](005-per-adapter-permission-configuration.md).
 
 ### Adapter Interface
 
@@ -250,7 +251,7 @@ for await (const event of Cligent.parallel([
 - **Role attribution** via `role` field on `CligentEvent` (not `BaseEvent`), distinguishing multiple sessions on the same backend; adapters do not emit `role`
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` supported by all agents; implementation varies (CLI flags, permissions config, policy engine)
-- **Budgeting**: `maxTurns` supported by Claude Code, OpenCode (`steps`), Gemini (`maxSessionTurns`); `maxBudgetUsd` only by Claude Code
+- **Budgeting**: `maxTurns` supported by Claude Code and OpenCode (`steps`); `maxBudgetUsd` only by Claude Code
 - **MCP integration** deferred to adapter implementation [^7]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
 
@@ -265,5 +266,5 @@ for await (const event of Cligent.parallel([
 [^7]: MCP Specification: <https://modelcontextprotocol.io/specification/2025-11-25>
 [^8]: Claude Code settings (permissions): <https://code.claude.com/docs/en/settings>
 [^9]: Codex security and sandbox/approvals: <https://developers.openai.com/codex/security>
-[^10]: Gemini CLI configuration: <https://geminicli.com/docs/cli/configuration/>
+[^10]: Gemini CLI Policy Engine: <https://geminicli.com/docs/reference/policy-engine/>
 [^11]: OpenCode permissions: <https://opencode.ai/docs/permissions>

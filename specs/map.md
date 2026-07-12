@@ -75,6 +75,7 @@ meta.md     The spec of specs
 | IR-027 | [027-tmux-play-dynamic-player-visibility.md](iterations/027-tmux-play-dynamic-player-visibility.md) | Implement DR-007 tmux-play dynamic player visibility: `layout.initialVisible`, shape-specific weight presets with `columnWeights` alias + migration, `setVisiblePlayers` on the Captain contracts, the `player_view_changed` record, and a full-rebuild `LayoutObserver` |
 | IR-028 | [028-explicit-player-session-selection.md](iterations/028-explicit-player-session-selection.md) | Add per-call tmux-play player session selection through `CallPlayerOptions.resume`, preserving omission-based auto-resume while allowing explicit tokens and forced-fresh calls; restore Gemini `--resume` forwarding |
 | IR-029 | [029-captain-pre-close-lifecycle.md](iterations/029-captain-pre-close-lifecycle.md) | Add failure-safe two-stage Captain shutdown so final session telemetry emits before the session closes |
+| IR-030 | [030-gemini-cli-050-compatibility.md](iterations/030-gemini-cli-050-compatibility.md) | Align the Gemini adapter with Gemini CLI 0.50 headless arguments, Policy Engine permissions, and configuration precedence |
 
 ## Packages
 
@@ -102,7 +103,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, resume token, reasoning-effort thinking settings |
+| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, Policy Engine permissions, resume token, reasoning-effort thinking settings |
 
 ### GIT
 

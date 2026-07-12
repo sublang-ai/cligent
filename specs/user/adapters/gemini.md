@@ -23,7 +23,8 @@ The adapter shall implement `AgentAdapter` with `agent: 'gemini'`; it has no SDK
 
 ### GEMINI-003
 
-`run()` shall spawn `gemini --output-format stream-json <prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001).
+`run()` shall spawn Gemini CLI in non-interactive mode with `gemini --output-format stream-json --prompt=<prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001) and [[4]].
+The adapter shall keep the option and arbitrary prompt in one argv token so Gemini CLI 0.50 treats the value as a headless prompt and does not reparse a leading-dash prompt as an option.
 
 ## Environment
 
@@ -63,22 +64,55 @@ The adapter shall map process exit codes to `done` status:
 
 ### GEMINI-006
 
-The adapter shall map `PermissionPolicy` to Gemini CLI tool controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `'allow'` capabilities via `--allowed-tools` flag; `'deny'` capabilities via `tools.exclude` in settings or policy rules. `allowedTools`/`disallowedTools` from options shall map to `tools.core`/`tools.exclude`.
+Where `PermissionPolicy` is provided with `mode` omitted, or `allowedTools` or `disallowedTools` is provided, the adapter shall map the supplied capability and tool-list restrictions to non-interactive User-tier Gemini Policy Engine rules per [[3]] and the following table:
+
+| Input | Policy outcome |
+| --- | --- |
+| capability `allow` | `decision = "allow"` for that capability's current built-in tools |
+| capability `ask` or omitted inside a provided policy | `decision = "ask_user"`, which denies in headless mode |
+| capability `deny` | `decision = "deny"` |
+| explicit `allowedTools` | priority-999 allows for effective listed tools plus a priority-998 catch-all deny, including when the effective list is empty |
+| explicit `disallowedTools` | deny rules that take precedence over allows |
+
+The capability tools shall be file writes `replace` and `write_file`, shell execution `run_shell_command`, and network access `google_web_search` and `web_fetch`.
+Capability-level allows shall not widen an explicit allowlist.
+When `PermissionPolicy.mode` is `'auto'` or `'bypass'`, the existing approval-mode mapping shall take precedence over per-capability fields per [ENG-021](../engine.md#eng-021); independently supplied tool lists may still generate policy rules.
+Where mapping generates at least one rule, the adapter shall write a per-run User-tier policy file and pass it through `--policy`; otherwise it shall generate no policy file or flag.
+The adapter runtime shall emit neither deprecated `--allowed-tools` nor deprecated `tools.exclude`; compatibility-only exported settings helpers may retain their historical return shape but shall not drive `run()`.
 When `PermissionPolicy.writablePaths` is non-empty per [ENG-022](../engine.md#eng-022) and Gemini sandboxing is not independently active through a selected adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with `enforcement: 'ambient'` and canonical `paths`, and keep the existing tool-control and approval-mode mapping unchanged.
+
+### GEMINI-012
+
+Where `PermissionPolicy`, `allowedTools`, and `disallowedTools` are all absent, the adapter shall generate no policy and pass no `--policy`, leaving Gemini's native defaults and discovered user policies in effect.
+A provided empty `PermissionPolicy` shall remain distinct and shall generate `ask_user` rules for its omitted default-ask capabilities.
+
+### GEMINI-013
+
+Where a user-provided tool name contains Gemini Policy Engine wildcard syntax `*` or an unpaired Unicode surrogate, the adapter shall reject it before spawn with an error naming the offending option index.
+For other accepted names, the adapter shall serialize a valid TOML basic string, including escaping DEL (`U+007F`).
+
+### GEMINI-014
+
+Where the adapter generates a policy file, every rule shall carry `interactive = false`, the file shall be removed after the run, and installed Admin-tier policies shall retain authority.
+Permission mapping shall not redirect Gemini's system settings or system-defaults paths.
 
 ## Options Mapping
 
 ### GEMINI-007
 
-The adapter shall map `AgentOptions` fields to CLI flags: `model` → `--model`, `maxTurns` → `--max-session-turns`, `resume` → `--resume`.
+The adapter shall map `AgentOptions.model` to `--model=<model>` and a non-empty `AgentOptions.resume` to `--resume=<token>`, keeping each value in the same argv token as its option so leading dashes are not reinterpreted.
+Where Gemini CLI exposes no compatible turn-limit flag, the adapter shall ignore `AgentOptions.maxTurns` and shall not pass the unsupported `--max-session-turns` flag.
 
 ### GEMINI-011
 
 The adapter shall map `AgentOptions.reasoningEffort` (per [ENG-020](../engine.md#eng-020)) to a per-run Gemini CLI settings override only when `AgentOptions.model` names a concrete Gemini model ID whose thinking surface is known per [[1]] and [[2]].
-For `model` values matching `^gemini-3`, the override shall create a self-contained custom alias under `modelConfigs.customAliases.<cligent-alias>.modelConfig` with `model` set to the original `AgentOptions.model` value and `generateContentConfig.thinkingConfig.thinkingLevel` set per the Gemini 3 table below; the spawned CLI shall target that custom alias via `--model`.
-For `model` values matching `^gemini-2\.5`, the override shall create the same self-contained alias shape and set `generateContentConfig.thinkingConfig.thinkingBudget` per the Gemini 2.5 table below; the spawned CLI shall target that custom alias via `--model`.
-When `AgentOptions.model` is unset, is a Gemini CLI alias such as `pro`, `flash`, `flash-lite`, `auto`, or `chat-base*`, or is any other non-matching value, the adapter shall not write the custom alias and shall preserve its existing model forwarding behavior: pass `--model <AgentOptions.model>` when the field is set, and pass no `--model` flag when it is unset.
+For `model` values matching `^gemini-3`, the override shall create a self-contained custom alias under `modelConfigs.customAliases.<cligent-alias>.modelConfig` with `model` set to the original `AgentOptions.model` value and `generateContentConfig.thinkingConfig.thinkingLevel` set per the Gemini 3 table below; the spawned CLI shall target that custom alias via `--model=<cligent-alias>`.
+For `model` values matching `^gemini-2\.5`, the override shall create the same self-contained alias shape and set `generateContentConfig.thinkingConfig.thinkingBudget` per the Gemini 2.5 table below; the spawned CLI shall target that custom alias via `--model=<cligent-alias>`.
+When `AgentOptions.model` is unset, is a Gemini CLI alias such as `pro`, `flash`, `flash-lite`, `auto`, or `chat-base*`, or is any other non-matching value, the adapter shall not write the custom alias and shall preserve its existing model forwarding behavior: pass `--model=<AgentOptions.model>` when the field is set, and pass no `--model` flag when it is unset.
 In those skip cases, `reasoningEffort` shall be silently ignored for that call.
+
+The generated alias shall be merged into a temporary copy of configured system defaults selected through `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, preserving pre-existing defaults and leaving `GEMINI_CLI_SYSTEM_SETTINGS_PATH` unchanged so system overrides, Admin policy, user settings, and project settings retain authority.
+The temporary defaults file shall be removed after the run.
 
 Gemini 3 mapping:
 
@@ -126,3 +160,5 @@ When terminal `done` is not interrupted and no session identifier was received, 
 
 [1]: https://ai.google.dev/gemini-api/docs/thinking "Gemini API: Thinking"
 [2]: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md "Google Gemini CLI: Configuration reference"
+[3]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI: Policy engine"
+[4]: https://geminicli.com/docs/cli/cli-reference/ "Gemini CLI: CLI reference"
