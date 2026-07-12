@@ -3,6 +3,7 @@
 
 import { describe, it, expectTypeOf } from 'vitest';
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
+import { CodexAdapter } from '../adapters/codex.js';
 import {
   AdapterRegistry,
   Cligent,
@@ -201,6 +202,15 @@ describe('core types', () => {
     new Cligent(new ClaudeCodeAdapter(), { effort: 'ultra' });
     // @ts-expect-error - run overrides remain Claude-scoped
     void claude.run('prompt', { effort: 'ultra' });
+  });
+
+  it('binds the concrete Codex adapter to Codex effort values', () => {
+    const codex = new Cligent(new CodexAdapter(), { effort: 'ultra' });
+    void codex.run('prompt', { effort: 'max' });
+    // @ts-expect-error - ultracode is a Claude-only orchestration value
+    new Cligent(new CodexAdapter(), { effort: 'ultracode' });
+    // @ts-expect-error - run overrides remain Codex-scoped
+    void codex.run('prompt', { effort: 'ultracode' });
   });
 
   it('keeps every heterogeneous parallel task correlated', () => {

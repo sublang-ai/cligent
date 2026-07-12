@@ -6,14 +6,15 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createEvent, generateSessionId } from '../events.js';
+import { assertSupportedEffort } from '../effort.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
   AgentEvent,
   AgentOptions,
+  CodexEffort,
   DonePayload,
   PermissionPolicy,
-  PortableEffort,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -377,18 +378,18 @@ interface MappedCodexOptions {
 }
 
 export function mapEffortToCodexEffort(
-  effort: PortableEffort | undefined,
-): CodexModelReasoningEffort | undefined {
+  effort: AgentOptions<CodexEffort>['effort'],
+): CodexEffort | undefined {
   if (effort === undefined) return undefined;
-  // Codex tops out at 'xhigh'; collapse Claude's 'max' to the nearest value.
-  if (effort === 'max') return 'xhigh';
+  assertSupportedEffort(AGENT, effort);
   return effort;
 }
 
 export function mapAgentOptionsToCodexOptions(
-  options: AgentOptions<PortableEffort> | undefined,
+  options: AgentOptions<CodexEffort> | undefined,
 ): MappedCodexOptions {
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
+  const effort = mapEffortToCodexEffort(options?.effort);
 
   let cleanupAbort = () => {};
   let abortController: AbortController | undefined;
@@ -407,10 +408,30 @@ export function mapAgentOptionsToCodexOptions(
 
   const signal = abortController?.signal;
 
+  const configEffort =
+    effort === 'max' || effort === 'ultra' ? effort : undefined;
+  const permissionConfig = permissions.codexOptions?.config;
+  const codexConfig =
+    permissionConfig || configEffort
+      ? {
+          ...(permissionConfig ?? {}),
+          ...(configEffort ? { model_reasoning_effort: configEffort } : {}),
+        }
+      : undefined;
+  const codexOptions =
+    permissions.codexOptions || codexConfig
+      ? {
+          ...(permissions.codexOptions ?? {}),
+          ...(codexConfig ? { config: codexConfig } : {}),
+        }
+      : undefined;
+
   const threadOptions: CodexThreadOptions = {
     workingDirectory: options?.cwd,
     model: options?.model,
-    modelReasoningEffort: mapEffortToCodexEffort(options?.effort),
+    ...(effort !== undefined && effort !== 'max' && effort !== 'ultra'
+      ? { modelReasoningEffort: effort }
+      : {}),
     // The CLI's git-repo gate is an interactive-user safety net; programmatic
     // callers (tmux-play, scripts, tests) choose workingDirectory deliberately
     // and frequently target tmpdirs that are not git repos.
@@ -422,7 +443,7 @@ export function mapAgentOptionsToCodexOptions(
   }
 
   return {
-    codexOptions: permissions.codexOptions,
+    codexOptions,
     ...(permissions.codexCliExecArgs
       ? { codexCliExecArgs: permissions.codexCliExecArgs }
       : {}),
@@ -784,7 +805,7 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
   };
 }
 
-export class CodexAdapter implements AgentAdapter<PortableEffort> {
+export class CodexAdapter implements AgentAdapter<CodexEffort> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
@@ -804,7 +825,7 @@ export class CodexAdapter implements AgentAdapter<PortableEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<PortableEffort>,
+    options?: AgentOptions<CodexEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: CodexSdk;
     try {

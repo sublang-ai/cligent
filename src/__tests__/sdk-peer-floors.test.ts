@@ -32,4 +32,15 @@ describe('minimum SDK peer floors', () => {
       ],
     ).toBe(expected);
   });
+
+  it('retains the Codex floor that declares constructor config transport', () => {
+    const manifest = readJson(new URL('../../package.json', import.meta.url));
+    const lock = readJson(new URL('../../package-lock.json', import.meta.url));
+    const expected = '>=0.138.0';
+
+    expect(manifest.peerDependencies?.['@openai/codex-sdk']).toBe(expected);
+    expect(
+      lock.packages?.['']?.peerDependencies?.['@openai/codex-sdk'],
+    ).toBe(expected);
+  });
 });

@@ -12,9 +12,10 @@ import {
 } from '../adapters/codex.js';
 import type {
   AgentEvent,
+  AgentOptions,
+  CodexEffort,
   PermissionLevel,
   PermissionPolicy,
-  PortableEffort,
 } from '../types.js';
 
 interface MockRunOptions {
@@ -1145,15 +1146,14 @@ describe('CodexAdapter', () => {
     expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
   });
 
-  it('maps effort to SDK modelReasoningEffort per CODEX-007', () => {
-    const cases: Array<[PortableEffort | undefined, string | undefined]> = [
+  it('maps portable effort through the typed SDK thread surface', () => {
+    const cases: Array<[CodexEffort | undefined, string | undefined]> = [
       [undefined, undefined],
       ['minimal', 'minimal'],
       ['low', 'low'],
       ['medium', 'medium'],
       ['high', 'high'],
       ['xhigh', 'xhigh'],
-      ['max', 'xhigh'],
     ];
 
     for (const [input, expected] of cases) {
@@ -1162,8 +1162,75 @@ describe('CodexAdapter', () => {
       const mapped = mapAgentOptionsToCodexOptions(
         input === undefined ? {} : { effort: input },
       );
-      expect(mapped.threadOptions.modelReasoningEffort).toBe(expected);
+      if (input === undefined) {
+        expect(mapped.threadOptions).not.toHaveProperty(
+          'modelReasoningEffort',
+        );
+      } else {
+        expect(mapped.threadOptions.modelReasoningEffort).toBe(expected);
+      }
+      expect(
+        mapped.codexOptions?.config?.model_reasoning_effort,
+      ).toBeUndefined();
     }
+  });
+
+  it.each(['max', 'ultra'] as const)(
+    'passes Codex %s unchanged through constructor config',
+    (effort) => {
+      expect(mapEffortToCodexEffort(effort)).toBe(effort);
+      const mapped = mapAgentOptionsToCodexOptions({ effort });
+      expect(mapped.threadOptions).not.toHaveProperty(
+        'modelReasoningEffort',
+      );
+      expect(mapped.codexOptions?.config).toEqual({
+        model_reasoning_effort: effort,
+      });
+    },
+  );
+
+  it('keeps permission controls unchanged while adding ultra config', () => {
+    const permissions: PermissionPolicy = {
+      mode: 'auto',
+      writablePaths: ['.git'],
+    };
+    const ordinary = mapAgentOptionsToCodexOptions({ permissions });
+    const ultra = mapAgentOptionsToCodexOptions({
+      permissions,
+      effort: 'ultra',
+    });
+
+    expect(ultra.threadOptions.approvalPolicy).toBe(
+      ordinary.threadOptions.approvalPolicy,
+    );
+    expect(ultra.codexCliExecArgs).toEqual(ordinary.codexCliExecArgs);
+    expect(ultra.codexCliConfigOverrides).toEqual(
+      ordinary.codexCliConfigOverrides,
+    );
+    expect(ultra.codexOptions?.config).toEqual({
+      ...ordinary.codexOptions?.config,
+      model_reasoning_effort: 'ultra',
+    });
+  });
+
+  it('rejects Claude and unknown effort values before starting a thread', async () => {
+    let startCalls = 0;
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [],
+        onStartThread: () => {
+          startCalls += 1;
+        },
+      }),
+    });
+
+    for (const effort of ['ultracode', 'future-effort']) {
+      const invalid = { effort } as unknown as AgentOptions<CodexEffort>;
+      await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+        'effort for adapter "codex" must be one of: minimal, low, medium, high, xhigh, max, ultra',
+      );
+    }
+    expect(startCalls).toBe(0);
   });
 
   it('forwards effort to startThread()', async () => {
@@ -1189,6 +1256,63 @@ describe('CodexAdapter', () => {
     await collect(adapter.run('prompt', { effort: 'high' }));
 
     expect(captured?.modelReasoningEffort).toBe('high');
+  });
+
+  it('forwards ultra through the SDK constructor-options seam', async () => {
+    let captured: MockCodexConstructorOptions | undefined;
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 1, output_tokens: 1, tool_uses: 0 },
+            },
+          },
+        ],
+        onConstruct: (options) => {
+          captured = options;
+        },
+      }),
+    });
+
+    await collect(adapter.run('prompt', { effort: 'ultra' }));
+
+    expect(captured?.config).toEqual({
+      model_reasoning_effort: 'ultra',
+    });
+  });
+
+  it('surfaces an upstream ultra rejection without substitution', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'turn.failed',
+            error: {
+              code: 'unsupported_reasoning_effort',
+              message: 'ultra is unavailable for this model or account',
+            },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { effort: 'ultra' }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      code: 'unsupported_reasoning_effort',
+      message: 'ultra is unavailable for this model or account',
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
   it('throws descriptive error when Codex constructor fails', async () => {

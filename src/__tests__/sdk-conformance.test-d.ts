@@ -66,6 +66,9 @@ declare const mappedCodexThreadOptions: MappedCodexOptions['threadOptions'];
 declare const mappedCodexTurnOptions: MappedCodexOptions['runOptions'];
 const codexSdkMirror: LoadedCodexSdk = installedCodexSdk;
 const currentCodexOptions: CurrentCodexOptions = mappedCodexOptions;
+const currentCodexUltraConfig: CurrentCodexOptions = {
+  config: { model_reasoning_effort: 'ultra' },
+};
 const currentCodexThreadOptions: CurrentCodexThreadOptions =
   mappedCodexThreadOptions;
 const currentCodexTurnOptions: CurrentCodexTurnOptions = mappedCodexTurnOptions;
@@ -104,6 +107,7 @@ const currentCodexEvents: AsyncIterable<unknown> =
   currentCodexStreamResult.events;
 void codexSdkMirror;
 void currentCodexOptions;
+void currentCodexUltraConfig;
 void currentCodexThreadOptions;
 void currentCodexTurnOptions;
 void unsupportedCodexOptionKeys;
