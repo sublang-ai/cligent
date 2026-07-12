@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-const tsc = resolve(repoRoot, 'node_modules/.bin/tsc');
+const buildScript = resolve(repoRoot, 'scripts/build.mjs');
 const cli = resolve(repoRoot, 'dist/app/tmux-play/cli.js');
 
 // The launcher re-invokes this script for the in-tmux session subprocess via
@@ -26,13 +26,7 @@ const cli = resolve(repoRoot, 'dist/app/tmux-play/cli.js');
 const isSessionMode = process.argv.slice(2).includes('--session');
 
 if (!isSessionMode) {
-  if (!existsSync(tsc)) {
-    process.stderr.write(
-      'tmux-play-dev: tsc not found. Run `npm install` in the cligent repo so devDependencies are present.\n',
-    );
-    process.exit(1);
-  }
-  const build = spawnSync(tsc, ['-p', resolve(repoRoot, 'tsconfig.json')], {
+  const build = spawnSync(process.execPath, [buildScript], {
     stdio: 'inherit',
     cwd: repoRoot,
   });

@@ -17,7 +17,9 @@ the independent readiness defects listed below.
 
 In Progress
 
-The readiness contract is specified; implementation tasks remain open.
+Exact runtime targets, native permission defaults, validation tooling, and
+clean package output are complete; live acceptance and final distributable
+verification remain open.
 
 ## Deliverables
 
@@ -29,8 +31,8 @@ The readiness contract is specified; implementation tasks remain open.
   every validation target observable.
 - [x] OpenCode preserves its native permission defaults when no
   `PermissionPolicy` is supplied.
-- [ ] Node and TypeScript consumer floors match emitted runtime and declaration syntax.
-- [ ] Every build and package operation removes stale `dist` output first.
+- [x] Node and TypeScript consumer floors match emitted runtime and declaration syntax.
+- [x] Every build and package operation removes stale `dist` output first.
 - [ ] Live auto-mode acceptance uses safe create/update probes and bounded
   retries only for explicit transient upstream failures.
 - [ ] Packed-package and dependency-audit checks pass.
@@ -58,7 +60,7 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke checks
    that remain compatible with every configured CI Node line without raising
    the packaged runtime floor, then clear production and full-graph audit
    findings.
-5. [ ] **Harden build and package output.**
+5. [x] **Harden build and package output.**
    Declare accurate Node and TypeScript floors, clean `dist` before builds and
    packing, make the repository-local development launcher use clean output,
    and verify stale artifacts cannot enter a tarball. External shell aliases or

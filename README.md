@@ -17,6 +17,11 @@ Register an adapter, send a prompt, and consume a single async event stream — 
 npm install @sublang/cligent
 ```
 
+Runtime and declaration requirements:
+
+- Node.js 18.3.0 or newer.
+- TypeScript 5.4 or newer when consuming the package declarations.
+
 ## Quick start
 
 ```ts
