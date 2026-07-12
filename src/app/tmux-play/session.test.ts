@@ -165,7 +165,7 @@ describe('TmuxPlaySession', () => {
         captainConfig: expect.objectContaining({
           adapter: 'claude',
           instruction: 'Coordinate players.',
-          reasoningEffort: 'high',
+          effort: 'ultracode',
         }),
         cwd: '/repo',
         observers: expect.arrayContaining([
@@ -173,7 +173,7 @@ describe('TmuxPlaySession', () => {
           timingObserver,
           optInObserver,
         ]),
-        players: [expect.objectContaining({ id: 'coder', reasoningEffort: 'low' })],
+        players: [expect.objectContaining({ id: 'coder', effort: 'ultra' })],
       }),
     );
     // Order: the TMUX-083 layout observer first, then the presenter, the
@@ -861,14 +861,14 @@ function makeWorkDir(
       from: '@sublang/cligent/captains/fanout',
       adapter: 'claude',
       instruction: 'Coordinate players.',
-      reasoningEffort: 'high',
+      effort: 'ultracode',
       options: { tone: 'direct' },
     },
     players: [
       {
         id: 'coder',
         adapter: 'codex',
-        reasoningEffort: 'low',
+        effort: 'ultra',
       },
     ],
     layout: {

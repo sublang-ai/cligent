@@ -3,7 +3,8 @@
 
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import type { RecordObserver } from './records.js';
-import type { PermissionPolicy, PortableEffort } from '../../types.js';
+import type { EffortForAgent } from '../../effort.js';
+import type { PermissionPolicy } from '../../types.js';
 
 export interface Captain {
   init?(session: CaptainSession): Promise<void>;
@@ -117,22 +118,40 @@ export interface CaptainRunResult {
   readonly error?: string;
 }
 
-export interface RuntimePlayerConfig {
+interface RuntimePlayerConfigBase {
   readonly id: string;
-  readonly adapter: PlayerAdapterName;
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
-  readonly reasoningEffort?: PortableEffort;
 }
 
-export interface RuntimeCaptainConfig {
-  readonly adapter: PlayerAdapterName;
+type RuntimePlayerConfigByAdapter = {
+  [A in PlayerAdapterName]: RuntimePlayerConfigBase & {
+    readonly adapter: A;
+    readonly effort?: EffortForAgent<A>;
+  };
+};
+
+export type RuntimePlayerConfig<
+  A extends PlayerAdapterName = PlayerAdapterName,
+> = RuntimePlayerConfigByAdapter[A];
+
+interface RuntimeCaptainConfigBase {
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
-  readonly reasoningEffort?: PortableEffort;
 }
+
+type RuntimeCaptainConfigByAdapter = {
+  [A in PlayerAdapterName]: RuntimeCaptainConfigBase & {
+    readonly adapter: A;
+    readonly effort?: EffortForAgent<A>;
+  };
+};
+
+export type RuntimeCaptainConfig<
+  A extends PlayerAdapterName = PlayerAdapterName,
+> = RuntimeCaptainConfigByAdapter[A];
 
 export interface RunTmuxPlayOptions {
   readonly captain: Captain;

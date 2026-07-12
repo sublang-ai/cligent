@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { EFFORT_SUPPORT } from '../../effort.js';
 import {
   TMUX_PLAY_CONFIG_FILE,
   TMUX_PLAY_CONFIG_SNAPSHOT,
@@ -87,8 +88,8 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       config.captain.instruction
         ? `  instruction: ${config.captain.instruction}`
         : undefined,
-      config.captain.reasoningEffort
-        ? `  reasoningEffort: ${config.captain.reasoningEffort}`
+      config.captain.effort
+        ? `  effort: ${config.captain.effort}`
         : undefined,
       ...(Object.keys(config.captain.options as Record<string, unknown>).length
         ? [
@@ -104,8 +105,8 @@ function writeYamlConfig(path: string, config = validConfig()): void {
         `    adapter: ${player.adapter}`,
         player.model ? `    model: ${player.model}` : undefined,
         player.instruction ? `    instruction: ${player.instruction}` : undefined,
-        player.reasoningEffort
-          ? `    reasoningEffort: ${player.reasoningEffort}`
+        player.effort
+          ? `    effort: ${player.effort}`
           : undefined,
       ]),
       '',
@@ -207,12 +208,12 @@ describe('tmux-play config loading', () => {
       'codex',
     ]);
     expect(loaded.config.captain.model).toBe('claude-opus-4-8');
-    expect(loaded.config.captain.reasoningEffort).toBe('xhigh');
+    expect(loaded.config.captain.effort).toBe('xhigh');
     expect(loaded.config.players.map((player) => player.model)).toEqual([
       'claude-opus-4-8',
       'gpt-5.5',
     ]);
-    expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual([
+    expect(loaded.config.players.map((player) => player.effort)).toEqual([
       'xhigh',
       'xhigh',
     ]);
@@ -588,79 +589,218 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('accepts reasoningEffort closed-set values on captain and players', async () => {
+  it('accepts every adapter-scoped effort value on captains and players', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
-    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
-    const values = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
-    writeFileSync(
-      configPath,
-      [
-        'captain:',
-        "  from: '@sublang/cligent/captains/fanout'",
-        '  adapter: claude',
-        '  reasoningEffort: minimal',
-        '  options: {}',
-        'players:',
-        ...values.flatMap((value, index) => [
-          `  - id: player-${index}`,
-          '    adapter: codex',
-          `    reasoningEffort: ${value}`,
-        ]),
-        '',
-      ].join('\n'),
-    );
+    const cases = [
+      ['claude', EFFORT_SUPPORT['claude-code'].values],
+      ['codex', EFFORT_SUPPORT.codex.values],
+      ['gemini', EFFORT_SUPPORT.gemini.values],
+      ['opencode', EFFORT_SUPPORT.opencode.values],
+    ] as const;
 
-    const loaded = await loadTmuxPlayConfig({ cwd: workDir });
+    for (const [adapter, values] of cases) {
+      for (const effort of values) {
+        const configPath = join(workDir, `${adapter}-${effort}.yaml`);
+        writeFileSync(
+          configPath,
+          [
+            'captain:',
+            "  from: '@sublang/cligent/captains/fanout'",
+            `  adapter: ${adapter}`,
+            `  effort: ${effort}`,
+            '  options: {}',
+            'players:',
+            '  - id: worker',
+            `    adapter: ${adapter}`,
+            `    effort: ${effort}`,
+            '',
+          ].join('\n'),
+        );
 
-    expect(loaded.config.captain.reasoningEffort).toBe('minimal');
-    expect(loaded.config.players.map((player) => player.reasoningEffort)).toEqual(
-      values,
-    );
+        const loaded = await loadTmuxPlayConfig({ configPath });
+        expect(loaded.config.captain.effort).toBe(effort);
+        expect(loaded.config.players[0]?.effort).toBe(effort);
+      }
+    }
   });
 
-  it('rejects invalid reasoningEffort values with the offending path', async () => {
+  it('rejects unsupported effort values with path, adapter, and allowed values', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
-    const badCaptain = join(workDir, 'bad-captain-effort.yaml');
-    const badPlayer = join(workDir, 'bad-player-effort.yaml');
-    writeFileSync(
-      badCaptain,
+    const cases = [
+      ['claude', EFFORT_SUPPORT['claude-code'].values, ['ultra', 'turbo']],
+      ['codex', EFFORT_SUPPORT.codex.values, ['ultracode', 'turbo']],
+      ['gemini', EFFORT_SUPPORT.gemini.values, ['ultracode', 'ultra', 'turbo']],
       [
-        'captain:',
-        "  from: '@sublang/cligent/captains/fanout'",
-        '  adapter: claude',
-        '  reasoningEffort: turbo',
-        '  options: {}',
-        'players:',
-        '  - id: coder',
-        '    adapter: codex',
-        '',
-      ].join('\n'),
-    );
-    writeFileSync(
-      badPlayer,
-      [
-        'captain:',
-        "  from: '@sublang/cligent/captains/fanout'",
-        '  adapter: claude',
-        '  options: {}',
-        'players:',
-        '  - id: coder',
-        '    adapter: codex',
-        '    reasoningEffort: turbo',
-        '',
-      ].join('\n'),
-    );
+        'opencode',
+        EFFORT_SUPPORT.opencode.values,
+        ['ultracode', 'ultra', 'turbo'],
+      ],
+    ] as const;
+
+    for (const [adapter, allowed, rejected] of cases) {
+      for (const effort of rejected) {
+        const captainPath = join(
+          workDir,
+          `bad-captain-${adapter}-${effort}.yaml`,
+        );
+        const playerPath = join(
+          workDir,
+          `bad-player-${adapter}-${effort}.yaml`,
+        );
+        writeFileSync(
+          captainPath,
+          [
+            'captain:',
+            "  from: '@sublang/cligent/captains/fanout'",
+            `  adapter: ${adapter}`,
+            `  effort: ${effort}`,
+            '  options: {}',
+            'players:',
+            '  - id: worker',
+            `    adapter: ${adapter}`,
+            '',
+          ].join('\n'),
+        );
+        writeFileSync(
+          playerPath,
+          [
+            'captain:',
+            "  from: '@sublang/cligent/captains/fanout'",
+            `  adapter: ${adapter}`,
+            '  options: {}',
+            'players:',
+            '  - id: worker',
+            `    adapter: ${adapter}`,
+            `    effort: ${effort}`,
+            '',
+          ].join('\n'),
+        );
+
+        await expect(
+          loadTmuxPlayConfig({ configPath: captainPath }),
+        ).rejects.toThrow(
+          `captain.effort for adapter "${adapter}" must be one of: ${allowed.join(', ')}`,
+        );
+        await expect(
+          loadTmuxPlayConfig({ configPath: playerPath }),
+        ).rejects.toThrow(
+          `players[0].effort for adapter "${adapter}" must be one of: ${allowed.join(', ')}`,
+        );
+      }
+    }
+  });
+
+  it('normalizes legacy effort keys in memory without rewriting the source', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
+    const source = [
+      '# retain this authored form until the lossless disk migration',
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  reasoningEffort: ultracode',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '    reasoningEffort: ultra',
+      '',
+    ].join('\n');
+    writeFileSync(configPath, source);
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const snapshot = createTmuxPlayConfigSnapshot(loaded);
+
+    expect(loaded.config.captain.effort).toBe('ultracode');
+    expect(loaded.config.players[0]?.effort).toBe('ultra');
+    expect(snapshot.captain).not.toHaveProperty('reasoningEffort');
+    expect(snapshot.players[0]).not.toHaveProperty('reasoningEffort');
+    expect(readFileSync(configPath, 'utf8')).toBe(source);
+  });
+
+  it('rejects legacy conflicts before writing, including equal values', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const captainPath = join(workDir, 'captain-conflict.yaml');
+    const playerPath = join(workDir, 'player-conflict.yaml');
+    const captainSource = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  effort: high',
+      '  reasoningEffort: high',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '',
+    ].join('\n');
+    const playerSource = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '    effort: ultra',
+      '    reasoningEffort: ultra',
+      '',
+    ].join('\n');
+    writeFileSync(captainPath, captainSource);
+    writeFileSync(playerPath, playerSource);
 
     await expect(
-      loadTmuxPlayConfig({ cwd: workDir, configPath: badCaptain }),
+      loadTmuxPlayConfig({ configPath: captainPath }),
     ).rejects.toThrow(
-      'captain.reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+      'captain.effort conflicts with deprecated captain.reasoningEffort',
     );
     await expect(
-      loadTmuxPlayConfig({ cwd: workDir, configPath: badPlayer }),
+      loadTmuxPlayConfig({ configPath: playerPath }),
     ).rejects.toThrow(
-      'players[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+      'players[0].effort conflicts with deprecated players[0].reasoningEffort',
     );
+    expect(readFileSync(captainPath, 'utf8')).toBe(captainSource);
+    expect(readFileSync(playerPath, 'utf8')).toBe(playerSource);
+  });
+
+  it('preserves legacy source on invalid effort or unrelated config failure', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const invalidPath = join(workDir, 'invalid-legacy-effort.yaml');
+    const unrelatedPath = join(workDir, 'invalid-legacy-document.yaml');
+    const invalidSource = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  reasoningEffort: ultra',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '',
+    ].join('\n');
+    const unrelatedSource = [
+      'unknownRoot: true',
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  reasoningEffort: ultracode',
+      '  options: {}',
+      'players:',
+      '  - id: coder',
+      '    adapter: codex',
+      '',
+    ].join('\n');
+    writeFileSync(invalidPath, invalidSource);
+    writeFileSync(unrelatedPath, unrelatedSource);
+
+    await expect(
+      loadTmuxPlayConfig({ configPath: invalidPath }),
+    ).rejects.toThrow('captain.effort for adapter "claude" must be one of:');
+    await expect(
+      loadTmuxPlayConfig({ configPath: unrelatedPath }),
+    ).rejects.toThrow('Unknown config field config.unknownRoot');
+    expect(readFileSync(invalidPath, 'utf8')).toBe(invalidSource);
+    expect(readFileSync(unrelatedPath, 'utf8')).toBe(unrelatedSource);
   });
 
   it('accepts theme: mocha | latte | auto and rejects other values', async () => {
@@ -853,7 +993,7 @@ describe('tmux-play config loading', () => {
     expect(migrated).not.toContain('model:');
     expect(migrated).not.toContain('instruction:');
     expect(migrated).not.toContain('permissions:');
-    expect(migrated).not.toContain('reasoningEffort:');
+    expect(migrated).not.toContain('effort:');
   });
 
   it('preserves an existing partial home notifications block', async () => {

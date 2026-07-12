@@ -558,14 +558,17 @@ export async function createTmuxPlayRuntime(
     cwd: options.cwd,
     adapterImports: options.adapterImports,
   });
-  const captainCligent = await createPlayerCligent(options.captainConfig.adapter, {
-    cwd: options.cwd,
-    model: options.captainConfig.model,
-    role: 'captain',
-    permissions: options.captainConfig.permissions,
-    reasoningEffort: options.captainConfig.reasoningEffort,
-    adapterImports: options.adapterImports,
-  });
+  const captainCligent = await createPlayerCligent(
+    options.captainConfig.adapter,
+    {
+      cwd: options.cwd,
+      model: options.captainConfig.model,
+      role: 'captain',
+      permissions: options.captainConfig.permissions,
+      effort: options.captainConfig.effort,
+      adapterImports: options.adapterImports,
+    },
+  );
   const runtime = new TmuxPlayRuntime(options, players, captainCligent);
   await runtime.initialize();
   return runtime;

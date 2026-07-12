@@ -23,6 +23,7 @@ import type {
 } from './contract.js';
 import {
   TMUX_PLAY_CONFIG_SNAPSHOT,
+  type CaptainConfig,
   type TmuxPlayConfig,
 } from './config.js';
 import { createTmuxPresenter, type WidthSource } from './presenter-tmux.js';
@@ -249,13 +250,7 @@ export class TmuxPlaySession {
     const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
     this.runtime = await createRuntime({
       captain,
-      captainConfig: {
-        adapter: config.captain.adapter,
-        model: config.captain.model,
-        instruction: config.captain.instruction,
-        permissions: config.captain.permissions,
-        reasoningEffort: config.captain.reasoningEffort,
-      },
+      captainConfig: runtimeCaptain(config.captain),
       players: runtimePlayers(config.players),
       observers: [
         layoutObserver,
@@ -672,20 +667,57 @@ async function runShutdownStep(
   }
 }
 
-function runtimePlayers(players: readonly PlayerConfig[]): RuntimePlayerConfig[] {
-  return players.map((player) => {
-    if (!isKnownPlayerAdapter(player.adapter)) {
-      throw new Error(`Unknown adapter "${player.adapter}" for player "${player.id}"`);
-    }
-    return {
-      id: player.id,
-      adapter: player.adapter,
-      model: player.model,
-      instruction: player.instruction,
-      permissions: player.permissions,
-      reasoningEffort: player.reasoningEffort,
-    };
-  });
+function runtimeCaptain(
+  captain: CaptainConfig,
+): RunTmuxPlayOptions['captainConfig'] {
+  const base = {
+    model: captain.model,
+    instruction: captain.instruction,
+    permissions: captain.permissions,
+  };
+
+  switch (captain.adapter) {
+    case 'claude':
+      return { ...base, adapter: 'claude', effort: captain.effort };
+    case 'codex':
+      return { ...base, adapter: 'codex', effort: captain.effort };
+    case 'gemini':
+      return { ...base, adapter: 'gemini', effort: captain.effort };
+    case 'opencode':
+      return { ...base, adapter: 'opencode', effort: captain.effort };
+  }
+}
+
+function runtimePlayers(
+  players: readonly PlayerConfig[],
+): RuntimePlayerConfig[] {
+  return players.map(runtimePlayer);
+}
+
+function runtimePlayer(player: PlayerConfig): RuntimePlayerConfig {
+  if (!isKnownPlayerAdapter(player.adapter)) {
+    throw new Error(
+      `Unknown adapter "${player.adapter}" for player "${player.id}"`,
+    );
+  }
+
+  const base = {
+    id: player.id,
+    model: player.model,
+    instruction: player.instruction,
+    permissions: player.permissions,
+  };
+
+  switch (player.adapter) {
+    case 'claude':
+      return { ...base, adapter: 'claude', effort: player.effort };
+    case 'codex':
+      return { ...base, adapter: 'codex', effort: player.effort };
+    case 'gemini':
+      return { ...base, adapter: 'gemini', effort: player.effort };
+    case 'opencode':
+      return { ...base, adapter: 'opencode', effort: player.effort };
+  }
 }
 
 function deferred<T>(): {

@@ -2,11 +2,8 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { Cligent } from '../../cligent.js';
-import type {
-  AgentAdapter,
-  PermissionPolicy,
-  PortableEffort,
-} from '../../types.js';
+import type { EffortForAgent } from '../../effort.js';
+import type { AgentAdapter, PermissionPolicy } from '../../types.js';
 
 export const KNOWN_PLAYER_ADAPTERS = [
   'claude',
@@ -17,29 +14,44 @@ export const KNOWN_PLAYER_ADAPTERS = [
 
 export type PlayerAdapterName = (typeof KNOWN_PLAYER_ADAPTERS)[number];
 
-export interface PlayerConfig {
+interface PlayerConfigBase {
   id: string;
-  adapter: string;
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: PortableEffort;
 }
 
-export interface ResolvedPlayer {
-  id: string;
-  adapter: PlayerAdapterName;
-  model?: string;
-  instruction?: string;
-  cligent: Cligent;
-}
+type PlayerConfigByAdapter = {
+  [A in PlayerAdapterName]: PlayerConfigBase & {
+    adapter: A;
+    effort?: EffortForAgent<A>;
+  };
+};
 
-export interface CreatePlayerCligentOptions {
+export type PlayerConfig<A extends PlayerAdapterName = PlayerAdapterName> =
+  PlayerConfigByAdapter[A];
+
+type ResolvedPlayerByAdapter = {
+  [A in PlayerAdapterName]: {
+    id: string;
+    adapter: A;
+    model?: string;
+    instruction?: string;
+    cligent: Cligent<EffortForAgent<A>>;
+  };
+};
+
+export type ResolvedPlayer<A extends PlayerAdapterName = PlayerAdapterName> =
+  ResolvedPlayerByAdapter[A];
+
+export interface CreatePlayerCligentOptions<
+  A extends PlayerAdapterName = PlayerAdapterName,
+> {
   cwd?: string;
   model?: string;
   role?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: PortableEffort;
+  effort?: EffortForAgent<A>;
   adapterImports?: PlayerAdapterImports;
 }
 
@@ -48,12 +60,18 @@ export interface ResolvePlayersOptions {
   adapterImports?: PlayerAdapterImports;
 }
 
-type AdapterConstructor = new () => AgentAdapter;
-
-export type PlayerAdapterImports = Record<
-  PlayerAdapterName,
-  () => Promise<AdapterConstructor>
+type AdapterConstructor<A extends PlayerAdapterName> = new () => AgentAdapter<
+  EffortForAgent<A>
 >;
+
+export type PlayerAdapterImports = {
+  [A in PlayerAdapterName]: () => Promise<AdapterConstructor<A>>;
+};
+
+interface UnvalidatedPlayerConfig {
+  id: string;
+  adapter: string;
+}
 
 const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*$/;
 
@@ -72,7 +90,9 @@ export function isKnownPlayerAdapter(name: string): name is PlayerAdapterName {
   return (KNOWN_PLAYER_ADAPTERS as readonly string[]).includes(name);
 }
 
-export function validatePlayerConfigs(configs: readonly PlayerConfig[]): void {
+export function validatePlayerConfigs(
+  configs: readonly UnvalidatedPlayerConfig[],
+): void {
   const seen = new Set<string>();
 
   for (const config of configs) {
@@ -100,10 +120,16 @@ export function validatePlayerConfigs(configs: readonly PlayerConfig[]): void {
   }
 }
 
-export async function createPlayerCligent(
-  adapterName: PlayerAdapterName,
-  options: CreatePlayerCligentOptions = {},
-): Promise<Cligent> {
+export async function createPlayerCligent<A extends PlayerAdapterName>(
+  adapterName: A,
+  options: CreatePlayerCligentOptions<NoInfer<A>> = {},
+): Promise<Cligent<EffortForAgent<A>>> {
+  if (!isKnownPlayerAdapter(adapterName)) {
+    throw new Error(
+      `Unknown adapter "${adapterName}". ` +
+        `Valid adapters: ${KNOWN_PLAYER_ADAPTERS.join(', ')}`,
+    );
+  }
   const adapterImports = options.adapterImports ?? DEFAULT_ADAPTER_IMPORTS;
   const AdapterClass = await adapterImports[adapterName]();
   return new Cligent(new AdapterClass(), {
@@ -111,7 +137,7 @@ export async function createPlayerCligent(
     model: options.model,
     role: options.role,
     permissions: options.permissions,
-    effort: options.reasoningEffort,
+    effort: options.effort,
   });
 }
 
@@ -125,24 +151,66 @@ export async function resolvePlayers(
   const players: ResolvedPlayer[] = [];
 
   for (const config of configs) {
-    const adapterName = config.adapter as PlayerAdapterName;
-    const cligent = await createPlayerCligent(adapterName, {
-      adapterImports,
-      cwd: options.cwd,
-      model: config.model,
-      role: config.id,
-      permissions: config.permissions,
-      reasoningEffort: config.reasoningEffort,
-    });
-
-    players.push({
-      id: config.id,
-      adapter: adapterName,
-      model: config.model,
-      instruction: config.instruction,
-      cligent,
-    });
+    players.push(await resolvePlayer(config, options.cwd, adapterImports));
   }
 
   return players;
+}
+
+async function resolvePlayer(
+  config: PlayerConfig,
+  cwd: string | undefined,
+  adapterImports: PlayerAdapterImports,
+): Promise<ResolvedPlayer> {
+  const commonOptions = {
+    adapterImports,
+    cwd,
+    model: config.model,
+    role: config.id,
+    permissions: config.permissions,
+  };
+  const resolvedBase = {
+    id: config.id,
+    model: config.model,
+    instruction: config.instruction,
+  };
+
+  switch (config.adapter) {
+    case 'claude':
+      return {
+        ...resolvedBase,
+        adapter: 'claude',
+        cligent: await createPlayerCligent('claude', {
+          ...commonOptions,
+          effort: config.effort,
+        }),
+      };
+    case 'codex':
+      return {
+        ...resolvedBase,
+        adapter: 'codex',
+        cligent: await createPlayerCligent('codex', {
+          ...commonOptions,
+          effort: config.effort,
+        }),
+      };
+    case 'gemini':
+      return {
+        ...resolvedBase,
+        adapter: 'gemini',
+        cligent: await createPlayerCligent('gemini', {
+          ...commonOptions,
+          effort: config.effort,
+        }),
+      };
+    case 'opencode':
+      return {
+        ...resolvedBase,
+        adapter: 'opencode',
+        cligent: await createPlayerCligent('opencode', {
+          ...commonOptions,
+          effort: config.effort,
+        }),
+      };
+  }
 }

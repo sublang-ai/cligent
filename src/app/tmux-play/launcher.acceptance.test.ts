@@ -31,10 +31,10 @@ import {
 } from '../../adapters/codex.js';
 import {
   buildGeminiSettings,
-  GEMINI_REASONING_EFFORT_ALIAS,
   mapAgentOptionsToGeminiCommand,
 } from '../../adapters/gemini.js';
 import { mapEffortToOpenCodeVariant } from '../../adapters/opencode.js';
+import { EFFORT_SUPPORT } from '../../effort.js';
 import { loadTmuxPlayConfig } from './config.js';
 import { createTmuxPlayRuntime } from './runtime.js';
 import { createFollowObserver } from './follow-observer.js';
@@ -58,6 +58,10 @@ import type {
   AgentEvent,
   AgentOptions,
   AgentType,
+  ClaudeEffort,
+  CodexEffort,
+  GeminiEffort,
+  OpenCodeEffort,
 } from '../../types.js';
 import type { TmuxPlayRecord } from './records.js';
 import type { PlayerAdapterImports } from './players.js';
@@ -2259,10 +2263,68 @@ describe('tmux-play YAML → adapter permission seam', () => {
   });
 });
 
-// Before Task 8 migrates the YAML key, legacy `reasoningEffort` reaches the
-// adapter's `run()` call as `AgentOptions.effort`, and each mapping seam
-// translates it to that adapter's native control surface.
-describe('tmux-play YAML → adapter reasoning-effort seam', () => {
+const CLAUDE_EFFORT_MAPPING = {
+  minimal: ['low', false],
+  low: ['low', false],
+  medium: ['medium', false],
+  high: ['high', false],
+  xhigh: ['xhigh', false],
+  max: ['max', false],
+  ultracode: ['xhigh', true],
+} as const satisfies Record<ClaudeEffort, readonly [string, boolean]>;
+
+const GEMINI_3_EFFORT_MAPPING = {
+  minimal: 'MINIMAL',
+  low: 'LOW',
+  medium: 'MEDIUM',
+  high: 'HIGH',
+  xhigh: 'HIGH',
+  max: 'HIGH',
+} as const satisfies Record<GeminiEffort, string>;
+
+const GEMINI_25_FLASH_EFFORT_MAPPING = {
+  minimal: 1024,
+  low: 4096,
+  medium: 8192,
+  high: 16384,
+  xhigh: 24576,
+  max: 24576,
+} as const satisfies Record<GeminiEffort, number>;
+
+const OPENCODE_EFFORT_MAPPING = {
+  anthropic: {
+    minimal: 'high',
+    low: 'high',
+    medium: 'high',
+    high: 'high',
+    xhigh: 'max',
+    max: 'max',
+  },
+  openai: {
+    minimal: 'minimal',
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    xhigh: 'xhigh',
+    max: 'xhigh',
+  },
+  google: {
+    minimal: 'low',
+    low: 'low',
+    medium: 'low',
+    high: 'high',
+    xhigh: 'high',
+    max: 'high',
+  },
+} as const satisfies Record<
+  'anthropic' | 'openai' | 'google',
+  Record<OpenCodeEffort, string>
+>;
+
+// TTMUX-057: canonical YAML `effort` reaches each adapter's `run()` call as
+// the exact adapter-scoped value, then the exported mapping seam translates it
+// to that provider's native control surface.
+describe('tmux-play YAML → adapter effort seam', () => {
   let cwd: string | undefined;
 
   afterEach(() => {
@@ -2272,7 +2334,7 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
     }
   });
 
-  it('routes YAML reasoningEffort through all adapter mappings (TTMUX-057)', async () => {
+  it('routes every metadata-supported YAML effort through its adapter mapping (TTMUX-057)', async () => {
     cwd = mkdtempSync(join(tmpdir(), 'tmux-play-effort-'));
     const configPath = join(cwd, 'tmux-play.config.yaml');
     writeFileSync(
@@ -2281,58 +2343,84 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
         'captain:',
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
-        '  model: claude-opus-4-7',
-        '  reasoningEffort: xhigh',
+        '  model: claude-captain-ultracode',
+        '  effort: ultracode',
         '  options: {}',
         'players:',
-        '  - id: reviewer',
-        '    adapter: claude',
-        '    model: claude-sonnet-4-5',
-        '    reasoningEffort: max',
-        '  - id: coder',
-        '    adapter: codex',
-        '    model: gpt-5',
-        '    reasoningEffort: max',
-        '  - id: gemini3',
-        '    adapter: gemini',
-        '    model: gemini-3-flash',
-        '    reasoningEffort: high',
-        '  - id: gemini25',
-        '    adapter: gemini',
-        '    model: gemini-2.5-flash',
-        '    reasoningEffort: medium',
-        '  - id: geminialias',
-        '    adapter: gemini',
-        '    model: flash',
-        '    reasoningEffort: high',
-        '  - id: geminiunknown',
-        '    adapter: gemini',
-        '    model: gemini-4-pro',
-        '    reasoningEffort: high',
-        '  - id: geminiunset',
-        '    adapter: gemini',
-        '    reasoningEffort: high',
-        '  - id: opener',
-        '    adapter: opencode',
-        '    model: anthropic/claude-sonnet-4-5',
-        '    reasoningEffort: max',
-        '  - id: openai',
-        '    adapter: opencode',
-        '    model: openai/gpt-5',
-        '    reasoningEffort: medium',
-        '  - id: openunknown',
-        '    adapter: opencode',
-        '    model: someprovider/somemodel',
-        '    reasoningEffort: max',
+        ...EFFORT_SUPPORT['claude-code'].values.flatMap((effort) =>
+          effortPlayerYaml({
+            id: `claude-${effort}`,
+            adapter: 'claude',
+            model: `claude-test-${effort}`,
+            effort,
+          }),
+        ),
+        ...EFFORT_SUPPORT.codex.values.flatMap((effort) =>
+          effortPlayerYaml({
+            id: `codex-${effort}`,
+            adapter: 'codex',
+            model: `gpt-test-${effort}`,
+            effort,
+          }),
+        ),
+        ...EFFORT_SUPPORT.gemini.values.flatMap((effort) => [
+          ...effortPlayerYaml({
+            id: `gemini3-${effort}`,
+            adapter: 'gemini',
+            model: `gemini-3-test-${effort}`,
+            effort,
+          }),
+          ...effortPlayerYaml({
+            id: `gemini25-${effort}`,
+            adapter: 'gemini',
+            model: `gemini-2.5-flash-${effort}`,
+            effort,
+          }),
+        ]),
+        ...effortPlayerYaml({
+          id: 'gemini-alias',
+          adapter: 'gemini',
+          model: 'flash',
+          effort: 'high',
+        }),
+        ...effortPlayerYaml({
+          id: 'gemini-unknown',
+          adapter: 'gemini',
+          model: 'gemini-4-pro',
+          effort: 'high',
+        }),
+        ...effortPlayerYaml({
+          id: 'gemini-unset',
+          adapter: 'gemini',
+          effort: 'high',
+        }),
+        ...(['anthropic', 'openai', 'google', 'someprovider'] as const).flatMap(
+          (provider) =>
+            EFFORT_SUPPORT.opencode.values.flatMap((effort) =>
+              effortPlayerYaml({
+                id: `open-${provider}-${effort}`,
+                adapter: 'opencode',
+                model: `${provider}/test-${effort}`,
+                effort,
+              }),
+            ),
+        ),
+        ...effortPlayerYaml({
+          id: 'open-omitted',
+          adapter: 'opencode',
+          model: 'openai/test-omitted',
+        }),
         '',
       ].join('\n'),
     );
 
     const loaded = await loadTmuxPlayConfig({ cwd, configPath });
-    const captured: Record<
-      'claude' | 'codex' | 'gemini' | 'opencode',
-      AgentOptions[]
-    > = {
+    const captured: {
+      claude: AgentOptions<ClaudeEffort>[];
+      codex: AgentOptions<CodexEffort>[];
+      gemini: AgentOptions<GeminiEffort>[];
+      opencode: AgentOptions<OpenCodeEffort>[];
+    } = {
       claude: [],
       codex: [],
       gemini: [],
@@ -2362,15 +2450,15 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
         model: loaded.config.captain.model,
         instruction: loaded.config.captain.instruction,
         permissions: loaded.config.captain.permissions,
-        reasoningEffort: loaded.config.captain.reasoningEffort,
+        effort: loaded.config.captain.effort,
       },
       players: loaded.config.players.map((player) => ({
         id: player.id,
-        adapter: player.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        adapter: player.adapter,
         model: player.model,
         instruction: player.instruction,
         permissions: player.permissions,
-        reasoningEffort: player.reasoningEffort,
+        effort: player.effort,
       })),
       adapterImports,
     });
@@ -2381,95 +2469,149 @@ describe('tmux-play YAML → adapter reasoning-effort seam', () => {
       await runtime.dispose();
     }
 
-    const captainOptions = capturedByModel(captured.claude, 'claude-opus-4-7');
-    expect(captainOptions.effort).toBe('xhigh');
+    expect(captured.claude).toHaveLength(
+      EFFORT_SUPPORT['claude-code'].values.length + 1,
+    );
+    expect(captured.codex).toHaveLength(EFFORT_SUPPORT.codex.values.length);
+    expect(captured.gemini).toHaveLength(
+      EFFORT_SUPPORT.gemini.values.length * 2 + 3,
+    );
+    expect(captured.opencode).toHaveLength(
+      EFFORT_SUPPORT.opencode.values.length * 4 + 1,
+    );
+
+    const captainOptions = capturedByModel(
+      captured.claude,
+      'claude-captain-ultracode',
+    );
+    expect(captainOptions.effort).toBe('ultracode');
     expect(
       mapAgentOptionsToClaudeQueryOptions({
         model: captainOptions.model,
         effort: captainOptions.effort,
-      }).queryOptions.effort,
-    ).toBe('xhigh');
+      }).queryOptions,
+    ).toMatchObject({ effort: 'xhigh', settings: { ultracode: true } });
 
-    const claudePlayerOptions = capturedByModel(
-      captured.claude,
-      'claude-sonnet-4-5',
-    );
-    expect(claudePlayerOptions.effort).toBe('max');
-    expect(
-      mapAgentOptionsToClaudeQueryOptions({
-        model: claudePlayerOptions.model,
-        effort: claudePlayerOptions.effort,
-      }).queryOptions.effort,
-    ).toBe('max');
+    for (const effort of EFFORT_SUPPORT['claude-code'].values) {
+      const options = capturedByModel(captured.claude, `claude-test-${effort}`);
+      const [nativeEffort, ultracode] = CLAUDE_EFFORT_MAPPING[effort];
+      expect(options.effort).toBe(effort);
+      expect(
+        mapAgentOptionsToClaudeQueryOptions({
+          model: options.model,
+          effort: options.effort,
+        }).queryOptions,
+      ).toMatchObject({
+        effort: nativeEffort,
+        settings: { ultracode },
+      });
+    }
 
-    const codexOptions = capturedByModel(captured.codex, 'gpt-5');
-    expect(codexOptions.effort).toBe('max');
-    expect(
-      mapAgentOptionsToCodexOptions({
-        model: codexOptions.model,
-        effort: codexOptions.effort,
-      }).threadOptions.modelReasoningEffort,
-    ).toBe('xhigh');
+    for (const effort of EFFORT_SUPPORT.codex.values) {
+      const options = capturedByModel(captured.codex, `gpt-test-${effort}`);
+      expect(options.effort).toBe(effort);
+      const mapped = mapAgentOptionsToCodexOptions({
+        model: options.model,
+        effort: options.effort,
+      });
 
-    expectGeminiReasoningAlias(
-      capturedByModel(captured.gemini, 'gemini-3-flash'),
-      'gemini-3-flash',
-      { thinkingLevel: 'HIGH' },
-    );
-    expectGeminiReasoningAlias(
-      capturedByModel(captured.gemini, 'gemini-2.5-flash'),
-      'gemini-2.5-flash',
-      { thinkingBudget: 8192 },
-    );
-    expectGeminiReasoningSkipped(
+      if (effort === 'max' || effort === 'ultra') {
+        expect(mapped.threadOptions).not.toHaveProperty('modelReasoningEffort');
+        expect(mapped.codexOptions?.config?.model_reasoning_effort).toBe(
+          effort,
+        );
+      } else {
+        expect(mapped.threadOptions.modelReasoningEffort).toBe(effort);
+        expect(
+          mapped.codexOptions?.config?.model_reasoning_effort,
+        ).toBeUndefined();
+      }
+    }
+
+    for (const effort of EFFORT_SUPPORT.gemini.values) {
+      const gemini3Model = `gemini-3-test-${effort}`;
+      expectGeminiEffortAlias(
+        capturedByModel(captured.gemini, gemini3Model),
+        gemini3Model,
+        effort,
+        { thinkingLevel: GEMINI_3_EFFORT_MAPPING[effort] },
+      );
+
+      const gemini25Model = `gemini-2.5-flash-${effort}`;
+      expectGeminiEffortAlias(
+        capturedByModel(captured.gemini, gemini25Model),
+        gemini25Model,
+        effort,
+        { thinkingBudget: GEMINI_25_FLASH_EFFORT_MAPPING[effort] },
+      );
+    }
+
+    expectGeminiEffortSkipped(
       capturedByModel(captured.gemini, 'flash'),
       'flash',
+      'high',
     );
-    expectGeminiReasoningSkipped(
+    expectGeminiEffortSkipped(
       capturedByModel(captured.gemini, 'gemini-4-pro'),
       'gemini-4-pro',
+      'high',
     );
-    expectGeminiReasoningSkipped(
+    expectGeminiEffortSkipped(
       captured.gemini.find((entry) => entry.model === undefined),
       undefined,
+      'high',
     );
 
-    const openAnthropic = capturedByModel(
-      captured.opencode,
-      'anthropic/claude-sonnet-4-5',
-    );
-    expect(openAnthropic.effort).toBe('max');
-    expect(
-      mapEffortToOpenCodeVariant(openAnthropic.model, openAnthropic.effort),
-    ).toBe('max');
+    for (const provider of ['anthropic', 'openai', 'google'] as const) {
+      for (const effort of EFFORT_SUPPORT.opencode.values) {
+        const model = `${provider}/test-${effort}`;
+        const options = capturedByModel(captured.opencode, model);
+        expect(options.effort).toBe(effort);
+        expect(mapEffortToOpenCodeVariant(model, options.effort)).toBe(
+          OPENCODE_EFFORT_MAPPING[provider][effort],
+        );
+      }
+    }
 
-    const openAi = capturedByModel(captured.opencode, 'openai/gpt-5');
-    expect(openAi.effort).toBe('medium');
-    expect(
-      mapEffortToOpenCodeVariant(openAi.model, openAi.effort),
-    ).toBe('medium');
+    for (const effort of EFFORT_SUPPORT.opencode.values) {
+      const model = `someprovider/test-${effort}`;
+      const options = capturedByModel(captured.opencode, model);
+      expect(options.effort).toBe(effort);
+      expect(mapEffortToOpenCodeVariant(model, options.effort)).toBeUndefined();
+    }
 
-    const openUnknown = capturedByModel(
-      captured.opencode,
-      'someprovider/somemodel',
-    );
-    expect(openUnknown.effort).toBe('max');
+    const omitted = capturedByModel(captured.opencode, 'openai/test-omitted');
+    expect(omitted.effort).toBeUndefined();
     expect(
-      mapEffortToOpenCodeVariant(openUnknown.model, openUnknown.effort),
+      mapEffortToOpenCodeVariant(omitted.model, omitted.effort),
     ).toBeUndefined();
   });
 });
 
-function makeCapturingAdapter(
+function effortPlayerYaml(options: {
+  id: string;
+  adapter: 'claude' | 'codex' | 'gemini' | 'opencode';
+  model?: string;
+  effort?: string;
+}): string[] {
+  return [
+    `  - id: ${options.id}`,
+    `    adapter: ${options.adapter}`,
+    ...(options.model === undefined ? [] : [`    model: ${options.model}`]),
+    ...(options.effort === undefined ? [] : [`    effort: ${options.effort}`]),
+  ];
+}
+
+function makeCapturingAdapter<E extends string>(
   agent: AgentType,
-  bucket: AgentOptions[],
-): new () => AgentAdapter {
-  return class CapturingAdapter implements AgentAdapter {
+  bucket: AgentOptions<E>[],
+): new () => AgentAdapter<E> {
+  return class CapturingAdapter implements AgentAdapter<E> {
     readonly agent = agent;
 
     async *run(
       _prompt: string,
-      options?: AgentOptions,
+      options?: AgentOptions<E>,
     ): AsyncGenerator<AgentEvent, void, void> {
       bucket.push(options ?? {});
       yield createEvent(
@@ -2490,10 +2632,10 @@ function makeCapturingAdapter(
   };
 }
 
-function capturedByModel(
-  captured: readonly AgentOptions[],
+function capturedByModel<E extends string>(
+  captured: readonly AgentOptions<E>[],
   model: string,
-): AgentOptions {
+): AgentOptions<E> {
   const found = captured.find((entry) => entry.model === model);
   if (!found) {
     throw new Error(`No captured adapter options for model ${model}`);
@@ -2503,12 +2645,16 @@ function capturedByModel(
 
 function modelArg(args: readonly string[]): string | undefined {
   const index = args.indexOf('--model');
-  return index === -1 ? undefined : args[index + 1];
+  if (index !== -1) return args[index + 1];
+  return args
+    .find((arg) => arg.startsWith('--model='))
+    ?.slice('--model='.length);
 }
 
-function expectGeminiReasoningAlias(
-  options: AgentOptions,
+function expectGeminiEffortAlias(
+  options: AgentOptions<GeminiEffort>,
   model: string,
+  effort: GeminiEffort,
   thinkingConfig: Record<string, unknown>,
 ): void {
   const mapped = mapAgentOptionsToGeminiCommand('prompt', {
@@ -2516,12 +2662,14 @@ function expectGeminiReasoningAlias(
     effort: options.effort,
   });
 
-  expect(options.effort).toBeDefined();
-  expect(modelArg(mapped.args)).toBe(GEMINI_REASONING_EFFORT_ALIAS);
+  expect(options.effort).toBe(effort);
+  const alias = modelArg(mapped.args);
+  expect(alias).toBeDefined();
+  expect(alias).not.toBe(model);
   expect(buildGeminiSettings(mapped.settingsConfig)).toEqual({
     modelConfigs: {
       customAliases: {
-        [GEMINI_REASONING_EFFORT_ALIAS]: {
+        [alias!]: {
           modelConfig: {
             model,
             generateContentConfig: {
@@ -2534,9 +2682,10 @@ function expectGeminiReasoningAlias(
   });
 }
 
-function expectGeminiReasoningSkipped(
-  options: AgentOptions | undefined,
+function expectGeminiEffortSkipped(
+  options: AgentOptions<GeminiEffort> | undefined,
   expectedModel: string | undefined,
+  expectedEffort: GeminiEffort,
 ): void {
   expect(options).toBeDefined();
   const mapped = mapAgentOptionsToGeminiCommand('prompt', {
@@ -2544,10 +2693,9 @@ function expectGeminiReasoningSkipped(
     effort: options?.effort,
   });
 
-  expect(options?.effort).toBe('high');
+  expect(options?.effort).toBe(expectedEffort);
   expect(buildGeminiSettings(mapped.settingsConfig)).toBeUndefined();
   expect(modelArg(mapped.args)).toBe(expectedModel);
-  expect(mapped.args).not.toContain(GEMINI_REASONING_EFFORT_ALIAS);
   expect(mapped.args).not.toContain('--thinking-budget');
   expect(mapped.args).not.toContain('--thinking-level');
 }

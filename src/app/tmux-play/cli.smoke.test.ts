@@ -225,9 +225,9 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.stdout).not.toContain('runtime_error');
   });
 
-  // TTMUX-058: invalid YAML reasoningEffort aborts the launcher at the
+  // TTMUX-058: adapter-invalid canonical effort aborts the launcher at the
   // CLI boundary before the runtime exists.
-  it('rejects invalid reasoningEffort with stderr and nonzero exit', () => {
+  it('rejects invalid player effort with stderr and nonzero exit', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');
     mkdirSync(cwd, { recursive: true });
@@ -241,7 +241,7 @@ describe('tmux-play built CLI smoke', () => {
         'players:',
         '  - id: coder',
         '    adapter: codex',
-        '    reasoningEffort: turbo',
+        '    effort: ultracode',
         '',
       ].join('\n'),
     );
@@ -250,7 +250,39 @@ describe('tmux-play built CLI smoke', () => {
 
     expect(result.status, result.stderr).not.toBe(0);
     expect(result.stderr).toContain(
-      'players[0].reasoningEffort must be one of: minimal, low, medium, high, xhigh, max',
+      'players[0].effort for adapter "codex" must be one of: minimal, low, medium, high, xhigh, max, ultra',
+    );
+    expect(result.stderr.startsWith('Error: ')).toBe(true);
+    expect(readTmuxCalls(harness).some((call) => call[0] === 'new-session')).toBe(
+      false,
+    );
+    expect(result.stdout).not.toContain('runtime_error');
+  });
+
+  it('rejects invalid captain effort before creating a tmux session', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      join(cwd, 'tmux-play.config.yaml'),
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  effort: ultra',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runCli(['--cwd', cwd], harness);
+
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(
+      'captain.effort for adapter "claude" must be one of: minimal, low, medium, high, xhigh, max, ultracode',
     );
     expect(result.stderr.startsWith('Error: ')).toBe(true);
     expect(readTmuxCalls(harness).some((call) => call[0] === 'new-session')).toBe(

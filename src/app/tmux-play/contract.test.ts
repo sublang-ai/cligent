@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { PortableEffort } from '../../types.js';
+import type { ClaudeEffort, CodexEffort } from '../../types.js';
 import {
   KNOWN_PLAYER_ADAPTERS,
   createTmuxPlayRuntime,
@@ -59,18 +59,18 @@ describe('tmux-play public contract', () => {
     expectTypeOf<CallPlayerOptions>().toMatchTypeOf<{
       resume?: string | false;
     }>();
-    expectTypeOf<RuntimeCaptainConfig>().toMatchTypeOf<{
-      adapter: PlayerHandle['adapter'];
+    expectTypeOf<RuntimeCaptainConfig<'claude'>>().toMatchTypeOf<{
+      adapter: 'claude';
       model?: string;
       instruction?: string;
-      reasoningEffort?: PortableEffort;
+      effort?: ClaudeEffort;
     }>();
-    expectTypeOf<RuntimePlayerConfig>().toMatchTypeOf<{
+    expectTypeOf<RuntimePlayerConfig<'codex'>>().toMatchTypeOf<{
       id: string;
-      adapter: PlayerHandle['adapter'];
+      adapter: 'codex';
       model?: string;
       instruction?: string;
-      reasoningEffort?: PortableEffort;
+      effort?: CodexEffort;
     }>();
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;

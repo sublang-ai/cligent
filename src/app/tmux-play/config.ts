@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
+import { assertSupportedEffort, type EffortForAgent } from '../../effort.js';
 import { normalizeWritablePaths } from '../../permissions.js';
 import {
   isKnownPlayerAdapter,
@@ -15,11 +16,7 @@ import {
   type PlayerConfig,
 } from './players.js';
 import type { CatppuccinFlavor } from './player-colors.js';
-import type {
-  PermissionLevel,
-  PermissionPolicy,
-  PortableEffort,
-} from '../../types.js';
+import type { PermissionLevel, PermissionPolicy } from '../../types.js';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
@@ -27,15 +24,24 @@ export type JsonValue =
   | { [key: string]: JsonValue }
   | JsonValue[];
 
-export interface CaptainConfig {
+interface CaptainConfigBase {
   from: string;
-  adapter: PlayerAdapterName;
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
-  reasoningEffort?: PortableEffort;
   options: JsonValue;
 }
+
+type CaptainConfigByAdapter = {
+  [A in PlayerAdapterName]: CaptainConfigBase & {
+    adapter: A;
+    effort?: EffortForAgent<A>;
+  };
+};
+
+/** Captain configuration correlated to its selected built-in adapter. */
+export type CaptainConfig<A extends PlayerAdapterName = PlayerAdapterName> =
+  CaptainConfigByAdapter[A];
 
 export type CatppuccinFlavorConfig = CatppuccinFlavor | 'auto';
 export type { CatppuccinFlavor };
@@ -174,7 +180,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
     from: '@sublang/cligent/captains/fanout',
     adapter: 'claude',
     model: 'claude-opus-4-8',
-    reasoningEffort: 'xhigh',
+    effort: 'xhigh',
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
     options: {},
@@ -184,7 +190,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
       id: 'claude',
       adapter: 'claude',
       model: 'claude-opus-4-8',
-      reasoningEffort: 'xhigh',
+      effort: 'xhigh',
       instruction:
         'You are the claude player in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },
@@ -193,7 +199,7 @@ const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
       id: 'codex',
       adapter: 'codex',
       model: 'gpt-5.5',
-      reasoningEffort: 'xhigh',
+      effort: 'xhigh',
       instruction:
         'You are the codex player in a fanout Captain session. Provide an independent answer.',
       permissions: { mode: 'auto' },
@@ -244,16 +250,22 @@ export async function loadTmuxPlayConfig(
   }
 
   let raw = await loadConfigValue(configPath);
+  const legacyEffort = normalizeLegacyEffortKeysInMemory(raw);
+  raw = legacyEffort.value;
   if (
     !createdDefaultConfig &&
     !options.configPath &&
     resolve(configPath) === resolve(homeConfig)
   ) {
     const migrated = migrateHomeConfigSafeDefaults(raw);
-    if (migrated.changed) {
+    // Task 8 keeps the deprecated key compatible in memory. Task 9 performs
+    // its lossless, post-validation disk rename. Until then, never serialize
+    // a document that contained the legacy key: this also guarantees that a
+    // legacy value rejected below leaves its source untouched.
+    if (migrated.changed && !legacyEffort.changed) {
       await writeFile(configPath, stringify(migrated.value));
-      raw = migrated.value;
     }
+    raw = migrated.value;
   }
   const config = normalizeTmuxPlayConfig(raw);
   assertJsonSerializable(config, 'config');
@@ -789,6 +801,68 @@ function migrateHomeConfigSafeDefaults(
   return { value: config, changed };
 }
 
+interface EffortKeyObject {
+  readonly value: Record<string, unknown>;
+  readonly path: string;
+}
+
+/**
+ * Accept the retired key without exposing it in normalized public values.
+ *
+ * The source tree is scanned for conflicts before cloning or applying home
+ * defaults, so a conflicting document cannot be written by the existing
+ * safe-default migration. The lossless on-disk rename is deliberately owned
+ * by IR-031 Task 9.
+ */
+function normalizeLegacyEffortKeysInMemory(value: unknown): {
+  value: unknown;
+  changed: boolean;
+} {
+  const targets = effortKeyObjects(value);
+  let changed = false;
+
+  for (const target of targets) {
+    if (!hasOwn(target.value, 'reasoningEffort')) continue;
+    if (hasOwn(target.value, 'effort')) {
+      throw new Error(
+        `${target.path}.effort conflicts with deprecated ` +
+          `${target.path}.reasoningEffort; set only effort`,
+      );
+    }
+    changed = true;
+  }
+
+  if (!changed) {
+    return { value, changed: false };
+  }
+
+  const normalized = structuredCloneJson(value);
+  for (const target of effortKeyObjects(normalized)) {
+    if (!hasOwn(target.value, 'reasoningEffort')) continue;
+    target.value.effort = target.value.reasoningEffort;
+    delete target.value.reasoningEffort;
+  }
+  return { value: normalized, changed: true };
+}
+
+function effortKeyObjects(value: unknown): EffortKeyObject[] {
+  if (!isRecord(value)) return [];
+
+  const targets: EffortKeyObject[] = [];
+  if (isRecord(value.captain)) {
+    targets.push({ value: value.captain, path: 'captain' });
+  }
+  if (Array.isArray(value.players)) {
+    for (let index = 0; index < value.players.length; index++) {
+      const player = value.players[index];
+      if (isRecord(player)) {
+        targets.push({ value: player, path: `players[${index}]` });
+      }
+    }
+  }
+  return targets;
+}
+
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -826,6 +900,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'model',
     'instruction',
     'permissions',
+    'effort',
     'reasoningEffort',
     'options',
   ]);
@@ -839,22 +914,41 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     input.permissions,
     'captain.permissions',
   );
-  const reasoningEffort = optionalReasoningEffort(
-    input.reasoningEffort,
-    'captain.reasoningEffort',
-  );
   const options = input.options === undefined ? {} : input.options;
-
-  const captain: CaptainConfig = {
+  const common: CaptainConfigBase = {
     from,
-    adapter,
     options: options as JsonValue,
   };
-  if (model !== undefined) captain.model = model;
-  if (instruction !== undefined) captain.instruction = instruction;
-  if (permissions !== undefined) captain.permissions = permissions;
-  if (reasoningEffort !== undefined) captain.reasoningEffort = reasoningEffort;
-  return captain;
+  if (model !== undefined) common.model = model;
+  if (instruction !== undefined) common.instruction = instruction;
+  if (permissions !== undefined) common.permissions = permissions;
+
+  switch (adapter) {
+    case 'claude': {
+      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'codex': {
+      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'gemini': {
+      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'opencode': {
+      const effort = optionalEffort(input.effort, adapter, 'captain.effort');
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+  }
 }
 
 function normalizePlayerConfigs(value: unknown): PlayerConfig[] {
@@ -879,30 +973,52 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     'model',
     'instruction',
     'permissions',
+    'effort',
     'reasoningEffort',
   ]);
   rejectUnknownKeys(input, allowed, path);
 
-  const player: PlayerConfig = {
-    id: requireString(input.id, `${path}.id`),
-    adapter: requireAdapterName(input.adapter, `${path}.adapter`),
-  };
-
+  const id = requireString(input.id, `${path}.id`);
+  const adapter = requireAdapterName(input.adapter, `${path}.adapter`);
   const model = optionalString(input.model, `${path}.model`);
   const instruction = optionalString(input.instruction, `${path}.instruction`);
   const permissions = optionalPermissionPolicy(
     input.permissions,
     `${path}.permissions`,
   );
-  const reasoningEffort = optionalReasoningEffort(
-    input.reasoningEffort,
-    `${path}.reasoningEffort`,
-  );
-  if (model !== undefined) player.model = model;
-  if (instruction !== undefined) player.instruction = instruction;
-  if (permissions !== undefined) player.permissions = permissions;
-  if (reasoningEffort !== undefined) player.reasoningEffort = reasoningEffort;
-  return player;
+  const common = {
+    id,
+    ...(model === undefined ? {} : { model }),
+    ...(instruction === undefined ? {} : { instruction }),
+    ...(permissions === undefined ? {} : { permissions }),
+  };
+
+  switch (adapter) {
+    case 'claude': {
+      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'codex': {
+      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'gemini': {
+      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+    case 'opencode': {
+      const effort = optionalEffort(input.effort, adapter, `${path}.effort`);
+      return effort === undefined
+        ? { ...common, adapter }
+        : { ...common, adapter, effort };
+    }
+  }
 }
 
 function requireObject(
@@ -987,15 +1103,6 @@ const PERMISSION_LEVELS: ReadonlySet<PermissionLevel> = new Set([
   'ask',
   'deny',
 ]);
-const REASONING_EFFORTS: ReadonlySet<PortableEffort> = new Set([
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-]);
-
 function requirePermissionMode(
   value: unknown,
   path: string,
@@ -1018,17 +1125,14 @@ function requirePermissionLevel(
   return value as PermissionLevel;
 }
 
-function optionalReasoningEffort(
+function optionalEffort<A extends PlayerAdapterName>(
   value: unknown,
+  adapter: A,
   path: string,
-): PortableEffort | undefined {
+): EffortForAgent<A> | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string' || !REASONING_EFFORTS.has(value as never)) {
-    throw new Error(
-      `${path} must be one of: minimal, low, medium, high, xhigh, max`,
-    );
-  }
-  return value as PortableEffort;
+  assertSupportedEffort(adapter, value, path);
+  return value;
 }
 
 function requireAdapterName(value: unknown, path: string): PlayerAdapterName {

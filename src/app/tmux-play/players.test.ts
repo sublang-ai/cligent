@@ -159,7 +159,7 @@ describe('resolvePlayers', () => {
           id: 'coder',
           adapter: 'codex',
           permissions: { mode: 'auto' },
-          reasoningEffort: 'xhigh',
+          effort: 'ultra',
         },
       ],
       { adapterImports },
@@ -171,7 +171,43 @@ describe('resolvePlayers', () => {
     }
 
     expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
-    expect(captured[0]?.effort).toBe('xhigh');
+    expect(captured[0]?.effort).toBe('ultra');
+  });
+
+  it('leaves adapter effort unset when PlayerConfig omits it', async () => {
+    const captured: (AgentOptions | undefined)[] = [];
+
+    class CapturingAdapter implements AgentAdapter {
+      readonly agent = 'claude-code';
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.push(options);
+      }
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    const adapterImports: PlayerAdapterImports = {
+      claude: async () => CapturingAdapter,
+      codex: async () => adapterClass('codex'),
+      gemini: async () => adapterClass('gemini'),
+      opencode: async () => adapterClass('opencode'),
+    };
+    const players = await resolvePlayers(
+      [{ id: 'reviewer', adapter: 'claude' }],
+      { adapterImports },
+    );
+
+    const gen = players[0]!.cligent.run('hello');
+    while (!(await gen.next()).done) {
+      // drain
+    }
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.effort).toBeUndefined();
   });
 
   it('allows multiple players to use the same adapter and model', async () => {
