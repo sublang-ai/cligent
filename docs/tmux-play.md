@@ -4,9 +4,9 @@
 # tmux-play
 
 `tmux-play` is a reference application built on the `@sublang/cligent`
-SDK. The Boss chats with a Captain in the left pane; the Captain
-coordinates per-player `Cligent` instances whose output streams into
-read-only panes on the right.
+SDK. The Boss (you, the human) chats with a Captain agent in the left
+pane; the Captain coordinates per-player `Cligent` instances whose
+output streams into read-only panes on the right.
 
 ```bash
 tmux-play                                 # discover or create config
@@ -80,8 +80,10 @@ players:
 The top-level `theme` field selects the Catppuccin flavor applied to the
 session chrome (status bar, pane-border row, accent colors). Accepted
 values are `mocha` (dark terminals), `latte` (light terminals), and
-`auto` (default; the launcher detects via `COLORFGBG` and
-`TERM_PROGRAM=Apple_Terminal`, then falls back to Mocha). The presenter
+`auto` (default; the launcher probes the terminal's background color
+via an OSC 11 query and falls back to Mocha when the terminal does not
+answer — run `tmux-play --theme-diagnostics` to see how the flavor was
+resolved). The presenter
 inside each pane uses the same resolved flavor for speaker prefixes,
 status lines, and tool lifecycle, so the `boss>` prompt and per-player
 text stay readable on the host terminal's background.
@@ -328,7 +330,10 @@ tmux.
 
 ## Custom Captains
 
-A Captain module default-exports a factory. Captains call players via
+A Captain module default-exports a factory. The full typed contract —
+`Captain`, `CaptainSession`, `CaptainContext`, `BossTurn`,
+`PlayerRunResult`, and the record/observer types — is exported from
+`@sublang/cligent/tmux-play`. Captains call players via
 `context`, and may retain the `CaptainSession` from `init()` to
 `emitStatus`/`emitTelemetry` from `init`, during turns, or between turns.
 The optional `prepareDispose()` hook is the final point at which those session

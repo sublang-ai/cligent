@@ -17,6 +17,21 @@ Register an adapter, send a prompt, and consume a single async event stream — 
 npm install @sublang/cligent
 ```
 
+The agent SDKs are optional peer dependencies — add the one(s) for the
+adapters you use:
+
+```bash
+npm install @anthropic-ai/claude-agent-sdk   # Claude Code
+npm install @openai/codex-sdk                # Codex
+npm install @opencode-ai/sdk                 # OpenCode
+# Gemini needs no SDK — the adapter drives the installed `gemini` CLI
+```
+
+Adapters reuse each vendor's own authentication from your environment —
+a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
+(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`); cligent stores no
+credentials itself.
+
 Runtime and declaration requirements:
 
 - Node.js 18.3.0 or newer.
@@ -107,4 +122,4 @@ We welcome contributions of all kinds. If you'd like to help:
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

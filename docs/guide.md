@@ -28,7 +28,7 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 // session continuity, option merging, and protocol hardening.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-6',
+  model: 'claude-opus-4-8',
 });
 
 // agent.run(prompt, overrides?) → AsyncGenerator<CligentEvent>
@@ -71,7 +71,7 @@ import type { CligentOptions, RunOptions } from '@sublang/cligent';
 // CligentOptions — instance-level defaults (no abortSignal, no resume).
 const agent = new Cligent(adapter, {
   role: 'coder',        // injected into every event as event.role
-  model: 'claude-opus-4-6',
+  model: 'claude-opus-4-8',
   permissions: { fileWrite: 'allow', shellExecute: 'ask' },
   maxTurns: 10,
 });
@@ -90,7 +90,8 @@ for await (const event of agent.run('Fix the bug', {
 
 ## Adapters
 
-Pass an adapter to the `Cligent` constructor (or to `runAgent` via a registry).
+Pass an adapter to the `Cligent` constructor (or to the lower-level
+`runAgent` helper).
 
 **Claude Code**
 
@@ -261,13 +262,14 @@ import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 // otherwise. It is not a command allowlist or network grant.
 //
 // Adapters translate these to vendor-specific controls:
-//   Claude Code  → permissions.allow / ask / deny
+//   Claude Code  → SDK permissionMode, plus a canUseTool callback
+//                  for mixed allow/deny policies
 //   Codex        → default_permissions + approval_policy
 //                  (+ SDK config.approvals_reviewer for mode: 'auto')
 //                  (+ generated profile rules for writablePaths)
 //                  (lossy: networkAccess 'allow' grants network only when
 //                   the policy selects :danger-full-access)
-//   Gemini       → coreTools / excludeTools
+//   Gemini       → Policy Engine rules via --policy + --approval-mode
 //   OpenCode     → permission map
 const permissions: PermissionPolicy = {
   fileWrite: 'ask',       // prompt the user before creating or modifying files
@@ -289,7 +291,7 @@ const codexAgent = new Cligent(new CodexAdapter(), {
 
 // Set permissions as defaults, or override per-call.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
-  model: 'claude-opus-4-6',
+  model: 'claude-opus-4-8',
   permissions,
 });
 
@@ -318,7 +320,7 @@ import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 
 const coder = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-6',
+  model: 'claude-opus-4-8',
 });
 const reviewer = new Cligent(new CodexAdapter(), {
   role: 'reviewer',
@@ -351,7 +353,7 @@ for await (const event of runParallel([
   {
     adapter: new ClaudeCodeAdapter(),
     prompt: 'Write unit tests',
-    options: { model: 'claude-opus-4-6', effort: 'ultracode' },
+    options: { model: 'claude-opus-4-8', effort: 'ultracode' },
   },
   {
     adapter: new CodexAdapter(),
