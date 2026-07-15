@@ -10,9 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-15
+
 ### Added
 
-- Isolated tmux-play Captain control calls: `CallCaptainOptions` now exposes a per-call session selector `resume?: string | false` and a tool restriction `allowedTools?: readonly string[]` alongside presentation visibility, so a Captain's routing and adjudication calls can start from a fresh backend session with a closed tool registry. Omitting both preserves the runtime-owned Captain `Cligent`'s automatic continuity and adapter-native tool surface; `resume: false` forces a fresh backend session; and an explicit `allowedTools: []` requires a tool-free run. An explicit allowlist (including an empty one) is a control boundary rather than a hint: Claude Code selects the available built-ins via SDK `tools` while `allowedTools` keeps automatic approval, sets `strictMcpConfig: true` for every explicit list, and additionally uses `settingSources: []` for the empty case; Gemini emits User-tier Policy Engine allow rules plus a catch-all deny (only the catch-all deny when empty); OpenCode maps to prompt tool booleans led by a wildcard deny (`{ "*": false }` when empty); and Codex fails closed by rejecting any explicit tool-list restriction its SDK cannot enforce. `disallowedTools` retains precedence across the enforcing adapters — DR-010, IR-034
+- Isolated tmux-play Captain control calls: `CallCaptainOptions` now exposes a per-call session selector `resume?: string | false` and a tool restriction `allowedTools?: readonly string[]` alongside presentation visibility, so a Captain's routing and adjudication calls can start from a fresh backend session with a closed tool registry. Omitting both preserves the runtime-owned Captain `Cligent`'s automatic continuity and adapter-native tool surface; `resume: false` forces a fresh backend session; and an explicit `allowedTools: []` requires a tool-free run. The runtime-owned Captain `Cligent` forwards only the present controls, and the tmux-play records and visibility behavior are unchanged — DR-010, IR-034
+
+### Changed
+
+- Explicit `allowedTools` / `disallowedTools` are now enforced as a tool-availability boundary rather than an approval hint, and an adapter that cannot honor an explicit restriction fails closed instead of silently weakening the request. An explicit allowlist — including an empty one — is a control boundary: Claude Code selects the available built-ins via SDK `tools` while `allowedTools` keeps automatic approval, sets `strictMcpConfig: true` for every explicit list, and additionally uses `settingSources: []` to drop filesystem settings and `CLAUDE.md` for the empty case; Gemini emits User-tier Policy Engine allow rules plus a catch-all deny (only the catch-all deny when empty); OpenCode maps to prompt tool booleans led by a wildcard deny (`{ "*": false }` when empty); and Codex now rejects any explicit `allowedTools`/`disallowedTools` (including empty arrays) before loading its SDK. `disallowedTools` retains precedence across the enforcing adapters, and omitting both options preserves each provider's native tool surface — DR-010, IR-034
 
 ## [0.14.0] - 2026-07-12
 
@@ -281,7 +287,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/sublang-ai/cligent/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sublang-ai/cligent/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sublang-ai/cligent/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sublang-ai/cligent/compare/v0.11.0...v0.12.0
