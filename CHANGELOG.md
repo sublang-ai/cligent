@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Isolated tmux-play Captain control calls: `CallCaptainOptions` now exposes a per-call session selector `resume?: string | false` and a tool restriction `allowedTools?: readonly string[]` alongside presentation visibility, so a Captain's routing and adjudication calls can start from a fresh backend session with a closed tool registry. Omitting both preserves the runtime-owned Captain `Cligent`'s automatic continuity and adapter-native tool surface; `resume: false` forces a fresh backend session; and an explicit `allowedTools: []` requires a tool-free run. An explicit allowlist (including an empty one) is a control boundary rather than a hint: Claude Code selects the available built-ins via SDK `tools` while `allowedTools` keeps automatic approval, sets `strictMcpConfig: true` for every explicit list, and additionally uses `settingSources: []` for the empty case; Gemini emits User-tier Policy Engine allow rules plus a catch-all deny (only the catch-all deny when empty); OpenCode maps to prompt tool booleans led by a wildcard deny (`{ "*": false }` when empty); and Codex fails closed by rejecting any explicit tool-list restriction its SDK cannot enforce. `disallowedTools` retains precedence across the enforcing adapters — DR-010, IR-034
+
 ## [0.14.0] - 2026-07-12
 
 ### Added
