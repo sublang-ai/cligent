@@ -22,6 +22,10 @@ Each coding-agent SDK ships its own permission/approval model:
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
+Claude's `'auto'` runs its classifier on a separate classifier model — Sonnet 5 by default, with model-dependent fallbacks (an Opus model for Fable 5 sessions) and a server-side override, none user-configurable — and fails closed:
+while the classifier model is unavailable, non-read-only tool calls outside allow rules and working-directory edits are denied outright naming that model, and repeated blocks abort a non-interactive session because the prompt fallback needs a user [[1]].
+Permission allow rules resolve before the classifier and keep working when it cannot run; on entering auto mode, broad code-execution allow rules are dropped while narrow rules carry over [[1]].
+
 Cligent already provides a typed abstraction surface, `PermissionPolicy = { fileWrite, shellExecute, networkAccess }` of `'allow' | 'ask' | 'deny'`.
 Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolicy` to its SDK knobs inside the adapter (see e.g., `src/adapters/codex.ts` `mapPermissionsToCodexOptions`, `src/adapters/claude-code.ts` `mapPermissionsToClaudeOptions`).
 
@@ -65,6 +69,14 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | `codex` | `ThreadOptions: { approvalPolicy: 'on-request' }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review', default_permissions: <profile> }` — see *Codex — modern permission-profile model* below | `ThreadOptions: { approvalPolicy: 'never' }` plus `CodexOptions.config: { default_permissions: ':danger-full-access' }` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
 | `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
+
+### Headless auto-mode posture
+
+Cligent runs are headless: the interactive prompt fallback each SDK's protected auto-mode leans on has no user to answer it.
+`mode: 'auto'` shall nevertheless map to each SDK's native protected auto-mode exactly, adding no cligent-selected capability grants; headless auto is accepted as semi-equivalent to the interactive CLI — identical automation minus the human fallback, so actions the SDK would refer to a user (including every classifier-band action while Claude's classifier model is unavailable) end in denial rather than approval.
+An alternative that widened auto with cligent-chosen network grants — pre-approved Claude `WebFetch` / `WebSearch` / `Bash(curl:*)` allow rules ahead of the classifier, a generated Codex profile extending `:workspace` with `network = { enabled = true }` (grammar validated credential-free via `codex sandbox`), and an opencode `websearch: 'allow'` pin — was implemented and rolled back: a curated grant list is ad hoc, cannot anticipate the next task's tools, and blurs the auto/bypass distinction this DR exists to keep.
+Callers that need unattended capabilities beyond the SDK's protected auto shall say so explicitly (`mode: 'bypass'`); a typed opt-in that widens specific capabilities under auto stays open for a future revision.
+Known headless hazard, deliberately left to user configuration: opencode's `websearch` is a permission key distinct from `webfetch` [[4]], and a `websearch: 'ask'` in the user's opencode config blocks a headless server run indefinitely — the server waits on a permission reply no client sends.
 
 ### Codex — modern permission-profile model
 
