@@ -9,6 +9,7 @@ export const KNOWN_PLAYER_ADAPTERS = [
   'claude',
   'codex',
   'gemini',
+  'kimi',
   'opencode',
 ] as const;
 
@@ -82,6 +83,8 @@ const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
     (await import('../../adapters/codex.js')).CodexAdapter,
   gemini: async () =>
     (await import('../../adapters/gemini.js')).GeminiAdapter,
+  kimi: async () =>
+    (await import('../../adapters/kimi.js')).KimiAdapter,
   opencode: async () =>
     (await import('../../adapters/opencode.js')).OpenCodeAdapter,
 };

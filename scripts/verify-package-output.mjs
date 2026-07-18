@@ -89,6 +89,8 @@ function assertCurrentBuild(label) {
   for (const relativePath of [
     'dist/index.js',
     'dist/index.d.ts',
+    'dist/adapters/kimi.js',
+    'dist/adapters/kimi.d.ts',
     'dist/app/tmux-play/cli.js',
   ]) {
     if (!existsSync(resolve(repoRoot, relativePath))) {
@@ -182,6 +184,8 @@ try {
       'bin/tmux-play.mjs',
       'dist/index.js',
       'dist/index.d.ts',
+      'dist/adapters/kimi.js',
+      'dist/adapters/kimi.d.ts',
     ]) {
       if (!packedPaths.has(relativePath)) {
         fail(`tarball omitted current file ${relativePath}`);

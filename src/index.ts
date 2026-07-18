@@ -42,6 +42,7 @@ export type {
   EffortForAgent,
   EffortSupport,
   GeminiEffort,
+  KimiEffort,
   OpenCodeEffort,
   PortableEffort,
 } from './effort.js';

@@ -18,6 +18,7 @@ import type {
   ClaudeEffort,
   CodexEffort,
   GeminiEffort,
+  KimiEffort,
   OpenCodeEffort,
   PermissionPolicy,
 } from '../types.js';
@@ -37,6 +38,7 @@ type ExpectedEffortMap = {
   claude: ClaudeEffort | undefined;
   codex: CodexEffort | undefined;
   gemini: GeminiEffort | undefined;
+  kimi: KimiEffort | undefined;
   opencode: OpenCodeEffort | undefined;
 };
 
@@ -122,10 +124,14 @@ describe('tmux-play effort types (TTMUX-090)', () => {
     const opencode = createPlayerCligent('opencode', {
       effort: 'minimal',
     });
+    const kimi = createPlayerCligent('kimi', {
+      effort: 'on',
+    });
 
     expectTypeOf(claude).toEqualTypeOf<Promise<Cligent<ClaudeEffort>>>();
     expectTypeOf(codex).toEqualTypeOf<Promise<Cligent<CodexEffort>>>();
     expectTypeOf(gemini).toEqualTypeOf<Promise<Cligent<GeminiEffort>>>();
+    expectTypeOf(kimi).toEqualTypeOf<Promise<Cligent<KimiEffort>>>();
     expectTypeOf(opencode).toEqualTypeOf<Promise<Cligent<OpenCodeEffort>>>();
 
     // @ts-expect-error - Codex-only ultra cannot configure Claude
@@ -136,5 +142,7 @@ describe('tmux-play effort types (TTMUX-090)', () => {
     void createPlayerCligent('gemini', { effort: 'ultra' });
     // @ts-expect-error - OpenCode accepts only portable effort values
     void createPlayerCligent('opencode', { effort: 'ultracode' });
+    // @ts-expect-error - Kimi accepts only its binary effort values
+    void createPlayerCligent('kimi', { effort: 'high' });
   });
 });

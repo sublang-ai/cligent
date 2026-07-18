@@ -4,10 +4,7 @@
 import type { AgentType } from './types.js';
 
 export type BuiltinEffortAgent =
-  | 'claude-code'
-  | 'codex'
-  | 'gemini'
-  | 'opencode';
+  'claude-code' | 'codex' | 'gemini' | 'kimi' | 'opencode';
 
 interface EffortSupportShape {
   readonly values: readonly string[];
@@ -65,6 +62,13 @@ export const EFFORT_SUPPORT = Object.freeze({
     notes:
       'Gemini 3 collapses high, xhigh, and max to HIGH; Gemini 2.5 non-Pro models collapse xhigh and max to the same budget. Aliases, unmatched models, and an omitted model receive no effort override.',
   }),
+  kimi: Object.freeze({
+    values: Object.freeze(['off', 'on'] as const),
+    orchestrationValues: Object.freeze([] as const),
+    modelDependent: true,
+    notes:
+      "Kimi thinking is binary: off disables it, while on uses the selected model's native default thinking effort rather than a portable reasoning-depth tier.",
+  }),
   opencode: Object.freeze({
     values: Object.freeze([
       'minimal',
@@ -84,7 +88,7 @@ export const EFFORT_SUPPORT = Object.freeze({
 type EffortValue<A extends BuiltinEffortAgent> =
   (typeof EFFORT_SUPPORT)[A]['values'][number];
 
-/** Portable effort values shared by every built-in adapter. */
+/** Portable effort ladder used by built-in adapters that expose it. */
 export type PortableEffort = EffortValue<'gemini'>;
 
 /** Accepted effort values for the built-in Claude Code adapter. */
@@ -95,6 +99,9 @@ export type CodexEffort = EffortValue<'codex'>;
 
 /** Accepted effort values for the built-in Gemini adapter. */
 export type GeminiEffort = EffortValue<'gemini'>;
+
+/** Accepted provider-native thinking values for the built-in Kimi adapter. */
+export type KimiEffort = EffortValue<'kimi'>;
 
 /** Accepted effort values for the built-in OpenCode adapter. */
 export type OpenCodeEffort = EffortValue<'opencode'>;
@@ -109,9 +116,11 @@ export type EffortForAgent<A extends AgentType | 'claude'> = A extends
     ? CodexEffort
     : A extends 'gemini'
       ? GeminiEffort
-      : A extends 'opencode'
-        ? OpenCodeEffort
-        : Effort;
+      : A extends 'kimi'
+        ? KimiEffort
+        : A extends 'opencode'
+          ? OpenCodeEffort
+          : Effort;
 
 export interface EffortSupport {
   /** Values Cligent accepts for this built-in adapter. */
@@ -135,6 +144,8 @@ function canonicalEffortAgent(
       return 'codex';
     case 'gemini':
       return 'gemini';
+    case 'kimi':
+      return 'kimi';
     case 'opencode':
       return 'opencode';
     default:

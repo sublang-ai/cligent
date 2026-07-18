@@ -351,6 +351,7 @@ function driverSource(params: DriverParams): string {
     `  claude: async () => StubAdapter,`,
     `  codex: async () => StubAdapter,`,
     `  gemini: async () => StubAdapter,`,
+    `  kimi: async () => StubAdapter,`,
     `  opencode: async () => StubAdapter,`,
     `};`,
     `const session = new TmuxPlaySession({`,

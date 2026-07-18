@@ -16,14 +16,19 @@ import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-import { EXPECTED_SDK_VERSIONS } from './verify-agent-targets.mjs';
+import {
+  EXPECTED_PROTOCOL_VERSIONS,
+  EXPECTED_SDK_VERSIONS,
+} from './verify-agent-targets.mjs';
 
 const PACKAGE_NAME = '@sublang/cligent';
 const NODE_RUNTIME_VERSION = '18.3.0';
 const TYPESCRIPT_VERSION = '5.4.5';
 const NODE_TYPES_VERSION = '18.19.24';
 const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
+  '@agentclientprotocol/sdk': '0.23.0',
   yaml: '^2.8.4',
+  zod: '4.4.3',
 });
 const EXPECTED_OPTIONAL_PEERS = Object.freeze({
   '@anthropic-ai/claude-agent-sdk': '>=0.3.154',
@@ -88,6 +93,33 @@ function assertDeepEqual(actual, expected, label) {
       `${label}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
     );
   }
+}
+
+function assertRuntimeDependencyShape(
+  packageName,
+  manifest,
+  expectedPeerDependencies = {},
+) {
+  assertDeepEqual(
+    manifest.dependencies ?? {},
+    {},
+    `${packageName} transitive runtime dependencies`,
+  );
+  assertDeepEqual(
+    manifest.optionalDependencies ?? {},
+    {},
+    `${packageName} optional transitive runtime dependencies`,
+  );
+  assertDeepEqual(
+    manifest.peerDependencies ?? {},
+    expectedPeerDependencies,
+    `${packageName} runtime peer dependencies`,
+  );
+  assertDeepEqual(
+    manifest.bundleDependencies ?? manifest.bundledDependencies ?? [],
+    [],
+    `${packageName} bundled transitive runtime dependencies`,
+  );
 }
 
 function parsePackResult(stdout) {
@@ -163,6 +195,22 @@ function assertManifestPlacement(manifest, label) {
         version,
         `${label} exact ${packageName} development target`,
       );
+    }
+  }
+
+  for (const [packageName, version] of Object.entries(
+    EXPECTED_PROTOCOL_VERSIONS,
+  )) {
+    assertEqual(
+      manifest.dependencies?.[packageName],
+      version,
+      `${label} exact ${packageName} runtime target`,
+    );
+    if (manifest.devDependencies?.[packageName] !== undefined) {
+      fail(`${label} duplicates ${packageName} in devDependencies`);
+    }
+    if (manifest.optionalDependencies?.[packageName] !== undefined) {
+      fail(`${label} places ${packageName} in optionalDependencies`);
     }
   }
 }
@@ -272,12 +320,13 @@ if (process.version !== expectedVersion) {
 }
 
 const nodeModulesRoot = join(process.cwd(), 'node_modules');
-const [root, claude, codex, gemini, opencode, tmuxPlay, fanout] =
+const [root, claude, codex, gemini, kimi, opencode, tmuxPlay, fanout] =
   await Promise.all([
     import('@sublang/cligent'),
     import('@sublang/cligent/adapters/claude-code'),
     import('@sublang/cligent/adapters/codex'),
     import('@sublang/cligent/adapters/gemini'),
+    import('@sublang/cligent/adapters/kimi'),
     import('@sublang/cligent/adapters/opencode'),
     import('@sublang/cligent/tmux-play'),
     import('@sublang/cligent/captains/fanout'),
@@ -288,6 +337,7 @@ for (const [label, value] of [
   ['ClaudeCodeAdapter', claude.ClaudeCodeAdapter],
   ['CodexAdapter', codex.CodexAdapter],
   ['GeminiAdapter', gemini.GeminiAdapter],
+  ['KimiAdapter', kimi.KimiAdapter],
   ['OpenCodeAdapter', opencode.OpenCodeAdapter],
   ['TmuxPlayRuntime', tmuxPlay.TmuxPlayRuntime],
   ['FanoutCaptain', fanout.FanoutCaptain],
@@ -300,6 +350,9 @@ if (root.EFFORT_SUPPORT['claude-code'].values.at(-1) !== 'ultracode') {
 }
 if (root.EFFORT_SUPPORT.codex.values.at(-1) !== 'ultra') {
   throw new Error('Codex effort metadata is unavailable or stale');
+}
+if (root.EFFORT_SUPPORT.kimi.values.join(',') !== 'off,on') {
+  throw new Error('Kimi effort metadata is unavailable or stale');
 }
 
 const installedBin = join(
@@ -345,11 +398,13 @@ process.stdout.write(
   type ClaudeEffort,
   type CodexEffort,
   type GeminiEffort,
+  type KimiEffort,
   type OpenCodeEffort,
 } from '@sublang/cligent';
 import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 import { GeminiAdapter } from '@sublang/cligent/adapters/gemini';
+import { KimiAdapter } from '@sublang/cligent/adapters/kimi';
 import { OpenCodeAdapter } from '@sublang/cligent/adapters/opencode';
 import type {
   Captain,
@@ -363,11 +418,13 @@ import createFanoutCaptain, {
 const claude = new Cligent(new ClaudeCodeAdapter(), { effort: 'ultracode' });
 const codex = new Cligent(new CodexAdapter(), { effort: 'ultra' });
 const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
+const kimi = new Cligent(new KimiAdapter(), { effort: 'on' });
 const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'minimal' });
 
 claude.run('typed consumer', { effort: 'ultracode' });
 codex.run('typed consumer', { effort: 'ultra' });
 gemini.run('typed consumer', { effort: 'xhigh' });
+kimi.run('typed consumer', { effort: 'off' });
 opencode.run('typed consumer', { effort: 'high' });
 // @ts-expect-error Codex-native effort must not reach Claude.
 claude.run('typed consumer', { effort: 'ultra' });
@@ -377,15 +434,19 @@ codex.run('typed consumer', { effort: 'ultracode' });
 gemini.run('typed consumer', { effort: 'ultra' });
 // @ts-expect-error OpenCode accepts only portable effort values.
 opencode.run('typed consumer', { effort: 'ultracode' });
+// @ts-expect-error Kimi accepts only its binary native effort values.
+kimi.run('typed consumer', { effort: 'high' });
 
 const claudeValues: readonly ClaudeEffort[] = EFFORT_SUPPORT['claude-code'].values;
 const codexValues: readonly CodexEffort[] = EFFORT_SUPPORT.codex.values;
 const geminiValues: readonly GeminiEffort[] = EFFORT_SUPPORT.gemini.values;
+const kimiValues: readonly KimiEffort[] = EFFORT_SUPPORT.kimi.values;
 const opencodeValues: readonly OpenCodeEffort[] = EFFORT_SUPPORT.opencode.values;
 const players: PlayerConfig[] = [
   { id: 'claude', adapter: 'claude', effort: 'ultracode' },
   { id: 'codex', adapter: 'codex', effort: 'ultra' },
   { id: 'gemini', adapter: 'gemini', effort: 'max' },
+  { id: 'kimi', adapter: 'kimi', effort: 'on' },
   { id: 'opencode', adapter: 'opencode', effort: 'minimal' },
 ];
 const captain: CaptainConfig = {
@@ -400,6 +461,7 @@ const namedFanout: Captain = new FanoutCaptain();
 void claudeValues;
 void codexValues;
 void geminiValues;
+void kimiValues;
 void opencodeValues;
 void players;
 void captain;
@@ -520,28 +582,26 @@ try {
       );
     }
   }
-  const installedYaml = readJson(
-    join(consumerDirectory, 'node_modules', 'yaml', 'package.json'),
+  assertRuntimeDependencyShape(
+    '@agentclientprotocol/sdk',
+    readJson(
+      join(
+        consumerDirectory,
+        'node_modules',
+        '@agentclientprotocol',
+        'sdk',
+        'package.json',
+      ),
+    ),
+    { zod: '^3.25.0 || ^4.0.0' },
   );
-  assertDeepEqual(
-    installedYaml.dependencies ?? {},
-    {},
-    'yaml transitive runtime dependencies',
+  assertRuntimeDependencyShape(
+    'yaml',
+    readJson(join(consumerDirectory, 'node_modules', 'yaml', 'package.json')),
   );
-  assertDeepEqual(
-    installedYaml.optionalDependencies ?? {},
-    {},
-    'yaml optional transitive runtime dependencies',
-  );
-  assertDeepEqual(
-    installedYaml.peerDependencies ?? {},
-    {},
-    'yaml peer transitive runtime dependencies',
-  );
-  assertDeepEqual(
-    installedYaml.bundleDependencies ?? installedYaml.bundledDependencies ?? [],
-    [],
-    'yaml bundled transitive runtime dependencies',
+  assertRuntimeDependencyShape(
+    'zod',
+    readJson(join(consumerDirectory, 'node_modules', 'zod', 'package.json')),
   );
 
   const installedNodeTypes = readJson(

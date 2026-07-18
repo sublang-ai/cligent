@@ -3,9 +3,16 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import createFanoutCaptain from '../../captains/fanout.js';
 import type {
@@ -19,20 +26,21 @@ import type { PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL;
-const OPENCODE_MODEL =
-  process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
+const KIMI_ACCEPTANCE_HOME = process.env.CLIGENT_KIMI_ACCEPTANCE_HOME;
+const INCLUDE_KIMI = Boolean(KIMI_ACCEPTANCE_HOME);
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
 const PLAYER_ADAPTERS = [
   'claude',
   'codex',
   'gemini',
+  ...(INCLUDE_KIMI ? (['kimi'] as const) : []),
   'opencode',
 ] as const satisfies readonly PlayerAdapterName[];
 const dependencyReport = fanoutAcceptanceDeps();
 
 // Acceptance files are excluded from the standard CI matrix; CI hard-fails
 // missing dependencies only when the acceptance config loads this file.
-const acceptanceIt =
-  dependencyReport.ready || process.env.CI ? it : it.skip;
+const acceptanceIt = dependencyReport.ready || process.env.CI ? it : it.skip;
 
 describe('tmux-play fanout acceptance', () => {
   acceptanceIt(
@@ -51,9 +59,18 @@ describe('tmux-play fanout acceptance', () => {
       let records: TmuxPlayRecord[] = [];
 
       try {
+        if (!INCLUDE_KIMI) {
+          process.stderr.write(
+            'tmux-play fanout acceptance: Kimi leg omitted — set ' +
+              'CLIGENT_KIMI_ACCEPTANCE_HOME to a dedicated source home authenticated ' +
+              'by `kimi login`; exact ACP conformance remains mandatory.\n',
+          );
+        }
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           records = await withIsolatedGeminiCliHome(() =>
-            runFanoutTurn({ workDir, sentinel }),
+            withIsolatedKimiCodeHome(() =>
+              runFanoutTurn({ workDir, sentinel }),
+            ),
           );
           const transient = findTransientUpstreamFailure(records);
           if (!transient || attempt === maxAttempts) break;
@@ -176,6 +193,76 @@ async function withIsolatedGeminiCliHome<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+async function withIsolatedKimiCodeHome<T>(run: () => Promise<T>): Promise<T> {
+  if (!INCLUDE_KIMI) return run();
+  if (!KIMI_ACCEPTANCE_HOME) {
+    throw new Error('CLIGENT_KIMI_ACCEPTANCE_HOME is required for Kimi');
+  }
+  const home = mkdtempSync(join(tmpdir(), 'cligent-kimi-fanout-'));
+  const previousHome = process.env.KIMI_CODE_HOME;
+  const modelEnvKeys = [
+    'KIMI_MODEL_API_KEY',
+    'KIMI_MODEL_BASE_URL',
+    'KIMI_MODEL_NAME',
+    'KIMI_MODEL_PROVIDER_TYPE',
+  ] as const;
+  const previousModelEnv = new Map<string, string | undefined>(
+    modelEnvKeys.map((key) => [key, process.env[key]]),
+  );
+
+  try {
+    cpSync(
+      join(KIMI_ACCEPTANCE_HOME, 'config.toml'),
+      join(home, 'config.toml'),
+      { dereference: true },
+    );
+    cpSync(
+      join(KIMI_ACCEPTANCE_HOME, 'credentials'),
+      join(home, 'credentials'),
+      { dereference: true, recursive: true },
+    );
+    hardenKimiAuthCopy(home);
+    process.env.KIMI_CODE_HOME = home;
+    for (const key of modelEnvKeys) delete process.env[key];
+    return await run();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.KIMI_CODE_HOME;
+    } else {
+      process.env.KIMI_CODE_HOME = previousHome;
+    }
+    for (const [key, value] of previousModelEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function hardenKimiAuthCopy(home: string): void {
+  chmodSync(join(home, 'config.toml'), 0o600);
+  hardenKimiCredentialTree(join(home, 'credentials'));
+}
+
+function hardenKimiCredentialTree(path: string): void {
+  chmodSync(path, 0o700);
+  for (const entry of readdirSync(path, { withFileTypes: true })) {
+    const entryPath = join(path, entry.name);
+    if (entry.isDirectory()) {
+      hardenKimiCredentialTree(entryPath);
+    } else if (entry.isFile()) {
+      chmodSync(entryPath, 0o600);
+    } else {
+      throw new Error(
+        `Unsupported entry in copied Kimi credentials: ${entry.name}`,
+      );
+    }
+  }
+}
+
 interface RunFanoutTurnOptions {
   readonly workDir: string;
   readonly sentinel: string;
@@ -202,8 +289,7 @@ async function runFanoutTurn(
       players: PLAYER_ADAPTERS.map((adapter) => ({
         id: adapter,
         adapter,
-        instruction:
-          `You are player ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
+        instruction: `You are player ${adapter}. Keep replies short and include required acceptance tokens exactly.`,
         ...adapterModel(adapter),
       })),
       cwd: options.workDir,
@@ -296,9 +382,7 @@ function normalized(value: string | undefined): string {
   return (value ?? '').replace(/[^a-zA-Z0-9]/g, '');
 }
 
-function adapterModel(
-  adapter: PlayerAdapterName,
-): { model?: string } {
+function adapterModel(adapter: PlayerAdapterName): { model?: string } {
   if (adapter === 'gemini' && GEMINI_MODEL) {
     return { model: GEMINI_MODEL };
   }
@@ -330,9 +414,24 @@ function fanoutAcceptanceDeps(): DependencyReport {
   }
 
   // The runtime imports the default Gemini/OpenCode adapters, which spawn
-  // these CLI commands by name.
+  // these CLI commands by name. Kimi joins only when an explicit authenticated
+  // source home is supplied; its exact credential-free ACP handshake is
+  // covered separately by package conformance.
   requireCommand('gemini', missing);
   requireCommand('opencode', missing);
+  if (INCLUDE_KIMI) {
+    requireCommand('kimi', missing);
+    if (!KIMI_ACCEPTANCE_HOME || !isAbsolute(KIMI_ACCEPTANCE_HOME)) {
+      missing.push('absolute CLIGENT_KIMI_ACCEPTANCE_HOME');
+    } else {
+      if (!existsSync(join(KIMI_ACCEPTANCE_HOME, 'config.toml'))) {
+        missing.push('CLIGENT_KIMI_ACCEPTANCE_HOME/config.toml');
+      }
+      if (!existsSync(join(KIMI_ACCEPTANCE_HOME, 'credentials'))) {
+        missing.push('CLIGENT_KIMI_ACCEPTANCE_HOME/credentials');
+      }
+    }
+  }
 
   return {
     ready: missing.length === 0,

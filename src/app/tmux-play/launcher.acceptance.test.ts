@@ -60,6 +60,7 @@ import type {
   ClaudeEffort,
   CodexEffort,
   GeminiEffort,
+  KimiEffort,
   OpenCodeEffort,
 } from '../../types.js';
 import type { TmuxPlayRecord } from './records.js';
@@ -1342,6 +1343,7 @@ describe('tmux-play real-tmux acceptance', () => {
         claude: async () => streamMarker('claude'),
         codex: async () => streamMarker('codex'),
         gemini: async () => streamMarker('gemini'),
+        kimi: async () => streamMarker('kimi'),
         opencode: async () => streamMarker('opencode'),
       };
 
@@ -2188,6 +2190,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
       claude: async () => CapturingClaudeAdapter,
       codex: async () => CapturingCodexAdapter,
       gemini: async () => CapturingClaudeAdapter,
+      kimi: async () => CapturingClaudeAdapter,
       opencode: async () => CapturingClaudeAdapter,
     };
 
@@ -2208,7 +2211,8 @@ describe('tmux-play YAML → adapter permission seam', () => {
       },
       players: loaded.config.players.map((player) => ({
         id: player.id,
-        adapter: player.adapter as 'claude' | 'codex' | 'gemini' | 'opencode',
+        adapter: player.adapter as
+          'claude' | 'codex' | 'gemini' | 'kimi' | 'opencode',
         model: player.model,
         instruction: player.instruction,
         permissions: player.permissions,
@@ -2325,6 +2329,12 @@ describe('tmux-play YAML → adapter effort seam', () => {
           effort: 'high',
         }),
         ...effortPlayerYaml({
+          id: 'kimi-thinking',
+          adapter: 'kimi',
+          model: 'k3',
+          effort: 'on',
+        }),
+        ...effortPlayerYaml({
           id: 'open-anthropic-xhigh',
           adapter: 'opencode',
           model: 'anthropic/test-xhigh',
@@ -2357,11 +2367,13 @@ describe('tmux-play YAML → adapter effort seam', () => {
       claude: AgentOptions<ClaudeEffort>[];
       codex: AgentOptions<CodexEffort>[];
       gemini: AgentOptions<GeminiEffort>[];
+      kimi: AgentOptions<KimiEffort>[];
       opencode: AgentOptions<OpenCodeEffort>[];
     } = {
       claude: [],
       codex: [],
       gemini: [],
+      kimi: [],
       opencode: [],
     };
 
@@ -2369,6 +2381,7 @@ describe('tmux-play YAML → adapter effort seam', () => {
       claude: async () => makeCapturingAdapter('claude-code', captured.claude),
       codex: async () => makeCapturingAdapter('codex', captured.codex),
       gemini: async () => makeCapturingAdapter('gemini', captured.gemini),
+      kimi: async () => makeCapturingAdapter('kimi', captured.kimi),
       opencode: async () => makeCapturingAdapter('opencode', captured.opencode),
     };
 
@@ -2410,6 +2423,7 @@ describe('tmux-play YAML → adapter effort seam', () => {
     expect(captured.claude).toHaveLength(2);
     expect(captured.codex).toHaveLength(2);
     expect(captured.gemini).toHaveLength(3);
+    expect(captured.kimi).toHaveLength(1);
     expect(captured.opencode).toHaveLength(4);
 
     const captainOptions = capturedByModel(
@@ -2469,6 +2483,11 @@ describe('tmux-play YAML → adapter effort seam', () => {
       'flash',
       'high',
     );
+
+    expect(capturedByModel(captured.kimi, 'k3')).toMatchObject({
+      model: 'k3',
+      effort: 'on',
+    });
     const openCodeCases: Array<[string, OpenCodeEffort, string | undefined]> = [
       ['anthropic/test-xhigh', 'xhigh', 'max'],
       ['openai/test-max', 'max', 'xhigh'],
@@ -2487,7 +2506,7 @@ describe('tmux-play YAML → adapter effort seam', () => {
 
 function effortPlayerYaml(options: {
   id: string;
-  adapter: 'claude' | 'codex' | 'gemini' | 'opencode';
+  adapter: 'claude' | 'codex' | 'gemini' | 'kimi' | 'opencode';
   model?: string;
   effort?: string;
 }): string[] {

@@ -14,7 +14,7 @@ export interface ResolvedAgent {
   cligent: Cligent;
 }
 
-const KNOWN_AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const;
+const KNOWN_AGENTS = ['claude', 'codex', 'gemini', 'kimi', 'opencode'] as const;
 
 type KnownAgentName = (typeof KNOWN_AGENTS)[number];
 
@@ -28,6 +28,8 @@ const ADAPTER_IMPORTS: Record<
     (await import('../adapters/codex.js')).CodexAdapter,
   gemini: async () =>
     (await import('../adapters/gemini.js')).GeminiAdapter,
+  kimi: async () =>
+    (await import('../adapters/kimi.js')).KimiAdapter,
   opencode: async () =>
     (await import('../adapters/opencode.js')).OpenCodeAdapter,
 };
@@ -89,7 +91,7 @@ export async function resolveAgents(
 
   if (results.length === 0) {
     throw new Error(
-      'No agents available — install at least one agent SDK',
+      'No agents available — install at least one supported agent runtime',
     );
   }
 

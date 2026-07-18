@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
 import {
   KNOWN_PLAYER_ADAPTERS,
+  createPlayerCligent,
   resolvePlayers,
   validatePlayerConfigs,
   type PlayerAdapterImports,
@@ -43,6 +44,7 @@ function fakeAdapterImports(): PlayerAdapterImports {
     claude: async () => adapterClass('claude-code'),
     codex: async () => adapterClass('codex'),
     gemini: async () => adapterClass('gemini'),
+    kimi: async () => adapterClass('kimi'),
     opencode: async () => adapterClass('opencode'),
   };
 }
@@ -85,12 +87,23 @@ describe('validatePlayerConfigs', () => {
     expect(() =>
       validatePlayerConfigs([{ id: 'coder', adapter: 'unknown' }]),
     ).toThrow(
-      'Unknown adapter "unknown" for player "coder". Valid adapters: claude, codex, gemini, opencode',
+      'Unknown adapter "unknown" for player "coder". Valid adapters: claude, codex, gemini, kimi, opencode',
     );
   });
 });
 
 describe('resolvePlayers', () => {
+  it('loads the Kimi adapter from the default runtime registry', async () => {
+    const cligent = await createPlayerCligent('kimi', {
+      effort: 'on',
+      model: 'k3',
+      role: 'planner',
+    });
+
+    expect(cligent.agentType).toBe('kimi');
+    expect(cligent.role).toBe('planner');
+  });
+
   it('creates one player-scoped Cligent per config', async () => {
     const players = await resolvePlayers(
       [
@@ -150,6 +163,7 @@ describe('resolvePlayers', () => {
       claude: async () => adapterClass('claude-code'),
       codex: async () => CapturingAdapter,
       gemini: async () => adapterClass('gemini'),
+      kimi: async () => adapterClass('kimi'),
       opencode: async () => adapterClass('opencode'),
     };
 
@@ -194,6 +208,7 @@ describe('resolvePlayers', () => {
       claude: async () => CapturingAdapter,
       codex: async () => adapterClass('codex'),
       gemini: async () => adapterClass('gemini'),
+      kimi: async () => adapterClass('kimi'),
       opencode: async () => adapterClass('opencode'),
     };
     const players = await resolvePlayers(

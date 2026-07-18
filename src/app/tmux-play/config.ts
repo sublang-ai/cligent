@@ -36,6 +36,7 @@ import {
 import { assertSupportedEffort, type EffortForAgent } from '../../effort.js';
 import { normalizeWritablePaths } from '../../permissions.js';
 import {
+  KNOWN_PLAYER_ADAPTERS,
   isKnownPlayerAdapter,
   validatePlayerConfigs,
   type PlayerAdapterName,
@@ -1335,7 +1336,7 @@ function requireAdapterName(value: unknown, path: string): PlayerAdapterName {
   if (!isKnownPlayerAdapter(adapter)) {
     throw new Error(
       `Unknown adapter "${adapter}" at ${path}. ` +
-        'Valid adapters: claude, codex, gemini, opencode',
+        `Valid adapters: ${KNOWN_PLAYER_ADAPTERS.join(', ')}`,
     );
   }
   return adapter;

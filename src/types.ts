@@ -8,6 +8,7 @@ export type {
   CodexEffort,
   Effort,
   GeminiEffort,
+  KimiEffort,
   OpenCodeEffort,
   PortableEffort,
 } from './effort.js';
@@ -24,11 +25,7 @@ export type AgentEventType =
   | 'done';
 
 export type AgentType =
-  | 'claude-code'
-  | 'codex'
-  | 'gemini'
-  | 'opencode'
-  | (string & {});
+  'claude-code' | 'codex' | 'gemini' | 'kimi' | 'opencode' | (string & {});
 
 export interface BaseEvent {
   type: AgentEventType | (string & {});
@@ -106,15 +103,16 @@ export type AgentEvent =
   | (BaseEvent & { type: 'tool_result'; payload: ToolResultPayload })
   | (BaseEvent & { type: 'thinking'; payload: ThinkingPayload })
   | (BaseEvent & { type: 'error'; payload: ErrorPayload })
-  | (BaseEvent & { type: 'permission_request'; payload: PermissionRequestPayload })
+  | (BaseEvent & {
+      type: 'permission_request';
+      payload: PermissionRequestPayload;
+    })
   | (BaseEvent & { type: 'done'; payload: DonePayload })
   | (BaseEvent & { type: `${string}:${string}`; payload: unknown });
 
 export type PermissionLevel = 'allow' | 'ask' | 'deny';
 export type PermissionCapability =
-  | 'fileWrite'
-  | 'shellExecute'
-  | 'networkAccess';
+  'fileWrite' | 'shellExecute' | 'networkAccess';
 export type WritablePathsEnforcement = 'profile' | 'sandbox' | 'ambient';
 
 export interface WritablePathsPermissionMapping {

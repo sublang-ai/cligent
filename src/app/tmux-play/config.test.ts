@@ -383,10 +383,14 @@ describe('tmux-play config loading', () => {
 
     await expect(
       loadTmuxPlayConfig({ cwd: workDir, configPath: badCaptain }),
-    ).rejects.toThrow('Unknown adapter "unknown" at captain.adapter');
+    ).rejects.toThrow(
+      'Unknown adapter "unknown" at captain.adapter. Valid adapters: claude, codex, gemini, kimi, opencode',
+    );
     await expect(
       loadTmuxPlayConfig({ cwd: workDir, configPath: badPlayer }),
-    ).rejects.toThrow('Unknown adapter "unknown" at players[0].adapter');
+    ).rejects.toThrow(
+      'Unknown adapter "unknown" at players[0].adapter. Valid adapters: claude, codex, gemini, kimi, opencode',
+    );
   });
 
   it('rejects invalid player ids', async () => {
@@ -617,6 +621,9 @@ describe('tmux-play config loading', () => {
         '  - id: researcher',
         '    adapter: gemini',
         '    effort: high',
+        '  - id: planner',
+        '    adapter: kimi',
+        '    effort: on',
         '  - id: reviewer',
         '    adapter: opencode',
         '    effort: max',
@@ -629,6 +636,7 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.players.map((player) => player.effort)).toEqual([
       'ultra',
       'high',
+      'on',
       'max',
     ]);
   });
@@ -639,6 +647,7 @@ describe('tmux-play config loading', () => {
       ['captain', 'claude', 'ultra', EFFORT_SUPPORT['claude-code'].values],
       ['player', 'codex', 'ultracode', EFFORT_SUPPORT.codex.values],
       ['captain', 'gemini', 'ultra', EFFORT_SUPPORT.gemini.values],
+      ['player', 'kimi', 'high', EFFORT_SUPPORT.kimi.values],
       ['player', 'opencode', 'ultracode', EFFORT_SUPPORT.opencode.values],
     ] as const;
 

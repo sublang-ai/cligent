@@ -43,10 +43,12 @@ describe('built-in effort metadata', () => {
       'xhigh',
       'max',
     ]);
+    expect(EFFORT_SUPPORT.kimi.values).toEqual(['off', 'on']);
     expect(EFFORT_SUPPORT.opencode.values).toEqual(
       EFFORT_SUPPORT.gemini.values,
     );
     expect(EFFORT_SUPPORT.gemini.orchestrationValues).toEqual([]);
+    expect(EFFORT_SUPPORT.kimi.orchestrationValues).toEqual([]);
     expect(EFFORT_SUPPORT.opencode.orchestrationValues).toEqual([]);
 
     expect(Object.isFrozen(EFFORT_SUPPORT)).toBe(true);
@@ -84,6 +86,12 @@ describe('built-in effort metadata', () => {
     expect(isEffortSupported('codex', 'ultra')).toBe(true);
     expect(isEffortSupported('codex', 'ultracode')).toBe(false);
     expect(isEffortSupported('gemini', 'ultra')).toBe(false);
+    expect(getEffortSupport('kimi')).toBe(EFFORT_SUPPORT.kimi);
+    expect(supportedEffortValues('kimi')).toBe(EFFORT_SUPPORT.kimi.values);
+    expect(isEffortSupported('kimi', 'off')).toBe(true);
+    expect(isEffortSupported('kimi', 'on')).toBe(true);
+    expect(isEffortSupported('kimi', 'high')).toBe(false);
+    expect(isEffortSupported('gemini', 'on')).toBe(false);
   });
 
   it('names the path, adapter, and allowed values on validation errors', () => {
@@ -95,6 +103,10 @@ describe('built-in effort metadata', () => {
     ).toThrow(
       'players[0].effort for adapter "claude" must be one of: minimal, low, medium, high, xhigh, max, ultracode',
     );
+    expect(() => assertSupportedEffort('kimi', 'off')).not.toThrow();
+    expect(() =>
+      assertSupportedEffort('kimi', 'high', 'players[4].effort'),
+    ).toThrow('players[4].effort for adapter "kimi" must be one of: off, on');
   });
 
   it('returns no support for unknown adapters', () => {
@@ -113,5 +125,12 @@ describe('built-in effort metadata', () => {
     expect(EFFORT_SUPPORT.opencode.notes).toContain('OpenAI collapses');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('Google collapses');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('no effort override');
+    expect(EFFORT_SUPPORT.kimi.notes).toContain('binary');
+    expect(EFFORT_SUPPORT.kimi.notes).toContain(
+      "selected model's native default thinking effort",
+    );
+    expect(EFFORT_SUPPORT.kimi.notes).toContain(
+      'rather than a portable reasoning-depth tier',
+    );
   });
 });

@@ -5,6 +5,27 @@ import type {
   CanUseTool as CurrentClaudeCanUseTool,
   Options as CurrentClaudeOptions,
 } from '@anthropic-ai/claude-agent-sdk';
+import {
+  ClientSideConnection,
+  PROTOCOL_VERSION,
+  ndJsonStream,
+} from '@agentclientprotocol/sdk';
+import type {
+  Client as CurrentAcpClient,
+  InitializeResponse as CurrentAcpInitializeResponse,
+  NewSessionResponse as CurrentAcpNewSessionResponse,
+  PromptResponse as CurrentAcpPromptResponse,
+  RequestPermissionRequest as CurrentAcpPermissionRequest,
+  RequestPermissionResponse as CurrentAcpPermissionResponse,
+  ResumeSessionResponse as CurrentAcpResumeSessionResponse,
+  SessionConfigOption as CurrentAcpSessionConfigOption,
+  SessionNotification as CurrentAcpSessionNotification,
+  SessionUpdate as CurrentAcpSessionUpdate,
+  SetSessionConfigOptionResponse as CurrentAcpSetConfigResponse,
+  ToolCallContent as CurrentAcpToolCallContent,
+  ToolCallStatus as CurrentAcpToolCallStatus,
+  Usage as CurrentAcpUsage,
+} from '@agentclientprotocol/sdk';
 import type {
   CodexOptions as CurrentCodexOptions,
   ThreadOptions as CurrentCodexThreadOptions,
@@ -25,6 +46,98 @@ import {
   loadCodexSdk,
   mapAgentOptionsToCodexOptions,
 } from '../adapters/codex.js';
+
+const currentAcpProtocolVersion: 1 = PROTOCOL_VERSION;
+declare const currentAcpWritable: Parameters<typeof ndJsonStream>[0];
+declare const currentAcpReadable: Parameters<typeof ndJsonStream>[1];
+const currentAcpClient: CurrentAcpClient = {
+  async requestPermission(
+    request: CurrentAcpPermissionRequest,
+  ): Promise<CurrentAcpPermissionResponse> {
+    void request.sessionId;
+    void request.toolCall.toolCallId;
+    const reject = request.options.find(
+      (option) => option.kind === 'reject_once',
+    );
+    return reject
+      ? {
+          outcome: { outcome: 'selected', optionId: reject.optionId },
+        }
+      : { outcome: { outcome: 'cancelled' } };
+  },
+  async sessionUpdate(
+    notification: CurrentAcpSessionNotification,
+  ): Promise<void> {
+    void notification.sessionId;
+    switch (notification.update.sessionUpdate) {
+      case 'agent_message_chunk':
+      case 'agent_thought_chunk':
+        void notification.update.content;
+        break;
+      case 'tool_call':
+      case 'tool_call_update':
+        void notification.update.toolCallId;
+        break;
+      case 'plan':
+      case 'plan_update':
+      case 'plan_removed':
+        void notification.update;
+        break;
+      default:
+        break;
+    }
+  },
+};
+const currentAcpConnection = new ClientSideConnection(
+  () => currentAcpClient,
+  ndJsonStream(currentAcpWritable, currentAcpReadable),
+);
+const currentAcpInitialize: Promise<CurrentAcpInitializeResponse> =
+  currentAcpConnection.initialize({
+    protocolVersion: currentAcpProtocolVersion,
+    clientCapabilities: {},
+  });
+const currentAcpNewSession: Promise<CurrentAcpNewSessionResponse> =
+  currentAcpConnection.newSession({
+    cwd: '/tmp/cligent-kimi',
+    mcpServers: [],
+  });
+const currentAcpResumeSession: Promise<CurrentAcpResumeSessionResponse> =
+  currentAcpConnection.resumeSession({
+    sessionId: 'conformance-session',
+    cwd: '/tmp/cligent-kimi',
+    mcpServers: [],
+  });
+const currentAcpSetConfig: Promise<CurrentAcpSetConfigResponse> =
+  currentAcpConnection.setSessionConfigOption({
+    sessionId: 'conformance-session',
+    configId: 'thinking',
+    value: 'on',
+  });
+const currentAcpPrompt: Promise<CurrentAcpPromptResponse> =
+  currentAcpConnection.prompt({
+    sessionId: 'conformance-session',
+    prompt: [{ type: 'text', text: 'conformance prompt' }],
+  });
+const currentAcpCancel: Promise<void> = currentAcpConnection.cancel({
+  sessionId: 'conformance-session',
+});
+declare const currentAcpConfigOption: CurrentAcpSessionConfigOption;
+declare const currentAcpSessionUpdate: CurrentAcpSessionUpdate;
+declare const currentAcpToolCallContent: CurrentAcpToolCallContent;
+declare const currentAcpToolCallStatus: CurrentAcpToolCallStatus;
+declare const currentAcpUsage: CurrentAcpUsage;
+void currentAcpInitialize;
+void currentAcpNewSession;
+void currentAcpResumeSession;
+void currentAcpSetConfig;
+void currentAcpPrompt;
+void currentAcpCancel;
+void currentAcpConfigOption;
+void currentAcpSessionUpdate;
+void currentAcpToolCallContent;
+void currentAcpToolCallStatus;
+void currentAcpUsage;
 
 type InstalledClaudeSdk = typeof import('@anthropic-ai/claude-agent-sdk');
 type LoadedClaudeSdk = Awaited<ReturnType<typeof loadClaudeAgentSdk>>;

@@ -14,6 +14,7 @@ const KNOWN_PLAYER_COLORS_MOCHA: Readonly<Record<string, string>> = {
   claude: '#a6e3a1', // green
   codex: '#94e2d5', // teal
   gemini: '#b4befe', // lavender
+  kimi: '#74c7ec', // sapphire
   opencode: '#f5c2e7', // pink
 };
 
@@ -21,6 +22,7 @@ const KNOWN_PLAYER_COLORS_LATTE: Readonly<Record<string, string>> = {
   claude: '#40a02b', // green
   codex: '#179299', // teal
   gemini: '#7287fd', // lavender
+  kimi: '#209fb5', // sapphire
   opencode: '#ea76cb', // pink
 };
 

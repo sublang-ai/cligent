@@ -25,7 +25,16 @@ describe('playerAccent', () => {
     expect(playerAccent('claude')).toBe('#a6e3a1');
     expect(playerAccent('codex')).toBe('#94e2d5');
     expect(playerAccent('gemini')).toBe('#b4befe');
+    expect(playerAccent('kimi')).toBe('#74c7ec');
     expect(playerAccent('opencode')).toBe('#f5c2e7');
+  });
+
+  it('returns the canonical Latte accent for each known adapter', () => {
+    expect(playerAccent('claude', 'latte')).toBe('#40a02b');
+    expect(playerAccent('codex', 'latte')).toBe('#179299');
+    expect(playerAccent('gemini', 'latte')).toBe('#7287fd');
+    expect(playerAccent('kimi', 'latte')).toBe('#209fb5');
+    expect(playerAccent('opencode', 'latte')).toBe('#ea76cb');
   });
 
   it('returns a stable fallback color for unknown adapters', () => {
@@ -66,7 +75,7 @@ describe('playerAccent', () => {
       STATUS_ERROR,
       STATUS_ABORTED,
     ]);
-    for (const adapter of ['claude', 'codex', 'gemini', 'opencode']) {
+    for (const adapter of ['claude', 'codex', 'gemini', 'kimi', 'opencode']) {
       expect(reserved.has(playerAccent(adapter))).toBe(false);
     }
   });

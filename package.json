@@ -1,7 +1,7 @@
 {
   "name": "@sublang/cligent",
   "version": "0.15.0",
-  "description": "Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, OpenCode, and more)",
+  "description": "Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, Kimi Code, OpenCode, and more)",
   "type": "module",
   "license": "Apache-2.0",
   "repository": {
@@ -17,6 +17,7 @@
     "claude",
     "codex",
     "gemini",
+    "kimi",
     "opencode",
     "unified",
     "adapter"
@@ -50,6 +51,10 @@
     "./adapters/gemini": {
       "import": "./dist/adapters/gemini.js",
       "types": "./dist/adapters/gemini.d.ts"
+    },
+    "./adapters/kimi": {
+      "import": "./dist/adapters/kimi.js",
+      "types": "./dist/adapters/kimi.d.ts"
     },
     "./adapters/opencode": {
       "import": "./dist/adapters/opencode.js",
@@ -111,6 +116,8 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
-    "yaml": "^2.8.4"
+    "@agentclientprotocol/sdk": "0.23.0",
+    "yaml": "^2.8.4",
+    "zod": "4.4.3"
   }
 }

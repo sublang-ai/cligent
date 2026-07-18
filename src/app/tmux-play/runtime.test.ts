@@ -64,6 +64,10 @@ function adapterImports(
       const script = scripts.gemini ?? fallback;
       return adapterClass(script.agent, script.run);
     },
+    kimi: async () => {
+      const script = scripts.kimi ?? fallback;
+      return adapterClass(script.agent, script.run);
+    },
     opencode: async () => {
       const script = scripts.opencode ?? fallback;
       return adapterClass(script.agent, script.run);

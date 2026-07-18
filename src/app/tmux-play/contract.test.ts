@@ -104,6 +104,7 @@ describe('tmux-play public contract', () => {
       'claude',
       'codex',
       'gemini',
+      'kimi',
       'opencode',
     ]);
   });
