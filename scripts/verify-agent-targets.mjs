@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 export const EXPECTED_SDK_VERSIONS = Object.freeze({
   '@anthropic-ai/claude-agent-sdk': '0.3.207',
-  '@openai/codex-sdk': '0.144.1',
+  '@openai/codex-sdk': '0.144.5',
   '@opencode-ai/sdk': '1.17.18',
 });
 
@@ -19,7 +19,7 @@ export const EXPECTED_CLI_VERSIONS = Object.freeze({
 
 export const EXPECTED_BUNDLED_AGENT_VERSIONS = Object.freeze({
   claudeCode: '2.1.207',
-  codex: '0.144.1',
+  codex: '0.144.5',
 });
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
