@@ -19,6 +19,7 @@ The adapter shall expose `KimiAdapter`, implement `AgentAdapter<KimiEffort>`, an
 
 `isAvailable()` shall probe the documented `kimi --version` command on PATH with a timeout [[3]].
 It shall not start ACP, authenticate, or mutate Kimi configuration.
+A successful zero exit shall return `true`; a missing executable, nonzero exit, or timeout shall return `false`.
 
 ## ACP Lifecycle
 
@@ -60,6 +61,7 @@ Kimi Code's ACP 0.23 surface exposes no stable per-turn usage totals, so absent 
 
 ACP stop reason `end_turn` shall map to `done.status: 'success'`; `cancelled` shall map to `'interrupted'`; `max_tokens` and `max_turn_requests` shall map to `'max_turns'`; and `refusal` shall emit a non-recoverable error followed by `done.status: 'error'`.
 Structured JSON-RPC errors, malformed protocol traffic, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
+Kimi Code `0.27.0` ACP session creation requires the OAuth credential written by `kimi login`; a configured API-key provider does not independently satisfy that ACP authentication gate [[8]].
 Authentication guidance shall name `kimi login`; the adapter shall never launch login itself.
 
 ## Permission Mapping
@@ -72,6 +74,7 @@ Where mode is `'bypass'`, the adapter shall reject before spawn because Kimi's `
 Where a policy is provided with mode omitted, including an empty policy, the adapter shall reject before spawn because ACP cannot deterministically impose Cligent's default-ask capability policy over Kimi's earlier native rule decisions.
 This limitation follows Kimi's configured permission-rule evaluation, which may decide operations before an ACP permission request is exposed [[4]].
 Any permission request that still reaches the headless ACP client shall emit `permission_request` and select a reject option; if no reject option exists or the run is aborted, it shall return a cancelled outcome.
+Where Kimi plan review exposes both `Revise` and `Reject and Exit` as reject-once choices, the adapter shall select the terminal `Reject and Exit` choice [[7]].
 
 ### KIMI-008
 
@@ -100,6 +103,7 @@ Where `maxTurns` or `maxBudgetUsd` is explicitly provided, the adapter shall rej
 When `AbortSignal` fires after session setup, the adapter shall send `session/cancel`, continue draining the prompt response and queued updates when possible, and yield exactly one `done` with `status: 'interrupted'` before terminating the child.
 When abort occurs before session setup completes, the adapter shall terminate the child and still yield exactly one interrupted `done`.
 Cleanup shall remove abort listeners, close protocol resources, drain or terminate the per-run process, and shall not retain mutable session state on the adapter instance.
+After a terminal prompt response, adapter-initiated `SIGTERM` following a bounded stdin-close grace shall not change an otherwise successful run to an error; cleanup that requires `SIGKILL` shall remain an error.
 
 ## Resume Token
 
@@ -116,3 +120,5 @@ When abort or failure occurs before a backend identifier is observed, it shall p
 [4]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code configuration"
 [5]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
+[7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code 0.27 ACP authentication gate"

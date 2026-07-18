@@ -16,7 +16,7 @@ Neither Kimi-specific SDK is therefore a suitable supported dependency for Clige
 The successor CLI exposes three automation surfaces.
 Prompt mode can emit `stream-json`, ACP mode exposes JSON-RPC over stdio for external clients, and server mode exposes a persistent REST and WebSocket service [[5]][[6]].
 Prompt mode always uses Kimi's headless `auto` policy, omits thinking content from JSONL, and publishes the resumable session identifier only after a successful prompt [[5]][[12]].
-Those properties cannot preserve Cligent's native-default permission posture, structured cancellation, reasoning privacy boundary, or fresh-run resume continuity.
+The omission preserves thought privacy, but prompt mode cannot preserve Cligent's native-default permission posture, structured permission and cancellation flow, or early fresh-session resume continuity.
 The persistent server adds lifecycle and network state that Cligent's stateless per-run adapter does not need.
 
 ## Decision
@@ -48,7 +48,8 @@ Kimi's ACP configuration surface exposes thinking as the provider-native binary 
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-ACP authentication failures shall instruct the user to authenticate through `kimi login` or Kimi's documented provider configuration [[5]][[6]].
+Kimi Code `0.27.0` gates ACP session creation on the OAuth credential written by `kimi login`; an API-key provider configuration can select a model after login but does not independently satisfy this ACP gate [[5]][[6]][[14]].
+ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
 ## Consequences
 
@@ -58,6 +59,9 @@ Text, tools, permissions, model selection, and cancellation remain structured, w
 One short-lived process per run preserves adapter thread safety and avoids a resident Kimi service.
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
+Credential-free CI shall always exercise the exact ACP initialization handshake.
+Live acceptance shall require an explicitly supplied dedicated Kimi home already authenticated by `kimi login`, clone only its dereferenced configuration and credential directory into a permission-hardened temporary home, and self-skip when that source is not supplied rather than reading or mutating a developer's ordinary Kimi home [[13]].
+Because an OAuth refresh performed against a clone may make the source fixture stale, the source shall be treated as disposable and reauthenticated before a later probe when necessary.
 A future public, documented Kimi Code SDK may replace the ACP subprocess only through a new decision that preserves the same observable contract.
 
 ## References
@@ -74,3 +78,5 @@ A future public, documented Kimi Code SDK may replace the ACP subprocess only th
 [10]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code permission rules"
 [11]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [12]: https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/src/cli/run-prompt.ts "Kimi Code prompt-mode implementation"
+[13]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html "Kimi Code data locations"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code 0.27 ACP authentication gate"

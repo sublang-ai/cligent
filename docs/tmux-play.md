@@ -21,10 +21,12 @@ Requirements:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
   [Gemini CLI](https://github.com/google-gemini/gemini-cli),
+  [Kimi Code](https://github.com/MoonshotAI/kimi-code),
   [OpenCode](https://opencode.ai).
 
 Each configured adapter behaves the same way it would for direct
-`Cligent` use (see [guide.md](guide.md)).
+`Cligent` use. Kimi users must install the pinned CLI and authenticate before
+launching a session with `kimi login` (see [guide.md](guide.md#install)).
 
 ## Config
 
@@ -115,7 +117,7 @@ same network limits while routing eligible approval requests to a
 reviewer agent. Remove the blocks to fall back to each adapter's SDK
 default; cligent itself ships no project-wide permission posture.
 
-- Adapters: `claude`, `codex`, `gemini`, `opencode`.
+- Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
@@ -144,6 +146,7 @@ players:
 | `codex`    | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`     | `minimal` through `xhigh` use SDK thread `modelReasoningEffort`. `max` and `ultra` pass through unchanged as constructor `config.model_reasoning_effort`, leaving the thread field unset.                                                                                                    |
 | `gemini`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | A concrete `gemini-3*` model gets a temporary settings alias with `thinkingLevel`; a concrete `gemini-2.5*` model gets `thinkingBudget`. An unset model, a CLI alias, or an unmatched model gets no effort override.                                                                         |
 | `opencode` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | The value maps to the v2 prompt body's `variant`, selected from the `provider/model` prefix. An unknown provider or an omitted or malformed model gets no effort override.                                                                                                                   |
+| `kimi`     | `off`, `on`                                                     | Provider-native binary thinking control through ACP. `on` enables the selected model's native default thinking behavior; it is not a portable effort tier. When both are configured, the adapter selects `model` before toggling thinking.                                                   |
 
 Gemini's model-specific mappings are:
 
@@ -188,7 +191,8 @@ The loader validates `captain.effort` and every `players[N].effort` before the
 runtime starts. An unsupported value fails startup with an error naming the
 offending path, adapter, and that adapter's allowed values; for example,
 Claude rejects `ultra`, while Codex rejects `ultracode`, and Gemini and
-OpenCode reject both.
+OpenCode reject both. Kimi rejects every portable value and accepts only
+`off` or `on`.
 
 ### Legacy `reasoningEffort` compatibility
 
@@ -228,33 +232,43 @@ captain:
   adapter: claude
   options: {}
   permissions:
-    mode: auto                  # session-wide automation posture
+    mode: auto # session-wide automation posture
 players:
   - id: coder
     adapter: codex
     permissions:
       mode: auto
       writablePaths:
-        - .git                 # allow git metadata writes under mode: auto
+        - .git # allow git metadata writes under mode: auto
   - id: reviewer
     adapter: claude
     permissions:
-      fileWrite: ask            # per-capability levels
+      fileWrite: ask # per-capability levels
       shellExecute: deny
       networkAccess: deny
+  - id: kimi-coder
+    adapter: kimi
+    permissions:
+      mode: auto # Kimi's native ACP auto mode
 ```
 
 - `mode: 'auto'` selects each adapter's classifier-, sandbox-, or reviewer-protected
   auto-mode (claude `permissionMode: auto`, codex `approval_policy:
-  on-request + default_permissions: :workspace + approvals_reviewer:
-  auto_review` with user config ignored for that managed run, gemini
-  `--approval-mode yolo`, opencode `permission: allow` SDK body).
+on-request + default_permissions: :workspace + approvals_reviewer:
+auto_review` with user config ignored for that managed run, gemini
+  `--approval-mode yolo`, kimi ACP `mode: auto`, opencode `permission: allow`
+  SDK body).
   `mode: 'bypass'` selects each adapter's
   unchecked-bypass mode where the SDK supports one; the
   opencode adapter rejects `bypass` because the cligent opencode path
-  drives `opencode serve` via the SDK rather than `opencode run`.
-- When `mode` is unset, the adapter derives an effective posture from
-  `fileWrite` / `shellExecute` / `networkAccess`.
+  drives `opencode serve` via the SDK rather than `opencode run`; Kimi also
+  rejects it because its `yolo` mode does not satisfy Cligent's unchecked
+  bypass contract.
+- When `mode` is unset, adapters other than Kimi derive an effective posture
+  from `fileWrite` / `shellExecute` / `networkAccess`. Kimi rejects any
+  supplied no-mode policy, including an empty block or per-capability fields,
+  because ACP cannot replace permission decisions made by the CLI's native
+  rules before the client is consulted.
 - `writablePaths` lists additional workspace-relative paths that should be
   writable for the run. Use `writablePaths: ['.git']` when a Codex player
   running with `mode: auto` needs git metadata writes such as `git add` or
@@ -267,12 +281,16 @@ players:
   `.git/**`, and shell expansions.
 - Omitting `permissions` leaves the adapter on its SDK default; cligent
   imposes no project-wide policy.
+- Kimi accepts `writablePaths` only alongside `mode: auto`; paths are validated
+  and reported as `ambient`, not sandbox-enforced or converted into extra
+  grants. Any permission request that reaches the headless ACP client is
+  surfaced as an event and rejected.
 
 ## Layout
 
 Boss/Captain occupies the left pane; the visible players fill the right in
 order. Sessions start on a 174×49 grid. The visible columns derive from the
-*visible* player set (see `layout.initialVisible` below), not the full
+_visible_ player set (see `layout.initialVisible` below), not the full
 roster: two columns with one visible player, three with two or more, and the
 first player column holds `ceil(visibleCount / 2)` players from top to bottom.
 
@@ -282,11 +300,11 @@ weights, and which players are visible at startup:
 ```yaml
 layout:
   window:
-    columns: 174                       # initial cell grid (default 174 × 49)
+    columns: 174 # initial cell grid (default 174 × 49)
     rows: 49
-  multiPlayerColumnWeights: [1, 1, 1]  # Boss + 2 player columns (3-column shape)
-  singlePlayerColumnWeights: [1, 1]    # Boss + 1 player column (2-column shape)
-  initialVisible:                      # panes shown at startup (default: all, in order)
+  multiPlayerColumnWeights: [1, 1, 1] # Boss + 2 player columns (3-column shape)
+  singlePlayerColumnWeights: [1, 1] # Boss + 1 player column (2-column shape)
+  initialVisible: # panes shown at startup (default: all, in order)
     - claude
     - codex
 ```
@@ -359,8 +377,13 @@ export default function createCaptain(options = {}) {
   return {
     async init(session) {
       captainSession = session;
-      await session.emitStatus('Captain ready', { players: session.players.length });
-      await session.emitTelemetry({ topic: 'captain.ready', payload: { options } });
+      await session.emitStatus('Captain ready', {
+        players: session.players.length,
+      });
+      await session.emitTelemetry({
+        topic: 'captain.ready',
+        payload: { options },
+      });
     },
 
     // Minimal example: real Captains usually frame prompts per player.
@@ -369,9 +392,14 @@ export default function createCaptain(options = {}) {
         context.players.map((r) => context.callPlayer(r.id, turn.prompt)),
       );
       const summary = results
-        .map((r) => `${r.playerId}: ${r.finalText ?? r.error ?? '(no final text)'}`)
+        .map(
+          (r) =>
+            `${r.playerId}: ${r.finalText ?? r.error ?? '(no final text)'}`,
+        )
         .join('\n\n');
-      await context.callCaptain(`Boss:\n${turn.prompt}\n\nPlayers:\n${summary}`);
+      await context.callCaptain(
+        `Boss:\n${turn.prompt}\n\nPlayers:\n${summary}`,
+      );
     },
 
     async prepareDispose() {

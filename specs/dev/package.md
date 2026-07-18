@@ -58,7 +58,7 @@ An imported production protocol SDK shall likewise use an exact runtime dependen
 CI-installed Gemini, OpenCode, and Kimi CLIs shall use exact versions and shall have their reported versions checked before acceptance runs.
 Repository verification shall compile the adapter's consumed SDK or protocol surfaces against the installed declarations.
 Where an adapter's conformance target consists of both an SDK client and a CLI server, their exact target versions shall match.
-The Kimi conformance target shall pair `@agentclientprotocol/sdk` `0.23.0` with Kimi Code CLI `0.27.0` and verify the `kimi acp` command surface.
+The Kimi conformance target shall pair `@agentclientprotocol/sdk` `0.23.0` with the `@moonshot-ai/kimi-code` CLI `0.27.0` and verify the `kimi acp` command surface.
 
 Exact conformance targets are independent of optional peer floors. Per
 [PKG-009](#pkg-009), a peer floor shall name the lowest supported runtime

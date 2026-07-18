@@ -7,7 +7,7 @@
 [![Node.js](https://img.shields.io/node/v/@sublang/cligent)](https://nodejs.org/)
 [![CI](https://github.com/sublang-ai/cligent/actions/workflows/ci.yml/badge.svg)](https://github.com/sublang-ai/cligent/actions/workflows/ci.yml)
 
-Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, OpenCode, and more).
+Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, Kimi Code, OpenCode, and more).
 
 Register an adapter, send a prompt, and consume a single async event stream — regardless of which agent runs underneath.
 
@@ -25,16 +25,29 @@ npm install @anthropic-ai/claude-agent-sdk   # Claude Code
 npm install @openai/codex-sdk                # Codex
 npm install @opencode-ai/sdk                 # OpenCode
 # Gemini needs no SDK — the adapter drives the installed `gemini` CLI
+# Kimi needs its CLI — see the separately pinned install below
+```
+
+The Kimi adapter targets the maintained Kimi Code CLI through ACP. Install
+the exact conformance target. The external Kimi CLI itself requires Node.js
+22.19 or newer to install and run, then authenticate once:
+
+```bash
+npm install -g @moonshot-ai/kimi-code@0.27.0
+kimi login
 ```
 
 Adapters reuse each vendor's own authentication from your environment —
 a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
-(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`); cligent stores no
-credentials itself.
+(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.27 ACP specifically
+requires the OAuth credential created by `kimi login`; provider configuration
+can still select a model after that login.
+Cligent stores no credentials and never starts an authentication flow itself.
 
 Runtime and declaration requirements:
 
-- Node.js 18.3.0 or newer.
+- Node.js 18.3.0 or newer for Cligent itself; using the Kimi adapter also
+  requires the external Kimi CLI to run under Node.js 22.19 or newer.
 - TypeScript 5.4 or newer when consuming the package declarations.
 
 ## Quick start
@@ -66,6 +79,7 @@ for await (const event of agent.run('Now add tests for it')) {
 - **Claude Code** — via `@anthropic-ai/claude-agent-sdk`
 - **Codex CLI** — via `@openai/codex-sdk`
 - **Gemini CLI** — via child-process NDJSON
+- **Kimi Code** — via one short-lived `kimi acp` process per run
 - **OpenCode** — via `@opencode-ai/sdk`
 
 ## tmux-play
@@ -94,11 +108,12 @@ Requirements:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
   [Gemini CLI](https://github.com/google-gemini/gemini-cli),
+  [Kimi Code](https://github.com/MoonshotAI/kimi-code),
   [OpenCode](https://opencode.ai).
 
 **The Captain is the extension point.** `tmux-play` owns player
 orchestration, panes, and event streaming; you write a Captain to decide
-*how* players collaborate — fanout, planner/router, debate protocol, an
+_how_ players collaborate — fanout, planner/router, debate protocol, an
 XState graph, anything. The built-in `fanout` Captain runs every player in
 parallel and synthesizes their answers; swap it for your own using the
 same contract.

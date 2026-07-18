@@ -16,7 +16,28 @@ npm install @anthropic-ai/claude-agent-sdk   # Claude Code
 npm install @openai/codex-sdk                 # Codex CLI
 npm install @opencode-ai/sdk                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
+# Kimi Code uses an external CLI — no Kimi-specific SDK required
 ```
+
+For Kimi, install the maintained Kimi Code CLI at Cligent's exact conformance
+target. The external Kimi CLI itself requires Node.js 22.19 or newer to install
+and run, even though Cligent and its other adapter surfaces support Node.js
+18.3:
+
+```bash
+npm install -g @moonshot-ai/kimi-code@0.27.0
+kimi --version
+kimi login
+```
+
+`kimi login` performs the one-time Kimi Code OAuth flow required by the exact
+0.27 ACP target. Kimi's [provider
+configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
+can select a Kimi or third-party model after login, but an API-key provider
+alone does not satisfy the [0.27 ACP session
+gate](https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116).
+The adapter inherits the CLI's configuration and credentials; Cligent neither
+stores credentials nor launches login for you.
 
 ## Quick start
 
@@ -70,7 +91,7 @@ import type { CligentOptions, RunOptions } from '@sublang/cligent';
 // Constructor: Cligent(adapter, options?)
 // CligentOptions — instance-level defaults (no abortSignal, no resume).
 const agent = new Cligent(adapter, {
-  role: 'coder',        // injected into every event as event.role
+  role: 'coder', // injected into every event as event.role
   model: 'claude-opus-4-8',
   permissions: { fileWrite: 'allow', shellExecute: 'ask' },
   maxTurns: 10,
@@ -127,15 +148,41 @@ import { OpenCodeAdapter } from '@sublang/cligent/adapters/opencode';
 const agent = new Cligent(new OpenCodeAdapter());
 ```
 
+**Kimi Code**
+
+```ts
+// ACP adapter — spawns one short-lived `kimi acp` child for each run.
+import { KimiAdapter } from '@sublang/cligent/adapters/kimi';
+const agent = new Cligent(new KimiAdapter(), {
+  effort: 'on',
+  permissions: { mode: 'auto' },
+});
+```
+
+Cligent uses Kimi Code's structured ACP mode rather than print mode, a
+persistent server, or a Kimi-specific SDK. The maintained product exposes ACP
+as a public integration surface, while the published Kimi agent SDK targets
+the retired Python CLI and the successor's Node SDK is not public. ACP preserves
+structured text, tool lifecycle, permission requests, cancellation, and the
+backend session ID without keeping a resident service.
+
+A fresh run creates an ACP session with `session/new`. A non-empty `resume`
+token uses `session/resume`; Cligent does not replay Kimi history as new output.
+The backend session ID becomes `DonePayload.resumeToken`, so the next run on the
+same `Cligent` instance resumes automatically. Raw Kimi thought chunks are not
+included in the Unified Event Stream.
+
 ## Effort
 
 Set `effort` in constructor defaults or in a `run()` override. The portable
 ladder, from least to greatest reasoning depth, is `minimal`, `low`, `medium`,
 `high`, `xhigh`, and `max`. Provider-native values remain adapter-scoped:
 Claude Code additionally accepts `ultracode`, while Codex additionally accepts
-`ultra`. Gemini and OpenCode accept only the portable ladder. The TypeScript
-API preserves this correlation, including heterogeneous parallel calls, so a
-Claude-specific value is not accepted for a Codex adapter and vice versa.
+`ultra`. Gemini and OpenCode accept only the portable ladder. Kimi instead
+accepts its provider-native binary values `off` and `on`; those values are not
+aliases for portable depth tiers. The TypeScript API preserves this
+correlation, including heterogeneous parallel calls, so an adapter-specific
+value is not accepted for a different adapter.
 
 ```ts
 import { Cligent } from '@sublang/cligent';
@@ -182,6 +229,10 @@ The mappings have a few important qualifications:
   `xhigh`/`max` to `max`; OpenAI collapses `max` to `xhigh`; Google collapses
   `minimal` through `medium` to `low` and `high` through `max` to `high`. An
   unknown provider or malformed or omitted model receives no variant override.
+- **Kimi:** `off` and `on` pass directly to ACP's `thinking` configuration
+  option. `on` enables the selected model's native default thinking behavior;
+  it does not select a portable Cligent effort tier. When both `model` and
+  `effort` are provided, the model is selected before thinking is toggled.
 
 Omitting `effort` sets no effort, orchestration, generated alias, or variant
 override and leaves applicable adapter, model, account, and user-configuration
@@ -235,8 +286,8 @@ for await (const event of agent.run('Now add tests for it')) {
 }
 
 // Override resume behavior per-call via RunOptions:
-agent.run('Start fresh', { resume: false });       // force a new session
-agent.run('Use this', { resume: 'other-token' });  // explicit token
+agent.run('Start fresh', { resume: false }); // force a new session
+agent.run('Use this', { resume: 'other-token' }); // explicit token
 ```
 
 ## Permissions
@@ -270,10 +321,11 @@ import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 //                  (lossy: networkAccess 'allow' grants network only when
 //                   the policy selects :danger-full-access)
 //   Gemini       → Policy Engine rules via --policy + --approval-mode
+//   Kimi         → ACP mode configuration (native default or auto only)
 //   OpenCode     → permission map
 const permissions: PermissionPolicy = {
-  fileWrite: 'ask',       // prompt the user before creating or modifying files
-  shellExecute: 'deny',   // block all shell command execution
+  fileWrite: 'ask', // prompt the user before creating or modifying files
+  shellExecute: 'deny', // block all shell command execution
   networkAccess: 'allow', // allow HTTP requests without prompting
 };
 
@@ -308,6 +360,24 @@ for await (const event of codexAgent.run('Build release artifacts', {
   // ...
 }
 ```
+
+Kimi has a deliberately narrower headless permission surface:
+
+- Omit `permissions` to preserve the Kimi CLI's native configured rules.
+- Use `permissions: { mode: 'auto' }` to select Kimi's native `auto` mode.
+  Valid `writablePaths` may accompany `auto`, but the adapter reports them as
+  ambient access; it does not enforce them with a filesystem sandbox or turn
+  them into additional grants.
+- Kimi rejects `mode: 'bypass'` because the CLI's `yolo` mode is not equivalent
+  to Cligent's unchecked bypass contract. It also rejects any supplied policy
+  without `mode`, including an empty policy or per-capability fields, because
+  ACP cannot deterministically replace Kimi's earlier native rule decisions.
+- Explicit `allowedTools` or `disallowedTools` values are unsupported and fail
+  before spawn, including empty arrays. `maxTurns` and `maxBudgetUsd` likewise
+  fail before spawn because Kimi ACP has no matching per-run controls.
+
+If Kimi still sends an ACP permission request, the headless adapter emits a
+`permission_request` event for observability and rejects the operation.
 
 ## Parallel execution
 
@@ -376,7 +446,9 @@ Cancel a running agent with a standard `AbortController`:
 const ac = new AbortController();
 setTimeout(() => ac.abort(), 30_000); // cancel after 30 s
 
-for await (const event of agent.run('Fix the login bug', { abortSignal: ac.signal })) {
+for await (const event of agent.run('Fix the login bug', {
+  abortSignal: ac.signal,
+})) {
   // On abort the generator emits a final 'done' event with
   // status 'interrupted', then ends.
 }
@@ -387,19 +459,19 @@ for await (const event of agent.run('Fix the login bug', { abortSignal: ac.signa
 `Cligent.run()` yields `CligentEvent` values, which extend `AgentEvent` with an optional `role` field. Every event carries a typed `payload`:
 
 - `type` — discriminant tag (see table below, or a namespaced string like `'codex:file_change'`)
-- `agent` — which adapter emitted the event (`'claude-code'`, `'codex'`, `'gemini'`, `'opencode'`, …)
+- `agent` — which adapter emitted the event (`'claude-code'`, `'codex'`, `'gemini'`, `'kimi'`, `'opencode'`, …)
 - `role` — task-level identity from `CligentOptions.role` (undefined when not set)
 - `timestamp` — Unix epoch milliseconds
 - `sessionId` — groups all events within one `run()` call
 
-| Type | Payload | Description |
-| --- | --- | --- |
-| `init` | `model`, `cwd`, `tools` | Session started |
-| `text` | `content` | Complete text response |
-| `text_delta` | `delta` | Streaming text chunk |
-| `thinking` | `summary` | Agent reasoning |
-| `tool_use` | `toolName`, `toolUseId`, `input` | Tool invocation |
-| `tool_result` | `toolUseId`, `status`, `output` | Tool outcome |
-| `permission_request` | `toolName`, `toolUseId`, `input` | Agent asks for permission |
-| `error` | `code`, `message`, `recoverable` | Error |
-| `done` | `status`, `resumeToken?`, `usage`, `durationMs` | Terminal event — always the last event |
+| Type                 | Payload                                         | Description                            |
+| -------------------- | ----------------------------------------------- | -------------------------------------- |
+| `init`               | `model`, `cwd`, `tools`                         | Session started                        |
+| `text`               | `content`                                       | Complete text response                 |
+| `text_delta`         | `delta`                                         | Streaming text chunk                   |
+| `thinking`           | `summary`                                       | Agent reasoning                        |
+| `tool_use`           | `toolName`, `toolUseId`, `input`                | Tool invocation                        |
+| `tool_result`        | `toolUseId`, `status`, `output`                 | Tool outcome                           |
+| `permission_request` | `toolName`, `toolUseId`, `input`                | Agent asks for permission              |
+| `error`              | `code`, `message`, `recoverable`                | Error                                  |
+| `done`               | `status`, `resumeToken?`, `usage`, `durationMs` | Terminal event — always the last event |
