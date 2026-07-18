@@ -27,16 +27,9 @@ command shall succeed and strict compilation shall pass.
 ### TPKG-003
 Verifies: [PKG-003](../dev/package.md#pkg-003), [PKG-004](../dev/package.md#pkg-004), [PKG-013](../dev/package.md#pkg-013)
 
-Where the release dependency graph and optional agent peers are resolved, when
-production and full dependency audits run and the tarball manifest is
-inspected, both audits shall report no known vulnerabilities and dependency
-placement and optional-peer declarations shall match the package requirements.
+Where the release dependency graph and optional agent peers are resolved, when production and full dependency audits run and the tarball manifest is inspected, both audits shall report no known vulnerabilities; the ACP protocol SDK and its schema peer shall be production dependencies; and agent-SDK placement and optional-peer declarations shall match the package requirements.
 
 ### TPKG-004
 Verifies: [PKG-012](../dev/package.md#pkg-012)
 
-Where repository conformance runs with installed SDK and CLI dependencies,
-when installed SDK package metadata, CLI-reported versions, and SDK
-declarations are checked, the resolved SDK and reported CLI versions shall
-equal the exact repository and CI targets, the consumed SDK type surfaces shall
-remain available, and the OpenCode SDK and CLI versions shall match.
+Where repository conformance runs with installed SDK, protocol, and CLI dependencies, when installed package metadata, CLI-reported versions, declarations, and command help are checked, the resolved SDK and reported CLI versions shall equal the exact repository and CI targets, consumed type surfaces shall remain available, the OpenCode SDK and CLI versions shall match, and the ACP SDK `0.23.0` shall pair with Kimi Code CLI `0.27.0` whose `kimi acp` command initializes successfully.

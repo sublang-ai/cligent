@@ -20,6 +20,7 @@ Each coding-agent SDK ships its own permission/approval model:
 | `claude` | `permissionMode` [[1]] | `'auto'` (classifier-backed, still blocks high-risk actions and falls back to prompts after consecutive/total denies); `'bypassPermissions'` (no checks) |
 | `codex` | `ThreadOptions.approvalPolicy`; `CodexOptions.config.default_permissions` (modern permission profile) and `CodexOptions.config.approvals_reviewer` [[2]][[6]][[7]][[8]] | `approval_policy = on-request` + `approvals_reviewer = auto_review` + a `default_permissions` profile (eligible approval requests route to a reviewer agent without broadening the profile's filesystem/network limits). The legacy `sandbox_mode` knob is not used: per [[8]] a present `sandbox_mode` makes Codex ignore `default_permissions`. |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
+| `kimi` | ACP session mode plus `session/request_permission` reverse requests [[9]][[10]] | `auto` is native protected automation; `yolo` retains higher-priority rules and is not an unchecked bypass |
 | `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
 
 Claude's `'auto'` runs its classifier on a separate classifier model — Sonnet 5 by default, with model-dependent fallbacks (an Opus model for Fable 5 sessions) and a server-side override, none user-configurable — and fails closed:
@@ -68,6 +69,7 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
 | `codex` | `ThreadOptions: { approvalPolicy: 'on-request' }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review', default_permissions: <profile> }` — see *Codex — modern permission-profile model* below | `ThreadOptions: { approvalPolicy: 'never' }` plus `CodexOptions.config: { default_permissions: ':danger-full-access' }` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
+| `kimi` | ACP `session/set_config_option` with `mode = 'auto'` | Reject: ACP `yolo` is not unchecked bypass |
 | `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
 
 ### Headless auto-mode posture
@@ -77,6 +79,8 @@ Cligent runs are headless: the interactive prompt fallback each SDK's protected 
 An alternative that widened auto with cligent-chosen network grants — pre-approved Claude `WebFetch` / `WebSearch` / `Bash(curl:*)` allow rules ahead of the classifier, a generated Codex profile extending `:workspace` with `network = { enabled = true }` (grammar validated credential-free via `codex sandbox`), and an opencode `websearch: 'allow'` pin — was implemented and rolled back: a curated grant list is ad hoc, cannot anticipate the next task's tools, and blurs the auto/bypass distinction this DR exists to keep.
 Callers that need unattended capabilities beyond the SDK's protected auto shall say so explicitly (`mode: 'bypass'`); a typed opt-in that widens specific capabilities under auto stays open for a future revision.
 Known headless hazard, deliberately left to user configuration: opencode's `websearch` is a permission key distinct from `webfetch` [[4]], and a `websearch: 'ask'` in the user's opencode config blocks a headless server run indefinitely — the server waits on a permission reply no client sends.
+Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
+Kimi shall therefore reject a provided no-mode capability policy, emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [KIMI-007](../user/adapters/kimi.md#kimi-007).
 
 ### Codex — modern permission-profile model
 
@@ -129,7 +133,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 - DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
-- All four adapters move from inconsistent coverage to a uniform abstraction: each adapter's mapping function gains an auto-mode case (claude and gemini also need their constructor option types extended; codex needs its mapping result widened to carry SDK constructor `config` overrides for `approvals_reviewer`; opencode needs the mapping wired at all).
+- The original four adapters retain their established mappings, while Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
 - Cligent ships no default permission posture; user choice is explicit per config.
 - Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `player_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.
@@ -146,3 +150,5 @@ The DR does not introduce new error machinery; it constrains where errors should
 [6]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
 [7]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
 [8]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
+[9]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
+[10]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code permission rules"

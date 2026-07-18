@@ -92,12 +92,12 @@ When one task's `AbortSignal` fires in `parallel()`, only that task shall yield 
 ### TENG-015
 Verifies: [ENG-020](../user/engine.md#eng-020)
 
-Where a TypeScript consumer uses the public API, the consumer shall be able to import `PortableEffort`, `ClaudeEffort`, `CodexEffort`, `GeminiEffort`, `OpenCodeEffort`, and `Effort`; construct and run every built-in adapter with its own vocabulary; use heterogeneous `Cligent.parallel()` and `runParallel()` tasks without cross-widening; and bind an arbitrary custom adapter vocabulary through direct and parallel calls. On those statically adapter-bound paths, cross-adapter and out-of-vocabulary values shall fail compilation.
+Where a TypeScript consumer uses the public API, the consumer shall be able to import `PortableEffort`, `ClaudeEffort`, `CodexEffort`, `GeminiEffort`, `OpenCodeEffort`, `KimiEffort`, and `Effort`; construct and run every built-in adapter with its own vocabulary; use heterogeneous `Cligent.parallel()` and `runParallel()` tasks without cross-widening; and bind an arbitrary custom adapter vocabulary through direct and parallel calls. On those statically adapter-bound paths, cross-adapter and out-of-vocabulary values shall fail compilation.
 
 ### TENG-016
 Verifies: [ENG-024](../user/engine.md#eng-024)
 
-Where a consumer imports the effort metadata and helpers from the public package entry point, `EFFORT_SUPPORT`, each adapter entry, and each nested array shall reject runtime mutation; every values array shall match its public alias and order; orchestration arrays and all four `modelDependent` flags shall match [ENG-024](../user/engine.md#eng-024); Claude and `claude-code` lookups shall agree; predicates and assertions shall narrow and match the exposed values; notes shall name lossy and no-op conditions; and unknown-adapter behavior shall match the cited item.
+Where a consumer imports the effort metadata and helpers from the public package entry point, `EFFORT_SUPPORT`, each adapter entry, and each nested array shall reject runtime mutation; every values array shall match its public alias and order; orchestration arrays and all five `modelDependent` flags shall match [ENG-024](../user/engine.md#eng-024); Claude and `claude-code` lookups shall agree; predicates and assertions shall narrow and match the exposed values; notes shall name lossy, no-op, and provider-default conditions; and unknown-adapter behavior shall match the cited item.
 
 ### TENG-017
 Verifies: [ENG-020](../user/engine.md#eng-020)

@@ -161,7 +161,7 @@ interface PlayerHandle {
 }
 
 // `PlayerAdapterName` is the canonical type from the tmux-play module
-// (claude | codex | gemini | opencode); not redefined here.
+// (claude | codex | gemini | kimi | opencode); not redefined here.
 
 type RunStatus = 'ok' | 'aborted' | 'error';
 
@@ -254,7 +254,7 @@ Workloads that need a hard cap should write a thin Captain wrapper or use a diff
 Player IDs match `^[a-z][a-z0-9_-]*$`, are unique within a config, and may not equal `captain`.
 Multiple players may share an adapter and model — the player ID is the runtime identity.
 
-Adapter names use the canonical short scheme: `claude`, `codex`, `gemini`, `opencode`.
+Adapter names use the canonical short scheme: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 
 ### Serialization and Abort
 

@@ -23,7 +23,9 @@ The package shall require Node >= 18.3.0 via
 
 ### PKG-003
 
-The package's runtime `dependencies` shall be limited to single-purpose, zero-transitive-dep packages required by the bundled CLI; build-time and test-time packages shall be `devDependencies`.
+The package's runtime `dependencies` shall be limited to single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation.
+An official generic protocol SDK and its zero-transitive-dependency schema peer may be runtime dependencies when a built-in adapter imports them directly.
+Build-time and test-time packages shall be `devDependencies`.
 
 ### PKG-004
 
@@ -51,13 +53,12 @@ declaration-consumer floor.
 
 ### PKG-012
 
-The SDK versions used for local and CI conformance shall be exact
-`devDependencies`, without range operators. CI-installed Gemini and OpenCode
-CLIs shall likewise use exact versions and shall have their reported versions
-checked before acceptance runs. Repository verification shall compile the
-adapter's consumed SDK surfaces against the installed declarations. Where an
-adapter's conformance target consists of both an SDK client and a CLI server,
-their exact target versions shall match.
+The agent SDK versions used for local and CI conformance shall be exact `devDependencies`, without range operators.
+An imported production protocol SDK shall likewise use an exact runtime dependency when its wire schema must match an external CLI target.
+CI-installed Gemini, OpenCode, and Kimi CLIs shall use exact versions and shall have their reported versions checked before acceptance runs.
+Repository verification shall compile the adapter's consumed SDK or protocol surfaces against the installed declarations.
+Where an adapter's conformance target consists of both an SDK client and a CLI server, their exact target versions shall match.
+The Kimi conformance target shall pair `@agentclientprotocol/sdk` `0.23.0` with Kimi Code CLI `0.27.0` and verify the `kimi acp` command surface.
 
 Exact conformance targets are independent of optional peer floors. Per
 [PKG-009](#pkg-009), a peer floor shall name the lowest supported runtime

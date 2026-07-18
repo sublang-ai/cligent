@@ -36,11 +36,12 @@ meta.md     The spec of specs
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; network-widening alternative recorded and rolled back); no project-wide default |
-| DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode `ambient`), with Codex profile enforcement the release bar |
+| DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept them on otherwise supported policies and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode+Kimi `ambient`), with Codex profile enforcement the release bar |
 | DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
 | DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md) | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()` |
 | DR-009 | [009-adapter-scoped-effort-vocabularies.md](decisions/009-adapter-scoped-effort-vocabularies.md) | One `effort` property with portable base values, provider-native extras, adapter-correlated types, and built-in support metadata |
 | DR-010 | [010-isolated-captain-control-calls.md](decisions/010-isolated-captain-control-calls.md) | Fresh and tool-restricted Captain control calls with fail-closed adapter enforcement |
+| DR-011 | [011-kimi-code-acp-integration.md](decisions/011-kimi-code-acp-integration.md) | Kimi Code through one per-run `kimi acp` process; reject legacy/private Kimi SDKs and lossy print mode |
 
 ## Iterations
 
@@ -82,6 +83,7 @@ meta.md     The spec of specs
 | IR-033 | [033-effort-surface-simplification.md](iterations/033-effort-surface-simplification.md) | Replace lossless migration with best-effort compatibility, derive effort types from runtime metadata, and consolidate redundant tests |
 | IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls and enforce explicit allowlists across adapters |
 | IR-035 | [035-headless-auto-mode-posture.md](iterations/035-headless-auto-mode-posture.md) | Record the headless auto-mode posture: `permissions.mode: 'auto'` stays SDK-native with no cligent-selected grants (network-widening alternative rolled back); no adapter behavior change |
+| IR-036 | [036-kimi-code-adapter.md](iterations/036-kimi-code-adapter.md) | Add the maintained Kimi Code CLI through ACP with session continuity, public integration, and exact conformance targets |
 
 ## Packages
 
@@ -116,6 +118,12 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | dev | [git.md](dev/git.md) | Commit message format and AI co-authorship trailers |
+
+### KIMI
+
+| Group | File | Summary |
+| --- | --- | --- |
+| user | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
 
 ### LIC
 

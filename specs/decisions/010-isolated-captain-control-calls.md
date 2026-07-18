@@ -33,6 +33,7 @@ The built-in adapter mappings are:
 | Gemini | User-tier Policy Engine allow rules plus a catch-all deny; an empty list emits only the catch-all deny. |
 | OpenCode | Prompt tool booleans beginning with wildcard deny for every explicit allowlist, followed by allowed `true` and denied `false` entries; an empty list is exactly `{ "*": false }`. |
 | Codex | Reject before SDK loading because the supported Codex SDK surface cannot constrain the available tool registry. |
+| Kimi | Reject before spawning `kimi acp` because the ACP surface cannot constrain the available tool registry. |
 
 Gemini and OpenCode init telemetry shall report an explicit allowlist as configured and known even when the effective list is empty.
 
@@ -40,6 +41,6 @@ Gemini and OpenCode init telemetry shall report an explicit allowlist as configu
 
 Playbook Captains can make fresh, tool-free control calls without constructing agents or bypassing tmux-play records.
 Existing callers that omit the new fields preserve prior continuity and provider defaults.
-Codex callers that explicitly set either tool-list option now receive an actionable failure rather than an unenforced request.
+Codex and Kimi callers that explicitly set either tool-list option receive an actionable failure rather than an unenforced request.
 Claude Code non-empty allowlists become true availability restrictions while retaining their prior automatic-approval behavior.
 Claude Code's explicit-allowlist mapping also removes ambient MCP configuration, and its empty-list mapping removes supported ambient filesystem settings; it does not claim to erase provider context outside those documented controls.

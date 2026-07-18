@@ -29,6 +29,7 @@ Adapters do not expose the same primitive, so `writablePaths` is a portable writ
 | `claude` | Claude Code `sandbox.filesystem.allowWrite` settings when sandboxing is independently enabled; otherwise existing tool permission mode plus ambient workspace access [[5]][[11]] | Sandbox-enforced when available, otherwise ambient-satisfied |
 | `gemini` | Gemini sandbox allowed-path or mount settings when sandboxing is independently enabled; otherwise ambient workspace access [[6]][[7]] | Sandbox-enforced when available, otherwise ambient-satisfied |
 | `opencode` | OpenCode tool permissions do not provide a filesystem sandbox, so workspace writes are ambient while existing `edit` / `bash` permissions still control tool approval [[8]] | Ambient-satisfied |
+| `kimi` | Kimi ACP exposes no client-selected filesystem sandbox when Cligent advertises no filesystem capability, so workspace writes remain process-local and ambient [[16]] | Ambient-satisfied for a supported whole-mode policy |
 
 ## Decision
 
@@ -73,7 +74,7 @@ If an adapter cannot keep the canonicalized entries workspace-relative, it shall
 
 ### Enforcement Reporting
 
-Every adapter shall accept a valid non-empty `writablePaths` list unless it conflicts with an explicit deny in the same `PermissionPolicy`.
+Every adapter shall accept a valid non-empty `writablePaths` list when the remainder of the same `PermissionPolicy` has a supported mapping and the list does not conflict with an explicit filesystem deny in that policy.
 Each adapter shall expose, in a test-observable mapping result or `init.capabilities`, the canonicalized paths and an enforcement class:
 
 - `profile` for Codex custom permission profiles.
@@ -97,6 +98,7 @@ The current adapter-specific conflict rules are:
 - `claude`: `fileWrite: 'deny'`, `shellExecute: 'deny'`, and `networkAccess: 'deny'` remain tool/permission-mode constraints; they are not `writablePaths` conflicts unless the implementation also maps them to a filesystem deny for the same canonicalized path.
 - `gemini`: denied tool groups remain tool constraints; they are not `writablePaths` conflicts unless the implementation also maps them to a filesystem deny for the same canonicalized path.
 - `opencode`: `edit: 'deny'`, `bash: 'deny'`, and `webfetch: 'deny'` remain OpenCode tool permission rules; they do not conflict with ambient `writablePaths`.
+- `kimi`: `writablePaths` is accepted only with the independently supported `mode: 'auto'` mapping; unsupported no-mode and bypass policies still fail before spawn, while the paths themselves add no further conflict.
 
 ### Reporting Scope
 
@@ -173,6 +175,10 @@ OpenCode shall accept valid non-empty `writablePaths` and report `ambient` enfor
 Its documented permission rules can allow or deny tool inputs and shell command patterns, but they are not a filesystem sandbox profile equivalent to Codex workspace-root write grants [[8]].
 The OpenCode adapter shall keep mapping `fileWrite` / `shellExecute` / `networkAccess` to `edit` / `bash` / `webfetch`; `writablePaths` does not add path-level enforcement for those tools.
 
+Kimi shall accept valid non-empty `writablePaths` alongside its supported `mode: 'auto'` policy and report `ambient` enforcement.
+Cligent advertises no ACP filesystem capability, so Kimi retains its process-local filesystem implementation and the field adds no path-level enforcement [[16]].
+The unsupported remainder of a Kimi policy still fails before spawn; `writablePaths` does not make a no-mode or bypass policy reachable.
+
 Ambient acceptance is deliberate.
 It keeps one YAML/API config portable across all supported coding agents, while enforcement reporting preserves the safety distinction a caller needs to audit adapter switches.
 
@@ -200,13 +206,13 @@ The design keeps filesystem writes separate from command approval.
 For the target Codex git case, no separate command allowlist is expected when the git command stays inside the sandbox and writes only granted paths.
 The acceptance test shall prove this headless outcome; `auto_review` is not the mechanism for that success path, because no approval request should be needed.
 
-Adapter enforcement becomes intentionally uneven, but adapter acceptance is uniform.
-Codex can implement profile enforcement only through a proven config-delivery route; Claude and Gemini can report sandbox enforcement when their sandbox path is active; OpenCode reports ambient enforcement.
+Adapter enforcement becomes intentionally uneven, while field acceptance remains uniform on otherwise supported policies.
+Codex can implement profile enforcement only through a proven config-delivery route; Claude and Gemini can report sandbox enforcement when their sandbox path is active; OpenCode and Kimi report ambient enforcement.
 
 Future implementation work must add validation tests for canonicalization, root-equivalent rejection, and adapter-specific conflict semantics.
-It must also add adapter mapping tests proving that all four adapters accept valid `writablePaths`, report canonicalized paths, and report the correct enforcement class.
+It must also add adapter mapping tests proving that all five adapters accept valid `writablePaths` on otherwise supported policies, report canonicalized paths, and report the correct enforcement class.
 Claude and Gemini tests shall cover both independently sandboxed runs (`sandbox`) and non-sandboxed runs (`ambient`) when the harness can exercise both states.
-OpenCode tests shall prove `ambient` reporting and no path-level enforcement.
+OpenCode and Kimi tests shall prove `ambient` reporting and no path-level enforcement.
 
 Future implementation work must add Codex config-generation tests and at least one real Codex acceptance test proving a headless git metadata write succeeds under `mode: 'auto'` with `writablePaths: ['.git']` and no human approval.
 The Codex acceptance test shall prove a config-delivery route that mutates neither the user's machine-level Codex config nor the repository, preserves required auth, is not silently ignored, and actually makes `.git` writable through the selected profile.
@@ -234,3 +240,4 @@ Ambient mappings remain required for portability once the field ships, but they 
 [13]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/git-utils/src/info.rs#L810-L843 "Codex 0.144.1 project trust-root resolver"
 [14]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L1116-L1173 "Codex 0.144.1 project auto-trust path"
 [15]: https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/utils/absolute-path/src/lib.rs#L142-L179 "Codex 0.144.1 Windows device-path normalization"
+[16]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"

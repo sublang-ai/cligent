@@ -37,7 +37,7 @@ A `tmux-play` config shall be YAML with a `captain` object and a non-empty `play
 
 ### TMUX-006
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `effort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), `effort` per [TMUX-056](#tmux-056), and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### TMUX-060
 
@@ -82,7 +82,7 @@ When the loader rejects an unknown notification key or invalid sink, the error s
 
 ### TMUX-007
 
-Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `effort` per [TMUX-056](#tmux-056). Player `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple players may share an adapter and model.
+Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [TMUX-052](#tmux-052), and `effort` per [TMUX-056](#tmux-056). Player `id` shall match `^[a-z][a-z0-9_-]*$`, be unique within the config, and shall not equal `captain`. Multiple players may share an adapter and model.
 
 ### TMUX-052
 
@@ -93,7 +93,7 @@ A missing `permissions` field shall be treated as no policy override; the adapte
 
 ### TMUX-056
 
-Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter`: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, and `gemini` and `opencode` accept only [ENG-020](engine.md#eng-020)'s portable set.
+Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter`: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, `gemini` and `opencode` accept only [ENG-020](engine.md#eng-020)'s portable set, and `kimi` accepts only the provider-native binary values `off` and `on`.
 The loader shall forward an accepted value to the corresponding `Cligent` constructor as `CligentOptions.effort` while preserving the adapter/value correlation in the exported captain, player, and runtime configuration types.
 The loader shall reject an unsupported value with an error naming the offending path, adapter, and allowed values before the runtime starts.
 A missing `effort` field shall be treated as no override; the adapter retains its defaults for that player or captain.
@@ -663,9 +663,10 @@ The launcher shall publish a stable per-adapter accent color, surfaced to consum
 | `claude` | `green` | `#a6e3a1` | `#40a02b` |
 | `codex` | `teal` | `#94e2d5` | `#179299` |
 | `gemini` | `lavender` | `#b4befe` | `#7287fd` |
+| `kimi` | `sapphire` | `#74c7ec` | `#209fb5` |
 | `opencode` | `pink` | `#f5c2e7` | `#ea76cb` |
 
-For an adapter name outside the table, the lookup shall return a stable color from a fallback pool selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The Mocha pool is `sapphire #74c7ec`, `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`; the Latte pool is the same roles at their Latte hex (`sapphire #209fb5`, `sky #04a5e5`, `rosewater #dc8a78`, `maroon #e64553`, `flamingo #dd7878`). Neither pool shall contain any accent reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
+For an adapter name outside the table, the lookup shall return a stable color from a fallback pool selected deterministically from the adapter name so repeated lookups for the same name yield the same color. The Mocha pool is `sky #89dceb`, `rosewater #f5e0dc`, `maroon #eba0ac`, `flamingo #f2cdcd`; the Latte pool is the same roles at their Latte hex (`sky #04a5e5`, `rosewater #dc8a78`, `maroon #e64553`, `flamingo #dd7878`). Neither pool shall contain an accent assigned to a known adapter or reserved for speaker / tool / status roles (`blue`, `mauve`, `peach`, `red`, `yellow`, `green`).
 The Boss/Captain pane's timer accent shall use Catppuccin `mauve` at the flavor-resolved hex (`#cba6f7` on Mocha, `#8839ef` on Latte), so the Captain pane timer reads against the mantle band on either polarity rather than washing out under a Mocha-only lookup on a Latte session.
 
 When the launcher sets `pane-border-format`, only the Boss/Captain pane (pane index 0) shall carry the highlighted blue title block, and only while it is the active pane. Player pane titles — even when active — shall never carry the highlight block (they are read-only per [TMUX-027](#tmux-027) and don't need a focus indicator there); the format's else branch shall render their titles on the resolved flavor's mantle surface (`fg=text,bg=mantle`).

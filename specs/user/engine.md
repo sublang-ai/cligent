@@ -108,7 +108,7 @@ Adapter-reported `inputTokens` shall include all input tokens consumed by the re
 
 Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), `AgentOptions<E>.effort` shall accept the selected adapter's effort vocabulary `E`, with `undefined` reserved to defer to applicable adapter, model, account, and user-configuration defaults and configuration-isolation rules.
 `PortableEffort` shall be the six-value ladder `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth.
-`ClaudeEffort` shall be `PortableEffort | 'ultracode'`; `CodexEffort` shall be `PortableEffort | 'ultra'`; `GeminiEffort` and `OpenCodeEffort` shall each be `PortableEffort`; and the adapter-neutral built-in `Effort` union shall cover every value in those aliases.
+`ClaudeEffort` shall be `PortableEffort | 'ultracode'`; `CodexEffort` shall be `PortableEffort | 'ultra'`; `GeminiEffort` and `OpenCodeEffort` shall each be `PortableEffort`; `KimiEffort` shall be the provider-native binary union `'off' | 'on'`; and the adapter-neutral built-in `Effort` union shall cover every value in those aliases.
 Those public aliases shall be derived from the literal values in [ENG-024](#eng-024)'s runtime support table rather than maintained as a second vocabulary definition.
 Where a built-in provider lacks a one-to-one portable value, its adapter item shall map to the nearest supported neighbour in the portable ordering; where mapping depends on a concrete model or provider that is absent or unrecognised, the adapter item may leave the provider override unset and shall document that behavior.
 `AgentAdapter<E>`, `CligentOptions<E>`, `RunOptions<E>`, and `Cligent<E>` shall carry the same vocabulary through constructor defaults, run overrides, direct adapter calls, `Cligent.parallel()`, and `runParallel()` without widening one adapter's values to another adapter's values.
@@ -116,13 +116,14 @@ A custom adapter may bind an arbitrary string-literal vocabulary with any names 
 On the legacy name-based mutable-registry path, `runAgent()` shall accept `AgentOptions<string>` and forward the exact effort string unchanged; because registrations may be removed and rebound dynamically, that path shall not claim compile-time agent-name-to-vocabulary correlation.
 Built-in adapters shall perform their specified runtime validation on the dynamic path, while custom adapters remain responsible for validating their own dynamic inputs; callers requiring compile-time correlation shall use a statically adapter-bound surface such as direct `AgentAdapter<E>` calls, `Cligent`, `Cligent.parallel()`, or `runParallel()`.
 
-The built-in vocabularies and provider mappings are defined by [CLAUDE-008](adapters/claude-code.md#claude-008), [CODEX-007](adapters/codex.md#codex-007), [GEMINI-011](adapters/gemini.md#gemini-011), and [OPENCODE-012](adapters/opencode.md#opencode-012).
+The built-in vocabularies and provider mappings are defined by [CLAUDE-008](adapters/claude-code.md#claude-008), [CODEX-007](adapters/codex.md#codex-007), [GEMINI-011](adapters/gemini.md#gemini-011), [OPENCODE-012](adapters/opencode.md#opencode-012), and [KIMI-009](adapters/kimi.md#kimi-009).
 
 ### ENG-024
 
 The exported `EFFORT_SUPPORT` object shall be deeply frozen at runtime and define each built-in adapter's accepted `values`, provider-native `orchestrationValues`, `modelDependent` flag, and user-facing `notes` without promising model, account, or installed-runtime availability.
-Each `values` array shall define its adapter's public effort alias in the [ENG-020](#eng-020) order; Claude and Codex `orchestrationValues` shall be exactly `['ultracode']` and `['ultra']`, respectively, while Gemini and OpenCode shall expose empty orchestration arrays; and `modelDependent` shall be `true` for all four built-ins.
+Each `values` array shall define its adapter's public effort alias in the [ENG-020](#eng-020) order; Claude and Codex `orchestrationValues` shall be exactly `['ultracode']` and `['ultra']`, respectively, while Gemini, OpenCode, and Kimi shall expose empty orchestration arrays; and `modelDependent` shall be `true` for all five built-ins.
 Where a mapping is lossy or ignored without a concrete model or provider, `notes` shall state that condition.
+Kimi's notes shall state that `on` selects the chosen model's native default thinking effort rather than a portable reasoning-depth tier.
 `getEffortSupport`, `supportedEffortValues`, `isEffortSupported`, and `assertSupportedEffort` shall expose and validate the same values in `EFFORT_SUPPORT`; the alias `claude` shall resolve to `claude-code`; and the predicate and assertion shall narrow known adapter values to that adapter's public effort alias.
 For an unknown adapter, the lookup functions shall return `undefined`, the predicate shall return `false`, and the assertion shall throw an error naming the adapter and validation path.
 For a known adapter and unsupported value, the assertion shall throw an error naming the adapter, validation path, and allowed values.

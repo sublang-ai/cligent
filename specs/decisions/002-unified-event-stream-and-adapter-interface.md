@@ -26,7 +26,7 @@ Accepted
 ```
 
 The core normalizes heterogeneous agent outputs into a **Unified Event Stream (UES)**.
-Adapter implementations should align with vendor CLI documentation and repositories for event mapping and option semantics (Claude Code [^1][^2], Codex CLI [^3][^4], Gemini CLI [^5], OpenCode [^6]).
+Adapter implementations should align with vendor CLI documentation and repositories for event mapping and option semantics (Claude Code [^1][^2], Codex CLI [^3][^4], Gemini CLI [^5], Kimi Code [^12], OpenCode [^6]).
 
 ### Unified Event Stream
 
@@ -53,7 +53,8 @@ type AgentEventType =
   | 'init' | 'text' | 'text_delta' | 'tool_use' | 'tool_result'
   | 'thinking' | 'error' | 'permission_request' | 'done';
 
-type AgentType = 'claude-code' | 'codex' | 'gemini' | 'opencode' | string;
+type AgentType =
+  | 'claude-code' | 'codex' | 'gemini' | 'kimi' | 'opencode' | string;
 
 interface BaseEvent {
   type: AgentEventType | string;  // string allows namespaced extensions
@@ -153,11 +154,11 @@ Adapters should emit `init` first when possible to establish capabilities.
 
 Capability-based primitives map to vendor-specific controls (not always 1:1):
 
-| Capability | Description | Claude Code | Codex | Gemini | OpenCode |
-| ---------- | ----------- | ----------- | ----- | ------ | -------- |
-| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `replace` / `write_file` [^10] | `permission` map for `edit` [^11] |
-| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `run_shell_command` [^10] | `permission` map for `bash` [^11] |
-| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [^8] | `sandbox_mode` + `network_access` + `approval_policy` [^9] | Policy Engine rules for `google_web_search` / `web_fetch` [^10] | `permission` map for `webfetch` [^11] |
+| Capability | Description | Claude Code | Codex | Gemini | Kimi | OpenCode |
+| ---------- | ----------- | ----------- | ----- | ------ | ---- | -------- |
+| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `replace` / `write_file` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `edit` [^11] |
+| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `run_shell_command` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `bash` [^11] |
+| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [^8] | `sandbox_mode` + `network_access` + `approval_policy` [^9] | Policy Engine rules for `google_web_search` / `web_fetch` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `webfetch` [^11] |
 
 ```typescript
 type PermissionLevel = 'allow' | 'ask' | 'deny';
@@ -181,6 +182,7 @@ type ReasoningEffort =
 
 Adapters translate these primitives to vendor-specific controls where supported.
 Omitted capability fields default to `'ask'` inside a provided policy; omitting the policy leaves adapter-native defaults in effect per [DR-005](005-per-adapter-permission-configuration.md).
+An adapter whose vendor protocol cannot enforce a provided policy shall reject before backend invocation rather than weaken it; Kimi's exact boundary is [KIMI-007](../user/adapters/kimi.md#kimi-007).
 
 ### Adapter Interface
 
@@ -250,7 +252,7 @@ for await (const event of Cligent.parallel([
 - **Session resumption** via `resumeToken` in `DonePayload`; `Cligent` auto-injects on subsequent calls; adapters that don't support resumption omit the token
 - **Role attribution** via `role` field on `CligentEvent` (not `BaseEvent`), distinguishing multiple sessions on the same backend; adapters do not emit `role`
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
-- **Tool filtering** via `allowedTools`/`disallowedTools` supported by all agents; implementation varies (CLI flags, permissions config, policy engine)
+- **Tool filtering** via `allowedTools`/`disallowedTools` is fail-closed; adapters with no exact registry-control surface reject explicit restrictions
 - **Budgeting**: `maxTurns` supported by Claude Code and OpenCode (`steps`); `maxBudgetUsd` only by Claude Code
 - **MCP integration** deferred to adapter implementation [^7]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
@@ -268,3 +270,4 @@ for await (const event of Cligent.parallel([
 [^9]: Codex security and sandbox/approvals: <https://developers.openai.com/codex/security>
 [^10]: Gemini CLI Policy Engine: <https://geminicli.com/docs/reference/policy-engine/>
 [^11]: OpenCode permissions: <https://opencode.ai/docs/permissions>
+[^12]: Kimi Code ACP reference: <https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html>
