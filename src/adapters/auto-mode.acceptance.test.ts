@@ -13,12 +13,9 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  chmodSync,
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -26,8 +23,9 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+import { describe, expect, inject, it } from 'vitest';
+import { withKimiAcceptanceEnvironment } from '../__tests__/helpers/kimi-acceptance.js';
 import { Cligent } from '../index.js';
 import type {
   AgentAdapter,
@@ -47,8 +45,8 @@ import { KimiAdapter } from './kimi.js';
 import { OpenCodeAdapter } from './opencode.js';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL;
-const KIMI_ACCEPTANCE_HOME = process.env.CLIGENT_KIMI_ACCEPTANCE_HOME;
 const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
+const kimiAcceptance = inject('kimiAcceptance');
 
 const PROBE_TIMEOUT_MS = 300_000;
 const MAX_PROBE_ATTEMPTS = 3;
@@ -318,25 +316,16 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     PROBE_TIMEOUT_MS,
   );
 
-  const kimiMissing = kimiAcceptanceMissing();
   // Kimi Code 0.27 gates ACP session creation on the OAuth credential written
-  // by `kimi login`; an API-key provider alone cannot satisfy that gate. The
-  // exact credential-free ACP handshake is still mandatory in package/CI
-  // conformance, while this live probe is opt-in even under CI so it never
-  // reads or mutates an ordinary user home implicitly.
-  const kimiAcceptanceIt =
-    KIMI_ACCEPTANCE_HOME && (kimiMissing.length === 0 || process.env.CI)
-      ? it
-      : it.skip;
-  kimiAcceptanceIt(
+  // by `kimi login`; an API-key provider alone cannot satisfy that gate. Local
+  // runs discover the documented Kimi home, while CI requires an explicit
+  // dedicated fixture. The source is never passed to the spawned process.
+  gatedIt(kimiAcceptance.missing)(
     'kimi auto mode auto-approves a temp-file create + update',
     async () => {
-      assertReady('kimi', kimiMissing);
-      const outcome = await probeWithRetry(
-        'kimi',
-        () => new KimiAdapter(),
-        undefined,
-        withIsolatedKimiCodeHome,
+      assertReady('kimi', kimiAcceptance.missing);
+      const outcome = await withKimiAcceptanceEnvironment(kimiAcceptance, () =>
+        probeWithRetry('kimi', () => new KimiAdapter(), undefined),
       );
       expectAutoMode('kimi', outcome);
     },
@@ -1083,96 +1072,6 @@ async function withIsolatedGeminiCliHome<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-async function withIsolatedKimiCodeHome<T>(run: () => Promise<T>): Promise<T> {
-  if (!KIMI_ACCEPTANCE_HOME) {
-    throw new Error('CLIGENT_KIMI_ACCEPTANCE_HOME is required for Kimi');
-  }
-  const home = mkdtempSync(join(tmpdir(), 'cligent-kimi-live-'));
-  const previousHome = process.env.KIMI_CODE_HOME;
-  const modelEnvKeys = [
-    'KIMI_MODEL_API_KEY',
-    'KIMI_MODEL_BASE_URL',
-    'KIMI_MODEL_NAME',
-    'KIMI_MODEL_PROVIDER_TYPE',
-  ] as const;
-  const previousModelEnv = new Map<string, string | undefined>(
-    modelEnvKeys.map((key) => [key, process.env[key]]),
-  );
-
-  try {
-    cpSync(
-      join(KIMI_ACCEPTANCE_HOME, 'config.toml'),
-      join(home, 'config.toml'),
-      { dereference: true },
-    );
-    cpSync(
-      join(KIMI_ACCEPTANCE_HOME, 'credentials'),
-      join(home, 'credentials'),
-      { dereference: true, recursive: true },
-    );
-    hardenKimiAuthCopy(home);
-    process.env.KIMI_CODE_HOME = home;
-    for (const key of modelEnvKeys) delete process.env[key];
-    return await run();
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.KIMI_CODE_HOME;
-    } else {
-      process.env.KIMI_CODE_HOME = previousHome;
-    }
-    for (const [key, value] of previousModelEnv) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-    rmSync(home, { recursive: true, force: true });
-  }
-}
-
-function hardenKimiAuthCopy(home: string): void {
-  chmodSync(join(home, 'config.toml'), 0o600);
-  hardenKimiCredentialTree(join(home, 'credentials'));
-}
-
-function hardenKimiCredentialTree(path: string): void {
-  chmodSync(path, 0o700);
-  for (const entry of readdirSync(path, { withFileTypes: true })) {
-    const entryPath = join(path, entry.name);
-    if (entry.isDirectory()) {
-      hardenKimiCredentialTree(entryPath);
-    } else if (entry.isFile()) {
-      chmodSync(entryPath, 0o600);
-    } else {
-      throw new Error(
-        `Unsupported entry in copied Kimi credentials: ${entry.name}`,
-      );
-    }
-  }
-}
-
-function kimiAcceptanceMissing(): string[] {
-  const missing = missingDeps([], ['kimi']);
-  if (!KIMI_ACCEPTANCE_HOME) {
-    missing.push(
-      'CLIGENT_KIMI_ACCEPTANCE_HOME (dedicated source home authenticated by `kimi login`)',
-    );
-    return missing;
-  }
-  if (!isAbsolute(KIMI_ACCEPTANCE_HOME)) {
-    missing.push('absolute CLIGENT_KIMI_ACCEPTANCE_HOME');
-    return missing;
-  }
-  if (!existsSync(join(KIMI_ACCEPTANCE_HOME, 'config.toml'))) {
-    missing.push('CLIGENT_KIMI_ACCEPTANCE_HOME/config.toml');
-  }
-  if (!existsSync(join(KIMI_ACCEPTANCE_HOME, 'credentials'))) {
-    missing.push('CLIGENT_KIMI_ACCEPTANCE_HOME/credentials');
-  }
-  return missing;
-}
-
 function transientFailure(
   events: readonly CligentEvent[],
   adapter: ProbeAdapter,
@@ -1435,14 +1334,14 @@ function userConfigStampChanged(before: string | undefined): boolean {
 function expectAutoMode(label: string, outcome: ProbeOutcome): void {
   expectPhaseUnblocked(`${label} create`, outcome.create.events);
   expect(
+    outcome.createContentMatches,
+    `${label}: file did not have the expected phase-one contents after create\n${formatEvents(outcome.create.events)}`,
+  ).toBe(true);
+  expect(
     outcome.updateAttempted,
     `${label}: update phase was not attempted`,
   ).toBe(true);
   expectPhaseUnblocked(`${label} update`, outcome.update.events);
-  expect(
-    outcome.createContentMatches,
-    `${label}: file did not have the expected phase-one contents after create\n${formatEvents(outcome.create.events)}`,
-  ).toBe(true);
   expect(
     outcome.updateContentMatches,
     `${label}: file did not have the expected phase-two contents after update\n${formatEvents(outcome.update.events)}`,

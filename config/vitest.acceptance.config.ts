@@ -11,6 +11,10 @@ config({ path: join(homedir(), '.cligent.env'), quiet: true });
 export default defineConfig({
   test: {
     include: ['src/**/*.acceptance.test.ts'],
+    globalSetup: ['src/__tests__/helpers/kimi-acceptance-global-setup.ts'],
+    // Safe-write and fanout share one writable Kimi OAuth clone. Serialize
+    // acceptance files so that mutable credential state has one writer.
+    fileParallelism: false,
     testTimeout: 120_000,
     hookTimeout: 480_000,
   },

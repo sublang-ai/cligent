@@ -103,6 +103,26 @@ jobs:
           sudo dpkg -i /tmp/glow.deb
           glow --version
 
+      - name: Configure Kimi acceptance credentials
+        env:
+          KIMI_CODE_CONFIG_TOML_B64: ${{ secrets.KIMI_CODE_CONFIG_TOML_B64 }}
+          KIMI_CODE_CREDENTIALS_JSON_B64: ${{ secrets.KIMI_CODE_CREDENTIALS_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          : "${KIMI_CODE_CONFIG_TOML_B64:?missing KIMI_CODE_CONFIG_TOML_B64 secret}"
+          : "${KIMI_CODE_CREDENTIALS_JSON_B64:?missing KIMI_CODE_CREDENTIALS_JSON_B64 secret}"
+          kimi_acceptance_home="$RUNNER_TEMP/kimi-code-acceptance"
+          install -d -m 0700 "$kimi_acceptance_home/credentials"
+          printf '%s' "$KIMI_CODE_CONFIG_TOML_B64" \
+            | base64 --decode > "$kimi_acceptance_home/config.toml"
+          printf '%s' "$KIMI_CODE_CREDENTIALS_JSON_B64" \
+            | base64 --decode > "$kimi_acceptance_home/credentials/kimi-code.json"
+          chmod 0600 \
+            "$kimi_acceptance_home/config.toml" \
+            "$kimi_acceptance_home/credentials/kimi-code.json"
+          printf 'CLIGENT_KIMI_ACCEPTANCE_HOME=%s\n' \
+            "$kimi_acceptance_home" >> "$GITHUB_ENV"
+
       - name: Run acceptance tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

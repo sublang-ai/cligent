@@ -135,6 +135,16 @@ We welcome contributions of all kinds. If you'd like to help:
 - [Open a PR](https://github.com/sublang-ai/cligent/pulls) for fixes or improvements.
 - Discuss on [Discord](https://discord.gg/XxTPjNqy9g) for support or new ideas.
 
+Live Kimi acceptance automatically discovers a local `~/.kimi-code` login
+and its managed `bin/kimi` when no override is set. CI reconstructs a
+dedicated, disposable Kimi source home from the base64 repository secrets
+`KIMI_CODE_CONFIG_TOML_B64` (`config.toml`) and
+`KIMI_CODE_CREDENTIALS_JSON_B64` (`credentials/kimi-code.json`). The harness
+copies those files into an owner-only temporary home and never runs against the
+source directly. If a cloned run rotates the OAuth refresh credential, repeat
+`kimi login` for an affected local source. For the dedicated CI account, repeat
+the login and replace both repository secrets.
+
 ## License
 
 [Apache-2.0](LICENSE)

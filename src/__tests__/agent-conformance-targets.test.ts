@@ -109,4 +109,37 @@ describe('agent SDK and CLI conformance targets', () => {
     expect(step?.env).not.toHaveProperty('KIMI_MODEL_NAME');
     expect(step?.env).not.toHaveProperty('CLIGENT_KIMI_ACCEPTANCE_HOME');
   });
+
+  it('materializes a dedicated Kimi OAuth fixture before acceptance', () => {
+    const workflow = parse(
+      readFileSync(
+        new URL('../../.github/workflows/ci.yml', import.meta.url),
+        'utf8',
+      ),
+    ) as Workflow;
+    const steps = workflow.jobs?.acceptance?.steps ?? [];
+    const setupIndex = steps.findIndex(
+      (step) => step.name === 'Configure Kimi acceptance credentials',
+    );
+    const runIndex = steps.findIndex(
+      (step) => step.name === 'Run acceptance tests',
+    );
+    const setup = steps[setupIndex];
+
+    expect(setupIndex).toBeGreaterThanOrEqual(0);
+    expect(runIndex).toBeGreaterThan(setupIndex);
+    expect(setup?.env).toEqual({
+      KIMI_CODE_CONFIG_TOML_B64: '${{ secrets.KIMI_CODE_CONFIG_TOML_B64 }}',
+      KIMI_CODE_CREDENTIALS_JSON_B64:
+        '${{ secrets.KIMI_CODE_CREDENTIALS_JSON_B64 }}',
+    });
+    expect(setup?.run).toContain(
+      '${KIMI_CODE_CONFIG_TOML_B64:?missing KIMI_CODE_CONFIG_TOML_B64 secret}',
+    );
+    expect(setup?.run).toContain(
+      '${KIMI_CODE_CREDENTIALS_JSON_B64:?missing KIMI_CODE_CREDENTIALS_JSON_B64 secret}',
+    );
+    expect(setup?.run).toContain('CLIGENT_KIMI_ACCEPTANCE_HOME=%s\\n');
+    expect(setup?.run).toContain('>> "$GITHUB_ENV"');
+  });
 });
