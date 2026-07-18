@@ -14,11 +14,10 @@ Done
 The production adapter, public/runtime registration, package boundary, exact
 ACP/CLI conformance, documentation, and authenticated acceptance are complete.
 The normal local gate discovers the configured Kimi Code `0.27.0` home and
-self-managed binary, isolates OAuth state across the complete retry sequence,
-serializes Kimi-bearing acceptance files, and passes both the safe
-create/update probe and mandatory five-player fanout. CI reconstructs the same
-dedicated source shape from required secrets and hard-fails when it is
-unavailable.
+self-managed binary, shares one isolated OAuth clone across the serialized
+suite, and passes both the safe create/update probe and mandatory five-player
+fanout. CI reconstructs the same dedicated source shape from required secrets
+and hard-fails when it is unavailable.
 
 ## Deliverables
 
