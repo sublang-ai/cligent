@@ -60,8 +60,11 @@ One short-lived process per run preserves adapter thread safety and avoids a res
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
 Credential-free CI shall always exercise the exact ACP initialization handshake.
-Live acceptance shall require an explicitly supplied dedicated Kimi home already authenticated by `kimi login`, clone only its dereferenced configuration and credential directory into a permission-hardened temporary home, and self-skip when that source is not supplied rather than reading or mutating a developer's ordinary Kimi home [[13]].
-Because an OAuth refresh performed against a clone may make the source fixture stale, the source shall be treated as disposable and reauthenticated before a later probe when necessary.
+Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].
+CI live acceptance shall require the explicit dedicated-home override and shall fail when it or the authenticated CLI is unavailable, matching the other coding-agent credential gates.
+The harness shall clone only the source home's dereferenced configuration and credential directory into a permission-hardened temporary home, keep that clone for the complete bounded retry sequence, restore the caller environment, and remove the clone without mutating the source.
+An absent or invalid automatically discovered local source shall self-skip with a precise reason.
+Because an OAuth refresh performed against a clone may make the source stale, a dedicated CI source shall be treated as disposable and a local source may require `kimi login` again before a later probe.
 A future public, documented Kimi Code SDK may replace the ACP subprocess only through a new decision that preserves the same observable contract.
 
 ## References

@@ -9,14 +9,13 @@ Implement [DR-011](../decisions/011-kimi-code-acp-integration.md) so Cligent can
 
 ## Status
 
-Complete
+In progress
 
 The production adapter, public/runtime registration, package boundary, exact
 ACP/CLI conformance, and documentation are complete. The authenticated Kimi
-safe-write and five-player fanout legs were not run locally because no
-dedicated `CLIGENT_KIMI_ACCEPTANCE_HOME` authenticated by `kimi login` was
-supplied; both cleanly retain their documented environment gate, while the
-credential-free exact `0.27.0` ACP initialization check passed.
+safe-write probe now passes against the configured local Kimi Code `0.27.0`
+account. Automatic local-home and self-managed-binary discovery, mandatory CI
+credentials, and five-player fanout verification remain in progress.
 
 ## Deliverables
 
@@ -27,6 +26,7 @@ credential-free exact `0.27.0` ACP initialization check passed.
 - [x] Exact ACP SDK and Kimi CLI conformance targets are installed and verified without adding a Kimi-specific SDK peer.
 - [x] Unit, package, smoke, exact-target, and applicable environment-gated acceptance checks pass.
 - [x] User documentation and the unreleased changelog describe setup, authentication, capabilities, and intentional limitations.
+- [ ] Normal local and CI credential gates run Kimi safe-write and five-player fanout acceptance at the same level as the other coding agents.
 
 ## Tasks
 
@@ -42,6 +42,8 @@ Each task is one-commit size and keeps build, typecheck, lint, and focused tests
        Pin Kimi Code CLI and ACP protocol versions, update CI and package consumers, add an installed-CLI ACP contract check, and add credential-gated real-run acceptance.
 5. [x] **Document and verify the feature.**
        Update user guides and changelog, run the complete repository verification sequence, and record any environment-gated acceptance skip explicitly.
+6. [ ] **Promote authenticated acceptance.**
+       Discover a configured local Kimi home and managed CLI safely, require a dedicated CI fixture, retain one isolated OAuth clone across retries, and verify both the safe-write and five-player fanout paths.
 
 ## Acceptance criteria
 
@@ -51,5 +53,5 @@ Each task is one-commit size and keeps build, typecheck, lint, and focused tests
 - Unsupported bypass, policies without a mode (including per-capability-only policies), explicit tool lists, turn/budget limits, and non-Kimi effort values fail before the Kimi process starts.
 - `mode: 'auto'`, ambient writable-path reporting, and native `off` / `on` thinking controls reach their documented ACP options.
 - The packed package imports `@sublang/cligent/adapters/kimi` on Node 18.3 and its declarations preserve `KimiEffort` correlation under TypeScript 5.4.
-- CI verifies the exact Kimi Code CLI target and the ACP command surface; a live safe-write probe succeeds when Kimi credentials are available.
+- CI verifies the exact Kimi Code CLI target and ACP command surface, requires dedicated Kimi credentials for live acceptance, and passes both the safe-write and five-player fanout probes.
 - Build, typecheck, lint, unit, smoke, package, distributable, and applicable acceptance checks pass.
