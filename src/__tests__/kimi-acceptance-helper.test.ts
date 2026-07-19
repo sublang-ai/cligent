@@ -163,24 +163,75 @@ describe('Kimi credential usability probe', () => {
     ).resolves.toContain('not ready');
   });
 
-  it('reports a reason when the resolved command cannot speak ACP', async () => {
+  it('detects a spent credential that only fails at session/prompt', async () => {
     const root = makeTemporaryRoot();
     const home = createKimiHome(join(root, 'home'));
+    // Reproduces the exact shape Kimi presents once its rotating refresh token
+    // is spent: `session/new` still succeeds, because the CLI treats any
+    // non-empty access token as authenticated without checking expiry, and the
+    // rejection appears only when a model call is attempted.
+    const stub = join(root, 'kimi-stub.mjs');
+    writeFileSync(
+      stub,
+      `#!/usr/bin/env node
+let buffer = '';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  const lines = buffer.split('\\n');
+  buffer = lines.pop() ?? '';
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const message = JSON.parse(line);
+    if (message.method === 'initialize') {
+      reply({ id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+    } else if (message.method === 'session/new') {
+      reply({ id: message.id, result: { sessionId: 'probe-session' } });
+    } else if (message.method === 'session/prompt') {
+      reply({ id: message.id, error: { code: -32000, message: 'Authentication required' } });
+    }
+  }
+});
+function reply(payload) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...payload }) + '\\n');
+}
+`,
+      { encoding: 'utf-8', mode: 0o755 },
+    );
 
-    // `true` exits 0 immediately without writing an ACP handshake, standing in
-    // for a CLI whose ACP session cannot be established.
     const reason = await probeKimiCredential(
       {
         source: 'explicit',
         sourceHome: home,
-        cliCommand: '/usr/bin/true',
+        cliCommand: stub,
         missing: [],
       },
-      5_000,
+      10_000,
     );
 
     expect(reason).toBeDefined();
     expect(reason).toContain('kimi login');
+    expect(reason).toContain('rotates its refresh token');
+  });
+
+  it('does not downgrade a non-authentication failure to a skip', async () => {
+    const root = makeTemporaryRoot();
+    const home = createKimiHome(join(root, 'home'));
+
+    // `true` exits 0 immediately without an ACP handshake, standing in for a
+    // broken CLI rather than a spent credential. Only an auth rejection means
+    // "skip"; every other failure must still reach the suite so a real
+    // regression fails the build instead of vanishing into a skip.
+    await expect(
+      probeKimiCredential(
+        {
+          source: 'explicit',
+          sourceHome: home,
+          cliCommand: '/usr/bin/true',
+          missing: [],
+        },
+        5_000,
+      ),
+    ).resolves.toBeUndefined();
   });
 });
 

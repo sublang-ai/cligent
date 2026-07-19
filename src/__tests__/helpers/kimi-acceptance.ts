@@ -21,6 +21,8 @@ import {
 } from '@agentclientprotocol/sdk';
 
 const KIMI_ACCEPTANCE_HOME_KEY = 'CLIGENT_KIMI_ACCEPTANCE_HOME';
+/** ACP `RequestError.authRequired()` — Kimi's spent-credential rejection. */
+const KIMI_AUTH_REQUIRED_CODE = -32000;
 const KIMI_MODEL_ENV_KEYS = [
   'KIMI_MODEL_API_KEY',
   'KIMI_MODEL_BASE_URL',
@@ -236,7 +238,7 @@ export async function withIsolatedKimiCodeHome<T>(
  */
 export async function probeKimiCredential(
   context: KimiAcceptanceContext,
-  timeoutMs = 30_000,
+  timeoutMs = 20_000,
 ): Promise<string | undefined> {
   if (!context.sourceHome || !context.cliCommand) {
     return 'Kimi acceptance context is not ready';
@@ -266,27 +268,53 @@ export async function probeKimiCredential(
       ),
     );
 
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`probe timed out after ${timeoutMs} ms`)),
-        timeoutMs,
-      );
+    await connection.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: {},
+    });
+    const { sessionId } = await connection.newSession({
+      cwd: probeCwd,
+      mcpServers: [],
+    });
+
+    // `session/new` is not a credential test: the CLI treats any non-empty
+    // access token as authenticated without checking its expiry, so it
+    // succeeds on a stale token and the rejection only appears once a model
+    // call is made. Send a minimal prompt and watch for the auth rejection.
+    //
+    // The prompt need not finish — surviving a short window without an auth
+    // error is enough to prove the credential works, so race a timer and
+    // cancel rather than paying for a whole completion.
+    const settled = new Promise<'usable'>((resolve) => {
+      timer = setTimeout(() => resolve('usable'), timeoutMs);
     });
 
     await Promise.race([
-      (async () => {
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {},
-        });
-        await connection.newSession({ cwd: probeCwd, mcpServers: [] });
-      })(),
-      deadline,
+      connection
+        .prompt({
+          sessionId,
+          prompt: [{ type: 'text', text: 'hi' }],
+        })
+        .then(() => 'usable' as const),
+      settled,
     ]);
+
+    try {
+      await connection.cancel({ sessionId });
+    } catch {
+      // Cancellation is best effort; the child is killed below regardless.
+    }
     return undefined;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return `Kimi OAuth credential is not usable (${message}) — the stored refresh token was already rotated or revoked; re-run \`kimi login\` and refresh the acceptance source`;
+    const code = (error as { code?: unknown } | undefined)?.code;
+    // Only an authentication rejection means "spent credential". Anything
+    // else (network, protocol, CLI defect) must still fail the suite loudly
+    // rather than being silently downgraded to a skip.
+    if (code !== KIMI_AUTH_REQUIRED_CODE && !/auth/i.test(message)) {
+      return undefined;
+    }
+    return `Kimi OAuth credential is not usable (${message}) — Kimi rotates its refresh token on every refresh, so a credential restored from an immutable secret is spent once any earlier run refreshed it; re-run \`kimi login\` and refresh the acceptance source`;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     try {
