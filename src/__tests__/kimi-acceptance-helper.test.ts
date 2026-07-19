@@ -16,6 +16,7 @@ import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createIsolatedKimiAcceptance,
+  probeKimiCredential,
   resolveKimiAcceptance,
   withIsolatedKimiCodeHome,
   withKimiAcceptanceEnvironment,
@@ -146,6 +147,40 @@ describe('Kimi acceptance dependency resolution', () => {
     expect(context.missing).toEqual([
       'CLIGENT_KIMI_ACCEPTANCE_HOME/credentials/kimi-code.json',
     ]);
+  });
+});
+
+describe('Kimi credential usability probe', () => {
+  // The probe gates the whole Kimi acceptance suite from global setup, so it
+  // must degrade to a reason string rather than throwing — a throw there would
+  // abort every acceptance file, not just the Kimi legs.
+  it('reports a reason instead of throwing for an unready context', async () => {
+    await expect(
+      probeKimiCredential({
+        source: 'missing',
+        missing: ['kimi CLI on PATH or in the resolved Kimi Code home'],
+      }),
+    ).resolves.toContain('not ready');
+  });
+
+  it('reports a reason when the resolved command cannot speak ACP', async () => {
+    const root = makeTemporaryRoot();
+    const home = createKimiHome(join(root, 'home'));
+
+    // `true` exits 0 immediately without writing an ACP handshake, standing in
+    // for a CLI whose ACP session cannot be established.
+    const reason = await probeKimiCredential(
+      {
+        source: 'explicit',
+        sourceHome: home,
+        cliCommand: '/usr/bin/true',
+        missing: [],
+      },
+      5_000,
+    );
+
+    expect(reason).toBeDefined();
+    expect(reason).toContain('kimi login');
   });
 });
 

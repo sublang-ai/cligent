@@ -32,8 +32,14 @@ const PLAYER_ADAPTERS = [
 const dependencyReport = fanoutAcceptanceDeps();
 
 // Acceptance files are excluded from the standard CI matrix; CI hard-fails
-// missing dependencies only when the acceptance config loads this file.
-const acceptanceIt = dependencyReport.ready || process.env.CI ? it : it.skip;
+// missing dependencies only when the acceptance config loads this file. A
+// self-skip report overrides that: it names a dependency no runner
+// configuration can supply, so failing on it would report a false regression.
+const acceptanceIt = dependencyReport.selfSkip
+  ? it.skip
+  : dependencyReport.ready || process.env.CI
+    ? it
+    : it.skip;
 
 describe('tmux-play fanout acceptance', () => {
   acceptanceIt(
@@ -321,6 +327,12 @@ function adapterModel(adapter: PlayerAdapterName): { model?: string } {
 interface DependencyReport {
   readonly ready: boolean;
   readonly missing: readonly string[];
+  /**
+   * True when a dependency is unavailable for a reason CI configuration cannot
+   * fix — today, Kimi's spent rotating refresh token. Such a report skips the
+   * composite even under `CI` instead of reporting a false regression.
+   */
+  readonly selfSkip: boolean;
 }
 
 function fanoutAcceptanceDeps(): DependencyReport {
@@ -349,6 +361,7 @@ function fanoutAcceptanceDeps(): DependencyReport {
   return {
     ready: missing.length === 0,
     missing,
+    selfSkip: kimiAcceptance.unusable !== undefined,
   };
 }
 

@@ -60,12 +60,21 @@ One short-lived process per run preserves adapter thread safety and avoids a res
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
 Credential-free CI shall always exercise the exact ACP initialization handshake.
+This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].
-CI live acceptance shall require the explicit dedicated-home override containing `config.toml` and `credentials/kimi-code.json`, and shall fail when it or the authenticated CLI is unavailable, matching the other coding-agent credential gates.
+CI live acceptance shall require the explicit dedicated-home override containing `config.toml` and `credentials/kimi-code.json`, and shall fail when that fixture or the authenticated CLI is absent, matching the other coding-agent credential gates.
+
+An absent fixture and a spent credential are distinct conditions and shall be gated differently.
+Kimi Code `0.27.0` admits no non-interactive credential: the ACP gate accepts only the managed OAuth token, because `harnessIsAuthed` reduces to whether the managed provider holds a stored token, and `KIMI_API_KEY` configures a model provider without ever reaching that gate [[15]][[16]].
+Its refresh response is required to carry a replacement `refresh_token`, which the CLI persists into whichever home performed the refresh; a refusal writes a revoked tombstone into that home instead [[17]].
+A credential restored from an immutable store is therefore single-use: the first run that refreshes rotates the server-side token and discards the replacement with its temporary home, so every later run presents a spent token, and the tombstone it writes fails every subsequent leg sharing that clone.
+No arrangement of repository secrets can avoid this, so live acceptance shall probe credential usability once, before any leg runs, and shall self-skip the live Kimi legs with a precise reason when the credential is spent — including under `CI`, where failing would report a false regression rather than a defect in this repository.
+Continuous live Kimi coverage in CI requires a writable, persistent credential home that retains each rotation — a self-hosted runner holding its own `~/.kimi-code`, or a run that writes the rotated credential back to the secret it came from — and either arrangement is outside this decision.
 The harness shall clone only the source home's dereferenced configuration and credential directory into one permission-hardened temporary home, share that clone across the complete acceptance suite including bounded retries and fanout, restore the caller environment around each consumer, and remove the clone without mutating the source.
 Acceptance files that consume the shared Kimi OAuth clone shall run serially so its mutable credential state has one writer.
 An absent or invalid automatically discovered local source shall self-skip with a precise reason.
-Because an OAuth refresh performed against a clone may make the source stale, a dedicated CI source shall be treated as disposable and a local source may require `kimi login` again before a later probe.
+Because a refresh performed against a clone rotates the shared server-side token, a dedicated CI source is consumed by its first refreshing run and a local source may require `kimi login` again before a later probe.
+A local source and a CI fixture copied from it share one token lineage, so exercising either invalidates the other; a CI fixture shall therefore come from an account dedicated to CI.
 A future public, documented Kimi Code SDK may replace the ACP subprocess only through a new decision that preserves the same observable contract.
 
 ## References
@@ -84,3 +93,6 @@ A future public, documented Kimi Code SDK may replace the ACP subprocess only th
 [12]: https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/src/cli/run-prompt.ts "Kimi Code prompt-mode implementation"
 [13]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html "Kimi Code data locations"
 [14]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code 0.27 ACP authentication gate"
+[15]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/server.ts "Kimi Code ACP harnessIsAuthed gate — any managed provider holding a stored token"
+[16]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/node-sdk/src/auth.ts "Kimi Code auth facade — status() reports only the managed OAuth provider"
+[17]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/oauth/src/oauth-manager.ts "Kimi Code OAuth manager — refresh rotation, persistence, and revoked tombstone"

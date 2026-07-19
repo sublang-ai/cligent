@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
@@ -12,6 +12,13 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { Readable, Writable } from 'node:stream';
+
+import {
+  ClientSideConnection,
+  PROTOCOL_VERSION,
+  ndJsonStream,
+} from '@agentclientprotocol/sdk';
 
 const KIMI_ACCEPTANCE_HOME_KEY = 'CLIGENT_KIMI_ACCEPTANCE_HOME';
 const KIMI_MODEL_ENV_KEYS = [
@@ -26,6 +33,17 @@ export interface KimiAcceptanceContext {
   readonly source: 'explicit' | 'environment' | 'default' | 'missing';
   readonly cliCommand?: string;
   readonly missing: readonly string[];
+  /**
+   * Set when the credential is present and well-formed but no longer usable —
+   * Kimi's rotating refresh token was already spent by an earlier run.
+   *
+   * Distinct from `missing`, which reports an absent fixture that a CI runner
+   * is expected to supply. An absent fixture is a misconfiguration worth
+   * failing on; a spent token is a property of Kimi's OAuth design that no
+   * amount of CI configuration can prevent, so consumers self-skip on it even
+   * under `CI` rather than reporting a false regression.
+   */
+  readonly unusable?: string;
 }
 
 export interface IsolatedKimiAcceptance {
@@ -195,6 +213,93 @@ export async function withIsolatedKimiCodeHome<T>(
     return await withKimiAcceptanceEnvironment(isolated.context, run);
   } finally {
     isolated.cleanup();
+  }
+}
+
+/**
+ * Confirm the cloned OAuth credential can still open an ACP session.
+ *
+ * Kimi Code 0.27 rotates the refresh token on every refresh and persists the
+ * replacement into whichever home performed it. A credential copied into an
+ * immutable store (a CI secret) is therefore spent the first time any run
+ * refreshes it: the next run's refresh returns `invalid_grant`, the CLI writes
+ * a revoked tombstone into the home, and every later `session/new` fails with
+ * `Authentication required`. File presence cannot detect that state, so probe
+ * the credential the same way the suite will use it.
+ *
+ * The probe deliberately runs against the SHARED clone, so the refresh it may
+ * trigger is the one refresh the suite was going to perform anyway rather than
+ * an extra rotation.
+ *
+ * Returns `undefined` when the credential is usable, or a human-readable
+ * reason when it is not. Never throws and never surfaces credential material.
+ */
+export async function probeKimiCredential(
+  context: KimiAcceptanceContext,
+  timeoutMs = 30_000,
+): Promise<string | undefined> {
+  if (!context.sourceHome || !context.cliCommand) {
+    return 'Kimi acceptance context is not ready';
+  }
+
+  const probeCwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-probe-'));
+  const child = spawn(context.cliCommand, ['acp'], {
+    cwd: probeCwd,
+    env: { ...process.env, KIMI_CODE_HOME: context.sourceHome },
+    shell: false,
+    stdio: 'pipe',
+  });
+  child.stderr?.resume();
+
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const connection = new ClientSideConnection(
+      () => ({
+        async requestPermission() {
+          return { outcome: { outcome: 'cancelled' as const } };
+        },
+        async sessionUpdate() {},
+      }),
+      ndJsonStream(
+        Writable.toWeb(child.stdin!),
+        Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>,
+      ),
+    );
+
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`probe timed out after ${timeoutMs} ms`)),
+        timeoutMs,
+      );
+    });
+
+    await Promise.race([
+      (async () => {
+        await connection.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: {},
+        });
+        await connection.newSession({ cwd: probeCwd, mcpServers: [] });
+      })(),
+      deadline,
+    ]);
+    return undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `Kimi OAuth credential is not usable (${message}) — the stored refresh token was already rotated or revoked; re-run \`kimi login\` and refresh the acceptance source`;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    try {
+      child.stdin?.end();
+    } catch {
+      // The child may already have closed its input stream.
+    }
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Ignore shutdown races with a process that already exited.
+    }
+    rmSync(probeCwd, { force: true, recursive: true });
   }
 }
 

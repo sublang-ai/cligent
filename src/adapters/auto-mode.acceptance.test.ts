@@ -320,7 +320,9 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
   // by `kimi login`; an API-key provider alone cannot satisfy that gate. Local
   // runs discover the documented Kimi home, while CI requires an explicit
   // dedicated fixture. The source is never passed to the spawned process.
-  gatedIt(kimiAcceptance.missing)(
+  // A spent rotating refresh token self-skips even under CI — see
+  // `KimiAcceptanceContext.unusable`. An absent fixture still hard-fails there.
+  (kimiAcceptance.unusable ? it.skip : gatedIt(kimiAcceptance.missing))(
     'kimi auto mode auto-approves a temp-file create + update',
     async () => {
       assertReady('kimi', kimiAcceptance.missing);
