@@ -157,6 +157,15 @@ export function createIsolatedKimiAcceptance(
       join(isolatedHome, 'credentials'),
       { dereference: true, recursive: true },
     );
+    // Carry the source home's device identity when it has one. The CLI sends
+    // it with the OAuth refresh request and mints a fresh random identifier
+    // when the file is absent, so a clone without it refreshes under a
+    // different device than the login it descends from.
+    const deviceId = join(context.sourceHome!, 'device_id');
+    if (isFile(deviceId)) {
+      cpSync(deviceId, join(isolatedHome, 'device_id'), { dereference: true });
+      chmodSync(join(isolatedHome, 'device_id'), 0o600);
+    }
     hardenKimiAuthCopy(isolatedHome);
   } catch (error) {
     rmSync(isolatedHome, { recursive: true, force: true });

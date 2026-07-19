@@ -236,6 +236,53 @@ function reply(payload) {
 });
 
 describe('Kimi acceptance credential isolation', () => {
+  it('carries the source device identity into the clone', () => {
+    const root = makeTemporaryRoot();
+    const sourceHome = createKimiHome(join(root, 'source'));
+    writeFileSync(join(sourceHome, 'device_id'), 'device-fixture', {
+      mode: 0o600,
+    });
+
+    const isolated = createIsolatedKimiAcceptance(
+      { sourceHome, source: 'explicit', cliCommand: 'kimi', missing: [] },
+      'cligent-kimi-device-test-',
+    );
+
+    try {
+      // The CLI sends this identifier with the OAuth refresh and mints a fresh
+      // random one when it is absent, so a clone missing it would refresh
+      // under a different device than the login it descends from.
+      const cloned = join(isolated.context.sourceHome!, 'device_id');
+      expect(readFileSync(cloned, 'utf8')).toBe('device-fixture');
+      expect(fileMode(cloned)).toBe(0o600);
+    } finally {
+      isolated.cleanup();
+    }
+  });
+
+  it('clones a source home that has no device identity', () => {
+    const root = makeTemporaryRoot();
+    const sourceHome = createKimiHome(join(root, 'source'));
+
+    const isolated = createIsolatedKimiAcceptance(
+      { sourceHome, source: 'explicit', cliCommand: 'kimi', missing: [] },
+      'cligent-kimi-nodevice-test-',
+    );
+
+    try {
+      expect(
+        existsSync(join(isolated.context.sourceHome!, 'device_id')),
+      ).toBe(false);
+      expect(
+        existsSync(
+          join(isolated.context.sourceHome!, 'credentials', 'kimi-code.json'),
+        ),
+      ).toBe(true);
+    } finally {
+      isolated.cleanup();
+    }
+  });
+
   it('preserves refreshed credentials across sequential consumers', async () => {
     const root = makeTemporaryRoot();
     const sourceHome = createKimiHome(join(root, 'source'));
