@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { EventEmitter } from 'node:events';
+import { isAbsolute, resolve } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 
 import {
@@ -439,11 +440,18 @@ describe('KimiAdapter', () => {
       }),
     );
 
+    // KIMI-003 / KIMI-004: the child and the session both take the resolved
+    // absolute cwd, so `cwd: '.'` never leaves the run rooted on a relative
+    // path or on the parent process's directory by accident.
+    const expectedCwd = resolve('.');
     expect(fake.spawns[0]).toMatchObject({ command: 'kimi', args: ['acp'] });
     expect(fake.spawns[0]?.options).toMatchObject({
+      cwd: expectedCwd,
       shell: false,
       stdio: 'pipe',
     });
+    expect(isAbsolute(expectedCwd)).toBe(true);
+    expect(fake.newRequests[0]?.cwd).toBe(expectedCwd);
     expect(fake.initializeRequest).toMatchObject({
       protocolVersion: 1,
       clientCapabilities: {},
@@ -511,6 +519,129 @@ describe('KimiAdapter', () => {
     expect(fake.children[0]).toMatchObject({
       exitCode: 0,
       killed: false,
+    });
+  });
+
+  it('reports a failed tool once and normalizes absent usage to zero', async () => {
+    const fake = new FakeKimi({
+      prompt: async (connection, request) => {
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'tool-fail',
+            title: 'Bash',
+            kind: 'execute',
+            rawInput: { command: 'exit 1' },
+          },
+        });
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'tool-fail',
+            status: 'failed',
+            rawOutput: { stderr: 'boom' },
+          },
+        });
+        // A redundant terminal update must not produce a second tool_result.
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'tool-fail',
+            status: 'failed',
+            rawOutput: { stderr: 'boom' },
+          },
+        });
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Run it', {
+        cwd: '.',
+      }),
+    );
+
+    const results = events.filter((event) => event.type === 'tool_result');
+    expect(results).toHaveLength(1);
+    expect(eventOf(events, 'tool_result').payload).toMatchObject({
+      toolName: 'Bash',
+      toolUseId: 'tool-fail',
+      status: 'error',
+      output: { stderr: 'boom' },
+    });
+    expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
+    // KIMI-005: Kimi's ACP surface exposes no per-turn totals, so an absent
+    // usage object normalizes to zeros with toolUses tracking emitted calls.
+    expect(eventOf(events, 'done').payload.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 1,
+    });
+  });
+
+  it('fails closed when a permission request offers no reject option', async () => {
+    const fake = new FakeKimi({
+      prompt: async (connection, request, state) => {
+        state.permissionOutcome = await connection.requestPermission({
+          sessionId: request.sessionId,
+          toolCall: {
+            toolCallId: 'tool-allow-only',
+            title: 'Write',
+            kind: 'edit',
+            rawInput: { path: 'out.txt' },
+          },
+          options: [
+            { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
+            { kind: 'allow_always', name: 'Always', optionId: 'always' },
+          ],
+        });
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Write it', {
+        cwd: '.',
+      }),
+    );
+
+    // KIMI-007: a headless run must never auto-approve. With no reject
+    // option available the adapter returns a cancelled outcome rather than
+    // selecting one of the allow options.
+    expect(fake.permissionOutcome).toEqual({
+      outcome: { outcome: 'cancelled' },
+    });
+    expect(eventOf(events, 'permission_request').payload).toMatchObject({
+      toolUseId: 'tool-allow-only',
+    });
+  });
+
+  it('falls back to a reject_always option when no reject_once exists', async () => {
+    const fake = new FakeKimi({
+      prompt: async (connection, request, state) => {
+        state.permissionOutcome = await connection.requestPermission({
+          sessionId: request.sessionId,
+          toolCall: { toolCallId: 'tool-3', title: 'Write', kind: 'edit' },
+          options: [
+            { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
+            { kind: 'reject_always', name: 'Never', optionId: 'never' },
+          ],
+        });
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Write it', {
+        cwd: '.',
+      }),
+    );
+
+    expect(fake.permissionOutcome).toEqual({
+      outcome: { outcome: 'selected', optionId: 'never' },
     });
   });
 
@@ -796,6 +927,10 @@ describe('KimiAdapter', () => {
     expect(fake.newRequests).toHaveLength(0);
     expect(fake.children[0]?.killSignals).toEqual(['SIGTERM']);
     expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+    // TADAPT-020 / KIMI-012: no backend id was observed and no inbound
+    // resume was supplied, so the locally generated correlation id must not
+    // leak out as a resumable token.
+    expect(eventOf(events, 'done').payload).not.toHaveProperty('resumeToken');
   });
 
   it.each([
