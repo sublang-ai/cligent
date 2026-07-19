@@ -10,9 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-18
+
 ### Added
 
 - Kimi Code support through the public `KimiAdapter` and tmux-play `kimi` adapter, targeting the maintained `@moonshot-ai/kimi-code` 0.27.0 CLI through one short-lived `kimi acp` process per run and the generic ACP SDK 0.23.0 rather than a legacy or unpublished Kimi-specific SDK. The adapter streams normalized text and correlated tool events without exposing raw thought chunks, creates or resumes backend sessions with automatic `resumeToken` continuity, supports model selection and provider-native binary `effort: off | on`, preserves Kimi's native permissions when no policy is supplied, and maps `permissions: { mode: auto }` to Kimi's native auto mode. Unsupported bypass, policies without a mode (including per-capability-only policies), explicit tool filters, and turn or budget limits fail before spawn; `writablePaths` with auto mode are reported as ambient rather than sandbox-enforced. Kimi Code 0.27 ACP requires the OAuth credential created by `kimi login`; exact ACP initialization is always verified, while authenticated live acceptance discovers an explicit source, `KIMI_CODE_HOME`, or `~/.kimi-code` locally, shares one isolated OAuth clone across safe-write and five-player fanout, and requires a dedicated source in CI — DR-011, IR-036, KIMI-001–KIMI-012
+
+### Changed
+
+- `@agentclientprotocol/sdk` 0.23.0 and its schema peer `zod` 4.4.3 are now direct runtime `dependencies` rather than optional agent peers, because the Kimi adapter imports the generic ACP protocol surface directly instead of a vendor SDK. Upgrading from 0.15.0 therefore adds both packages to the install graph; each is pinned exactly so the wire schema matches the Kimi Code CLI conformance target, while the four agent SDKs remain optional peers — PKG-003, PKG-012
+- Release-candidate Codex conformance now pins Codex CLI/SDK 0.144.5, replacing the 0.144.1 target shipped in 0.14.0. The exact `devDependency`, the npm lockfile, and the repository target verifier move together; the optional `@openai/codex-sdk` peer floor remains `>=0.138.0` — PKG-012
+
+### Fixed
+
+- tmux-play no longer renders an unknown adapter in the accent reserved for a known one. `kimi` claims Catppuccin `sapphire`, but sapphire also remained the first entry of both unknown-adapter fallback pools, so custom adapter names landing in that bucket — `cursor`, `qwen`, `agentx`, `cline` — drew exactly the `kimi` accent and became indistinguishable from a `kimi` player's speaker prefixes and pane-border timer in the same session. Both pools are now the four documented colors (sky, rosewater, maroon, flamingo) on each flavor, so every fallback accent is disjoint from the known-adapter table — TMUX-048
 
 ## [0.15.0] - 2026-07-15
 
@@ -291,7 +302,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/sublang-ai/cligent/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sublang-ai/cligent/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sublang-ai/cligent/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sublang-ai/cligent/compare/v0.12.0...v0.13.0
