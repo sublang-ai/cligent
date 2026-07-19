@@ -29,9 +29,10 @@ const KNOWN_PLAYER_COLORS_LATTE: Readonly<Record<string, string>> = {
 // Pool for unknown adapter names (custom Captain implementations, future
 // adapters). Avoids overlap with the speaker/tool/status accents reserved
 // elsewhere (boss=blue, captain=mauve, tool=peach, ok=green, error=red,
-// aborted=yellow).
+// aborted=yellow) and with every known-adapter accent above — sapphire left
+// this pool when `kimi` claimed it, so an unknown adapter can never render
+// with a known adapter's color.
 const FALLBACK_POOL_MOCHA: readonly string[] = [
-  '#74c7ec', // sapphire
   '#89dceb', // sky
   '#f5e0dc', // rosewater
   '#eba0ac', // maroon
@@ -39,7 +40,6 @@ const FALLBACK_POOL_MOCHA: readonly string[] = [
 ];
 
 const FALLBACK_POOL_LATTE: readonly string[] = [
-  '#209fb5', // sapphire
   '#04a5e5', // sky
   '#dc8a78', // rosewater
   '#e64553', // maroon

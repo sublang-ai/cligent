@@ -19,6 +19,24 @@ import {
   playerAccent,
 } from './player-colors.js';
 
+// TMUX-048 fallback pools; changes here are normative. Sapphire is absent
+// from both because the `kimi` adapter claims it.
+const FALLBACK_POOL_MOCHA = new Set([
+  '#89dceb', // sky
+  '#f5e0dc', // rosewater
+  '#eba0ac', // maroon
+  '#f2cdcd', // flamingo
+]);
+
+const FALLBACK_POOL_LATTE = new Set([
+  '#04a5e5', // sky
+  '#dc8a78', // rosewater
+  '#e64553', // maroon
+  '#dd7878', // flamingo
+]);
+
+const KNOWN_ADAPTERS = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
+
 describe('playerAccent', () => {
   it('returns the canonical Mocha accent for each known adapter', () => {
     // Anchors per TMUX-048; changes here are normative.
@@ -44,15 +62,30 @@ describe('playerAccent', () => {
   });
 
   it('keeps fallback colors inside the documented pool', () => {
-    const pool = new Set([
-      '#74c7ec',
-      '#89dceb',
-      '#f5e0dc',
-      '#eba0ac',
-      '#f2cdcd',
-    ]);
     for (const name of ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']) {
-      expect(pool.has(playerAccent(name))).toBe(true);
+      expect(FALLBACK_POOL_MOCHA.has(playerAccent(name))).toBe(true);
+      expect(FALLBACK_POOL_LATTE.has(playerAccent(name, 'latte'))).toBe(true);
+    }
+  });
+
+  it('never hands an unknown adapter a known adapter accent', () => {
+    // TMUX-048: neither pool may contain an accent assigned to a known
+    // adapter. `kimi` claimed sapphire, so sapphire left both pools —
+    // otherwise `cursor`/`qwen`/`agentx`/`cline` would render identically
+    // to a `kimi` player in the same session.
+    for (const adapter of KNOWN_ADAPTERS) {
+      expect(FALLBACK_POOL_MOCHA.has(playerAccent(adapter))).toBe(false);
+      expect(FALLBACK_POOL_LATTE.has(playerAccent(adapter, 'latte'))).toBe(
+        false,
+      );
+    }
+    for (const name of ['cursor', 'qwen', 'agentx', 'cline', 'some-future']) {
+      for (const adapter of KNOWN_ADAPTERS) {
+        expect(playerAccent(name)).not.toBe(playerAccent(adapter));
+        expect(playerAccent(name, 'latte')).not.toBe(
+          playerAccent(adapter, 'latte'),
+        );
+      }
     }
   });
 
@@ -75,7 +108,7 @@ describe('playerAccent', () => {
       STATUS_ERROR,
       STATUS_ABORTED,
     ]);
-    for (const adapter of ['claude', 'codex', 'gemini', 'kimi', 'opencode']) {
+    for (const adapter of KNOWN_ADAPTERS) {
       expect(reserved.has(playerAccent(adapter))).toBe(false);
     }
   });
