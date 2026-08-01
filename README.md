@@ -96,6 +96,10 @@ tmux-play                                # discover or create config
 tmux-play --config ./tmux-play.config.yaml
 ```
 
+For a global install, add the optional agent SDK peers globally as well
+(e.g. `npm install -g @openai/codex-sdk`) so the adapters your config uses
+can load them.
+
 On first run, if neither the cwd nor the home config exists, `tmux-play`
 creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` and starts
 with the built-in `fanout` Captain plus a `claude` and a `codex` player.
