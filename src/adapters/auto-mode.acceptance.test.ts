@@ -21,7 +21,6 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, inject, it } from 'vitest';
@@ -39,6 +38,7 @@ import {
   CodexAdapter,
   codexWorkspaceExtraWritesProfileConfigOverride,
   createCodexConfigOverrideWrapper,
+  resolveCodexBinPath,
 } from './codex.js';
 import { GeminiAdapter } from './gemini.js';
 import { KimiAdapter } from './kimi.js';
@@ -1223,7 +1223,7 @@ function matchTransientFailure(
 
 function resolveCodexCliPath(): string | undefined {
   try {
-    return createRequire(import.meta.url).resolve('@openai/codex/bin/codex.js');
+    return resolveCodexBinPath();
   } catch {
     return undefined;
   }

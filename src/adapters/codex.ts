@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
@@ -802,8 +803,135 @@ interface CodexConfigOverrideWrapper {
   cleanup: () => Promise<void>;
 }
 
-function resolveCodexBinPath(): string {
-  return requireFromHere.resolve('@openai/codex/bin/codex.js');
+const CODEX_SDK_PACKAGE = '@openai/codex-sdk';
+const CODEX_BIN_SPECIFIER = '@openai/codex/bin/codex.js';
+
+export interface CodexBinPathResolutionDeps {
+  // Loader-provided ESM resolution; pass undefined to model runtimes that
+  // predate import.meta.resolve (Node < 18.19).
+  importMetaResolve?: ((specifier: string) => string) | undefined;
+  // Module scope whose search paths anchor the lookup and whose resolution
+  // serves as the final fallback.
+  baseRequire?: Pick<NodeJS.Require, 'resolve'>;
+}
+
+interface CodexSdkAnchor {
+  anchor: string;
+  route: string;
+}
+
+function firstErrorLine(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.split('\n', 1)[0] ?? text;
+}
+
+function toRealPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+// @openai/codex is a dependency of @openai/codex-sdk, not of cligent, so
+// anchors must sit inside the installed SDK tree for layouts that do not
+// hoist it (npm global prefixes, nested-strategy consumers). Anchors are
+// realpath-canonicalized so pnpm-style symlinked layouts resolve from the
+// SDK's physical tree, matching how Node resolves the SDK's own imports.
+function codexSdkAnchors(
+  importMetaResolve: ((specifier: string) => string) | undefined,
+  baseRequire: Pick<NodeJS.Require, 'resolve'>,
+  failures: string[],
+): CodexSdkAnchor[] {
+  const anchors: CodexSdkAnchor[] = [];
+
+  if (importMetaResolve) {
+    try {
+      const resolvedUrl = new URL(importMetaResolve(CODEX_SDK_PACKAGE));
+      if (resolvedUrl.protocol === 'file:') {
+        anchors.push({
+          anchor: toRealPath(fileURLToPath(resolvedUrl)),
+          route: `loader-resolved ${CODEX_SDK_PACKAGE}`,
+        });
+      } else {
+        failures.push(
+          `loader resolved ${CODEX_SDK_PACKAGE} to a non-file URL ${resolvedUrl.href}`,
+        );
+      }
+    } catch (error) {
+      failures.push(
+        `loader resolution of ${CODEX_SDK_PACKAGE} failed: ${firstErrorLine(error)}`,
+      );
+    }
+  }
+
+  const searchPaths = baseRequire.resolve.paths(CODEX_SDK_PACKAGE) ?? [];
+  const manifest = searchPaths
+    .map((searchPath) =>
+      join(searchPath, ...CODEX_SDK_PACKAGE.split('/'), 'package.json'),
+    )
+    .find((candidate) => existsSync(candidate));
+  if (manifest) {
+    anchors.push({
+      anchor: toRealPath(manifest),
+      route: `search-path ${CODEX_SDK_PACKAGE} manifest`,
+    });
+  } else {
+    failures.push(
+      `no ${CODEX_SDK_PACKAGE} package manifest on module search paths ` +
+        `(${searchPaths.join(', ')})`,
+    );
+  }
+
+  return anchors;
+}
+
+export function resolveCodexBinPath(
+  deps: CodexBinPathResolutionDeps = {},
+): string {
+  const baseRequire = deps.baseRequire ?? requireFromHere;
+  // An injected baseRequire scopes resolution to a caller-chosen tree, so the
+  // ambient loader is only auto-detected when no scope was injected; letting
+  // it through would silently resolve against this module's own tree instead.
+  const importMetaResolve =
+    'importMetaResolve' in deps
+      ? deps.importMetaResolve
+      : deps.baseRequire === undefined &&
+          typeof import.meta.resolve === 'function'
+        ? (specifier: string) => import.meta.resolve(specifier)
+        : undefined;
+
+  const failures: string[] = [];
+  for (const { anchor, route } of codexSdkAnchors(
+    importMetaResolve,
+    baseRequire,
+    failures,
+  )) {
+    try {
+      return createRequire(anchor).resolve(CODEX_BIN_SPECIFIER);
+    } catch (error) {
+      failures.push(`${route} (${anchor}): ${firstErrorLine(error)}`);
+    }
+  }
+
+  try {
+    return baseRequire.resolve(CODEX_BIN_SPECIFIER);
+  } catch (error) {
+    failures.push(`cligent module scope: ${firstErrorLine(error)}`);
+  }
+
+  // Keep Node's module-resolution code so callers that degrade on a missing
+  // optional CLI by testing error.code keep matching.
+  throw Object.assign(
+    new Error(
+      `CodexAdapter could not resolve '${CODEX_BIN_SPECIFIER}', the Codex CLI ` +
+        `entry owned by the '${CODEX_SDK_PACKAGE}' peer dependency.\n` +
+        `Attempted:\n${failures.map((failure) => `  - ${failure}`).join('\n')}\n` +
+        `Install '${CODEX_SDK_PACKAGE}' where '@sublang/cligent' can resolve ` +
+        `it (for a global cligent install: npm install -g ${CODEX_SDK_PACKAGE}).`,
+    ),
+    { code: 'MODULE_NOT_FOUND' },
+  );
 }
 
 function codexWrapperScript(
@@ -940,10 +1068,18 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
       cleanupAbort,
     } = mapAgentOptionsToCodexOptions(options);
 
-    const codexConfigWrapper = await createCodexConfigOverrideWrapper(
-      codexCliConfigOverrides ?? [],
-      codexCliExecArgs ?? [],
-    );
+    let codexConfigWrapper: CodexConfigOverrideWrapper | undefined;
+    try {
+      codexConfigWrapper = await createCodexConfigOverrideWrapper(
+        codexCliConfigOverrides ?? [],
+        codexCliExecArgs ?? [],
+      );
+    } catch (err) {
+      // Executable resolution and wrapper setup run before any event, so
+      // release the abort listener registered for this run before rethrowing.
+      cleanupAbort();
+      throw err;
+    }
     const effectiveCodexOptions = codexConfigWrapper
       ? {
           ...codexOptions,

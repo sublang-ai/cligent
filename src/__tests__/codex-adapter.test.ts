@@ -6,12 +6,15 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -19,6 +22,7 @@ import {
   mapAgentOptionsToCodexOptions,
   mapEffortToCodexEffort,
   mapPermissionsToCodexOptions,
+  resolveCodexBinPath,
 } from '../adapters/codex.js';
 import { normalizeCodexWindowsDevicePath } from '../adapters/codex-path.js';
 import type {
@@ -1728,5 +1732,233 @@ describe('CodexAdapter', () => {
     });
     expect(autoNarrowsLocalAccess).not.toHaveProperty('sandboxMode');
     expect(autoNarrowsLocalAccess).not.toHaveProperty('networkAccessEnabled');
+  });
+});
+
+describe('resolveCodexBinPath', () => {
+  interface ResolutionTree {
+    root: string;
+    baseRequire: NodeJS.Require;
+    sdkEntry?: string;
+    sdkOwnedBin?: string;
+    topLevelBin?: string;
+  }
+
+  function writeCodexPackage(directory: string, marker: string): string {
+    mkdirSync(join(directory, 'bin'), { recursive: true });
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: '@openai/codex',
+        version: '0.0.0-test',
+        bin: { codex: 'bin/codex.js' },
+      }),
+      'utf8',
+    );
+    const binPath = join(directory, 'bin', 'codex.js');
+    writeFileSync(binPath, `// ${marker}\n`, 'utf8');
+    return binPath;
+  }
+
+  function makeResolutionTree(shape: {
+    sdk?: boolean;
+    sdkOwnedCodex?: boolean;
+    topLevelCodex?: boolean;
+  }): ResolutionTree {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-codex-resolution-'));
+    const nodeModules = join(root, 'node_modules');
+    mkdirSync(nodeModules, { recursive: true });
+
+    const tree: ResolutionTree = {
+      root,
+      baseRequire: createRequire(join(root, 'resolution-probe.mjs')),
+    };
+
+    if (shape.sdk) {
+      const sdkDirectory = join(nodeModules, '@openai', 'codex-sdk');
+      mkdirSync(join(sdkDirectory, 'dist'), { recursive: true });
+      writeFileSync(
+        join(sdkDirectory, 'package.json'),
+        JSON.stringify({
+          name: '@openai/codex-sdk',
+          version: '0.0.0-test',
+          type: 'module',
+          exports: { '.': { import: './dist/index.js' } },
+          dependencies: { '@openai/codex': '0.0.0-test' },
+        }),
+        'utf8',
+      );
+      tree.sdkEntry = join(sdkDirectory, 'dist', 'index.js');
+      writeFileSync(tree.sdkEntry, 'export {};\n', 'utf8');
+
+      if (shape.sdkOwnedCodex) {
+        tree.sdkOwnedBin = writeCodexPackage(
+          join(sdkDirectory, 'node_modules', '@openai', 'codex'),
+          'sdk-owned codex entry',
+        );
+      }
+    }
+
+    if (shape.topLevelCodex) {
+      tree.topLevelBin = writeCodexPackage(
+        join(nodeModules, '@openai', 'codex'),
+        'top-level codex entry',
+      );
+    }
+
+    return tree;
+  }
+
+  function withTree<T>(
+    shape: Parameters<typeof makeResolutionTree>[0],
+    body: (tree: ResolutionTree) => T,
+  ): T {
+    const tree = makeResolutionTree(shape);
+    try {
+      return body(tree);
+    } finally {
+      rmSync(tree.root, { recursive: true, force: true });
+    }
+  }
+
+  it('resolves the SDK-owned entry from search paths without loader resolution', () => {
+    withTree({ sdk: true, sdkOwnedCodex: true }, (tree) => {
+      const resolved = resolveCodexBinPath({
+        baseRequire: tree.baseRequire,
+        importMetaResolve: undefined,
+      });
+      expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
+      expect(readFileSync(resolved, 'utf8')).toContain('sdk-owned codex entry');
+    });
+  });
+
+  it('resolves the SDK-owned entry through loader resolution alone', () => {
+    withTree({ sdk: true, sdkOwnedCodex: true }, (tree) => {
+      const detachedRoot = mkdtempSync(join(tmpdir(), 'cligent-codex-detached-'));
+      try {
+        const resolved = resolveCodexBinPath({
+          baseRequire: createRequire(join(detachedRoot, 'probe.mjs')),
+          importMetaResolve: () =>
+            pathToFileURL(tree.sdkEntry ?? '').href,
+        });
+        expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
+      } finally {
+        rmSync(detachedRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('prefers the SDK-owned entry over an independently installed copy', () => {
+    withTree(
+      { sdk: true, sdkOwnedCodex: true, topLevelCodex: true },
+      (tree) => {
+        const resolved = resolveCodexBinPath({
+          baseRequire: tree.baseRequire,
+          importMetaResolve: undefined,
+        });
+        expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
+        expect(readFileSync(resolved, 'utf8')).toContain(
+          'sdk-owned codex entry',
+        );
+      },
+    );
+  });
+
+  it('resolves a hoisted install through the SDK anchor walk-up', () => {
+    withTree({ sdk: true, topLevelCodex: true }, (tree) => {
+      const resolved = resolveCodexBinPath({
+        baseRequire: tree.baseRequire,
+        importMetaResolve: undefined,
+      });
+      expect(resolved).toBe(realpathSync(tree.topLevelBin ?? ''));
+    });
+  });
+
+  it('falls back to the adapter module scope when the SDK is absent', () => {
+    withTree({ topLevelCodex: true }, (tree) => {
+      const resolved = resolveCodexBinPath({
+        baseRequire: tree.baseRequire,
+        importMetaResolve: undefined,
+      });
+      expect(resolved).toBe(realpathSync(tree.topLevelBin ?? ''));
+    });
+  });
+
+  it('skips a non-file loader resolution and still resolves via search paths', () => {
+    withTree({ sdk: true, sdkOwnedCodex: true }, (tree) => {
+      const resolved = resolveCodexBinPath({
+        baseRequire: tree.baseRequire,
+        importMetaResolve: () => 'node:fs',
+      });
+      expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
+    });
+  });
+
+  it('survives a throwing loader resolution', () => {
+    withTree({ sdk: true, sdkOwnedCodex: true }, (tree) => {
+      const resolved = resolveCodexBinPath({
+        baseRequire: tree.baseRequire,
+        importMetaResolve: () => {
+          throw new Error('loader offline');
+        },
+      });
+      expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
+    });
+  });
+
+  it('raises the ownership diagnostic naming attempts and repair', () => {
+    withTree({}, (tree) => {
+      let failure: Error | undefined;
+      try {
+        resolveCodexBinPath({
+          baseRequire: tree.baseRequire,
+          importMetaResolve: () => {
+            throw new Error('loader cannot find @openai/codex-sdk');
+          },
+        });
+      } catch (error) {
+        failure = error as Error;
+      }
+
+      expect(failure).toBeDefined();
+      const message = failure?.message ?? '';
+      expect(message).toContain("'@openai/codex/bin/codex.js'");
+      expect(message).toContain("'@openai/codex-sdk'");
+      expect(message).toContain('Attempted:');
+      expect(message).toContain('loader cannot find @openai/codex-sdk');
+      expect(message).toContain('no @openai/codex-sdk package manifest');
+      expect(message).toContain('cligent module scope:');
+      expect(message).toContain('npm install -g @openai/codex-sdk');
+      expect((failure as NodeJS.ErrnoException | undefined)?.code).toBe(
+        'MODULE_NOT_FOUND',
+      );
+    });
+  });
+
+  it('does not consult the ambient loader when a base scope is injected', () => {
+    withTree({ topLevelCodex: true }, (tree) => {
+      const detachedRoot = mkdtempSync(join(tmpdir(), 'cligent-codex-scoped-'));
+      try {
+        // Injecting only baseRequire must scope resolution to that tree; the
+        // repository's own SDK stays out of the result.
+        expect(
+          resolveCodexBinPath({ baseRequire: tree.baseRequire }),
+        ).toBe(realpathSync(tree.topLevelBin ?? ''));
+
+        expect(() =>
+          resolveCodexBinPath({
+            baseRequire: createRequire(join(detachedRoot, 'probe.mjs')),
+          }),
+        ).toThrow("could not resolve '@openai/codex/bin/codex.js'");
+      } finally {
+        rmSync(detachedRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('resolves the repository development tree with default dependencies', () => {
+    const resolved = resolveCodexBinPath();
+    expect(existsSync(resolved)).toBe(true);
+    expect(resolved).toContain(join('@openai', 'codex', 'bin', 'codex.js'));
   });
 });
