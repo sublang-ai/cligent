@@ -8,13 +8,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   EXPECTED_PROTOCOL_VERSIONS,
@@ -42,6 +43,15 @@ const verificationRoot = mkdtempSync(join(tmpdir(), 'cligent-distributable-'));
 const npmCache = join(verificationRoot, 'npm-cache');
 const packDirectory = join(verificationRoot, 'pack');
 const consumerDirectory = join(verificationRoot, 'consumer');
+const codexGlobalPrefix = join(verificationRoot, 'codex-global');
+const codexNestedConsumerDirectory = join(
+  verificationRoot,
+  'codex-nested-consumer',
+);
+const CODEX_PROBE_FILENAME = 'codex-resolution-probe.mjs';
+const codexProbeHomeDirectory = join(verificationRoot, 'codex-home');
+const codexProbeWorkDirectory = join(verificationRoot, 'codex-probe-workdir');
+const codexSdkInstallSpec = `@openai/codex-sdk@${EXPECTED_SDK_VERSIONS['@openai/codex-sdk']}`;
 
 function fail(message) {
   throw new Error(`distributable verification: ${message}`);
@@ -493,6 +503,216 @@ void namedFanout;
   );
 }
 
+// TPKG-005: the Codex CLI entry must resolve from install layouts that do
+// not hoist @openai/codex out of the SDK's own tree (npm global prefixes,
+// nested-strategy consumers), and a real permission-managed adapter
+// invocation must get past executable resolution. The probe is written into
+// the consumer directory it verifies because ESM bare specifiers resolve
+// from the importing file's location, not the working directory.
+function writeCodexResolutionProbe(directory) {
+  const probePath = join(directory, CODEX_PROBE_FILENAME);
+  writeFileSync(
+    probePath,
+    `import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+const adapterSpecifier = process.env.CODEX_PROBE_ADAPTER;
+const expectation = process.env.CODEX_PROBE_EXPECT ?? 'sdk-owned';
+const sdkOwnedPrefix = process.env.CODEX_PROBE_SDK_OWNED_PREFIX ?? '';
+
+if (!adapterSpecifier) throw new Error('CODEX_PROBE_ADAPTER is required');
+if (
+  process.env.CODEX_PROBE_REQUIRE_NO_LOADER === '1' &&
+  typeof import.meta.resolve === 'function'
+) {
+  throw new Error(
+    \`expected a runtime without import.meta.resolve, got \${process.version}\`,
+  );
+}
+
+const adapterModule = await import(adapterSpecifier);
+const { CodexAdapter, createCodexConfigOverrideWrapper, resolveCodexBinPath } =
+  adapterModule;
+for (const [label, value] of [
+  ['CodexAdapter', CodexAdapter],
+  ['createCodexConfigOverrideWrapper', createCodexConfigOverrideWrapper],
+  ['resolveCodexBinPath', resolveCodexBinPath],
+]) {
+  if (typeof value !== 'function') {
+    throw new Error(\`missing adapter export \${label}\`);
+  }
+}
+
+if (expectation === 'missing') {
+  let failure;
+  try {
+    resolveCodexBinPath();
+  } catch (error) {
+    failure = error;
+  }
+  if (!failure) {
+    throw new Error(
+      'Codex executable resolution unexpectedly succeeded without @openai/codex-sdk',
+    );
+  }
+  const message = failure instanceof Error ? failure.message : String(failure);
+  for (const marker of [
+    "'@openai/codex/bin/codex.js'",
+    "'@openai/codex-sdk'",
+    'Attempted:',
+    'npm install -g @openai/codex-sdk',
+  ]) {
+    if (!message.includes(marker)) {
+      throw new Error(\`resolution diagnostic lacks \${marker}: \${message}\`);
+    }
+  }
+  process.stdout.write('codex resolution diagnostic verified\\n');
+} else {
+  const binPath = resolveCodexBinPath();
+  if (!existsSync(binPath)) {
+    throw new Error(\`resolved Codex entry does not exist: \${binPath}\`);
+  }
+  if (sdkOwnedPrefix && !binPath.startsWith(sdkOwnedPrefix)) {
+    throw new Error(
+      \`resolved \${binPath}, expected the SDK-owned entry under \${sdkOwnedPrefix}\`,
+    );
+  }
+
+  const wrapper = await createCodexConfigOverrideWrapper(
+    ['permissions.cligent_probe="resolution"'],
+    ['--ignore-user-config'],
+  );
+  if (!wrapper) throw new Error('config override wrapper was not created');
+  try {
+    const scriptPath = wrapper.path.endsWith('.cmd')
+      ? join(dirname(wrapper.path), 'codex-wrapper.mjs')
+      : wrapper.path;
+    const script = readFileSync(scriptPath, 'utf8');
+    if (!script.includes(JSON.stringify(binPath))) {
+      throw new Error(\`wrapper does not embed resolved Codex entry \${binPath}\`);
+    }
+  } finally {
+    await wrapper.cleanup();
+  }
+
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 3000);
+  const adapter = new CodexAdapter();
+  const events = [];
+  let runFailure;
+  try {
+    for await (const event of adapter.run('cligent codex resolution probe', {
+      cwd: process.cwd(),
+      permissions: { mode: 'auto' },
+      abortSignal: controller.signal,
+    })) {
+      events.push(event);
+    }
+  } catch (error) {
+    runFailure = error;
+  } finally {
+    clearTimeout(abortTimer);
+  }
+
+  const failureText = runFailure ? \`\${runFailure?.stack ?? runFailure}\` : '';
+  if (
+    /Cannot find module '@openai\\/codex/.test(failureText) ||
+    failureText.includes("could not resolve '@openai/codex/bin/codex.js'")
+  ) {
+    throw new Error(
+      \`adapter run failed at Codex executable resolution: \${failureText}\`,
+    );
+  }
+  // The only run() failure preceding executable resolution; without this the
+  // leg would pass without ever reaching the path it claims to verify.
+  if (failureText.includes('CodexAdapter requires @openai/codex-sdk')) {
+    throw new Error(\`adapter run failed before resolution: \${failureText}\`);
+  }
+  if (!runFailure && !events.some((event) => event?.type === 'done')) {
+    throw new Error(
+      \`adapter run yielded no terminal done event: \${events
+        .map((event) => event?.type)
+        .join(',')}\`,
+    );
+  }
+  process.stdout.write(\`codex resolution verified: \${binPath}\\n\`);
+}
+`,
+    'utf8',
+  );
+  return probePath;
+}
+
+function globalNodeModulesRoot(prefix) {
+  const candidates = [
+    join(prefix, 'lib', 'node_modules'),
+    join(prefix, 'node_modules'),
+  ];
+  const found = candidates.find((candidate) =>
+    existsSync(join(candidate, '@sublang', 'cligent')),
+  );
+  if (!found) {
+    fail(`global install created no @sublang/cligent under ${prefix}`);
+  }
+  return found;
+}
+
+function assertSdkOwnedCodexLayout(nodeModulesRoot, label) {
+  const hoisted = join(nodeModulesRoot, '@openai', 'codex');
+  if (existsSync(hoisted)) {
+    fail(`${label} unexpectedly placed @openai/codex at ${hoisted}`);
+  }
+  const sdkOwnedEntry = join(
+    nodeModulesRoot,
+    '@openai',
+    'codex-sdk',
+    'node_modules',
+    '@openai',
+    'codex',
+    'bin',
+    'codex.js',
+  );
+  if (!existsSync(sdkOwnedEntry)) {
+    fail(`${label} did not nest @openai/codex inside the SDK (${sdkOwnedEntry})`);
+  }
+  return realpathSync(join(nodeModulesRoot, '@openai', 'codex-sdk'));
+}
+
+function runCodexResolutionProbe(label, options) {
+  const probePath = writeCodexResolutionProbe(options.cwd);
+  const probeEnv = {
+    CODEX_PROBE_ADAPTER: options.adapterSpecifier,
+    CODEX_PROBE_EXPECT: options.expect ?? 'sdk-owned',
+    CODEX_PROBE_SDK_OWNED_PREFIX: options.sdkOwnedPrefix ?? '',
+    CODEX_PROBE_REQUIRE_NO_LOADER: options.requireNoLoader ? '1' : '',
+    CODEX_HOME: codexProbeHomeDirectory,
+  };
+  const { stdout } = options.nodeRuntimeFloor
+    ? run(
+        npm,
+        [
+          'exec',
+          '--yes',
+          `--package=node@${NODE_RUNTIME_VERSION}`,
+          '--',
+          'node',
+          probePath,
+        ],
+        { cwd: options.cwd, env: probeEnv },
+      )
+    : run(process.execPath, [probePath], {
+        cwd: options.cwd,
+        env: probeEnv,
+      });
+  const expectedMarker =
+    (options.expect ?? 'sdk-owned') === 'missing'
+      ? 'codex resolution diagnostic verified'
+      : 'codex resolution verified:';
+  if (!stdout.includes(expectedMarker)) {
+    fail(`${label} probe did not report "${expectedMarker}":\n${stdout.trim()}`);
+  }
+}
+
 try {
   mkdirSync(packDirectory, { recursive: true });
   mkdirSync(consumerDirectory, { recursive: true });
@@ -645,10 +865,96 @@ try {
     ],
     { cwd: consumerDirectory },
   );
+
+  mkdirSync(codexProbeHomeDirectory, { recursive: true });
+  mkdirSync(codexProbeWorkDirectory, { recursive: true });
+
+  // Global-style layout: each globally installed package keeps its own
+  // dependency tree, so @openai/codex exists only inside the SDK.
+  mkdirSync(codexGlobalPrefix, { recursive: true });
+  run(npm, [
+    'install',
+    '--global',
+    '--prefix',
+    codexGlobalPrefix,
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    tarballPath,
+    codexSdkInstallSpec,
+  ]);
+  const globalRoot = globalNodeModulesRoot(codexGlobalPrefix);
+  const globalSdkRoot = assertSdkOwnedCodexLayout(globalRoot, 'global install');
+  runCodexResolutionProbe('global install', {
+    adapterSpecifier: pathToFileURL(
+      join(globalRoot, '@sublang', 'cligent', 'dist', 'adapters', 'codex.js'),
+    ).href,
+    sdkOwnedPrefix: globalSdkRoot,
+    cwd: codexProbeWorkDirectory,
+  });
+
+  // Non-hoisted consumer layout: nested install strategy keeps every
+  // dependency inside its dependent's tree.
+  mkdirSync(codexNestedConsumerDirectory, { recursive: true });
+  writeFileSync(
+    join(codexNestedConsumerDirectory, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'cligent-codex-nested-consumer',
+        private: true,
+        type: 'module',
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  run(
+    npm,
+    [
+      'install',
+      '--install-strategy=nested',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--package-lock=false',
+      tarballPath,
+      codexSdkInstallSpec,
+    ],
+    { cwd: codexNestedConsumerDirectory },
+  );
+  const nestedRoot = join(codexNestedConsumerDirectory, 'node_modules');
+  const nestedSdkRoot = assertSdkOwnedCodexLayout(
+    nestedRoot,
+    'nested-strategy consumer',
+  );
+  runCodexResolutionProbe('nested-strategy consumer', {
+    adapterSpecifier: '@sublang/cligent/adapters/codex',
+    sdkOwnedPrefix: nestedSdkRoot,
+    cwd: codexNestedConsumerDirectory,
+  });
+  // The Node runtime floor has no import.meta.resolve, so this leg proves
+  // the search-path anchor alone finds the SDK-owned entry.
+  runCodexResolutionProbe('nested-strategy consumer on the Node floor', {
+    adapterSpecifier: '@sublang/cligent/adapters/codex',
+    sdkOwnedPrefix: nestedSdkRoot,
+    cwd: codexNestedConsumerDirectory,
+    nodeRuntimeFloor: true,
+    requireNoLoader: true,
+  });
+
+  // The peer-free consumer resolves no @openai/codex from any route, so the
+  // adapter must raise the ownership diagnostic with the repair.
+  runCodexResolutionProbe('peer-free consumer diagnostic', {
+    adapterSpecifier: '@sublang/cligent/adapters/codex',
+    expect: 'missing',
+    cwd: consumerDirectory,
+  });
 } finally {
   rmSync(verificationRoot, { recursive: true, force: true });
 }
 
 process.stdout.write(
-  'Distributable tarball, consumers, audits, and conformance targets verified.\n',
+  'Distributable tarball, consumers, audits, conformance targets, and Codex ' +
+    'install layouts verified.\n',
 );
