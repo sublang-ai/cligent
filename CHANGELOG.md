@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Codex adapter now resolves the `@openai/codex/bin/codex.js` CLI entry anchored inside the installed `@openai/codex-sdk` tree that owns the `@openai/codex` dependency — preferring the ESM loader's own SDK resolution, then the SDK package manifest discovered on the adapter's module search paths, and only then the adapter's own module scope — so permission-managed runs start from npm global prefixes and nested-strategy installs where `@openai/codex` is not hoisted next to cligent. Such layouts previously failed with `Cannot find module '@openai/codex/bin/codex.js'` even with the documented SDK peer installed. When both an SDK-owned and an independently installed `@openai/codex` are visible, the SDK-owned copy wins so the wrapped executable matches the SDK's exact pin; when no route resolves, the raised error names the attempted entry and anchors and directs installing `@openai/codex-sdk` as the repair, while keeping the `MODULE_NOT_FOUND` code so callers that degrade on a missing optional CLI by inspecting the error code keep matching. A failed resolution at run start now also releases that run's abort registration, so repeated failing runs against one long-lived `AbortSignal` no longer accumulate listeners. `@sublang/cligent/adapters/codex` additionally exports `resolveCodexBinPath()`, which reports the executable the adapter would wrap and otherwise raises the same diagnostic, so consumers can check their own install layout. Distributable verification now installs the packed tarball plus the exact Codex SDK into a global-style prefix and a nested-strategy consumer — the latter also on the Node 18.3.0 floor, which has no `import.meta.resolve` — and drives a real aborted permission-managed run past executable resolution in both layouts — IR-037, CODEX-012, CODEX-013, TPKG-005
+
+### Security
+
+- Refreshed the npm lockfile so the production and full development dependency audits report no known vulnerabilities again. Advisories against transitive development-graph packages (`@hono/node-server`, `@modelcontextprotocol/sdk`, `body-parser`, `brace-expansion`, `fast-uri`, `postcss`) were published upstream after v0.16.0; every remediation is an in-range lockfile update, with no direct dependency, exact conformance pin, or runtime-floor change — PKG-013
+
 ## [0.16.0] - 2026-07-19
 
 ### Added
