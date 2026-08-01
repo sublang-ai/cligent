@@ -84,6 +84,7 @@ meta.md     The spec of specs
 | IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls and enforce explicit allowlists across adapters |
 | IR-035 | [035-headless-auto-mode-posture.md](iterations/035-headless-auto-mode-posture.md) | Record the headless auto-mode posture: `permissions.mode: 'auto'` stays SDK-native with no cligent-selected grants (network-widening alternative rolled back); no adapter behavior change |
 | IR-036 | [036-kimi-code-adapter.md](iterations/036-kimi-code-adapter.md) | Add the maintained Kimi Code CLI through ACP with session continuity, public integration, and exact conformance targets |
+| IR-037 | [037-codex-executable-resolution.md](iterations/037-codex-executable-resolution.md) | Resolve the Codex executable from the SDK-owned tree across hoisted, global, and non-hoisted installs, with actionable failure diagnostics |
 
 ## Packages
 
@@ -98,7 +99,7 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
-| dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery and permission-managed project trust without repository/user config mutation |
+| dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery, permission-managed project trust without repository/user config mutation, and SDK-anchored Codex executable resolution across install layouts with diagnostic failure |
 
 ### ENG
 
@@ -149,7 +150,7 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | dev | [package.md](dev/package.md) | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints |
-| test | [package.md](test/package.md) | Clean-build, TypeScript-floor, packed-consumer, export, launcher, and dependency-audit acceptance |
+| test | [package.md](test/package.md) | Clean-build, TypeScript-floor, packed-consumer, export, launcher, dependency-audit, and Codex-executable install-layout acceptance |
 
 ### RELEASE
 

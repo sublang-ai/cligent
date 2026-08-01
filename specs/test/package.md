@@ -33,3 +33,21 @@ Where the release dependency graph and optional agent peers are resolved, when p
 Verifies: [PKG-012](../dev/package.md#pkg-012)
 
 Where repository conformance runs with installed SDK, protocol, and CLI dependencies, when installed package metadata, CLI-reported versions, declarations, and command help are checked, the resolved SDK and reported CLI versions shall equal the exact repository and CI targets, consumed type surfaces shall remain available, the OpenCode SDK and CLI versions shall match, and the ACP SDK `0.23.0` shall pair with Kimi Code CLI `0.27.0` whose `kimi acp` command initializes successfully.
+
+### TPKG-005
+Verifies: [PKG-004](../dev/package.md#pkg-004), [PKG-007](../dev/package.md#pkg-007), [CODEX-012](../dev/adapters/codex.md#codex-012), [CODEX-013](../dev/adapters/codex.md#codex-013)
+
+Where the packed tarball and the exact Codex SDK target are installed both
+into a global-style prefix whose package trees are independent and into a
+nested-strategy consumer, each leaving no `@openai/codex` at the install
+root, when the installed Codex adapter resolves the executable entry,
+generates a per-run configuration wrapper, and runs a real permission-managed
+aborted invocation, resolution shall return the SDK-owned executable in both
+layouts — in the nested consumer also on the Node 18.3.0 runtime floor
+without an ESM loader resolution surface — the wrapper shall embed that
+executable path, and the aborted invocation shall terminate without a module
+resolution failure.
+Where the installed consumer resolves no `@openai/codex` from any route, when
+the adapter resolves the executable entry, the raised error shall name the
+attempted entry and anchors and direct installing `@openai/codex-sdk` as the
+repair.
