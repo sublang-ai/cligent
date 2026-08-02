@@ -96,6 +96,13 @@ tarball is installed in an isolated consumer, the root and every documented
 subpath shall load and the executable's `--help` command shall exit
 successfully.
 
+### PKG-015
+
+The distributable shall neither install nor bundle the optional agent SDKs of [PKG-004](#pkg-004), and shall not acquire them through a lifecycle script.
+It shall resolve them from the tree the package itself is installed in, which for a global installation is the prefix `node_modules` root `npm install -g` writes to.
+Where a documented executable would need an agent runtime that does not resolve from that tree, it shall report the commands that install that runtime, scoped to that tree, before performing any side effect, rather than proceeding to a failure at first use.
+User-facing package documentation shall state this dependency contract, naming what a documented first run requires beyond the package itself.
+
 ## Verification
 
 ### PKG-008

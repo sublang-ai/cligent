@@ -51,3 +51,9 @@ Where the installed consumer resolves no `@openai/codex` from any route, when
 the adapter resolves the executable entry, the raised error shall name the
 attempted entry and anchors and direct installing `@openai/codex-sdk` as the
 repair.
+
+### TPKG-006
+Verifies: [PKG-015](../dev/package.md#pkg-015), [PKG-004](../dev/package.md#pkg-004), [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-089](../user/tmux-play.md#tmux-089)
+
+Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command against an isolated configuration home, the invocation shall fail, shall name the install command for every supported adapter, shall create no config file, and shall issue no tmux command.
+Where the exact Codex SDK target is then installed into that same prefix and the same command runs again, the invocation shall succeed, the created config shall name `codex` as its only adapter, the stdout notice shall name the adapter the roster was built from, and a tmux session shall be created.
