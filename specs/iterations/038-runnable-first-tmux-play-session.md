@@ -26,7 +26,10 @@ Done
 - [x] The repair command targets the tree cligent actually resolves from: the
       install is classified by the manifest at its root rather than by the
       working directory, and the command names the tree with `--prefix`
-      wherever a bare `npm install` would choose another.
+      wherever a bare `npm install` would choose another — judged against the
+      global prefix npm itself reports and the nearest project marker above
+      the invoking directory — with prefix paths shell-quoted, and a tree no
+      command reaches carrying a named manual placement instead of one.
 - [x] First-run config generation follows the installed runtimes and refuses,
       writing nothing, when none is installed.
 - [x] Launcher mode fails before creating a work directory, snapshot, or tmux
@@ -61,6 +64,12 @@ checks green at its boundary.
 4. [x] **Document the dependency contract.**
        Align README, tmux-play, and guide install guidance with the enforced
        contract and record the fix in the unreleased changelog.
+5. [x] **Print only provable repair commands.**
+       Ask npm for its effective global prefix instead of matching a set of
+       plausible roots, pin a project tree whenever a nearer manifest or
+       `node_modules` directory would capture a bare install, quote prefix
+       paths a shell would split, and replace the peer install command with a
+       named manual placement for trees no npm invocation reaches.
 
 ## Acceptance criteria
 
@@ -76,7 +85,10 @@ checks green at its boundary.
   install commands, and the config path.
 - Repair commands carry `-g` for a global installation and no scope flag for a
   project installation, external CLI packages carry `-g` in both, and the
-  reported tree is the `node_modules` root the adapters resolve from.
+  reported tree is the `node_modules` root the adapters resolve from. A bare
+  command appears only where npm provably selects that tree, prefix paths are
+  shell-quoted, and an unreachable tree names a manual placement instead of
+  an install command.
 - The agent SDKs remain optional peer dependencies and no lifecycle script
   installs them.
 - Build, lint, typecheck, unit, smoke, package, and distributable checks pass.
