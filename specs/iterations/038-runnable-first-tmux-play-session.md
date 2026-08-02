@@ -23,12 +23,18 @@ Done
 - [x] A readiness module owns the per-adapter runtime requirements, the
       install-scope-correct repair commands, and the probe, which is each
       adapter's own availability check.
+- [x] The repair command targets the tree cligent actually resolves from: the
+      install is classified by the manifest at its root rather than by the
+      working directory, and the command names the tree with `--prefix`
+      wherever a bare `npm install` would choose another.
 - [x] First-run config generation follows the installed runtimes and refuses,
       writing nothing, when none is installed.
 - [x] Launcher mode fails before creating a work directory, snapshot, or tmux
       session when a configured role's runtime is missing.
 - [x] Distributable verification drives the installed executable in a global
-      prefix with no agent runtime reachable, then with one installed.
+      prefix with no agent runtime reachable, then with one installed by
+      running the printed repair command verbatim, so a command scoped to the
+      wrong tree fails the gate rather than passing beside it.
 - [x] README, tmux-play, and guide documentation state the same dependency
       contract the launcher enforces, and the unreleased changelog records the
       fix.

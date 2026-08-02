@@ -29,6 +29,11 @@ Optional peers stay optional; cligent checks for agent runtimes and never instal
   This covers hand-written configs, `--config` files, copied configs, and a host that drifts after generation, which roster generation alone cannot.
 - Readiness is each adapter's own `isAvailable()`, so the gate and the load it protects can never disagree.
 - Repair commands are scoped to the tree the running package resolves from: a peer SDK follows cligent's own install scope, an external CLI is always global, and the reported tree is the `node_modules` root itself so a layout no canned command repairs stays diagnosable ([PKG-015](../dev/package.md#pkg-015)).
+  "Scoped" has to mean the command lands there when run as printed, which a bare `npm install [-g]` only does where npm's configured prefix already is that tree.
+  So the tree is classified **structurally** — a project install root carries the manifest that made it one, a global prefix's `lib` does not — rather than by whether the working directory happens to sit inside it, which misreports a project install invoked from anywhere else as global.
+  And the command names the tree with `--prefix` in the two cases where npm would choose differently: a prefix supplied out of band (`npm install --prefix <dir> -g` persists nothing for a later bare `-g` to rediscover) and a project tree the command was not invoked from.
+  `--prefix` is only safe against a real project root: npm treats a manifest-less directory as a project to prune, which against a global prefix's `lib` would uninstall cligent itself — so the global case uses `-g --prefix <prefix>`, never a bare `--prefix <lib>`.
+  External CLIs stay unpinned by design; they are found through `PATH`, so they belong in whatever global prefix the user's shell already reads.
 
 This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s fixed two-player first-run roster; its remaining architecture stays in force.
 

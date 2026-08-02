@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { dirname, join, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_ADAPTER_IMPORTS,
@@ -16,6 +17,32 @@ import {
  * installation, `local` for a project `node_modules` tree.
  */
 export type InstallScope = 'global' | 'local';
+
+/**
+ * The install tree a repair command has to target, resolved from the running
+ * package rather than guessed from the working directory.
+ *
+ * A bare `npm install [-g] <pkg>` lands wherever *npm* is configured to put
+ * it, which is only the tree cligent resolves from when the two agree. They
+ * disagree whenever the prefix was supplied out of band — `npm install
+ * --prefix <dir> -g` — and for any project install invoked from outside its
+ * own project. `prefix` carries the `--prefix` value that pins the command to
+ * {@link moduleRoot} in exactly those cases, and is absent when the bare
+ * command is provably right.
+ */
+export interface InstallTarget {
+  readonly scope: InstallScope;
+  /** The `node_modules` the adapters' bare specifiers resolve from. */
+  readonly moduleRoot: string;
+  /** `--prefix` value, when the bare command cannot be shown to land in {@link moduleRoot}. */
+  readonly prefix?: string;
+  /**
+   * True when no `npm install` invocation is known to reach {@link moduleRoot}
+   * — an exotic layout the printed command cannot repair, which the error says
+   * outright instead of pretending otherwise.
+   */
+  readonly unreachable?: boolean;
+}
 
 interface AdapterRuntimeRequirement {
   /**
@@ -57,48 +84,112 @@ const ADAPTER_RUNTIME_REQUIREMENTS: Readonly<
  */
 export function adapterRepairCommands(
   adapter: PlayerAdapterName,
-  scope: InstallScope,
+  target: InstallTarget,
 ): readonly string[] {
   const requirement = ADAPTER_RUNTIME_REQUIREMENTS[adapter];
   const commands: string[] = [];
   if (requirement.peers.length > 0) {
-    const flag = scope === 'global' ? '-g ' : '';
-    commands.push(`npm install ${flag}${requirement.peers.join(' ')}`);
+    // The peer SDK is resolved from cligent's own tree, so the command has to
+    // name that tree whenever npm would not choose it on its own.
+    const flags = [
+      ...(target.scope === 'global' ? ['-g'] : []),
+      ...(target.prefix ? ['--prefix', target.prefix] : []),
+    ];
+    commands.push(
+      ['npm', 'install', ...flags, ...requirement.peers].join(' '),
+    );
   }
   for (const cli of requirement.clis) {
+    // An external CLI is found through PATH, not through cligent's tree, so
+    // it belongs in whichever global prefix the user's shell already reads —
+    // never pinned to cligent's.
     commands.push(`npm install -g ${cli}`);
   }
   commands.push(...requirement.steps);
   return commands;
 }
 
+export interface ResolveInstallTargetOptions {
+  readonly packageRoot?: string;
+  /**
+   * The directory the command was run from. Only ever used to decide whether
+   * a `--prefix` is worth printing for a project tree — never to decide *which*
+   * tree, which is derived from the running package alone. This is not the
+   * agent workspace that `--cwd` selects.
+   */
+  readonly cwd?: string;
+  /** Injectable for tests; defaults to `fs.existsSync`. */
+  readonly fileExists?: (path: string) => boolean;
+  /**
+   * The `node_modules` roots a bare `npm install -g` would choose. Injectable
+   * so tests do not depend on where the host's Node happens to live; defaults
+   * to {@link globalModuleRoots}.
+   */
+  readonly globalRoots?: readonly string[];
+}
+
 /**
- * Which install tree the running cligent lives in, and therefore whether its
- * peers need `npm install -g`.
+ * The tree the running cligent resolves adapter SDKs from, and the command
+ * shape that provably installs into it.
  *
- * Two signals, because neither covers every layout on its own. npm's default
- * global root is `<node prefix>/lib/node_modules` (`<prefix>/node_modules` on
- * Windows), which identifies a stock global install outright. A configured
- * `npm config set prefix` breaks that match, so an install whose tree does not
- * contain the directory the command was run from is global too: a project
- * install is always reachable from inside the project it belongs to.
+ * Classification is structural, never positional. A project install root
+ * carries the `package.json` that made it one; a global prefix's `lib` does
+ * not. Deciding by whether the working directory happens to sit inside the
+ * tree misreports a project install invoked from anywhere else as global, and
+ * the resulting `npm install -g` would put the SDK where that cligent cannot
+ * reach it.
  *
- * This deliberately uses the process working directory rather than `--cwd`,
- * which names the workspace the agents operate in and says nothing about where
- * cligent was installed.
+ * `prefix` is omitted only when the bare command is provably correct: npm's
+ * own default global root (from the Node prefix or `npm_config_prefix`) is
+ * the tree we resolved, or a project tree the user is already standing in.
+ * Otherwise the command names the tree, because a prefix supplied out of band
+ * — `npm install --prefix <dir> -g` — leaves nothing for a later bare
+ * `npm install -g` to rediscover.
  */
-export function resolveInstallScope(
-  options: { readonly packageRoot?: string; readonly cwd?: string } = {},
-): InstallScope {
+export function resolveInstallTarget(
+  options: ResolveInstallTargetOptions = {},
+): InstallTarget {
   const packageRoot = options.packageRoot ?? cligentPackageRoot();
-  if (globalModuleRoots().includes(resolveModuleRoot(packageRoot))) {
-    return 'global';
-  }
+  const fileExists = options.fileExists ?? existsSync;
+  const moduleRoot = resolveModuleRoot(packageRoot);
   const installRoot = resolveInstallRoot(packageRoot);
-  const cwd = resolve(options.cwd ?? process.cwd());
-  return cwd === installRoot || cwd.startsWith(installRoot + sep)
-    ? 'local'
-    : 'global';
+
+  // npm's own default global root — the one case where bare `-g` is provable.
+  const globalRoots = options.globalRoots ?? globalModuleRoots();
+  if (globalRoots.includes(moduleRoot)) {
+    return { scope: 'global', moduleRoot };
+  }
+
+  // A project tree, identified by the manifest that defines it. `--prefix
+  // <root>` is equivalent to running the install from inside the project, so
+  // it is safe here — unlike against a prefix `lib`, which npm would treat as
+  // a manifest-less project and prune cligent itself out of.
+  if (fileExists(join(installRoot, 'package.json'))) {
+    const cwd = resolve(options.cwd ?? process.cwd());
+    const inside = cwd === installRoot || cwd.startsWith(installRoot + sep);
+    return inside
+      ? { scope: 'local', moduleRoot }
+      : { scope: 'local', moduleRoot, prefix: installRoot };
+  }
+
+  // A global prefix that npm will not rediscover. `npm install -g --prefix P`
+  // targets `P/lib/node_modules` (`P/node_modules` on Windows), so name P.
+  const prefix = globalPrefixFor(installRoot);
+  return prefix === undefined
+    ? { scope: 'global', moduleRoot, unreachable: true }
+    : { scope: 'global', moduleRoot, prefix };
+}
+
+/**
+ * The `--prefix` value whose global root is this install root, or `undefined`
+ * for a layout no `-g` command can express — a linked checkout, say — which
+ * the install-tree note reports instead of a command that would not work.
+ */
+function globalPrefixFor(installRoot: string): string | undefined {
+  if (process.platform === 'win32') {
+    return installRoot;
+  }
+  return basename(installRoot) === 'lib' ? dirname(installRoot) : undefined;
 }
 
 function globalModuleRoots(): string[] {
@@ -200,7 +291,7 @@ export async function readyAdapters(
 }
 
 export interface FormatNoRuntimeInstalledOptions {
-  readonly scope?: InstallScope;
+  readonly target?: InstallTarget;
   readonly packageRoot?: string;
 }
 
@@ -213,7 +304,7 @@ export function formatNoRuntimeInstalled(
   options: FormatNoRuntimeInstalledOptions = {},
 ): string {
   const packageRoot = options.packageRoot ?? cligentPackageRoot();
-  const scope = options.scope ?? resolveInstallScope({ packageRoot });
+  const target = options.target ?? resolveInstallTarget({ packageRoot });
   const lines = [
     'tmux-play found no agent runtime installed — install at least one, ' +
       'then run tmux-play again.',
@@ -221,18 +312,18 @@ export function formatNoRuntimeInstalled(
   ];
   for (const adapter of KNOWN_PLAYER_ADAPTERS) {
     lines.push(`  ${adapter}`);
-    for (const command of adapterRepairCommands(adapter, scope)) {
+    for (const command of adapterRepairCommands(adapter, target)) {
       lines.push(`    ${command}`);
     }
   }
   lines.push('');
-  lines.push(installTreeNote(scope, packageRoot));
+  lines.push(installTreeNote(target, packageRoot));
   return lines.join('\n');
 }
 
 export interface FormatMissingRuntimesOptions {
   readonly missing: readonly AdapterRoleUse[];
-  readonly scope: InstallScope;
+  readonly target: InstallTarget;
   readonly packageRoot: string;
   readonly configPath?: string;
 }
@@ -245,7 +336,7 @@ export interface FormatMissingRuntimesOptions {
 export function formatMissingRuntimes(
   options: FormatMissingRuntimesOptions,
 ): string {
-  const { missing, scope, packageRoot, configPath } = options;
+  const { missing, target, packageRoot, configPath } = options;
   const subject =
     missing.length === 1
       ? `the ${missing[0]!.adapter} adapter has no runtime installed`
@@ -253,12 +344,12 @@ export function formatMissingRuntimes(
   const lines = [`tmux-play cannot run this config — ${subject}.`, ''];
   for (const entry of missing) {
     lines.push(`  ${entry.adapter} (${entry.roles.join(', ')})`);
-    for (const command of adapterRepairCommands(entry.adapter, scope)) {
+    for (const command of adapterRepairCommands(entry.adapter, target)) {
       lines.push(`    ${command}`);
     }
   }
   lines.push('');
-  lines.push(installTreeNote(scope, packageRoot));
+  lines.push(installTreeNote(target, packageRoot));
   if (configPath) {
     lines.push(`Edit ${configPath} to use adapters you already have.`);
   }
@@ -284,11 +375,13 @@ export interface AssertConfiguredAdaptersReadyOptions
   extends ProbeAdapterRuntimesOptions {
   readonly packageRoot?: string;
   /**
-   * The directory the command was run from, for install-scope detection per
-   * {@link resolveInstallScope}. Defaults to the process working directory;
+   * The directory the command was run from, for the repair-command shape per
+   * {@link resolveInstallTarget}. Defaults to the process working directory;
    * this is not the agent workspace that `--cwd` selects.
    */
   readonly cwd?: string;
+  /** Injectable for tests; defaults to `fs.existsSync`. */
+  readonly fileExists?: (path: string) => boolean;
 }
 
 /**
@@ -337,9 +430,10 @@ export async function assertConfiguredAdaptersReady(
   throw new Error(
     formatMissingRuntimes({
       missing,
-      scope: resolveInstallScope({
+      target: resolveInstallTarget({
         packageRoot,
         ...(options.cwd ? { cwd: options.cwd } : {}),
+        ...(options.fileExists ? { fileExists: options.fileExists } : {}),
       }),
       packageRoot,
       ...(loaded.path ? { configPath: loaded.path } : {}),
@@ -352,9 +446,18 @@ export async function assertConfiguredAdaptersReady(
  * canned command repairs — a linked checkout, a per-tool install prefix —
  * diagnosable rather than mysterious.
  */
-function installTreeNote(scope: InstallScope, packageRoot: string): string {
+function installTreeNote(target: InstallTarget, packageRoot: string): string {
+  const note =
+    `cligent runs from ${packageRoot} as ` +
+    `${target.scope === 'global' ? 'a global' : 'a project'} install, and ` +
+    `resolves adapter SDKs from ${target.moduleRoot}.`;
+  if (!target.unreachable) {
+    return note;
+  }
+  // No canned command reaches this tree, so say so rather than print one that
+  // would land somewhere else and look like it had worked.
   return (
-    `cligent runs from ${packageRoot} as ${scope === 'global' ? 'a global' : 'a project'} ` +
-    `install, and resolves adapter SDKs from ${resolveModuleRoot(packageRoot)}.`
+    `${note} No npm install command targets that tree, so place the peer ` +
+    `SDK in it yourself, or reinstall cligent where npm installs globally.`
   );
 }

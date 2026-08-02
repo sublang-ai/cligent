@@ -41,7 +41,11 @@ const EXPECTED_OPTIONAL_PEERS = Object.freeze({
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const verificationRoot = mkdtempSync(join(tmpdir(), 'cligent-distributable-'));
+// Canonical, because tmux-play reports the tree it actually resolves from and
+// macOS exposes the same temporary directory through both /var and /private/var.
+const verificationRoot = realpathSync(
+  mkdtempSync(join(tmpdir(), 'cligent-distributable-')),
+);
 const npmCache = join(verificationRoot, 'npm-cache');
 const packDirectory = join(verificationRoot, 'pack');
 const consumerDirectory = join(verificationRoot, 'consumer');
@@ -724,6 +728,29 @@ function runInstalledTmuxPlay(args) {
   };
 }
 
+/**
+ * The exact repair command tmux-play printed for one package, as argv.
+ *
+ * The gate is only worth anything if the command the user sees is the command
+ * that works, so the test executes this rather than composing its own — a
+ * hand-written install can be scoped to a tree the printed one never names.
+ */
+function extractRepairCommand(output, packageName) {
+  const line = output
+    .split('\n')
+    .map((candidate) => candidate.trim())
+    .find(
+      (candidate) =>
+        candidate.startsWith('npm install ') && candidate.endsWith(packageName),
+    );
+  if (!line) {
+    fail(
+      `tmux-play printed no npm install command for ${packageName}:\n${output.trim()}`,
+    );
+  }
+  return line.split(/\s+/);
+}
+
 function assertOutputContains(result, expected, label) {
   if (!result.output.includes(expected)) {
     fail(
@@ -1074,12 +1101,16 @@ try {
     'found no agent runtime installed',
     'tmux-play launch without any agent runtime',
   );
+  // This prefix was supplied out of band, so npm will not rediscover it: every
+  // peer SDK command has to name it, while the PATH executables stay unpinned
+  // because they belong in whatever global prefix the user's shell reads.
   for (const repair of [
-    'npm install -g @anthropic-ai/claude-agent-sdk',
-    'npm install -g @openai/codex-sdk',
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @anthropic-ai/claude-agent-sdk`,
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @openai/codex-sdk`,
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @opencode-ai/sdk`,
     'npm install -g @google/gemini-cli',
     'npm install -g @moonshot-ai/kimi-code@0.27.0',
-    'npm install -g @opencode-ai/sdk',
+    'npm install -g opencode-ai',
   ]) {
     assertOutputContains(emptyLaunch, repair, 'tmux-play repair commands');
   }
@@ -1092,16 +1123,28 @@ try {
     fail('tmux-play created a tmux session before reporting a missing runtime');
   }
 
+  // TPKG-006: repair by running what the user was actually shown, verbatim.
+  // Substituting a hand-written install here is what let a command scoped to
+  // the wrong tree pass: this prefix is supplied out of band, so a bare
+  // `npm install -g` would resolve against npm's own prefix instead.
+  const printedRepair = extractRepairCommand(emptyLaunch.output, '@openai/codex-sdk');
   run(npm, [
-    'install',
-    '--global',
-    '--prefix',
-    tmuxPlayGlobalPrefix,
+    ...printedRepair.slice(1),
     '--ignore-scripts',
     '--no-audit',
     '--no-fund',
-    codexSdkInstallSpec,
   ]);
+  const installedSdk = join(
+    globalNodeModulesRoot(tmuxPlayGlobalPrefix),
+    '@openai',
+    'codex-sdk',
+  );
+  if (!existsSync(installedSdk)) {
+    fail(
+      `the printed repair command (${printedRepair.join(' ')}) did not install ` +
+        `the SDK into ${installedSdk}, the tree tmux-play reported it resolves from`,
+    );
+  }
 
   // One installed runtime is enough for a first session: the generated roster
   // names only that adapter, and the launch reaches tmux.

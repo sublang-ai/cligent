@@ -121,6 +121,14 @@ writes no config and prints the commands above; if a configured adapter's
 runtime is missing, the launcher names it and its install command before
 starting tmux, rather than failing on your first prompt.
 
+The commands above assume cligent sits where npm installs globally by
+default. It is the launcher's printed command that is authoritative: an SDK
+has to land in the one tree cligent resolves from, so where that is not the
+tree a bare `npm install -g` would choose — a custom prefix, or a project
+install of cligent — the launcher prints the command with `--prefix` already
+filled in. Run what it prints. The error also names the tree itself, so a
+layout no canned command reaches stays fixable by hand.
+
 Requirements:
 
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
