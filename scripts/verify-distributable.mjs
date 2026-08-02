@@ -4,12 +4,14 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,6 +54,14 @@ const CODEX_PROBE_FILENAME = 'codex-resolution-probe.mjs';
 const codexProbeHomeDirectory = join(verificationRoot, 'codex-home');
 const codexProbeWorkDirectory = join(verificationRoot, 'codex-probe-workdir');
 const codexSdkInstallSpec = `@openai/codex-sdk@${EXPECTED_SDK_VERSIONS['@openai/codex-sdk']}`;
+const tmuxPlayGlobalPrefix = join(verificationRoot, 'tmux-play-global');
+const tmuxPlayHarnessBin = join(verificationRoot, 'tmux-play-harness-bin');
+const tmuxPlayConfigHome = join(verificationRoot, 'tmux-play-xdg');
+const tmuxPlayHome = join(verificationRoot, 'tmux-play-home');
+const tmuxPlayWorkDirectory = join(verificationRoot, 'tmux-play-workdir');
+const tmuxPlayTmp = join(verificationRoot, 'tmux-play-tmp');
+const tmuxPlayLog = join(verificationRoot, 'tmux-play-tmux.jsonl');
+const tmuxPlayHomeConfig = join(tmuxPlayConfigHome, 'tmux-play', 'config.yaml');
 
 function fail(message) {
   throw new Error(`distributable verification: ${message}`);
@@ -643,6 +653,89 @@ if (expectation === 'missing') {
   return probePath;
 }
 
+// TPKG-006: the documented onboarding path (`npm install -g @sublang/cligent`
+// then `tmux-play`) has to reach a session whose adapters resolve. Driving the
+// installed executable is the only way to see that: the launcher, the config
+// it generates, and the adapter runtimes it needs all live behind the bin.
+// `tmux` and `glow` are stubbed because the runner has no glow and a real tmux
+// session cannot be attached headlessly; the stub log doubles as mock-free
+// evidence of whether a session was ever created.
+function writeTmuxPlayHarness() {
+  mkdirSync(tmuxPlayHarnessBin, { recursive: true });
+  mkdirSync(tmuxPlayConfigHome, { recursive: true });
+  mkdirSync(tmuxPlayHome, { recursive: true });
+  mkdirSync(tmuxPlayWorkDirectory, { recursive: true });
+  mkdirSync(tmuxPlayTmp, { recursive: true });
+
+  // A PATH holding only node and the stubs: the CI runner installs the
+  // gemini, kimi, and opencode CLIs globally, and any of them on PATH would
+  // make an adapter look ready and change the generated roster.
+  symlinkSync(realpathSync(process.execPath), join(tmuxPlayHarnessBin, 'node'));
+
+  const fakeTmux = join(tmuxPlayHarnessBin, 'tmux');
+  writeFileSync(
+    fakeTmux,
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "if (args[0] === '-V') {",
+      "  console.log('tmux 3.4');",
+      '  process.exit(0);',
+      '}',
+      "fs.appendFileSync(process.env.FAKE_TMUX_LOG, JSON.stringify(args) + '\\n');",
+      'process.exit(0);',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(fakeTmux, 0o755);
+
+  const fakeGlow = join(tmuxPlayHarnessBin, 'glow');
+  writeFileSync(
+    fakeGlow,
+    ['#!/usr/bin/env node', "console.log('glow stub');", 'process.exit(0);', ''].join(
+      '\n',
+    ),
+  );
+  chmodSync(fakeGlow, 0o755);
+}
+
+function runInstalledTmuxPlay(args) {
+  const result = spawnSync(join(tmuxPlayGlobalPrefix, 'bin', 'tmux-play'), args, {
+    cwd: tmuxPlayWorkDirectory,
+    encoding: 'utf8',
+    timeout: 120_000,
+    env: {
+      PATH: tmuxPlayHarnessBin,
+      HOME: tmuxPlayHome,
+      XDG_CONFIG_HOME: tmuxPlayConfigHome,
+      FAKE_TMUX_LOG: tmuxPlayLog,
+      TMPDIR: tmuxPlayTmp,
+    },
+  });
+  if (result.error) {
+    fail(`installed tmux-play could not start: ${result.error.message}`);
+  }
+  return {
+    status: result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  };
+}
+
+function assertOutputContains(result, expected, label) {
+  if (!result.output.includes(expected)) {
+    fail(
+      `${label}: expected output to contain ${JSON.stringify(expected)}, received:\n${result.output.trim()}`,
+    );
+  }
+}
+
+function tmuxPlaySessionCreated() {
+  return existsSync(tmuxPlayLog) && readFileSync(tmuxPlayLog, 'utf8').includes('new-session');
+}
+
 function globalNodeModulesRoot(prefix) {
   const candidates = [
     join(prefix, 'lib', 'node_modules'),
@@ -950,11 +1043,93 @@ try {
     expect: 'missing',
     cwd: consumerDirectory,
   });
+
+  // TPKG-006: the documented global install, with no agent SDK beside it.
+  mkdirSync(tmuxPlayGlobalPrefix, { recursive: true });
+  run(npm, [
+    'install',
+    '--global',
+    '--prefix',
+    tmuxPlayGlobalPrefix,
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    tarballPath,
+  ]);
+  globalNodeModulesRoot(tmuxPlayGlobalPrefix);
+  writeTmuxPlayHarness();
+
+  const installedTmuxPlayBin = join(tmuxPlayGlobalPrefix, 'bin', 'tmux-play');
+  if (!existsSync(installedTmuxPlayBin)) {
+    fail(`global install created no tmux-play executable at ${installedTmuxPlayBin}`);
+  }
+
+  // With nothing but cligent installed, the documented command must refuse:
+  // no config naming runtimes it cannot load, no session, and every repair
+  // command scoped to the prefix the user actually installed into.
+  const emptyLaunch = runInstalledTmuxPlay([]);
+  assertEqual(emptyLaunch.status, 1, 'tmux-play launch without any agent runtime');
+  assertOutputContains(
+    emptyLaunch,
+    'found no agent runtime installed',
+    'tmux-play launch without any agent runtime',
+  );
+  for (const repair of [
+    'npm install -g @anthropic-ai/claude-agent-sdk',
+    'npm install -g @openai/codex-sdk',
+    'npm install -g @google/gemini-cli',
+    'npm install -g @moonshot-ai/kimi-code@0.27.0',
+    'npm install -g @opencode-ai/sdk',
+  ]) {
+    assertOutputContains(emptyLaunch, repair, 'tmux-play repair commands');
+  }
+  if (existsSync(tmuxPlayHomeConfig)) {
+    fail(
+      `tmux-play wrote ${tmuxPlayHomeConfig} with no adapter runtime installed`,
+    );
+  }
+  if (tmuxPlaySessionCreated()) {
+    fail('tmux-play created a tmux session before reporting a missing runtime');
+  }
+
+  run(npm, [
+    'install',
+    '--global',
+    '--prefix',
+    tmuxPlayGlobalPrefix,
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    codexSdkInstallSpec,
+  ]);
+
+  // One installed runtime is enough for a first session: the generated roster
+  // names only that adapter, and the launch reaches tmux.
+  const readyLaunch = runInstalledTmuxPlay([]);
+  assertEqual(readyLaunch.status, 0, 'tmux-play launch with the Codex SDK installed');
+  assertOutputContains(
+    readyLaunch,
+    `Created tmux-play config at ${tmuxPlayHomeConfig} for installed adapters: codex`,
+    'tmux-play first-run notice',
+  );
+  const generatedConfig = readFileSync(tmuxPlayHomeConfig, 'utf8');
+  if (!generatedConfig.includes('adapter: codex')) {
+    fail(`generated config named no codex role:\n${generatedConfig}`);
+  }
+  if (/adapter: (?!codex)/.test(generatedConfig)) {
+    fail(
+      `generated config named an adapter with no installed runtime:\n${generatedConfig}`,
+    );
+  }
+
+  if (!tmuxPlaySessionCreated()) {
+    fail('tmux-play created no tmux session with every configured adapter ready');
+  }
 } finally {
   rmSync(verificationRoot, { recursive: true, force: true });
 }
 
 process.stdout.write(
-  'Distributable tarball, consumers, audits, conformance targets, and Codex ' +
-    'install layouts verified.\n',
+  'Distributable tarball, consumers, audits, conformance targets, Codex ' +
+    'install layouts, and global tmux-play onboarding verified.\n',
 );
