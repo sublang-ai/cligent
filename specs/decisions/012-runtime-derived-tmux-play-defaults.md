@@ -33,6 +33,7 @@ Optional peers stay optional; cligent checks for agent runtimes and never instal
   So the tree is classified **structurally** — a project install root carries the manifest that made it one, a global prefix's `lib` does not — rather than by whether the working directory happens to sit inside it, which misreports a project install invoked from anywhere else as global.
   And every peer-SDK command names the tree with `--prefix`, because npm's command line outranks both its environment and its project discovery, so the pinned form lands in the named tree in every context where the bare form would only sometimes.
   `--prefix` is only safe against a real project root: npm treats a manifest-less directory as a project to prune, which against a global prefix's `lib` would uninstall cligent itself — so the global case uses `-g --prefix <prefix>`, never a bare `--prefix <lib>`.
+  Scope is pinned along with the tree: npm's global mode is the disjunction of its `global` and `location` configurations, either settable by the paste-time environment, so the project case sets both to their non-global values (`--global=false --location=project`) while `-g` alone settles the global case, a true operand winning the disjunction.
   External CLIs stay unpinned by design; they are found through `PATH`, so they belong in whatever global prefix the user's shell already reads.
 
 This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s fixed two-player first-run roster; its remaining architecture stays in force.

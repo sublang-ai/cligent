@@ -87,6 +87,14 @@ checks green at its boundary.
        on every peer-SDK command — npm's command line outranks its
        environment and its project discovery, so the pinned form holds in
        every context.
+8. [x] **Pin install scope with the tree.**
+       An inherited `npm_config_global=true` — or `npm_config_location=global`,
+       since npm's global mode is the disjunction of the two configurations —
+       diverts a prefix-pinned project install into `<prefix>/lib/node_modules`,
+       outside the reported project tree. Project peer commands set both
+       operands to their non-global values (`--global=false
+       --location=project`); `-g` alone settles the global case, a true
+       operand winning the disjunction.
 
 ## Acceptance criteria
 
@@ -100,11 +108,12 @@ checks green at its boundary.
 - A config assigning any role to an adapter whose runtime is not installed
   fails before session construction, naming the adapter, its roles, its
   install commands, and the config path.
-- Repair commands carry `-g` for a global installation and no scope flag for a
-  project installation, external CLI packages carry `-g` in both, and the
-  reported tree is the `node_modules` root the adapters resolve from. Every
-  peer-SDK command carries `--prefix`; prefix paths are shell-quoted; and an
-  unreachable tree names a manual placement instead of an install command.
+- Repair commands carry `-g` for a global installation and explicit
+  non-global scope settings for a project installation, external CLI packages
+  carry `-g` in both, and the reported tree is the `node_modules` root the
+  adapters resolve from. Every peer-SDK command carries `--prefix`; prefix
+  paths are shell-quoted; and an unreachable tree names a manual placement
+  instead of an install command.
 - The agent SDKs remain optional peer dependencies and no lifecycle script
   installs them.
 - Build, lint, typecheck, unit, smoke, package, and distributable checks pass.
