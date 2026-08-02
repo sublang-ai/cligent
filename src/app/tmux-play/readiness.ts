@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shellQuote } from '../shared/shell.js';
 import {
   DEFAULT_ADAPTER_IMPORTS,
   KNOWN_PLAYER_ADAPTERS,
@@ -25,10 +27,11 @@ export type InstallScope = 'global' | 'local';
  * A bare `npm install [-g] <pkg>` lands wherever *npm* is configured to put
  * it, which is only the tree cligent resolves from when the two agree. They
  * disagree whenever the prefix was supplied out of band — `npm install
- * --prefix <dir> -g` — and for any project install invoked from outside its
- * own project. `prefix` carries the `--prefix` value that pins the command to
- * {@link moduleRoot} in exactly those cases, and is absent when the bare
- * command is provably right.
+ * --prefix <dir> -g` — for any project install invoked from outside its own
+ * project, and for one invoked from a subdirectory whose nearer manifest or
+ * `node_modules` captures a bare install. `prefix` carries the `--prefix`
+ * value that pins the command to {@link moduleRoot} in exactly those cases,
+ * and is absent when the bare command is provably right.
  */
 export interface InstallTarget {
   readonly scope: InstallScope;
@@ -88,12 +91,21 @@ export function adapterRepairCommands(
 ): readonly string[] {
   const requirement = ADAPTER_RUNTIME_REQUIREMENTS[adapter];
   const commands: string[] = [];
-  if (requirement.peers.length > 0) {
+  if (requirement.peers.length > 0 && target.unreachable) {
+    // No npm invocation reaches the resolved tree, so an install command here
+    // would land somewhere else and look like it had worked. Name the manual
+    // placement instead; the install-tree note explains why.
+    for (const peer of requirement.peers) {
+      commands.push(`place ${peer} in ${target.moduleRoot}`);
+    }
+  } else if (requirement.peers.length > 0) {
     // The peer SDK is resolved from cligent's own tree, so the command has to
-    // name that tree whenever npm would not choose it on its own.
+    // name that tree whenever npm would not choose it on its own. The prefix
+    // is a filesystem path: quote it, or a path with whitespace splits into a
+    // bogus package spec when the printed command is run.
     const flags = [
       ...(target.scope === 'global' ? ['-g'] : []),
-      ...(target.prefix ? ['--prefix', target.prefix] : []),
+      ...(target.prefix ? ['--prefix', shellQuote(target.prefix)] : []),
     ];
     commands.push(
       ['npm', 'install', ...flags, ...requirement.peers].join(' '),
@@ -121,11 +133,11 @@ export interface ResolveInstallTargetOptions {
   /** Injectable for tests; defaults to `fs.existsSync`. */
   readonly fileExists?: (path: string) => boolean;
   /**
-   * The `node_modules` roots a bare `npm install -g` would choose. Injectable
-   * so tests do not depend on where the host's Node happens to live; defaults
-   * to {@link globalModuleRoots}.
+   * Reports the one `node_modules` root a bare `npm install -g` would choose.
+   * Injectable so tests do not depend on the host's npm configuration;
+   * defaults to {@link npmGlobalModuleRoot}.
    */
-  readonly globalRoots?: readonly string[];
+  readonly npmGlobalRoot?: () => string | undefined;
 }
 
 /**
@@ -139,9 +151,9 @@ export interface ResolveInstallTargetOptions {
  * the resulting `npm install -g` would put the SDK where that cligent cannot
  * reach it.
  *
- * `prefix` is omitted only when the bare command is provably correct: npm's
- * own default global root (from the Node prefix or `npm_config_prefix`) is
- * the tree we resolved, or a project tree the user is already standing in.
+ * `prefix` is omitted only when the bare command is provably correct: the
+ * global prefix npm itself reports resolves to the tree we resolved, or the
+ * invoking directory's bare install provably lands in that project tree.
  * Otherwise the command names the tree, because a prefix supplied out of band
  * — `npm install --prefix <dir> -g` — leaves nothing for a later bare
  * `npm install -g` to rediscover.
@@ -154,9 +166,12 @@ export function resolveInstallTarget(
   const moduleRoot = resolveModuleRoot(packageRoot);
   const installRoot = resolveInstallRoot(packageRoot);
 
-  // npm's own default global root — the one case where bare `-g` is provable.
-  const globalRoots = options.globalRoots ?? globalModuleRoots();
-  if (globalRoots.includes(moduleRoot)) {
+  // npm's own effective global root — the one case where bare `-g` is
+  // provable. npm follows exactly one prefix, so membership in a set of
+  // plausible roots proves nothing: an environment-redirected prefix carries
+  // a bare install away from a tree that merely looks like the default.
+  const npmGlobalRoot = (options.npmGlobalRoot ?? npmGlobalModuleRoot)();
+  if (npmGlobalRoot !== undefined && resolve(npmGlobalRoot) === moduleRoot) {
     return { scope: 'global', moduleRoot };
   }
 
@@ -166,8 +181,7 @@ export function resolveInstallTarget(
   // a manifest-less project and prune cligent itself out of.
   if (fileExists(join(installRoot, 'package.json'))) {
     const cwd = resolve(options.cwd ?? process.cwd());
-    const inside = cwd === installRoot || cwd.startsWith(installRoot + sep);
-    return inside
+    return bareInstallReaches(installRoot, cwd, fileExists)
       ? { scope: 'local', moduleRoot }
       : { scope: 'local', moduleRoot, prefix: installRoot };
   }
@@ -192,25 +206,74 @@ function globalPrefixFor(installRoot: string): string | undefined {
   return basename(installRoot) === 'lib' ? dirname(installRoot) : undefined;
 }
 
-function globalModuleRoots(): string[] {
-  const roots = new Set<string>();
-  const prefixes = [
-    dirname(dirname(process.execPath)),
-    process.env.npm_config_prefix,
-    process.env.NPM_CONFIG_PREFIX,
-  ];
-  for (const prefix of prefixes) {
-    if (!prefix) continue;
-    roots.add(
-      process.platform === 'win32'
-        ? join(prefix, 'node_modules')
-        : join(prefix, 'lib', 'node_modules'),
-    );
+/**
+ * Whether a bare `npm install` run in `cwd` provably lands in `installRoot`'s
+ * tree. npm installs into the nearest directory at or above the invoking one
+ * that carries a `package.json` or a `node_modules`, so standing inside the
+ * project is not enough: a nested manifest — or even a bare `node_modules`
+ * directory — between the two captures the install into a tree the root
+ * cligent never resolves from.
+ */
+function bareInstallReaches(
+  installRoot: string,
+  cwd: string,
+  fileExists: (path: string) => boolean,
+): boolean {
+  if (cwd === installRoot) {
+    return true;
   }
-  if (process.platform === 'win32') {
-    roots.add(join(dirname(process.execPath), 'node_modules'));
+  if (!cwd.startsWith(installRoot + sep)) {
+    return false;
   }
-  return [...roots];
+  for (let dir = cwd; dir !== installRoot; dir = dirname(dir)) {
+    if (
+      fileExists(join(dir, 'package.json')) ||
+      fileExists(join(dir, 'node_modules'))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The `node_modules` root a bare `npm install -g` would install into, from
+ * npm itself. npm's effective global prefix folds in every configuration
+ * layer — environment, per-user and per-project npmrc files, and a builtin
+ * derived from npm's own install location, which need not match this
+ * process's `execPath` (Homebrew, for one, symlinks `node` out of a
+ * versioned cellar) — so reimplementing the cascade misreads real layouts.
+ * The probe runs only on the failure path, where its answer decides whether
+ * the printed command may drop `--prefix`. When npm cannot be consulted, the
+ * environment-configured or Node-derived prefix approximates it; a wrong
+ * approximation can only add a correct `--prefix`, never drop one, because
+ * the bare form is printed solely on a confirmed match.
+ */
+export function npmGlobalModuleRoot(): string | undefined {
+  const probe = spawnSync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['prefix', '-g'],
+    {
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 15_000,
+      shell: process.platform === 'win32',
+    },
+  );
+  const reported =
+    probe.error === undefined && probe.status === 0
+      ? probe.stdout.trim()
+      : '';
+  const prefix =
+    reported ||
+    process.env.npm_config_prefix ||
+    process.env.NPM_CONFIG_PREFIX ||
+    (process.platform === 'win32'
+      ? dirname(process.execPath)
+      : dirname(dirname(process.execPath)));
+  return process.platform === 'win32'
+    ? join(prefix, 'node_modules')
+    : join(prefix, 'lib', 'node_modules');
 }
 
 /**
@@ -382,6 +445,8 @@ export interface AssertConfiguredAdaptersReadyOptions
   readonly cwd?: string;
   /** Injectable for tests; defaults to `fs.existsSync`. */
   readonly fileExists?: (path: string) => boolean;
+  /** Injectable for tests; defaults to {@link npmGlobalModuleRoot}. */
+  readonly npmGlobalRoot?: () => string | undefined;
 }
 
 /**
@@ -434,6 +499,9 @@ export async function assertConfiguredAdaptersReady(
         packageRoot,
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.fileExists ? { fileExists: options.fileExists } : {}),
+        ...(options.npmGlobalRoot
+          ? { npmGlobalRoot: options.npmGlobalRoot }
+          : {}),
       }),
       packageRoot,
       ...(loaded.path ? { configPath: loaded.path } : {}),
