@@ -117,17 +117,19 @@ to two in the order above — so with the Claude and Codex SDKs installed you
 get a `claude` and a `codex` player. The file is yours to edit afterwards.
 
 `tmux-play` installs nothing itself. With no agent runtime installed it
-writes no config and prints the commands above; if a configured adapter's
-runtime is missing, the launcher names it and its install command before
-starting tmux, rather than failing on your first prompt.
+writes no config and prints an install command for each adapter above; if a
+configured adapter's runtime is missing, the launcher names it and its
+install command before starting tmux, rather than failing on your first
+prompt.
 
 The commands above assume cligent sits where npm installs globally by
 default. It is the launcher's printed command that is authoritative: an SDK
-has to land in the one tree cligent resolves from, so where that is not the
-tree a bare `npm install -g` would choose — a custom prefix, or a project
-install of cligent — the launcher prints the command with `--prefix` already
-filled in. Run what it prints. The error also names the tree itself, so a
-layout no canned command reaches stays fixable by hand.
+has to land in the one tree cligent resolves from, and a bare
+`npm install [-g]` follows whatever prefix or enclosing project your
+shell's npm happens to resolve, so the launcher prints every SDK command
+with `--prefix` already filled in. Run what it prints. The error also names
+the tree itself, so a layout no canned command reaches stays fixable by
+hand.
 
 Requirements:
 
