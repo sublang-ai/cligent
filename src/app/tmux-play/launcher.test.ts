@@ -54,6 +54,7 @@ import {
   TMUX_STATUS_TIMER_TEXT_OPTION,
 } from './timer-options.js';
 import { shellQuote } from '../shared/shell.js';
+import { cligentPackageRoot, resolveInstallRoot } from './readiness.js';
 
 class MemoryOutput {
   chunks: string[] = [];
@@ -1703,9 +1704,18 @@ describe('launchTmuxPlay', () => {
 
     expect(error).toBeDefined();
     expect(error!.message).toContain('claude (captain)');
-    expect(error!.message).toContain('npm install @anthropic-ai/claude-agent-sdk');
+    // The gate resolves the real repository checkout as the install tree, and
+    // every peer-SDK command pins that tree with --prefix (TMUX-089): where a
+    // bare install would land belongs to the paste-time shell, not to this
+    // process.
+    const expectedPrefix = shellQuote(resolveInstallRoot(cligentPackageRoot()));
+    expect(error!.message).toContain(
+      `npm install --prefix ${expectedPrefix} @anthropic-ai/claude-agent-sdk`,
+    );
     expect(error!.message).toContain('codex (player "coder", player "reviewer")');
-    expect(error!.message).toContain('npm install @openai/codex-sdk');
+    expect(error!.message).toContain(
+      `npm install --prefix ${expectedPrefix} @openai/codex-sdk`,
+    );
     expect(error!.message).toContain(configPath);
     expect(runTmuxMock).not.toHaveBeenCalled();
   });

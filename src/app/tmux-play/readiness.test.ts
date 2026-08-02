@@ -8,7 +8,6 @@ import {
   assertConfiguredAdaptersReady,
   configuredAdapterRoles,
   formatNoRuntimeInstalled,
-  npmGlobalModuleRoot,
   probeAdapterRuntimes,
   readyAdapters,
   resolveInstallRoot,
@@ -16,7 +15,7 @@ import {
 } from './readiness.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 
-/** npm's effective global root for these cases, so the host cannot skew them. */
+/** npm's classic default global root, for fixture layouts. */
 const NPM_DEFAULT_GLOBAL_ROOT = join('/usr', 'local', 'lib', 'node_modules');
 
 /** Only the paths named exist — manifests and `node_modules` markers alike. */
@@ -25,15 +24,9 @@ function manifestsAt(...paths: string[]) {
   return (path: string): boolean => present.has(path);
 }
 
-function targetFor(
-  packageRoot: string,
-  cwd: string,
-  ...manifests: string[]
-) {
+function targetFor(packageRoot: string, ...manifests: string[]) {
   return resolveInstallTarget({
     packageRoot,
-    cwd,
-    npmGlobalRoot: () => NPM_DEFAULT_GLOBAL_ROOT,
     fileExists: manifestsAt(...manifests),
   });
 }
@@ -56,25 +49,30 @@ function adapterImportsReporting(
   } as unknown as PlayerAdapterImports;
 }
 
-const GLOBAL = { scope: 'global', moduleRoot: NPM_DEFAULT_GLOBAL_ROOT } as const;
+const GLOBAL = {
+  scope: 'global',
+  moduleRoot: NPM_DEFAULT_GLOBAL_ROOT,
+  prefix: join('/usr', 'local'),
+} as const;
 const LOCAL = {
   scope: 'local',
   moduleRoot: join('/srv', 'app', 'node_modules'),
+  prefix: join('/srv', 'app'),
 } as const;
 
 describe('adapterRepairCommands', () => {
-  it('scopes peer SDK installs to the cligent installation', () => {
+  it('pins every peer SDK install to the cligent installation', () => {
+    // Every peer command names its tree: where a bare install lands is a
+    // property of the paste-time shell — its npm environment and its working
+    // directory — which nothing observable here can witness, while `--prefix`
+    // outranks both. `-g` still marks the global scope; `--prefix` marks the
+    // tree in both scopes.
     expect(adapterRepairCommands('claude', GLOBAL)).toEqual([
-      'npm install -g @anthropic-ai/claude-agent-sdk',
+      'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
     ]);
     expect(adapterRepairCommands('claude', LOCAL)).toEqual([
-      'npm install @anthropic-ai/claude-agent-sdk',
+      'npm install --prefix /srv/app @anthropic-ai/claude-agent-sdk',
     ]);
-  });
-
-  it('pins the peer SDK to the tree when npm would not choose it', () => {
-    // A bare `npm install -g` follows npm's own prefix, which is not this one:
-    // without --prefix the SDK lands where this cligent cannot resolve it.
     expect(
       adapterRepairCommands('codex', {
         scope: 'global',
@@ -82,13 +80,6 @@ describe('adapterRepairCommands', () => {
         prefix: '/opt/pfx',
       }),
     ).toEqual(['npm install -g --prefix /opt/pfx @openai/codex-sdk']);
-    expect(
-      adapterRepairCommands('codex', {
-        scope: 'local',
-        moduleRoot: join('/srv', 'app', 'node_modules'),
-        prefix: '/srv/app',
-      }),
-    ).toEqual(['npm install --prefix /srv/app @openai/codex-sdk']);
   });
 
   it('quotes a prefix a shell would split', () => {
@@ -148,7 +139,7 @@ describe('adapterRepairCommands', () => {
 
   it('names both the SDK and the CLI OpenCode needs', () => {
     expect(adapterRepairCommands('opencode', GLOBAL)).toEqual([
-      'npm install -g @opencode-ai/sdk',
+      'npm install -g --prefix /usr/local @opencode-ai/sdk',
       'npm install -g opencode-ai',
     ]);
   });
@@ -157,109 +148,38 @@ describe('adapterRepairCommands', () => {
 describe('resolveInstallTarget', () => {
   const APP_MANIFEST = join('/srv', 'app', 'package.json');
 
-  it('reads npm’s effective global root as needing no prefix', () => {
+  it('pins every global tree, npm’s classic default root included', () => {
+    // The regression: a probe of this process — even asking npm itself —
+    // once licensed a bare `npm install -g` here. npm injects transient
+    // prefix configuration into every lifecycle child's environment, so no
+    // such probe witnesses the shell where the command is pasted; the pinned
+    // form holds in every context because npm's command line outranks its
+    // environment.
     expect(
-      targetFor(
-        join(NPM_DEFAULT_GLOBAL_ROOT, '@sublang', 'cligent'),
-        '/srv/app',
-      ),
-    ).toEqual({ scope: 'global', moduleRoot: NPM_DEFAULT_GLOBAL_ROOT });
-  });
-
-  it('pins a global tree npm’s effective prefix does not select', () => {
-    // The regression: this tree matches a plausible default (the Node-derived
-    // prefix), but npm follows exactly one effective prefix. With
-    // `npm_config_prefix` redirecting it, a bare `npm install -g` installs
-    // there — so the command must pin the tree cligent resolves from.
-    expect(
-      resolveInstallTarget({
-        packageRoot: '/usr/local/lib/node_modules/@sublang/cligent',
-        cwd: '/srv/app',
-        npmGlobalRoot: () => '/redirected/lib/node_modules',
-        fileExists: manifestsAt(),
-      }),
+      targetFor(join(NPM_DEFAULT_GLOBAL_ROOT, '@sublang', 'cligent')),
     ).toEqual({
       scope: 'global',
-      moduleRoot: '/usr/local/lib/node_modules',
-      prefix: '/usr/local',
+      moduleRoot: NPM_DEFAULT_GLOBAL_ROOT,
+      prefix: join('/usr', 'local'),
     });
-  });
-
-  it('pins a global prefix npm would not rediscover', () => {
-    // `npm install --prefix /opt/pfx -g @sublang/cligent` persists nothing, so
-    // a later bare `npm install -g` goes to npm's own prefix instead.
-    expect(
-      targetFor('/opt/pfx/lib/node_modules/@sublang/cligent', '/home/dev/work'),
-    ).toEqual({
+    // A prefix supplied out of band persists nothing for a later bare
+    // `npm install -g` to rediscover — pinned all the same.
+    expect(targetFor('/opt/pfx/lib/node_modules/@sublang/cligent')).toEqual({
       scope: 'global',
       moduleRoot: '/opt/pfx/lib/node_modules',
       prefix: '/opt/pfx',
     });
   });
 
-  it('reads a project node_modules as a local install', () => {
+  it('pins a project tree wherever the command will be pasted from', () => {
+    // The launching working directory is not the pasting one — a wrapper
+    // that cds before launching, or a paste into another terminal, walks
+    // npm's project discovery to whatever project encloses the paste
+    // directory — so a project install is pinned to its root, which
+    // `--prefix` delivers from anywhere.
     expect(
       targetFor(
         join('/srv', 'app', 'node_modules', '@sublang', 'cligent'),
-        '/srv/app',
-        APP_MANIFEST,
-      ),
-    ).toEqual({ scope: 'local', moduleRoot: join('/srv', 'app', 'node_modules') });
-  });
-
-  it('reads a local install invoked from a subdirectory as local', () => {
-    expect(
-      targetFor(
-        join('/srv', 'app', 'node_modules', '@sublang', 'cligent'),
-        '/srv/app/packages/api/src',
-        APP_MANIFEST,
-      ),
-    ).toEqual({ scope: 'local', moduleRoot: join('/srv', 'app', 'node_modules') });
-  });
-
-  it('pins a subdirectory a nearer manifest captures', () => {
-    // npm installs into the nearest directory carrying a package.json, so a
-    // bare install from below `/srv/app/packages/api` lands in that nested
-    // project — a tree the root cligent never resolves from.
-    expect(
-      targetFor(
-        join('/srv', 'app', 'node_modules', '@sublang', 'cligent'),
-        '/srv/app/packages/api/src',
-        APP_MANIFEST,
-        join('/srv', 'app', 'packages', 'api', 'package.json'),
-      ),
-    ).toEqual({
-      scope: 'local',
-      moduleRoot: join('/srv', 'app', 'node_modules'),
-      prefix: join('/srv', 'app'),
-    });
-  });
-
-  it('pins a subdirectory a bare node_modules directory captures', () => {
-    // npm's project discovery stops at a `node_modules` directory even with
-    // no manifest beside it, so the capture check has to read both markers.
-    expect(
-      targetFor(
-        join('/srv', 'app', 'node_modules', '@sublang', 'cligent'),
-        '/srv/app/tools/deep',
-        APP_MANIFEST,
-        join('/srv', 'app', 'tools', 'node_modules'),
-      ),
-    ).toEqual({
-      scope: 'local',
-      moduleRoot: join('/srv', 'app', 'node_modules'),
-      prefix: join('/srv', 'app'),
-    });
-  });
-
-  it('keeps a local install local when invoked from outside its project', () => {
-    // The regression: classifying by working directory called this global and
-    // printed `npm install -g`, which puts the SDK in npm's global root — a
-    // tree a project install can never resolve from.
-    expect(
-      targetFor(
-        join('/srv', 'app', 'node_modules', '@sublang', 'cligent'),
-        '/tmp/elsewhere',
         APP_MANIFEST,
       ),
     ).toEqual({
@@ -269,28 +189,13 @@ describe('resolveInstallTarget', () => {
     });
   });
 
-  it('reads a repository checkout as a local install', () => {
+  it('reads a repository checkout as its own pinned project tree', () => {
     expect(
-      targetFor('/srv/cligent', '/srv/cligent', join('/srv', 'cligent', 'package.json')),
-    ).toEqual({ scope: 'local', moduleRoot: join('/srv', 'cligent', 'node_modules') });
-  });
-
-  it('pins the tree when npm cannot confirm its prefix', () => {
-    // The regression: with npm unconsultable, a Node-derived guess that
-    // happened to equal this tree licensed a bare `npm install -g` while
-    // npm's real configuration (an npmrc prefix, say) installs elsewhere.
-    // Nothing confirmed means the explicit prefix, which works either way.
-    expect(
-      resolveInstallTarget({
-        packageRoot: '/usr/local/lib/node_modules/@sublang/cligent',
-        cwd: '/srv/app',
-        npmGlobalRoot: () => undefined,
-        fileExists: manifestsAt(),
-      }),
+      targetFor('/srv/cligent', join('/srv', 'cligent', 'package.json')),
     ).toEqual({
-      scope: 'global',
-      moduleRoot: '/usr/local/lib/node_modules',
-      prefix: '/usr/local',
+      scope: 'local',
+      moduleRoot: join('/srv', 'cligent', 'node_modules'),
+      prefix: '/srv/cligent',
     });
   });
 
@@ -300,41 +205,8 @@ describe('resolveInstallTarget', () => {
     expect(
       process.platform === 'win32'
         ? { unreachable: true }
-        : { unreachable: targetFor('/opt/odd/node_modules/@sublang/cligent', '/tmp').unreachable },
-    ).toEqual({ unreachable: true });
-  });
-});
-
-describe('npmGlobalModuleRoot', () => {
-  const rootUnder = (prefix: string) =>
-    process.platform === 'win32'
-      ? join(prefix, 'node_modules')
-      : join(prefix, 'lib', 'node_modules');
-
-  it('converts npm’s reported prefix into its global root', () => {
-    expect(
-      npmGlobalModuleRoot(() => ({ status: 0, stdout: '/opt/homebrew\n' })),
-    ).toBe(rootUnder('/opt/homebrew'));
-  });
-
-  it('confirms nothing when npm cannot be consulted', () => {
-    // A guess substituted here can coincide with the resolved tree and
-    // license a bare `npm install -g` that npm's real configuration sends
-    // elsewhere, so a spawn error, a nonzero exit, and empty output must
-    // all decline to answer rather than approximate one.
-    expect(
-      npmGlobalModuleRoot(() => ({
-        error: new Error('spawn npm ENOENT'),
-        status: null,
-        stdout: null,
-      })),
-    ).toBeUndefined();
-    expect(
-      npmGlobalModuleRoot(() => ({ status: 1, stdout: '/opt/homebrew\n' })),
-    ).toBeUndefined();
-    expect(
-      npmGlobalModuleRoot(() => ({ status: 0, stdout: ' \n' })),
-    ).toBeUndefined();
+        : targetFor('/opt/odd/node_modules/@sublang/cligent'),
+    ).toMatchObject({ unreachable: true });
   });
 });
 
@@ -421,9 +293,7 @@ describe('assertConfiguredAdaptersReady', () => {
   it('names the missing adapter, its roles, the repair, and the config', async () => {
     const error = await assertConfiguredAdaptersReady(loaded, {
       packageRoot: '/srv/app/node_modules/@sublang/cligent',
-      cwd: '/srv/app',
       fileExists: manifestsAt(join('/srv', 'app', 'package.json')),
-      npmGlobalRoot: () => NPM_DEFAULT_GLOBAL_ROOT,
       adapterImports: adapterImportsReporting((adapter) => adapter !== 'codex'),
     }).then(
       () => undefined,
@@ -432,7 +302,7 @@ describe('assertConfiguredAdaptersReady', () => {
 
     expect(error?.message).toContain('the codex adapter has no runtime installed');
     expect(error?.message).toContain('codex (player "coder")');
-    expect(error?.message).toContain('npm install @openai/codex-sdk');
+    expect(error?.message).toContain('npm install --prefix /srv/app @openai/codex-sdk');
     expect(error?.message).toContain(loaded.path);
     // A ready adapter is not reported as a repair the user has to make.
     expect(error?.message).not.toContain('@anthropic-ai/claude-agent-sdk');
@@ -448,11 +318,12 @@ describe('formatNoRuntimeInstalled', () => {
 
     expect(message).toContain('found no agent runtime installed');
     for (const command of [
-      'npm install -g @anthropic-ai/claude-agent-sdk',
-      'npm install -g @openai/codex-sdk',
+      // Peer SDKs pin the tree; PATH executables stay bare `-g`.
+      'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
+      'npm install -g --prefix /usr/local @openai/codex-sdk',
       'npm install -g @google/gemini-cli',
       'npm install -g @moonshot-ai/kimi-code@0.27.0',
-      'npm install -g @opencode-ai/sdk',
+      'npm install -g --prefix /usr/local @opencode-ai/sdk',
       'npm install -g opencode-ai',
     ]) {
       expect(message).toContain(command);

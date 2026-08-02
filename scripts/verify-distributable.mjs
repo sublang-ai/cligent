@@ -1101,9 +1101,10 @@ try {
     'found no agent runtime installed',
     'tmux-play launch without any agent runtime',
   );
-  // This prefix was supplied out of band, so npm will not rediscover it: every
-  // peer SDK command has to name it, while the PATH executables stay unpinned
-  // because they belong in whatever global prefix the user's shell reads.
+  // Every peer SDK command names its tree with --prefix; here that tree is a
+  // prefix supplied out of band that a bare install would never reach. PATH
+  // executables stay unpinned because they belong in whatever global prefix
+  // the user's shell reads.
   for (const repair of [
     `npm install -g --prefix ${tmuxPlayGlobalPrefix} @anthropic-ai/claude-agent-sdk`,
     `npm install -g --prefix ${tmuxPlayGlobalPrefix} @openai/codex-sdk`,
