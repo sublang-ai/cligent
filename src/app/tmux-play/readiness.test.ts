@@ -8,6 +8,7 @@ import {
   assertConfiguredAdaptersReady,
   configuredAdapterRoles,
   formatNoRuntimeInstalled,
+  npmGlobalModuleRoot,
   probeAdapterRuntimes,
   readyAdapters,
   resolveInstallRoot,
@@ -274,6 +275,25 @@ describe('resolveInstallTarget', () => {
     ).toEqual({ scope: 'local', moduleRoot: join('/srv', 'cligent', 'node_modules') });
   });
 
+  it('pins the tree when npm cannot confirm its prefix', () => {
+    // The regression: with npm unconsultable, a Node-derived guess that
+    // happened to equal this tree licensed a bare `npm install -g` while
+    // npm's real configuration (an npmrc prefix, say) installs elsewhere.
+    // Nothing confirmed means the explicit prefix, which works either way.
+    expect(
+      resolveInstallTarget({
+        packageRoot: '/usr/local/lib/node_modules/@sublang/cligent',
+        cwd: '/srv/app',
+        npmGlobalRoot: () => undefined,
+        fileExists: manifestsAt(),
+      }),
+    ).toEqual({
+      scope: 'global',
+      moduleRoot: '/usr/local/lib/node_modules',
+      prefix: '/usr/local',
+    });
+  });
+
   it('reports a tree no install command reaches rather than guessing', () => {
     // `<prefix>/node_modules` on a POSIX host: not npm's global layout, and no
     // manifest makes it a project, so no canned command targets it.
@@ -282,6 +302,39 @@ describe('resolveInstallTarget', () => {
         ? { unreachable: true }
         : { unreachable: targetFor('/opt/odd/node_modules/@sublang/cligent', '/tmp').unreachable },
     ).toEqual({ unreachable: true });
+  });
+});
+
+describe('npmGlobalModuleRoot', () => {
+  const rootUnder = (prefix: string) =>
+    process.platform === 'win32'
+      ? join(prefix, 'node_modules')
+      : join(prefix, 'lib', 'node_modules');
+
+  it('converts npm’s reported prefix into its global root', () => {
+    expect(
+      npmGlobalModuleRoot(() => ({ status: 0, stdout: '/opt/homebrew\n' })),
+    ).toBe(rootUnder('/opt/homebrew'));
+  });
+
+  it('confirms nothing when npm cannot be consulted', () => {
+    // A guess substituted here can coincide with the resolved tree and
+    // license a bare `npm install -g` that npm's real configuration sends
+    // elsewhere, so a spawn error, a nonzero exit, and empty output must
+    // all decline to answer rather than approximate one.
+    expect(
+      npmGlobalModuleRoot(() => ({
+        error: new Error('spawn npm ENOENT'),
+        status: null,
+        stdout: null,
+      })),
+    ).toBeUndefined();
+    expect(
+      npmGlobalModuleRoot(() => ({ status: 1, stdout: '/opt/homebrew\n' })),
+    ).toBeUndefined();
+    expect(
+      npmGlobalModuleRoot(() => ({ status: 0, stdout: ' \n' })),
+    ).toBeUndefined();
   });
 });
 

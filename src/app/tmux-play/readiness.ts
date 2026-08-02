@@ -133,9 +133,10 @@ export interface ResolveInstallTargetOptions {
   /** Injectable for tests; defaults to `fs.existsSync`. */
   readonly fileExists?: (path: string) => boolean;
   /**
-   * Reports the one `node_modules` root a bare `npm install -g` would choose.
-   * Injectable so tests do not depend on the host's npm configuration;
-   * defaults to {@link npmGlobalModuleRoot}.
+   * Reports the one `node_modules` root a bare `npm install -g` would
+   * choose, or `undefined` when that cannot be confirmed. Injectable so
+   * tests do not depend on the host's npm configuration; defaults to
+   * {@link npmGlobalModuleRoot}.
    */
   readonly npmGlobalRoot?: () => string | undefined;
 }
@@ -236,21 +237,15 @@ function bareInstallReaches(
   return true;
 }
 
-/**
- * The `node_modules` root a bare `npm install -g` would install into, from
- * npm itself. npm's effective global prefix folds in every configuration
- * layer — environment, per-user and per-project npmrc files, and a builtin
- * derived from npm's own install location, which need not match this
- * process's `execPath` (Homebrew, for one, symlinks `node` out of a
- * versioned cellar) — so reimplementing the cascade misreads real layouts.
- * The probe runs only on the failure path, where its answer decides whether
- * the printed command may drop `--prefix`. When npm cannot be consulted, the
- * environment-configured or Node-derived prefix approximates it; a wrong
- * approximation can only add a correct `--prefix`, never drop one, because
- * the bare form is printed solely on a confirmed match.
- */
-export function npmGlobalModuleRoot(): string | undefined {
-  const probe = spawnSync(
+/** What one `npm prefix -g` invocation reported. */
+export interface NpmPrefixProbe {
+  readonly error?: Error;
+  readonly status: number | null;
+  readonly stdout: string | null;
+}
+
+function runNpmPrefixProbe(): NpmPrefixProbe {
+  return spawnSync(
     process.platform === 'win32' ? 'npm.cmd' : 'npm',
     ['prefix', '-g'],
     {
@@ -260,17 +255,37 @@ export function npmGlobalModuleRoot(): string | undefined {
       shell: process.platform === 'win32',
     },
   );
-  const reported =
-    probe.error === undefined && probe.status === 0
-      ? probe.stdout.trim()
-      : '';
-  const prefix =
-    reported ||
-    process.env.npm_config_prefix ||
-    process.env.NPM_CONFIG_PREFIX ||
-    (process.platform === 'win32'
-      ? dirname(process.execPath)
-      : dirname(dirname(process.execPath)));
+}
+
+/**
+ * The `node_modules` root a bare `npm install -g` would install into,
+ * confirmed by npm itself — or `undefined` when npm cannot be consulted.
+ * npm's effective global prefix folds in every configuration layer —
+ * environment, per-user and per-project npmrc files, and a builtin derived
+ * from npm's own install location, which need not match this process's
+ * `execPath` (Homebrew, for one, symlinks `node` out of a versioned cellar)
+ * — so no value derived from this process is npm's answer, and a derived
+ * guess that happened to equal the resolved tree would license the bare
+ * command while npm's real configuration installs somewhere else. Not even
+ * this process's `npm_config_prefix` proves what the user's shell will do:
+ * npm scripts inject `npm_config_*` into child environments, so the
+ * variable can be present here and absent where the command is pasted. An
+ * unconsultable npm therefore confirms nothing, and the caller keeps
+ * `--prefix`, which is correct whether or not the bare form would have
+ * been. The probe runs only on the failure path, where its answer decides
+ * whether the printed command may drop `--prefix`.
+ */
+export function npmGlobalModuleRoot(
+  probe: () => NpmPrefixProbe = runNpmPrefixProbe,
+): string | undefined {
+  const result = probe();
+  if (result.error !== undefined || result.status !== 0) {
+    return undefined;
+  }
+  const prefix = (result.stdout ?? '').trim();
+  if (!prefix) {
+    return undefined;
+  }
   return process.platform === 'win32'
     ? join(prefix, 'node_modules')
     : join(prefix, 'lib', 'node_modules');
