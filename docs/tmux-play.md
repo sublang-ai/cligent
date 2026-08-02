@@ -17,7 +17,12 @@ Requirements:
 
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
-- Credentials and any out-of-process CLIs for the adapters you use:
+- An installed runtime for every adapter your config uses — the optional peer
+  SDK the adapter imports, plus any CLI it spawns — installed where the
+  running cligent resolves packages from, which for `npm install -g
+  @sublang/cligent` means globally. See [guide.md](guide.md#install) for the
+  per-adapter packages.
+- Credentials for each of those adapters:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
   [Gemini CLI](https://github.com/google-gemini/gemini-cli),
@@ -25,8 +30,13 @@ Requirements:
   [OpenCode](https://opencode.ai).
 
 Each configured adapter behaves the same way it would for direct
-`Cligent` use. Kimi users must install the pinned CLI and authenticate before
-launching a session with `kimi login` (see [guide.md](guide.md#install)).
+`Cligent` use. The launcher checks that each configured adapter's runtime is
+installed and fails before creating a session when one is not, naming the
+adapter, the roles that use it, and the commands that install it — so a
+missing runtime is a message on your terminal rather than an error on your
+first prompt inside tmux. Credentials are not part of that check: they are
+each vendor's own state and surface when a turn runs. Kimi in particular
+needs `kimi login` after its pinned CLI is installed.
 
 ## Config
 
@@ -36,11 +46,16 @@ Discovery order:
 2. `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml`.
 
 If neither file exists and `--config` is not set, `tmux-play` creates the
-home config with the default `fanout` Captain and two stub players, prints a
-one-line notice, and continues. Existing home config values are preserved,
-and a cwd config takes precedence over the home file. `--config <path>`
-points at a specific YAML file and disables discovery and auto-create
-behavior.
+home config with the default `fanout` Captain and one player per installed
+adapter — taking up to two, in the order `claude`, `codex`, `gemini`,
+`kimi`, `opencode` — prints a one-line notice naming the path and those
+adapters, and continues. With no agent runtime installed it creates nothing
+and prints the install commands instead, so the generated config never names
+a role that cannot run. The file is yours to edit afterwards; installing
+another provider later does not rewrite it. Existing home config values are
+preserved, and a cwd config takes precedence over the home file.
+`--config <path>` points at a specific YAML file and disables discovery and
+auto-create behavior.
 
 When an older home config is loaded through fallback discovery, `tmux-play`
 adds only missing safe defaults to that home YAML: `theme: auto`, resolved

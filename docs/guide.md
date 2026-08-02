@@ -19,6 +19,17 @@ npm install @opencode-ai/sdk                  # OpenCode
 # Kimi Code uses an external CLI — no Kimi-specific SDK required
 ```
 
+A peer SDK has to land in the tree the running cligent resolves packages
+from, so add `-g` to these commands when cligent itself was installed with
+`npm install -g` — as the [`tmux-play`](tmux-play.md) app is. The CLIs an
+adapter spawns (`gemini`, `kimi`, `opencode`) are always global, since they
+are found on `PATH` rather than in `node_modules`:
+
+```bash
+npm install -g @google/gemini-cli            # Gemini CLI
+npm install -g opencode-ai                    # OpenCode server
+```
+
 For Kimi, install the maintained Kimi Code CLI at Cligent's exact conformance
 target. The external Kimi CLI itself requires Node.js 22.19 or newer to install
 and run, even though Cligent and its other adapter surfaces support Node.js

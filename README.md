@@ -92,28 +92,47 @@ on the right.
 
 ```bash
 npm install -g @sublang/cligent
+npm install -g @openai/codex-sdk         # plus at least one agent runtime
 tmux-play                                # discover or create config
 tmux-play --config ./tmux-play.config.yaml
 ```
 
-For a global install, add the optional agent SDK peers globally as well
-(e.g. `npm install -g @openai/codex-sdk`) so the adapters your config uses
-can load them.
+`tmux-play` needs at least one agent runtime installed alongside it. The
+agent SDKs are optional peers, so a global cligent install needs them
+globally too — that is the same tree its adapters resolve from. Install
+whichever providers you have credentials for:
+
+| Adapter | Install |
+| --- | --- |
+| `claude` | `npm install -g @anthropic-ai/claude-agent-sdk` |
+| `codex` | `npm install -g @openai/codex-sdk` |
+| `gemini` | `npm install -g @google/gemini-cli` |
+| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.27.0` then `kimi login` |
+| `opencode` | `npm install -g @opencode-ai/sdk opencode-ai` |
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`
-creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` and starts
-with the built-in `fanout` Captain plus a `claude` and a `codex` player.
+creates `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` wired to the
+built-in `fanout` Captain plus one player per installed adapter, taking up
+to two in the order above — so with the Claude and Codex SDKs installed you
+get a `claude` and a `codex` player. The file is yours to edit afterwards.
+
+`tmux-play` installs nothing itself. With no agent runtime installed it
+writes no config and prints the commands above; if a configured adapter's
+runtime is missing, the launcher names it and its install command before
+starting tmux, rather than failing on your first prompt.
 
 Requirements:
 
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
-- Credentials and any out-of-process CLIs for the adapters you use:
+- An installed runtime, plus credentials, for each adapter your config uses:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
   [Gemini CLI](https://github.com/google-gemini/gemini-cli),
   [Kimi Code](https://github.com/MoonshotAI/kimi-code),
   [OpenCode](https://opencode.ai).
+  The launcher checks that the runtime is installed; credentials stay each
+  vendor's own concern and surface when a turn runs.
 
 **The Captain is the extension point.** `tmux-play` owns player
 orchestration, panes, and event streaming; you write a Captain to decide
