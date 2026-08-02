@@ -25,11 +25,11 @@ Done
       adapter's own availability check.
 - [x] The repair command targets the tree cligent actually resolves from: the
       install is classified by the manifest at its root rather than by the
-      working directory, and the command names the tree with `--prefix`
-      wherever a bare `npm install` would choose another — judged against the
-      global prefix npm itself reports and the nearest project marker above
-      the invoking directory — with prefix paths shell-quoted, and a tree no
-      command reaches carrying a named manual placement instead of one.
+      working directory, every peer-SDK command names the tree with
+      `--prefix` — the launching process cannot witness the paste-time
+      shell's npm environment or working directory — with prefix paths
+      shell-quoted, and a tree no command reaches carrying a named manual
+      placement instead of one.
 - [x] First-run config generation follows the installed runtimes and refuses,
       writing nothing, when none is installed.
 - [x] Launcher mode fails before creating a work directory, snapshot, or tmux
@@ -76,6 +76,17 @@ checks green at its boundary.
        guess whose coincidental match would license a bare `npm install -g`
        that npm's real configuration sends elsewhere; nothing confirmed keeps
        the explicit `--prefix`.
+7. [x] **Always pin peer repairs.**
+       Where a bare install lands is a property of the paste-time shell: npm
+       injects transient prefix configuration into every lifecycle child's
+       environment, so even a successful `npm prefix -g` inside the
+       launching process can confirm a prefix that shell does not have, and
+       the launching working directory need not be the pasting one, whose
+       nearest enclosing project captures a bare project install. Drop the
+       probe and the invoking-directory walk; name the tree with `--prefix`
+       on every peer-SDK command — npm's command line outranks its
+       environment and its project discovery, so the pinned form holds in
+       every context.
 
 ## Acceptance criteria
 
@@ -91,10 +102,9 @@ checks green at its boundary.
   install commands, and the config path.
 - Repair commands carry `-g` for a global installation and no scope flag for a
   project installation, external CLI packages carry `-g` in both, and the
-  reported tree is the `node_modules` root the adapters resolve from. A bare
-  command appears only where npm provably selects that tree, prefix paths are
-  shell-quoted, and an unreachable tree names a manual placement instead of
-  an install command.
+  reported tree is the `node_modules` root the adapters resolve from. Every
+  peer-SDK command carries `--prefix`; prefix paths are shell-quoted; and an
+  unreachable tree names a manual placement instead of an install command.
 - The agent SDKs remain optional peer dependencies and no lifecycle script
   installs them.
 - Build, lint, typecheck, unit, smoke, package, and distributable checks pass.
