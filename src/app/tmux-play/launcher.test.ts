@@ -1710,11 +1710,11 @@ describe('launchTmuxPlay', () => {
     // process.
     const expectedPrefix = shellQuote(resolveInstallRoot(cligentPackageRoot()));
     expect(error!.message).toContain(
-      `npm install --prefix ${expectedPrefix} @anthropic-ai/claude-agent-sdk`,
+      `npm install --global=false --location=project --prefix ${expectedPrefix} @anthropic-ai/claude-agent-sdk`,
     );
     expect(error!.message).toContain('codex (player "coder", player "reviewer")');
     expect(error!.message).toContain(
-      `npm install --prefix ${expectedPrefix} @openai/codex-sdk`,
+      `npm install --global=false --location=project --prefix ${expectedPrefix} @openai/codex-sdk`,
     );
     expect(error!.message).toContain(configPath);
     expect(runTmuxMock).not.toHaveBeenCalled();

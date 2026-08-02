@@ -70,8 +70,13 @@ describe('adapterRepairCommands', () => {
     expect(adapterRepairCommands('claude', GLOBAL)).toEqual([
       'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
     ]);
+    // The project form pins scope as well as tree: npm's globalness is
+    // `global || location === 'global'`, either operand settable by the
+    // paste-time environment, so both are pinned false — otherwise an
+    // inherited `npm_config_global=true` lands the SDK in
+    // `/srv/app/lib/node_modules`, outside the reported tree.
     expect(adapterRepairCommands('claude', LOCAL)).toEqual([
-      'npm install --prefix /srv/app @anthropic-ai/claude-agent-sdk',
+      'npm install --global=false --location=project --prefix /srv/app @anthropic-ai/claude-agent-sdk',
     ]);
     expect(
       adapterRepairCommands('codex', {
@@ -302,7 +307,9 @@ describe('assertConfiguredAdaptersReady', () => {
 
     expect(error?.message).toContain('the codex adapter has no runtime installed');
     expect(error?.message).toContain('codex (player "coder")');
-    expect(error?.message).toContain('npm install --prefix /srv/app @openai/codex-sdk');
+    expect(error?.message).toContain(
+      'npm install --global=false --location=project --prefix /srv/app @openai/codex-sdk',
+    );
     expect(error?.message).toContain(loaded.path);
     // A ready adapter is not reported as a repair the user has to make.
     expect(error?.message).not.toContain('@anthropic-ai/claude-agent-sdk');

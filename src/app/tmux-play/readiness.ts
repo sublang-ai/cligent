@@ -101,16 +101,25 @@ export function adapterRepairCommands(
     }
   } else if (requirement.peers.length > 0) {
     // The peer SDK is resolved from cligent's own tree, and every peer
-    // command names that tree: a bare install follows whatever prefix or
-    // nearest project the paste-time shell resolves, which this process
-    // cannot witness, while `--prefix` outranks both. The prefix is a
-    // filesystem path: quote it, or a path with whitespace splits into a
-    // bogus package spec when the printed command is run.
+    // command names both the tree and the scope: a bare install follows
+    // whatever prefix, project, and install scope the paste-time shell
+    // resolves, which this process cannot witness, while npm's command line
+    // outranks all three. Scope needs pinning on the command line too —
+    // npm's globalness is `global || location === 'global'`, either operand
+    // settable by environment, so a project command pins both operands
+    // (`--global=false --location=project`) or an inherited
+    // `npm_config_global`/`npm_config_location` would land the SDK in
+    // `<prefix>/lib/node_modules` instead of the project tree; `-g` already
+    // pins the global side, because a true operand wins the OR. The prefix
+    // is a filesystem path: quote it, or a path with whitespace splits into
+    // a bogus package spec when the printed command is run.
     commands.push(
       [
         'npm',
         'install',
-        ...(target.scope === 'global' ? ['-g'] : []),
+        ...(target.scope === 'global'
+          ? ['-g']
+          : ['--global=false', '--location=project']),
         '--prefix',
         shellQuote(target.prefix),
         ...requirement.peers,
