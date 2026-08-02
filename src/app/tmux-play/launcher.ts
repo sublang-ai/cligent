@@ -10,6 +10,11 @@ import { ReadStream } from 'node:tty';
 import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
+import { assertConfiguredAdaptersReady } from './readiness.js';
+import type {
+  PlayerAdapterImports,
+  PlayerAdapterName,
+} from './players.js';
 import { attachTmuxSession, isTmuxAvailable, runTmux } from '../shared/tmux.js';
 import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
 import {
@@ -27,6 +32,7 @@ import {
 import { formatTimerDuration } from './timing.js';
 import {
   TMUX_PLAY_CONFIG_FILE,
+  findTmuxPlayConfig,
   loadTmuxPlayConfig,
   writeTmuxPlayConfigSnapshot,
   type CatppuccinFlavorConfig,
@@ -96,6 +102,16 @@ export interface LaunchTmuxPlayOptions {
    * leave this unset so the launcher queries the controlling terminal.
    */
   readonly themeProbe?: Osc11Probe;
+  /**
+   * @internal Test hook for the adapter-runtime gate per TMUX-089. Production
+   * callers leave this unset so the installed runtimes decide.
+   */
+  readonly adapterImports?: PlayerAdapterImports;
+  /**
+   * @internal Test hook for the first-run default roster per TMUX-011.
+   * Production callers leave this unset.
+   */
+  readonly readyAdapters?: () => Promise<readonly PlayerAdapterName[]>;
 }
 
 export interface LaunchTmuxPlayResult {
@@ -125,11 +141,10 @@ export async function launchTmuxPlay(
     cwd: options.cwd,
     configPath: options.configPath,
     configHome: options.configHome,
-    onDefaultConfigCreated: (path) => {
-      (options.stdout ?? process.stdout).write(
-        `Created tmux-play config at ${path}\n`,
-      );
-    },
+    ...(options.readyAdapters ? { readyAdapters: options.readyAdapters } : {}),
+    onDefaultConfigCreated: defaultConfigReporter(
+      options.stdout ?? process.stdout,
+    ),
     onLegacyConfigIgnored: (path) => {
       (options.stderr ?? process.stderr).write(
         `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
@@ -138,6 +153,16 @@ export async function launchTmuxPlay(
     onLegacyEffortDeprecated: legacyEffortReporter(
       options.stderr ?? process.stderr,
     ),
+  });
+  // TMUX-089: every configured role's adapter runtime must be installed
+  // before a session exists. The adapters import their SDKs lazily inside
+  // run(), so without this gate a missing optional peer stays invisible until
+  // the first Boss turn — inside tmux, where the repair command is hardest to
+  // act on.
+  await assertConfiguredAdaptersReady(loaded, {
+    ...(options.adapterImports
+      ? { adapterImports: options.adapterImports }
+      : {}),
   });
   const sessionId = options.sessionId ?? randomBytes(4).toString('hex');
   const sessionName = `tmux-play-${sessionId}`;
@@ -204,15 +229,27 @@ export interface TmuxPlayThemeDiagnosticsOptions {
 export async function tmuxPlayThemeDiagnostics(
   options: TmuxPlayThemeDiagnosticsOptions = {},
 ): Promise<ThemeDiagnostics> {
+  // TMUX-061: theme diagnostics answers a terminal question, so it reports on
+  // whatever config exists and creates none. Generating one would tie a colour
+  // probe to the installed agent runtimes that the first-run roster needs.
+  if (
+    !options.configPath &&
+    !findTmuxPlayConfig(options.cwd ?? process.cwd(), options.configHome)
+  ) {
+    return resolveThemeDiagnostics({
+      launchOption: options.themeFlavor,
+      yamlOption: 'auto',
+      allowOsc11: true,
+      osc11Probe: options.themeProbe,
+    });
+  }
   const loaded = await loadTmuxPlayConfig({
     cwd: options.cwd,
     configPath: options.configPath,
     configHome: options.configHome,
-    onDefaultConfigCreated: (path) => {
-      (options.stdout ?? process.stdout).write(
-        `Created tmux-play config at ${path}\n`,
-      );
-    },
+    onDefaultConfigCreated: defaultConfigReporter(
+      options.stdout ?? process.stdout,
+    ),
     onLegacyConfigIgnored: (path) => {
       (options.stderr ?? process.stderr).write(
         `Found legacy tmux-play config at ${path}; tmux-play now requires ${TMUX_PLAY_CONFIG_FILE}. Rename or convert it.\n`,
@@ -228,6 +265,21 @@ export async function tmuxPlayThemeDiagnostics(
     allowOsc11: true,
     osc11Probe: options.themeProbe,
   });
+}
+
+/**
+ * TMUX-010 / TMUX-011: the first-run notice names the created path and the
+ * installed adapters the generated roster was built from, so the roster is
+ * never a silent function of host state.
+ */
+export function defaultConfigReporter(
+  stdout: Output,
+): (path: string, adapters: readonly PlayerAdapterName[]) => void {
+  return (path, adapters) => {
+    stdout.write(
+      `Created tmux-play config at ${path} for installed adapters: ${adapters.join(', ')}\n`,
+    );
+  };
 }
 
 export function legacyEffortReporter(

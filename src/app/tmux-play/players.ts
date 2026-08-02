@@ -76,7 +76,7 @@ interface UnvalidatedPlayerConfig {
 
 const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*$/;
 
-const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
+export const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
   claude: async () =>
     (await import('../../adapters/claude-code.js')).ClaudeCodeAdapter,
   codex: async () =>

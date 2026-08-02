@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -25,6 +26,17 @@ import {
   type LegacyEffortDeprecation,
   type TmuxPlayConfig,
 } from './config.js';
+import type { PlayerAdapterName } from './players.js';
+
+/**
+ * TMUX-011: pin the first-run roster instead of probing whatever agent
+ * runtimes the host happens to have installed.
+ */
+function readyAdapters(
+  ...adapters: readonly PlayerAdapterName[]
+): () => Promise<readonly PlayerAdapterName[]> {
+  return async () => adapters;
+}
 
 function validConfig(
   overrides: Partial<TmuxPlayConfig> = {},
@@ -185,7 +197,10 @@ describe('tmux-play config loading', () => {
     process.env.HOME = workDir;
     process.env.XDG_CONFIG_HOME = '';
 
-    const loaded = await loadTmuxPlayConfig({ cwd });
+    const loaded = await loadTmuxPlayConfig({
+      cwd,
+      readyAdapters: readyAdapters('claude', 'codex'),
+    });
     const fallbackConfig = join(workDir, '.config', TMUX_PLAY_HOME_CONFIG);
 
     expect(loaded.path).toBe(fallbackConfig);
@@ -204,6 +219,7 @@ describe('tmux-play config loading', () => {
     const loaded = await loadTmuxPlayConfig({
       cwd,
       configHome,
+      readyAdapters: readyAdapters('claude', 'codex'),
       onDefaultConfigCreated: (path) => notices.push(path),
     });
     const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
@@ -264,6 +280,96 @@ describe('tmux-play config loading', () => {
     expect(homeSource).not.toContain('turn_aborted:');
   });
 
+  // TTMUX-092: the generated roster follows the installed runtimes, so the
+  // config a first run creates is one the first Boss turn can actually run.
+  it('generates the first-run roster from one installed adapter', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    const notices: Array<readonly PlayerAdapterName[]> = [];
+    mkdirSync(cwd);
+
+    const loaded = await loadTmuxPlayConfig({
+      cwd,
+      configHome,
+      readyAdapters: readyAdapters('codex'),
+      onDefaultConfigCreated: (_path, adapters) => notices.push(adapters),
+    });
+
+    expect(notices).toEqual([['codex']]);
+    expect(loaded.config.captain.adapter).toBe('codex');
+    expect(loaded.config.captain.model).toBe('gpt-5.5');
+    expect(loaded.config.players.map((player) => player.adapter)).toEqual([
+      'codex',
+    ]);
+    expect(loaded.config.players.map((player) => player.id)).toEqual(['codex']);
+    // TMUX-064: a one-player roster resolves the single-player weights.
+    expect(loaded.config.layout.columnWeights).toEqual([1, 1]);
+    expect(loaded.config.layout.initialVisible).toEqual(['codex']);
+    const homeSource = readFileSync(
+      join(configHome, TMUX_PLAY_HOME_CONFIG),
+      'utf8',
+    );
+    expect(homeSource).not.toContain('adapter: claude');
+  });
+
+  it('generates roles without a model for an adapter with no shipped pin', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    mkdirSync(cwd);
+
+    const loaded = await loadTmuxPlayConfig({
+      cwd,
+      configHome,
+      readyAdapters: readyAdapters('gemini', 'kimi'),
+    });
+
+    expect(loaded.config.captain.adapter).toBe('gemini');
+    expect(loaded.config.captain.model).toBeUndefined();
+    expect(loaded.config.captain.effort).toBeUndefined();
+    expect(loaded.config.captain.permissions).toEqual({ mode: 'auto' });
+    expect(loaded.config.players.map((player) => player.adapter)).toEqual([
+      'gemini',
+      'kimi',
+    ]);
+  });
+
+  it('caps the generated roster at two players', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    mkdirSync(cwd);
+
+    const loaded = await loadTmuxPlayConfig({
+      cwd,
+      configHome,
+      readyAdapters: readyAdapters('claude', 'codex', 'gemini', 'kimi'),
+    });
+
+    expect(loaded.config.players.map((player) => player.adapter)).toEqual([
+      'claude',
+      'codex',
+    ]);
+  });
+
+  it('writes no config and names every repair when no runtime is installed', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cwd = join(workDir, 'project');
+    const configHome = join(workDir, 'xdg');
+    mkdirSync(cwd);
+
+    await expect(
+      loadTmuxPlayConfig({
+        cwd,
+        configHome,
+        readyAdapters: readyAdapters(),
+      }),
+    ).rejects.toThrow(/found no agent runtime installed/);
+
+    expect(existsSync(join(configHome, TMUX_PLAY_HOME_CONFIG))).toBe(false);
+  });
+
   it('preserves existing home config values while adding missing safe defaults', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const cwd = join(workDir, 'project');
@@ -300,6 +406,7 @@ describe('tmux-play config loading', () => {
     await loadTmuxPlayConfig({
       cwd,
       configHome,
+      readyAdapters: readyAdapters('claude', 'codex'),
       onLegacyConfigIgnored: (path) => ignored.push(path),
     });
 

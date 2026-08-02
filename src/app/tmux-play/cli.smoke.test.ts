@@ -8,7 +8,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +25,7 @@ import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
 
 interface SmokeHarness {
   readonly root: string;
+  readonly binDir: string;
   readonly env: NodeJS.ProcessEnv;
   readonly tmuxLog: string;
 }
@@ -90,6 +93,42 @@ describe('tmux-play built CLI smoke', () => {
       '-t',
       sessionName,
     ]);
+  });
+
+  // TTMUX-092: the built CLI refuses a config whose adapter runtime is not
+  // installed. `kimi` needs the `kimi` executable, and the harness PATH holds
+  // only the stub bin directory, so the runtime is reliably absent whatever
+  // the developer has installed.
+  it('refuses a config naming an uninstalled runtime from the built CLI', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      join(cwd, 'tmux-play.config.yaml'),
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: thinker',
+        '    adapter: kimi',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runCli(['--cwd', cwd], harness, {
+      PATH: harness.binDir,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('kimi (player "thinker")');
+    expect(result.stderr).toContain(
+      'npm install -g @moonshot-ai/kimi-code@0.27.0',
+    );
+    expect(result.stderr).toContain('kimi login');
+    // No tmux session was ever created: the stub logs every call but `-V`.
+    expect(existsSync(harness.tmuxLog)).toBe(false);
   });
 
   it('auto-creates the home config once from the built CLI', () => {
@@ -369,8 +408,13 @@ function createHarness(): SmokeHarness {
   );
   chmodSync(fakeGlow, 0o755);
 
+  // TTMUX-092: the stub bin directory also carries node, so a test can scrub
+  // PATH down to it and know no agent CLI is reachable.
+  symlinkSync(realpathSync(process.execPath), join(binDir, 'node'));
+
   return {
     root,
+    binDir,
     tmuxLog,
     env: {
       ...process.env,

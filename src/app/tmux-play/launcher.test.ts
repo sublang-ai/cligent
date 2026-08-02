@@ -45,6 +45,7 @@ import {
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
+import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import {
   TMUX_PANE_TIMER_ACCENT_OPTION,
   TMUX_PANE_TIMER_RUNNING_OPTION,
@@ -1588,10 +1589,14 @@ describe('launchTmuxPlay', () => {
       selfBin: '/tmp/cli.js',
       stdout,
       attach: false,
+      readyAdapters: async () => ['claude', 'codex'],
+      adapterImports: availableAdapterImports(),
     });
 
+    // TMUX-011: the notice names the roster's basis, so a generated roster is
+    // never a silent function of which runtimes the host happens to have.
     expect(stdout.text()).toContain(
-      `Created tmux-play config at ${join(configHome, 'tmux-play/config.yaml')}`,
+      `Created tmux-play config at ${join(configHome, 'tmux-play/config.yaml')} for installed adapters: claude, codex`,
     );
     expect(existsSync(join(configHome, 'tmux-play/config.yaml'))).toBe(true);
   });
@@ -1659,7 +1664,99 @@ describe('launchTmuxPlay', () => {
     );
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
+
+  // TTMUX-092: a configured role whose adapter runtime is missing stops the
+  // launch while it is still on the terminal the user can read — tmux's
+  // alternate screen would otherwise cover the report for the whole session.
+  it('fails before creating a session when a configured runtime is missing', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await expect(
+      launchTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        attach: false,
+        adapterImports: adapterImportsReporting(
+          (adapter) => adapter !== 'codex',
+        ),
+      }),
+    ).rejects.toThrow(/codex \(player "coder"\)/);
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
+  it('names every missing runtime, its roles, and its repair command', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder', 'reviewer']);
+
+    let error: Error | undefined;
+    try {
+      await launchTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        attach: false,
+        adapterImports: adapterImportsReporting(() => false),
+      });
+    } catch (thrown) {
+      error = thrown as Error;
+    }
+
+    expect(error).toBeDefined();
+    expect(error!.message).toContain('claude (captain)');
+    expect(error!.message).toContain('npm install @anthropic-ai/claude-agent-sdk');
+    expect(error!.message).toContain('codex (player "coder", player "reviewer")');
+    expect(error!.message).toContain('npm install @openai/codex-sdk');
+    expect(error!.message).toContain(configPath);
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
+  it('launches when every configured runtime is installed', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, ['coder']);
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'ready',
+      workDir: join(tempDir, 'work'),
+      selfBin: '/tmp/cli.js',
+      attach: false,
+      adapterImports: availableAdapterImports(),
+    });
+
+    expect(runTmuxMock).toHaveBeenCalled();
+  });
 });
+
+/**
+ * TMUX-089: adapter imports whose runtimes report as installed (or not),
+ * so launcher tests pin the gate instead of probing the host's own SDKs and
+ * agent CLIs.
+ */
+function adapterImportsReporting(
+  available: (adapter: PlayerAdapterName) => boolean,
+): PlayerAdapterImports {
+  const adapterFor = (adapter: PlayerAdapterName) =>
+    async () =>
+      class {
+        readonly name = adapter;
+        async isAvailable(): Promise<boolean> {
+          return available(adapter);
+        }
+        async *run(): AsyncGenerator<never, void, void> {}
+      } as unknown as new () => never;
+  return {
+    claude: adapterFor('claude'),
+    codex: adapterFor('codex'),
+    gemini: adapterFor('gemini'),
+    kimi: adapterFor('kimi'),
+    opencode: adapterFor('opencode'),
+  } as unknown as PlayerAdapterImports;
+}
+
+function availableAdapterImports(): PlayerAdapterImports {
+  return adapterImportsReporting(() => true);
+}
 
 function writeConfig(dir: string, playerIds: readonly string[]): string {
   const configPath = join(dir, 'tmux-play.config.yaml');

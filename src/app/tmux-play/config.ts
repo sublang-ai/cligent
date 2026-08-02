@@ -42,6 +42,7 @@ import {
   type PlayerAdapterName,
   type PlayerConfig,
 } from './players.js';
+import { formatNoRuntimeInstalled, readyAdapters } from './readiness.js';
 import type { CatppuccinFlavor } from './player-colors.js';
 import type { PermissionLevel, PermissionPolicy } from '../../types.js';
 
@@ -163,9 +164,17 @@ export interface LoadTmuxPlayConfigOptions {
   cwd?: string;
   configPath?: string;
   configHome?: string;
-  onDefaultConfigCreated?: (path: string) => void;
+  onDefaultConfigCreated?: (
+    path: string,
+    adapters: readonly PlayerAdapterName[],
+  ) => void;
   onLegacyConfigIgnored?: (path: string) => void;
   onLegacyEffortDeprecated?: (result: LegacyEffortDeprecation) => void;
+  /**
+   * @internal Adapter-readiness probe for the first-run default roster.
+   * Production callers leave this unset so the installed runtimes decide.
+   */
+  readyAdapters?: () => Promise<readonly PlayerAdapterName[]>;
 }
 
 export interface LegacyEffortDeprecation {
@@ -185,61 +194,109 @@ const LEGACY_CONFIG_FILES = [
   'tmux-play.config.json',
 ] as const;
 
-const DEFAULT_TMUX_PLAY_CONFIG: TmuxPlayConfig = {
-  theme: 'auto',
-  notifications: {
-    player_finished: 'bell',
-    turn_finished: 'desktop',
-    turn_aborted: 'off',
-  },
-  layout: {
-    window: { columns: 174, rows: 49 },
-    // Resolved startup-visible set (TMUX-080): all configured players in
-    // order. `defaultHomeConfigValue` strips it so the authored YAML omits it
-    // (every player visible by default).
-    initialVisible: ['claude', 'codex'],
-    // Canonical shape-specific weights (TMUX-064). The shipped multi-player
-    // default is equal-thirds [1, 1, 1] (Boss/Captain and each player column
-    // each take floor(W / 3), rightmost absorbing the remainder); the
-    // single-player default [1, 1] is resolved too so the snapshot can render
-    // either shape. `columnWeights` is the active (two-player roster -> multi)
-    // resolved weights. `defaultHomeConfigValue` strips the resolved-only
-    // fields so the authored YAML surfaces only `multiPlayerColumnWeights`
-    // per TMUX-011.
-    singlePlayerColumnWeights: [1, 1],
-    multiPlayerColumnWeights: [1, 1, 1],
-    columnWeights: [1, 1, 1],
-  },
-  captain: {
-    from: '@sublang/cligent/captains/fanout',
-    adapter: 'claude',
-    model: 'claude-opus-4-8',
-    effort: 'xhigh',
+const FANOUT_CAPTAIN_SPECIFIER = '@sublang/cligent/captains/fanout';
+
+/**
+ * The largest generated player roster (TMUX-011). Two players fill the
+ * shipped three-column layout; a host with only one ready adapter gets a
+ * one-player roster rather than two players sharing a backend.
+ */
+const DEFAULT_ROSTER_LIMIT = 2;
+
+/**
+ * Per-adapter model and effort for generated default roles. Only the adapters
+ * with a shipped model pin carry one: the rest omit `model` and `effort` so
+ * the generated roles run each adapter's own defaults instead of a model name
+ * this project would have to keep current for a provider it does not pin.
+ */
+const DEFAULT_ROLE_BY_ADAPTER: {
+  [A in PlayerAdapterName]: {
+    readonly model?: string;
+    readonly effort?: EffortForAgent<A>;
+  };
+} = {
+  claude: { model: 'claude-opus-4-8', effort: 'xhigh' },
+  codex: { model: 'gpt-5.5', effort: 'xhigh' },
+  gemini: {},
+  kimi: {},
+  opencode: {},
+};
+
+/**
+ * The first-run default config for a roster of adapters whose runtimes are
+ * installed (TMUX-011). The Captain runs the built-in `fanout` Captain on the
+ * first adapter; every adapter in the roster also plays.
+ */
+function defaultTmuxPlayConfig(
+  adapters: readonly PlayerAdapterName[],
+): TmuxPlayConfig {
+  if (adapters.length === 0) {
+    throw new Error('a default tmux-play config needs at least one adapter');
+  }
+  const roster = adapters.slice(0, DEFAULT_ROSTER_LIMIT);
+  return {
+    theme: 'auto',
+    notifications: {
+      player_finished: 'bell',
+      turn_finished: 'desktop',
+      turn_aborted: 'off',
+    },
+    layout: {
+      window: { ...DEFAULT_LAYOUT_WINDOW },
+      // Resolved startup-visible set (TMUX-080): all configured players in
+      // order. `defaultHomeConfigValue` strips it so the authored YAML omits
+      // it (every player visible by default).
+      initialVisible: [...roster],
+      // Canonical shape-specific weights (TMUX-064). The shipped multi-player
+      // default is equal-thirds [1, 1, 1] (Boss/Captain and each player column
+      // each take floor(W / 3), rightmost absorbing the remainder); the
+      // single-player default [1, 1] is resolved too so the snapshot can
+      // render either shape. `columnWeights` is the active resolved weights
+      // for this roster's shape. `defaultHomeConfigValue` strips the
+      // resolved-only fields so the authored YAML surfaces only
+      // `multiPlayerColumnWeights` per TMUX-011.
+      singlePlayerColumnWeights: [...DEFAULT_SINGLE_PLAYER_WEIGHTS],
+      multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
+      columnWeights:
+        roster.length === 1
+          ? [...DEFAULT_SINGLE_PLAYER_WEIGHTS]
+          : [...DEFAULT_MULTI_PLAYER_WEIGHTS],
+    },
+    captain: defaultCaptainConfig(roster[0]!),
+    players: roster.map((adapter) => defaultPlayerConfig(adapter)),
+  };
+}
+
+function defaultCaptainConfig<A extends PlayerAdapterName>(
+  adapter: A,
+): CaptainConfig<A> {
+  const role = DEFAULT_ROLE_BY_ADAPTER[adapter];
+  return {
+    from: FANOUT_CAPTAIN_SPECIFIER,
+    adapter,
+    ...(role.model !== undefined ? { model: role.model } : {}),
+    ...(role.effort !== undefined ? { effort: role.effort } : {}),
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
     options: {},
-  },
-  players: [
-    {
-      id: 'claude',
-      adapter: 'claude',
-      model: 'claude-opus-4-8',
-      effort: 'xhigh',
-      instruction:
-        'You are the claude player in a fanout Captain session. Provide an independent answer.',
-      permissions: { mode: 'auto' },
-    },
-    {
-      id: 'codex',
-      adapter: 'codex',
-      model: 'gpt-5.5',
-      effort: 'xhigh',
-      instruction:
-        'You are the codex player in a fanout Captain session. Provide an independent answer.',
-      permissions: { mode: 'auto' },
-    },
-  ],
-};
+  } as CaptainConfig<A>;
+}
+
+function defaultPlayerConfig<A extends PlayerAdapterName>(
+  adapter: A,
+): PlayerConfig<A> {
+  const role = DEFAULT_ROLE_BY_ADAPTER[adapter];
+  return {
+    id: adapter,
+    adapter,
+    ...(role.model !== undefined ? { model: role.model } : {}),
+    ...(role.effort !== undefined ? { effort: role.effort } : {}),
+    instruction:
+      `You are the ${adapter} player in a fanout Captain session. ` +
+      'Provide an independent answer.',
+    permissions: { mode: 'auto' },
+  } as PlayerConfig<A>;
+}
 
 export function findTmuxPlayConfig(
   cwd = process.cwd(),
@@ -285,10 +342,19 @@ export async function loadTmuxPlayConfig(
   }
 
   if (!configPath) {
+    // TMUX-011: generate the first-run roster from the adapters whose
+    // runtimes are actually installed, so the config this creates is one the
+    // very next Boss turn can run. With none installed, write nothing: a
+    // config naming absent runtimes is the defect this avoids, and a later
+    // run generates one for whatever the user installs.
+    const adapters = await (options.readyAdapters ?? readyAdapters)();
+    if (adapters.length === 0) {
+      throw new Error(formatNoRuntimeInstalled());
+    }
     configPath = homeConfig;
-    await writeDefaultTmuxPlayConfig(configPath);
+    const roster = await writeDefaultTmuxPlayConfig(configPath, adapters);
     createdDefaultConfig = true;
-    options.onDefaultConfigCreated?.(configPath);
+    options.onDefaultConfigCreated?.(configPath, roster);
   }
 
   const loadedDocument = await loadConfigDocument(configPath);
@@ -375,9 +441,14 @@ function findLegacyTmuxPlayConfig(cwd: string): string | undefined {
   return undefined;
 }
 
-async function writeDefaultTmuxPlayConfig(path: string): Promise<void> {
+async function writeDefaultTmuxPlayConfig(
+  path: string,
+  adapters: readonly PlayerAdapterName[],
+): Promise<readonly PlayerAdapterName[]> {
+  const config = defaultHomeConfigValue(adapters);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, stringify(defaultHomeConfigValue()));
+  await writeFile(path, stringify(config));
+  return config.players.map((player) => player.adapter);
 }
 
 function normalizeCaptainFrom(from: string, configPath: string): string {
@@ -810,8 +881,10 @@ function requireNotificationSink(
   return value as NotificationSink;
 }
 
-function defaultHomeConfigValue(): TmuxPlayConfig {
-  const config = structuredCloneJson(DEFAULT_TMUX_PLAY_CONFIG);
+function defaultHomeConfigValue(
+  adapters: readonly PlayerAdapterName[],
+): TmuxPlayConfig {
+  const config = defaultTmuxPlayConfig(adapters);
   // The generated YAML documents the non-off defaults requested for first-run
   // users while omission of `turn_aborted` still normalizes to `off`.
   delete (config.notifications as Partial<NotificationConfig>).turn_aborted;
