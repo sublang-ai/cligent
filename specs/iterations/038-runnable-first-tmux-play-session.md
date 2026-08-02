@@ -70,6 +70,12 @@ checks green at its boundary.
        `node_modules` directory would capture a bare install, quote prefix
        paths a shell would split, and replace the peer install command with a
        named manual placement for trees no npm invocation reaches.
+6. [x] **Treat an unconsultable npm as unconfirmed.**
+       Report no global root when `npm prefix -g` errors, times out, or
+       prints nothing, instead of substituting an environment or Node-derived
+       guess whose coincidental match would license a bare `npm install -g`
+       that npm's real configuration sends elsewhere; nothing confirmed keeps
+       the explicit `--prefix`.
 
 ## Acceptance criteria
 
