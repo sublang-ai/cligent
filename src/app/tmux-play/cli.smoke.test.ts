@@ -124,7 +124,7 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('kimi (player "thinker")');
     expect(result.stderr).toContain(
-      'npm install -g @moonshot-ai/kimi-code@0.27.0',
+      'npm install -g @moonshot-ai/kimi-code@0.31.1',
     );
     expect(result.stderr).toContain('kimi login');
     // No tmux session was ever created: the stub logs every call but `-V`.

@@ -230,7 +230,7 @@ export async function withIsolatedKimiCodeHome<T>(
 /**
  * Confirm the cloned OAuth credential can still open an ACP session.
  *
- * Kimi Code 0.27 rotates the refresh token on every refresh and persists the
+ * Kimi Code 0.31 rotates the refresh token on every refresh and persists the
  * replacement into whichever home performed it. A credential copied into an
  * immutable store (a CI secret) is therefore spent the first time any run
  * refreshes it: the next run's refresh returns `invalid_grant`, the CLI writes

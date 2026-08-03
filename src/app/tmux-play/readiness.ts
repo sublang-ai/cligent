@@ -76,7 +76,7 @@ const ADAPTER_RUNTIME_REQUIREMENTS: Readonly<
   gemini: { peers: [], clis: ['@google/gemini-cli'], steps: [] },
   kimi: {
     peers: [],
-    clis: ['@moonshot-ai/kimi-code@0.27.0'],
+    clis: ['@moonshot-ai/kimi-code@0.31.1'],
     steps: ['kimi login'],
   },
   opencode: { peers: ['@opencode-ai/sdk'], clis: ['opencode-ai'], steps: [] },

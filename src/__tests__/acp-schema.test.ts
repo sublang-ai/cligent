@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  zAcpError,
+  zAcpInitializeResponse,
+  zAcpNewSessionResponse,
+  zAcpPromptResponse,
+  zAcpRequestPermissionRequest,
+  zAcpResumeSessionResponse,
+  zAcpSessionNotification,
+  zAcpSetSessionConfigOptionResponse,
+} from '../adapters/acp-schema.js';
+
+// KIMI-006 / DR-011: the adapter owns these schemas because the protocol
+// SDK publishes its generated ones only inside `dist/`, and because that
+// generation salvages malformed payloads where this adapter must reject.
+describe('owned ACP wire schemas (KIMI-006)', () => {
+  it('rejects a prompt result whose usage is malformed rather than dropping it', () => {
+    // The regression these schemas exist to prevent: the SDK's own newer
+    // generation parses this successfully and silently discards `usage`,
+    // which would report a turn as complete while losing its accounting.
+    expect(() =>
+      zAcpPromptResponse.parse({
+        stopReason: 'end_turn',
+        usage: { inputTokens: 'nope', outputTokens: 2 },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an unrecognized stop reason', () => {
+    // stopReason drives the terminal done status, so an unknown value must
+    // not fall through to 'success'.
+    expect(() => zAcpPromptResponse.parse({ stopReason: 'exploded' })).toThrow();
+    for (const stopReason of [
+      'end_turn',
+      'max_tokens',
+      'max_turn_requests',
+      'refusal',
+      'cancelled',
+    ]) {
+      expect(zAcpPromptResponse.parse({ stopReason }).stopReason).toBe(
+        stopReason,
+      );
+    }
+  });
+
+  it('folds optional and absent usage counters', () => {
+    expect(
+      zAcpPromptResponse.parse({
+        stopReason: 'end_turn',
+        usage: { inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 },
+      }).usage,
+    ).toMatchObject({ inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 });
+    expect(
+      zAcpPromptResponse.parse({ stopReason: 'end_turn', usage: null }).usage,
+    ).toBeNull();
+  });
+
+  it('requires the fields the adapter reads off a session', () => {
+    expect(() => zAcpNewSessionResponse.parse({})).toThrow();
+    expect(zAcpNewSessionResponse.parse({ sessionId: 'abc' })).toMatchObject({
+      sessionId: 'abc',
+    });
+    expect(() => zAcpInitializeResponse.parse({})).toThrow();
+    expect(
+      zAcpInitializeResponse.parse({ protocolVersion: 1 }).protocolVersion,
+    ).toBe(1);
+  });
+
+  it('carries config options through for the model lookup', () => {
+    const parsed = zAcpSetSessionConfigOptionResponse.parse({
+      configOptions: [
+        { id: 'model', type: 'select', currentValue: 'kimi-k2', options: [] },
+        { id: 'thinking', type: 'select', currentValue: 'high', options: [] },
+      ],
+    });
+    expect(parsed.configOptions?.[0]).toMatchObject({
+      id: 'model',
+      currentValue: 'kimi-k2',
+    });
+    // Kimi Code 0.31.1 reports a per-model effort ladder here rather than the
+    // binary on/off it used to; the adapter reads only `model`, so the value
+    // passes through untouched.
+    expect(parsed.configOptions?.[1]?.currentValue).toBe('high');
+    expect(zAcpResumeSessionResponse.parse({}).configOptions).toBeUndefined();
+  });
+
+  it('rejects session/update parameters that name no update', () => {
+    expect(() => zAcpSessionNotification.parse({})).toThrow();
+    expect(() =>
+      zAcpSessionNotification.parse({ sessionId: 's', update: {} }),
+    ).toThrow();
+  });
+
+  it('accepts an unknown update case and unknown fields', () => {
+    // Protocol growth must not be reported as malformed traffic: the adapter
+    // ignores cases it does not handle.
+    expect(
+      zAcpSessionNotification.parse({
+        sessionId: 's',
+        update: { sessionUpdate: 'something_new', payload: { a: 1 } },
+      }).update.sessionUpdate,
+    ).toBe('something_new');
+    expect(
+      zAcpSessionNotification.parse({
+        sessionId: 's',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'hi', futureField: true },
+        },
+      }).update,
+    ).toMatchObject({ sessionUpdate: 'agent_message_chunk' });
+  });
+
+  it('requires the consumed shape of a handled update case', () => {
+    expect(() =>
+      zAcpSessionNotification.parse({
+        sessionId: 's',
+        update: { sessionUpdate: 'agent_message_chunk' },
+      }),
+    ).toThrow();
+    expect(() =>
+      zAcpSessionNotification.parse({
+        sessionId: 's',
+        update: { sessionUpdate: 'tool_call' },
+      }),
+    ).toThrow();
+  });
+
+  it('validates permission requests and JSON-RPC errors', () => {
+    expect(() => zAcpRequestPermissionRequest.parse({ sessionId: 's' })).toThrow();
+    expect(
+      zAcpRequestPermissionRequest.parse({
+        sessionId: 's',
+        options: [{ optionId: 'allow', kind: 'allow_once' }],
+      }).options,
+    ).toHaveLength(1);
+    expect(() => zAcpError.parse({ message: 'no code' })).toThrow();
+    expect(zAcpError.parse({ code: -32000, message: 'Authentication required' })).toMatchObject({
+      code: -32000,
+    });
+  });
+});

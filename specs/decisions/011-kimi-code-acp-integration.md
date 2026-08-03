@@ -48,7 +48,7 @@ Kimi's ACP configuration surface exposes thinking as the provider-native binary 
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-Kimi Code `0.27.0` gates ACP session creation on the OAuth credential written by `kimi login`; an API-key provider configuration can select a model after login but does not independently satisfy this ACP gate [[5]][[6]][[14]].
+Kimi Code `0.31.1` gates ACP session creation on the OAuth credential written by `kimi login`; an API-key provider configuration can select a model after login but does not independently satisfy this ACP gate [[5]][[6]][[14]].
 ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
 ## Consequences
@@ -59,13 +59,17 @@ Text, tools, permissions, model selection, and cancellation remain structured, w
 One short-lived process per run preserves adapter thread safety and avoids a resident Kimi service.
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
+Wire-schema ownership sits with the adapter, not with the protocol SDK.
+The SDK generates a complete set of schemas but publishes them only inside its build output, so consuming them means depending on a file layout rather than on an interface — a dependency its `1.3.0` `exports` map ended, without offering any public replacement.
+Their generation also diverges from what this adapter needs in kind rather than in detail: they validate the entire protocol where the adapter reads a small subset of it, and they deliberately salvage malformed payloads — dropping an invalid `usage` rather than rejecting it — where [KIMI-006](../user/adapters/kimi.md#kimi-006) requires malformed traffic to surface as an actionable error.
+The adapter therefore validates the fields it consumes against schemas held in this repository, strictly, while ignoring everything else, so an agent may extend the protocol without this client calling valid traffic malformed.
 Credential-free CI shall always exercise the exact ACP initialization handshake.
 This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].
 CI live acceptance shall require the explicit dedicated-home override containing `config.toml` and `credentials/kimi-code.json`, and shall fail when that fixture or the authenticated CLI is absent, matching the other coding-agent credential gates.
 
 An absent fixture and a spent credential are distinct conditions and shall be gated differently.
-Kimi Code `0.27.0` admits no non-interactive credential: the ACP gate accepts only the managed OAuth token, because `harnessIsAuthed` reduces to whether the managed provider holds a stored token, and `KIMI_API_KEY` configures a model provider without ever reaching that gate [[15]][[16]].
+Kimi Code `0.31.1` admits no non-interactive credential: the ACP gate accepts only the managed OAuth token, because `harnessIsAuthed` reduces to whether the managed provider holds a stored token, and `KIMI_API_KEY` configures a model provider without ever reaching that gate [[15]][[16]].
 Its refresh response is required to carry a replacement `refresh_token`, which the CLI persists into whichever home performed the refresh; a refusal writes a revoked tombstone into that home instead, and the tombstone then fails every later leg sharing that home [[17]].
 A credential restored from an immutable store is therefore single-use whenever a run refreshes it: the replacement is discarded with the temporary home, leaving the stored token spent.
 Refresh is lazy — it fires only once the token is within `max(300s, expires_in / 2)` of expiry — so a run early in a credential's life can pass without exercising the network auth path at all, and its success is not evidence that the credential still works.
@@ -96,7 +100,7 @@ A future public, documented Kimi Code SDK may replace the ACP subprocess only th
 [11]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [12]: https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/src/cli/run-prompt.ts "Kimi Code prompt-mode implementation"
 [13]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html "Kimi Code data locations"
-[14]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code 0.27 ACP authentication gate"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code ACP authentication gate"
 [15]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/server.ts "Kimi Code ACP harnessIsAuthed gate — any managed provider holding a stored token"
 [16]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/node-sdk/src/auth.ts "Kimi Code auth facade — status() reports only the managed OAuth provider"
 [17]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/oauth/src/oauth-manager.ts "Kimi Code OAuth manager — refresh rotation, persistence, and revoked tombstone"

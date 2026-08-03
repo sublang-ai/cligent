@@ -19,23 +19,22 @@ import type {
   Client,
   RequestPermissionRequest,
   RequestPermissionResponse,
-  SessionConfigOption,
   SessionNotification,
   SessionUpdate,
   ToolCallContent,
   ToolCallStatus,
-  Usage,
 } from '@agentclientprotocol/sdk';
+import type { AcpSessionConfigOption, AcpUsage } from './acp-schema.js';
 import {
-  zError,
-  zInitializeResponse,
-  zNewSessionResponse,
-  zPromptResponse,
-  zRequestPermissionRequest,
-  zResumeSessionResponse,
-  zSessionNotification,
-  zSetSessionConfigOptionResponse,
-} from '@agentclientprotocol/sdk/dist/schema/zod.gen.js';
+  zAcpError as zError,
+  zAcpInitializeResponse as zInitializeResponse,
+  zAcpNewSessionResponse as zNewSessionResponse,
+  zAcpPromptResponse as zPromptResponse,
+  zAcpRequestPermissionRequest as zRequestPermissionRequest,
+  zAcpResumeSessionResponse as zResumeSessionResponse,
+  zAcpSessionNotification as zSessionNotification,
+  zAcpSetSessionConfigOptionResponse as zSetSessionConfigOptionResponse,
+} from './acp-schema.js';
 
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
@@ -509,7 +508,7 @@ function toolOutput(state: ToolState): unknown {
 }
 
 function selectedConfigValue(
-  options: SessionConfigOption[] | null | undefined,
+  options: AcpSessionConfigOption[] | null | undefined,
   id: string,
 ): string | undefined {
   const option = options?.find((candidate) => candidate.id === id);
@@ -517,7 +516,7 @@ function selectedConfigValue(
 }
 
 function mapUsage(
-  usage: Usage | null | undefined,
+  usage: AcpUsage | null | undefined,
   toolUses: number,
 ): DonePayload['usage'] {
   if (!usage) return { ...DEFAULT_DONE_USAGE, toolUses };
@@ -1024,7 +1023,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           );
         }
 
-        let configOptions: SessionConfigOption[] | null | undefined;
+        let configOptions: AcpSessionConfigOption[] | null | undefined;
         if (options?.resume) {
           const resumed = parseAcpResult(
             zResumeSessionResponse,

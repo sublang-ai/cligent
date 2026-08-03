@@ -36,16 +36,16 @@ and run, even though Cligent and its other adapter surfaces support Node.js
 18.3:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.27.0
+npm install -g @moonshot-ai/kimi-code@0.31.1
 kimi --version
 kimi login
 ```
 
 `kimi login` performs the one-time Kimi Code OAuth flow required by the exact
-0.27 ACP target. Kimi's [provider
+0.31 ACP target. Kimi's [provider
 configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
 can select a Kimi or third-party model after login, but an API-key provider
-alone does not satisfy the [0.27 ACP session
+alone does not satisfy the [0.31 ACP session
 gate](https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116).
 The adapter inherits the CLI's configuration and credentials; Cligent neither
 stores credentials nor launches login for you.

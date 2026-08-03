@@ -21,12 +21,12 @@ export const EXPECTED_SDK_VERSIONS = Object.freeze({
 });
 
 export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
-  '@agentclientprotocol/sdk': '0.23.0',
+  '@agentclientprotocol/sdk': '1.3.0',
 });
 
 export const EXPECTED_CLI_VERSIONS = Object.freeze({
   gemini: '0.53.1',
-  kimi: '0.27.0',
+  kimi: '0.31.1',
   opencode: '1.18.11',
 });
 

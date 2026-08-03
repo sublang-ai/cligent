@@ -61,7 +61,7 @@ Kimi Code's ACP 0.23 surface exposes no stable per-turn usage totals, so absent 
 
 ACP stop reason `end_turn` shall map to `done.status: 'success'`; `cancelled` shall map to `'interrupted'`; `max_tokens` and `max_turn_requests` shall map to `'max_turns'`; and `refusal` shall emit a non-recoverable error followed by `done.status: 'error'`.
 Structured JSON-RPC errors, malformed protocol traffic, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
-Kimi Code `0.27.0` ACP session creation requires the OAuth credential written by `kimi login`; a configured API-key provider does not independently satisfy that ACP authentication gate [[8]].
+Kimi Code `0.31.1` ACP session creation requires the OAuth credential written by `kimi login`; a configured API-key provider does not independently satisfy that ACP authentication gate [[8]].
 Authentication guidance shall name `kimi login`; the adapter shall never launch login itself.
 
 ## Permission Mapping
@@ -121,4 +121,4 @@ When abort or failure occurs before a backend identifier is observed, it shall p
 [5]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
 [7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
-[8]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code 0.27 ACP authentication gate"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code ACP authentication gate"

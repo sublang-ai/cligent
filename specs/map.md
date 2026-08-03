@@ -87,6 +87,7 @@ meta.md     The spec of specs
 | IR-036 | [036-kimi-code-adapter.md](iterations/036-kimi-code-adapter.md) | Add the maintained Kimi Code CLI through ACP with session continuity, public integration, and exact conformance targets |
 | IR-037 | [037-codex-executable-resolution.md](iterations/037-codex-executable-resolution.md) | Resolve the Codex executable from the SDK-owned tree across hoisted, global, and non-hoisted installs, with actionable failure diagnostics |
 | IR-038 | [038-runnable-first-tmux-play-session.md](iterations/038-runnable-first-tmux-play-session.md) | Make the documented global tmux-play install produce a runnable first session |
+| IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 
 ## Packages
 

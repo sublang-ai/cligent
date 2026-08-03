@@ -33,13 +33,13 @@ the exact conformance target. The external Kimi CLI itself requires Node.js
 22.19 or newer to install and run, then authenticate once:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.27.0
+npm install -g @moonshot-ai/kimi-code@0.31.1
 kimi login
 ```
 
 Adapters reuse each vendor's own authentication from your environment —
 a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
-(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.27 ACP specifically
+(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.31 ACP specifically
 requires the OAuth credential created by `kimi login`; provider configuration
 can still select a model after that login.
 Cligent stores no credentials and never starts an authentication flow itself.
@@ -107,7 +107,7 @@ whichever providers you have credentials for:
 | `claude` | `npm install -g @anthropic-ai/claude-agent-sdk` |
 | `codex` | `npm install -g @openai/codex-sdk` |
 | `gemini` | `npm install -g @google/gemini-cli` |
-| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.27.0` then `kimi login` |
+| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.31.1` then `kimi login` |
 | `opencode` | `npm install -g @opencode-ai/sdk opencode-ai` |
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`
