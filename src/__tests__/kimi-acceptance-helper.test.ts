@@ -213,6 +213,70 @@ function reply(payload) {
     expect(reason).toContain('rotates its refresh token');
   });
 
+  it('probes without the KIMI_MODEL_* overlay the live legs remove', async () => {
+    const root = makeTemporaryRoot();
+    const home = createKimiHome(join(root, 'home'));
+    // The regression: `KIMI_MODEL_NAME` + `KIMI_MODEL_API_KEY` synthesize a
+    // default model that satisfies Kimi's ACP gate on its own. Inherited here,
+    // they would let a spent OAuth fixture probe as usable, and the live legs
+    // — which scrub these keys — would then fail instead of self-skipping.
+    // This stub authenticates only when the overlay is absent, so a probe that
+    // leaked it would report a skip reason instead of undefined.
+    const stub = join(root, 'kimi-overlay-stub.mjs');
+    writeFileSync(
+      stub,
+      `#!/usr/bin/env node
+const leaked = process.env.KIMI_MODEL_NAME !== undefined ||
+  process.env.KIMI_MODEL_API_KEY !== undefined;
+let buffer = '';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  const lines = buffer.split('\\n');
+  buffer = lines.pop() ?? '';
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const message = JSON.parse(line);
+    if (message.method === 'initialize') {
+      reply({ id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+    } else if (message.method === 'session/new') {
+      if (leaked) {
+        reply({ id: message.id, error: { code: -32000, message: 'Authentication required' } });
+      } else {
+        reply({ id: message.id, result: { sessionId: 'probe-session' } });
+      }
+    } else if (message.method === 'session/prompt') {
+      reply({ id: message.id, result: { stopReason: 'end_turn' } });
+    }
+  }
+});
+function reply(payload) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...payload }) + '\\n');
+}
+`,
+      { encoding: 'utf-8', mode: 0o755 },
+    );
+
+    const previous = {
+      KIMI_MODEL_NAME: process.env.KIMI_MODEL_NAME,
+      KIMI_MODEL_API_KEY: process.env.KIMI_MODEL_API_KEY,
+    };
+    process.env.KIMI_MODEL_NAME = 'kimi-probe-model';
+    process.env.KIMI_MODEL_API_KEY = 'sk-probe-overlay';
+    try {
+      await expect(
+        probeKimiCredential(
+          { source: 'explicit', sourceHome: home, cliCommand: stub, missing: [] },
+          10_000,
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('does not downgrade a non-authentication failure to a skip', async () => {
     const root = makeTemporaryRoot();
     const home = createKimiHome(join(root, 'home'));

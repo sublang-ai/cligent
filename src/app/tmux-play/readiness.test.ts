@@ -138,7 +138,7 @@ describe('adapterRepairCommands', () => {
   it('pins the Kimi CLI target and names its login step', () => {
     expect(adapterRepairCommands('kimi', GLOBAL)).toEqual([
       'npm install -g @moonshot-ai/kimi-code@0.31.1',
-      'kimi login',
+      'kimi login  # or configure a default model',
     ]);
   });
 

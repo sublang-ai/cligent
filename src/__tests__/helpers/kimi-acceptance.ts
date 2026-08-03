@@ -254,9 +254,19 @@ export async function probeKimiCredential(
   }
 
   const probeCwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-probe-'));
+  // The probe answers one question: is the OAuth fixture still usable? The
+  // CLI's gate is satisfied by other routes too, and a KIMI_MODEL_* overlay
+  // inherited from the environment would answer "yes" on a spent token — after
+  // which the live legs, which scrub those same keys, fail instead of
+  // self-skipping. Probe under the environment the legs actually run in.
+  const probeEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    KIMI_CODE_HOME: context.sourceHome,
+  };
+  for (const key of KIMI_MODEL_ENV_KEYS) delete probeEnv[key];
   const child = spawn(context.cliCommand, ['acp'], {
     cwd: probeCwd,
-    env: { ...process.env, KIMI_CODE_HOME: context.sourceHome },
+    env: probeEnv,
     shell: false,
     stdio: 'pipe',
   });

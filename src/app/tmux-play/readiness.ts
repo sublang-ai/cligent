@@ -77,7 +77,10 @@ const ADAPTER_RUNTIME_REQUIREMENTS: Readonly<
   kimi: {
     peers: [],
     clis: ['@moonshot-ai/kimi-code@0.31.1'],
-    steps: ['kimi login'],
+    // One of Kimi's three ACP auth routes, and the only one expressible as a
+    // command; a configured default model or the KIMI_MODEL_* overlay also
+    // satisfies the gate, so this reads as the simplest path, not the sole one.
+    steps: ['kimi login  # or configure a default model'],
   },
   opencode: { peers: ['@opencode-ai/sdk'], clis: ['opencode-ai'], steps: [] },
 });

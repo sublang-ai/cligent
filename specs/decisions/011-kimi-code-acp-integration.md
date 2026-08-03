@@ -48,8 +48,8 @@ Kimi's ACP configuration surface exposes thinking as the provider-native binary 
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-Kimi Code `0.31.1` gates ACP session creation on either the OAuth credential written by `kimi login` or a configured default model whose alias resolves to a provider holding non-OAuth credentials [[5]][[6]][[14]].
-An API key supplied only through the environment satisfies neither route, because it configures no default model alias.
+Kimi Code `0.31.1` gates ACP session creation on any of three routes: the OAuth credential written by `kimi login`; a configured default model whose alias resolves to a provider holding non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[5]][[6]][[14]].
+A bare provider key such as `MOONSHOT_API_KEY` or `KIMI_API_KEY` satisfies none of them, because it establishes no default model alias.
 ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
 ## Consequences

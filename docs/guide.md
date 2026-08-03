@@ -46,8 +46,10 @@ simplest way to satisfy the exact 0.31 ACP target's session gate. That gate
 also accepts a [provider
 configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
 that names a `defaultModel` whose alias resolves to a provider holding
-non-OAuth credentials; an API key exported into the environment alone does
-not, because it configures no default model alias.
+non-OAuth credentials, and the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY`
+environment overlay, which synthesizes that default model for the running
+process only. A bare `MOONSHOT_API_KEY` satisfies none of them, because it
+names no default model.
 The adapter inherits the CLI's configuration and credentials; Cligent neither
 stores credentials nor launches login for you.
 
