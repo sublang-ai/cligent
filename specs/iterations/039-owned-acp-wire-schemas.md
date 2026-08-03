@@ -51,6 +51,12 @@ checks green at its boundary.
   response carrying neither result nor error, an unrecognized prompt stop
   reason — still produces the actionable malformed-traffic error rather than
   being silently repaired.
+- Every field the adapter reads off a message is covered by the owned
+  schemas, because the protocol SDK parses the same traffic behind them and
+  since `1.3.0` salvages what it cannot read: a consumed field left
+  unvalidated is dropped there instead of rejected here, and the turn ends
+  reporting success. A text chunk missing its text, and a tool call carrying
+  a status or title of the wrong type, are each rejected at the wire.
 - An agent may add unknown fields, and unknown `session/update` cases, without
   the adapter reporting valid traffic as malformed.
 - `kimi acp` from CLI `0.31.1` initializes against SDK `1.3.0`, and the

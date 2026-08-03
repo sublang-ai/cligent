@@ -104,11 +104,29 @@ export const zAcpPromptResponse = z.object({
   usage: zAcpUsage.nullish(),
 });
 
-/** Content the adapter renders as assistant text. */
-const zAcpContentChunk = z.looseObject({
-  type: z.string(),
-  text: z.string().optional(),
-});
+/**
+ * Content the adapter renders as assistant text. A `text` chunk must carry
+ * its text: the adapter concatenates that field, so a chunk that omits it is
+ * malformed rather than empty. Other content types are read only for their
+ * discriminant.
+ */
+const zAcpContentChunk = z.union([
+  z.looseObject({ type: z.literal('text'), text: z.string() }),
+  z.looseObject({ type: z.string() }).refine((c) => c.type !== 'text', {
+    message: 'a text content chunk must carry its text',
+  }),
+]);
+
+/**
+ * Tool-call content and status as the adapter stores them. Both feed the
+ * emitted `tool_result`, so both are validated where present.
+ */
+const zAcpToolCallStatus = z.enum([
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+]);
 
 /** Update cases the adapter reads fields off, so it validates their shape. */
 const CHUNK_UPDATES = [
@@ -133,6 +151,14 @@ const zAcpSessionUpdate = z.union([
   z.looseObject({
     sessionUpdate: z.literal(TOOL_UPDATES),
     toolCallId: z.string(),
+    // Every field below is read into the tool state that produces the
+    // emitted tool_use / tool_result, so each is validated where present.
+    // `rawInput` and `rawOutput` are opaque payloads the adapter forwards
+    // without interpreting, so they carry no shape requirement.
+    title: z.string().nullish(),
+    kind: z.string().nullish(),
+    status: zAcpToolCallStatus.nullish(),
+    content: z.array(z.looseObject({ type: z.string() })).nullish(),
   }),
   z
     .looseObject({ sessionUpdate: z.string() })

@@ -1006,6 +1006,79 @@ describe('KimiAdapter', () => {
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });
 
+  // IR-039 / KIMI-006: the owned pre-filter is the only layer that can raise
+  // malformed traffic. The SDK's own parser sits behind it and, since 1.3.0,
+  // salvages rather than rejects — a malformed update it drops would otherwise
+  // let the turn finish `success` with the defect invisible. These drive real
+  // wire bytes rather than the typed helper, because the typed helper cannot
+  // express the malformed shapes.
+  it.each([
+    [
+      'a text chunk missing its text',
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text' } },
+    ],
+    [
+      'a tool call with a non-protocol status',
+      { sessionUpdate: 'tool_call', toolCallId: 'tool-1', status: 'exploded' },
+    ],
+    [
+      'a tool call whose title is not a string',
+      { sessionUpdate: 'tool_call', toolCallId: 'tool-1', title: { a: 1 } },
+    ],
+  ])('rejects %s rather than letting the turn succeed', async (_case, update) => {
+    const fake = new FakeKimi({
+      prompt: async (_connection, request, state) => {
+        state.children[0]?.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: { sessionId: request.sessionId, update },
+          })}\n`,
+        );
+        return new Promise<PromptResponse>(() => {});
+      },
+    });
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Hello'),
+    );
+
+    expect(eventOf(events, 'error').payload).toMatchObject({
+      message: expect.stringContaining(
+        'Malformed Kimi ACP traffic: invalid session/update parameters',
+      ),
+      recoverable: false,
+    });
+    expect(eventOf(events, 'done').payload.status).toBe('error');
+  });
+
+  // The other half of the same contract: protocol growth is not malformed.
+  it('ignores an unknown session update case and completes the turn', async () => {
+    const fake = new FakeKimi({
+      prompt: async (_connection, request, state) => {
+        state.children[0]?.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              sessionId: request.sessionId,
+              update: {
+                sessionUpdate: 'a_case_from_a_later_protocol',
+                payload: { anything: true },
+              },
+            },
+          })}\n`,
+        );
+        return { stopReason: 'end_turn' } as PromptResponse;
+      },
+    });
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Hello'),
+    );
+
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload.status).toBe('success');
+  });
+
   it('rejects malformed session update parameters', async () => {
     const fake = new FakeKimi({
       prompt: async (_connection, _request, state) => {
