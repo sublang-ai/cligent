@@ -16,7 +16,7 @@ describe('OpenCode CLI contract (TADAPT-028)', () => {
       throw new Error('Missing OpenCode CLI required by acceptance CI');
     }
 
-    expect(version.trim()).toBe('1.17.18');
+    expect(version.trim()).toBe('1.18.11');
     expect(help).toContain('--hostname');
     expect(help).toContain('--port');
   });

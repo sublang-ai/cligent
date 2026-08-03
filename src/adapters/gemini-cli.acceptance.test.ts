@@ -15,7 +15,11 @@ describe('Gemini CLI 0.50 argument contract (TADAPT-025)', () => {
   acceptanceIt(
     'parses joined headless and session values without credentials',
     () => {
-      expect(commandOutput(['--version']).trim()).toBe('0.50.0');
+      // `0.50` names the argument and Policy Engine contract generation this
+      // adapter targets (IR-030), not the pinned patch release. The literal
+      // is the exact CI conformance target, so a CLI bump that leaves the
+      // contract intact still has to move this pin deliberately.
+      expect(commandOutput(['--version']).trim()).toBe('0.53.1');
 
       const home = mkdtempSync(join(tmpdir(), 'cligent-gemini-parser-'));
       try {
