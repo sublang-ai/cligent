@@ -1033,6 +1033,21 @@ describe('KimiAdapter', () => {
         content: [{ type: 'content', content: { type: 'text' } }],
       },
     ],
+    [
+      'a plan entry with an unrecognized status',
+      {
+        sessionUpdate: 'plan',
+        entries: [{ content: 'step', priority: 'high', status: 'invented' }],
+      },
+    ],
+    [
+      'a plan update with no plan content',
+      { sessionUpdate: 'plan_update' },
+    ],
+    [
+      'a plan removal with no plan id',
+      { sessionUpdate: 'plan_removed' },
+    ],
   ])('rejects %s rather than letting the turn succeed', async (_case, update) => {
     const fake = new FakeKimi({
       prompt: async (_connection, request, state) => {
@@ -1055,6 +1070,55 @@ describe('KimiAdapter', () => {
         'Malformed Kimi ACP traffic: invalid session/update parameters',
       ),
       recoverable: false,
+    });
+    expect(eventOf(events, 'done').payload.status).toBe('error');
+  });
+
+  // Results are validated on the raw wire, not on what the SDK hands back:
+  // SDK 1.3 salvages a malformed `configOptions` into an empty array, so a
+  // check applied after its parse would never see the offending value.
+  it('rejects a malformed response result before the SDK can salvage it', async () => {
+    const child = new FakeChild();
+    let seenId: number | undefined;
+    child.stdin.on('data', (buf: Buffer) => {
+      for (const line of buf.toString().split('\n')) {
+        const text = line.trim();
+        if (!text) continue;
+        const message = JSON.parse(text) as { id?: number; method?: string };
+        if (message.method === 'initialize') {
+          child.stdout.write(
+            `${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } })}\n`,
+          );
+        } else if (message.method === 'session/new') {
+          seenId = message.id;
+          // A `select` option without `currentValue`: the adapter reads that
+          // field, and the SDK would drop the whole option rather than reject.
+          child.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              id: seenId,
+              result: {
+                sessionId: 'sess-1',
+                configOptions: [{ id: 'model', type: 'select', name: 'Model', options: [] }],
+              },
+            })}\n`,
+          );
+        }
+      }
+    });
+    const events = await collect(
+      new KimiAdapter({
+        spawnProcess: () =>
+          child as unknown as ReturnType<
+            typeof import('node:child_process').spawn
+          >,
+      }).run('Hello'),
+    );
+
+    expect(eventOf(events, 'error').payload).toMatchObject({
+      message: expect.stringContaining(
+        'Malformed Kimi ACP traffic: invalid session/new response result',
+      ),
     });
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });

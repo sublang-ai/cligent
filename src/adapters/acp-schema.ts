@@ -153,6 +153,37 @@ const zAcpToolCallContent = z.union([
   }),
 ]);
 
+/**
+ * Plan payloads. The adapter reads no field off these — it forwards the whole
+ * update as a `kimi:plan` event — which makes the entire payload consumed,
+ * not exempt: a consumer receives whatever arrives here, and the SDK behind
+ * the filter would rewrite an invalid plan into empty entries or drop the
+ * update outright rather than reject it.
+ */
+const zAcpPlanEntry = z.looseObject({
+  content: z.string(),
+  priority: z.enum(['high', 'medium', 'low']),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+});
+
+const zAcpPlanUpdateContent = z.union([
+  z.looseObject({
+    type: z.literal('items'),
+    planId: z.string(),
+    entries: z.array(zAcpPlanEntry),
+  }),
+  z.looseObject({
+    type: z.literal('file'),
+    planId: z.string(),
+    uri: z.string(),
+  }),
+  z.looseObject({
+    type: z.literal('markdown'),
+    planId: z.string(),
+    content: z.string(),
+  }),
+]);
+
 /** Update cases the adapter reads fields off, so it validates their shape. */
 const CHUNK_UPDATES = [
   'agent_message_chunk',
@@ -160,10 +191,8 @@ const CHUNK_UPDATES = [
   'user_message_chunk',
 ] as const;
 const TOOL_UPDATES = ['tool_call', 'tool_call_update'] as const;
-/** Cases the adapter forwards whole, so only their discriminant is checked. */
+/** Cases the adapter forwards whole, so the whole payload is validated. */
 const PLAN_UPDATES = ['plan', 'plan_update', 'plan_removed'] as const;
-const HANDLED_UPDATES = new Set<string>([...CHUNK_UPDATES, ...TOOL_UPDATES]);
-
 /**
  * Every case this adapter acts on. A `session/update` naming anything else is
  * one the adapter would ignore, and the pinned SDK rejects it against its own
@@ -199,10 +228,22 @@ const zAcpSessionUpdate = z.union([
     status: zAcpToolCallStatus.nullish(),
     content: z.array(zAcpToolCallContent).nullish(),
   }),
+  z.looseObject({
+    sessionUpdate: z.literal('plan'),
+    entries: z.array(zAcpPlanEntry),
+  }),
+  z.looseObject({
+    sessionUpdate: z.literal('plan_update'),
+    plan: zAcpPlanUpdateContent,
+  }),
+  z.looseObject({
+    sessionUpdate: z.literal('plan_removed'),
+    planId: z.string(),
+  }),
   z
     .looseObject({ sessionUpdate: z.string() })
-    .refine((update) => !HANDLED_UPDATES.has(update.sessionUpdate), {
-      message: 'handled session update is missing its required fields',
+    .refine((update) => !ACTED_ON_UPDATES.has(update.sessionUpdate), {
+      message: 'a session update the adapter acts on is missing its fields',
     }),
 ]);
 

@@ -58,8 +58,12 @@ checks green at its boundary.
   reporting success. A text chunk missing its text, a tool call carrying a
   status or title of the wrong type, nested tool content missing its own text,
   a permission request without its tool call or with an option missing a name
-  or carrying an unrecognized kind, and a `select` configuration option
-  missing its current value are each rejected at the wire.
+  or carrying an unrecognized kind, a plan whose entry carries an
+  unrecognized status or whose update names no plan, and a `select`
+  configuration option missing its current value are each rejected.
+  A payload the adapter forwards whole, such as a plan, is consumed in its
+  entirety and validated in its entirety, because a consumer receives whatever
+  arrives.
 - An agent may add unknown fields, and unknown `session/update` cases, without
   the adapter reporting valid traffic as malformed. A case the adapter acts on
   none of reaches neither the adapter nor the protocol SDK, whose closed union
