@@ -26,6 +26,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import type { AcpSessionConfigOption, AcpUsage } from './acp-schema.js';
 import {
+  ACTED_ON_UPDATES,
   zAcpError as zError,
   zAcpInitializeResponse as zInitializeResponse,
   zAcpNewSessionResponse as zNewSessionResponse,
@@ -270,10 +271,18 @@ function parseAcpResult<Result>(
   }
 }
 
+/**
+ * Validates one inbound message and reports whether it should reach the SDK.
+ *
+ * A `session/update` naming a case this adapter does not act on is dropped:
+ * the adapter would ignore it, while the pinned SDK rejects it against its
+ * own closed union and logs an error, so forwarding it produces noise and no
+ * behavior. Dropping makes "an unhandled case is ignored" true end to end.
+ */
 function validateInboundAcpMessage(
   value: unknown,
   pendingRequestIds: Set<string>,
-): void {
+): boolean {
   const message = asRecord(value);
   if (!message || message.jsonrpc !== '2.0') {
     throw malformedAcpTraffic('expected a JSON-RPC 2.0 object');
@@ -302,7 +311,10 @@ function validateInboundAcpMessage(
         if (hasId) {
           throw malformedAcpTraffic('session/update must be a notification');
         }
-        zSessionNotification.parse(message.params);
+        const notification = zSessionNotification.parse(message.params);
+        if (!ACTED_ON_UPDATES.has(notification.update.sessionUpdate)) {
+          return false;
+        }
       } else if (message.method === 'session/request_permission') {
         if (!hasId) {
           throw malformedAcpTraffic(
@@ -317,7 +329,7 @@ function validateInboundAcpMessage(
       }
       throw malformedAcpTraffic(`invalid ${message.method} parameters`);
     }
-    return;
+    return true;
   }
 
   if (!hasId || hasResult === hasError) {
@@ -337,6 +349,7 @@ function validateInboundAcpMessage(
     }
   }
   pendingRequestIds.delete(idKey);
+  return true;
 }
 
 function trackOutboundAcpRequest(
@@ -422,7 +435,7 @@ function strictAcpStream(
         } catch {
           throw malformedAcpTraffic('invalid JSON');
         }
-        validateInboundAcpMessage(message, pendingRequestIds);
+        if (!validateInboundAcpMessage(message, pendingRequestIds)) return;
         controller.enqueue(encoder.encode(`${trimmed}\n`));
       };
 
@@ -512,7 +525,11 @@ function selectedConfigValue(
   id: string,
 ): string | undefined {
   const option = options?.find((candidate) => candidate.id === id);
-  return option?.type === 'select' ? option.currentValue : undefined;
+  if (option?.type !== 'select') return undefined;
+  // The schema requires a string here for a select, so this narrowing only
+  // restates that guarantee for the loose non-select arm of the union.
+  const { currentValue } = option as { currentValue?: unknown };
+  return typeof currentValue === 'string' ? currentValue : undefined;
 }
 
 function mapUsage(

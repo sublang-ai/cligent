@@ -41,11 +41,20 @@ export const zAcpInitializeResponse = z.object({
  * `select` options (model and thinking control); other option types are
  * carried through untouched, so they need only their discriminant.
  */
-export const zAcpSessionConfigOption = z.looseObject({
-  id: z.string(),
-  type: z.string(),
-  currentValue: z.string().optional(),
-});
+export const zAcpSessionConfigOption = z.union([
+  // The adapter reads a select's current value to report the effective
+  // model, so a select that omits it is malformed rather than unset.
+  z.looseObject({
+    id: z.string(),
+    type: z.literal('select'),
+    currentValue: z.string(),
+  }),
+  z
+    .looseObject({ id: z.string(), type: z.string() })
+    .refine((option) => option.type !== 'select', {
+      message: 'a select config option must carry its currentValue',
+    }),
+]);
 
 /**
  * A session configuration option as this adapter reads it — deliberately
@@ -128,6 +137,22 @@ const zAcpToolCallStatus = z.enum([
   'failed',
 ]);
 
+/**
+ * One item of a tool call's content. The adapter walks `content` items and
+ * concatenates the text of every `content`-typed entry into the tool result,
+ * so those entries are validated to the depth it reads; other item types
+ * (diffs, terminals) are carried without inspection.
+ */
+const zAcpToolCallContent = z.union([
+  z.looseObject({
+    type: z.literal('content'),
+    content: zAcpContentChunk,
+  }),
+  z.looseObject({ type: z.string() }).refine((item) => item.type !== 'content', {
+    message: 'a content tool-call item must carry its content',
+  }),
+]);
+
 /** Update cases the adapter reads fields off, so it validates their shape. */
 const CHUNK_UPDATES = [
   'agent_message_chunk',
@@ -135,7 +160,21 @@ const CHUNK_UPDATES = [
   'user_message_chunk',
 ] as const;
 const TOOL_UPDATES = ['tool_call', 'tool_call_update'] as const;
+/** Cases the adapter forwards whole, so only their discriminant is checked. */
+const PLAN_UPDATES = ['plan', 'plan_update', 'plan_removed'] as const;
 const HANDLED_UPDATES = new Set<string>([...CHUNK_UPDATES, ...TOOL_UPDATES]);
+
+/**
+ * Every case this adapter acts on. A `session/update` naming anything else is
+ * one the adapter would ignore, and the pinned SDK rejects it against its own
+ * closed union, so the stream filter drops it rather than forwarding traffic
+ * whose only effect would be an SDK error log.
+ */
+export const ACTED_ON_UPDATES = new Set<string>([
+  ...CHUNK_UPDATES,
+  ...TOOL_UPDATES,
+  ...PLAN_UPDATES,
+]);
 
 /**
  * A `session/update` payload. The cases the adapter reads must carry the
@@ -158,7 +197,7 @@ const zAcpSessionUpdate = z.union([
     title: z.string().nullish(),
     kind: z.string().nullish(),
     status: zAcpToolCallStatus.nullish(),
-    content: z.array(z.looseObject({ type: z.string() })).nullish(),
+    content: z.array(zAcpToolCallContent).nullish(),
   }),
   z
     .looseObject({ sessionUpdate: z.string() })
@@ -173,13 +212,29 @@ export const zAcpSessionNotification = z.object({
   update: zAcpSessionUpdate,
 });
 
-/** `session/request_permission` request parameters. */
+/**
+ * `session/request_permission` request parameters. The adapter reports the
+ * requesting tool and picks a rejection option by kind, id, and name, so all
+ * three are required: a missing `name` would fault the selection, and an
+ * unrecognized `kind` would silently fail to match any rejection.
+ */
 export const zAcpRequestPermissionRequest = z.looseObject({
   sessionId: z.string(),
+  toolCall: z.looseObject({
+    toolCallId: z.string(),
+    title: z.string().nullish(),
+    kind: z.string().nullish(),
+  }),
   options: z.array(
     z.looseObject({
       optionId: z.string(),
-      kind: z.string(),
+      name: z.string(),
+      kind: z.enum([
+        'allow_once',
+        'allow_always',
+        'reject_once',
+        'reject_always',
+      ]),
     }),
   ),
 });

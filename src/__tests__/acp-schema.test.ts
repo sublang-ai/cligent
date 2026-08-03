@@ -86,6 +86,13 @@ describe('owned ACP wire schemas (KIMI-006)', () => {
     // passes through untouched.
     expect(parsed.configOptions?.[1]?.currentValue).toBe('high');
     expect(zAcpResumeSessionResponse.parse({}).configOptions).toBeUndefined();
+    // A select without its current value is malformed: the adapter reads that
+    // field to report the effective model.
+    expect(() =>
+      zAcpSetSessionConfigOptionResponse.parse({
+        configOptions: [{ id: 'model', type: 'select', options: [] }],
+      }),
+    ).toThrow();
   });
 
   it('rejects session/update parameters that name no update', () => {
@@ -131,13 +138,30 @@ describe('owned ACP wire schemas (KIMI-006)', () => {
   });
 
   it('validates permission requests and JSON-RPC errors', () => {
+    const validPermission = {
+      sessionId: 's',
+      toolCall: { toolCallId: 'tc-1', title: 'Read', kind: 'read' },
+      options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }],
+    };
+    expect(zAcpRequestPermissionRequest.parse(validPermission).options).toHaveLength(1);
+    // The adapter reports the requesting tool and selects a rejection option
+    // by kind, id, and name, so each of those is required.
     expect(() => zAcpRequestPermissionRequest.parse({ sessionId: 's' })).toThrow();
-    expect(
+    expect(() =>
+      zAcpRequestPermissionRequest.parse({ ...validPermission, toolCall: undefined }),
+    ).toThrow();
+    expect(() =>
       zAcpRequestPermissionRequest.parse({
-        sessionId: 's',
+        ...validPermission,
         options: [{ optionId: 'allow', kind: 'allow_once' }],
-      }).options,
-    ).toHaveLength(1);
+      }),
+    ).toThrow();
+    expect(() =>
+      zAcpRequestPermissionRequest.parse({
+        ...validPermission,
+        options: [{ optionId: 'allow', name: 'Allow', kind: 'not_a_kind' }],
+      }),
+    ).toThrow();
     expect(() => zAcpError.parse({ message: 'no code' })).toThrow();
     expect(zAcpError.parse({ code: -32000, message: 'Authentication required' })).toMatchObject({
       code: -32000,

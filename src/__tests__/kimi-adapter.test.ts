@@ -1025,6 +1025,14 @@ describe('KimiAdapter', () => {
       'a tool call whose title is not a string',
       { sessionUpdate: 'tool_call', toolCallId: 'tool-1', title: { a: 1 } },
     ],
+    [
+      'nested tool content whose text is missing',
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-1',
+        content: [{ type: 'content', content: { type: 'text' } }],
+      },
+    ],
   ])('rejects %s rather than letting the turn succeed', async (_case, update) => {
     const fake = new FakeKimi({
       prompt: async (_connection, request, state) => {
@@ -1053,6 +1061,12 @@ describe('KimiAdapter', () => {
 
   // The other half of the same contract: protocol growth is not malformed.
   it('ignores an unknown session update case and completes the turn', async () => {
+    const consoleErrors: string[] = [];
+    const consoleSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        consoleErrors.push(args.map((a) => String(a)).join(' '));
+      });
     const fake = new FakeKimi({
       prompt: async (_connection, request, state) => {
         state.children[0]?.stdout.write(
@@ -1077,6 +1091,11 @@ describe('KimiAdapter', () => {
 
     expect(events.some((event) => event.type === 'error')).toBe(false);
     expect(eventOf(events, 'done').payload.status).toBe('success');
+    // Ignored must mean ignored: the pinned SDK rejects any case outside its
+    // own closed union, so forwarding one would log an Invalid params error
+    // even though the turn succeeds. The filter drops it before that.
+    expect(consoleErrors.join('\n')).not.toMatch(/Invalid params|-32602/);
+    consoleSpy.mockRestore();
   });
 
   it('rejects malformed session update parameters', async () => {

@@ -55,10 +55,15 @@ checks green at its boundary.
   schemas, because the protocol SDK parses the same traffic behind them and
   since `1.3.0` salvages what it cannot read: a consumed field left
   unvalidated is dropped there instead of rejected here, and the turn ends
-  reporting success. A text chunk missing its text, and a tool call carrying
-  a status or title of the wrong type, are each rejected at the wire.
+  reporting success. A text chunk missing its text, a tool call carrying a
+  status or title of the wrong type, nested tool content missing its own text,
+  a permission request without its tool call or with an option missing a name
+  or carrying an unrecognized kind, and a `select` configuration option
+  missing its current value are each rejected at the wire.
 - An agent may add unknown fields, and unknown `session/update` cases, without
-  the adapter reporting valid traffic as malformed.
+  the adapter reporting valid traffic as malformed. A case the adapter acts on
+  none of reaches neither the adapter nor the protocol SDK, whose closed union
+  would reject it and log an error for traffic that changes nothing.
 - `kimi acp` from CLI `0.31.1` initializes against SDK `1.3.0`, and the
   binary `off | on` thinking control still resolves through the CLI's
   per-model default effort.
