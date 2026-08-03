@@ -41,12 +41,13 @@ kimi --version
 kimi login
 ```
 
-`kimi login` performs the one-time Kimi Code OAuth flow required by the exact
-0.31 ACP target. Kimi's [provider
+`kimi login` performs the one-time Kimi Code OAuth flow, which is the
+simplest way to satisfy the exact 0.31 ACP target's session gate. That gate
+also accepts a [provider
 configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
-can select a Kimi or third-party model after login, but an API-key provider
-alone does not satisfy the [0.31 ACP session
-gate](https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116).
+that names a `defaultModel` whose alias resolves to a provider holding
+non-OAuth credentials; an API key exported into the environment alone does
+not, because it configures no default model alias.
 The adapter inherits the CLI's configuration and credentials; Cligent neither
 stores credentials nor launches login for you.
 

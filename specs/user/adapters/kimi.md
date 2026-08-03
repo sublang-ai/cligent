@@ -61,7 +61,8 @@ Kimi Code's ACP 0.23 surface exposes no stable per-turn usage totals, so absent 
 
 ACP stop reason `end_turn` shall map to `done.status: 'success'`; `cancelled` shall map to `'interrupted'`; `max_tokens` and `max_turn_requests` shall map to `'max_turns'`; and `refusal` shall emit a non-recoverable error followed by `done.status: 'error'`.
 Structured JSON-RPC errors, malformed protocol traffic, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
-Kimi Code `0.31.1` ACP session creation requires the OAuth credential written by `kimi login`; a configured API-key provider does not independently satisfy that ACP authentication gate [[8]].
+Kimi Code `0.31.1` gates ACP session creation on either the OAuth credential written by `kimi login` or a configured default model whose alias resolves to a provider holding non-OAuth credentials [[8]].
+The second route is specific: the configuration must name a `defaultModel`, that name must resolve to a declared alias, and that alias's provider must carry usable non-OAuth credentials; a provider configured without a resolvable default model does not satisfy the gate.
 Authentication guidance shall name `kimi login`; the adapter shall never launch login itself.
 
 ## Permission Mapping

@@ -48,7 +48,8 @@ Kimi's ACP configuration surface exposes thinking as the provider-native binary 
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-Kimi Code `0.31.1` gates ACP session creation on the OAuth credential written by `kimi login`; an API-key provider configuration can select a model after login but does not independently satisfy this ACP gate [[5]][[6]][[14]].
+Kimi Code `0.31.1` gates ACP session creation on either the OAuth credential written by `kimi login` or a configured default model whose alias resolves to a provider holding non-OAuth credentials [[5]][[6]][[14]].
+An API key supplied only through the environment satisfies neither route, because it configures no default model alias.
 ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
 ## Consequences
@@ -69,7 +70,8 @@ Local live acceptance shall resolve an authenticated source home from `CLIGENT_K
 CI live acceptance shall require the explicit dedicated-home override containing `config.toml` and `credentials/kimi-code.json`, and shall fail when that fixture or the authenticated CLI is absent, matching the other coding-agent credential gates.
 
 An absent fixture and a spent credential are distinct conditions and shall be gated differently.
-Kimi Code `0.31.1` admits no non-interactive credential: the ACP gate accepts only the managed OAuth token, because `harnessIsAuthed` reduces to whether the managed provider holds a stored token, and `KIMI_API_KEY` configures a model provider without ever reaching that gate [[15]][[16]].
+The OAuth route admits no non-interactive credential: `harnessIsAuthed` is satisfied for it only by a stored managed-provider token, and `KIMI_API_KEY` configures a model provider without ever establishing one [[15]][[16]].
+The acceptance harness takes that route, so its fixture is an OAuth credential and the gating below concerns that credential's lifetime.
 Its refresh response is required to carry a replacement `refresh_token`, which the CLI persists into whichever home performed the refresh; a refusal writes a revoked tombstone into that home instead, and the tombstone then fails every later leg sharing that home [[17]].
 A credential restored from an immutable store is therefore single-use whenever a run refreshes it: the replacement is discarded with the temporary home, leaving the stored token spent.
 Refresh is lazy — it fires only once the token is within `max(300s, expires_in / 2)` of expiry — so a run early in a credential's life can pass without exercising the network auth path at all, and its success is not evidence that the credential still works.
