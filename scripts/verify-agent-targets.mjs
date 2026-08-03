@@ -15,9 +15,9 @@ import {
 } from '@agentclientprotocol/sdk';
 
 export const EXPECTED_SDK_VERSIONS = Object.freeze({
-  '@anthropic-ai/claude-agent-sdk': '0.3.207',
-  '@openai/codex-sdk': '0.144.5',
-  '@opencode-ai/sdk': '1.17.18',
+  '@anthropic-ai/claude-agent-sdk': '0.3.220',
+  '@openai/codex-sdk': '0.146.0',
+  '@opencode-ai/sdk': '1.18.11',
 });
 
 export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
@@ -25,14 +25,14 @@ export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
 });
 
 export const EXPECTED_CLI_VERSIONS = Object.freeze({
-  gemini: '0.50.0',
+  gemini: '0.53.1',
   kimi: '0.27.0',
-  opencode: '1.17.18',
+  opencode: '1.18.11',
 });
 
 export const EXPECTED_BUNDLED_AGENT_VERSIONS = Object.freeze({
-  claudeCode: '2.1.207',
-  codex: '0.144.5',
+  claudeCode: '2.1.220',
+  codex: '0.146.0',
 });
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');

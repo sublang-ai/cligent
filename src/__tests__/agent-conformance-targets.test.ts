@@ -57,7 +57,7 @@ describe('agent SDK and CLI conformance targets', () => {
 
     expect(installIndex).toBeGreaterThanOrEqual(0);
     expect(steps[installIndex]?.run).toBe(
-      'npm install -g @google/gemini-cli@0.50.0 @moonshot-ai/kimi-code@0.27.0 opencode-ai@1.17.18',
+      'npm install -g @google/gemini-cli@0.53.1 @moonshot-ai/kimi-code@0.27.0 opencode-ai@1.18.11',
     );
     expect(verifyIndex).toBeGreaterThan(installIndex);
     expect(steps[verifyIndex]?.run).toBe(
@@ -82,7 +82,7 @@ describe('agent SDK and CLI conformance targets', () => {
 
     expect(installIndex).toBeGreaterThanOrEqual(0);
     expect(steps[installIndex]?.run).toBe(
-      'npm install -g @google/gemini-cli@0.50.0 @moonshot-ai/kimi-code@0.27.0 opencode-ai@1.17.18',
+      'npm install -g @google/gemini-cli@0.53.1 @moonshot-ai/kimi-code@0.27.0 opencode-ai@1.18.11',
     );
     expect(verifyIndex).toBeGreaterThan(installIndex);
     expect(steps[verifyIndex]?.run).toBe('npm run test:distributable');
