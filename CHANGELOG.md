@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `@sublang/cligent/runtime-targets` publishes the agent runtimes each adapter requires, with the lowest supported version, the exact version this release verifies, and the vendor executable a package selects where one decides behavior. Repository verification asserts every declared version equals the manifest's peer range and development pin, so the descriptor and the manifest cannot drift. A consumer inherits the compatibility policy by upgrading cligent and no longer carries its own agent-SDK version knowledge — DR-013, IR-040, PKG-016
+- A structured runtime-readiness verdict — `satisfied`, `missing`, `unsupported`, `untested`, or `unknown` — carrying the installed version, the required range, the resolved `node_modules` tree, and the repair commands. `isAvailable()` stays boolean and reports `false` for exactly `missing` and `unsupported`, so an existing caller keeps its contract while a caller that adopts the verdict can tell an absent runtime from an incompatible one — ENG-026, TENG-018
+
+### Changed
+
+- An adapter now refuses to load a peer SDK older than this release supports, inside the loader `isAvailable()` and `run()` share, so the readiness gate and the load it protects cannot disagree. Previously the gate tested only that the SDK imported: a seven-minor-stale Codex passed it and the defect surfaced mid-turn as the vendor's own message about a model, with no visible connection to a version. For Codex the version read is the bundled executable's, because that executable is what refuses a newer model. A version that cannot be read never blocks — vendored, bundled, and archived layouts are legitimate installations — and a version above the tested one is reported as untested rather than refused — DR-013, ENG-025, TMUX-089
+
 ## [0.17.0] - 2026-08-04
 
 ### Changed

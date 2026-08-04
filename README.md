@@ -28,6 +28,15 @@ npm install @opencode-ai/sdk                 # OpenCode
 # Kimi needs its CLI — see the separately pinned install below
 ```
 
+cligent owns which versions of those runtimes work, and refuses one it
+does not support with the version it found, the version it needs, and the
+command that repairs it. Declare them so a cligent upgrade can carry them
+forward: `npm install` writes a caret, and for a `0.MINOR.PATCH` package a
+caret pins the minor — `^0.139.0` never reaches `0.146.0`. Prefer an open
+`>=` specifier on npm, or re-run the install to move the pin deliberately.
+`@sublang/cligent/runtime-targets` publishes the supported and tested
+version of every runtime if you want to check them yourself.
+
 The Kimi adapter targets the maintained Kimi Code CLI through ACP. Install
 the exact conformance target. The external Kimi CLI itself requires Node.js
 22.19 or newer to install and run, then authenticate once:
