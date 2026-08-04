@@ -53,6 +53,10 @@ jobs:
 
       - run: npm ci
 
+      # The target verifier reads the shipped runtime descriptor from `dist`
+      # (PKG-016), so the emit has to exist before verification imports it.
+      - run: npm run build
+
       - name: Install exact agent CLIs
         run: npm install -g @google/gemini-cli@0.53.1 @moonshot-ai/kimi-code@0.31.1 opencode-ai@1.18.11
 
