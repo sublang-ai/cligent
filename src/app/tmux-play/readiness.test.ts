@@ -305,7 +305,7 @@ describe('assertConfiguredAdaptersReady', () => {
       (thrown: unknown) => thrown as Error,
     );
 
-    expect(error?.message).toContain('the codex adapter has no runtime installed');
+    expect(error?.message).toContain('the codex adapter has no usable runtime');
     expect(error?.message).toContain('codex (player "coder")');
     expect(error?.message).toContain(
       'npm install --global=false --location=project --prefix /srv/app @openai/codex-sdk',

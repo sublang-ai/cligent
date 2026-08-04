@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shellQuote } from '../shared/shell.js';
+import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
+import { isBelowFloor, readRuntimeVersion } from '../../runtime-version.js';
 import {
   DEFAULT_ADAPTER_IMPORTS,
   KNOWN_PLAYER_ADAPTERS,
@@ -235,6 +237,13 @@ export function cligentPackageRoot(
 
 export interface AdapterRoleUse {
   readonly adapter: PlayerAdapterName;
+  /**
+   * Why the adapter is unusable, when known. TMUX-089 requires a runtime
+   * installed below its supported version to be reported as such rather than
+   * as absent: the repair differs, and "not installed" sends a user looking
+   * for something that is already there.
+   */
+  readonly detail?: string;
   /** Human-readable roles that use the adapter, e.g. `captain`, `player "claude"`. */
   readonly roles: readonly string[];
 }
@@ -328,11 +337,14 @@ export function formatMissingRuntimes(
   const { missing, target, packageRoot, configPath } = options;
   const subject =
     missing.length === 1
-      ? `the ${missing[0]!.adapter} adapter has no runtime installed`
-      : `${missing.length} configured adapters have no runtime installed`;
+      ? `the ${missing[0]!.adapter} adapter has no usable runtime`
+      : `${missing.length} configured adapters have no usable runtime`;
   const lines = [`tmux-play cannot run this config — ${subject}.`, ''];
   for (const entry of missing) {
-    lines.push(`  ${entry.adapter} (${entry.roles.join(', ')})`);
+    lines.push(
+      `  ${entry.adapter} (${entry.roles.join(', ')})` +
+        (entry.detail ? ` — ${entry.detail}` : ''),
+    );
     for (const command of adapterRepairCommands(entry.adapter, target)) {
       lines.push(`    ${command}`);
     }
@@ -393,6 +405,25 @@ export function configuredAdapterRoles(
 }
 
 /**
+ * Why an adapter's runtime is unusable, when the reason is a version rather
+ * than an absence. Returns `undefined` when nothing is installed, so the
+ * caller's existing "not installed" wording stands.
+ */
+function unusableRuntimeDetail(
+  adapter: PlayerAdapterName,
+): string | undefined {
+  for (const target of AGENT_RUNTIME_TARGETS[adapter] ?? []) {
+    if (target.kind !== 'peer') continue;
+    const installed = readRuntimeVersion(target);
+    if (installed === undefined) continue;
+    if (isBelowFloor(installed, target)) {
+      return `${target.bundles ?? target.package} ${installed} is installed but this release requires >=${target.supportedFrom}`;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Fail before a session exists when a configured role's adapter runtime is
  * not installed, naming every missing runtime and its repair command.
  */
@@ -405,7 +436,14 @@ export async function assertConfiguredAdaptersReady(
     uses.map((use) => use.adapter),
     options,
   );
-  const missing = uses.filter((use) => ready.get(use.adapter) !== true);
+  const missing: AdapterRoleUse[] = uses
+    .filter((use) => ready.get(use.adapter) !== true)
+    .map((use) => {
+      // TMUX-089: an installed-but-unsupported runtime reports its versions,
+      // so the user is not sent looking for something already present.
+      const detail = unusableRuntimeDetail(use.adapter);
+      return detail ? { ...use, detail } : use;
+    });
   if (missing.length === 0) {
     return;
   }

@@ -64,3 +64,12 @@ export type {
   RuntimeKind,
   RuntimeTarget,
 } from './runtime-targets.js';
+export {
+  classifyRuntime,
+  describeRuntimeReadiness,
+  readRuntimeVersion,
+} from './runtime-version.js';
+export type {
+  RuntimeReadiness,
+  RuntimeReadinessState,
+} from './runtime-version.js';

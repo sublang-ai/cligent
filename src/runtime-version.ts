@@ -149,3 +149,72 @@ export function assertRuntimeSupported(
     throw unsupportedRuntimeError(target, installed, repair);
   }
 }
+
+/** The state of one runtime an adapter requires, per ENG-026. */
+export type RuntimeReadinessState =
+  | 'satisfied'
+  | 'missing'
+  | 'unsupported'
+  | 'untested'
+  | 'unknown';
+
+export interface RuntimeReadiness {
+  readonly state: RuntimeReadinessState;
+  readonly target: RuntimeTarget;
+  /** The version found, absent when missing or unreadable. */
+  readonly installed?: string;
+  /** The `node_modules` tree the runtime resolved from, when known. */
+  readonly resolvedFrom?: string;
+}
+
+/**
+ * Classifies one already-probed runtime.
+ *
+ * `available` is the adapter's own availability answer, so a caller cannot
+ * produce a verdict that disagrees with the load. The version is read here
+ * rather than inferred, which is what separates *installed but too old* from
+ * *absent* — a distinction a boolean cannot carry and consumers were
+ * previously forced to collapse into "not installed".
+ */
+export function classifyRuntime(
+  target: RuntimeTarget,
+  available: boolean,
+  installed: string | undefined = readRuntimeVersion(target),
+): RuntimeReadiness {
+  const resolvedFrom = resolvedTreeOf(target.package);
+  const base = { target, ...(resolvedFrom ? { resolvedFrom } : {}) };
+  if (installed === undefined) {
+    // An adapter that loads without a readable version is working; only an
+    // adapter that also fails to load is missing.
+    return available
+      ? { state: 'unknown', ...base }
+      : { state: 'missing', ...base };
+  }
+  if (isBelowFloor(installed, target)) {
+    return { state: 'unsupported', installed, ...base };
+  }
+  if (isAboveTested(installed, target)) {
+    return { state: 'untested', installed, ...base };
+  }
+  return available
+    ? { state: 'satisfied', installed, ...base }
+    : { state: 'missing', installed, ...base };
+}
+
+/** A one-line human summary of a verdict, for a caller that renders text. */
+export function describeRuntimeReadiness(readiness: RuntimeReadiness): string {
+  const { target, installed, state } = readiness;
+  const named = target.bundles ?? target.package;
+  switch (state) {
+    case 'satisfied':
+      return `${named} ${installed} is supported`;
+    case 'missing':
+      return `${named} is not installed (requires >=${target.supportedFrom})`;
+    case 'unsupported':
+      return `${named} ${installed} is too old (requires >=${target.supportedFrom}, tested at ${target.tested})`;
+    case 'untested':
+      return `${named} ${installed} is newer than this release tested (${target.tested})`;
+    case 'unknown':
+      return `${named} is installed at an unreadable version`;
+  }
+}
