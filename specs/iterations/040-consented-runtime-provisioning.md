@@ -1,14 +1,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
 
-# IR-040: Consented Runtime Provisioning
+# IR-040: Runtime Compatibility and Consented Provisioning
 
 ## Goal
 
-Let the readiness layer run the peer-SDK repair command it already renders,
-on an explicit consent from a user at a terminal, and export that surface so
-every cligent-based tool provisions through the same prefix-pinned install
-instead of reimplementing one.
+Make cligent the single authority for which agent-runtime versions work,
+per [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), and
+then let the readiness layer run the repair it renders on an explicit consent
+from a user at a terminal, per DR-014.
+Phase one ships the runtime descriptor, the load-time version gate, and the
+structured readiness verdict, so a consumer inherits the compatibility policy
+by upgrading cligent alone.
+Phase two provisions against the version phase one declares.
 Unattended, continuous-integration, declined, and unreachable-tree
 invocations keep today's printed remedy and exit code unchanged.
 
@@ -24,12 +28,31 @@ An adapter whose runtime is an external CLI found through `PATH` — `gemini`,
 `kimi`, and `opencode`'s CLI half — keeps its unpinned printed command
 unchanged, because the tree such a command lands in is the paste-time shell's
 own global prefix, which this process cannot witness and must not redirect.
-`@sublang/playbook` and `@sublang/slc` are sibling projects outside this
-repository; they are the consumers the exported surface exists for, and no
-item here depends on their contents.
+Phase one covers every runtime an adapter requires, including the external
+CLIs and the paired OpenCode SDK and CLI, because a version the adapter
+selects is a version cligent verifies; only the consented install of phase two
+is restricted to peer SDKs.
+`@sublang/playbook`, `@sublang/slc`, and `@sublang/spex` are sibling projects
+outside this repository; they are the consumers the exported surface exists
+for, and no item here depends on their contents.
 
 ## Deliverables
 
+- [x] A decision record states that cligent owns runtime compatibility: one
+      shipped descriptor per runtime declaring identity, tested version,
+      supported range, and repair; the supported range's upper bound enforced
+      at load and never published in `peerDependencies`; and a structured
+      verdict distinguishing missing from incompatible.
+- [ ] The descriptor ships through the exports map, and repository
+      verification asserts each declared version equals the manifest's peer
+      range and exact development pin, so the two cannot drift.
+- [ ] Every adapter reads its runtime's version through the resolution it
+      loads with, refuses a version below the floor with an error naming the
+      installed and required versions, the resolved tree, and the repair, and
+      loads unchanged when the version cannot be read.
+- [ ] The readiness verdict is structured and exported, so a consumer stops
+      translating a boolean into "not installed" for a runtime that is
+      installed but incompatible.
 - [ ] A decision record states that cligent may acquire an optional peer SDK
       only on an explicit affirmative response from a user attached to a
       terminal, running the exact argv it displayed into the tree it named,
@@ -71,8 +94,40 @@ item here depends on their contents.
 Each task is one commit and keeps build, typecheck, lint, unit, and smoke
 checks green at its boundary.
 
-1. [ ] **Record the consent decision and the tmux-play items.**
-       Record DR-013 and amend DR-012's Context premise, Decision opener,
+1. [x] **Record the compatibility decision and its canonical items.**
+       Record DR-013; amend PKG-009 for the no-upper-bound rule and the
+       conditions under which a floor moves, and PKG-012 for the
+       tested-versus-supported distinction; add PKG-016 for the shipped
+       descriptor; add ENG-025 for the load-time gate and ENG-026 for the
+       structured verdict; add TENG-018; amend TMUX-089 so an incompatible
+       runtime is reported distinctly from an absent one; add the DR-013 row
+       and refresh the PKG and ENG summaries in the spec map.
+2. [ ] **Ship the runtime descriptor.**
+       Add the descriptor module and its exports-map subpath; invert
+       ownership of the conformance literals so the repository verifier
+       imports them instead of declaring its own; add the assertion that each
+       descriptor version equals the manifest's peer range and development
+       pin; raise the peer floors the descriptor now declares.
+3. [ ] **Gate the runtime at load.**
+       Read each peer SDK's version through the resolution its loader already
+       uses — for Codex, through the anchor that selects the executable, so
+       the version checked is the version spawned — and each CLI's version
+       from the probe that already runs it and discards the output; refuse
+       below the floor with the named error; leave `isAvailable()` boolean and
+       unchanged in shape so it inherits the check.
+4. [ ] **Export the structured verdict.**
+       Add the readiness verdict, distinguishing satisfied, missing,
+       unsupported, untested, and unknown, carrying installed and required
+       versions, the resolved tree, and the repair commands; render it in the
+       launcher gate so a stale runtime reports its versions; export it for
+       consumers.
+5. [ ] **Document the compatibility contract.**
+       State in README and the guide which declaration form a consumer should
+       use so a cligent upgrade carries the runtime forward, replacing the
+       bare install commands that currently write a freezing caret into a
+       consumer manifest, and record the change in the unreleased changelog.
+6. [ ] **Record the consent decision and the tmux-play items.**
+       Record DR-014 and amend DR-012's Context premise, Decision opener,
        no-runtime bullet, and fatal-gate consequences, adding a
        superseded-in-part note; amend TMUX-010 and TMUX-089 so today's text
        becomes the no-consent branch, splitting the print-nothing-on-stdout
@@ -81,9 +136,9 @@ checks green at its boundary.
        through its TMUX-089 citation; add TMUX-090 for the offer and TMUX-091
        for the npm-exec cache tree; amend TTMUX-092 and TTMUX-093 with the
        same preconditions and add TTMUX-094 and TTMUX-095 as their
-       integration counterparts; add the DR-013 row to the spec map and
+       integration counterparts; add the DR-014 row to the spec map and
        refresh the DR-012 and TMUX summaries there.
-2. [ ] **Specify the install-placement contract.**
+7. [ ] **Specify the install-placement contract.**
        Amend PKG-015 to scope its prohibition to the distributable's own
        installation and to grant the consented install; add PKG-016 for the
        top-level-root placement outcome; amend TPKG-003 for the absent
@@ -91,34 +146,34 @@ checks green at its boundary.
        for the unattached-terminal contract its harness currently satisfies
        only by accident of piping; add TPKG-007; refresh the PKG summaries in
        the spec map.
-3. [ ] **Specify the exported provisioning surface.**
+8. [ ] **Specify the exported provisioning surface.**
        Amend PKG-014 and TPKG-002 for the documented surface the export lands
        on, state what a library caller may and may not do with the install
        capability PKG-015 grants the executable, add RELEASE-011 under the
        versioning section beside RELEASE-001, and refresh the RELEASE and
        PKG summaries in the spec map.
-4. [ ] **Classify npm exec cache trees.**
+9. [ ] **Classify npm exec cache trees.**
        Give `InstallTarget` an inhabitant for a tree created by `npm exec`,
        detected structurally from the resolved module path and the
        install-root manifest rather than from inherited npm environment
        variables, which a grandchild process inherits from an unrelated
        ancestor; print no install command and offer no install for it, and
        stop reporting it as a project install.
-5. [ ] **Execute every printed peer repair command.**
+10. [ ] **Execute every printed peer repair command.**
        Distributable verification asserts the Claude SDK repair command only
        as a substring while it executes the Codex one, so a peer command that
        renders correctly but installs elsewhere passes today; run each
        printed peer-SDK command as argv and assert its landing tree, leaving
        external-CLI commands asserted as rendered text because their target
        is the paste-time shell's own prefix.
-6. [ ] **Separate the provisioning surface from the tmux-play copy.**
+11. [ ] **Separate the provisioning surface from the tmux-play copy.**
        Split target resolution, command rendering, and the adapter probe from
        the tmux-play-worded formatters, moving the importers rather than
        re-exporting through the old module; decide where the adapter-name
        vocabulary the split half types against lives, and which side the
        combined probe-and-report helper lands on, so the exported surface is
        not named after the app it was extracted from.
-7. [ ] **Add the guarded provisioning core.**
+12. [ ] **Add the guarded provisioning core.**
        Add the module, wired to no call site: an injected streaming spawner
        mirroring the existing tmux runner's error shape, a lock keyed by the
        target tree under a user-writable path outside a possibly unwritable
@@ -126,7 +181,7 @@ checks green at its boundary.
        post-install probe that decides the outcome because npm can exit zero
        having installed nothing, a bounded wait that degrades to the printed
        remedy, and refusal for an unreachable or npm-exec target.
-8. [ ] **Offer the install at the readiness gate.**
+13. [ ] **Offer the install at the readiness gate.**
        Wire the core into the launcher gate and the first-run roster path
        behind an option that defaults to off, so a library consumer calling
        the exported config loader never prompts or installs; print one
@@ -134,7 +189,7 @@ checks green at its boundary.
        download size; stream npm live; re-probe and continue. Decline, no
        terminal, continuous integration, a caller-declared machine-readable
        mode, and refusal fall through to today's message and exit code.
-9. [ ] **Verify consented provisioning from packed tarballs.**
+14. [ ] **Verify consented provisioning from packed tarballs.**
        Extend distributable verification with a terminal-attached affirmative
        run that installs into a throwaway prefix supplied out of band and
        asserts the peer lands as its own top-level root there, a declined run
@@ -143,12 +198,12 @@ checks green at its boundary.
        prefix installing nothing; raise the launcher-invocation timeout,
        which today bounds a run at less than a cold install of the largest
        peer.
-10. [ ] **Export the provisioning surface.**
+15. [ ] **Export the provisioning surface.**
         Export the generic half and the provisioning entry on the surface
         task 3 specified, leaving the tmux-play-worded formatters internal,
         extend the packed-consumer fixtures that enumerate imports by hand,
         and have a packed consumer provision through the exported entry.
-11. [ ] **Document consented runtime provisioning.**
+16. [ ] **Document consented runtime provisioning.**
         Replace the installs-nothing claims in README and tmux-play
         documentation, state what a consented install does and how to avoid
         it, and record the change in the unreleased changelog.

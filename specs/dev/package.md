@@ -33,7 +33,9 @@ Agent SDKs (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai
 
 ### PKG-009
 
-The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter code supports at runtime. This floor may be lower than the exact `devDependencies` version pinned for local development and CI, and shall be raised only when adapter code begins to depend on a newer SDK surface.
+The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter supports at runtime, and shall declare no upper bound. This floor may be lower than the exact `devDependencies` version pinned for local development and CI. The floor shall be raised when adapter code begins to depend on a newer SDK surface, and may be raised when a version below the new floor can no longer serve the adapter's users — including a vendor runtime that the SDK bundles and that the adapter therefore selects. A floor shall be raised only in a release that is MINOR or greater per [RELEASE-001](release.md#release-001), because a raised floor refuses a version that previously loaded.
+
+The upper bound of the supported range shall live in the runtime descriptor of [PKG-016](#pkg-016) and shall be enforced when the runtime loads, never in `peerDependencies`. A published upper bound on an optional peer is intersected into version selection by npm and silently resolves an older SDK without an error, which defeats the floor it accompanies.
 
 ### PKG-010
 
@@ -60,9 +62,7 @@ Repository verification shall compile the adapter's consumed SDK or protocol sur
 Where an adapter's conformance target consists of both an SDK client and a CLI server, their exact target versions shall match.
 The Kimi conformance target shall pair `@agentclientprotocol/sdk` `1.3.0` with the `@moonshot-ai/kimi-code` CLI `0.31.1` and verify the `kimi acp` command surface.
 
-Exact conformance targets are independent of optional peer floors. Per
-[PKG-009](#pkg-009), a peer floor shall name the lowest supported runtime
-surface rather than automatically following the exact development pin.
+The exact conformance target is the tested version and the optional peer floor is the lowest supported version; the two are distinct and neither shall be derived from the other automatically. Per [PKG-009](#pkg-009), a floor names the lowest version the adapter supports, which may sit below the tested version and moves only for the reasons that item states. Both versions shall be declared once, in the runtime descriptor of [PKG-016](#pkg-016), which repository verification asserts equal to the manifest.
 
 ### PKG-013
 
@@ -71,6 +71,13 @@ dependency graph and the complete development dependency graph shall report no
 known vulnerabilities. Remediation shall retain the runtime floor in
 [PKG-002](#pkg-002) and shall not rely on an ignored audit finding or an
 unsupported dependency override.
+
+### PKG-016
+
+The distributable shall publish a runtime descriptor declaring, for each built-in adapter, the identity of every runtime it requires — an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or both — together with that runtime's exact tested version, its supported version range, and the repair that installs it.
+Where a runtime is a package the adapter resolves and a vendor executable that package selects, the descriptor shall name the version the adapter's own resolution reaches, so the declared version is the one that runs.
+The descriptor shall be reachable through the exports map as a documented module, because the package manifest is not.
+Repository verification shall assert that every descriptor version equals the corresponding `peerDependencies` range and exact `devDependencies` pin, and shall fail when they diverge.
 
 ## TypeScript
 

@@ -149,3 +149,19 @@ When `mode` is `undefined`, adapters shall continue to derive their SDK options 
 ### ENG-023
 
 `WritablePathsEnforcement` shall accept the closed set `'profile' | 'sandbox' | 'ambient'` per [DR-006](../decisions/006-workspace-writable-paths.md). `WritablePathsPermissionMapping` shall report canonical `paths` and the field-local `enforcement` class for accepted non-empty `writablePaths` policies. When `writablePaths` is absent or empty, permission mapping shall not emit a `WritablePathsPermissionMapping` payload.
+
+## Runtime Compatibility
+
+### ENG-025
+
+Where an adapter's runtime is a package resolved from the installed `@sublang/cligent` tree, the adapter shall read that package's declared version through the same resolution it uses to load the runtime, and shall refuse to load a version below the supported floor declared for it by [PKG-016](../dev/package.md#pkg-016).
+The refusal shall be an error naming the package, the version that is installed, the version that is required, the `node_modules` tree it resolved from, and the command that repairs it.
+Where the version cannot be read, the runtime shall load unchanged, because a vendored, bundled, or archived layout is a supported installation and an unreadable version is not evidence of an unsupported one.
+Where an adapter's runtime is an executable found through `PATH`, the adapter shall read the version that executable reports and apply the same rules.
+
+### ENG-026
+
+`Cligent` shall expose a runtime-readiness verdict for an adapter reporting one of the closed set `'satisfied' | 'missing' | 'unsupported' | 'untested' | 'unknown'`, carrying the installed version where one was read, the supported range and tested version from [PKG-016](../dev/package.md#pkg-016), the resolved `node_modules` tree or executable path, and the repair commands.
+`'unsupported'` shall name a runtime below the supported floor and `'untested'` a runtime above the tested version, and the two shall not be reported as the same verdict.
+`'unknown'` shall report a runtime whose version could not be read and shall not be treated as a failure by any caller-facing behavior in this repository.
+`adapter.isAvailable()` shall remain a boolean and shall report `false` for exactly `'missing'` and `'unsupported'`, so a caller that has not adopted the verdict keeps its current contract while a caller that has can distinguish an absent runtime from an incompatible one.

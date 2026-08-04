@@ -43,6 +43,7 @@ meta.md     The spec of specs
 | DR-010 | [010-isolated-captain-control-calls.md](decisions/010-isolated-captain-control-calls.md) | Fresh and tool-restricted Captain control calls with fail-closed adapter enforcement |
 | DR-011 | [011-kimi-code-acp-integration.md](decisions/011-kimi-code-acp-integration.md) | Kimi Code through one per-run `kimi acp` process; reject legacy/private Kimi SDKs and lossy print mode |
 | DR-012 | [012-runtime-derived-tmux-play-defaults.md](decisions/012-runtime-derived-tmux-play-defaults.md) | tmux-play first-run defaults follow the installed agent runtimes; optional peers stay optional and are checked, never installed |
+| DR-013 | [013-cligent-owned-runtime-compatibility.md](decisions/013-cligent-owned-runtime-compatibility.md) | Cligent owns agent-runtime compatibility: one shipped descriptor per runtime, load-time version gate, structured readiness verdict, no published upper bound on an optional peer |
 
 ## Iterations
 
@@ -88,7 +89,7 @@ meta.md     The spec of specs
 | IR-037 | [037-codex-executable-resolution.md](iterations/037-codex-executable-resolution.md) | Resolve the Codex executable from the SDK-owned tree across hoisted, global, and non-hoisted installs, with actionable failure diagnostics |
 | IR-038 | [038-runnable-first-tmux-play-session.md](iterations/038-runnable-first-tmux-play-session.md) | Make the documented global tmux-play install produce a runnable first session |
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
-| IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Run the rendered repair command on explicit terminal consent and export the provisioning surface, keeping the unattended remedy unchanged |
+| IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 
 ## Packages
 

@@ -103,3 +103,9 @@ Where a consumer imports the effort metadata and helpers from the public package
 Verifies: [ENG-020](../user/engine.md#eng-020)
 
 Where a custom adapter is registered through the legacy mutable registry, `runAgent()` shall accept `AgentOptions<string>` and forward an adapter-valid custom effort unchanged; its declarations shall not claim name-to-vocabulary narrowing.
+
+### TENG-018
+Verifies: [ENG-025](../user/engine.md#eng-025), [ENG-026](../user/engine.md#eng-026), [PKG-016](../dev/package.md#pkg-016)
+
+Where an adapter's peer SDK is installed at a version below its declared floor, when the adapter loads its runtime, the load shall fail with an error naming the package, the installed version, the required version, the resolved tree, and the repair command; `isAvailable()` shall report `false`; and the readiness verdict shall report `'unsupported'` with those same versions, distinctly from the `'missing'` verdict an absent runtime produces.
+Where the installed version is at or above the floor and at or below the tested version, the load shall succeed and the verdict shall report `'satisfied'`; where it is above the tested version, the load shall succeed and the verdict shall report `'untested'`; and where the version cannot be read, the load shall succeed and the verdict shall report `'unknown'`.
