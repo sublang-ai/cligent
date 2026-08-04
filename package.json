@@ -40,6 +40,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./runtime-targets": {
+      "import": "./dist/runtime-targets.js",
+      "types": "./dist/runtime-targets.d.ts"
+    },
     "./adapters/claude-code": {
       "import": "./dist/adapters/claude-code.js",
       "types": "./dist/adapters/claude-code.d.ts"

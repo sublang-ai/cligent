@@ -54,3 +54,13 @@ export { createEvent, generateSessionId, isAgentEvent } from './events.js';
 export type { AgentEventMap } from './events.js';
 export { Cligent } from './cligent.js';
 export type { CligentParallelTask } from './cligent.js';
+export {
+  AGENT_RUNTIME_TARGETS,
+  agentRuntimeTargets,
+  compareVersions,
+} from './runtime-targets.js';
+export type {
+  AgentRuntimeName,
+  RuntimeKind,
+  RuntimeTarget,
+} from './runtime-targets.js';

@@ -13,11 +13,18 @@ import {
   PROTOCOL_VERSION,
   ndJsonStream,
 } from '@agentclientprotocol/sdk';
+import { AGENT_RUNTIME_TARGETS } from '../dist/runtime-targets.js';
 
+const targetsFor = (name) => AGENT_RUNTIME_TARGETS[name];
+const peerOf = (name) => targetsFor(name).find((t) => t.kind === 'peer');
+const cliOf = (name) => targetsFor(name).find((t) => t.kind === 'cli');
+
+// PKG-016: every literal below comes from the shipped descriptor, so this
+// verifier can no longer disagree with what the package declares at runtime.
 export const EXPECTED_SDK_VERSIONS = Object.freeze({
-  '@anthropic-ai/claude-agent-sdk': '0.3.220',
-  '@openai/codex-sdk': '0.146.0',
-  '@opencode-ai/sdk': '1.18.11',
+  '@anthropic-ai/claude-agent-sdk': peerOf('claude').tested,
+  '@openai/codex-sdk': peerOf('codex').tested,
+  '@opencode-ai/sdk': peerOf('opencode').tested,
 });
 
 export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
@@ -25,14 +32,14 @@ export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
 });
 
 export const EXPECTED_CLI_VERSIONS = Object.freeze({
-  gemini: '0.53.1',
-  kimi: '0.31.1',
-  opencode: '1.18.11',
+  gemini: cliOf('gemini').tested,
+  kimi: cliOf('kimi').tested,
+  opencode: cliOf('opencode').tested,
 });
 
 export const EXPECTED_BUNDLED_AGENT_VERSIONS = Object.freeze({
   claudeCode: '2.1.220',
-  codex: '0.146.0',
+  codex: peerOf('codex').tested,
 });
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -52,6 +59,25 @@ function assertEqual(actual, expected, label) {
 
 export function verifySdkTargets() {
   const manifest = readJson(join(repoRoot, 'package.json'));
+  // PKG-016: the descriptor is the declaration; the manifest must agree with
+  // it. Two sources of truth for a version is the exact drift this exists to
+  // prevent, so a divergence fails here rather than at a user's first turn.
+  for (const [adapter, targets] of Object.entries(AGENT_RUNTIME_TARGETS)) {
+    for (const target of targets) {
+      if (target.kind !== 'peer') continue;
+      assertEqual(
+        manifest.peerDependencies?.[target.package],
+        `>=${target.supportedFrom}`,
+        `${adapter} peer floor matches the runtime descriptor`,
+      );
+      assertEqual(
+        manifest.devDependencies?.[target.package],
+        target.tested,
+        `${adapter} tested version matches the runtime descriptor`,
+      );
+    }
+  }
+
   const lock = readJson(join(repoRoot, 'package-lock.json'));
 
   for (const [packageName, expected] of Object.entries(EXPECTED_SDK_VERSIONS)) {
