@@ -10,10 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-04
+
 ### Changed
 
 - Refreshed the coding-agent conformance targets to Claude Agent SDK `0.3.220` (bundled Claude Code `2.1.220`), Codex SDK `0.146.0` (bundled Codex CLI `0.146.0`), OpenCode SDK and CLI `1.18.11`, and Gemini CLI `0.53.1`, moving the exact `devDependencies`, the npm lockfile, the repository target verifier, and the CI CLI installs together. Every adapter's consumed SDK surface still compiles against the new declarations and the optional peer floors are unchanged, because no adapter began depending on a newer surface — PKG-009, PKG-012, TPKG-004
 - The Kimi conformance target moves to `@agentclientprotocol/sdk` `1.3.0` with `@moonshot-ai/kimi-code` `0.31.1`, and the Kimi adapter now validates inbound protocol traffic against wire schemas this project owns. It previously imported the SDK's generated schemas from inside that package's `dist/` directory — reachable only while the package published no `exports` map, and unreachable as soon as `1.3.0` published one, with no public replacement exposed at any subpath. Adopting the generated schemas would also have weakened the guarantee they were serving: their newer generation salvages malformed payloads, parsing a `session/prompt` result whose `usage` is invalid and silently discarding the accounting, where [KIMI-006](https://github.com/sublang-ai/cligent/blob/main/specs/user/adapters/kimi.md) requires malformed traffic to surface as an actionable error. The owned schemas validate exactly the fields the adapter consumes and ignore everything else, so an agent may add fields — and whole `session/update` cases — without valid traffic being reported as malformed, while a handled case that omits the fields the adapter reads off it is still rejected. The binary `off | on` thinking control is unaffected by Kimi Code `0.31.1` advertising a per-model effort ladder in its place: the CLI resolves `on` to the model's own default effort and `off` to `off`, which is the mapping [KIMI-009](https://github.com/sublang-ai/cligent/blob/main/specs/user/adapters/kimi.md) already specifies, and the adapter reads only the `model` option's value — DR-011, IR-039, PKG-012, TPKG-004
+- Kimi Code's documented ACP authentication is corrected: the `0.31.1` session gate accepts any of three routes — the OAuth credential written by `kimi login`, a configured default model whose alias resolves to a provider holding non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes that provider and alias in the runtime configuration only. Earlier releases documented `kimi login` as the sole route, which was accurate for Kimi Code `0.27.0` and stopped being so when `0.31.1` widened the gate. A bare provider key such as `MOONSHOT_API_KEY` still satisfies none of them, because it establishes no default model alias, and cligent continues to start no authentication flow itself. Live Kimi acceptance exercises the OAuth route exclusively and now probes its credential with the `KIMI_MODEL_*` overlay removed, as its legs already ran: inheriting it let an environment-configured model report a spent OAuth credential as usable, after which those legs failed instead of self-skipping — DR-011, KIMI-006, TADAPT-019
 - `tmux-play` now builds its first-run config from the agent runtimes that are actually installed rather than from a fixed `claude` + `codex` roster. The generated home config wires the built-in `fanout` Captain plus one player per installed adapter, taking the first two in the order `claude`, `codex`, `gemini`, `kimi`, `opencode`, and the one-line creation notice names those adapters so the roster is never a silent function of host state. With the Claude and Codex SDKs both installed the generated file is unchanged; a host with one provider gets a roster it can run instead of one it cannot. Generated roles carry `model` and `effort` only for the adapters this project pins (`claude-opus-4-8` and `gpt-5.5`, both at `xhigh`), because a portable `effort` is not valid for every adapter. The file stays user-owned: installing another provider later does not rewrite it. `--theme-diagnostics` no longer creates a config as a side effect, so reporting the terminal background never depends on an installed runtime — DR-012, IR-038, TMUX-010, TMUX-011, TMUX-061
 
 ### Fixed
@@ -24,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Refreshed the npm lockfile so the production and full development dependency audits report no known vulnerabilities again. Advisories against transitive development-graph packages (`@hono/node-server`, `@modelcontextprotocol/sdk`, `body-parser`, `brace-expansion`, `fast-uri`, `postcss`) were published upstream after v0.16.0; every remediation is an in-range lockfile update, with no direct dependency, exact conformance pin, or runtime-floor change — PKG-013
+- Refreshed the npm lockfile so the production and full development dependency audits report no known vulnerabilities again. Advisories against transitive development-graph packages (`@hono/node-server`, `@modelcontextprotocol/sdk`, `body-parser`, `brace-expansion`, `fast-uri`, `hono`, `ip-address`, `postcss`) were published upstream after v0.16.0; every remediation is an in-range lockfile update, with no direct dependency, exact conformance pin, or runtime-floor change — PKG-013
 
 ## [0.16.0] - 2026-07-19
 
@@ -319,7 +322,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/sublang-ai/cligent/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/sublang-ai/cligent/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sublang-ai/cligent/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sublang-ai/cligent/compare/v0.13.0...v0.14.0
