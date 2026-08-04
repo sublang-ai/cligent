@@ -16,6 +16,8 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { assertRuntimeSupported } from '../runtime-version.js';
 
 type ClaudePermissionMode =
   | 'auto'
@@ -630,6 +632,12 @@ export async function loadClaudeAgentSdk(): Promise<ClaudeAgentSdk> {
   if (typeof mod.query !== 'function') {
     throw new Error('@anthropic-ai/claude-agent-sdk does not export query()');
   }
+
+  // ENG-025: an importable SDK is not necessarily a supported one.
+  assertRuntimeSupported(
+    AGENT_RUNTIME_TARGETS.claude[0]!,
+    `npm install @anthropic-ai/claude-agent-sdk@${AGENT_RUNTIME_TARGETS.claude[0]!.tested}`,
+  );
 
   return {
     query: mod.query as ClaudeAgentSdk['query'],

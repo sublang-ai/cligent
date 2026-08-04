@@ -25,6 +25,8 @@ import {
   trimCodexRustWhitespace,
 } from './codex-path.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { assertRuntimeSupported } from '../runtime-version.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
@@ -1020,6 +1022,14 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
   if (typeof mod.Codex !== 'function') {
     throw new Error('@openai/codex-sdk does not export Codex');
   }
+
+  // ENG-025: the SDK imported, which says nothing about whether the Codex
+  // executable it selects is new enough to serve the caller's model. Check
+  // here, inside the loader isAvailable() and run() share.
+  assertRuntimeSupported(
+    AGENT_RUNTIME_TARGETS.codex[0]!,
+    `npm install @openai/codex-sdk@${AGENT_RUNTIME_TARGETS.codex[0]!.tested}`,
+  );
 
   return {
     Codex: mod.Codex as CodexSdk['Codex'],
