@@ -43,14 +43,14 @@ for, and no item here depends on their contents.
       supported range, and repair; the supported range's upper bound enforced
       at load and never published in `peerDependencies`; and a structured
       verdict distinguishing missing from incompatible.
-- [ ] The descriptor ships through the exports map, and repository
+- [x] The descriptor ships through the exports map, and repository
       verification asserts each declared version equals the manifest's peer
       range and exact development pin, so the two cannot drift.
-- [ ] Every adapter reads its runtime's version through the resolution it
+- [x] Every adapter reads its runtime's version through the resolution it
       loads with, refuses a version below the floor with an error naming the
       installed and required versions, the resolved tree, and the repair, and
       loads unchanged when the version cannot be read.
-- [ ] The readiness verdict is structured and exported, so a consumer stops
+- [x] The readiness verdict is structured and exported, so a consumer stops
       translating a boolean into "not installed" for a runtime that is
       installed but incompatible.
 - [ ] A decision record states that cligent may acquire an optional peer SDK
@@ -102,26 +102,26 @@ checks green at its boundary.
        structured verdict; add TENG-018; amend TMUX-089 so an incompatible
        runtime is reported distinctly from an absent one; add the DR-013 row
        and refresh the PKG and ENG summaries in the spec map.
-2. [ ] **Ship the runtime descriptor.**
+2. [x] **Ship the runtime descriptor.**
        Add the descriptor module and its exports-map subpath; invert
        ownership of the conformance literals so the repository verifier
        imports them instead of declaring its own; add the assertion that each
        descriptor version equals the manifest's peer range and development
        pin; raise the peer floors the descriptor now declares.
-3. [ ] **Gate the runtime at load.**
+3. [x] **Gate the runtime at load.**
        Read each peer SDK's version through the resolution its loader already
        uses — for Codex, through the anchor that selects the executable, so
        the version checked is the version spawned — and each CLI's version
        from the probe that already runs it and discards the output; refuse
        below the floor with the named error; leave `isAvailable()` boolean and
        unchanged in shape so it inherits the check.
-4. [ ] **Export the structured verdict.**
+4. [x] **Export the structured verdict.**
        Add the readiness verdict, distinguishing satisfied, missing,
        unsupported, untested, and unknown, carrying installed and required
        versions, the resolved tree, and the repair commands; render it in the
        launcher gate so a stale runtime reports its versions; export it for
        consumers.
-5. [ ] **Document the compatibility contract.**
+5. [x] **Document the compatibility contract.**
        State in README and the guide which declaration form a consumer should
        use so a cligent upgrade carries the runtime forward, replacing the
        bare install commands that currently write a freezing caret into a
