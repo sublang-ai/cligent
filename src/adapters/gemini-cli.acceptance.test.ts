@@ -8,6 +8,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+
 const available = isExecutableAvailable();
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 
@@ -19,7 +21,9 @@ describe('Gemini CLI 0.50 argument contract (TADAPT-025)', () => {
       // adapter targets (IR-030), not the pinned patch release. The literal
       // is the exact CI conformance target, so a CLI bump that leaves the
       // contract intact still has to move this pin deliberately.
-      expect(commandOutput(['--version']).trim()).toBe('0.53.1');
+      expect(commandOutput(['--version']).trim()).toBe(
+        AGENT_RUNTIME_TARGETS.gemini[0]!.tested,
+      );
 
       const home = mkdtempSync(join(tmpdir(), 'cligent-gemini-parser-'));
       try {

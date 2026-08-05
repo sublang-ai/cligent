@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+
 const available = isExecutableAvailable();
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 
@@ -16,7 +18,9 @@ describe('OpenCode CLI contract (TADAPT-028)', () => {
       throw new Error('Missing OpenCode CLI required by acceptance CI');
     }
 
-    expect(version.trim()).toBe('1.18.11');
+    expect(version.trim()).toBe(
+      AGENT_RUNTIME_TARGETS.opencode.find((t) => t.kind === 'cli')!.tested,
+    );
     expect(help).toContain('--hostname');
     expect(help).toContain('--port');
   });
