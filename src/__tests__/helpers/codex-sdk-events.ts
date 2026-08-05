@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// Canonical Codex SDK event fixtures (TADAPT-031). This helper is included
+// Canonical Codex SDK event fixtures (TADAPT-001). This helper is included
 // in `npm run typecheck`, which resolves the real installed
 // `@openai/codex-sdk` declarations (the minimal ambient codex-sdk.d.ts is
 // excluded there), so every fixture below is typed against the SDK's
