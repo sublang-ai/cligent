@@ -273,8 +273,9 @@ because the failure can arrive after the tool ran; an attempt reaching a
 successful `done` shall never classify as transient, because its `result`
 text is model-authored and capacity language there is not a failure.
 An attempt that witnessed an invariant violation — a `permission_request`,
-a denied `tool_result`, a duplicated `tool_use` id, or a `tool_result`
-whose id no `tool_use` announced — shall never classify as transient even
+a denied `tool_result`, a duplicated `tool_use` or `tool_result` id, or a
+`tool_result` whose id no `tool_use` announced — shall never classify as
+transient even
 alongside matching failure text, so a retried clean attempt cannot mask the
 violation; an errored `tool_result` and a `tool_use` stranded without its
 result shall not preclude retry, because a model-level command failure and

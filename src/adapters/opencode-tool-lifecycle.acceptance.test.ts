@@ -202,13 +202,16 @@ function transientFailure(
 
 // TADAPT-019-style fatal precheck: an attempt that witnessed a lifecycle
 // invariant violation never classifies as transient, because a 429/503
-// does not cause permission asks, denials, duplicate tool_use ids, or
-// results for unannounced calls — retrying such an attempt would let a
-// later nondeterministic clean run mask the very regressions this gate
-// exists to catch. Errored tool_results stay retryable, unlike in
-// TADAPT-019: the invariants deliberately tolerate model-level command
-// failures, and a truncated transient attempt may legitimately strand a
-// tool_use without its result, so neither condition may be fatal here.
+// does not cause permission asks, denials, duplicate tool_use or
+// tool_result ids, or results for unannounced calls — retrying such an
+// attempt would let a later nondeterministic clean run mask the very
+// regressions this gate exists to catch. In particular a call can strand
+// its tool_use on a truncated attempt but can never double-terminate: a
+// second terminal result for one id means the per-call tracking broke.
+// Errored tool_results stay retryable, unlike in TADAPT-019: the
+// invariants deliberately tolerate model-level command failures, and a
+// truncated transient attempt may legitimately strand a tool_use without
+// its result, so neither condition may be fatal here.
 function witnessedInvariantViolation(
   events: readonly CligentEvent[],
 ): boolean {
@@ -219,13 +222,18 @@ function witnessedInvariantViolation(
     .map((e) => (e.payload as ToolUsePayload).toolUseId);
   if (new Set(useIds).size !== useIds.length) return true;
 
-  const announced = new Set(useIds);
-  return events
+  const results = events
     .filter((e) => e.type === 'tool_result')
-    .some((e) => {
-      const payload = e.payload as ToolResultPayload;
-      return payload.status === 'denied' || !announced.has(payload.toolUseId);
-    });
+    .map((e) => e.payload as ToolResultPayload);
+  if (new Set(results.map((r) => r.toolUseId)).size !== results.length) {
+    return true;
+  }
+
+  const announced = new Set(useIds);
+  return results.some(
+    (payload) =>
+      payload.status === 'denied' || !announced.has(payload.toolUseId),
+  );
 }
 
 function missingDeps(): string[] {
