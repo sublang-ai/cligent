@@ -16,6 +16,7 @@ import {
   parseCliVersion,
   readPackageVersion,
   readRuntimeVersion,
+  isCliRuntimeSupported,
   isUnsupportedRuntimeError,
   unsupportedRuntimeError,
 } from '../runtime-version.js';
@@ -128,8 +129,34 @@ describe('the runtimes DR-013 was written about', () => {
     // 0.145.0 is the first release carrying the whole current model family,
     // and the floor is that version rather than the tested one, so a working
     // 0.145.0 install is not refused.
-    expect(classifyRuntime(codex, true, '0.145.0').state).toBe('satisfied');
-    expect(classifyRuntime(codex, true, '0.144.0').state).toBe('unsupported');
+    expect(classifyRuntime(codex, true, '0.144.0').state).toBe('satisfied');
+    expect(classifyRuntime(codex, true, '0.143.0').state).toBe('unsupported');
+  });
+
+  it('keeps a CLI probe and the verdict from disagreeing', () => {
+    // The gap this closes: readRuntimeVersion could read a CLI version, but
+    // the gemini/kimi/opencode probes still answered "does it run", so
+    // isAvailable() reported true for a runtime the verdict called
+    // unsupported — the disagreement DR-013 forbids. `node` stands in for a
+    // real executable so this exercises the spawn path without depending on
+    // an agent CLI being installed.
+    const asNode = (supportedFrom: string): RuntimeTarget => ({
+      kind: 'cli',
+      package: 'node',
+      command: process.execPath,
+      repairSpec: 'node@latest',
+      supportedFrom,
+      tested: '99.0.0',
+    });
+    expect(isCliRuntimeSupported(asNode('99.0.0'))).toBe(false);
+    expect(isCliRuntimeSupported(asNode('0.0.1'))).toBe(true);
+    // Fail open: an executable that cannot be run is unknown, not refused.
+    expect(
+      isCliRuntimeSupported({
+        ...asNode('99.0.0'),
+        command: 'cligent-no-such-command',
+      }),
+    ).toBe(true);
   });
 
   it('enforces a CLI runtime floor, not only a peer one', () => {
@@ -138,10 +165,10 @@ describe('the runtimes DR-013 was written about', () => {
     const kimi = AGENT_RUNTIME_TARGETS.kimi[0]!;
     expect(kimi.kind).toBe('cli');
     expect(classifyRuntime(kimi, true, '0.27.0').state).toBe('unsupported');
-    expect(classifyRuntime(kimi, true, '0.31.1').state).toBe('satisfied');
+    expect(classifyRuntime(kimi, true, '0.28.1').state).toBe('satisfied');
     const opencodeCli = AGENT_RUNTIME_TARGETS.opencode[1]!;
     expect(opencodeCli.kind).toBe('cli');
-    expect(classifyRuntime(opencodeCli, true, '1.14.40').state).toBe('unsupported');
+    expect(classifyRuntime(opencodeCli, true, '1.18.11').state).toBe('unsupported');
   });
 
   it('carries the repair the verdict promises', () => {

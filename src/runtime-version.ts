@@ -277,3 +277,17 @@ export function isUnsupportedRuntimeError(error: unknown): boolean {
     (error as Record<PropertyKey, unknown>)[UNSUPPORTED_RUNTIME] === true
   );
 }
+
+/**
+ * Whether a CLI runtime on `PATH` meets its floor.
+ *
+ * The adapters already spawn `<command> --version` to answer
+ * `isAvailable()`; this reuses that answer so availability and the readiness
+ * verdict cannot disagree — the DR-013 invariant that a boolean probe must
+ * not report a runtime usable while the verdict calls it unsupported.
+ * An unreadable version stays available, matching the peer-side fail-open.
+ */
+export function isCliRuntimeSupported(target: RuntimeTarget): boolean {
+  if (process.env.CLIGENT_RUNTIME_GATE === 'off') return true;
+  return !isBelowFloor(readRuntimeVersion(target), target);
+}

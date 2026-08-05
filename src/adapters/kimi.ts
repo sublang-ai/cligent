@@ -50,6 +50,8 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { isCliRuntimeSupported } from '../runtime-version.js';
 
 const AGENT = 'kimi' as const;
 const AUTH_REQUIRED_CODE = -32000;
@@ -171,7 +173,10 @@ function defaultSpawnProcess(
 async function defaultProbeAvailability(): Promise<boolean> {
   try {
     await execFileAsync('kimi', ['--version'], { timeout: 5000 });
-    return true;
+    // ENG-025: an executable that runs is not necessarily one this release
+    // supports, and reporting it available here while the readiness verdict
+    // calls it unsupported is exactly the disagreement DR-013 forbids.
+    return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.kimi[0]!);
   } catch {
     return false;
   }

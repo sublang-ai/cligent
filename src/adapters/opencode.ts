@@ -28,7 +28,11 @@ import type {
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
-import { assertRuntimeSupported } from '../runtime-version.js';
+import {
+  assertRuntimeSupported,
+  isCliRuntimeSupported,
+  isUnsupportedRuntimeError,
+} from '../runtime-version.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
@@ -325,7 +329,9 @@ function defaultSpawnProcess(
 async function defaultProbeCliAvailability(): Promise<boolean> {
   try {
     await execFileAsync('opencode', ['--version'], { timeout: 5000 });
-    return true;
+    // ENG-025: PKG-012 pairs this CLI with the SDK, so an executable that
+    // merely runs is not necessarily one this release supports.
+    return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.opencode[1]!);
   } catch {
     return false;
   }
@@ -976,6 +982,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     try {
       sdk = await this.loadSdkFn();
     } catch (err) {
+      // A version refusal already names installed, required, tree, and
+      // repair; replacing it would advise installing what is present.
+      if (isUnsupportedRuntimeError(err)) throw err;
       throw new Error(
         'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.' +
           (err instanceof Error ? ` (${err.message})` : ''),

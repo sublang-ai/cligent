@@ -25,9 +25,9 @@ adapters you use:
 # forward. A bare `npm install <pkg>` writes a caret instead, and for a
 # `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
 # `0.146.0`, however often you run `npm update`.
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.154"   # Claude Code
-npm install "@openai/codex-sdk@>=0.145.0"                # Codex
-npm install "@opencode-ai/sdk@>=1.14.41"                 # OpenCode
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
+npm install "@openai/codex-sdk@>=0.144.0"                # Codex
+npm install "@opencode-ai/sdk@>=1.18.12"                 # OpenCode
 # Gemini needs no SDK — the adapter drives the installed `gemini` CLI
 # Kimi needs its CLI — see the separately pinned install below
 ```

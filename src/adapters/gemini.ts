@@ -27,6 +27,8 @@ import type {
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { isCliRuntimeSupported } from '../runtime-version.js';
 
 const AGENT = 'gemini' as const;
 
@@ -270,7 +272,10 @@ const execFileAsync = promisify(execFile);
 async function defaultProbeAvailability(): Promise<boolean> {
   try {
     await execFileAsync('gemini', ['--version'], { timeout: 5000 });
-    return true;
+    // ENG-025: an executable that runs is not necessarily one this release
+    // supports, and reporting it available here while the readiness verdict
+    // calls it unsupported is exactly the disagreement DR-013 forbids.
+    return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.gemini[0]!);
   } catch {
     return false;
   }
