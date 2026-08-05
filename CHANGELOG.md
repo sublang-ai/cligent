@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-05
+
 ### Added
 
 - `@sublang/cligent/runtime-targets` publishes the agent runtimes each adapter requires, with the lowest supported version, the exact version this release verifies, and the vendor executable a package selects where one decides behavior. Repository verification asserts every declared version equals the manifest's peer range and development pin, so the descriptor and the manifest cannot drift. A consumer inherits the compatibility policy by upgrading cligent and no longer carries its own agent-SDK version knowledge — DR-013, IR-040, PKG-016
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The supported floors now name the lowest runtime that serves every current provider model and that this adapter supports, rather than the version that happened to be pinned. `@anthropic-ai/claude-agent-sdk` moves `>=0.3.154` to `>=0.3.219`, the first release whose model catalog carries `claude-opus-5`; `@openai/codex-sdk` moves `>=0.138.0` to `>=0.144.0` for the current `gpt-5.6` routes; `@moonshot-ai/kimi-code` moves to `0.28.1`, which added the non-OAuth ACP route, and `@opencode-ai/sdk` with its paired CLI moves to `1.18.12`, which fixed GPT-5.5+ completion requests failing when reasoning is enabled — the route this adapter drives whenever `effort` maps to a reasoning variant. The OpenCode conformance target moves to `1.18.13`. A runtime below its floor is refused with its versions named; upgrading is the repair — PKG-009, PKG-012, PKG-016
+- The supported floors now name the lowest runtime that serves every current provider model and that this adapter supports, rather than the version that happened to be pinned. `@anthropic-ai/claude-agent-sdk` moves `>=0.3.154` to `>=0.3.219`, the first release whose model catalog carries `claude-opus-5`; `@openai/codex-sdk` moves `>=0.138.0` to `>=0.144.0` for the current `gpt-5.6` routes; `@moonshot-ai/kimi-code` moves to `0.28.1`, which added the non-OAuth ACP route, and `@opencode-ai/sdk` with its paired CLI moves to `1.18.12`, which fixed GPT-5.5+ completion requests failing when reasoning is enabled — the route this adapter drives whenever `effort` maps to a reasoning variant. The OpenCode conformance target moves to `1.18.13`. The Gemini CLI gains its first enforced floor: `@google/gemini-cli` at `0.50.0` — the release whose headless arguments and Policy Engine permission surface this adapter drives — with the conformance target at `0.53.1`; earlier releases probed only that the `gemini` executable ran, so a below-floor CLI surfaced its failures only after spawn. Enforcement for the CLI-found runtimes — Gemini, Kimi, and OpenCode's paired CLI — sits at both the availability probe and the entry to `run()`, so a below-floor executable is refused before it spawns rather than reported available and then failed mid-turn. A runtime below its floor is refused with its versions named; upgrading is the repair — PKG-009, PKG-012, PKG-016
 - An adapter now refuses to load a peer SDK older than this release supports, inside the loader `isAvailable()` and `run()` share, so the readiness gate and the load it protects cannot disagree. Previously the gate tested only that the SDK imported: a seven-minor-stale Codex passed it and the defect surfaced mid-turn as the vendor's own message about a model, with no visible connection to a version. For Codex the version read is the bundled executable's, because that executable is what refuses a newer model. A version that cannot be read never blocks — vendored, bundled, and archived layouts are legitimate installations — and a version above the tested one is reported as untested rather than refused — DR-013, ENG-025, TMUX-089
 
 ### Fixed
@@ -337,7 +339,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/sublang-ai/cligent/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/sublang-ai/cligent/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/sublang-ai/cligent/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sublang-ai/cligent/compare/v0.14.0...v0.15.0
