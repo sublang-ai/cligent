@@ -51,7 +51,10 @@ import type {
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
-import { isCliRuntimeSupported } from '../runtime-version.js';
+import {
+  assertRuntimeSupported,
+  isCliRuntimeSupported,
+} from '../runtime-version.js';
 
 const AGENT = 'kimi' as const;
 const AUTH_REQUIRED_CODE = -32000;
@@ -676,6 +679,11 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     prompt: string,
     options?: AgentOptions<KimiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    // ENG-025: gate the direct run path too, not only `isAvailable()`.
+    assertRuntimeSupported(
+      AGENT_RUNTIME_TARGETS.kimi[0]!,
+      `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0]!.repairSpec}`,
+    );
     const mapped = mapAgentOptionsToKimiOptions(options);
     const startTime = Date.now();
     const queue = new AsyncEventQueue();

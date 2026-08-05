@@ -28,7 +28,10 @@ import type {
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
-import { isCliRuntimeSupported } from '../runtime-version.js';
+import {
+  assertRuntimeSupported,
+  isCliRuntimeSupported,
+} from '../runtime-version.js';
 
 const AGENT = 'gemini' as const;
 
@@ -1057,6 +1060,13 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     prompt: string,
     options?: AgentOptions<GeminiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    // ENG-025: `isAvailable()` is not on this path. Cligent.run() reaches
+    // the adapter directly, so without this a below-floor CLI is spawned and
+    // fails mid-turn — the failure mode this work exists to remove.
+    assertRuntimeSupported(
+      AGENT_RUNTIME_TARGETS.gemini[0]!,
+      `npm install -g ${AGENT_RUNTIME_TARGETS.gemini[0]!.repairSpec}`,
+    );
     const mapped = mapAgentOptionsToGeminiCommand(prompt, options);
 
     let processExited = false;

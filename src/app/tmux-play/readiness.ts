@@ -412,8 +412,11 @@ export function configuredAdapterRoles(
 function unusableRuntimeDetail(
   adapter: PlayerAdapterName,
 ): string | undefined {
+  // Every runtime the adapter needs, peer and CLI alike: skipping CLI
+  // targets reported an installed-but-stale gemini, kimi, or opencode as
+  // absent, which TMUX-089 forbids and which sends the user to install
+  // something already present.
   for (const target of AGENT_RUNTIME_TARGETS[adapter] ?? []) {
-    if (target.kind !== 'peer') continue;
     const installed = readRuntimeVersion(target);
     if (installed === undefined) continue;
     if (isBelowFloor(installed, target)) {

@@ -1043,6 +1043,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
     try {
       if (this.mode === 'managed') {
+        // ENG-025: the peer gate sits in the SDK loader, but managed mode
+        // also spawns the paired CLI, and Cligent.run() reaches here without
+        // ever calling `isAvailable()`.
+        assertRuntimeSupported(
+          AGENT_RUNTIME_TARGETS.opencode[1]!,
+          `npm install -g ${AGENT_RUNTIME_TARGETS.opencode[1]!.repairSpec}`,
+        );
         const managedArgs = createManagedServerArgs(this.serverUrl);
         serverProcess = this.spawnProcess(
           'opencode',

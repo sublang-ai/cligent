@@ -10,6 +10,7 @@ import {
   type RuntimeTarget,
 } from '../runtime-targets.js';
 import {
+  assertRuntimeSupported,
   classifyRuntime,
   isAboveTested,
   isBelowFloor,
@@ -157,6 +158,26 @@ describe('the runtimes DR-013 was written about', () => {
         command: 'cligent-no-such-command',
       }),
     ).toBe(true);
+  });
+
+  it('throws for a below-floor CLI, so a direct run is refused too', () => {
+    // The gap: the CLI check lived only in `isAvailable()`, but
+    // `Cligent.run()` reaches `adapter.run()` directly, so a stale CLI was
+    // spawned and failed mid-turn. Both paths now share this assertion.
+    const asNode = (supportedFrom: string): RuntimeTarget => ({
+      kind: 'cli',
+      package: `node-${supportedFrom}`,
+      command: process.execPath,
+      repairSpec: 'node@latest',
+      supportedFrom,
+      tested: '99.0.0',
+    });
+    expect(() =>
+      assertRuntimeSupported(asNode('99.0.0'), 'npm install -g node'),
+    ).toThrow(/is older than this release/);
+    expect(() =>
+      assertRuntimeSupported(asNode('0.0.1'), 'npm install -g node'),
+    ).not.toThrow();
   });
 
   it('enforces a CLI runtime floor, not only a peer one', () => {
