@@ -32,6 +32,71 @@ import type {
   PermissionLevel,
   PermissionPolicy,
 } from '../types.js';
+import {
+  CANONICAL_THREAD_ID,
+  canonicalAgentMessage,
+  canonicalCommand,
+  canonicalCommandCompleted,
+  canonicalCommandFailed,
+  canonicalFileChange,
+  canonicalMcpCall,
+  canonicalMcpFailed,
+  canonicalMcpResult,
+  canonicalToolLifecycleEvents,
+  duplicatedCompletionEvents,
+  failedCommandEvents,
+  failedMcpEvents,
+  interleavedCommandA,
+  interleavedCommandB,
+  interleavedParallelEvents,
+  missedStartEvents,
+  repeatedUpdateEvents,
+  toolThenStreamEndEvents,
+  toolThenTurnFailedEvents,
+  updateFirstEvents,
+} from './helpers/codex-sdk-events.js';
+
+interface ToolUseAssertion {
+  toolName: string;
+  toolUseId: string;
+  input: Record<string, unknown>;
+}
+
+interface ToolResultAssertion {
+  toolName: string;
+  toolUseId: string;
+  status: string;
+  output: unknown;
+  durationMs?: number;
+}
+
+function toolUsePayload(event: AgentEvent): ToolUseAssertion {
+  expect(event.type).toBe('tool_use');
+  return event.payload as ToolUseAssertion;
+}
+
+function toolResultPayload(event: AgentEvent): ToolResultAssertion {
+  expect(event.type).toBe('tool_result');
+  return event.payload as ToolResultAssertion;
+}
+
+interface DoneAssertion {
+  status: string;
+  result?: string;
+  resumeToken?: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    toolUses: number;
+    totalCostUsd?: number;
+  };
+  durationMs: number;
+}
+
+function donePayload(event: AgentEvent): DoneAssertion {
+  expect(event.type).toBe('done');
+  return event.payload as DoneAssertion;
+}
 
 interface MockRunOptions {
   signal?: AbortSignal;
@@ -150,7 +215,288 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
-  it('maps codex stream events to unified events', async () => {
+  it('maps canonical SDK tool lifecycles to unified events (TADAPT-031)', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
+    });
+
+    const events = await collect(
+      adapter.run('do it', {
+        model: 'gpt-5-codex',
+        cwd: '/repo',
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_use',
+      'tool_result',
+      'tool_result',
+      'text',
+      'codex:file_change',
+      'done',
+    ]);
+    for (const event of events) {
+      expect(event.sessionId).toBe(CANONICAL_THREAD_ID);
+    }
+
+    const init = events[0] as AgentEvent & {
+      payload: { model: string; cwd: string; tools: string[] };
+    };
+    expect(init.payload.model).toBe('gpt-5-codex');
+    expect(init.payload.cwd).toBe('/repo');
+
+    const commandUse = toolUsePayload(events[1]);
+    expect(commandUse.toolName).toBe('command_execution');
+    expect(commandUse.toolUseId).toBe(canonicalCommand.id);
+    expect(commandUse.input).toEqual({ command: canonicalCommand.command });
+
+    const mcpUse = toolUsePayload(events[2]);
+    expect(mcpUse.toolName).toBe('files.read');
+    expect(mcpUse.toolUseId).toBe(canonicalMcpCall.id);
+    expect(mcpUse.input).toEqual(canonicalMcpCall.arguments);
+
+    const commandResult = toolResultPayload(events[3]);
+    expect(commandResult.toolName).toBe('command_execution');
+    expect(commandResult.toolUseId).toBe(canonicalCommand.id);
+    expect(commandResult.status).toBe('success');
+    expect(commandResult.output).toEqual({
+      aggregated_output: canonicalCommandCompleted.aggregated_output,
+      exit_code: 0,
+    });
+
+    const mcpResult = toolResultPayload(events[4]);
+    expect(mcpResult.toolName).toBe('files.read');
+    expect(mcpResult.toolUseId).toBe(canonicalMcpCall.id);
+    expect(mcpResult.status).toBe('success');
+    expect(mcpResult.output).toEqual(canonicalMcpResult);
+
+    const text = events[5] as AgentEvent & { payload: { content: string } };
+    expect(text.payload.content).toBe(canonicalAgentMessage.text);
+
+    // codex:file_change keeps passing the native item through unchanged.
+    expect(events[6].payload).toEqual(canonicalFileChange);
+
+    const done = donePayload(events[7]);
+    expect(done.status).toBe('success');
+    expect(done.resumeToken).toBe(CANONICAL_THREAD_ID);
+    // toolUses derives from the unique observed tool item ids; the SDK
+    // usage object carries token counts only.
+    expect(done.usage).toEqual({
+      inputTokens: 33,
+      outputTokens: 44,
+      toolUses: 2,
+    });
+  });
+
+  it('emits one tool_use and one terminal tool_result across repeated updates', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: repeatedUpdateEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+    expect(toolUsePayload(events[1]).toolUseId).toBe(canonicalCommand.id);
+    expect(toolResultPayload(events[2]).toolUseId).toBe(canonicalCommand.id);
+    expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('announces the call on item.updated when item.started was missed', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: updateFirstEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+    expect(toolUsePayload(events[1]).toolUseId).toBe(canonicalCommand.id);
+    expect(toolResultPayload(events[2]).toolUseId).toBe(canonicalCommand.id);
+    expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('reports observed tool uses when the stream ends without a turn event', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: toolThenStreamEndEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'error',
+      'done',
+    ]);
+    const error = events[3] as AgentEvent & { payload: { code?: string } };
+    expect(error.payload.code).toBe('MISSING_TURN_DONE');
+    const done = donePayload(events[4]);
+    expect(done.status).toBe('error');
+    expect(done.usage.toolUses).toBe(1);
+  });
+
+  it('reports observed tool uses on the error done after a stream failure', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: toolThenStreamEndEvents,
+        throwFromRun: new Error('stream blew up'),
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'error',
+      'done',
+    ]);
+    const error = events[3] as AgentEvent & { payload: { code?: string } };
+    expect(error.payload.code).toBe('SDK_STREAM_ERROR');
+    const done = donePayload(events[4]);
+    expect(done.status).toBe('error');
+    expect(done.usage.toolUses).toBe(1);
+  });
+
+  it('synthesizes the missing tool_use before the result when the start was missed', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: missedStartEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const use = toolUsePayload(events[1]);
+    expect(use.toolUseId).toBe(canonicalCommandCompleted.id);
+    expect(use.input).toEqual({ command: canonicalCommandCompleted.command });
+    expect(toolResultPayload(events[2]).toolUseId).toBe(
+      canonicalCommandCompleted.id,
+    );
+    expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('preserves native output and exit code for failed command executions', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: failedCommandEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const result = toolResultPayload(events[2]);
+    expect(result.toolUseId).toBe(canonicalCommandFailed.id);
+    expect(result.status).toBe('error');
+    expect(result.output).toEqual({
+      aggregated_output: canonicalCommandFailed.aggregated_output,
+      exit_code: 127,
+    });
+    expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('preserves native error details for failed MCP tool calls', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: failedMcpEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const use = toolUsePayload(events[1]);
+    expect(use.toolName).toBe('files.write');
+    expect(use.input).toEqual(canonicalMcpFailed.arguments);
+
+    const result = toolResultPayload(events[2]);
+    expect(result.toolName).toBe('files.write');
+    expect(result.toolUseId).toBe(canonicalMcpFailed.id);
+    expect(result.status).toBe('error');
+    expect(result.output).toEqual(canonicalMcpFailed.error);
+  });
+
+  it('correlates interleaved concurrent tool items by item id', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: interleavedParallelEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_use',
+      'tool_result',
+      'tool_result',
+      'done',
+    ]);
+
+    expect(toolUsePayload(events[1]).toolUseId).toBe(interleavedCommandA.id);
+    expect(toolUsePayload(events[2]).toolUseId).toBe(interleavedCommandB.id);
+    // Completions arrive in reverse start order and keep their own ids.
+    expect(toolResultPayload(events[3]).toolUseId).toBe(interleavedCommandB.id);
+    expect(toolResultPayload(events[3]).output).toEqual({
+      aggregated_output: 'b\n',
+      exit_code: 0,
+    });
+    expect(toolResultPayload(events[4]).toolUseId).toBe(interleavedCommandA.id);
+    expect(donePayload(events[5]).usage.toolUses).toBe(2);
+  });
+
+  it('emits at most one terminal tool_result for duplicated completions', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: duplicatedCompletionEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+    expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('reports observed tool uses on the done event after turn.failed', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: toolThenTurnFailedEvents }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'error',
+      'done',
+    ]);
+    const done = donePayload(events[4]);
+    expect(done.status).toBe('error');
+    expect(done.usage.toolUses).toBe(1);
+  });
+
+  it('retains legacy alias item shapes as a compatibility fallback', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
         events: [
@@ -231,46 +577,25 @@ describe('CodexAdapter', () => {
       'done',
     ]);
 
-    const init = events[0] as AgentEvent & {
-      payload: { model: string; cwd: string; tools: string[] };
-    };
-    expect(init.payload.model).toBe('gpt-5-codex');
-    expect(init.payload.cwd).toBe('/repo');
-    expect(init.payload.tools).toEqual([]);
-    expect(events[0].sessionId).toBe('thread-1');
-    expect(events[1].sessionId).toBe('thread-1');
-
     const text = events[1] as AgentEvent & { payload: { content: string } };
     expect(text.payload.content).toBe('Hello from Codex');
 
-    const toolUse = events[2] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
-    };
-    expect(toolUse.payload.toolName).toBe('bash');
-    expect(toolUse.payload.toolUseId).toBe('call-1');
-    expect(toolUse.payload.input).toEqual({ command: 'ls' });
+    const toolUse = toolUsePayload(events[2]);
+    expect(toolUse.toolName).toBe('bash');
+    expect(toolUse.toolUseId).toBe('call-1');
+    expect(toolUse.input).toEqual({ command: 'ls' });
 
-    const toolResult = events[3] as AgentEvent & {
-      payload: {
-        toolName: string;
-        toolUseId: string;
-        status: string;
-        output: unknown;
-        durationMs?: number;
-      };
-    };
-    expect(toolResult.payload.toolName).toBe('bash');
-    expect(toolResult.payload.toolUseId).toBe('call-1');
-    expect(toolResult.payload.status).toBe('success');
-    expect(toolResult.payload.output).toEqual({ stdout: 'file.txt' });
-    expect(toolResult.payload.durationMs).toBe(15);
+    const toolResult = toolResultPayload(events[3]);
+    expect(toolResult.toolName).toBe('bash');
+    expect(toolResult.toolUseId).toBe('call-1');
+    expect(toolResult.status).toBe('success');
+    expect(toolResult.output).toEqual({ stdout: 'file.txt' });
+    expect(toolResult.durationMs).toBe(15);
 
     const fileChangeOne = events[4] as AgentEvent & { payload: Record<string, unknown> };
-    expect(fileChangeOne.type).toBe('codex:file_change');
     expect(fileChangeOne.payload.path).toBe('/repo/file.txt');
 
     const fileChangeTwo = events[5] as AgentEvent & { payload: Record<string, unknown> };
-    expect(fileChangeTwo.type).toBe('codex:file_change');
     expect(fileChangeTwo.payload.path).toBe('/repo/another.ts');
 
     const error = events[6] as AgentEvent & {
@@ -280,28 +605,18 @@ describe('CodexAdapter', () => {
     expect(error.payload.message).toBe('transient hiccup');
     expect(error.payload.recoverable).toBe(true);
 
-    const done = events[7] as AgentEvent & {
-      payload: {
-        status: string;
-        result: string;
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          toolUses: number;
-          totalCostUsd: number;
-        };
-        durationMs: number;
-      };
-    };
-    expect(done.payload.status).toBe('max_turns');
-    expect(done.payload.result).toBe('final summary');
-    expect(done.payload.usage).toEqual({
+    const done = donePayload(events[7]);
+    expect(done.status).toBe('max_turns');
+    expect(done.result).toBe('final summary');
+    // toolUses derives from the unique observed tool-call ids (call-1);
+    // the legacy usage field tool_uses: 2 is deliberately not consulted.
+    expect(done.usage).toEqual({
       inputTokens: 33,
       outputTokens: 44,
-      toolUses: 2,
+      toolUses: 1,
       totalCostUsd: 0.17,
     });
-    expect(done.payload.durationMs).toBe(222);
+    expect(done.durationMs).toBe(222);
   });
 
   it('preserves item.completed content block order', async () => {
@@ -386,7 +701,8 @@ describe('CodexAdapter', () => {
             type: 'item.completed',
             sessionId: 'thread-unknown-tools',
             item: {
-              type: 'message',
+              id: 'item_msg',
+              type: 'agent_message',
               text: 'hello',
             },
           },
@@ -1019,7 +1335,11 @@ describe('CodexAdapter', () => {
                     async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
                       yield {
                         type: 'item.completed',
-                        item: { type: 'message', text: 'started' },
+                        item: { id: 'item_msg', type: 'agent_message', text: 'started' },
+                      };
+                      yield {
+                        type: 'item.completed',
+                        item: canonicalCommandCompleted,
                       };
 
                       await new Promise<void>((resolve) => {
@@ -1059,9 +1379,15 @@ describe('CodexAdapter', () => {
     expect(capturedSignal?.aborted).toBe(true);
 
     const rest = await collect(stream);
-    expect(rest.map((event) => event.type)).toEqual(['done']);
-    const done = rest[0] as AgentEvent & { payload: { status: string } };
-    expect(done.payload.status).toBe('interrupted');
+    expect(rest.map((event) => event.type)).toEqual([
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+    const done = donePayload(rest[2]);
+    expect(done.status).toBe('interrupted');
+    // The interrupted done also reports the tools observed before abort.
+    expect(done.usage.toolUses).toBe(1);
   });
 
   it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
@@ -1080,7 +1406,7 @@ describe('CodexAdapter', () => {
               async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
                 yield {
                   type: 'item.completed',
-                  item: { type: 'message', text: 'started' },
+                  item: { id: 'item_msg', type: 'agent_message', text: 'started' },
                   ...(options.backendThreadId
                     ? { threadId: options.backendThreadId }
                     : {}),
@@ -1603,7 +1929,7 @@ describe('CodexAdapter', () => {
         events: [
           {
             type: 'item.completed',
-            item: { type: 'message', text: 'hello' },
+            item: { id: 'item_msg', type: 'agent_message', text: 'hello' },
             threadId: 'thread-new-abc',
           },
           {
