@@ -83,6 +83,12 @@ interface CodexItem {
   duration_ms?: unknown;
   file?: unknown;
   path?: unknown;
+  command?: unknown;
+  aggregated_output?: unknown;
+  exit_code?: unknown;
+  server?: unknown;
+  tool?: unknown;
+  error?: unknown;
 }
 
 interface CodexThreadOptions {
@@ -407,9 +413,12 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
-function mapUsage(rawUsage: unknown): DonePayload['usage'] {
+// The SDK usage object carries token counts only; toolUses is derived from
+// the unique tool item ids observed during the run (CODEX-003), so the
+// caller supplies it rather than this parser reading a usage field.
+function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
   if (typeof rawUsage !== 'object' || rawUsage === null) {
-    return { ...DEFAULT_DONE_USAGE };
+    return { ...DEFAULT_DONE_USAGE, toolUses };
   }
 
   const usage = rawUsage as Record<string, unknown>;
@@ -424,9 +433,6 @@ function mapUsage(rawUsage: unknown): DonePayload['usage'] {
 
   const outputTokens =
     asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens) ?? 0;
-
-  const toolUses =
-    asNumber(usage.toolUses) ?? asNumber(usage.tool_uses) ?? 0;
 
   const totalCostUsd =
     asNumber(usage.totalCostUsd) ?? asNumber(usage.total_cost_usd);
@@ -558,15 +564,28 @@ export function mapAgentOptionsToCodexOptions(
 }
 
 function parseToolInput(value: unknown): Record<string, unknown> {
+  if (value === undefined || value === null) return {};
   if (typeof value === 'string') {
     try {
       const parsed = JSON.parse(value) as unknown;
-      return asRecord(parsed);
+      return toToolInputRecord(parsed, value);
     } catch {
       return { raw: value };
     }
   }
-  return asRecord(value);
+  return toToolInputRecord(value, value);
+}
+
+// Non-record argument payloads (arrays, primitives) are preserved under a
+// `raw` key rather than dropped, because ToolUsePayload.input is a record.
+function toToolInputRecord(
+  value: unknown,
+  raw: unknown,
+): Record<string, unknown> {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { raw };
 }
 
 function loadSessionId(message: unknown): string | undefined {
@@ -609,6 +628,71 @@ type NormalizedItemEvent =
   | { type: 'tool_use'; payload: NormalizedToolUse }
   | { type: 'tool_result'; payload: NormalizedToolResult }
   | { type: 'codex:file_change'; payload: unknown };
+
+// The SDK's canonical tool items: shell commands and MCP tool invocations
+// evolve across item.started / item.updated / item.completed and correlate
+// by item id (CODEX-003).
+type CodexToolLifecycleType = 'command_execution' | 'mcp_tool_call';
+
+function codexToolLifecycleType(
+  item: CodexItem,
+): CodexToolLifecycleType | undefined {
+  const itemType = asString(item.type);
+  return itemType === 'command_execution' || itemType === 'mcp_tool_call'
+    ? itemType
+    : undefined;
+}
+
+function codexLifecycleToolUse(
+  lifecycleType: CodexToolLifecycleType,
+  item: CodexItem,
+  toolUseId: string,
+): NormalizedToolUse {
+  if (lifecycleType === 'command_execution') {
+    return {
+      toolName: 'command_execution',
+      toolUseId,
+      input: { command: asString(item.command) ?? '' },
+    };
+  }
+
+  const server = asString(item.server);
+  const tool = asString(item.tool);
+  return {
+    toolName: server && tool ? `${server}.${tool}` : (tool ?? 'mcp_tool_call'),
+    toolUseId,
+    input: parseToolInput(item.arguments),
+  };
+}
+
+function codexLifecycleToolResult(
+  lifecycleType: CodexToolLifecycleType,
+  item: CodexItem,
+  toolUse: NormalizedToolUse,
+): NormalizedToolResult {
+  const failed = asString(item.status)?.toLowerCase() === 'failed';
+  const status: NormalizedToolResult['status'] = failed ? 'error' : 'success';
+
+  if (lifecycleType === 'command_execution') {
+    const exitCode = asNumber(item.exit_code);
+    return {
+      toolName: toolUse.toolName,
+      toolUseId: toolUse.toolUseId,
+      status,
+      output: {
+        aggregated_output: asString(item.aggregated_output) ?? '',
+        ...(exitCode !== undefined ? { exit_code: exitCode } : {}),
+      },
+    };
+  }
+
+  return {
+    toolName: toolUse.toolName,
+    toolUseId: toolUse.toolUseId,
+    status,
+    output: (failed ? (item.error ?? item.result) : (item.result ?? item.error)) ?? null,
+  };
+}
 
 function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
   const events: NormalizedItemEvent[] = [];
@@ -1160,6 +1244,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
+    // Tool lifecycle correlation (CODEX-003): ids that already produced a
+    // tool_use, ids that already produced their terminal tool_result, and
+    // every unique tool-call id observed — the toolUses count on done.
+    const announcedToolUseIds = new Set<string>();
+    const completedToolUseIds = new Set<string>();
+    const observedToolUseIds = new Set<string>();
 
     const buildInitPayload = (
       sourceEvent?: Record<string, unknown>,
@@ -1227,7 +1317,54 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         const eventType = asString(event.type);
         if (!eventType) continue;
 
+        if (eventType === 'item.started' || eventType === 'item.updated') {
+          const item = asRecord(event.item) as CodexItem;
+          const lifecycleType = codexToolLifecycleType(item);
+          const id = asString(item.id);
+
+          // First observation of a command/MCP item announces the call;
+          // later item.updated events for the same id emit nothing, so
+          // update streams never duplicate the unified lifecycle.
+          if (lifecycleType && id && !announcedToolUseIds.has(id)) {
+            announcedToolUseIds.add(id);
+            observedToolUseIds.add(id);
+            yield createEvent(
+              'tool_use',
+              AGENT,
+              codexLifecycleToolUse(lifecycleType, item, id),
+              sessionId,
+            );
+          }
+          continue;
+        }
+
         if (eventType === 'item.completed') {
+          const item = asRecord(event.item) as CodexItem;
+          const lifecycleType = codexToolLifecycleType(item);
+
+          if (lifecycleType) {
+            // Items without an id cannot correlate across lifecycle events;
+            // completion still yields a self-consistent call/result pair
+            // under one generated id.
+            const id = asString(item.id) ?? generateSessionId();
+            if (completedToolUseIds.has(id)) continue;
+            completedToolUseIds.add(id);
+            observedToolUseIds.add(id);
+
+            const toolUse = codexLifecycleToolUse(lifecycleType, item, id);
+            if (!announcedToolUseIds.has(id)) {
+              announcedToolUseIds.add(id);
+              yield createEvent('tool_use', AGENT, toolUse, sessionId);
+            }
+            yield createEvent(
+              'tool_result',
+              AGENT,
+              codexLifecycleToolResult(lifecycleType, item, toolUse),
+              sessionId,
+            );
+            continue;
+          }
+
           const itemEvents = parseItemCompleted(event.item);
 
           for (const itemEvent of itemEvents) {
@@ -1237,11 +1374,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
             }
 
             if (itemEvent.type === 'tool_use') {
+              observedToolUseIds.add(itemEvent.payload.toolUseId);
               yield createEvent('tool_use', AGENT, itemEvent.payload, sessionId);
               continue;
             }
 
             if (itemEvent.type === 'tool_result') {
+              observedToolUseIds.add(itemEvent.payload.toolUseId);
               yield createEvent('tool_result', AGENT, itemEvent.payload, sessionId);
               continue;
             }
@@ -1289,7 +1428,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: mapUsage(event.usage),
+              usage: mapUsage(event.usage, observedToolUseIds.size),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1323,7 +1462,10 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: mapUsage(turn.usage ?? event.usage),
+              usage: mapUsage(
+                turn.usage ?? event.usage,
+                observedToolUseIds.size,
+              ),
               durationMs,
             },
             sessionId,
@@ -1351,7 +1493,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1374,7 +1516,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
           AGENT,
           {
             status: 'error',
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
             durationMs: Date.now() - startTime,
           },
           sessionId,
@@ -1398,7 +1540,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
               sessionId,
               options?.resume,
             ),
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
             durationMs: Date.now() - startTime,
           },
           sessionId,
@@ -1424,7 +1566,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         AGENT,
         {
           status: 'error',
-          usage: { ...DEFAULT_DONE_USAGE },
+          usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
           durationMs: Date.now() - startTime,
         },
         sessionId,

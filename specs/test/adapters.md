@@ -13,6 +13,7 @@ Verification criteria for all adapters. Shared patterns apply to each adapter; p
 Verifies: [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-003](../user/adapters/codex.md#codex-003), [GEMINI-004](../user/adapters/gemini.md#gemini-004), [GEMINI-005](../user/adapters/gemini.md#gemini-005), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
 
 Given canned native events for each adapter, when running the adapter, the yielded `AgentEvent` types shall match the normalization table for that adapter.
+For the Codex adapter, the canned events shall be shaped as the SDK's canonical exported event types — including the multi-phase `command_execution` and `mcp_tool_call` item lifecycles per [TADAPT-031](#tadapt-031) — rather than invented aliases.
 
 ### TADAPT-002
 Verifies: [CLAUDE-002](../user/adapters/claude-code.md#claude-002), [CODEX-002](../user/adapters/codex.md#codex-002), [OPENCODE-002](../user/adapters/opencode.md#opencode-002), [OPENCODE-003](../user/adapters/opencode.md#opencode-003)
@@ -45,6 +46,13 @@ The Codex adapter shall emit `codex:file_change` extension events for file chang
 Verifies: [CODEX-003](../user/adapters/codex.md#codex-003)
 
 Given Codex emits an error whose message is a JSON-encoded object string, the Codex adapter shall expose the human-readable detail/message content in the normalized `error.message`, may unwrap nested error envelopes to reach that content, and shall not pass the raw JSON string through to pane-facing consumers.
+
+### TADAPT-031
+Verifies: [CODEX-003](../user/adapters/codex.md#codex-003)
+
+Given canonical Codex SDK `command_execution` and `mcp_tool_call` items driven through `item.started`, `item.updated`, and `item.completed` lifecycle events — including completed and failed terminals, interleaved concurrent items, missed starts, and repeated updates — the Codex adapter shall emit exactly one `tool_use` per item `id` and at most one terminal `tool_result` per item `id`, correlated by `toolUseId`; shall preserve command, server-qualified MCP tool name, arguments, aggregated output, error details, and exit code; and shall report `done.usage.toolUses` as the count of unique observed tool item `id`s independent of token-usage fields.
+Given `file_change` items in the same stream, the adapter shall still yield `codex:file_change` events for them per [CODEX-003](../user/adapters/codex.md#codex-003).
+The canned events shall be typed against the canonical exported Codex SDK event and item declarations so fixture drift from the installed SDK fails the typecheck.
 
 ### TADAPT-021
 Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
