@@ -89,6 +89,26 @@ and `serve --help` output are inspected, the reported version shall equal the
 exact CI target and the managed-server help shall expose `--hostname` and
 `--port`.
 
+### TADAPT-031
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-016](../user/adapters/opencode.md#opencode-016)
+
+Given canonical OpenCode tool-part snapshot sequences whose `part.id` differs
+from `part.callID` — pending through repeated running to `completed`, and
+pending through running to `error` — the adapter shall emit exactly one
+`tool_use`/`tool_result` pair per `callID`, correlated by `callID`, preserving
+`state.input`, the terminal `state.output` or `state.error`, and the
+state-supplied duration, and shall count each call once in
+`done.usage.toolUses`. Given a terminal snapshot with no earlier snapshots for
+its `callID`, the adapter shall still emit the correlated pair. Given
+interleaved snapshots for distinct `callID`s, each pair shall stay isolated per
+call. Given a rejected permission reply that resolves to a `callID` followed by
+terminal tool-state updates for that call, the adapter shall emit exactly one
+terminal `tool_result`, carrying the call's tool name where the permission
+request named only the permission it gates. Given a rejected reply that
+resolves to a call whose terminal result was already emitted, no denied
+`tool_result` shall follow. Given repeated terminal snapshots, no event or
+usage count shall duplicate.
+
 ## Tool Filtering
 
 ### TADAPT-009
