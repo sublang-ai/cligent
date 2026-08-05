@@ -215,7 +215,7 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
-  it('maps canonical SDK tool lifecycles to unified events (TADAPT-031)', async () => {
+  it('maps canonical SDK tool lifecycles to unified events (TADAPT-001)', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
     });
