@@ -267,7 +267,11 @@ non-empty `input`, exactly one terminal `tool_result` for each emitted
 denied `tool_result`, and a successful `done` whose `usage.toolUses` equals
 the `tool_use` count. The probe shall retry only on the explicit transient
 upstream failures named in [TADAPT-019](#tadapt-019), with the same attempt
-bound.
+bound. A failed attempt whose failures all match those markers shall retry
+into a fresh throwaway directory even when the file was already created,
+because the failure can arrive after the tool ran; an attempt reaching a
+successful `done` shall never classify as transient, because its `result`
+text is model-authored and capacity language there is not a failure.
 This item is the real-run counterpart to [TADAPT-031](#tadapt-031)'s
 canned-event lifecycle check: the canned fixtures encode the wire schema this
 release was written against, so only a live run can catch a later OpenCode

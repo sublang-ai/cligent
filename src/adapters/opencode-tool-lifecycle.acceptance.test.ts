@@ -112,7 +112,7 @@ async function probeWithRetry(): Promise<LifecycleProbe> {
   for (let attempt = 1; attempt <= MAX_PROBE_ATTEMPTS; attempt++) {
     const probe = await runLifecycleProbe();
     const transient = transientFailure(probe.events);
-    if (!transient || probe.fileContentMatches) return probe;
+    if (!transient) return probe;
     if (attempt === MAX_PROBE_ATTEMPTS) {
       throw new Error(
         `opencode lifecycle acceptance failed after ${MAX_PROBE_ATTEMPTS} ` +
@@ -166,22 +166,36 @@ function lifecyclePrompt(fileName: string): string {
   ].join('\n');
 }
 
+// Mirrors the TADAPT-019 classifier: only a failed attempt can be
+// transient — a successful done's `result` is model-authored text, where
+// capacity language would be a false positive that loops a passing run
+// into the attempt bound — and every failure must match a marker, so a
+// real defect accompanied by an incidental 429 fails instead of retrying.
+// A failed attempt retries even when the tool already created the file:
+// each attempt uses a fresh throwaway directory.
 function transientFailure(
   events: readonly CligentEvent[],
 ): string | undefined {
-  for (const event of events) {
-    const text =
-      event.type === 'error'
-        ? ((event.payload as ErrorPayload).message ?? '')
-        : event.type === 'done'
-          ? ((event.payload as DonePayload).result ?? '')
-          : '';
-    if (!text) continue;
-    for (const marker of TRANSIENT_UPSTREAM_MARKERS) {
-      if (marker.test(text)) return text;
+  const doneEvents = events.filter((e) => e.type === 'done');
+  if (doneEvents.length !== 1) return undefined;
+  const done = doneEvents[0]!.payload as DonePayload;
+  if (done.status !== 'error') return undefined;
+
+  const failureTexts = events
+    .filter((e) => e.type === 'error')
+    .map((e) => (e.payload as ErrorPayload).message ?? '');
+  const doneText = done.result?.trim();
+  if (doneText) failureTexts.push(doneText);
+  if (failureTexts.length === 0) return undefined;
+
+  let summary: string | undefined;
+  for (const text of failureTexts) {
+    if (!TRANSIENT_UPSTREAM_MARKERS.some((marker) => marker.test(text))) {
+      return undefined;
     }
+    summary ??= text;
   }
-  return undefined;
+  return summary;
 }
 
 function missingDeps(): string[] {
