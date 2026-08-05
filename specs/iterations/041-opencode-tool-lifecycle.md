@@ -25,6 +25,9 @@ Complete
 - [x] Canned-event tests cover the canonical lifecycle fixtures, terminal-first
       arrival, parallel calls, `part.id` ≠ `callID`, denial precedence, and
       usage counting, alongside the preserved legacy-shape behavior.
+- [x] A live acceptance leg proves the lifecycle invariants against a real
+      managed-mode OpenCode run, so later wire-schema drift fails acceptance
+      instead of shipping.
 
 ## Tasks
 
@@ -38,6 +41,10 @@ checks green at its boundary.
 2. [x] **Correlate tool lifecycle snapshots by `callID`.**
    Rework the adapter's tool-part and permission-reply normalization with
    per-call tracking, and add the lifecycle tests.
+3. [x] **Add the live lifecycle acceptance leg.**
+   Add [TADAPT-032](../test/adapters.md#tadapt-032) and the real-run probe
+   asserting per-`callID` pairing, non-empty input, and usage parity, gated
+   and retried like the existing acceptance items.
 
 ## Acceptance criteria
 
@@ -54,3 +61,6 @@ checks green at its boundary.
   one terminal `tool_result`.
 - Legacy stateless tool parts and the `opencode:*` extension events keep their
   existing normalization.
+- A real managed-mode run that creates a file through tools yields unique
+  `tool_use` ids, one terminal result per id, and `usage.toolUses` parity,
+  self-skipping per the acceptance gating.

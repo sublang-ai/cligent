@@ -168,7 +168,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
 
 ### TMUX
 
