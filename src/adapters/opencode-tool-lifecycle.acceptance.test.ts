@@ -176,6 +176,8 @@ function lifecyclePrompt(fileName: string): string {
 function transientFailure(
   events: readonly CligentEvent[],
 ): string | undefined {
+  if (witnessedInvariantViolation(events)) return undefined;
+
   const doneEvents = events.filter((e) => e.type === 'done');
   if (doneEvents.length !== 1) return undefined;
   const done = doneEvents[0]!.payload as DonePayload;
@@ -196,6 +198,34 @@ function transientFailure(
     summary ??= text;
   }
   return summary;
+}
+
+// TADAPT-019-style fatal precheck: an attempt that witnessed a lifecycle
+// invariant violation never classifies as transient, because a 429/503
+// does not cause permission asks, denials, duplicate tool_use ids, or
+// results for unannounced calls — retrying such an attempt would let a
+// later nondeterministic clean run mask the very regressions this gate
+// exists to catch. Errored tool_results stay retryable, unlike in
+// TADAPT-019: the invariants deliberately tolerate model-level command
+// failures, and a truncated transient attempt may legitimately strand a
+// tool_use without its result, so neither condition may be fatal here.
+function witnessedInvariantViolation(
+  events: readonly CligentEvent[],
+): boolean {
+  if (events.some((e) => e.type === 'permission_request')) return true;
+
+  const useIds = events
+    .filter((e) => e.type === 'tool_use')
+    .map((e) => (e.payload as ToolUsePayload).toolUseId);
+  if (new Set(useIds).size !== useIds.length) return true;
+
+  const announced = new Set(useIds);
+  return events
+    .filter((e) => e.type === 'tool_result')
+    .some((e) => {
+      const payload = e.payload as ToolResultPayload;
+      return payload.status === 'denied' || !announced.has(payload.toolUseId);
+    });
 }
 
 function missingDeps(): string[] {
