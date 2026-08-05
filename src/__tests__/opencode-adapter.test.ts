@@ -2349,3 +2349,481 @@ describe('OpenCode SSE event structure', () => {
     expect(usage.inputTokens).toBe(136);
   });
 });
+
+describe('OpenCode tool lifecycle (TADAPT-031)', () => {
+  interface ToolUseLike {
+    payload: {
+      toolName: string;
+      toolUseId: string;
+      input: Record<string, unknown>;
+      description?: string;
+    };
+  }
+
+  interface ToolResultLike {
+    payload: {
+      toolName: string;
+      toolUseId: string;
+      status: string;
+      output: unknown;
+      durationMs?: number;
+    };
+  }
+
+  interface DoneLike {
+    payload: { usage: { toolUses: number } };
+  }
+
+  function toolPartEvent(
+    callID: string,
+    partId: string,
+    state: Record<string, unknown>,
+    tool = 'bash',
+  ): Record<string, unknown> {
+    return {
+      type: 'message.part.updated',
+      properties: {
+        sessionID: 'session-1',
+        part: {
+          id: partId,
+          sessionID: 'session-1',
+          messageID: 'message-1',
+          type: 'tool',
+          callID,
+          tool,
+          state,
+        },
+        time: 1,
+      },
+    };
+  }
+
+  const idleEvent = {
+    type: 'session.idle',
+    properties: { sessionID: 'session-1' },
+  };
+
+  async function runLifecycle(events: unknown[]): Promise<AgentEvent[]> {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'session-1' },
+          events: [...events, idleEvent],
+        }),
+      },
+    );
+    return collect(adapter.run('prompt'));
+  }
+
+  it('collapses pending → repeated running → completed into one correlated pair', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-a', 'part-a', {
+        status: 'pending',
+        input: {},
+        raw: '{"comm',
+      }),
+      toolPartEvent('call-a', 'part-a', {
+        status: 'running',
+        input: { command: 'ls -la' },
+        time: { start: 100 },
+      }),
+      toolPartEvent('call-a', 'part-a', {
+        status: 'running',
+        input: { command: 'ls -la' },
+        title: 'ls -la',
+        time: { start: 100 },
+      }),
+      toolPartEvent('call-a', 'part-a', {
+        status: 'completed',
+        input: { command: 'ls -la' },
+        output: 'file.txt',
+        title: 'ls -la',
+        metadata: {},
+        time: { start: 100, end: 250 },
+      }),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const toolUse = events[1] as AgentEvent & ToolUseLike;
+    expect(toolUse.payload.toolUseId).toBe('call-a');
+    expect(toolUse.payload.toolName).toBe('bash');
+    expect(toolUse.payload.input).toEqual({ command: 'ls -la' });
+    expect(toolUse.payload.description).toBeUndefined();
+
+    const toolResult = events[2] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-a');
+    expect(toolResult.payload.toolName).toBe('bash');
+    expect(toolResult.payload.status).toBe('success');
+    expect(toolResult.payload.output).toBe('file.txt');
+    expect(toolResult.payload.durationMs).toBe(150);
+
+    const done = events[3] as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+
+  it('collapses pending → running → error into one correlated error pair', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-b', 'part-b', {
+        status: 'pending',
+        input: {},
+        raw: '',
+      }),
+      toolPartEvent('call-b', 'part-b', {
+        status: 'running',
+        input: { url: 'https://example.com' },
+        time: { start: 10 },
+      }),
+      toolPartEvent(
+        'call-b',
+        'part-b',
+        {
+          status: 'error',
+          input: { url: 'https://example.com' },
+          error: 'connection refused',
+          time: { start: 10, end: 35 },
+        },
+        'webfetch',
+      ),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const toolUse = events[1] as AgentEvent & ToolUseLike;
+    expect(toolUse.payload.toolUseId).toBe('call-b');
+    expect(toolUse.payload.input).toEqual({ url: 'https://example.com' });
+
+    const toolResult = events[2] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-b');
+    expect(toolResult.payload.status).toBe('error');
+    expect(toolResult.payload.output).toBe('connection refused');
+    expect(toolResult.payload.durationMs).toBe(25);
+
+    const done = events[3] as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+
+  it('produces a correlated pair from a terminal snapshot with no earlier snapshots', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-c', 'part-c', {
+        status: 'completed',
+        input: { command: 'pwd' },
+        output: '/repo',
+        title: 'pwd',
+        metadata: {},
+        time: { start: 5, end: 9 },
+      }),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'done',
+    ]);
+
+    const toolUse = events[1] as AgentEvent & ToolUseLike;
+    expect(toolUse.payload.toolUseId).toBe('call-c');
+    expect(toolUse.payload.input).toEqual({ command: 'pwd' });
+    expect(toolUse.payload.description).toBe('pwd');
+
+    const toolResult = events[2] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-c');
+    expect(toolResult.payload.status).toBe('success');
+  });
+
+  it('does not duplicate events or usage on repeated terminal snapshots', async () => {
+    const completed = {
+      status: 'completed',
+      input: { command: 'pwd' },
+      output: '/repo',
+      title: 'pwd',
+      metadata: {},
+      time: { start: 5, end: 9 },
+    };
+    const events = await runLifecycle([
+      toolPartEvent('call-d', 'part-d', completed),
+      toolPartEvent('call-d', 'part-d', completed),
+      toolPartEvent('call-d', 'part-d', completed),
+    ]);
+
+    expect(events.filter((e) => e.type === 'tool_use')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'tool_result')).toHaveLength(1);
+
+    const done = events.find((e) => e.type === 'done') as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+
+  it('keeps interleaved parallel calls isolated per callID', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-x', 'part-x', {
+        status: 'running',
+        input: { command: 'sleep 1' },
+        time: { start: 1 },
+      }),
+      toolPartEvent(
+        'call-y',
+        'part-y',
+        {
+          status: 'running',
+          input: { url: 'https://example.com' },
+          time: { start: 2 },
+        },
+        'webfetch',
+      ),
+      toolPartEvent('call-x', 'part-x', {
+        status: 'completed',
+        input: { command: 'sleep 1' },
+        output: 'done-x',
+        title: 'sleep',
+        metadata: {},
+        time: { start: 1, end: 11 },
+      }),
+      toolPartEvent(
+        'call-y',
+        'part-y',
+        {
+          status: 'error',
+          input: { url: 'https://example.com' },
+          error: 'timeout',
+          time: { start: 2, end: 22 },
+        },
+        'webfetch',
+      ),
+    ]);
+
+    const toolUses = events.filter(
+      (e) => e.type === 'tool_use',
+    ) as Array<AgentEvent & ToolUseLike>;
+    expect(toolUses.map((e) => e.payload.toolUseId)).toEqual([
+      'call-x',
+      'call-y',
+    ]);
+    expect(toolUses[1]!.payload.toolName).toBe('webfetch');
+
+    const toolResults = events.filter(
+      (e) => e.type === 'tool_result',
+    ) as Array<AgentEvent & ToolResultLike>;
+    expect(
+      toolResults.map((e) => [e.payload.toolUseId, e.payload.status]),
+    ).toEqual([
+      ['call-x', 'success'],
+      ['call-y', 'error'],
+    ]);
+
+    const done = events.find((e) => e.type === 'done') as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(2);
+  });
+
+  it('emits a single denied terminal result across denial and tool-state error', async () => {
+    const events = await runLifecycle([
+      toolPartEvent(
+        'call-e',
+        'part-e',
+        { status: 'pending', input: {}, raw: '' },
+        'write',
+      ),
+      toolPartEvent(
+        'call-e',
+        'part-e',
+        {
+          status: 'running',
+          input: { filePath: '/tmp/x', content: 'data' },
+          time: { start: 1 },
+        },
+        'write',
+      ),
+      {
+        type: 'permission.asked',
+        properties: {
+          id: 'perm-1',
+          sessionID: 'session-1',
+          permission: 'edit',
+          patterns: ['/tmp/*'],
+          metadata: {},
+          always: [],
+          tool: { messageID: 'message-1', callID: 'call-e' },
+        },
+      },
+      {
+        type: 'permission.replied',
+        properties: {
+          sessionID: 'session-1',
+          requestID: 'perm-1',
+          reply: 'reject',
+        },
+      },
+      toolPartEvent(
+        'call-e',
+        'part-e',
+        {
+          status: 'error',
+          input: { filePath: '/tmp/x', content: 'data' },
+          error: 'rejected',
+          time: { start: 1, end: 2 },
+        },
+        'write',
+      ),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'tool_use',
+      'permission_request',
+      'tool_result',
+      'done',
+    ]);
+
+    const toolUse = events[1] as AgentEvent & ToolUseLike;
+    expect(toolUse.payload.toolUseId).toBe('call-e');
+    expect(toolUse.payload.toolName).toBe('write');
+
+    const permission = events[2] as AgentEvent & {
+      payload: { toolName: string };
+    };
+    expect(permission.payload.toolName).toBe('edit');
+
+    // The denial resolves to the tracked call: it carries the tool's
+    // name, not the permission name the ask carried.
+    const toolResult = events[3] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-e');
+    expect(toolResult.payload.toolName).toBe('write');
+    expect(toolResult.payload.status).toBe('denied');
+
+    const done = events[4] as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+
+  it('emits no denied result for a call whose terminal result already arrived', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-g', 'part-g', {
+        status: 'completed',
+        input: { command: 'pwd' },
+        output: '/repo',
+        title: 'pwd',
+        metadata: {},
+        time: { start: 5, end: 9 },
+      }),
+      {
+        type: 'permission.asked',
+        properties: {
+          id: 'perm-3',
+          sessionID: 'session-1',
+          permission: 'bash',
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: 'message-1', callID: 'call-g' },
+        },
+      },
+      {
+        type: 'permission.replied',
+        properties: {
+          sessionID: 'session-1',
+          requestID: 'perm-3',
+          reply: 'reject',
+        },
+      },
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'tool_use',
+      'tool_result',
+      'permission_request',
+      'done',
+    ]);
+
+    const toolResult = events[2] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-g');
+    expect(toolResult.payload.status).toBe('success');
+
+    const done = events[4] as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+
+  it('suppresses a late tool_use behind a denial delivered while pending', async () => {
+    const events = await runLifecycle([
+      toolPartEvent('call-f', 'part-f', {
+        status: 'pending',
+        input: {},
+        raw: '',
+      }),
+      {
+        type: 'permission.asked',
+        properties: {
+          id: 'perm-2',
+          sessionID: 'session-1',
+          permission: 'bash',
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: 'message-1', callID: 'call-f' },
+        },
+      },
+      {
+        type: 'permission.replied',
+        properties: {
+          sessionID: 'session-1',
+          requestID: 'perm-2',
+          reply: 'reject',
+        },
+      },
+      toolPartEvent('call-f', 'part-f', {
+        status: 'error',
+        input: {},
+        error: 'rejected',
+        time: { start: 1, end: 2 },
+      }),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'permission_request',
+      'tool_result',
+      'done',
+    ]);
+
+    const toolResult = events[2] as AgentEvent & ToolResultLike;
+    expect(toolResult.payload.toolUseId).toBe('call-f');
+    expect(toolResult.payload.status).toBe('denied');
+
+    const done = events[3] as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(0);
+  });
+
+  it('deduplicates repeated legacy stateless tool parts by identifier', async () => {
+    const legacyPart = {
+      type: 'message.part.updated',
+      sessionId: 'session-1',
+      part: {
+        type: 'tool_call',
+        id: 'legacy-1',
+        name: 'bash',
+        input: { command: 'ls' },
+      },
+    };
+    const events = await runLifecycle([legacyPart, legacyPart]);
+
+    const toolUses = events.filter(
+      (e) => e.type === 'tool_use',
+    ) as Array<AgentEvent & ToolUseLike>;
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0]!.payload.toolUseId).toBe('legacy-1');
+    expect(toolUses[0]!.payload.input).toEqual({ command: 'ls' });
+
+    const done = events.find((e) => e.type === 'done') as AgentEvent & DoneLike;
+    expect(done.payload.usage.toolUses).toBe(1);
+  });
+});

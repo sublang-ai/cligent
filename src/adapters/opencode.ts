@@ -1024,6 +1024,20 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let accumulatedToolUses = 0;
     let accumulatedCost = 0;
 
+    // OpenCode re-sends the whole ToolPart on every lifecycle transition
+    // (pending → running → completed/error), so tool events must be
+    // correlated per callID rather than emitted per snapshot.
+    const toolCalls = new Map<
+      string,
+      { toolName: string; useEmitted: boolean; resultEmitted: boolean }
+    >();
+    // permission.replied carries only requestID; the tool callID it
+    // resolves to arrives earlier on permission.asked.
+    const permissionRequests = new Map<
+      string,
+      { toolUseId: string; toolName: string }
+    >();
+
     const onAbort = () => {
       abortRequested = true;
       if (serverProcess && !serverClosed) {
@@ -1279,35 +1293,93 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             partType === 'tool_call' ||
             partType === 'tool_use'
           ) {
-            accumulatedToolUses++;
-            yield createEvent(
-              'tool_use',
-              AGENT,
-              {
-                toolName:
-                  asString(part.toolName) ??
-                  asString(part.name) ??
-                  asString(part.tool) ??
-                  asString(asRecord(part.tool).name) ??
-                  'unknown_tool',
-                toolUseId:
-                  asString(part.toolUseId) ??
-                  asString(part.id) ??
-                  asString(part.callId) ??
-                  asString(part.callID) ??
-                  generateSessionId(),
-                input: parseToolInput(
-                  part.input ??
-                    part.arguments ??
-                    part.args ??
-                    asRecord(part.tool).input,
-                ),
-                ...(asString(part.description)
-                  ? { description: asString(part.description) }
-                  : {}),
-              },
-              sessionId,
-            );
+            const state = asRecord(part.state);
+            const stateStatus = asString(state.status)?.toLowerCase();
+
+            // OPENCODE-016: correlation uses callID — the provider's
+            // invocation id, which permission.asked also references —
+            // not part.id, which names the enclosing message part.
+            const toolUseId =
+              asString(part.callID) ??
+              asString(part.callId) ??
+              asString(part.toolUseId) ??
+              asString(part.id) ??
+              generateSessionId();
+
+            const toolName =
+              asString(part.toolName) ??
+              asString(part.name) ??
+              asString(part.tool) ??
+              asString(asRecord(part.tool).name) ??
+              'unknown_tool';
+
+            let call = toolCalls.get(toolUseId);
+            if (!call) {
+              call = { toolName, useEmitted: false, resultEmitted: false };
+              toolCalls.set(toolUseId, call);
+            } else if (toolName !== 'unknown_tool') {
+              call.toolName = toolName;
+            }
+
+            // Pending snapshots stream partially parsed arguments; the
+            // input is settled once the call runs or terminates. Parts
+            // without lifecycle state emit immediately (legacy shape).
+            // A call already terminated by a permission denial gets no
+            // late tool_use behind its terminal result.
+            if (
+              stateStatus !== 'pending' &&
+              !call.useEmitted &&
+              !call.resultEmitted
+            ) {
+              call.useEmitted = true;
+              accumulatedToolUses++;
+              const description =
+                asString(part.description) ?? asString(state.title);
+              yield createEvent(
+                'tool_use',
+                AGENT,
+                {
+                  toolName: call.toolName,
+                  toolUseId,
+                  input: parseToolInput(
+                    state.input ??
+                      part.input ??
+                      part.arguments ??
+                      part.args ??
+                      asRecord(part.tool).input,
+                  ),
+                  ...(description ? { description } : {}),
+                },
+                sessionId,
+              );
+            }
+
+            if (
+              (stateStatus === 'completed' || stateStatus === 'error') &&
+              !call.resultEmitted
+            ) {
+              call.resultEmitted = true;
+              const time = asRecord(state.time);
+              const start = asNumber(time.start);
+              const end = asNumber(time.end);
+              yield createEvent(
+                'tool_result',
+                AGENT,
+                {
+                  toolUseId,
+                  toolName: call.toolName,
+                  status: stateStatus === 'completed' ? 'success' : 'error',
+                  output:
+                    (stateStatus === 'completed'
+                      ? state.output
+                      : state.error) ?? null,
+                  ...(start !== undefined && end !== undefined
+                    ? { durationMs: end - start }
+                    : {}),
+                },
+                sessionId,
+              );
+            }
             continue;
           }
 
@@ -1348,23 +1420,37 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const permission =
             eventType === 'permission.asked' ? event : asRecord(event.permission);
           const reason = asString(permission.reason) ?? asString(event.reason);
+          const toolName =
+            asString(permission.permission) ??
+            asString(permission.toolName) ??
+            asString(permission.name) ??
+            asString(event.toolName) ??
+            'unknown_tool';
+          const requestId =
+            asString(permission.requestID) ?? asString(permission.id);
+          const toolUseId =
+            requestId ??
+            asString(asRecord(permission.tool).callID) ??
+            asString(permission.toolUseId) ??
+            asString(event.toolUseId) ??
+            generateSessionId();
+
+          if (requestId) {
+            // permission.replied carries only requestID; remember which
+            // tool call (callID) a later denial must resolve to.
+            permissionRequests.set(requestId, {
+              toolUseId:
+                asString(asRecord(permission.tool).callID) ?? toolUseId,
+              toolName,
+            });
+          }
+
           yield createEvent(
             'permission_request',
             AGENT,
             {
-              toolName:
-                asString(permission.permission) ??
-                asString(permission.toolName) ??
-                asString(permission.name) ??
-                asString(event.toolName) ??
-                'unknown_tool',
-              toolUseId:
-                asString(permission.requestID) ??
-                asString(permission.id) ??
-                asString(asRecord(permission.tool).callID) ??
-                asString(permission.toolUseId) ??
-                asString(event.toolUseId) ??
-                generateSessionId(),
+              toolName,
+              toolUseId,
               input: parseToolInput(
                 permission.input ?? permission.metadata ?? event.input ?? {},
               ),
@@ -1391,20 +1477,54 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             decision === 'rejected' ||
             decision === 'reject'
           ) {
+            const requestId =
+              asString(permission.requestID) ?? asString(event.requestID);
+            const asked = requestId
+              ? permissionRequests.get(requestId)
+              : undefined;
+            const toolUseId =
+              asked?.toolUseId ??
+              asString(asRecord(permission.tool).callID) ??
+              asString(permission.toolUseId) ??
+              asString(permission.id) ??
+              asString(event.toolUseId) ??
+              generateSessionId();
+
+            // OPENCODE-016: the denial is the call's terminal result; the
+            // tool part will still transition to an error state afterwards
+            // and must not produce a second one — and a call that already
+            // terminated gets no denied result behind its terminal one.
+            let call = toolCalls.get(toolUseId);
+            if (call?.resultEmitted) {
+              continue;
+            }
+
+            // The ask names the permission it gates ('edit'), not the
+            // tool; the tracked call holds the tool name from part.tool.
+            const trackedName =
+              call && call.toolName !== 'unknown_tool'
+                ? call.toolName
+                : undefined;
+            const toolName =
+              trackedName ??
+              asString(permission.toolName) ??
+              asString(permission.name) ??
+              asString(event.toolName) ??
+              asked?.toolName ??
+              'unknown_tool';
+
+            if (!call) {
+              call = { toolName, useEmitted: false, resultEmitted: false };
+              toolCalls.set(toolUseId, call);
+            }
+            call.resultEmitted = true;
+
             yield createEvent(
               'tool_result',
               AGENT,
               {
-                toolName:
-                  asString(permission.toolName) ??
-                  asString(permission.name) ??
-                  asString(event.toolName) ??
-                  'unknown_tool',
-                toolUseId:
-                  asString(permission.toolUseId) ??
-                  asString(permission.id) ??
-                  asString(event.toolUseId) ??
-                  generateSessionId(),
+                toolName,
+                toolUseId,
                 status: 'denied',
                 output:
                   permission.reason ??
