@@ -28,12 +28,25 @@ The adapter shall normalize Codex events to `AgentEvent` types:
 | Codex Event | AgentEvent |
 | --- | --- |
 | `item.completed` (text content) | `text` |
-| `item.completed` (tool call) | `tool_use` |
-| `item.completed` (tool result) | `tool_result` |
+| First observed lifecycle event of a `command_execution` or `mcp_tool_call` item | `tool_use` |
+| `item.completed` of a `command_execution` or `mcp_tool_call` item | `tool_result` |
 | File change events | `codex:file_change` (extension) |
 | `turn.completed` | `done` (usage) |
 | `turn.failed` | `error` followed by `done` (`status: 'error'`) |
 | Errors | `error` |
+
+The SDK represents shell commands and MCP tool invocations as `command_execution` and `mcp_tool_call` thread items that evolve across `item.started`, `item.updated`, and `item.completed` events and correlate by item `id` [[1]].
+For each such item `id`, the adapter shall emit exactly one `tool_use`, on the first lifecycle event observed for the `id`, and at most one terminal `tool_result`, on the item's `item.completed` event, whether the item completed or failed.
+When `item.completed` arrives for an `id` whose earlier lifecycle events were not observed, the adapter shall synthesize the missing `tool_use` immediately before the `tool_result`.
+An `item.updated` event for an already-announced `id` shall produce no additional unified lifecycle event.
+Both unified events shall carry the native item `id` as `toolUseId` so concurrent items remain correlated.
+
+The `tool_use` payload shall name the tool `command_execution` with the native command string as input for command items, and the MCP server-qualified tool name (`<server>.<tool>`) with the native arguments as input for MCP items.
+The `tool_result` payload shall map native status `failed` to `status: 'error'` and any other terminal status to `status: 'success'`, and shall preserve the native `aggregated_output` and, when present, `exit_code` for command items, and the native result or error details for MCP items.
+
+Where an `item.completed` item instead carries legacy alias tool shapes — `tool_call`, `function_call`, or `tool_use` calls and `tool_result`, `function_call_result`, or `tool_output` results, at item top level or among content blocks — the adapter shall normalize them to the same `tool_use` and `tool_result` events as a compatibility fallback, preserving their native status (including `denied`) and duration detail, with their identifiers counted through the same unique-`toolUseId` rule below.
+
+Because the SDK usage object carries token counts but no tool-count metric, the adapter shall report `DonePayload.usage.toolUses` on every terminal `done` event as the number of unique `toolUseId` values observed during the run — for canonical SDK streams, the unique `command_execution` and `mcp_tool_call` item `id`s — independent of token-usage fields.
 
 When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream. This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
 
