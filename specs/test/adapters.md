@@ -253,3 +253,23 @@ Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants 
 With the same `CODEX_HOME`, when a Codex `Cligent` constructed with `CligentOptions.permissions = { mode: 'auto' }` is invoked to write a different file outside its throwaway working directory, the file shall not exist on disk after the run, the event stream shall contain no `error` event, and the terminal `done` status shall be `success`.
 The probe shall restore the caller's `CODEX_HOME` after the run and shall use the same Codex sandbox-init skip / CI hard-fail rules as [TADAPT-019](#tadapt-019).
 This item is the real-run counterpart to [TADAPT-004](#tadapt-004)'s mapping check for `exec --ignore-user-config`: the no-policy control proves runs without `permissions` inherit Codex user config, and the permission-managed leg proves that config no longer overrides Cligent's managed `:workspace` profile.
+
+### TADAPT-032
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-016](../user/adapters/opencode.md#opencode-016)
+
+Where OpenCode acceptance dependencies are present per this section's gating,
+when a real managed-mode OpenCode run with auto-approved permissions is
+prompted to create a file through its tools and the file exists with the
+expected content afterwards, the collected stream shall contain no two
+`tool_use` events sharing a `toolUseId`, at least one `tool_use` carrying
+non-empty `input`, exactly one terminal `tool_result` for each emitted
+`tool_use` `toolUseId` and none for any other id, no `permission_request` or
+denied `tool_result`, and a successful `done` whose `usage.toolUses` equals
+the `tool_use` count. The probe shall retry only on the explicit transient
+upstream failures named in [TADAPT-019](#tadapt-019), with the same attempt
+bound.
+This item is the real-run counterpart to [TADAPT-031](#tadapt-031)'s
+canned-event lifecycle check: the canned fixtures encode the wire schema this
+release was written against, so only a live run can catch a later OpenCode
+release changing the `ToolPart` lifecycle shape the way the pre-1.18
+normalization drifted.
