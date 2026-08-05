@@ -17,7 +17,10 @@ import type {
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
-import { assertRuntimeSupported } from '../runtime-version.js';
+import {
+  assertRuntimeSupported,
+  isUnsupportedRuntimeError,
+} from '../runtime-version.js';
 
 type ClaudePermissionMode =
   | 'auto'
@@ -752,7 +755,11 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
     let sdk: ClaudeAgentSdk;
     try {
       sdk = await this.loadSdk();
-    } catch {
+    } catch (error) {
+      // A version refusal already names the installed version, the required
+      // version, the tree, and the repair. Replacing it with "install it"
+      // would tell the user to install something already present.
+      if (isUnsupportedRuntimeError(error)) throw error;
       throw new Error(
         'ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.',
       );

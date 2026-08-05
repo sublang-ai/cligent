@@ -21,21 +21,25 @@ The agent SDKs are optional peer dependencies — add the one(s) for the
 adapters you use:
 
 ```bash
-npm install @anthropic-ai/claude-agent-sdk   # Claude Code
-npm install @openai/codex-sdk                # Codex
-npm install @opencode-ai/sdk                 # OpenCode
+# `>=` keeps the declaration open so a cligent upgrade can carry the runtime
+# forward. A bare `npm install <pkg>` writes a caret instead, and for a
+# `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
+# `0.146.0`, however often you run `npm update`.
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.154"   # Claude Code
+npm install "@openai/codex-sdk@>=0.145.0"                # Codex
+npm install "@opencode-ai/sdk@>=1.14.41"                 # OpenCode
 # Gemini needs no SDK — the adapter drives the installed `gemini` CLI
 # Kimi needs its CLI — see the separately pinned install below
 ```
 
-cligent owns which versions of those runtimes work, and refuses one it
-does not support with the version it found, the version it needs, and the
-command that repairs it. Declare them so a cligent upgrade can carry them
-forward: `npm install` writes a caret, and for a `0.MINOR.PATCH` package a
-caret pins the minor — `^0.139.0` never reaches `0.146.0`. Prefer an open
-`>=` specifier on npm, or re-run the install to move the pin deliberately.
-`@sublang/cligent/runtime-targets` publishes the supported and tested
-version of every runtime if you want to check them yourself.
+cligent owns which versions of those runtimes work. It refuses one it does
+not support, naming the version it found, the version it needs, and the
+command that repairs it — before an agent call rather than in the middle of
+one. `@sublang/cligent/runtime-targets` publishes the supported and tested
+version of every runtime, so a tool built on cligent inherits the policy by
+upgrading cligent and carries no agent-SDK version knowledge of its own.
+Note pnpm rewrites `>=` back into a caret on `pnpm update`; there, move the
+pin deliberately and let the lockfile hold it.
 
 The Kimi adapter targets the maintained Kimi Code CLI through ACP. Install
 the exact conformance target. The external Kimi CLI itself requires Node.js

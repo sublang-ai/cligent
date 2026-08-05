@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,6 +13,9 @@ import {
 } from './runtime-targets.js';
 
 const requireFromHere = createRequire(import.meta.url);
+
+/** Marker carried by a version refusal so callers can re-throw it intact. */
+const UNSUPPORTED_RUNTIME = Symbol.for('cligent.unsupportedRuntime');
 
 /**
  * Reads an installed package's declared version, resolving from this module's
@@ -53,11 +57,34 @@ export function readPackageVersion(packageName: string): string | undefined {
  * it.
  */
 export function readRuntimeVersion(target: RuntimeTarget): string | undefined {
+  // A CLI runtime lives on PATH, not in any node_modules this process can
+  // walk, so searching the module tree for it always answered "unknown" and
+  // left every CLI floor unenforced.
+  if (target.kind === 'cli') {
+    return target.command ? readCommandVersion(target.command) : undefined;
+  }
   if (target.bundles) {
     const bundled = readPackageVersion(target.bundles);
     if (bundled !== undefined) return bundled;
   }
   return readPackageVersion(target.package);
+}
+
+/**
+ * The version an executable on `PATH` reports. Every adapter with a CLI
+ * runtime already spawns `<command> --version` to answer `isAvailable()` and
+ * discards the output; this reads the same answer instead of throwing it
+ * away. A command that cannot be run is an unknown version, never an
+ * unsupported one.
+ */
+export function readCommandVersion(command: string): string | undefined {
+  const probe = spawnSync(command, ['--version'], {
+    stdio: 'pipe',
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (probe.error !== undefined || probe.status !== 0) return undefined;
+  return parseCliVersion(`${probe.stdout ?? ''}${probe.stderr ?? ''}`);
 }
 
 /** The version an executable reports, or `undefined` when it cannot be run. */
@@ -99,12 +126,14 @@ export function unsupportedRuntimeError(
 ): Error {
   const named = target.bundles ?? target.package;
   const tree = resolvedTreeOf(target.package);
-  return new Error(
+  const error = new Error(
     `${named} ${installed} is older than this release of @sublang/cligent supports ` +
       `(requires >=${target.supportedFrom}, tested at ${target.tested})` +
       `${tree ? `, resolved from ${tree}` : ''}. ` +
       `Repair: ${repair}`,
   );
+  Object.defineProperty(error, UNSUPPORTED_RUNTIME, { value: true });
+  return error;
 }
 
 /** The `node_modules` directory a package resolved from, for diagnostics. */
@@ -165,6 +194,16 @@ export interface RuntimeReadiness {
   readonly installed?: string;
   /** The `node_modules` tree the runtime resolved from, when known. */
   readonly resolvedFrom?: string;
+  /**
+   * What repairs this runtime: the package specifier to install, and any
+   * one-time step no install performs. The surrounding command depends on the
+   * install tree, which only the caller knows, so the caller renders it — but
+   * it never has to know which package an adapter needs.
+   */
+  readonly repair: {
+    readonly spec: string;
+    readonly steps: readonly string[];
+  };
 }
 
 /**
@@ -181,8 +220,13 @@ export function classifyRuntime(
   available: boolean,
   installed: string | undefined = readRuntimeVersion(target),
 ): RuntimeReadiness {
-  const resolvedFrom = resolvedTreeOf(target.package);
-  const base = { target, ...(resolvedFrom ? { resolvedFrom } : {}) };
+  const resolvedFrom =
+    target.kind === 'peer' ? resolvedTreeOf(target.package) : undefined;
+  const base = {
+    target,
+    repair: { spec: target.repairSpec, steps: target.steps ?? [] },
+    ...(resolvedFrom ? { resolvedFrom } : {}),
+  };
   if (installed === undefined) {
     // An adapter that loads without a readable version is working; only an
     // adapter that also fails to load is missing.
@@ -217,4 +261,19 @@ export function describeRuntimeReadiness(readiness: RuntimeReadiness): string {
     case 'unknown':
       return `${named} is installed at an unreadable version`;
   }
+}
+
+
+/**
+ * Whether an error is a runtime version refusal rather than an absent
+ * runtime. An adapter's `run()` replaces a load failure with installation
+ * guidance, which is the wrong advice for a runtime that is installed and
+ * merely too old — so that guidance must not swallow this.
+ */
+export function isUnsupportedRuntimeError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as Record<PropertyKey, unknown>)[UNSUPPORTED_RUNTIME] === true
+  );
 }

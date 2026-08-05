@@ -23,6 +23,7 @@ import {
   EXPECTED_PROTOCOL_VERSIONS,
   EXPECTED_SDK_VERSIONS,
 } from './verify-agent-targets.mjs';
+import { AGENT_RUNTIME_TARGETS } from '../dist/runtime-targets.js';
 
 const PACKAGE_NAME = '@sublang/cligent';
 const NODE_RUNTIME_VERSION = '18.3.0';
@@ -33,11 +34,16 @@ const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
   yaml: '^2.8.4',
   zod: '4.4.3',
 });
-const EXPECTED_OPTIONAL_PEERS = Object.freeze({
-  '@anthropic-ai/claude-agent-sdk': '>=0.3.154',
-  '@openai/codex-sdk': '>=0.138.0',
-  '@opencode-ai/sdk': '>=1.14.41',
-});
+// PKG-016: derived from the shipped descriptor, never restated here. A
+// second copy of a floor is exactly the drift this work removes.
+const EXPECTED_OPTIONAL_PEERS = Object.freeze(
+  Object.fromEntries(
+    Object.values(AGENT_RUNTIME_TARGETS)
+      .flat()
+      .filter((target) => target.kind === 'peer')
+      .map((target) => [target.package, `>=${target.supportedFrom}`]),
+  ),
+);
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';

@@ -11,9 +11,12 @@
  *
  * Two versions per runtime, deliberately distinct:
  *
- * - `supportedFrom` is the lowest version the adapter supports. It is the
- *   published `peerDependencies` floor, and it blocks: below it the runtime
- *   refuses to load.
+ * - `supportedFrom` is the lowest version that satisfies both halves of the
+ *   floor rule: it supports every current model of that provider, and this
+ *   adapter supports it. It is the published `peerDependencies` floor, and
+ *   it blocks: below it the runtime refuses to load. It is established by
+ *   checking the published runtimes, not by copying the tested version,
+ *   because a floor set too high refuses installs that work.
  * - `tested` is the exact version CI verifies, the `devDependencies` pin.
  *   Above it a runtime still loads, reported as untested rather than as
  *   unsupported, because a version this release never saw is not thereby
@@ -55,6 +58,13 @@ export interface RuntimeTarget {
   readonly bundles?: string;
   /** A one-time step no install command performs, such as an OAuth login. */
   readonly steps?: readonly string[];
+  /**
+   * The package specifier a repair should install, at the version this
+   * release verified. Rendering the surrounding command needs the install
+   * tree, which only the caller knows; this is the part that is cligent's to
+   * decide, so a consumer never reconstructs an adapter-to-package mapping.
+   */
+  readonly repairSpec: string;
 }
 
 export type AgentRuntimeName =
@@ -76,7 +86,13 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
-      supportedFrom: '0.3.154',
+      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.220',
+      // The first release whose bundled model catalog carries
+      // `claude-opus-5`: 0.3.218 has `claude-sonnet-5` only, and 0.3.154 —
+      // the previous floor — has neither. Bisected against the published
+      // tarballs, because the catalog is data inside the package rather
+      // than something the API surface reveals.
+      supportedFrom: '0.3.219',
       tested: '0.3.220',
       bundles: '@anthropic-ai/claude-code',
     }),
@@ -85,7 +101,16 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
-      supportedFrom: '0.138.0',
+      repairSpec: '@openai/codex-sdk@0.146.0',
+      // The first release carrying the complete current model family:
+      // 0.144.0 has gpt-5.6-luna/-sol/-terra, 0.145.0 adds gpt-5.6 and
+      // gpt-5.6-pro, and 0.142.2 has none of them. 0.139.0 — the runtime
+      // DR-013 was written about — is therefore refused, where a floor at
+      // the old 0.138.0 classified it as satisfied and left the motivating
+      // defect in place. Bisected against the published binaries rather
+      // than assumed, so the floor is the lowest usable version and not
+      // merely the tested one.
+      supportedFrom: '0.145.0',
       tested: '0.146.0',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
@@ -96,6 +121,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'cli' as const,
       package: '@google/gemini-cli',
+      repairSpec: '@google/gemini-cli@0.53.1',
       command: 'gemini',
       supportedFrom: '0.50.0',
       tested: '0.53.1',
@@ -105,6 +131,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'cli' as const,
       package: '@moonshot-ai/kimi-code',
+      repairSpec: '@moonshot-ai/kimi-code@0.31.1',
       command: 'kimi',
       supportedFrom: '0.31.1',
       tested: '0.31.1',
@@ -115,12 +142,14 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@opencode-ai/sdk',
+      repairSpec: '@opencode-ai/sdk@1.18.11',
       supportedFrom: '1.14.41',
       tested: '1.18.11',
     }),
     Object.freeze({
       kind: 'cli' as const,
       package: 'opencode-ai',
+      repairSpec: 'opencode-ai@1.18.11',
       command: 'opencode',
       // PKG-012 requires the SDK and CLI conformance targets to match.
       supportedFrom: '1.14.41',

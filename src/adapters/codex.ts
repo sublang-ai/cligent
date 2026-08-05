@@ -26,7 +26,10 @@ import {
 } from './codex-path.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
-import { assertRuntimeSupported } from '../runtime-version.js';
+import {
+  assertRuntimeSupported,
+  isUnsupportedRuntimeError,
+} from '../runtime-version.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
@@ -1063,7 +1066,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     let sdk: CodexSdk;
     try {
       sdk = await this.loadSdk();
-    } catch {
+    } catch (error) {
+      // A version refusal already names the installed version, the required
+      // version, the tree, and the repair. Replacing it with "install it"
+      // would tell the user to install something already present.
+      if (isUnsupportedRuntimeError(error)) throw error;
       throw new Error(
         'CodexAdapter requires @openai/codex-sdk. Install it to use this adapter.',
       );

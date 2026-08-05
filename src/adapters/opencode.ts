@@ -27,6 +27,8 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { assertRuntimeSupported } from '../runtime-version.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
@@ -867,6 +869,11 @@ export function wrapOpencodeClient(
 }
 
 export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
+  // ENG-025: an importable SDK is not necessarily a supported one.
+  assertRuntimeSupported(
+    AGENT_RUNTIME_TARGETS.opencode[0]!,
+    `npm install ${AGENT_RUNTIME_TARGETS.opencode[0]!.repairSpec}`,
+  );
   const mod = (await import('@opencode-ai/sdk/v2')) as {
     createOpencodeClient?: unknown;
     createClient?: unknown;

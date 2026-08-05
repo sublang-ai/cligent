@@ -10,11 +10,13 @@ import {
   type RuntimeTarget,
 } from '../runtime-targets.js';
 import {
+  classifyRuntime,
   isAboveTested,
   isBelowFloor,
   parseCliVersion,
   readPackageVersion,
   readRuntimeVersion,
+  isUnsupportedRuntimeError,
   unsupportedRuntimeError,
 } from '../runtime-version.js';
 
@@ -54,6 +56,7 @@ describe('runtime version comparison (ENG-025)', () => {
   const target: RuntimeTarget = {
     kind: 'peer',
     package: '@example/sdk',
+    repairSpec: '@example/sdk@0.146.0',
     supportedFrom: '0.138.0',
     tested: '0.146.0',
   };
@@ -107,7 +110,66 @@ describe('runtime version comparison (ENG-025)', () => {
     );
     expect(error.message).toContain('@openai/codex');
     expect(error.message).toContain('0.139.0');
-    expect(error.message).toContain('>=0.138.0');
+    expect(error.message).toContain(
+      `>=${AGENT_RUNTIME_TARGETS.codex[0]!.supportedFrom}`,
+    );
     expect(error.message).toContain('npm install @openai/codex-sdk@0.146.0');
+  });
+});
+
+describe('the runtimes DR-013 was written about', () => {
+  it('refuses Codex 0.139.0, the exact runtime that motivated this work', () => {
+    // The regression the first implementation shipped with: a floor of
+    // 0.138.0 classified 0.139.0 as satisfied, so the gate approved the
+    // runtime whose model refusal started all of this.
+    const codex = AGENT_RUNTIME_TARGETS.codex[0]!;
+    expect(classifyRuntime(codex, true, '0.139.0').state).toBe('unsupported');
+    expect(isBelowFloor('0.139.0', codex)).toBe(true);
+    // 0.145.0 is the first release carrying the whole current model family,
+    // and the floor is that version rather than the tested one, so a working
+    // 0.145.0 install is not refused.
+    expect(classifyRuntime(codex, true, '0.145.0').state).toBe('satisfied');
+    expect(classifyRuntime(codex, true, '0.144.0').state).toBe('unsupported');
+  });
+
+  it('enforces a CLI runtime floor, not only a peer one', () => {
+    // readRuntimeVersion ignored `kind` and searched node_modules for every
+    // target, so a CLI on PATH read as unknown and its floor never applied.
+    const kimi = AGENT_RUNTIME_TARGETS.kimi[0]!;
+    expect(kimi.kind).toBe('cli');
+    expect(classifyRuntime(kimi, true, '0.27.0').state).toBe('unsupported');
+    expect(classifyRuntime(kimi, true, '0.31.1').state).toBe('satisfied');
+    const opencodeCli = AGENT_RUNTIME_TARGETS.opencode[1]!;
+    expect(opencodeCli.kind).toBe('cli');
+    expect(classifyRuntime(opencodeCli, true, '1.14.40').state).toBe('unsupported');
+  });
+
+  it('carries the repair the verdict promises', () => {
+    // ENG-026 and the changelog both say the verdict carries repair
+    // commands; without it a consumer rebuilds the adapter-to-package map
+    // this work exists to delete.
+    // An explicit version keeps this a pure classification check: the
+    // default would probe, and a CLI probe spawns a real process.
+    for (const target of agentRuntimeTargets()) {
+      const verdict = classifyRuntime(target, false, '0.0.1');
+      expect(verdict.repair.spec).toContain(target.package);
+      expect(Array.isArray(verdict.repair.steps)).toBe(true);
+    }
+    expect(
+      classifyRuntime(AGENT_RUNTIME_TARGETS.kimi[0]!, false, '0.0.1').repair
+        .steps.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('marks a version refusal so run() can re-throw it intact', () => {
+    // Otherwise run() replaces it with "install it", advice that is wrong
+    // for a runtime already installed.
+    const error = unsupportedRuntimeError(
+      AGENT_RUNTIME_TARGETS.codex[0]!,
+      '0.139.0',
+      'npm install @openai/codex-sdk@0.146.0',
+    );
+    expect(isUnsupportedRuntimeError(error)).toBe(true);
+    expect(isUnsupportedRuntimeError(new Error('missing'))).toBe(false);
   });
 });

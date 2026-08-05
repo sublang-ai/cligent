@@ -73,3 +73,7 @@ export type {
   RuntimeReadiness,
   RuntimeReadinessState,
 } from './runtime-version.js';
+export {
+  isUnsupportedRuntimeError,
+  readCommandVersion,
+} from './runtime-version.js';

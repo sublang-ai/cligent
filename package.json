@@ -90,8 +90,8 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": ">=0.3.154",
-    "@openai/codex-sdk": ">=0.138.0",
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.219",
+    "@openai/codex-sdk": ">=0.145.0",
     "@opencode-ai/sdk": ">=1.14.41"
   },
   "peerDependenciesMeta": {
