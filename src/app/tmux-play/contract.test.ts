@@ -93,10 +93,17 @@ describe('tmux-play public contract', () => {
       turnId: 1,
       error: 'failed',
     };
+    const resumableCaptainResult: CaptainRunResult = {
+      status: 'ok',
+      turnId: 2,
+      resumeToken: 'captain-thread-1',
+      finalText: 'done',
+    };
 
     expect(playerResult.status).toBe('ok');
     expect(playerResult.resumeToken).toBe('thread-1');
     expect(captainResult.status).toBe('error');
+    expect(resumableCaptainResult.resumeToken).toBe('captain-thread-1');
   });
 
   it('re-exports known adapters', () => {

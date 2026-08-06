@@ -298,7 +298,7 @@ A `BossTurn` argument shall expose the turn's numeric `id`, the Boss `prompt`, a
 
 ### TMUX-033
 
-`PlayerRunResult` shall expose `playerId`, `turnId`, and `status`, and may include `resumeToken`, `finalText`, and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `finalText` and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`. When an aborted player call's terminal `done` carries a `resumeToken`, `PlayerRunResult.resumeToken` shall expose it; when the terminal `done` omits `resumeToken`, `PlayerRunResult` shall omit it so captains can detect interrupted, not-resumable calls.
+`PlayerRunResult` shall expose `playerId`, `turnId`, and `status`, and may include `resumeToken`, `finalText`, and `error`. `CaptainRunResult` shall expose `turnId` and `status`, and may include `resumeToken`, `finalText`, and `error`. `status` values are `'ok' | 'aborted' | 'error'`; aborted results may carry neither `finalText` nor `error`. When an aborted player call's terminal `done` carries a `resumeToken`, `PlayerRunResult.resumeToken` shall expose it; when the terminal `done` omits `resumeToken`, `PlayerRunResult` shall omit it so captains can detect interrupted, not-resumable calls. When a `callCaptain` call's terminal `done` carries a `resumeToken`, `CaptainRunResult.resumeToken` shall expose that token; when the terminal `done` omits it, `CaptainRunResult` shall omit it — the same pass-through as `PlayerRunResult`, so captains can capture a call's backend session (e.g., for a later `CallCaptainOptions.resume` per [TMUX-088](#tmux-088)).
 
 ## Launcher → Session Protocol
 
@@ -744,7 +744,7 @@ The verbatim player-prompt rule has one exception: when a player result has `sta
 
 `callCaptain` shall accept an optional second argument `options: CallCaptainOptions` whose `visibility` field is `'visible' | 'hidden'`, defaulting to `'visible'` when `options` or `visibility` is omitted.
 
-A `'hidden'` call shall run identically to a `'visible'` call and shall return the same `CaptainRunResult` per [TMUX-033](#tmux-033) — same `status`, `turnId`, `finalText`, and `error`. The runtime shall still emit the call's `captain_prompt`, `captain_event*`, and `captain_finished` records in the order of [TMUX-022](#tmux-022), each carrying the resolved `visibility`, so non-presenter observers receive the full trace regardless of the tag.
+A `'hidden'` call shall run identically to a `'visible'` call and shall return the same `CaptainRunResult` per [TMUX-033](#tmux-033) — same `status`, `turnId`, `resumeToken`, `finalText`, and `error`. The runtime shall still emit the call's `captain_prompt`, `captain_event*`, and `captain_finished` records in the order of [TMUX-022](#tmux-022), each carrying the resolved `visibility`, so non-presenter observers receive the full trace regardless of the tag.
 
 The tmux presenter shall produce zero Boss/Captain-pane output for a `'hidden'` call: it shall skip the call's `captain_event` records (so their text never accumulates into a rendered block) and its `captain_finished` record (so no terminal reply, status, or error line is written), in addition to the Captain-prompt body already withheld per [TMUX-040](#tmux-040). For `'visible'` or omitted visibility, Boss/Captain-pane output shall be byte-for-byte identical to the behavior before this option existed.
 

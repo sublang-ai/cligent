@@ -125,6 +125,7 @@ export interface PlayerRunResult {
 export interface CaptainRunResult {
   readonly status: RunStatus;
   readonly turnId: number;
+  readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
 }

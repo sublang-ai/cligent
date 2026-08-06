@@ -300,6 +300,66 @@ describe('TmuxPlayRuntime', () => {
     expect(captured[3]?.allowedTools).not.toBe(readonlyTools);
   });
 
+  it('passes the Captain call resumeToken through CaptainRunResult and omits it when absent', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        const withToken = await context.callCaptain('token work');
+        // Parity with PlayerRunResult: the terminal done's resumeToken is
+        // exposed on the result...
+        expect(withToken.status).toBe('ok');
+        expect(withToken.resumeToken).toBe('captain-session-token');
+
+        const withoutToken = await context.callCaptain('tokenless work', {
+          resume: false,
+        });
+        // ...and a call whose terminal done carries none omits the field.
+        expect(withoutToken.status).toBe('ok');
+        expect(withoutToken.resumeToken).toBeUndefined();
+        expect('resumeToken' in withoutToken).toBe(false);
+      },
+    };
+    let call = 0;
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run() {
+            call++;
+            yield doneEvent(
+              'claude-code',
+              `captain ${call}`,
+              'success',
+              call === 1 ? 'captain-session-token' : undefined,
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('feature');
+
+    // The captain_finished records carry the same results observers rely on.
+    const finished = records.filter(
+      (record) => record.type === 'captain_finished',
+    );
+    expect(finished).toMatchObject([
+      { result: { status: 'ok', resumeToken: 'captain-session-token' } },
+      { result: { status: 'ok' } },
+    ]);
+    expect(
+      (finished[1] as { result: { resumeToken?: string } }).result.resumeToken,
+    ).toBeUndefined();
+  });
+
   it('returns an error result and tags records hidden for a failing hidden call', async () => {
     const records: TmuxPlayRecord[] = [];
     const captain: Captain = {

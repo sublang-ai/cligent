@@ -381,6 +381,7 @@ export class TmuxPlayRuntime {
     const result: CaptainRunResult = {
       status: call.status,
       turnId: turn.id,
+      ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
       finalText: call.finalText,
       error: call.error,
     };
