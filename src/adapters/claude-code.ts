@@ -778,6 +778,17 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
 
     const startTime = Date.now();
     let doneYielded = false;
+    // True once this call's stream has produced any model-turn output event
+    // (text, text_delta, thinking, tool_use, tool_result). Those are exactly
+    // the events the adapter derives from assistant messages and stream
+    // deltas — the submitted turn doing work — and exactly what downstream
+    // consumers capture to synthesize a final text. `init` stays excluded
+    // because the system handshake precedes every turn (including the
+    // resume-repair no-op), and `error` events are diagnostics rather than
+    // turn output. Guards the internal-no-op result skip below: once real
+    // activity has streamed, an empty zero-usage result is a legitimate
+    // terminal and must not be swallowed.
+    let submittedTurnActivity = false;
 
     try {
       for await (const message of sdk.query({
@@ -816,17 +827,24 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const assistant = message as ClaudeAssistantMessage;
           const textFromField = asString(assistant.text);
           if (textFromField) {
+            submittedTurnActivity = true;
             yield createEvent('text', AGENT, { content: textFromField }, sessionId);
           }
 
           const delta = asString(assistant.delta);
           if (delta) {
+            submittedTurnActivity = true;
             yield createEvent('text_delta', AGENT, { delta }, sessionId);
           }
 
           const contentEvents = parseAssistantContent(
             assistant.content ?? assistant.message?.content,
           );
+          if (contentEvents.length > 0) {
+            // Every parsed content entry yields one text / thinking /
+            // tool_use / tool_result event below.
+            submittedTurnActivity = true;
+          }
 
           for (const contentEvent of contentEvents) {
             if (contentEvent.type === 'text') {
@@ -888,6 +906,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             asString((message as { delta?: unknown; text?: unknown }).text);
 
           if (delta) {
+            submittedTurnActivity = true;
             yield createEvent('text_delta', AGENT, { delta }, sessionId);
           }
           continue;
@@ -896,6 +915,36 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
         if (messageType === 'result') {
           const result = message as ClaudeResultMessage;
           const { status, errorText } = classifyResultMessage(result);
+          const resultText = asString(result.result);
+          const usage = mapUsage(result.usage);
+
+          // Resuming a session whose previous turn ended with a dangling tool
+          // call makes Claude Code first run an internal continuation-repair
+          // no-op turn and emit a result message for it — success-classified,
+          // no result text, zero token/tool usage — before the submitted turn
+          // produces anything. Skip exactly that: the shape alone is not
+          // enough, so the skip additionally requires (i) this call resumed a
+          // session (`inboundResume` — a fresh run cannot carry the repair
+          // turn, and its empty zero-usage success is a genuine, if empty,
+          // terminal) and (ii) no submitted-turn output has streamed yet
+          // (`submittedTurnActivity` — once text/thinking/tool events have
+          // been yielded, an empty result is the real turn's terminal and
+          // downstream legitimately derives the final text from the captured
+          // events). When the skip applies and the stream then ends with no
+          // further result, the MISSING_RESULT path below classifies the
+          // abandoned turn as an error.
+          const isInternalNoOpResult =
+            inboundResume !== undefined &&
+            !submittedTurnActivity &&
+            status === 'success' &&
+            errorText === undefined &&
+            resultText === undefined &&
+            usage.inputTokens === 0 &&
+            usage.outputTokens === 0 &&
+            usage.toolUses === 0;
+          if (isInternalNoOpResult) {
+            continue;
+          }
 
           const durationMs =
             typeof result.durationMs === 'number'
@@ -922,14 +971,14 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             AGENT,
             {
               status,
-              result: asString(result.result) ?? errorText,
+              result: resultText ?? errorText,
               ...doneResumeTokenPayload(
                 status,
                 resumableSessionIdKnown,
                 sessionId,
                 inboundResume,
               ),
-              usage: mapUsage(result.usage),
+              usage,
               durationMs,
             },
             sessionId,

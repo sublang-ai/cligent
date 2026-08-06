@@ -837,6 +837,254 @@ describe('ClaudeCodeAdapter', () => {
     expect(done.payload.status).toBe('error');
   });
 
+  it('skips the resume-repair no-op result and terminates on the real result', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'session-resume',
+        },
+        // Internal continuation-repair no-op turn emitted by Claude Code when
+        // resuming a session whose previous turn ended with a dangling tool
+        // call: success-classified, no result text, zero usage.
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          stop_reason: null,
+          result: '',
+          usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          duration_ms: 5,
+          sessionId: 'session-resume',
+        },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'real answer' }] },
+          sessionId: 'session-resume',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          stop_reason: null,
+          result: 'real answer',
+          usage: { input_tokens: 12, output_tokens: 7, tool_uses: 0 },
+          duration_ms: 456,
+          sessionId: 'session-resume',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt', { resume: 'session-resume' }));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+
+    const done = events[2] as AgentEvent & {
+      payload: {
+        status: string;
+        result?: string;
+        usage: { inputTokens: number; outputTokens: number };
+        durationMs: number;
+      };
+    };
+    expect(done.payload.status).toBe('success');
+    expect(done.payload.result).toBe('real answer');
+    expect(done.payload.usage.inputTokens).toBe(12);
+    expect(done.payload.usage.outputTokens).toBe(7);
+    expect(done.payload.durationMs).toBe(456);
+  });
+
+  it('classifies a stream ending after the no-op result as missing-result error', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'session-resume',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          stop_reason: null,
+          result: '',
+          usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          duration_ms: 5,
+          sessionId: 'session-resume',
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt', { resume: 'session-resume' }));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+
+    const error = events[1] as AgentEvent & {
+      payload: { code: string; recoverable: boolean };
+    };
+    expect(error.payload.code).toBe('MISSING_RESULT');
+    expect(error.payload.recoverable).toBe(false);
+
+    const done = events[2] as AgentEvent & {
+      payload: { status: string; result?: string };
+    };
+    expect(done.payload.status).toBe('error');
+    expect(done.payload.result).toBeUndefined();
+  });
+
+  it('treats a fresh run zero-usage empty success result as terminal without draining further', async () => {
+    // No resume option: a fresh run cannot carry the CLI's continuation-
+    // repair no-op turn, so its empty zero-usage success is a genuine (if
+    // empty) terminal and must not be skipped into a MISSING_RESULT error.
+    const pulled: string[] = [];
+    const messages: unknown[] = [
+      {
+        type: 'system',
+        model: 'claude',
+        cwd: '/repo',
+        tools: [],
+        sessionId: 'session-fresh',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        stop_reason: null,
+        result: '',
+        usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+        duration_ms: 5,
+        sessionId: 'session-fresh',
+      },
+      // Poison tail: reachable only if the adapter wrongly skips the fresh
+      // run's empty result and keeps draining the stream.
+      {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        stop_reason: null,
+        result: 'poison',
+        usage: { input_tokens: 99, output_tokens: 99, tool_uses: 0 },
+        duration_ms: 999,
+        sessionId: 'session-fresh',
+      },
+    ];
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(): AsyncIterable<unknown> {
+          return {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
+              for (const message of messages) {
+                pulled.push((message as { type: string }).type);
+                yield message;
+              }
+            },
+          };
+        },
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    const done = events[1] as AgentEvent & {
+      payload: {
+        status: string;
+        result?: string;
+        usage: { inputTokens: number; outputTokens: number };
+        durationMs: number;
+      };
+    };
+    expect(done.payload.status).toBe('success');
+    expect(done.payload.result).toBeUndefined();
+    expect(done.payload.usage.inputTokens).toBe(0);
+    expect(done.payload.usage.outputTokens).toBe(0);
+    expect(done.payload.durationMs).toBe(5);
+    // Terminal means terminal: the adapter stopped at the first result and
+    // never pulled the poison tail.
+    expect(pulled).toEqual(['system', 'result']);
+  });
+
+  it('treats a zero-usage empty result after real turn activity as terminal on a resumed run', async () => {
+    // The continuation-repair no-op arrives before the submitted turn
+    // produces anything. Once assistant/tool activity has streamed, an
+    // empty zero-usage result is the real turn's terminal — downstream
+    // derives the final text from the captured text events — and skipping
+    // it would discard a legitimate termination as MISSING_RESULT.
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+          sessionId: 'session-resume',
+        },
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'work in progress' },
+              {
+                type: 'tool_use',
+                id: 'tool-1',
+                name: 'Bash',
+                input: { command: 'ls' },
+              },
+            ],
+          },
+          sessionId: 'session-resume',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          stop_reason: null,
+          result: '',
+          usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          duration_ms: 7,
+          sessionId: 'session-resume',
+        },
+      ]),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { resume: 'session-resume' }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'tool_use',
+      'done',
+    ]);
+    const done = events[3] as AgentEvent & {
+      payload: {
+        status: string;
+        result?: string;
+        usage: { inputTokens: number; outputTokens: number };
+      };
+    };
+    expect(done.payload.status).toBe('success');
+    expect(done.payload.result).toBeUndefined();
+    expect(done.payload.usage.inputTokens).toBe(0);
+    expect(done.payload.usage.outputTokens).toBe(0);
+  });
+
   it('maps SDK error_during_execution result to error done with API error text', async () => {
     const apiError =
       'API Error: Repeated 529 Overloaded errors. The API is at capacity, this is usually temporary. Try again in a moment. If it persists, check status.claude.com';

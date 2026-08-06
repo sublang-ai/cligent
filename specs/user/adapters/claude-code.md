@@ -31,8 +31,13 @@ The adapter shall normalize SDK messages to `AgentEvent` types:
 | `assistant` with text content | `text` |
 | `assistant` with tool_use content | `tool_use` |
 | Stream events (text deltas) | `text_delta` |
-| `result` | `done` (usage, status) |
+| `result` | `done` (usage, status), except an internal no-op `result` per [CLAUDE-010](#claude-010) |
 | Errors | `error` (recoverable flag) |
+
+### CLAUDE-010
+
+Where the run was invoked with a non-empty `AgentOptions.resume`, while the adapter has yielded no `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` event in the current run, when the SDK stream yields a `result` message that classifies as `success` while carrying no non-empty `result` string and zero input-token, output-token, and tool-use counts — the shape of the CLI-internal continuation-repair no-op turn that Claude Code runs before the submitted turn when resuming a session whose previous turn ended with a dangling tool call — the adapter shall not emit terminal `done` for that message and shall continue consuming the stream so the submitted turn's messages, including its own `result`, normalize per [CLAUDE-003](#claude-003); where the stream then ends without a further `result` message and the run was not aborted, the adapter shall yield its no-result outcome (`error` then terminal `done` with `status: 'error'`); an aborted run keeps its interrupted outcome per [CLAUDE-007](#claude-007); in neither case shall the adapter yield a `success` `done` without a result.
+When the run was invoked without `AgentOptions.resume`, or when any `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` event has already been yielded in the current run, a `result` message of that same shape shall normalize as terminal `done` per [CLAUDE-003](#claude-003) — `status: 'success'` with no `result` value and zero usage — and the adapter shall stop consuming the stream, so an empty fresh-run success and a silent termination after real turn activity are reported as the terminals they are rather than skipped.
 
 ## Permission Mapping
 
