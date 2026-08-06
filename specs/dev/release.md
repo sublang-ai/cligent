@@ -69,6 +69,7 @@ Scoped packages (e.g., `@sublang/cligent`) shall be published with `--access pub
 Before tagging a release, the developer/agent shall verify:
 
 - [ ] All tests pass
+- [ ] `npm run smoke:release` passes locally — the single local release-smoke entry point, chaining the existing gates in order: `build`, `test:package`, `test:distributable`, `test:smoke`
 - [ ] `CHANGELOG.md` is updated with the new version and date
 - [ ] `package.json` version is bumped
 - [ ] All changes are committed and pushed to `main`
