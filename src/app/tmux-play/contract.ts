@@ -92,6 +92,15 @@ export interface CaptainContext {
     options?: CallCaptainOptions,
   ): Promise<CaptainRunResult>;
   /**
+   * TMUX-092: emit one turn-scoped conversational Captain reply. The text is
+   * rendered in the Boss/Captain pane as ordinary Captain prose — the same
+   * Markdown pipeline and `captain> ` prefix as visible Captain speech — not
+   * as a bracketed `[status]` operational line. The emitted `captain_reply`
+   * record carries this turn's id; a call after the turn has ended (or after
+   * session shutdown) rejects and emits nothing.
+   */
+  emitReply(text: string): Promise<void>;
+  /**
    * TMUX-081: turn-scoped variant of {@link CaptainSession.setVisiblePlayers}
    * for mid-turn workflow transitions. Same validation and rejection
    * semantics; an accepted call emits one `player_view_changed` carrying the

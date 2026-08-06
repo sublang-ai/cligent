@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   ObserverDispatchError,
   RecordDispatcher,
+  type CaptainReplyRecord,
   type CaptainTelemetryRecord,
   type CaptainStatusRecord,
   type RecordObserver,
@@ -74,6 +75,8 @@ function deferred(): {
 describe('RecordDispatcher', () => {
   it('types turn-bound records with non-null turn ids', () => {
     expectTypeOf<TurnStartedRecord['turnId']>().toEqualTypeOf<number>();
+    // TMUX-092: a conversational reply is turn-bound, unlike captain_status.
+    expectTypeOf<CaptainReplyRecord['turnId']>().toEqualTypeOf<number>();
     expectTypeOf<CaptainStatusRecord['turnId']>().toEqualTypeOf<
       number | null
     >();

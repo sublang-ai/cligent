@@ -4,7 +4,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEvent } from '../../events.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
-import type { Captain, CaptainSession, PlayerRunResult } from './contract.js';
+import type {
+  Captain,
+  CaptainContext,
+  CaptainSession,
+  PlayerRunResult,
+} from './contract.js';
 import type { PlayerViewChangedRecord, TmuxPlayRecord } from './records.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime } from './runtime.js';
@@ -358,6 +363,86 @@ describe('TmuxPlayRuntime', () => {
     expect(
       (finished[1] as { result: { resumeToken?: string } }).result.resumeToken,
     ).toBeUndefined();
+  });
+
+  it('emits a turn-bound captain_reply for a context emitReply call', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        await context.emitReply('Looking into it now.');
+        // Fire-and-forget replies drain on the ordered dispatch path before
+        // the turn closes, like fire-and-forget status emissions.
+        void context.emitReply('Second thought.');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('chat');
+
+    expect(records).toMatchObject([
+      { type: 'turn_started', turnId: 1 },
+      { type: 'captain_reply', turnId: 1, text: 'Looking into it now.' },
+      { type: 'captain_reply', turnId: 1, text: 'Second thought.' },
+      { type: 'turn_finished', turnId: 1 },
+    ]);
+  });
+
+  it('rejects emitReply outside its originating turn and emits no record', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let staleContext!: CaptainContext;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        if (turn.id === 1) {
+          staleContext = context;
+          return;
+        }
+        // A context stashed from an earlier turn is out of scope even while
+        // another turn is active...
+        await expect(staleContext.emitReply('late')).rejects.toThrow(
+          'turn-scoped',
+        );
+        // ...while the active turn's own context still emits.
+        await context.emitReply('current turn reply');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('first');
+    // Between turns no turn is active: the stashed context rejects.
+    await expect(staleContext.emitReply('between turns')).rejects.toThrow(
+      'turn-scoped',
+    );
+    await runtime.runBossTurn('second');
+    await runtime.dispose();
+    // After shutdown the session gate rejects first, mirroring emitStatus.
+    await expect(staleContext.emitReply('after dispose')).rejects.toThrow(
+      'tmux-play session emissions are closed',
+    );
+
+    const replies = records.filter((record) => record.type === 'captain_reply');
+    expect(replies).toMatchObject([
+      { turnId: 2, text: 'current turn reply' },
+    ]);
   });
 
   it('returns an error result and tags records hidden for a failing hidden call', async () => {

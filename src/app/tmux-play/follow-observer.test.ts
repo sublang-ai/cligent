@@ -56,6 +56,26 @@ describe('FollowObserver', () => {
     expect(followed).toEqual([CAPTAIN_PANE, CAPTAIN_PANE, CAPTAIN_PANE]);
   });
 
+  it('follows the boss pane on a conversational captain reply', () => {
+    const { observer, followed } = makeObserver();
+
+    // TMUX-092: the presenter renders the reply as a complete prose block on
+    // the boss pane, so the follow fires like any other flushed write.
+    observer.onRecord(captainReply('On it.'));
+
+    expect(followed).toEqual([CAPTAIN_PANE]);
+  });
+
+  it('does not follow a whitespace-only captain reply with no pending block', () => {
+    const { observer, followed } = makeObserver();
+
+    // The presenter writes zero bytes for an all-blank reply, so a scrolled
+    // Boss pane must not be snapped out of copy-mode by it.
+    observer.onRecord(captainReply('   \n'));
+
+    expect(followed).toEqual([]);
+  });
+
   it('does not follow on the no-op control records', () => {
     const { observer, followed } = makeObserver();
 
@@ -314,6 +334,10 @@ function turnAborted(): TmuxPlayRecord {
 
 function captainPrompt(): TmuxPlayRecord {
   return { type: 'captain_prompt', turnId: 1, timestamp: 0, prompt: 'go' };
+}
+
+function captainReply(text: string): TmuxPlayRecord {
+  return { type: 'captain_reply', turnId: 1, timestamp: 0, text };
 }
 
 function captainTelemetry(): TmuxPlayRecord {

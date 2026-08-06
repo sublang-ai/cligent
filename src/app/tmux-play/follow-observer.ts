@@ -134,6 +134,19 @@ export class FollowObserver implements RecordObserver {
       case 'runtime_error':
         // The presenter flushes the boss block then writes a bracketed line.
         return this.flushedWrite(this.captainTitle);
+      case 'captain_reply': {
+        // TMUX-092: the presenter flushes the open block, then renders the
+        // reply as its own prose block — but writes zero bytes for an
+        // all-blank reply (`flushBlock` skips empty text and `applyPrefix`
+        // returns '' for whitespace-only rendered output), so follow iff
+        // buffered visible text or the reply itself is visible, mirroring
+        // the non-streaming text classification.
+        const hadPending = this.pending.delete(this.captainTitle);
+        return {
+          title: this.captainTitle,
+          writes: hadPending || hasVisibleText(record.text),
+        };
+      }
       case 'captain_finished':
         // TMUX-072: a hidden Captain call puts zero bytes on the pane
         // (presenter-tmux.ts skips its captain_event / captain_finished), so it

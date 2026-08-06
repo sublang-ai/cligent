@@ -50,6 +50,7 @@ export {
   telemetryRecord,
 } from './records.js';
 export type {
+  CaptainReplyRecord,
   CaptainStatusRecord,
   CaptainTelemetryRecord,
   PlayerViewChangedRecord,

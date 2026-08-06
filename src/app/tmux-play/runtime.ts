@@ -291,6 +291,8 @@ export class TmuxPlayRuntime {
         this.callPlayer(turn, signal, playerId, prompt, options),
       callCaptain: (prompt, options) =>
         this.callCaptain(turn, signal, prompt, options),
+      // TMUX-092: a turn-scoped conversational reply carries this turn's id.
+      emitReply: (text) => this.emitTurnReply(turn, text),
       // TMUX-081: a turn-scoped call carries this turn's id.
       setVisiblePlayers: (playerIds) =>
         this.setVisiblePlayers(playerIds, turn.id),
@@ -396,6 +398,33 @@ export class TmuxPlayRuntime {
 
   private emit(record: Parameters<RecordDispatcher['emit']>[0]): Promise<void> {
     return this.dispatcher.emit(record);
+  }
+
+  // TMUX-092: turn-scoped counterpart of emitSessionStatus. Where the status
+  // lane is session-scoped (nullable turn id, open until shutdown), a
+  // conversational reply belongs to the turn that produced it: the record
+  // always carries the context turn's id, and — enforced the same way
+  // emitStatus enforces its session scope, by rejecting before any record is
+  // emitted — a stashed context used after its turn ended (or after session
+  // shutdown) rejects instead of emitting an out-of-turn record.
+  private emitTurnReply(turn: BossTurn, text: string): Promise<void> {
+    const error = this.sessionEmissionError() ?? this.turnEmissionError(turn);
+    if (error) {
+      return Promise.reject(error);
+    }
+    return this.dispatcher.emit({
+      ...makeRecordBase('captain_reply', turn.id),
+      text,
+    });
+  }
+
+  private turnEmissionError(turn: BossTurn): Error | undefined {
+    if (this.activeTurn?.turn.id !== turn.id) {
+      return new Error(
+        'tmux-play captain reply emissions are turn-scoped: the emitting turn is no longer active',
+      );
+    }
+    return undefined;
   }
 
   private emitSessionStatus(

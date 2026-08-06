@@ -651,6 +651,59 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('');
   });
 
+  // Conversational Captain replies (TMUX-092).
+
+  it('renders captain_reply as ordinary Captain prose through the Markdown pipeline', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    presenter.onRecord({
+      type: 'captain_reply',
+      turnId: 1,
+      timestamp: 100,
+      text: 'On it — checking the players.',
+    });
+
+    // Same path as visible captain speech: one renderMarkdown call for the
+    // block, the colored `captain> ` speaker prefix, and no bracketed tag.
+    expect(renderMarkdownMock).toHaveBeenCalledTimes(1);
+    expect(renderMarkdownMock).toHaveBeenCalledWith(
+      'On it — checking the players.',
+      80,
+      'mocha',
+    );
+    expect(boss.raw()).toBe(
+      '\x1b[1;38;2;203;166;247mcaptain> \x1b[0mOn it — checking the players.\n',
+    );
+  });
+
+  it('flushes an open streamed block before rendering a captain_reply', () => {
+    const boss = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map(),
+    });
+
+    // The streamed delta buffers (no bytes yet)...
+    presenter.onRecord(captainEvent(textDeltaEvent('streamed part')));
+    expect(boss.raw()).toBe('');
+
+    // ...and the reply record is a block boundary: the buffered block
+    // renders first, then the reply renders as its own complete block.
+    presenter.onRecord({
+      type: 'captain_reply',
+      turnId: 1,
+      timestamp: 101,
+      text: 'reply text',
+    });
+
+    expect(renderMarkdownMock).toHaveBeenCalledTimes(2);
+    expect(boss.text()).toBe('captain> streamed part\ncaptain> reply text\n');
+  });
+
   it('omits Boss prompt re-echo and Captain prompt bodies on the Boss pane', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({

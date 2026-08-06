@@ -161,6 +161,7 @@ The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively p
 `callPlayer`'s optional `options` shall be a `CallPlayerOptions` whose `resume?: string | false` selects the player's backend session for that call: a string explicitly resumes that opaque token and overrides the player's stored auto-resume token, `false` forces a fresh backend session, and omission preserves automatic continuity per [TMUX-041](#tmux-041).
 `callCaptain`'s optional `options` shall be a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation per [TMUX-072](#tmux-072), whose `resume?: string | false` selects the Captain backend session for the call, and whose `allowedTools?: readonly string[]` restricts the call's tools per [TMUX-088](#tmux-088).
 `CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [TMUX-081](#tmux-081), a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
+`CaptainContext` shall additionally expose `emitReply(text: string): Promise<void>` per [TMUX-092](#tmux-092), a turn-scoped, text-only surface for conversational Captain replies rendered in the Boss/Captain pane as ordinary Captain prose.
 
 ### TMUX-017
 
@@ -173,6 +174,14 @@ When validation fails, the returned Promise shall reject before any record is em
 When validation succeeds, the runtime shall emit exactly one `player_view_changed` record per [TMUX-082](#tmux-082) carrying the requested visible player IDs in order.
 A call from `CaptainContext` shall carry the active turn ID; a call from `CaptainSession` shall carry the active turn ID when a turn is active and `null` otherwise, matching [TMUX-021](#tmux-021)'s convention for `captain_status` and `captain_telemetry`.
 `setVisiblePlayers` shall change only which configured players have panes in the main tmux window; it shall not alter the configured `players` roster, the runtime player map, per-player log streams, the `players` manifest exposed through `CaptainContext` / `CaptainSession`, or any player's `Cligent` continuity.
+
+### TMUX-092
+
+`CaptainContext` shall expose `emitReply(text: string): Promise<void>`, a turn-scoped, text-only surface for conversational Captain replies with no options and no visibility parameter.
+While the originating turn is active, when a Captain calls `emitReply(text)`, the runtime shall emit exactly one `captain_reply` record carrying `type: 'captain_reply'`, that turn's `turnId: number`, a `timestamp`, and the `text`, on the same ordered, awaited dispatch path as other records per [TMUX-023](#tmux-023).
+When `emitReply` is called after its originating turn has ended, or after session shutdown per [TMUX-019](#tmux-019), the returned Promise shall reject and no `captain_reply` record shall be emitted.
+The tmux presenter shall render a `captain_reply` in the Boss/Captain pane as ordinary Captain prose: the text shall pass through the [TMUX-050](#tmux-050) Markdown pipeline as its own complete block under [TMUX-038](#tmux-038)'s `captain> ` speaker prefix — the same rendering path as visible Captain reply text — and shall not use [TMUX-039](#tmux-039)'s bracketed operational-line grammar.
+`captain_reply` shall export from the `@sublang/cligent/tmux-play` record types per [TMUX-029](#tmux-029).
 
 ### TMUX-018
 
@@ -194,7 +203,7 @@ Repeated or concurrent disposal calls shall share the same cleanup operation and
 
 ### TMUX-020
 
-The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_status`, `captain_telemetry`, `player_view_changed`, `runtime_error`. Each record shall carry a stable player ID where applicable.
+The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_reply`, `captain_status`, `captain_telemetry`, `player_view_changed`, `runtime_error`. Each record shall carry a stable player ID where applicable.
 
 ### TMUX-021
 
@@ -563,7 +572,7 @@ The result is an operational line whose speaker prefix carries the speaker color
 
 ### TMUX-040
 
-The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-player outputs and the Captain's prompt body (which references player results) shall not be written to the Boss/Captain pane; player-emitted tool events remain in their respective player panes. Records from a `callCaptain` invocation tagged `visibility: 'hidden'` are the exception per [TMUX-072](#tmux-072): the Boss/Captain pane shall display none of them.
+The Boss/Captain pane shall display the Boss's input lines, the Captain's synthesized reply or terminal Captain failure line per [TMUX-039](#tmux-039), the Captain's conversational replies (`captain_reply` rendered as Captain prose per [TMUX-092](#tmux-092)), operational records intended for that pane (`captain_status`, `runtime_error`, and `turn_aborted`), and Captain-emitted `tool_use` / `tool_result` events rendered per [TMUX-049](#tmux-049). Per-player outputs and the Captain's prompt body (which references player results) shall not be written to the Boss/Captain pane; player-emitted tool events remain in their respective player panes. Records from a `callCaptain` invocation tagged `visibility: 'hidden'` are the exception per [TMUX-072](#tmux-072): the Boss/Captain pane shall display none of them.
 
 ### TMUX-049
 
@@ -588,7 +597,7 @@ Tool-result bodies keep this continuation-body budget rather than the text-block
 
 ### TMUX-050
 
-While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `player_finished` or `captain_finished` record; a `text` event (always a complete block); a `tool_use` or `tool_result` event on the same writer; a `player_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
+While in session mode, the presenter shall buffer text from `text_delta` and `text` events per `(writer, block)` and render the buffered text through `renderMarkdown` per [TMUX-051](#tmux-051) at the next block boundary. Block boundaries are: a `player_finished` or `captain_finished` record; a `text` event (always a complete block); a `captain_reply` record (itself a complete prose block per [TMUX-092](#tmux-092)) on the same writer; a `tool_use` or `tool_result` event on the same writer; a `player_prompt` on the same writer; any status emission (`captain_status`, `runtime_error`, `turn_aborted`) on the same writer.
 
 The render width for text blocks shall be `max(1, paneWidth)`. When no pane-width source is configured for the writer, the render width shall default to `80`.
 This budget compensates for `glow`'s built-in two-cell document margin in the built-in `dark` / `light` styles: after `glow` wraps ordinary prose and the presenter strips trailing right padding, a rendered continuation row that reaches `glow`'s wrap limit plus the presenter's two-space continuation indent shall reach the pane width rather than stopping short.

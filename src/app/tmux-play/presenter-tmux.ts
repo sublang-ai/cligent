@@ -171,6 +171,14 @@ export class TmuxPresenter implements RecordObserver {
         if (record.visibility === 'hidden') break;
         this.writeRunResult(this.boss, 'captain', record.result);
         break;
+      case 'captain_reply':
+        // TMUX-092: a conversational Captain reply renders as ordinary
+        // Captain prose — the same glow Markdown pipeline and `captain> `
+        // prefix as visible captain_event text — not as a bracketed
+        // operational line. writeBlock flushes any open block first, so the
+        // record is a block boundary like a complete `text` event.
+        this.writeBlock(this.boss, 'captain', record.text);
+        break;
       case 'captain_status':
         this.flushBlock(this.boss);
         this.writeBracketedLine(

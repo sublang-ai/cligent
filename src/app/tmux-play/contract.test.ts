@@ -47,6 +47,8 @@ describe('tmux-play public contract', () => {
           allowedTools: [] as const,
         };
         await context.callCaptain('summarize', captainControl);
+        // TMUX-092: turn-scoped conversational reply — text only, no options.
+        await context.emitReply('All players have reported in.');
       },
       async prepareDispose() {
         // no-op
