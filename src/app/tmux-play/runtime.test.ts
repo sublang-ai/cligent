@@ -445,6 +445,100 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
+  it('rejects a stashed emitReply once turn_finished dispatches, keeping the terminal record last', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    let lateReply!: Promise<void>;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              // A stashed context firing while the terminal record is being
+              // dispatched: from this point no captain_reply may follow the
+              // turn's terminal record.
+              lateReply = stashedContext.emitReply('escaped');
+              lateReply.catch(() => {
+                // Settled below; keep the rejection handled either way.
+              });
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('chat');
+    const outcome = await lateReply.then(
+      () => 'emitted',
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+    );
+
+    // Terminal-last ordering: the trace ends at turn_finished with no record
+    // after it, and the late call rejected with the turn-scope error.
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'turn_finished',
+    ]);
+    expect(outcome).toContain('turn-scoped');
+  });
+
+  it('rejects a stashed emitReply once a failed turn dispatches turn_aborted', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    let lateReply!: Promise<void>;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+        throw new Error('boom');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_aborted') {
+              lateReply = stashedContext.emitReply('escaped');
+              lateReply.catch(() => {
+                // Settled below; keep the rejection handled either way.
+              });
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await expect(runtime.runBossTurn('chat')).rejects.toThrow('boom');
+    const outcome = await lateReply.then(
+      () => 'emitted',
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+    );
+
+    // The failure path's terminal record is fenced the same way.
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'runtime_error',
+      'turn_aborted',
+    ]);
+    expect(outcome).toContain('turn-scoped');
+  });
+
   it('returns an error result and tags records hidden for a failing hidden call', async () => {
     const records: TmuxPlayRecord[] = [];
     const captain: Captain = {

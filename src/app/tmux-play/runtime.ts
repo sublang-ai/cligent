@@ -41,6 +41,12 @@ import {
 interface ActiveTurn {
   readonly turn: BossTurn;
   readonly controller: AbortController;
+  // TMUX-092: set once the turn begins finalizing — immediately before its
+  // terminal record (turn_finished / turn_aborted) is enqueued. The emitReply
+  // gate treats a finalizing turn as ended, so a stashed context firing
+  // during or after the terminal dispatch rejects instead of appending a
+  // captain_reply after the turn's terminal record.
+  finalizing: boolean;
 }
 
 interface RunCligentCallOptions {
@@ -247,7 +253,7 @@ export class TmuxPlayRuntime {
     if (this.externalSignal?.aborted) {
       controller.abort(abortReason(this.externalSignal));
     }
-    this.activeTurn = { turn, controller };
+    this.activeTurn = { turn, controller, finalizing: false };
 
     try {
       await this.emit({
@@ -264,6 +270,10 @@ export class TmuxPlayRuntime {
 
       await this.dispatcher.drain();
 
+      // TMUX-092: fence the turn before its terminal record dispatches. Reply
+      // Promises obtained earlier are already enqueued ahead of the terminal
+      // record; from here a late emitReply rejects with the turn-scope error.
+      this.fenceActiveTurn(turn.id);
       if (controller.signal.aborted) {
         await this.emit({
           ...makeRecordBase('turn_aborted', turn.id),
@@ -274,6 +284,9 @@ export class TmuxPlayRuntime {
       }
     } catch (error) {
       controller.abort(errorMessage(error));
+      // TMUX-092: the failure path dispatches the terminal turn_aborted via
+      // handleRuntimeFailure — fence before it, like the success path.
+      this.fenceActiveTurn(turn.id);
       await this.handleRuntimeFailure(turn.id, error);
       throw error;
     } finally {
@@ -419,12 +432,25 @@ export class TmuxPlayRuntime {
   }
 
   private turnEmissionError(turn: BossTurn): Error | undefined {
-    if (this.activeTurn?.turn.id !== turn.id) {
+    const active = this.activeTurn;
+    // TMUX-092: a finalizing turn counts as ended — its terminal record is
+    // dispatching (or dispatched), and no captain_reply may follow it.
+    if (!active || active.turn.id !== turn.id || active.finalizing) {
       return new Error(
         'tmux-play captain reply emissions are turn-scoped: the emitting turn is no longer active',
       );
     }
     return undefined;
+  }
+
+  // TMUX-092: called immediately before a turn's terminal record is enqueued
+  // on the ordered dispatch path. Replies enqueued before the fence keep
+  // their place ahead of the terminal record; later emitReply calls reject.
+  private fenceActiveTurn(turnId: number): void {
+    const active = this.activeTurn;
+    if (active && active.turn.id === turnId) {
+      active.finalizing = true;
+    }
   }
 
   private emitSessionStatus(
