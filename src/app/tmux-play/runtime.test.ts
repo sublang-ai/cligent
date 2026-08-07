@@ -7,6 +7,7 @@ import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
 import type {
   Captain,
   CaptainContext,
+  CaptainRunResult,
   CaptainSession,
   PlayerRunResult,
 } from './contract.js';
@@ -537,6 +538,353 @@ describe('TmuxPlayRuntime', () => {
       'turn_aborted',
     ]);
     expect(outcome).toContain('turn-scoped');
+  });
+
+  it('stamps late session emitStatus/emitTelemetry on the null session lane once the terminal record dispatches', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let session!: CaptainSession;
+    let lateStatus!: Promise<void>;
+    let lateTelemetry!: Promise<void>;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+      },
+      async handleBossTurn() {
+        // A mid-turn emission keeps the active turn's id and drains before
+        // the terminal record, exactly as before the unified fence.
+        void session.emitStatus('mid-turn');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              // A session emission fired while the terminal record dispatches
+              // lands after the turn: TMUX-017 permits it at any point during
+              // the session, and per TMUX-021 it is outside an active turn,
+              // so it stamps turnId null — the session lane, which TMUX-024
+              // dispatches in emission order without a turn boundary. It must
+              // not carry the closed turn's id past its terminal record.
+              lateStatus = session.emitStatus('late status');
+              lateStatus.catch(() => {});
+              lateTelemetry = session.emitTelemetry({
+                topic: 'late.topic',
+                payload: { late: true },
+              });
+              lateTelemetry.catch(() => {});
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('status');
+    await Promise.all([lateStatus, lateTelemetry]);
+
+    expect(records).toMatchObject([
+      { type: 'turn_started', turnId: 1 },
+      { type: 'captain_status', turnId: 1, message: 'mid-turn' },
+      { type: 'turn_finished', turnId: 1 },
+      { type: 'captain_status', turnId: null, message: 'late status' },
+      { type: 'captain_telemetry', turnId: null, topic: 'late.topic' },
+    ]);
+  });
+
+  it('stamps a late session setVisiblePlayers null once the terminal record dispatches', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let session!: CaptainSession;
+    let lateView!: Promise<void>;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+      },
+      async handleBossTurn() {
+        // stash only
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              // The session-scoped surface stays usable between turns per
+              // TMUX-017 / TMUX-081; once the turn is fenced the call is a
+              // between-turns call and stamps turnId null per TMUX-021.
+              lateView = session.setVisiblePlayers(['coder']);
+              lateView.catch(() => {});
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+    await lateView;
+
+    expect(records).toMatchObject([
+      { type: 'turn_started', turnId: 1 },
+      { type: 'turn_finished', turnId: 1 },
+      { type: 'player_view_changed', turnId: null, visiblePlayerIds: ['coder'] },
+    ]);
+  });
+
+  it('rejects a stashed context setVisiblePlayers once turn_finished dispatches, keeping the terminal record last', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    let lateView!: Promise<void>;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              // The turn-scoped surface shares emitReply's fence: from the
+              // terminal dispatch on, the call rejects and emits nothing, so
+              // no player_view_changed can trail the terminal record carrying
+              // the closed turn's id.
+              lateView = stashedContext.setVisiblePlayers(['coder']);
+              lateView.catch(() => {});
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+    const outcome = await lateView.then(
+      () => 'emitted',
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+    );
+
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'turn_finished',
+    ]);
+    expect(outcome).toContain('turn-scoped');
+  });
+
+  it('rejects a stashed context callPlayer once turn_finished dispatches, keeping the terminal record last', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    let lateCall!: Promise<PlayerRunResult>;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              // Same ordering class as the emitReply escape: an unfenced call
+              // here would run a whole player call after the turn's terminal
+              // record, all of its records stamped with the closed turn's id.
+              lateCall = stashedContext.callPlayer('coder', 'late work');
+              lateCall.catch(() => {});
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+    const outcome = await lateCall.then(
+      () => 'ran',
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+    );
+
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'turn_finished',
+    ]);
+    expect(outcome).toContain('turn-scoped');
+  });
+
+  it('rejects a stashed context callCaptain once turn_finished dispatches, keeping the terminal record last', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    let lateCall!: Promise<CaptainRunResult>;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_finished') {
+              lateCall = stashedContext.callCaptain('late control');
+              lateCall.catch(() => {});
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('go');
+    const outcome = await lateCall.then(
+      () => 'ran',
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+    );
+
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'turn_finished',
+    ]);
+    expect(outcome).toContain('turn-scoped');
+  });
+
+  it('rejects stashed context calls once a failed turn dispatches turn_aborted', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let stashedContext!: CaptainContext;
+    const outcomes: Promise<string>[] = [];
+    const settle = (promise: Promise<unknown>): Promise<string> =>
+      promise.then(
+        () => 'ran',
+        (error: unknown) =>
+          error instanceof Error ? error.message : String(error),
+      );
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashedContext = context;
+        throw new Error('boom');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            records.push(record as TmuxPlayRecord);
+            if (record.type === 'turn_aborted') {
+              // The failure path's terminal record fences every turn-scoped
+              // surface, not only emitReply.
+              outcomes.push(
+                settle(stashedContext.callPlayer('coder', 'late work')),
+                settle(stashedContext.callCaptain('late control')),
+                settle(stashedContext.setVisiblePlayers(['coder'])),
+              );
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await expect(runtime.runBossTurn('go')).rejects.toThrow('boom');
+    const settled = await Promise.all(outcomes);
+
+    expect(records.map((record) => record.type)).toEqual([
+      'turn_started',
+      'runtime_error',
+      'turn_aborted',
+    ]);
+    expect(settled).toHaveLength(3);
+    for (const outcome of settled) {
+      expect(outcome).toContain('turn-scoped');
+    }
+  });
+
+  it('rejects stale-context calls outside their originating turn and after shutdown', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let staleContext!: CaptainContext;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        if (turn.id === 1) {
+          staleContext = context;
+          return;
+        }
+        // A context stashed from an earlier turn is out of scope even while
+        // another turn is active: without the identity check its records
+        // would emit into turn 2 stamped with turn 1's id...
+        await expect(
+          staleContext.callPlayer('coder', 'stale work'),
+        ).rejects.toThrow('turn-scoped');
+        await expect(staleContext.callCaptain('stale control')).rejects.toThrow(
+          'turn-scoped',
+        );
+        await expect(
+          staleContext.setVisiblePlayers(['coder']),
+        ).rejects.toThrow('turn-scoped');
+        // ...while the active turn's own context still works.
+        await context.setVisiblePlayers(['coder']);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('first');
+    // Between turns no turn is active: the stashed context rejects.
+    await expect(
+      staleContext.callPlayer('coder', 'between turns'),
+    ).rejects.toThrow('turn-scoped');
+    await expect(
+      staleContext.setVisiblePlayers(['coder']),
+    ).rejects.toThrow('turn-scoped');
+    await runtime.runBossTurn('second');
+    await runtime.dispose();
+    // After shutdown the session gate rejects first, mirroring emitStatus.
+    await expect(
+      staleContext.callPlayer('coder', 'after dispose'),
+    ).rejects.toThrow('tmux-play session emissions are closed');
+    await expect(staleContext.callCaptain('after dispose')).rejects.toThrow(
+      'tmux-play session emissions are closed',
+    );
+
+    const views = records.filter(
+      (record) => record.type === 'player_view_changed',
+    );
+    expect(views).toMatchObject([{ turnId: 2, visiblePlayerIds: ['coder'] }]);
+    const playerRecords = records.filter((record) =>
+      record.type.startsWith('player_p'),
+    );
+    expect(playerRecords).toEqual([]);
   });
 
   it('returns an error result and tags records hidden for a failing hidden call', async () => {

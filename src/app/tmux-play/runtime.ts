@@ -41,12 +41,6 @@ import {
 interface ActiveTurn {
   readonly turn: BossTurn;
   readonly controller: AbortController;
-  // TMUX-092: set once the turn begins finalizing — immediately before its
-  // terminal record (turn_finished / turn_aborted) is enqueued. The emitReply
-  // gate treats a finalizing turn as ended, so a stashed context firing
-  // during or after the terminal dispatch rejects instead of appending a
-  // captain_reply after the turn's terminal record.
-  finalizing: boolean;
 }
 
 interface RunCligentCallOptions {
@@ -253,7 +247,7 @@ export class TmuxPlayRuntime {
     if (this.externalSignal?.aborted) {
       controller.abort(abortReason(this.externalSignal));
     }
-    this.activeTurn = { turn, controller, finalizing: false };
+    this.activeTurn = { turn, controller };
 
     try {
       await this.emit({
@@ -270,9 +264,11 @@ export class TmuxPlayRuntime {
 
       await this.dispatcher.drain();
 
-      // TMUX-092: fence the turn before its terminal record dispatches. Reply
-      // Promises obtained earlier are already enqueued ahead of the terminal
-      // record; from here a late emitReply rejects with the turn-scope error.
+      // TMUX-016 / TMUX-081 / TMUX-092: fence the turn before its terminal
+      // record dispatches. Records enqueued earlier keep their place ahead of
+      // the terminal record; from here every turn-scoped context surface
+      // rejects with its turn-scope error and session-scoped emissions stamp
+      // the null turn lane.
       this.fenceActiveTurn(turn.id);
       if (controller.signal.aborted) {
         await this.emit({
@@ -284,7 +280,7 @@ export class TmuxPlayRuntime {
       }
     } catch (error) {
       controller.abort(errorMessage(error));
-      // TMUX-092: the failure path dispatches the terminal turn_aborted via
+      // The failure path dispatches the terminal turn_aborted via
       // handleRuntimeFailure — fence before it, like the success path.
       this.fenceActiveTurn(turn.id);
       await this.handleRuntimeFailure(turn.id, error);
@@ -300,6 +296,8 @@ export class TmuxPlayRuntime {
     return {
       signal,
       players: this.playerHandles,
+      // TMUX-016: turn-scoped calls carry this turn's id and reject once the
+      // turn is fenced, so no call's records can trail its terminal record.
       callPlayer: (playerId, prompt, options) =>
         this.callPlayer(turn, signal, playerId, prompt, options),
       callCaptain: (prompt, options) =>
@@ -308,7 +306,7 @@ export class TmuxPlayRuntime {
       emitReply: (text) => this.emitTurnReply(turn, text),
       // TMUX-081: a turn-scoped call carries this turn's id.
       setVisiblePlayers: (playerIds) =>
-        this.setVisiblePlayers(playerIds, turn.id),
+        this.setContextVisiblePlayers(turn, playerIds),
     };
   }
 
@@ -319,6 +317,11 @@ export class TmuxPlayRuntime {
     prompt: string,
     options?: CallPlayerOptions,
   ): Promise<PlayerRunResult> {
+    const scopeError =
+      this.sessionEmissionError() ?? this.turnScopeError(turn, 'player calls');
+    if (scopeError) {
+      throw scopeError;
+    }
     const player = this.playersById.get(playerId);
     if (!player) {
       throw new Error(`Unknown player: ${playerId}`);
@@ -366,6 +369,11 @@ export class TmuxPlayRuntime {
     prompt: string,
     options?: CallCaptainOptions,
   ): Promise<CaptainRunResult> {
+    const scopeError =
+      this.sessionEmissionError() ?? this.turnScopeError(turn, 'captain calls');
+    if (scopeError) {
+      throw scopeError;
+    }
     // Resolve once and stamp every record this call emits. A 'hidden' tag
     // lets the tmux presenter skip Boss-pane output while non-presenter
     // observers keep the full trace; the returned result is unaffected.
@@ -416,12 +424,14 @@ export class TmuxPlayRuntime {
   // TMUX-092: turn-scoped counterpart of emitSessionStatus. Where the status
   // lane is session-scoped (nullable turn id, open until shutdown), a
   // conversational reply belongs to the turn that produced it: the record
-  // always carries the context turn's id, and — enforced the same way
-  // emitStatus enforces its session scope, by rejecting before any record is
-  // emitted — a stashed context used after its turn ended (or after session
-  // shutdown) rejects instead of emitting an out-of-turn record.
+  // always carries the context turn's id, and — through the shared turn-scope
+  // gate, rejecting before any record is emitted — a stashed context used
+  // after its turn ended (or after session shutdown) rejects instead of
+  // emitting an out-of-turn record.
   private emitTurnReply(turn: BossTurn, text: string): Promise<void> {
-    const error = this.sessionEmissionError() ?? this.turnEmissionError(turn);
+    const error =
+      this.sessionEmissionError() ??
+      this.turnScopeError(turn, 'captain reply emissions');
     if (error) {
       return Promise.reject(error);
     }
@@ -431,25 +441,33 @@ export class TmuxPlayRuntime {
     });
   }
 
-  private turnEmissionError(turn: BossTurn): Error | undefined {
-    const active = this.activeTurn;
-    // TMUX-092: a finalizing turn counts as ended — its terminal record is
-    // dispatching (or dispatched), and no captain_reply may follow it.
-    if (!active || active.turn.id !== turn.id || active.finalizing) {
+  // TMUX-016 / TMUX-081 / TMUX-092: the single turn-scope gate every
+  // turn-scoped CaptainContext surface (callPlayer, callCaptain,
+  // setVisiblePlayers, emitReply) checks before emitting anything. Because
+  // fenceActiveTurn invalidates the active turn before the turn's terminal
+  // record is enqueued, this identity check alone rejects a stashed context
+  // used during or after terminal dispatch — including from an observer
+  // handling the terminal record — and during any later turn.
+  private turnScopeError(turn: BossTurn, surface: string): Error | undefined {
+    if (this.activeTurn?.turn.id !== turn.id) {
       return new Error(
-        'tmux-play captain reply emissions are turn-scoped: the emitting turn is no longer active',
+        `tmux-play ${surface} are turn-scoped: the originating turn is no longer active`,
       );
     }
     return undefined;
   }
 
-  // TMUX-092: called immediately before a turn's terminal record is enqueued
-  // on the ordered dispatch path. Replies enqueued before the fence keep
-  // their place ahead of the terminal record; later emitReply calls reject.
+  // TMUX-016 / TMUX-081 / TMUX-092: called immediately before a turn's
+  // terminal record is enqueued on the ordered dispatch path — the one fence
+  // behind every turn-scoped surface. Invalidating the active turn here makes
+  // late callPlayer / callCaptain / setVisiblePlayers / emitReply calls
+  // reject via the turn-scope gate, and moves late session-scoped emitStatus
+  // / emitTelemetry / setVisiblePlayers onto the ordering-legal null turn
+  // lane per TMUX-021. Records enqueued before the fence keep their place
+  // ahead of the terminal record on the FIFO dispatch chain.
   private fenceActiveTurn(turnId: number): void {
-    const active = this.activeTurn;
-    if (active && active.turn.id === turnId) {
-      active.finalizing = true;
+    if (this.activeTurn?.turn.id === turnId) {
+      this.activeTurn = undefined;
     }
   }
 
@@ -493,6 +511,23 @@ export class TmuxPlayRuntime {
       ...makeRecordBase('player_view_changed', turnId),
       visiblePlayerIds,
     });
+  }
+
+  // TMUX-081: the turn-scoped CaptainContext variant. The turn-scope gate
+  // rejects a stashed context — after the fence or during a later turn —
+  // before validation, so no player_view_changed can trail the turn's
+  // terminal record or misattribute a closed turn's id.
+  private async setContextVisiblePlayers(
+    turn: BossTurn,
+    playerIds: readonly string[],
+  ): Promise<void> {
+    const error =
+      this.sessionEmissionError() ??
+      this.turnScopeError(turn, 'context setVisiblePlayers calls');
+    if (error) {
+      throw error;
+    }
+    await this.setVisiblePlayers(playerIds, turn.id);
   }
 
   private async setSessionVisiblePlayers(

@@ -79,6 +79,15 @@ export interface CallPlayerOptions {
   readonly resume?: string | false;
 }
 
+/**
+ * TMUX-016: the turn-scoped surface passed to each `handleBossTurn`. Every
+ * turn-scoped member — `callPlayer`, `callCaptain`, `setVisiblePlayers`,
+ * `emitReply` — shares one fence: the originating turn counts as ended no
+ * later than the dispatch of its terminal record (`turn_finished` /
+ * `turn_aborted`), and a call made after that — a stashed context, e.g. from
+ * an observer handling the terminal record — rejects before any record is
+ * emitted, so no call's records can trail its turn's terminal record.
+ */
 export interface CaptainContext {
   readonly signal: AbortSignal;
   readonly players: readonly PlayerHandle[];
