@@ -18,10 +18,9 @@ Requirements:
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
 - An installed runtime for every adapter your config uses — the optional peer
-  SDK the adapter imports, plus any CLI it spawns — installed where the
-  running cligent resolves packages from, which for `npm install -g
-  @sublang/cligent` means globally. See [guide.md](guide.md#install) for the
-  per-adapter packages.
+  SDK the adapter imports, plus any CLI it spawns — installed wherever the
+  running cligent resolves packages. For a global cligent installation, that
+  means globally. See [guide.md](guide.md#install) for the per-adapter packages.
 - Credentials for each of those adapters:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),
@@ -367,7 +366,7 @@ tmux.
 
 A Captain module default-exports a factory. The full typed contract —
 `Captain`, `CaptainSession`, `CaptainContext`, `BossTurn`,
-`PlayerRunResult`, and the record/observer types — is exported from
+`PlayerRunResult`, `CaptainRunResult`, and the record/observer types — is exported from
 `@sublang/cligent/tmux-play`. Captains call players via
 `context`, and may retain the `CaptainSession` from `init()` to
 `emitStatus`/`emitTelemetry` from `init`, during turns, or between turns.
@@ -381,12 +380,29 @@ which player panes are visible. The roster stays unchanged, hidden players
 keep their logs, and awaiting the call lets the pane rebuild finish before
 later player output is presented.
 
+Every turn-scoped `CaptainContext` surface — `callPlayer`, `callCaptain`,
+`setVisiblePlayers`, and `emitReply` — accepts new work only until the runtime
+resumes from `handleBossTurn`. Promises obtained before that boundary continue
+to settle, and the turn remains abortable while the runtime joins and drains
+them before its terminal record.
+
+Use `context.emitReply(text)` for natural Captain prose in the Boss pane. It
+renders through the normal Markdown pipeline under the `captain> ` prefix;
+use retained `CaptainSession.emitStatus` / `emitTelemetry` for operational or
+structured session-lifetime output instead.
+
 `context.callPlayer(playerId, prompt, options?)` also accepts
 `{ resume: <token> }` to select an opaque backend session explicitly, or
 `{ resume: false }` to force a fresh session even when that persistent player
 has an automatic resume token. Omitting `options.resume` preserves the default
-auto-resume behavior. Persist and reuse only `PlayerRunResult.resumeToken`;
-event-level `sessionId` values are transport correlation and may be synthetic.
+auto-resume behavior. Persist and reuse only result-level resume tokens —
+`PlayerRunResult.resumeToken` or `CaptainRunResult.resumeToken`; event-level
+`sessionId` values are transport correlation and may be synthetic.
+
+`context.callCaptain(prompt, options?)` accepts the same `resume` selection,
+plus `visibility: 'visible' | 'hidden'` and `allowedTools`. Its returned
+`CaptainRunResult.resumeToken` is the opaque handle to persist when a later
+Captain call must explicitly continue that backend session.
 
 ```js
 export default function createCaptain(options = {}) {

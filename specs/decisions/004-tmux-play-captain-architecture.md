@@ -75,8 +75,10 @@ The minimum record set is:
 - `turn_started`, `turn_finished`, `turn_aborted`
 - `player_prompt`, `player_event`, `player_finished`
 - `captain_prompt`, `captain_event`, `captain_finished`
+- `captain_reply`
 - `captain_status`
 - `captain_telemetry`
+- `player_view_changed`
 - `runtime_error`
 
 Every record carries a stable player ID where applicable.
@@ -122,31 +124,39 @@ interface BossTurn {
 }
 
 interface CaptainSession {
-  readonly signal: AbortSignal;            // session-scoped abort
+  readonly signal: AbortSignal; // session-scoped abort
   readonly players: readonly PlayerHandle[];
   emitStatus(message: string, data?: Record<string, unknown>): Promise<void>;
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
+  setVisiblePlayers(playerIds: readonly string[]): Promise<void>;
 }
 
 type RecordVisibility = 'visible' | 'hidden';
 
 interface CallCaptainOptions {
-  readonly visibility?: RecordVisibility;  // default 'visible'
+  readonly visibility?: RecordVisibility; // default 'visible'
+  readonly resume?: string | false; // omit for auto-resume
+  readonly allowedTools?: readonly string[];
 }
 
 interface CallPlayerOptions {
-  readonly resume?: string | false;         // omit for auto-resume
+  readonly resume?: string | false; // omit for auto-resume
 }
 
 interface CaptainContext {
-  readonly signal: AbortSignal;            // turn-scoped abort
+  readonly signal: AbortSignal; // turn-scoped abort
   readonly players: readonly PlayerHandle[];
   callPlayer(
     playerId: string,
     prompt: string,
     options?: CallPlayerOptions,
   ): Promise<PlayerRunResult>;
-  callCaptain(prompt: string, options?: CallCaptainOptions): Promise<CaptainRunResult>;
+  callCaptain(
+    prompt: string,
+    options?: CallCaptainOptions,
+  ): Promise<CaptainRunResult>;
+  emitReply(text: string): Promise<void>;
+  setVisiblePlayers(playerIds: readonly string[]): Promise<void>;
 }
 
 interface CaptainTelemetry {
@@ -177,6 +187,7 @@ interface PlayerRunResult {
 interface CaptainRunResult {
   readonly status: RunStatus;
   readonly turnId: number;
+  readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
 }
@@ -184,8 +195,10 @@ interface CaptainRunResult {
 
 Neither context exposes raw `Cligent`; `callPlayer` and `callCaptain` are the only paths to a run, so every run is recorded and bound to `context.signal`.
 `callPlayer` accepts an optional `CallPlayerOptions` whose `resume` selects the persistent player's backend session for that call: a string overrides the `Cligent`'s stored token, `false` forces a fresh session, and omission retains automatic resume continuity.
-The continuation handle is the opaque `PlayerRunResult.resumeToken`, not an event's transport-level `sessionId`.
-`callCaptain` accepts an optional `CallCaptainOptions` whose `visibility` (default `'visible'`) controls only presentation: a `'hidden'` call runs and returns identically, but the runtime tags its `captain_prompt` / `captain_event` / `captain_finished` records so the tmux presenter skips them while non-presenter observers keep the full trace.
+The continuation handles are the opaque `PlayerRunResult.resumeToken` and `CaptainRunResult.resumeToken`, not an event's transport-level `sessionId`.
+`callCaptain` accepts an optional `CallCaptainOptions` whose `visibility` (default `'visible'`) controls only presentation, whose `resume` selects the Captain backend session, and whose `allowedTools` restricts that call's tools: a `'hidden'` call runs and returns identically, but the runtime tags its `captain_prompt` / `captain_event` / `captain_finished` records so the tmux presenter skips them while non-presenter observers keep the full trace.
+`emitReply` emits one turn-bound `captain_reply` that the presenter renders as ordinary Captain prose; `setVisiblePlayers` changes the visible pane subset without changing the configured roster.
+All four `CaptainContext` surfaces close admission when the runtime resumes from `handleBossTurn`. Calls admitted before that boundary remain abortable and are joined and drained before the turn's terminal record.
 
 `emitStatus` emits `captain_status`: free-form, human-readable; routed to the Boss/Captain pane.
 `emitTelemetry` emits `captain_telemetry`: structured, topic-routed; ignored by the tmux pane and consumed by opt-in observers (visualizer, metrics).

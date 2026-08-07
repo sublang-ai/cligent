@@ -27,10 +27,7 @@ export interface BossTurn {
 export interface CaptainSession {
   readonly signal: AbortSignal;
   readonly players: readonly PlayerHandle[];
-  emitStatus(
-    message: string,
-    data?: Record<string, unknown>,
-  ): Promise<void>;
+  emitStatus(message: string, data?: Record<string, unknown>): Promise<void>;
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
   /**
    * TMUX-081: change which configured players have panes in the main tmux
@@ -82,11 +79,11 @@ export interface CallPlayerOptions {
 /**
  * TMUX-016: the turn-scoped surface passed to each `handleBossTurn`. Every
  * turn-scoped member — `callPlayer`, `callCaptain`, `setVisiblePlayers`,
- * `emitReply` — shares one fence: the originating turn counts as ended no
- * later than the dispatch of its terminal record (`turn_finished` /
- * `turn_aborted`), and a call made after that — a stashed context, e.g. from
- * an observer handling the terminal record — rejects before any record is
- * emitted, so no call's records can trail its turn's terminal record.
+ * `emitReply` — shares one admission boundary: once the runtime resumes from
+ * `handleBossTurn`, a new call rejects before emitting any record. Calls
+ * admitted earlier may continue while the turn remains abortable; the runtime
+ * joins and drains them before its pre-terminal fence, so no turn-bound record
+ * can trail `turn_finished` / `turn_aborted`.
  */
 export interface CaptainContext {
   readonly signal: AbortSignal;
