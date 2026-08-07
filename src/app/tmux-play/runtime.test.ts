@@ -366,6 +366,277 @@ describe('TmuxPlayRuntime', () => {
     ).toBeUndefined();
   });
 
+  it('keeps a fire-and-forget call inside its turn, terminal record last', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        // Never awaited: handleBossTurn returns while both calls are still
+        // running, and the turn owes their records ahead of turn_finished.
+        void context.callPlayer('coder', 'go');
+        void context.callCaptain('think');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run() {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            yield doneEvent('codex', 'player done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('chat');
+
+    const types = records.map((record) => record.type);
+    expect(types).toContain('player_finished');
+    expect(types).toContain('captain_finished');
+    expect(types[types.length - 1]).toBe('turn_finished');
+    expect(
+      records.every(
+        (record) => record.turnId === null || record.turnId === 1,
+      ),
+    ).toBe(true);
+  });
+
+  it('closes admission before a failed turn fires its abort listeners', async () => {
+    let fromListener: Promise<unknown> | undefined;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        // The runtime aborts this signal on the failure path, and abort
+        // listeners run synchronously — so this listener is the last thing
+        // that could slip a call in behind a Captain run that already ended.
+        context.signal.addEventListener('abort', () => {
+          fromListener = context.callPlayer('coder', 'from the listener').then(
+            () => 'resolved',
+            (error: unknown) => error,
+          );
+        });
+        throw new Error('captain exploded');
+      },
+    };
+    const records: TmuxPlayRecord[] = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await expect(runtime.runBossTurn('chat')).rejects.toThrow(
+      'captain exploded',
+    );
+
+    expect(fromListener).toBeDefined();
+    const outcome = await fromListener;
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('turn-scoped');
+    expect(records.some((record) => record.type === 'player_prompt')).toBe(
+      false,
+    );
+  });
+
+  it('closes every turn-scoped surface once the Captain run resumes', async () => {
+    const late: Record<string, unknown> = {};
+    let stashed: CaptainContext | undefined;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        stashed = context;
+        // Leaves a call in flight, so the records below dispatch while the
+        // turn is joining — after admission closed, before the terminal
+        // record. Every surface must refuse there, not just the calls.
+        void context.callPlayer('coder', 'go');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            if (record.type !== 'player_finished' || !stashed) {
+              return;
+            }
+            const capture = (name: string, promise: Promise<void>): void => {
+              late[name] = promise.then(
+                () => 'resolved',
+                (error: unknown) => error,
+              );
+            };
+            capture('emitReply', stashed.emitReply('late prose'));
+            capture('setVisiblePlayers', stashed.setVisiblePlayers(['coder']));
+            capture('callPlayer', stashed.callPlayer('coder', 'late'));
+            capture('callCaptain', stashed.callCaptain('late'));
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('chat');
+
+    const settled = Object.fromEntries(
+      await Promise.all(
+        Object.entries(late).map(async ([name, promise]) => [
+          name,
+          await promise,
+        ]),
+      ),
+    );
+    expect(Object.keys(settled).sort()).toEqual([
+      'callCaptain',
+      'callPlayer',
+      'emitReply',
+      'setVisiblePlayers',
+    ]);
+    for (const [name, outcome] of Object.entries(settled)) {
+      expect(outcome, `${name} should have rejected`).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toContain('turn-scoped');
+    }
+  });
+
+  it('lets an abort unwind a turn joining a fire-and-forget call', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let playerStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      playerStarted = resolve;
+    });
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        void context.callPlayer('coder', 'slow work');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => records.push(record as TmuxPlayRecord),
+        },
+      ],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(_prompt, options) {
+            playerStarted();
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, 5000);
+              options?.abortSignal?.addEventListener('abort', () => {
+                clearTimeout(timer);
+                resolve();
+              });
+            });
+            yield doneEvent('codex', 'player done');
+          },
+        },
+      }),
+    });
+
+    const turn = runtime.runBossTurn('chat');
+    await started;
+    // The join is under way: admission is closed, but the turn must still be
+    // reachable or ESC cannot cancel the call it is waiting for.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const abortedAt = Date.now();
+    runtime.abortActiveTurn('user cancelled');
+    await turn;
+
+    expect(Date.now() - abortedAt).toBeLessThan(2000);
+    expect(records[records.length - 1]).toMatchObject({
+      type: 'turn_aborted',
+      turnId: 1,
+    });
+  }, 20000);
+
+  it('marks a dropped rejecting call handled so the host survives', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const captain: Captain = {
+        async handleBossTurn(_turn, context) {
+          // Never awaited, and its dispatch fails: TMUX-022 supports this
+          // style, so the rejection must not take the host down.
+          void context.callPlayer('coder', 'go');
+        },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'coder', adapter: 'codex' }],
+        observers: [
+          {
+            onRecord: (record) => {
+              if (record.type === 'player_prompt') {
+                throw new Error('observer failed on player_prompt');
+              }
+            },
+          },
+        ],
+        adapterImports: adapterImports({}),
+      });
+
+      await runtime.runBossTurn('chat').catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('still rejects a dropped call to a Captain that awaits it', async () => {
+    let observed: unknown;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        // `handled` must not swallow the rejection for a caller that looks.
+        observed = await context
+          .callPlayer('coder', 'go')
+          .then(() => undefined)
+          .catch((error: unknown) => error);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord: (record) => {
+            if (record.type === 'player_prompt') {
+              throw new Error('observer failed on player_prompt');
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    await runtime.runBossTurn('chat').catch(() => {});
+
+    expect(observed).toBeInstanceOf(Error);
+    expect((observed as Error).message).toContain('observer failed');
+  });
+
   it('emits a turn-bound captain_reply for a context emitReply call', async () => {
     const records: TmuxPlayRecord[] = [];
     const captain: Captain = {

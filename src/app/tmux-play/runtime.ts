@@ -41,6 +41,14 @@ import {
 interface ActiveTurn {
   readonly turn: BossTurn;
   readonly controller: AbortController;
+  // TMUX-022: settlement signals for the callPlayer / callCaptain calls this
+  // turn admitted, joined before its terminal record dispatches.
+  readonly admittedCalls: Set<Promise<void>>;
+  // TMUX-016: true once the runtime has resumed from handleBossTurn. Closing
+  // admission is a state of the turn, not the end of it: the turn stays
+  // reachable so ESC, an external signal, and disposal can still abort the
+  // calls it already admitted, which is what bounds the join below.
+  admissionClosed: boolean;
 }
 
 interface RunCligentCallOptions {
@@ -247,28 +255,51 @@ export class TmuxPlayRuntime {
     if (this.externalSignal?.aborted) {
       controller.abort(abortReason(this.externalSignal));
     }
-    this.activeTurn = { turn, controller };
+    const active: ActiveTurn = {
+      turn,
+      controller,
+      admittedCalls: new Set(),
+      admissionClosed: false,
+    };
+    this.activeTurn = active;
 
     try {
-      await this.emit({
-        ...makeRecordBase('turn_started', turn.id, turn.timestamp),
-        turn,
-      });
-
-      if (!controller.signal.aborted) {
-        await this.captain.handleBossTurn(
+      try {
+        await this.emit({
+          ...makeRecordBase('turn_started', turn.id, turn.timestamp),
           turn,
-          this.createContext(turn, controller.signal),
-        );
+        });
+
+        if (!controller.signal.aborted) {
+          await this.captain.handleBossTurn(
+            turn,
+            this.createContext(turn, controller.signal),
+          );
+        }
+      } finally {
+        // TMUX-016 / TMUX-022: the Captain run is the turn's scope, so
+        // admission closes the instant the runtime holds control again —
+        // whatever the outcome, and before the runtime takes any action of
+        // its own. Closing it here rather than on each path below is what
+        // keeps the boundary honest: the failure path's own
+        // `controller.abort` runs abort listeners synchronously, and a
+        // listener calling a context surface must find it already closed.
+        // Every turn-scoped surface then rejects, so the admitted set cannot
+        // grow while it is joined and a call the Captain never awaited still
+        // emits its whole sequence ahead of the terminal record. The turn
+        // itself stays active: abortActiveTurn needs its controller to bound
+        // that join, and session-scoped emissions keep carrying its id until
+        // the fence.
+        active.admissionClosed = true;
       }
 
+      await this.joinAdmittedCalls(active);
       await this.dispatcher.drain();
 
-      // TMUX-016 / TMUX-081 / TMUX-092: fence the turn before its terminal
-      // record dispatches. Records enqueued earlier keep their place ahead of
-      // the terminal record; from here every turn-scoped context surface
-      // rejects with its turn-scope error and session-scoped emissions stamp
-      // the null turn lane.
+      // TMUX-016 / TMUX-021 / TMUX-081 / TMUX-092: fence the turn before its
+      // terminal record is enqueued. Records enqueued earlier keep their
+      // place ahead of it, and from here session-scoped emissions stamp the
+      // null turn lane.
       this.fenceActiveTurn(turn.id);
       if (controller.signal.aborted) {
         await this.emit({
@@ -279,9 +310,15 @@ export class TmuxPlayRuntime {
         await this.emit(makeRecordBase('turn_finished', turn.id));
       }
     } catch (error) {
+      // Admission is already closed by the finally above, so the abort
+      // listeners this fires synchronously cannot slip a call in behind the
+      // failed run. The failure path dispatches the terminal turn_aborted
+      // via handleRuntimeFailure — join before it, like the success path, so
+      // a call the failed turn admitted still lands ahead of that record.
+      // The abort bounds that join: every admitted call's Cligent run is
+      // bound to this controller's signal.
       controller.abort(errorMessage(error));
-      // The failure path dispatches the terminal turn_aborted via
-      // handleRuntimeFailure — fence before it, like the success path.
+      await this.joinAdmittedCalls(active);
       this.fenceActiveTurn(turn.id);
       await this.handleRuntimeFailure(turn.id, error);
       throw error;
@@ -292,21 +329,60 @@ export class TmuxPlayRuntime {
     }
   }
 
+  // TMUX-022: register a call the turn just admitted and return its release.
+  // The turn-scope gate ran first, so the active turn is this call's turn,
+  // and both run in one synchronous segment: passing the gate means being
+  // admitted. The tracked promise resolves and never rejects, so the runtime
+  // attaches no handler to the caller's own Promise — a fire-and-forget call
+  // that fails stays exactly as unhandled as it is without this tracking,
+  // and joining it cannot alter the turn's outcome.
+  private admitCall(): () => void {
+    const active = this.activeTurn;
+    if (!active) {
+      return () => {};
+    }
+    let release!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    active.admittedCalls.add(settled);
+    return () => {
+      active.admittedCalls.delete(settled);
+      release();
+    };
+  }
+
+  // TMUX-022 / TMUX-024: wait for the calls this turn admitted, so their
+  // player_prompt → player_event* → player_finished (captain_prompt →
+  // captain_event* → captain_finished) sequences dispatch before the terminal
+  // record — including when the Captain never awaited the call and let
+  // handleBossTurn return. One pass suffices: the caller fences before
+  // joining, so a call presented from here on is rejected by the turn-scope
+  // gate instead of joining the set being awaited.
+  private async joinAdmittedCalls(active: ActiveTurn): Promise<void> {
+    if (active.admittedCalls.size > 0) {
+      await Promise.all([...active.admittedCalls]);
+    }
+  }
+
   private createContext(turn: BossTurn, signal: AbortSignal): CaptainContext {
     return {
       signal,
       players: this.playerHandles,
       // TMUX-016: turn-scoped calls carry this turn's id and reject once the
-      // turn is fenced, so no call's records can trail its terminal record.
+      // turn's admission closes, so no call's records can trail its terminal
+      // record. TMUX-022 makes starting one without awaiting a supported
+      // style, so every surface here is `handled`: the runtime owns the
+      // failure of a call it owns the settlement of.
       callPlayer: (playerId, prompt, options) =>
-        this.callPlayer(turn, signal, playerId, prompt, options),
+        handled(this.callPlayer(turn, signal, playerId, prompt, options)),
       callCaptain: (prompt, options) =>
-        this.callCaptain(turn, signal, prompt, options),
+        handled(this.callCaptain(turn, signal, prompt, options)),
       // TMUX-092: a turn-scoped conversational reply carries this turn's id.
-      emitReply: (text) => this.emitTurnReply(turn, text),
+      emitReply: (text) => handled(this.emitTurnReply(turn, text)),
       // TMUX-081: a turn-scoped call carries this turn's id.
       setVisiblePlayers: (playerIds) =>
-        this.setContextVisiblePlayers(turn, playerIds),
+        handled(this.setContextVisiblePlayers(turn, playerIds)),
     };
   }
 
@@ -327,40 +403,45 @@ export class TmuxPlayRuntime {
       throw new Error(`Unknown player: ${playerId}`);
     }
 
-    await this.emit({
-      ...makeRecordBase('player_prompt', turn.id),
-      playerId,
-      prompt,
-    });
+    const release = this.admitCall();
+    try {
+      await this.emit({
+        ...makeRecordBase('player_prompt', turn.id),
+        playerId,
+        prompt,
+      });
 
-    const call = await runCligentCall({
-      cligent: player.cligent,
-      prompt,
-      instruction: player.instruction,
-      signal,
-      ...(options?.resume !== undefined ? { resume: options.resume } : {}),
-      emitEvent: (event) =>
-        this.emit({
-          ...makeRecordBase('player_event', turn.id, event.timestamp),
-          playerId,
-          event,
-        }),
-    });
-    const result: PlayerRunResult = {
-      status: call.status,
-      playerId,
-      turnId: turn.id,
-      ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
-      finalText: call.finalText,
-      error: call.error,
-    };
+      const call = await runCligentCall({
+        cligent: player.cligent,
+        prompt,
+        instruction: player.instruction,
+        signal,
+        ...(options?.resume !== undefined ? { resume: options.resume } : {}),
+        emitEvent: (event) =>
+          this.emit({
+            ...makeRecordBase('player_event', turn.id, event.timestamp),
+            playerId,
+            event,
+          }),
+      });
+      const result: PlayerRunResult = {
+        status: call.status,
+        playerId,
+        turnId: turn.id,
+        ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
+        finalText: call.finalText,
+        error: call.error,
+      };
 
-    await this.emit({
-      ...makeRecordBase('player_finished', turn.id),
-      playerId,
-      result,
-    });
-    return result;
+      await this.emit({
+        ...makeRecordBase('player_finished', turn.id),
+        playerId,
+        result,
+      });
+      return result;
+    } finally {
+      release();
+    }
   }
 
   private async callCaptain(
@@ -379,42 +460,47 @@ export class TmuxPlayRuntime {
     // observers keep the full trace; the returned result is unaffected.
     const visibility: RecordVisibility = options?.visibility ?? 'visible';
 
-    await this.emit({
-      ...makeRecordBase('captain_prompt', turn.id),
-      prompt,
-      visibility,
-    });
+    const release = this.admitCall();
+    try {
+      await this.emit({
+        ...makeRecordBase('captain_prompt', turn.id),
+        prompt,
+        visibility,
+      });
 
-    const call = await runCligentCall({
-      cligent: this.captainCligent,
-      prompt,
-      instruction: this.captainInstruction,
-      signal,
-      ...(options?.resume !== undefined ? { resume: options.resume } : {}),
-      ...(options?.allowedTools !== undefined
-        ? { allowedTools: options.allowedTools }
-        : {}),
-      emitEvent: (event) =>
-        this.emit({
-          ...makeRecordBase('captain_event', turn.id, event.timestamp),
-          event,
-          visibility,
-        }),
-    });
-    const result: CaptainRunResult = {
-      status: call.status,
-      turnId: turn.id,
-      ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
-      finalText: call.finalText,
-      error: call.error,
-    };
+      const call = await runCligentCall({
+        cligent: this.captainCligent,
+        prompt,
+        instruction: this.captainInstruction,
+        signal,
+        ...(options?.resume !== undefined ? { resume: options.resume } : {}),
+        ...(options?.allowedTools !== undefined
+          ? { allowedTools: options.allowedTools }
+          : {}),
+        emitEvent: (event) =>
+          this.emit({
+            ...makeRecordBase('captain_event', turn.id, event.timestamp),
+            event,
+            visibility,
+          }),
+      });
+      const result: CaptainRunResult = {
+        status: call.status,
+        turnId: turn.id,
+        ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
+        finalText: call.finalText,
+        error: call.error,
+      };
 
-    await this.emit({
-      ...makeRecordBase('captain_finished', turn.id),
-      result,
-      visibility,
-    });
-    return result;
+      await this.emit({
+        ...makeRecordBase('captain_finished', turn.id),
+        result,
+        visibility,
+      });
+      return result;
+    } finally {
+      release();
+    }
   }
 
   private emit(record: Parameters<RecordDispatcher['emit']>[0]): Promise<void> {
@@ -443,13 +529,15 @@ export class TmuxPlayRuntime {
 
   // TMUX-016 / TMUX-081 / TMUX-092: the single turn-scope gate every
   // turn-scoped CaptainContext surface (callPlayer, callCaptain,
-  // setVisiblePlayers, emitReply) checks before emitting anything. Because
-  // fenceActiveTurn invalidates the active turn before the turn's terminal
-  // record is enqueued, this identity check alone rejects a stashed context
+  // setVisiblePlayers, emitReply) checks before emitting anything. It rejects
+  // on either half of the turn's end: once admission closes, so nothing joins
+  // the set being awaited; and once fenceActiveTurn invalidates the turn
+  // before its terminal record is enqueued, which covers a stashed context
   // used during or after terminal dispatch — including from an observer
   // handling the terminal record — and during any later turn.
   private turnScopeError(turn: BossTurn, surface: string): Error | undefined {
-    if (this.activeTurn?.turn.id !== turn.id) {
+    const active = this.activeTurn;
+    if (active?.turn.id !== turn.id || active.admissionClosed) {
       return new Error(
         `tmux-play ${surface} are turn-scoped: the originating turn is no longer active`,
       );
@@ -457,9 +545,11 @@ export class TmuxPlayRuntime {
     return undefined;
   }
 
-  // TMUX-016 / TMUX-081 / TMUX-092: called immediately before a turn's
-  // terminal record is enqueued on the ordered dispatch path — the one fence
-  // behind every turn-scoped surface. Invalidating the active turn here makes
+  // TMUX-016 / TMUX-081 / TMUX-092: called ahead of a turn's terminal record
+  // on the ordered dispatch path — the last thing before it on the completed
+  // path, before the runtime_error handleRuntimeFailure emits on the failure
+  // one — the one fence behind every turn-scoped surface. Invalidating the
+  // active turn here makes
   // late callPlayer / callCaptain / setVisiblePlayers / emitReply calls
   // reject via the turn-scope gate, and moves late session-scoped emitStatus
   // / emitTelemetry / setVisiblePlayers onto the ordering-legal null turn
@@ -623,6 +713,23 @@ export class TmuxPlayRuntime {
       remove();
     }
   }
+}
+
+/**
+ * TMUX-022: marks a turn-scoped surface's rejection as observed.
+ *
+ * Starting a call without awaiting it is a supported style, and the runtime
+ * both admits and joins such a call — so it owns that call's failure too. An
+ * unobserved rejection here would terminate the host before the turn could
+ * unwind, which is a defect of the runtime's contract rather than the
+ * Captain's code. The *original* promise is returned, so a Captain that does
+ * await still receives the rejection, and one that never looks changes
+ * nothing about its turn's outcome. `RecordDispatcher.emit` applies the same
+ * guard to the emission promise it owns.
+ */
+function handled<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => {});
+  return promise;
 }
 
 function collectFailure(failures: unknown[], error: unknown): void {
