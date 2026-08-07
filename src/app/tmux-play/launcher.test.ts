@@ -1622,6 +1622,14 @@ describe('launchTmuxPlay', () => {
       stdout,
       stderr,
       attach: false,
+      // TTMUX-011's legacy-warning Given names only the ignored cwd config —
+      // never the host's adapter roster — so pin the first-run generation
+      // this launch falls through to (TMUX-011 seam) and the runtime gate
+      // (TMUX-089 seam) off the host's CLIs. The unstubbed default probed
+      // all five adapter runtimes, whose spawned --version checks sum past
+      // the test timeout on a loaded host.
+      readyAdapters: async () => ['claude', 'codex'],
+      adapterImports: availableAdapterImports(),
     });
 
     expect(stderr.text()).toContain(
