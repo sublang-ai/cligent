@@ -78,6 +78,10 @@ order. Legacy content events carrying no message identifier shall retain their
 existing normalization because no role can be correlated, while respecting
 the same ordering gate.
 
+When `message.removed` identifies a message with held content, the adapter
+shall discard that content and release any now-unblocked later events. Removed
+content shall neither remain resident nor hold the global ordering gate open.
+
 Session filtering per [OPENCODE-006](#opencode-006) shall precede role
 correlation, so metadata from another session cannot release or discard the
 current session's pending content.

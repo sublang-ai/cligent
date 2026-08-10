@@ -20,8 +20,8 @@ Complete
 - [x] The adapter tracks message roles per run, buffers parts that precede their
       role, suppresses user content, and releases assistant content in order.
 - [x] Canned-event tests cover both event orderings, all conversational event
-      kinds, equal prompt/assistant bytes, unresolved roles, and foreign
-      sessions.
+      kinds, equal prompt/assistant bytes, unresolved and removed messages,
+      and foreign sessions.
 
 ## Tasks
 
@@ -36,7 +36,7 @@ at its boundary.
    early parts until their role resolves, and suppress user-owned content.
 3. [x] **Pin ordering and attribution behavior.** Cover role-before-part,
    part-before-role, multiple content kinds, prompt-equal assistant output,
-   unresolved roles, and cross-session isolation.
+   unresolved and removed messages, and cross-session isolation.
 
 ## Acceptance criteria
 
@@ -48,5 +48,7 @@ at its boundary.
 - Identifier-bearing content remains pending until its role resolves and is
   not emitted if the run terminates first; later known assistant content still
   flushes in order before terminal `done`.
+- Removing an unresolved message discards its held content and immediately
+  unblocks later known assistant output.
 - Role correlation is per run and occurs only after session filtering.
 - Legacy content without a message identifier retains its prior behavior.

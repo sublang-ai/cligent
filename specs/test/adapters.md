@@ -121,7 +121,9 @@ to the submitted prompt shall still be emitted. Content with a message
 identifier whose role never resolves shall not be emitted, shall not prevent
 later known assistant content from flushing before terminal `done`, and legacy
 content without a message identifier shall preserve its prior normalization.
-Role metadata from a foreign session shall not resolve current-session content.
+Removing a message with held content shall discard that content and unblock
+later events without waiting for terminal completion. Role metadata from a
+foreign session shall not resolve current-session content.
 
 ## Tool Filtering
 
