@@ -8,7 +8,7 @@ import type {
 } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   EventSessionError,
   EventSessionIdle,
@@ -38,6 +38,13 @@ interface MockOpenCodeClient {
   abortSession?(options: {
     sessionId: string;
     cwd?: string;
+  }): Promise<void>;
+  replyPermission(options: {
+    sessionId: string;
+    requestId: string;
+    permission: string;
+    cwd?: string;
+    signal?: AbortSignal;
   }): Promise<void>;
   close(): Promise<void>;
   shutdown(): Promise<void>;
@@ -123,6 +130,21 @@ function makeLoader(config: {
   onAbortSession?: (
     options: { sessionId: string; cwd?: string },
   ) => Promise<void> | void;
+  onReplyPermission?: (options: {
+    sessionId: string;
+    requestId: string;
+    permission: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => void;
+  replyPermissionFactory?: (options: {
+    sessionId: string;
+    requestId: string;
+    permission: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<void>;
+  replyPermissionError?: unknown;
   onClose?: () => Promise<void> | void;
   onShutdown?: () => Promise<void> | void;
 }): () => Promise<{ createClient(options?: { baseUrl?: string }): MockOpenCodeClient }> {
@@ -160,6 +182,16 @@ function makeLoader(config: {
         },
         async abortSession(options): Promise<void> {
           await config.onAbortSession?.(options);
+        },
+        async replyPermission(options): Promise<void> {
+          config.onReplyPermission?.(options);
+          if (config.replyPermissionFactory) {
+            await config.replyPermissionFactory(options);
+            return;
+          }
+          if (config.replyPermissionError !== undefined) {
+            throw config.replyPermissionError;
+          }
         },
         async close(): Promise<void> {
           await config.onClose?.();
@@ -242,6 +274,7 @@ describe('OpenCodeAdapter', () => {
               type: 'permission.updated',
               sessionId: 'session-1',
               permission: {
+                id: 'permission-tool-2',
                 toolName: 'bash',
                 toolUseId: 'tool-2',
                 input: { command: 'rm -rf /tmp' },
@@ -252,6 +285,7 @@ describe('OpenCodeAdapter', () => {
               type: 'permission.replied',
               sessionId: 'session-1',
               permission: {
+                requestID: 'permission-tool-2',
                 toolName: 'bash',
                 toolUseId: 'tool-2',
                 decision: 'denied',
@@ -783,10 +817,808 @@ describe('OpenCodeAdapter', () => {
 
     expect(permission?.payload).toEqual({
       toolName: 'bash',
-      toolUseId: 'permission-1',
+      toolUseId: 'tool-call-1',
       input: { command: 'npm test' },
     });
   });
+
+  it('rejects canonical v1 and v2 permission requests with exact correlation', async () => {
+    const replies: Array<{
+      sessionId: string;
+      requestId: string;
+      permission: string;
+      signal?: AbortSignal;
+    }> = [];
+
+    for (const fixture of [
+      {
+        sessionId: 'permission-v1-session',
+        requestId: 'permission-v1-request',
+        permission: 'external_directory',
+        event: {
+          type: 'permission.updated',
+          properties: {
+            id: 'permission-v1-request',
+            sessionID: 'permission-v1-session',
+            type: 'external_directory',
+            pattern: ['/tmp/*'],
+            messageID: 'message-v1',
+            callID: 'call-v1',
+            title: 'Access outside the working directory',
+            metadata: { path: '/tmp/probe' },
+            time: { created: 1 },
+          },
+        },
+      },
+      {
+        sessionId: 'permission-v2-session',
+        requestId: 'permission-v2-request',
+        permission: 'future_permission',
+        event: {
+          type: 'permission.asked',
+          properties: {
+            id: 'permission-v2-request',
+            sessionID: 'permission-v2-session',
+            permission: 'future_permission',
+            patterns: ['*'],
+            metadata: { future: true },
+            always: [],
+            tool: { messageID: 'message-v2', callID: 'call-v2' },
+          },
+        },
+      },
+    ]) {
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: fixture.sessionId },
+            events: [
+              fixture.event,
+              {
+                type: 'session.idle',
+                properties: { sessionID: fixture.sessionId },
+              },
+            ],
+            onReplyPermission(options) {
+              replies.push(options);
+            },
+          }),
+        },
+      );
+
+      const events = await collect(adapter.run('permission probe'));
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'permission_request',
+        'done',
+      ]);
+    }
+
+    expect(
+      replies.map(({ signal: _signal, ...reply }) => reply),
+    ).toEqual([
+      {
+        sessionId: 'permission-v1-session',
+        requestId: 'permission-v1-request',
+        permission: 'external_directory',
+      },
+      {
+        sessionId: 'permission-v2-session',
+        requestId: 'permission-v2-request',
+        permission: 'future_permission',
+      },
+    ]);
+    expect(replies[0]?.signal).toBeDefined();
+    expect(replies[0]?.signal?.aborted).toBe(true);
+    expect(replies[1]?.signal).toBeDefined();
+    expect(replies[1]?.signal?.aborted).toBe(true);
+    expect(replies[0]?.signal).not.toBe(replies[1]?.signal);
+  });
+
+  it('ignores foreign-session asks and replies once to a repeated local request', async () => {
+    const replies: Array<{
+      sessionId: string;
+      requestId: string;
+      permission: string;
+    }> = [];
+    const localAsk = {
+      type: 'permission.asked',
+      properties: {
+        id: 'request-local-a',
+        sessionID: 'session-local',
+        permission: 'external_directory',
+        patterns: ['/tmp/*'],
+        metadata: {},
+        always: [],
+      },
+    };
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'session-local' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                ...localAsk.properties,
+                id: 'request-foreign',
+                sessionID: 'session-foreign',
+              },
+            },
+            localAsk,
+            {
+              type: 'permission.asked',
+              properties: {
+                ...localAsk.properties,
+                id: 'request-local-b',
+                permission: 'future_permission',
+              },
+            },
+            localAsk,
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'session-local' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push({
+              sessionId: options.sessionId,
+              requestId: options.requestId,
+              permission: options.permission,
+            });
+          },
+        }),
+      },
+    );
+
+    await collect(adapter.run('concurrency probe'));
+    expect(replies).toEqual([
+      {
+        sessionId: 'session-local',
+        requestId: 'request-local-a',
+        permission: 'external_directory',
+      },
+      {
+        sessionId: 'session-local',
+        requestId: 'request-local-b',
+        permission: 'future_permission',
+      },
+    ]);
+  });
+
+  it('terminates with request identifiers when a permission reply fails', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'reply-failure-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reply-failure-request',
+                sessionID: 'reply-failure-session',
+                permission: 'unknown_future_permission',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+          ],
+          replyPermissionError: new Error('reply route unavailable'),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('failure probe'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'permission_request',
+      'error',
+      'done',
+    ]);
+    const error = events[2] as AgentEvent & {
+      payload: { code?: string; message: string };
+    };
+    expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
+    expect(error.payload.message).toContain('reply-failure-session');
+    expect(error.payload.message).toContain('reply-failure-request');
+    expect(error.payload.message).toContain('unknown_future_permission');
+    expect((events[3]!.payload as { status: string }).status).toBe('error');
+  });
+
+  it('bounds a permission reply that never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      let eventSignal: AbortSignal | undefined;
+      let replySignal: AbortSignal | undefined;
+      let replyCancelled = false;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'reply-timeout-session' },
+            events: [
+              {
+                type: 'permission.asked',
+                properties: {
+                  id: 'reply-timeout-request',
+                  sessionID: 'reply-timeout-session',
+                  permission: 'future_permission',
+                  patterns: ['*'],
+                  metadata: {},
+                  always: [],
+                },
+              },
+            ],
+            onEvents(options) {
+              eventSignal = options?.signal as AbortSignal | undefined;
+            },
+            replyPermissionFactory: async (options) =>
+              new Promise<void>((_resolve, reject) => {
+                replySignal = options.signal;
+                const cancel = () => {
+                  replyCancelled = true;
+                  reject(new Error('reply request cancelled'));
+                };
+                if (replySignal?.aborted) {
+                  cancel();
+                } else {
+                  replySignal?.addEventListener('abort', cancel, { once: true });
+                }
+              }),
+          }),
+        },
+      );
+
+      const stream = adapter.run('timeout probe');
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('permission_request');
+
+      const pendingError = stream.next();
+      await vi.advanceTimersByTimeAsync(5_000);
+      const error = (await pendingError).value as AgentEvent & {
+        payload: { code?: string; message: string };
+      };
+      expect(error.type).toBe('error');
+      expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
+      expect(error.payload.message).toContain('reply-timeout-session');
+      expect(error.payload.message).toContain('reply-timeout-request');
+      expect(error.payload.message).toContain('timed out after 5000ms');
+      expect(eventSignal).toBe(replySignal);
+      expect(eventSignal?.aborted).toBe(true);
+      expect(replySignal?.aborted).toBe(true);
+      expect(replyCancelled).toBe(true);
+
+      const done = (await stream.next()).value;
+      expect(done?.type).toBe('done');
+      expect((done?.payload as { status: string }).status).toBe('error');
+      await stream.next();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminates when a permission event has no request identifier', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'invalid-request-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                sessionID: 'invalid-request-session',
+                permission: 'future_permission',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('invalid request probe'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'permission_request',
+      'error',
+      'done',
+    ]);
+    const error = events[2] as AgentEvent & {
+      payload: { code?: string; message: string };
+    };
+    expect(error.payload.code).toBe('OPENCODE_PERMISSION_REQUEST_INVALID');
+    expect(error.payload.message).toContain('requestID="<missing>"');
+    expect(error.payload.message).toContain('future_permission');
+  });
+
+  it('aborts a pending permission reply and cleans up the managed server', async () => {
+    const controller = new AbortController();
+    const { spawnProcess, invocations } = makeSpawn();
+    let closeCalls = 0;
+    let shutdownCalls = 0;
+    let eventSignal: AbortSignal | undefined;
+    let replySignal: AbortSignal | undefined;
+    let replyCancelled = false;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'managed', serverUrl: 'http://127.0.0.1:4998' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'pending-permission-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'pending-permission-request',
+                sessionID: 'pending-permission-session',
+                permission: 'external_directory',
+                patterns: ['/tmp/*'],
+                metadata: {},
+                always: [],
+              },
+            },
+          ],
+          onEvents(options) {
+            eventSignal = options?.signal as AbortSignal | undefined;
+          },
+          replyPermissionFactory: async (options) =>
+            new Promise<void>((_resolve, reject) => {
+              replySignal = options.signal;
+              const cancel = () => {
+                replyCancelled = true;
+                reject(new Error('reply request cancelled'));
+              };
+              if (replySignal?.aborted) {
+                cancel();
+              } else {
+                replySignal?.addEventListener('abort', cancel, { once: true });
+              }
+            }),
+          onClose() {
+            closeCalls++;
+          },
+          onShutdown() {
+            shutdownCalls++;
+          },
+        }),
+        spawnProcess,
+        probeCliAvailability: async () => true,
+        waitForServerReady: async () => 'http://127.0.0.1:4998',
+      },
+    );
+
+    const stream = adapter.run('abort permission probe', {
+      abortSignal: controller.signal,
+    });
+    expect((await stream.next()).value?.type).toBe('init');
+    expect((await stream.next()).value?.type).toBe('permission_request');
+
+    const terminal = stream.next();
+    controller.abort();
+    const done = await terminal;
+    expect(done.value?.type).toBe('done');
+    expect((done.value?.payload as { status: string }).status).toBe(
+      'interrupted',
+    );
+    expect(invocations[0]?.process.killSignals).not.toContain('SIGTERM');
+    await stream.next();
+
+    expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
+    expect(eventSignal).toBe(replySignal);
+    expect(eventSignal?.aborted).toBe(true);
+    expect(replySignal).not.toBe(controller.signal);
+    expect(replySignal?.aborted).toBe(true);
+    expect(replyCancelled).toBe(true);
+    expect(closeCalls).toBe(1);
+    expect(shutdownCalls).toBe(1);
+  });
+
+  it('bounds stuck iterator and SDK cleanup after terminating the managed server', async () => {
+    vi.useFakeTimers();
+    try {
+      const { spawnProcess, invocations } = makeSpawn();
+      const cleanupOrder: string[] = [];
+      let nextCalls = 0;
+      const iterator: AsyncIterator<unknown> = {
+        async next() {
+          nextCalls++;
+          return {
+            done: false,
+            value: {
+              type: 'session.idle',
+              properties: { sessionID: 'stuck-cleanup-session' },
+            },
+          };
+        },
+        async return() {
+          cleanupOrder.push('iterator.return');
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      };
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4997' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'stuck-cleanup-session' },
+            eventStreamFactory: () => ({
+              [Symbol.asyncIterator]() {
+                return iterator;
+              },
+            }),
+            onClose() {
+              cleanupOrder.push('client.close');
+              return new Promise<void>(() => {});
+            },
+            onShutdown() {
+              cleanupOrder.push('client.shutdown');
+              return new Promise<void>(() => {});
+            },
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4997',
+        },
+      );
+
+      const stream = adapter.run('finish before stuck cleanup');
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('done');
+      expect(nextCalls).toBe(1);
+
+      const processRef = invocations[0]!.process;
+      const originalKill = processRef.kill.bind(processRef);
+      processRef.kill = (signal) => {
+        cleanupOrder.push(`server.kill:${String(signal)}`);
+        return originalKill(signal);
+      };
+
+      const teardown = stream.next();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(cleanupOrder).toEqual([
+        'server.kill:SIGTERM',
+        'iterator.return',
+        'client.close',
+        'client.shutdown',
+      ]);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect((await teardown).done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending v1 canonical SSE request and closes its iterator', async () => {
+    const controller = new AbortController();
+    let subscriptionSignal: AbortSignal | undefined;
+    let nextCancelled = false;
+    let returnCalls = 0;
+
+    const rawIterator: AsyncIterator<unknown> = {
+      next: async () =>
+        new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+          const cancel = () => {
+            nextCancelled = true;
+            reject(new Error('v1 SSE request cancelled'));
+          };
+          if (subscriptionSignal?.aborted) {
+            cancel();
+          } else {
+            subscriptionSignal?.addEventListener('abort', cancel, {
+              once: true,
+            });
+          }
+        }),
+      return: async () => {
+        returnCalls++;
+        return { done: true, value: undefined };
+      },
+    };
+    const real = {
+      session: {
+        async create() {
+          return { id: 'v1-pending-sse-session' };
+        },
+        async prompt() {
+          return {};
+        },
+      },
+      event: {
+        async subscribe(requestOptions?: unknown) {
+          subscriptionSignal = (requestOptions as { signal?: AbortSignal })
+            ?.signal;
+          return {
+            stream: {
+              [Symbol.asyncIterator]() {
+                return rawIterator;
+              },
+            },
+          };
+        },
+      },
+    };
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: async () => ({
+          createClient: () => wrapOpencodeClient(real),
+        }),
+      },
+    );
+
+    const stream = adapter.run('abort pending v1 SSE', {
+      abortSignal: controller.signal,
+    });
+    expect((await stream.next()).value?.type).toBe('init');
+    expect(subscriptionSignal).toBeDefined();
+    expect(subscriptionSignal).not.toBe(controller.signal);
+    expect(subscriptionSignal?.aborted).toBe(false);
+
+    const terminal = stream.next();
+    controller.abort();
+    const done = await terminal;
+    expect(done.value?.type).toBe('done');
+    expect((done.value?.payload as { status: string }).status).toBe(
+      'interrupted',
+    );
+    await stream.next();
+
+    expect(subscriptionSignal?.aborted).toBe(true);
+    expect(nextCancelled).toBe(true);
+    expect(returnCalls).toBe(1);
+  });
+
+  it('cancels a pending v2 canonical SSE request and closes its iterator', async () => {
+    const controller = new AbortController();
+    let subscriptionSignal: AbortSignal | undefined;
+    let nextCancelled = false;
+    let returnCalls = 0;
+
+    const rawIterator: AsyncIterator<unknown> = {
+      next: async () =>
+        new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+          const cancel = () => {
+            nextCancelled = true;
+            reject(new Error('SSE request cancelled'));
+          };
+          if (subscriptionSignal?.aborted) {
+            cancel();
+          } else {
+            subscriptionSignal?.addEventListener('abort', cancel, {
+              once: true,
+            });
+          }
+        }),
+      return: async () => {
+        returnCalls++;
+        return { done: true, value: undefined };
+      },
+    };
+    const real = {
+      session: {
+        async create() {
+          return { data: { id: 'eager-sse-session' } };
+        },
+        async promptAsync() {
+          return {};
+        },
+      },
+      event: {
+        async subscribe(_parameters: unknown, requestOptions?: unknown) {
+          subscriptionSignal = (requestOptions as { signal?: AbortSignal })
+            ?.signal;
+          return {
+            stream: {
+              [Symbol.asyncIterator]() {
+                return rawIterator;
+              },
+            },
+          };
+        },
+      },
+    };
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: async () => ({
+          createClient: () =>
+            wrapOpencodeClient(real, { apiVersion: 'v2' }),
+        }),
+      },
+    );
+
+    const stream = adapter.run('abort eager SSE', {
+      abortSignal: controller.signal,
+    });
+    expect((await stream.next()).value?.type).toBe('init');
+    expect(subscriptionSignal).toBeDefined();
+    expect(subscriptionSignal).not.toBe(controller.signal);
+    expect(subscriptionSignal?.aborted).toBe(false);
+
+    const terminal = stream.next();
+    controller.abort();
+    const done = await terminal;
+    expect(done.value?.type).toBe('done');
+    expect((done.value?.payload as { status: string }).status).toBe(
+      'interrupted',
+    );
+    await stream.next();
+
+    expect(subscriptionSignal?.aborted).toBe(true);
+    expect(nextCancelled).toBe(true);
+    expect(returnCalls).toBe(1);
+  });
+
+  it.each(['v1', 'v2'] as const)(
+    'cancels a pending %s canonical permission reply HTTP request',
+    async (apiVersion) => {
+      const controller = new AbortController();
+      const sessionId = `canonical-${apiVersion}-reply-session`;
+      const requestId = `canonical-${apiVersion}-reply-request`;
+      let subscriptionSignal: AbortSignal | undefined;
+      let replySignal: AbortSignal | undefined;
+      let replyCancelled = false;
+      let legacyReplyParameters: Record<string, unknown> | undefined;
+      let v2ReplyParameters: Record<string, unknown> | undefined;
+      let rawEventDelivered = false;
+      let resolveReplyStarted: () => void = () => {};
+      const replyStarted = new Promise<void>((resolve) => {
+        resolveReplyStarted = resolve;
+      });
+
+      const permissionEvent =
+        apiVersion === 'v1'
+          ? {
+              type: 'permission.updated',
+              properties: {
+                id: requestId,
+                sessionID: sessionId,
+                type: 'external_directory',
+                pattern: ['/tmp/*'],
+              },
+            }
+          : {
+              type: 'permission.asked',
+              properties: {
+                id: requestId,
+                sessionID: sessionId,
+                permission: 'external_directory',
+                patterns: ['/tmp/*'],
+              },
+            };
+      const rawIterator: AsyncIterator<unknown> = {
+        async next() {
+          if (!rawEventDelivered) {
+            rawEventDelivered = true;
+            return { done: false, value: permissionEvent };
+          }
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+        async return() {
+          return { done: true, value: undefined };
+        },
+      };
+      const event = {
+        async subscribe(parameters?: unknown, requestOptions?: unknown) {
+          const options = apiVersion === 'v2' ? requestOptions : parameters;
+          subscriptionSignal = (options as { signal?: AbortSignal })?.signal;
+          return {
+            stream: {
+              [Symbol.asyncIterator]() {
+                return rawIterator;
+              },
+            },
+          };
+        },
+      };
+      const rejectOnAbort = (signal: AbortSignal | undefined) =>
+        new Promise<unknown>((_resolve, reject) => {
+          replySignal = signal;
+          resolveReplyStarted();
+          const cancel = () => {
+            replyCancelled = true;
+            reject(new Error(`${apiVersion} reply HTTP request cancelled`));
+          };
+          if (signal?.aborted) {
+            cancel();
+          } else {
+            signal?.addEventListener('abort', cancel, { once: true });
+          }
+        });
+      const real: Record<string, unknown> =
+        apiVersion === 'v1'
+          ? {
+              session: {
+                async create() {
+                  return { id: sessionId };
+                },
+                async prompt() {
+                  return {};
+                },
+              },
+              event,
+              async postSessionIdPermissionsPermissionId(parameters: unknown) {
+                legacyReplyParameters = parameters as Record<string, unknown>;
+                return rejectOnAbort(
+                  legacyReplyParameters.signal as AbortSignal | undefined,
+                );
+              },
+            }
+          : {
+              session: {
+                async create() {
+                  return { data: { id: sessionId } };
+                },
+                async promptAsync() {
+                  return {};
+                },
+              },
+              event,
+              permission: {
+                async reply(parameters: unknown, requestOptions?: unknown) {
+                  v2ReplyParameters = parameters as Record<string, unknown>;
+                  return rejectOnAbort(
+                    (requestOptions as { signal?: AbortSignal })?.signal,
+                  );
+                },
+              },
+            };
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: async () => ({
+            createClient: () =>
+              wrapOpencodeClient(real, { apiVersion }),
+          }),
+        },
+      );
+
+      const stream = adapter.run(`abort ${apiVersion} reply HTTP`, {
+        abortSignal: controller.signal,
+        cwd: '/workspace',
+      });
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('permission_request');
+
+      const terminal = stream.next();
+      await replyStarted;
+      expect(replySignal).toBeDefined();
+      expect(replySignal).toBe(subscriptionSignal);
+      expect(replySignal).not.toBe(controller.signal);
+      expect(replySignal?.aborted).toBe(false);
+
+      controller.abort();
+      const done = await terminal;
+      expect(done.value?.type).toBe('done');
+      expect((done.value?.payload as { status: string }).status).toBe(
+        'interrupted',
+      );
+      await stream.next();
+
+      expect(replySignal?.aborted).toBe(true);
+      expect(replyCancelled).toBe(true);
+      if (apiVersion === 'v1') {
+        expect(legacyReplyParameters).toMatchObject({
+          path: { id: sessionId, permissionID: requestId },
+          body: { response: 'reject' },
+          signal: replySignal,
+        });
+      } else {
+        expect(v2ReplyParameters).toMatchObject({
+          requestID: requestId,
+          directory: '/workspace',
+          reply: 'reject',
+        });
+      }
+    },
+  );
 
   it('uses external mode without spawning a server', async () => {
     let createClientBaseUrl: string | undefined;
@@ -1419,13 +2251,26 @@ describe('OpenCodeAdapter', () => {
             eventStreamFactory: (streamOptions) => ({
               async *[Symbol.asyncIterator]() {
                 const signal = streamOptions?.signal as AbortSignal;
+                let eventIndex = 0;
                 while (!signal.aborted) {
                   await new Promise((resolve) => setTimeout(resolve, 8));
-                  yield {
-                    type: 'session.status',
-                    sessionId: 'foreign-session',
-                    status: { type: 'busy' },
-                  };
+                  yield eventIndex++ % 2 === 0
+                    ? {
+                        type: 'message.updated',
+                        properties: {
+                          info: {
+                            id: 'foreign-message',
+                            sessionID: 'foreign-session',
+                            role: 'assistant',
+                          },
+                        },
+                      }
+                    : {
+                        type: 'session.updated',
+                        properties: {
+                          info: { id: 'foreign-session' },
+                        },
+                      };
                 }
               },
             }),
@@ -1782,7 +2627,7 @@ describe('OpenCodeAdapter', () => {
 
       const events = await collect(adapter.run('prompt'));
       expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
-      expect(cleanupOrder).toEqual(['close', 'shutdown', 'SIGTERM']);
+      expect(cleanupOrder).toEqual(['SIGTERM', 'close', 'shutdown']);
       expect(invocations[0]?.process.killSignals).toEqual(['SIGTERM']);
     });
 
@@ -2222,11 +3067,7 @@ describe('OpenCodeAdapter', () => {
 
   it('maps PermissionPolicy.mode = "auto" to SDK permission: allow per ENG-021', () => {
     const auto = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
-    expect(auto.permission).toEqual({
-      edit: 'allow',
-      bash: 'allow',
-      webfetch: 'allow',
-    });
+    expect(auto.permission).toEqual({ '*': 'allow' });
 
     // User-passed allowedTools / disallowedTools (independent from
     // `permissions`) still flow through to `tools`.
@@ -2234,11 +3075,7 @@ describe('OpenCodeAdapter', () => {
       { mode: 'auto' },
       { allowedTools: ['custom-a'], disallowedTools: ['custom-b'] },
     );
-    expect(withUserTools.permission).toEqual({
-      edit: 'allow',
-      bash: 'allow',
-      webfetch: 'allow',
-    });
+    expect(withUserTools.permission).toEqual({ '*': 'allow' });
     expect(withUserTools.tools?.core).toEqual(['custom-a']);
     expect(withUserTools.tools?.exclude).toEqual(['custom-b']);
   });
@@ -2263,11 +3100,7 @@ describe('OpenCodeAdapter', () => {
       shellExecute: 'deny',
       networkAccess: 'deny',
     });
-    expect(config.permission).toEqual({
-      edit: 'allow',
-      bash: 'allow',
-      webfetch: 'allow',
-    });
+    expect(config.permission).toEqual({ '*': 'allow' });
   });
 
   it('accepts writablePaths and reports ambient enforcement', () => {
@@ -2276,11 +3109,7 @@ describe('OpenCodeAdapter', () => {
       writablePaths: ['./.git/', 'generated/./cache//'],
     });
 
-    expect(mapped.permission).toEqual({
-      edit: 'allow',
-      bash: 'allow',
-      webfetch: 'allow',
-    });
+    expect(mapped.permission).toEqual({ '*': 'allow' });
     expect(mapped.writablePaths).toEqual({
       paths: ['.git', 'generated/cache'],
       enforcement: 'ambient',
@@ -2343,6 +3172,45 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       },
     });
   }
+
+  it('passes the run-owned signal to v1 SSE and delegates iterator cleanup', async () => {
+    const controller = new AbortController();
+    let subscribeOptions: unknown;
+    let returnCalls = 0;
+    const rawIterator: AsyncIterator<unknown> = {
+      async next() {
+        return { done: false, value: { type: 'session.idle' } };
+      },
+      async return() {
+        returnCalls++;
+        return { done: true, value: undefined };
+      },
+    };
+    const client = wrapOpencodeClient(
+      makeV1Sdk({
+        onSubscribe(options) {
+          subscribeOptions = options;
+        },
+        subscribeResult: {
+          stream: {
+            [Symbol.asyncIterator]() {
+              return rawIterator;
+            },
+          },
+        },
+      }),
+    );
+
+    const result = (await client.run?.({
+      prompt: 'signal-aware v1 subscription',
+      signal: controller.signal,
+    })) as { events: AsyncIterable<unknown> };
+    expect(subscribeOptions).toEqual({ signal: controller.signal });
+
+    const iterator = result.events[Symbol.asyncIterator]();
+    await iterator.return?.();
+    expect(returnCalls).toBe(1);
+  });
 
   it('creates session and forwards prompt through session.prompt', async () => {
     let capturedPromptArgs: unknown;
@@ -2634,6 +3502,202 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         permission: askRules,
       },
     ]);
+  });
+
+  it('maps auto mode to wildcard allow on v1 and v2 permission paths', async () => {
+    const mapped = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
+    const v1Prompts: unknown[] = [];
+    const v1 = wrapOpencodeClient(
+      makeV1Sdk({
+        onPrompt(args) {
+          v1Prompts.push(args);
+        },
+      }),
+    );
+    await v1.run?.({ prompt: 'v1 auto', ...mapped });
+    expect(v1Prompts[0]).toMatchObject({
+      body: { permission: { '*': 'allow' } },
+    });
+    await v1.run?.({
+      prompt: 'v1 resumed auto',
+      sessionId: 'v1-existing',
+      ...mapped,
+    });
+    expect(v1Prompts[1]).toMatchObject({
+      path: { id: 'v1-existing' },
+      body: { permission: { '*': 'allow' } },
+    });
+
+    let v2Create: unknown;
+    let v2Update: unknown;
+    const v2 = wrapOpencodeClient(
+      {
+        session: {
+          async create(args: unknown) {
+            v2Create = args;
+            return { data: { id: 'v2-auto' } };
+          },
+          async update(args: unknown) {
+            v2Update = args;
+            return {};
+          },
+          async promptAsync() {
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+    await v2.run?.({ prompt: 'v2 auto', ...mapped });
+    expect(v2Create).toEqual({
+      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
+    });
+
+    await v2.run?.({
+      prompt: 'v2 resumed auto',
+      sessionId: 'v2-existing',
+      cwd: '/workspace',
+      ...mapped,
+    });
+    expect(v2Update).toEqual({
+      sessionID: 'v2-existing',
+      directory: '/workspace',
+      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
+    });
+  });
+
+  it('uses the legacy v1 permission response endpoint with session correlation', async () => {
+    let replyArgs: unknown;
+    const controller = new AbortController();
+    const real = makeV1Sdk({});
+    real.postSessionIdPermissionsPermissionId = async (args: unknown) => {
+      replyArgs = args;
+      return {};
+    };
+    const client = wrapOpencodeClient(real);
+
+    await client.replyPermission?.({
+      sessionId: 'legacy-session',
+      requestId: 'legacy-request',
+      permission: 'external_directory',
+      cwd: '/workspace',
+      signal: controller.signal,
+    });
+
+    expect(replyArgs).toEqual({
+      path: { id: 'legacy-session', permissionID: 'legacy-request' },
+      body: { response: 'reject' },
+      query: { directory: '/workspace' },
+      signal: controller.signal,
+    });
+  });
+
+  it('uses the v2 permission reply endpoint and surfaces SDK result errors', async () => {
+    const replyCalls: Array<{
+      parameters: unknown;
+      requestOptions: unknown;
+    }> = [];
+    const controller = new AbortController();
+    const real = {
+      session: {
+        async create() {
+          return { data: { id: 'v2-reply-session' } };
+        },
+        async promptAsync() {
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+      permission: {
+        async reply(parameters: unknown, requestOptions?: unknown) {
+          replyCalls.push({ parameters, requestOptions });
+          if (replyCalls.length === 1) return {};
+          if (replyCalls.length === 2) {
+            return { error: { data: { message: 'request disappeared' } } };
+          }
+          return { data: false };
+        },
+      },
+    };
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await client.replyPermission?.({
+      sessionId: 'v2-reply-session',
+      requestId: 'v2-reply-request',
+      permission: 'future_permission',
+      cwd: '/workspace',
+      signal: controller.signal,
+    });
+    expect(replyCalls[0]).toEqual({
+      parameters: {
+        requestID: 'v2-reply-request',
+        directory: '/workspace',
+        reply: 'reject',
+        message:
+          'Cligent headless runs reject unresolved permission requests',
+      },
+      requestOptions: { signal: controller.signal },
+    });
+
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-missing-request',
+        permission: 'future_permission',
+      }),
+    ).rejects.toThrow(
+      /sessionID="v2-reply-session".*requestID="v2-missing-request".*permission="future_permission".*request disappeared/,
+    );
+
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-declined-request',
+        permission: 'future_permission',
+      }),
+    ).rejects.toThrow(
+      /sessionID="v2-reply-session".*requestID="v2-declined-request".*permission="future_permission".*declined/,
+    );
+  });
+
+  it('fails with correlation details when the SDK has no permission response route', async () => {
+    const client = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'no-reply-route-session' } };
+          },
+          async promptAsync() {
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'no-reply-route-session',
+        requestId: 'no-reply-route-request',
+        permission: 'future_permission',
+      }),
+    ).rejects.toThrow(
+      /sessionID="no-reply-route-session".*requestID="no-reply-route-request".*permission="future_permission".*permission\.reply\(\) not available/,
+    );
   });
 
   it('maps an explicit empty allowlist to wildcard deny prompts', async () => {

@@ -11,6 +11,12 @@ Record the headless auto-mode posture after investigating why `permissions: { mo
 
 Complete
 
+The OpenCode permission hang described below records the posture when this
+iteration completed.
+[OPENCODE-020](../user/adapters/opencode.md#opencode-020) later supersedes that
+known-hazard disposition with a wildcard auto rule and deterministic
+fail-closed replies for any residual request.
+
 ## Deliverables
 
 - [x] DR-005 context corrected from official docs: Claude's auto-mode classifier is a separate model (Sonnet 5 default, Opus fallback for Fable 5 sessions, server-side override, not user-configurable) that fails closed when unavailable; headless runs abort on repeated blocks; allow rules resolve before the classifier.
