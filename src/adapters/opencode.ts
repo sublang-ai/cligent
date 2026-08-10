@@ -1181,8 +1181,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // role, so content stays pending until its message role is known.
     const messageRoles = new Map<string, OpenCodeMessageRole>();
     const partKinds = new Map<string, OpenCodePartKind>();
+    const partOwners = new Map<string, string>();
     const settledPartSnapshots = new Map<string, Set<string>>();
-    const emittedTextDeltas = new Map<string, string>();
+    const emittedTextDeltas = new Map<
+      string,
+      { chunks: string[]; length: number }
+    >();
     const pendingContentEvents: Array<
       | { removed: true }
       | {
@@ -1232,7 +1236,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // and text_delta, so forwarding both would duplicate the answer.
             if (
               contentKind === 'text' &&
-              emittedTextDeltas.get(partId) === content
+              emittedTextDeltas.get(partId)?.length === content.length &&
+              emittedTextDeltas.get(partId)?.chunks.join('') === content
             ) {
               return undefined;
             }
@@ -1247,10 +1252,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         sessionId,
       );
       if (normalized && contentKind === 'text' && partId && delta) {
-        emittedTextDeltas.set(
-          partId,
-          `${emittedTextDeltas.get(partId) ?? ''}${delta}`,
-        );
+        const emitted = emittedTextDeltas.get(partId) ?? {
+          chunks: [],
+          length: 0,
+        };
+        emitted.chunks.push(delta);
+        emitted.length += delta.length;
+        emittedTextDeltas.set(partId, emitted);
       }
       return normalized;
     };
@@ -1322,6 +1330,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
       if (partId && inlinePartKind) {
         partKinds.set(partId, inlinePartKind);
+      }
+      if (partId && messageId) {
+        partOwners.set(partId, messageId);
       }
 
       pendingContentEvents.push({
@@ -1569,6 +1580,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               }
             }
             messageRoles.delete(messageId);
+            for (const [partId, ownerId] of partOwners) {
+              if (ownerId !== messageId) continue;
+              partOwners.delete(partId);
+              partKinds.delete(partId);
+              settledPartSnapshots.delete(partId);
+              emittedTextDeltas.delete(partId);
+            }
           }
           for (const normalized of drainPendingContent()) {
             yield normalized;
@@ -1602,6 +1620,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               }
             }
             partKinds.delete(partId);
+            partOwners.delete(partId);
             settledPartSnapshots.delete(partId);
             emittedTextDeltas.delete(partId);
           }
@@ -1629,7 +1648,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (eventType === 'message.part.delta') {
-          for (const normalized of queueContent(eventType, event)) {
+          const partId = loadOpenCodePartId(event);
+          const inlinePartKind = loadOpenCodePartKind(event);
+          // A generic delta without either a correlatable part identifier or
+          // inline part metadata can never become classifiable. Fail closed
+          // immediately so malformed traffic cannot hold the ordered queue.
+          if (!partId && !inlinePartKind) continue;
+          if (inlinePartKind === 'other') continue;
+
+          for (const normalized of queueContent(
+            eventType,
+            event,
+            inlinePartKind,
+          )) {
             yield normalized;
           }
           continue;
@@ -1640,10 +1671,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const part = asRecord(event.part ?? message.part ?? event.data);
           const partType = asString(part.type)?.toLowerCase();
           const partId = loadOpenCodePartId(event);
+          const messageId = loadOpenCodePartMessageId(event);
           const partKind = loadOpenCodePartKind(event);
 
           if (partId && partKind) {
             partKinds.set(partId, partKind);
+            if (messageId) partOwners.set(partId, messageId);
             for (const normalized of drainPendingContent()) {
               yield normalized;
             }
