@@ -23,7 +23,8 @@ Complete
       through supported SDK surfaces and emits one terminal event.
 - [x] Canned-stream coverage exercises idle, busy, retry, query failure and
       timeout, relevant and foreign traffic, cleanup, and abort races with
-      short deadlines.
+      short deadlines, including prompt-dispatch and ready-terminal races,
+      oversized host timers, and forced managed-child termination.
 - [x] A credential-free real managed-server acceptance probe exercises the
       vendor status endpoint and resource-cleanup seam without a long wait.
 
@@ -53,6 +54,8 @@ Complete
   inactivity, deadline, server mode/state, and queried state or failure.
 - Pending SSE iteration, active session work, SDK client resources, and the
   managed server are cleaned up; external caller abort cannot hang on an
-  iterator that ignores its signal.
-- Caller abort racing inactivity produces exactly one terminal `done`.
+  iterator that ignores its signal or leave a known prompt-dispatch session
+  active, and a managed child cannot survive by ignoring `SIGTERM`.
+- Caller abort racing inactivity or an already-ready terminal event produces
+  exactly one interrupted `done`.
 - Unit, type, lint, build, and focused real-server acceptance checks pass.

@@ -111,7 +111,8 @@ When the managed server crashes, the adapter shall yield an `error` event (`code
 Where `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is omitted, the adapter
 shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
 provided, the adapter shall require a finite number greater than zero and use
-that value.
+that value. The deadline shall use monotonic elapsed time and split waits above
+the host timer's maximum delay into safe chunks rather than expiring early.
 While a run is awaiting OpenCode's global SSE stream, when an event survives
 the current-session filtering of [OPENCODE-006](#opencode-006), including an
 untagged pass-through event, the adapter shall restart the deadline; an event
@@ -138,12 +139,18 @@ elapsed inactivity, configured deadline, server mode and state, queried state
 or query failure, and session-abort outcome where attempted.
 When caller abort races a pending SSE read, status query, or inactivity
 recovery in either server mode, the adapter shall give the caller abort
-terminal precedence once observed and emit exactly one interrupted `done`.
+terminal precedence once observed, including when a terminal SSE event is
+already ready in the same race turn, and emit exactly one interrupted `done`.
+When caller abort arrives during SDK session creation or prompt dispatch, the
+adapter shall propagate cancellation into supported SDK request surfaces,
+abort any session whose identifier has already been created, and bound how
+long it waits for the raced dispatch to settle.
 After any terminal path, the adapter shall cancel and return the pending event
 iterator, make bounded SDK-client close and shutdown attempts, and terminate
-its managed server; external mode shall leave the caller-owned server running
-while still aborting active session work on interruption or non-idle
-inactivity.
+its managed server, escalating its owned child from `SIGTERM` to `SIGKILL`
+after a bounded grace when necessary; external mode shall leave the
+caller-owned server running while still aborting active session work on
+interruption or non-idle inactivity.
 
 ## Resume Token
 

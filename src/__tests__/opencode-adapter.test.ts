@@ -44,6 +44,10 @@ interface MockOpenCodeClient {
 }
 
 class MockServerProcess extends EventEmitter {
+  constructor(private readonly ignoreSigterm = false) {
+    super();
+  }
+
   readonly stdout = new PassThrough();
 
   readonly stderr = new PassThrough();
@@ -52,10 +56,15 @@ class MockServerProcess extends EventEmitter {
 
   kill(signal?: NodeJS.Signals | number): boolean {
     this.killSignals.push(signal);
+    if (signal === 'SIGTERM' && this.ignoreSigterm) return true;
     queueMicrotask(() => {
       this.stdout.end();
       this.stderr.end();
-      this.emit('close', null, signal === 'SIGTERM' ? 'SIGTERM' : null);
+      this.emit(
+        'close',
+        null,
+        typeof signal === 'string' ? signal : null,
+      );
     });
     return true;
   }
@@ -68,7 +77,7 @@ interface SpawnInvocation {
   process: MockServerProcess;
 }
 
-function makeSpawn(): {
+function makeSpawn(processBehavior: { ignoreSigterm?: boolean } = {}): {
   spawnProcess: (
     command: string,
     args: readonly string[],
@@ -83,7 +92,7 @@ function makeSpawn(): {
     args: readonly string[],
     options: SpawnOptionsWithoutStdio,
   ): ChildProcessWithoutNullStreams => {
-    const process = new MockServerProcess();
+    const process = new MockServerProcess(processBehavior.ignoreSigterm);
     invocations.push({ command, args, options, process });
     return process as unknown as ChildProcessWithoutNullStreams;
   };
@@ -1161,6 +1170,41 @@ describe('OpenCodeAdapter', () => {
       expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
     });
 
+    it('escalates an owned managed server that ignores SIGTERM', async () => {
+      const { spawnProcess, invocations } = makeSpawn({
+        ignoreSigterm: true,
+      });
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'managed',
+          serverUrl: 'http://127.0.0.1:4781',
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'managed-term-resistant' },
+            events: [
+              {
+                type: 'session.idle',
+                sessionId: 'managed-term-resistant',
+              },
+            ],
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4781',
+          managedServerTermGraceMs: 5,
+          managedServerKillGraceMs: 25,
+        },
+      );
+
+      const events = await collect(adapter.run('prompt'));
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(invocations[0]?.process.killSignals).toEqual([
+        'SIGTERM',
+        'SIGKILL',
+      ]);
+    });
+
     it('bounds a non-settling session abort and reports its outcome', async () => {
       const adapter = new OpenCodeAdapter(
         {
@@ -1300,6 +1344,37 @@ describe('OpenCodeAdapter', () => {
       expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
     });
 
+    it('chunks deadlines beyond the Node timer limit without expiring early', async () => {
+      let statusCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 2_147_483_648,
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'large-deadline' },
+            eventStreamFactory: async function* () {
+              await new Promise((resolve) => setTimeout(resolve, 25));
+              yield {
+                type: 'session.idle',
+                sessionId: 'large-deadline',
+              };
+            },
+            onGetSessionStatus() {
+              statusCalls++;
+            },
+          }),
+        },
+      );
+
+      const events = await collect(adapter.run('prompt'));
+      expect(statusCalls).toBe(0);
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    });
+
     it('does not let foreign multiplexed traffic reset the deadline', async () => {
       let statusCalls = 0;
       let abortCalls = 0;
@@ -1403,6 +1478,113 @@ describe('OpenCodeAdapter', () => {
       expect(closeCalls).toBe(1);
     });
 
+    it('aborts a created external session when caller aborts during prompt dispatch', async () => {
+      const controller = new AbortController();
+      let resolvePromptStarted!: () => void;
+      const promptStarted = new Promise<void>((resolve) => {
+        resolvePromptStarted = resolve;
+      });
+      let createSignal: AbortSignal | undefined;
+      let promptSignal: AbortSignal | undefined;
+      let wrappedRunSettled = false;
+      const abortCalls: unknown[] = [];
+
+      const real = {
+        session: {
+          async create(_args: unknown, requestOptions?: unknown) {
+            createSignal = (requestOptions as { signal?: AbortSignal } | undefined)
+              ?.signal;
+            return { data: { id: 'dispatch-abort-session' } };
+          },
+          async promptAsync(_args: unknown, requestOptions?: unknown) {
+            promptSignal = (requestOptions as { signal?: AbortSignal } | undefined)
+              ?.signal;
+            resolvePromptStarted();
+            return new Promise<never>(() => {});
+          },
+          async abort(args: unknown) {
+            abortCalls.push(args);
+            return { data: true };
+          },
+        },
+        event: {
+          async subscribe(_args: unknown, requestOptions?: unknown) {
+            const signal = (
+              requestOptions as { signal?: AbortSignal } | undefined
+            )?.signal;
+            return {
+              stream: {
+                [Symbol.asyncIterator](): AsyncIterator<unknown> {
+                  return {
+                    next: () =>
+                      new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+                        if (signal?.aborted) {
+                          reject(new Error('event stream aborted'));
+                          return;
+                        }
+                        signal?.addEventListener(
+                          'abort',
+                          () => reject(new Error('event stream aborted')),
+                          { once: true },
+                        );
+                      }),
+                  };
+                },
+              },
+            };
+          },
+        },
+      };
+
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 1_000,
+        },
+        {
+          loadSdk: async () => ({
+            createClient() {
+              const wrapped = wrapOpencodeClient(real, {
+                apiVersion: 'v2',
+              });
+              return {
+                ...wrapped,
+                async run(options: Record<string, unknown>) {
+                  try {
+                    return await wrapped.run!(options);
+                  } finally {
+                    wrappedRunSettled = true;
+                  }
+                },
+              } as unknown as MockOpenCodeClient;
+            },
+          }),
+        },
+      );
+
+      const eventsPromise = collect(
+        adapter.run('prompt', {
+          abortSignal: controller.signal,
+          cwd: '/repo',
+        }),
+      );
+      await promptStarted;
+      controller.abort();
+      const events = await eventsPromise;
+
+      expect(createSignal).toBeInstanceOf(AbortSignal);
+      expect(promptSignal).toBe(createSignal);
+      expect(createSignal?.aborted).toBe(true);
+      expect(wrappedRunSettled).toBe(true);
+      expect(abortCalls).toEqual([
+        { sessionID: 'dispatch-abort-session', directory: '/repo' },
+      ]);
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'interrupted' });
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    });
+
     it('bounds client disposal and still attempts the shutdown fallback', async () => {
       let shutdownCalls = 0;
       const adapter = new OpenCodeAdapter(
@@ -1468,6 +1650,53 @@ describe('OpenCodeAdapter', () => {
       expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
       expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
+      expect(abortCalls).toBe(1);
+    });
+
+    it('gives caller abort precedence over a simultaneously ready idle event', async () => {
+      const controller = new AbortController();
+      let abortCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 1_000,
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'abort-terminal-race' },
+            eventStreamFactory: () => ({
+              [Symbol.asyncIterator](): AsyncIterator<unknown> {
+                return {
+                  next() {
+                    controller.abort();
+                    return Promise.resolve({
+                      done: false,
+                      value: {
+                        type: 'session.idle',
+                        sessionId: 'abort-terminal-race',
+                      },
+                    });
+                  },
+                };
+              },
+            }),
+            onAbortSession() {
+              abortCalls++;
+            },
+          }),
+        },
+      );
+
+      const events = await collect(
+        adapter.run('prompt', { abortSignal: controller.signal }),
+      );
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(events.at(-1)?.payload).toMatchObject({
+        status: 'interrupted',
+        resumeToken: 'abort-terminal-race',
+      });
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
       expect(abortCalls).toBe(1);
     });
 
