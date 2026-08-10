@@ -1165,19 +1165,25 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       eventType: string;
       event: Record<string, unknown>;
       messageId?: string;
+      removed?: boolean;
     }> = [];
+    let pendingContentHead = 0;
 
     const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
       const normalizedEvents: AgentEvent[] = [];
 
-      while (pendingContentEvents.length > 0) {
-        const item = pendingContentEvents[0]!;
+      while (pendingContentHead < pendingContentEvents.length) {
+        const item = pendingContentEvents[pendingContentHead]!;
+        if (item.removed) {
+          pendingContentHead++;
+          continue;
+        }
         const role = item.messageId
           ? messageRoles.get(item.messageId)
           : 'assistant';
 
         if (!role && !dropUnresolved) break;
-        pendingContentEvents.shift();
+        pendingContentHead++;
 
         if (role === 'assistant') {
           const normalized = normalizeOpenCodeContentEvent(
@@ -1187,6 +1193,17 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           );
           if (normalized) normalizedEvents.push(normalized);
         }
+      }
+
+      // Incident captures contain tens of thousands of content events.
+      // Advance a cursor instead of shifting the array for each item, then
+      // compact occasionally to keep draining linear and memory bounded.
+      if (
+        pendingContentHead > 1024 &&
+        pendingContentHead * 2 >= pendingContentEvents.length
+      ) {
+        pendingContentEvents.splice(0, pendingContentHead);
+        pendingContentHead = 0;
       }
 
       return normalizedEvents;
@@ -1427,6 +1444,26 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           // Only mark backend-provided after confirming the event belongs
           // to this session — foreign events must not flip the flag.
           backendProvidedSessionId = true;
+        }
+
+        if (eventType === 'message.removed') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          if (messageId) {
+            for (
+              let index = pendingContentHead;
+              index < pendingContentEvents.length;
+              index++
+            ) {
+              if (pendingContentEvents[index]?.messageId === messageId) {
+                pendingContentEvents[index]!.removed = true;
+              }
+            }
+            messageRoles.delete(messageId);
+          }
+          for (const normalized of drainPendingContent()) {
+            yield normalized;
+          }
+          continue;
         }
 
         if (eventType === 'message.updated') {
