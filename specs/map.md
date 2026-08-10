@@ -32,7 +32,7 @@ meta.md     The spec of specs
 | --- | --- | --- |
 | DR-000 | [000-spec-structure-format.md](decisions/000-spec-structure-format.md) | Spec structure, format, and naming conventions |
 | DR-001 | [001-unified-cli-agent-interface-architecture.md](decisions/001-unified-cli-agent-interface-architecture.md) | TypeScript library with async generator interface across CLI agents |
-| DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model |
+| DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model, token-usage availability |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
 | DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; network-widening alternative recorded and rolled back); no project-wide default |
@@ -91,6 +91,7 @@ meta.md     The spec of specs
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
+| IR-046 | [046-token-usage-availability.md](iterations/046-token-usage-availability.md) | Distinguish reported token totals, including zero, from unavailable accounting across every terminal path |
 
 ## Packages
 
@@ -104,21 +105,21 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
+| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization including inclusive-input/cache-detail accounting, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
 | dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery, permission-managed project trust without repository/user config mutation, and SDK-anchored Codex executable resolution across install layouts with diagnostic failure |
 
 ### ENG
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, usage reporting, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
-| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, and effort API verification |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
+| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability and formatting, and effort API verification |
 
 ### GEMINI
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings |
+| user | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization including cache-inclusive StreamStats accounting, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings |
 
 ### GIT
 
@@ -130,7 +131,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
+| user | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization including reported/unavailable token usage, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
 
 ### LIC
 
@@ -149,7 +150,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization including canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -168,7 +169,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including reported/unavailable token usage, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
 
 ### TMUX
 

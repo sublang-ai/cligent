@@ -31,7 +31,10 @@ import type {
   AgentEvent,
   AgentEventType,
   BaseEvent,
+  DonePayload,
+  DoneUsage,
   TextPayload,
+  TokenUsageAvailability,
   PermissionCapability,
   PermissionPolicy,
   WritablePathsEnforcement,
@@ -133,6 +136,43 @@ describe('core types', () => {
   it('BaseEvent.type accepts AgentEventType and arbitrary strings', () => {
     expectTypeOf<AgentEventType>().toMatchTypeOf<BaseEvent['type']>();
     expectTypeOf<string>().toMatchTypeOf<BaseEvent['type']>();
+  });
+
+  it('requires an explicit token-usage availability state on done usage', () => {
+    const measuredZero: DoneUsage = {
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    };
+    const unavailable: DoneUsage = {
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 3,
+    };
+    expectTypeOf(measuredZero.tokenAvailability).toEqualTypeOf<
+      TokenUsageAvailability
+    >();
+    expectTypeOf(unavailable).toEqualTypeOf<DonePayload['usage']>();
+
+    // @ts-expect-error - legacy payloads must migrate and declare whether
+    // their numeric token fields are measurements or placeholders.
+    const ambiguous: DoneUsage = {
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    };
+    void ambiguous;
+
+    const invalid: DoneUsage = {
+      // @ts-expect-error - availability is a closed, non-estimating state.
+      tokenAvailability: 'estimated',
+      inputTokens: 1,
+      outputTokens: 1,
+      toolUses: 0,
+    };
+    void invalid;
   });
 
   it('exports exact adapter-scoped effort metadata types', () => {

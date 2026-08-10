@@ -1331,7 +1331,12 @@ describe('tmux-play real-tmux acceptance', () => {
             yield createEvent('text_delta', agent, { delta: marker });
             yield createEvent('done', agent, {
               status: 'success',
-              usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+              usage: {
+                tokenAvailability: 'reported',
+                inputTokens: 0,
+                outputTokens: 0,
+                toolUses: 0,
+              },
               durationMs: 0,
             });
           }
@@ -2535,7 +2540,12 @@ function makeCapturingAdapter<E extends string>(
         agent,
         {
           status: 'success',
-          usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+          usage: {
+            tokenAvailability: 'reported',
+            inputTokens: 0,
+            outputTokens: 0,
+            toolUses: 0,
+          },
           durationMs: 0,
         },
         `${agent}-capture`,

@@ -105,7 +105,12 @@ function doneEvent(
     agent,
     {
       status,
-      usage: { inputTokens: 10, outputTokens: 20, toolUses: 1 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 10,
+        outputTokens: 20,
+        toolUses: 1,
+      },
       durationMs: 100,
       ...extra,
     },
@@ -622,7 +627,7 @@ describe('Cligent protocol hardening', () => {
     expect((events[2].payload as DonePayload).status).toBe('error');
   });
 
-  it('synthesized done has zeroed usage', async () => {
+  it('synthesized done marks zeroed token placeholders unavailable', async () => {
     const adapter = createMockAdapter('claude-code', [], {
       throwAfter: 0,
       throwError: new Error('fail'),
@@ -632,10 +637,39 @@ describe('Cligent protocol hardening', () => {
 
     const done = events.find((e) => e.type === 'done')!;
     const payload = done.payload as DonePayload;
+    expect(payload.usage.tokenAvailability).toBe('unavailable');
     expect(payload.usage.inputTokens).toBe(0);
     expect(payload.usage.outputTokens).toBe(0);
     expect(payload.usage.toolUses).toBe(0);
     expect(payload.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps observed tool uses when done must be synthesized', async () => {
+    const adapter = createMockAdapter(
+      'claude-code',
+      [
+        createEvent(
+          'tool_use',
+          'claude-code',
+          {
+            toolName: 'Bash',
+            toolUseId: 'observed-before-exhaustion',
+            input: { command: 'true' },
+          },
+          'tool-session',
+        ),
+      ],
+    );
+    const agent = new Cligent(adapter);
+
+    const events = await collectEvents(agent.run('hi'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 1,
+    });
   });
 
   // TENG-009: missing done

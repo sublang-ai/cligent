@@ -21,6 +21,7 @@ import {
   assertRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
+import { isUsageRecord, readUsageCounter } from './usage.js';
 
 type ClaudePermissionMode =
   | 'auto'
@@ -170,6 +171,7 @@ interface ClaudeAdapterDeps {
 const AGENT = 'claude-code' as const;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
+  tokenAvailability: 'unavailable',
   inputTokens: 0,
   outputTokens: 0,
   toolUses: 0,
@@ -177,6 +179,10 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -415,60 +421,57 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
-function mapUsage(rawUsage: unknown): DonePayload['usage'] {
-  if (typeof rawUsage !== 'object' || rawUsage === null) {
-    return { ...DEFAULT_DONE_USAGE };
+function mapUsage(
+  rawUsage: unknown,
+  observedToolUses: number,
+): DonePayload['usage'] {
+  if (!isUsageRecord(rawUsage)) {
+    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
   }
 
-  const usage = rawUsage as Record<string, unknown>;
-
-  const baseInput =
-    typeof usage.inputTokens === 'number'
-      ? usage.inputTokens
-      : typeof usage.input_tokens === 'number'
-        ? usage.input_tokens
-        : 0;
-
-  const cacheRead =
-    typeof usage.cacheReadInputTokens === 'number'
-      ? usage.cacheReadInputTokens
-      : typeof usage.cache_read_input_tokens === 'number'
-        ? usage.cache_read_input_tokens
-        : 0;
-
-  const cacheCreation =
-    typeof usage.cacheCreationInputTokens === 'number'
-      ? usage.cacheCreationInputTokens
-      : typeof usage.cache_creation_input_tokens === 'number'
-        ? usage.cache_creation_input_tokens
-        : 0;
-
-  const inputTokens = baseInput + cacheRead + cacheCreation;
-
-  const outputTokens =
-    typeof usage.outputTokens === 'number'
-      ? usage.outputTokens
-      : typeof usage.output_tokens === 'number'
-        ? usage.output_tokens
-        : 0;
-
-  const toolUses =
-    typeof usage.toolUses === 'number'
-      ? usage.toolUses
-      : typeof usage.tool_uses === 'number'
-        ? usage.tool_uses
-        : 0;
+  const baseInput = readUsageCounter(
+    rawUsage,
+    ['inputTokens', 'input_tokens'],
+    true,
+  );
+  const cacheRead = readUsageCounter(
+    rawUsage,
+    ['cacheReadInputTokens', 'cache_read_input_tokens'],
+    false,
+  );
+  const cacheCreation = readUsageCounter(
+    rawUsage,
+    ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
+    false,
+  );
+  const outputTokens = readUsageCounter(
+    rawUsage,
+    ['outputTokens', 'output_tokens'],
+    true,
+  );
+  const reportedToolUses = readUsageCounter(
+    rawUsage,
+    ['toolUses', 'tool_uses'],
+    false,
+  );
+  const toolUses = Math.max(
+    reportedToolUses.valid ? reportedToolUses.value : 0,
+    observedToolUses,
+  );
 
   const totalCostUsd =
-    typeof usage.totalCostUsd === 'number'
-      ? usage.totalCostUsd
-      : typeof usage.total_cost_usd === 'number'
-        ? usage.total_cost_usd
-        : undefined;
+    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
   return {
-    inputTokens,
-    outputTokens,
+    tokenAvailability:
+      baseInput.valid &&
+      cacheRead.valid &&
+      cacheCreation.valid &&
+      outputTokens.valid
+        ? 'reported'
+        : 'unavailable',
+    inputTokens: baseInput.value + cacheRead.value + cacheCreation.value,
+    outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
   };
@@ -789,6 +792,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
     // activity has streamed, an empty zero-usage result is a legitimate
     // terminal and must not be swallowed.
     let submittedTurnActivity = false;
+    const observedToolUseIds = new Set<string>();
 
     try {
       for await (const message of sdk.query({
@@ -868,6 +872,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             }
 
             if (contentEvent.type === 'tool_use') {
+              observedToolUseIds.add(contentEvent.toolUseId);
               yield createEvent(
                 'tool_use',
                 AGENT,
@@ -916,7 +921,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const result = message as ClaudeResultMessage;
           const { status, errorText } = classifyResultMessage(result);
           const resultText = asString(result.result);
-          const usage = mapUsage(result.usage);
+          const usage = mapUsage(result.usage, observedToolUseIds.size);
 
           // Resuming a session whose previous turn ended with a dangling tool
           // call makes Claude Code first run an internal continuation-repair
@@ -939,6 +944,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             status === 'success' &&
             errorText === undefined &&
             resultText === undefined &&
+            usage.tokenAvailability === 'reported' &&
             usage.inputTokens === 0 &&
             usage.outputTokens === 0 &&
             usage.toolUses === 0;
@@ -1006,7 +1012,10 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
                 sessionId,
                 inboundResume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: {
+                ...DEFAULT_DONE_USAGE,
+                toolUses: observedToolUseIds.size,
+              },
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1030,7 +1039,10 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           AGENT,
           {
             status: 'error',
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: {
+              ...DEFAULT_DONE_USAGE,
+              toolUses: observedToolUseIds.size,
+            },
             durationMs: Date.now() - startTime,
           },
           sessionId,
@@ -1049,7 +1061,10 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
               sessionId,
               inboundResume,
             ),
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: {
+              ...DEFAULT_DONE_USAGE,
+              toolUses: observedToolUseIds.size,
+            },
             durationMs: Date.now() - startTime,
           },
           sessionId,
@@ -1074,7 +1089,10 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
         AGENT,
         {
           status: 'error',
-          usage: { ...DEFAULT_DONE_USAGE },
+          usage: {
+            ...DEFAULT_DONE_USAGE,
+            toolUses: observedToolUseIds.size,
+          },
           durationMs: Date.now() - startTime,
         },
         sessionId,

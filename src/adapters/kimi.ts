@@ -65,6 +65,7 @@ const CANCEL_TERMINATION_DELAY_MS = 1_000;
 const STDERR_BUFFER_LIMIT = 64 * 1024;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
+  tokenAvailability: 'unavailable',
   inputTokens: 0,
   outputTokens: 0,
   toolUses: 0,
@@ -546,6 +547,7 @@ function mapUsage(
 ): DonePayload['usage'] {
   if (!usage) return { ...DEFAULT_DONE_USAGE, toolUses };
   return {
+    tokenAvailability: 'reported',
     inputTokens:
       usage.inputTokens +
       (usage.cachedReadTokens ?? 0) +

@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
+import type { Usage as CodexUsage } from '@openai/codex-sdk';
 
 import {
   CodexAdapter,
@@ -85,6 +86,7 @@ interface DoneAssertion {
   result?: string;
   resumeToken?: string;
   usage: {
+    tokenAvailability: 'reported' | 'unavailable';
     inputTokens: number;
     outputTokens: number;
     toolUses: number;
@@ -284,6 +286,7 @@ describe('CodexAdapter', () => {
     // toolUses derives from the unique observed tool item ids; the SDK
     // usage object carries token counts only.
     expect(done.usage).toEqual({
+      tokenAvailability: 'reported',
       inputTokens: 33,
       outputTokens: 44,
       toolUses: 2,
@@ -305,6 +308,28 @@ describe('CodexAdapter', () => {
     expect(toolUsePayload(events[1]).toolUseId).toBe(canonicalCommand.id);
     expect(toolResultPayload(events[2]).toolUseId).toBe(canonicalCommand.id);
     expect(donePayload(events[3]).usage.toolUses).toBe(1);
+  });
+
+  it('keeps an explicitly reported zero distinct from unavailable usage', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          { type: 'thread.started', thread_id: 'thread-zero' },
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(donePayload(events.at(-1)!).usage).toEqual({
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
   });
 
   it('announces the call on item.updated when item.started was missed', async () => {
@@ -341,6 +366,7 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('MISSING_TURN_DONE');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
+    expect(done.usage.tokenAvailability).toBe('unavailable');
     expect(done.usage.toolUses).toBe(1);
   });
 
@@ -364,6 +390,7 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('SDK_STREAM_ERROR');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
+    expect(done.usage.tokenAvailability).toBe('unavailable');
     expect(done.usage.toolUses).toBe(1);
   });
 
@@ -611,6 +638,7 @@ describe('CodexAdapter', () => {
     // toolUses derives from the unique observed tool-call ids (call-1);
     // the legacy usage field tool_uses: 2 is deliberately not consulted.
     expect(done.usage).toEqual({
+      tokenAvailability: 'reported',
       inputTokens: 33,
       outputTokens: 44,
       toolUses: 1,
@@ -1975,24 +2003,20 @@ describe('CodexAdapter', () => {
     expect(payload.resumeToken).toBeUndefined();
   });
 
-  it('sums cache tokens into inputTokens', async () => {
+  it('validates canonical cache subsets without double-counting inclusive input', async () => {
+    const sdkUsage = {
+      input_tokens: 120,
+      cached_input_tokens: 80,
+      cache_write_input_tokens: 30,
+      output_tokens: 20,
+      reasoning_output_tokens: 5,
+    } satisfies CodexUsage;
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
         events: [
           {
             type: 'turn.completed',
-            turn: {
-              status: 'success',
-              result: 'ok',
-              usage: {
-                input_tokens: 10,
-                output_tokens: 20,
-                cache_read_input_tokens: 80,
-                cache_creation_input_tokens: 30,
-                tool_uses: 0,
-              },
-              duration_ms: 50,
-            },
+            usage: sdkUsage,
           },
         ],
       }),
@@ -2000,8 +2024,50 @@ describe('CodexAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
-    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    const usage = donePayload(done).usage;
+    expect(usage.tokenAvailability).toBe('reported');
     expect(usage.inputTokens).toBe(120);
+    expect(usage.outputTokens).toBe(20);
+  });
+
+  it.each([
+    ['negative input', { input_tokens: -1, output_tokens: 2 }],
+    ['fractional output', { input_tokens: 1, output_tokens: 2.5 }],
+    [
+      'invalid cached-input subset',
+      {
+        input_tokens: 3,
+        output_tokens: 2,
+        cached_input_tokens: '1',
+      },
+    ],
+    [
+      'invalid cache-write subset',
+      {
+        input_tokens: 3,
+        output_tokens: 2,
+        cache_write_input_tokens: -1,
+      },
+    ],
+    [
+      'invalid reasoning-output subset',
+      {
+        input_tokens: 3,
+        output_tokens: 2,
+        reasoning_output_tokens: 0.5,
+      },
+    ],
+  ])('marks %s accounting unavailable', async (_case, rawUsage) => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [{ type: 'turn.completed', usage: rawUsage }],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(donePayload(events.at(-1)!).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
   });
 
   it('maps PermissionPolicy.mode to Codex approval axis and default_permissions per ENG-021', () => {

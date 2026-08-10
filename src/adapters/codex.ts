@@ -30,6 +30,7 @@ import {
   assertRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
+import { isUsageRecord, readUsageCounter } from './usage.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
@@ -129,6 +130,7 @@ const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
 const requireFromHere = createRequire(import.meta.url);
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
+  tokenAvailability: 'unavailable',
   inputTokens: 0,
   outputTokens: 0,
   toolUses: 0,
@@ -417,29 +419,52 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
 // the unique tool item ids observed during the run (CODEX-003), so the
 // caller supplies it rather than this parser reading a usage field.
 function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
-  if (typeof rawUsage !== 'object' || rawUsage === null) {
+  if (!isUsageRecord(rawUsage)) {
     return { ...DEFAULT_DONE_USAGE, toolUses };
   }
 
-  const usage = rawUsage as Record<string, unknown>;
-
-  const baseInput =
-    asNumber(usage.inputTokens) ?? asNumber(usage.input_tokens) ?? 0;
-  const cacheRead =
-    asNumber(usage.cacheReadInputTokens) ?? asNumber(usage.cache_read_input_tokens) ?? 0;
-  const cacheCreation =
-    asNumber(usage.cacheCreationInputTokens) ?? asNumber(usage.cache_creation_input_tokens) ?? 0;
-  const inputTokens = baseInput + cacheRead + cacheCreation;
-
-  const outputTokens =
-    asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens) ?? 0;
+  const baseInput = readUsageCounter(
+    rawUsage,
+    ['inputTokens', 'input_tokens'],
+    true,
+  );
+  // Codex input_tokens already includes cache hits and writes. Validate the
+  // canonical cache subset counters, but do not add them a second time.
+  const cachedInput = readUsageCounter(
+    rawUsage,
+    ['cachedInputTokens', 'cached_input_tokens'],
+    false,
+  );
+  const cacheWriteInput = readUsageCounter(
+    rawUsage,
+    ['cacheWriteInputTokens', 'cache_write_input_tokens'],
+    false,
+  );
+  const outputTokens = readUsageCounter(
+    rawUsage,
+    ['outputTokens', 'output_tokens'],
+    true,
+  );
+  const reasoningOutput = readUsageCounter(
+    rawUsage,
+    ['reasoningOutputTokens', 'reasoning_output_tokens'],
+    false,
+  );
 
   const totalCostUsd =
-    asNumber(usage.totalCostUsd) ?? asNumber(usage.total_cost_usd);
+    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
   return {
-    inputTokens,
-    outputTokens,
+    tokenAvailability:
+      baseInput.valid &&
+      cachedInput.valid &&
+      cacheWriteInput.valid &&
+      outputTokens.valid &&
+      reasoningOutput.valid
+        ? 'reported'
+        : 'unavailable',
+    inputTokens: baseInput.value,
+    outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
   };

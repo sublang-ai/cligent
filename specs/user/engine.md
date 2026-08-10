@@ -67,7 +67,8 @@ When the adapter's generator exhausts without yielding a `done` event, `run()` s
 
 ### ENG-013
 
-Synthesized `done` payloads shall use zeroed usage (`inputTokens: 0`, `outputTokens: 0`, `toolUses: 0`) and `durationMs` measured from when the adapter's `.run()` was called. An adapter-emitted `done` shall take precedence over synthesis.
+Synthesized `done` payloads shall use unavailable zeroed token usage (`tokenAvailability: 'unavailable'`, `inputTokens: 0`, `outputTokens: 0`), shall preserve any independently known `toolUses`, and shall use `durationMs` measured from when the adapter's `.run()` was called.
+An adapter-emitted `done` shall take precedence over synthesis.
 This precedence includes an adapter-emitted interrupted `done` observed during the abort-drain path of [ENG-009](#eng-009).
 
 ## Cligent.parallel()
@@ -100,7 +101,10 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 
 ### ENG-019
 
-Adapter-reported `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation). Adapters shall sum provider-specific cache fields (e.g. `cacheReadInputTokens`, `cacheCreationInputTokens`) into the single `inputTokens` value.
+Where token accounting is `'reported'`, `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation).
+Where a provider defines its base input counter as cache-exclusive, the adapter shall sum provider-specific cache-read and cache-write fields into `inputTokens` exactly once.
+Where a provider defines its base input counter as cache-inclusive, including Codex `input_tokens` and Gemini `StreamStats.input_tokens`, the adapter shall preserve that base total and validate separately reported cache subset/detail counters without adding them again.
+Cache fields shall not make incomplete base input and output accounting `'reported'`; availability shall remain governed by [ENG-027](#eng-027).
 
 ## Effort
 
@@ -165,3 +169,14 @@ Where an adapter's runtime is an executable found through `PATH`, the adapter sh
 `'unsupported'` shall name a runtime below the supported floor and `'untested'` a runtime above the tested version, and the two shall not be reported as the same verdict.
 `'unknown'` shall report a runtime whose version could not be read and shall not be treated as a failure by any caller-facing behavior in this repository.
 `adapter.isAvailable()` shall remain a boolean and shall report `false` for exactly `'missing'` and `'unsupported'`, so a caller that has not adopted the verdict keeps its current contract while a caller that has can distinguish an absent runtime from an incompatible one.
+
+## Token Usage Availability
+
+### ENG-027
+
+Every `DonePayload.usage` shall carry the required `tokenAvailability` discriminator with the closed values `'reported' | 'unavailable'` per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#key-payloads).
+Where upstream supplies complete finite non-negative integer input and output counters, including explicit zeroes, and every present mapped cache counter has the same form, the adapter shall set `'reported'`, shall preserve the mapped counters and [ENG-019](#eng-019) cache treatment, and shall not estimate any missing component.
+Where an optional cache counter is absent, its contribution shall be zero without invalidating otherwise complete accounting; where a required counter is absent or any present mapped token or cache counter is non-finite, negative, fractional, or non-numeric, the producer shall set `'unavailable'` rather than silently substituting a reported zero.
+Where complete upstream token counters are absent, malformed, or unavailable on a synthesized, errored, interrupted, exhausted, or other terminal path, the producer shall set `'unavailable'`; numeric token fields shall remain present for object-shape compatibility but consumers shall not treat them as measurements.
+Where either availability state applies, the producer shall preserve an independently known `toolUses` count from observed tool lifecycles or a valid provider-reported count instead of deriving its availability from token accounting.
+`formatCligentEvent()` shall render reported token counts numerically and shall render `'tokens: unavailable'` for unavailable or legacy discriminator-less payloads.

@@ -48,6 +48,8 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
 
+Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, and shall accumulate the resulting input and output totals across steps without adding the separately validated reasoning detail to output.
+
 ### OPENCODE-016
 
 The adapter shall correlate tool-part snapshots by OpenCode's `part.callID`, using legacy identifier aliases (including `part.id`) only when `callID` is absent.

@@ -84,14 +84,18 @@ export const zAcpSetSessionConfigOptionResponse = z.object({
 });
 
 /**
- * Token accounting. Cached counters are optional; the adapter folds them into
- * the reported input total.
+ * Token accounting. ACP counters are unsigned integers. Nullable optional
+ * counters remain absent accounting; malformed present numbers are rejected.
  */
+const zAcpTokenCounter = z.number().int().nonnegative();
+
 export const zAcpUsage = z.looseObject({
-  inputTokens: z.number(),
-  outputTokens: z.number(),
-  cachedReadTokens: z.number().nullish(),
-  cachedWriteTokens: z.number().nullish(),
+  totalTokens: zAcpTokenCounter,
+  inputTokens: zAcpTokenCounter,
+  outputTokens: zAcpTokenCounter,
+  thoughtTokens: zAcpTokenCounter.nullish(),
+  cachedReadTokens: zAcpTokenCounter.nullish(),
+  cachedWriteTokens: zAcpTokenCounter.nullish(),
 });
 
 /** Token accounting as this adapter reads it. */

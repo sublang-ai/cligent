@@ -25,8 +25,41 @@ describe('owned ACP wire schemas (KIMI-006)', () => {
     expect(() =>
       zAcpPromptResponse.parse({
         stopReason: 'end_turn',
-        usage: { inputTokens: 'nope', outputTokens: 2 },
+        usage: { totalTokens: 3, inputTokens: 'nope', outputTokens: 2 },
       }),
+    ).toThrow();
+  });
+
+  it.each([
+    [
+      'negative input',
+      { totalTokens: 2, inputTokens: -1, outputTokens: 2 },
+    ],
+    [
+      'fractional output',
+      { totalTokens: 3, inputTokens: 1, outputTokens: 2.5 },
+    ],
+    [
+      'invalid cache read',
+      {
+        totalTokens: 3,
+        inputTokens: 1,
+        outputTokens: 2,
+        cachedReadTokens: -1,
+      },
+    ],
+    [
+      'invalid cache write',
+      {
+        totalTokens: 3,
+        inputTokens: 1,
+        outputTokens: 2,
+        cachedWriteTokens: 0.5,
+      },
+    ],
+  ])('rejects %s token accounting', (_case, usage) => {
+    expect(() =>
+      zAcpPromptResponse.parse({ stopReason: 'end_turn', usage }),
     ).toThrow();
   });
 
@@ -51,7 +84,12 @@ describe('owned ACP wire schemas (KIMI-006)', () => {
     expect(
       zAcpPromptResponse.parse({
         stopReason: 'end_turn',
-        usage: { inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 },
+        usage: {
+          totalTokens: 12,
+          inputTokens: 3,
+          outputTokens: 4,
+          cachedReadTokens: 5,
+        },
       }).usage,
     ).toMatchObject({ inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 });
     expect(

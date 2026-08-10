@@ -17,6 +17,7 @@ import {
   nextWithAbortDrain,
   makeSynthDone,
   makeSynthError,
+  recordObservedToolUse,
 } from './protocol.js';
 import { generateSessionId } from './events.js';
 
@@ -168,6 +169,7 @@ export class Cligent<E extends string = Effort> {
       let lastSessionId = sessionId;
       const gen = this.adapter.run(prompt, agentOptions);
       let doneYielded = false;
+      const observedToolUseIds = new Set<string>();
 
       try {
         while (true) {
@@ -188,7 +190,9 @@ export class Cligent<E extends string = Effort> {
                 role,
               );
               yield injectRole(
-                makeSynthDone(agent, 'error', lastSessionId, startTime),
+                makeSynthDone(agent, 'error', lastSessionId, startTime, {
+                  toolUses: observedToolUseIds.size,
+                }),
                 role,
               );
               doneYielded = true;
@@ -213,7 +217,10 @@ export class Cligent<E extends string = Effort> {
                     'interrupted',
                     lastSessionId,
                     startTime,
-                    resume ? { resumeToken: resume } : undefined,
+                    {
+                      ...(resume ? { resumeToken: resume } : {}),
+                      toolUses: observedToolUseIds.size,
+                    },
                   ),
                   role,
                 );
@@ -237,7 +244,9 @@ export class Cligent<E extends string = Effort> {
                 role,
               );
               yield injectRole(
-                makeSynthDone(agent, 'error', lastSessionId, startTime),
+                makeSynthDone(agent, 'error', lastSessionId, startTime, {
+                  toolUses: observedToolUseIds.size,
+                }),
                 role,
               );
               doneYielded = true;
@@ -254,6 +263,7 @@ export class Cligent<E extends string = Effort> {
           }
 
           lastSessionId = event.sessionId;
+          recordObservedToolUse(observedToolUseIds, event);
           yield injectRole(event, role);
 
           if (event.type === 'done') {
@@ -283,11 +293,13 @@ export class Cligent<E extends string = Effort> {
     interface StreamState {
       gen: AsyncGenerator<CligentEvent, void, void>;
       index: number;
+      observedToolUseIds: Set<string>;
     }
 
     const states: (StreamState | null)[] = tasks.map((task, index) => ({
       gen: task.agent.run(task.prompt, task.overrides),
       index,
+      observedToolUseIds: new Set<string>(),
     }));
 
     const pending = new Map<number, Promise<{ index: number; result?: IteratorResult<CligentEvent, void>; error?: unknown; isError: boolean }>>();
@@ -313,6 +325,7 @@ export class Cligent<E extends string = Effort> {
         const raceResult = await Promise.race([...pending.values()]);
         const { index } = raceResult;
         pending.delete(index);
+        const state = states[index];
 
         if (raceResult.isError) {
           // run() normally handles its own errors, but if the generator
@@ -326,7 +339,12 @@ export class Cligent<E extends string = Effort> {
             ? raceResult.error.message
             : String(raceResult.error);
           yield injectRole(makeSynthError(agentName, 'PARALLEL_TASK_ERROR', msg, sid), taskRole);
-          yield injectRole(makeSynthDone(agentName, 'error', sid, Date.now()), taskRole);
+          yield injectRole(
+            makeSynthDone(agentName, 'error', sid, Date.now(), {
+              toolUses: state?.observedToolUseIds.size ?? 0,
+            }),
+            taskRole,
+          );
           states[index] = null;
           continue;
         }
@@ -337,6 +355,9 @@ export class Cligent<E extends string = Effort> {
           continue;
         }
 
+        if (state) {
+          recordObservedToolUse(state.observedToolUseIds, result.value);
+        }
         yield result.value;
         scheduleNext(index);
       }

@@ -5,7 +5,12 @@ import { describe, it, expect } from 'vitest';
 import { runAgent, runParallel } from '../engine.js';
 import { createEvent } from '../events.js';
 import { AdapterRegistry } from '../registry.js';
-import type { AgentAdapter, AgentEvent, AgentOptions } from '../types.js';
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentOptions,
+  DonePayload,
+} from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,6 +62,19 @@ function textEvent(agent: string, content: string, sid = 'test-sid'): AgentEvent
   return createEvent('text', agent, { content }, sid);
 }
 
+function toolUseEvent(
+  agent: string,
+  toolUseId: string,
+  sid = 'test-sid',
+): AgentEvent {
+  return createEvent(
+    'tool_use',
+    agent,
+    { toolName: 'Bash', toolUseId, input: { command: 'true' } },
+    sid,
+  );
+}
+
 function doneEvent(
   agent: string,
   status: 'success' | 'error' | 'interrupted' = 'success',
@@ -69,7 +87,12 @@ function doneEvent(
     {
       status,
       ...extra,
-      usage: { inputTokens: 10, outputTokens: 20, toolUses: 1 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 10,
+        outputTokens: 20,
+        toolUses: 1,
+      },
       durationMs: 100,
     },
     sid,
@@ -158,7 +181,7 @@ describe('runAgent', () => {
     ).toBe('error');
   });
 
-  it('synthesized done has zeroed usage and measured durationMs', async () => {
+  it('synthesized done marks zeroed token placeholders unavailable', async () => {
     const adapter = createMockAdapter('claude-code', [], {
       throwAfter: 0,
       throwError: new Error('fail'),
@@ -170,11 +193,43 @@ describe('runAgent', () => {
       runAgent('claude-code', 'hi', undefined, registry),
     );
     const done = events.find((e) => e.type === 'done')!;
-    const payload = (done as AgentEvent & { payload: { usage: { inputTokens: number; outputTokens: number; toolUses: number }; durationMs: number } }).payload;
+    const payload = (done as AgentEvent & {
+      payload: {
+        usage: {
+          tokenAvailability: string;
+          inputTokens: number;
+          outputTokens: number;
+          toolUses: number;
+        };
+        durationMs: number;
+      };
+    }).payload;
+    expect(payload.usage.tokenAvailability).toBe('unavailable');
     expect(payload.usage.inputTokens).toBe(0);
     expect(payload.usage.outputTokens).toBe(0);
     expect(payload.usage.toolUses).toBe(0);
     expect(payload.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps observed tool uses when done must be synthesized', async () => {
+    const adapter = createMockAdapter(
+      'claude-code',
+      [toolUseEvent('claude-code', 'observed-before-error')],
+      { throwAfter: 1, throwError: new Error('fail after tool') },
+    );
+    const registry = new AdapterRegistry();
+    registry.register(adapter);
+
+    const events = await collectEvents(
+      runAgent('claude-code', 'hi', undefined, registry),
+    );
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 1,
+    });
   });
 
   it('suppresses post-done events', async () => {

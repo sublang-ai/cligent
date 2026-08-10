@@ -55,7 +55,10 @@ The adapter shall normalize ACP traffic to `AgentEvent` values:
 Tool state shall be keyed by ACP `toolCallId` and shall tolerate a pending lazy-create notification whose parsed `rawInput` arrives in a later update.
 The adapter shall use the best structured `rawInput` available and shall not emit duplicate `tool_use` or terminal `tool_result` events for one call.
 Assistant text deltas shall be accumulated in order for `DonePayload.result`.
-Kimi Code's ACP 0.23 surface exposes no stable per-turn usage totals, so absent usage fields shall normalize to zero input and output tokens while tool uses shall equal the emitted tool calls.
+When the ACP prompt response supplies schema-valid unsigned-integer usage, including explicit zeroes for required `totalTokens`, `inputTokens`, and `outputTokens` and for any present optional counter, the adapter shall mark token accounting as `'reported'`, shall fold `cachedReadTokens` and `cachedWriteTokens` into `inputTokens`, and shall preserve `outputTokens`.
+Where any supplied ACP token or cache counter is negative, fractional, non-finite, or non-numeric, the adapter shall reject the malformed protocol response and its terminal error `done` shall mark token accounting as `'unavailable'`.
+When ACP omits usage, the adapter shall mark token accounting as `'unavailable'` and retain zero-valued compatibility placeholders rather than reporting measured zero or estimating tokens.
+In either state, `toolUses` shall equal the emitted tool calls independently of token accounting.
 
 ### KIMI-006
 

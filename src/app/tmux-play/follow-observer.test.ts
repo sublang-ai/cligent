@@ -449,7 +449,13 @@ function doneEvent(): CligentEvent {
     type: 'done',
     payload: {
       status: 'success',
-      usage: { inputTokens: 1, outputTokens: 1 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 1,
+        outputTokens: 1,
+        toolUses: 0,
+      },
+      durationMs: 0,
     },
   } as CligentEvent;
 }

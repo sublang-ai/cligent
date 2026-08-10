@@ -514,7 +514,12 @@ describe('KimiAdapter', () => {
       status: 'success',
       result: 'Hello world',
       resumeToken: 'fresh-kimi-session',
-      usage: { inputTokens: 13, outputTokens: 4, toolUses: 1 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 13,
+        outputTokens: 4,
+        toolUses: 1,
+      },
     });
     expect(fake.children[0]).toMatchObject({
       exitCode: 0,
@@ -522,7 +527,55 @@ describe('KimiAdapter', () => {
     });
   });
 
-  it('reports a failed tool once and normalizes absent usage to zero', async () => {
+  it('represents an explicitly reported zero token total', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => ({
+        stopReason: 'end_turn',
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        },
+      }),
+    });
+    const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+
+    const events = await collect(adapter.run('Do nothing'));
+    expect(eventOf(events, 'done').payload.usage).toEqual({
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
+  });
+
+  it('rejects malformed ACP token accounting as unavailable', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => ({
+        stopReason: 'end_turn',
+        usage: {
+          totalTokens: 1,
+          inputTokens: -1,
+          outputTokens: 2,
+        },
+      }),
+    });
+    const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+
+    const events = await collect(adapter.run('Do nothing'));
+    expect(eventOf(events, 'error').payload).toMatchObject({
+      code: 'KIMI_ACP_ERROR',
+      message: expect.stringContaining('invalid session/prompt response result'),
+    });
+    expect(eventOf(events, 'done').payload.usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
+  });
+
+  it('reports a failed tool once and marks absent token usage unavailable', async () => {
     const fake = new FakeKimi({
       prompt: async (connection, request) => {
         await connection.sessionUpdate({
@@ -573,9 +626,10 @@ describe('KimiAdapter', () => {
       output: { stderr: 'boom' },
     });
     expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
-    // KIMI-005: Kimi's ACP surface exposes no per-turn totals, so an absent
-    // usage object normalizes to zeros with toolUses tracking emitted calls.
+    // KIMI-005: an absent usage object keeps compatibility zeroes but marks
+    // them unavailable, with toolUses tracking emitted calls independently.
     expect(eventOf(events, 'done').payload.usage).toEqual({
+      tokenAvailability: 'unavailable',
       inputTokens: 0,
       outputTokens: 0,
       toolUses: 1,

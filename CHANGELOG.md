@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `DonePayload.usage` now requires `tokenAvailability: 'reported' | 'unavailable'`, so a measured zero is no longer externally identical to missing upstream accounting. All built-in adapters set `reported` only when complete finite non-negative integer input and output counters are supplied (explicit zero remains reported) and every present mapped cache counter is valid; absent optional cache counters contribute zero, while malformed present counters make accounting unavailable. Cache-exclusive providers fold cache reads and writes into `inputTokens` exactly once; Codex preserves its cache-inclusive `input_tokens` and validates canonical `cached_input_tokens` / `cache_write_input_tokens` without double-counting; Gemini likewise preserves cache-inclusive `StreamStats.input_tokens`, validates its `cached` and uncached `input` details, and maps canonical `tool_calls`; OpenCode includes canonical nested step cache reads and writes. Missing accounting and synthesized error, interruption, and exhaustion paths remain unavailable without token estimation, while independently known `toolUses` from observed or valid provider-reported counts survives either state. The shared formatter prints `tokens: unavailable` instead of numeric placeholders and defensively treats persisted pre-discriminator events as unavailable. This is an additive serialized-event field but a required TypeScript producer change: custom adapters and fixtures constructing `DonePayload` must add the discriminator, while consumers must branch on it before arithmetic or rendering; readers ingesting older stored events should interpret an absent field as unavailable — DR-002, IR-046, ENG-013, ENG-019, ENG-027, KIMI-005, TENG-019, TADAPT-033, #35
+
 ## [0.19.0] - 2026-08-07
 
 ### Added

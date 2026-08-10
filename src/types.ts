@@ -82,16 +82,27 @@ export interface ToolResultPayload {
   durationMs?: number;
 }
 
+export type TokenUsageAvailability = 'reported' | 'unavailable';
+
+export interface DoneUsage {
+  /**
+   * Whether inputTokens and outputTokens came from upstream accounting.
+   * When unavailable, both token fields are compatibility placeholders and
+   * must not be interpreted as measured zeroes. Tool counts remain
+   * independently meaningful in either state.
+   */
+  tokenAvailability: TokenUsageAvailability;
+  inputTokens: number;
+  outputTokens: number;
+  toolUses: number;
+  totalCostUsd?: number;
+}
+
 export interface DonePayload {
   status: 'success' | 'error' | 'interrupted' | 'max_turns' | 'max_budget';
   result?: string;
   resumeToken?: string;
-  usage: {
-    inputTokens: number;
-    outputTokens: number;
-    toolUses: number;
-    totalCostUsd?: number;
-  };
+  usage: DoneUsage;
   durationMs: number;
 }
 

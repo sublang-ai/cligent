@@ -122,16 +122,21 @@ interface ToolResultPayload {
   durationMs?: number;
 }
 
+type TokenUsageAvailability = 'reported' | 'unavailable';
+
+interface DoneUsage {
+  tokenAvailability: TokenUsageAvailability;
+  inputTokens: number;
+  outputTokens: number;
+  toolUses: number;
+  totalCostUsd?: number;
+}
+
 interface DonePayload {
   status: 'success' | 'error' | 'interrupted' | 'max_turns' | 'max_budget';
   result?: string;
   resumeToken?: string;  // backend-resumable session token, if supported (DR-003)
-  usage: {
-    inputTokens: number;
-    outputTokens: number;
-    toolUses: number;
-    totalCostUsd?: number;
-  };
+  usage: DoneUsage;
   durationMs: number;
 }
 
@@ -149,6 +154,23 @@ type AgentEvent =
 ```
 
 Adapters should emit `init` first when possible to establish capabilities.
+
+`DoneUsage.tokenAvailability` is the required discriminator for token
+accounting.
+`'reported'` means the upstream supplied complete finite non-negative integer
+input and output counters, including when both are zero, and every present
+mapped cache counter is valid.
+Provider cache-read and cache-write counters are either already included in an
+inclusive provider input total or folded into an exclusive base exactly once.
+`'unavailable'` means complete token totals were not supplied, including every
+engine- or adapter-synthesized terminal path; the numeric token fields retain
+their stable object shape for compatibility but are not measurements and shall
+not be estimated.
+`toolUses` remains independently meaningful in either state and shall preserve
+the count of tool calls the adapter observed.
+Consumers shall branch on `tokenAvailability` before token arithmetic or
+rendering; persisted payloads from before this discriminator existed shall be
+treated as unavailable.
 
 ### Unified Permission Model (UPM)
 
@@ -256,6 +278,8 @@ for await (const event of Cligent.parallel([
 - **Budgeting**: `maxTurns` supported by Claude Code and OpenCode (`steps`); `maxBudgetUsd` only by Claude Code
 - **MCP integration** deferred to adapter implementation [^7]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
+- **Token accounting** is explicitly reported or unavailable; measured zero is
+  distinct from missing totals, and tool-call counts remain independent
 
 ## References
 

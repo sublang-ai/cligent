@@ -49,6 +49,9 @@ The adapter shall normalize NDJSON objects to `AgentEvent` types:
 
 When `parseNDJSON()` yields `{ ok: false }`, the adapter shall emit an `error` event with `recoverable: true`.
 
+Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate the `total_tokens`, `cached`, and uncached `input` details without adding either input detail to the inclusive total a second time, and shall map valid `tool_calls` to `toolUses` while retaining any greater independently observed tool-call count.
+Where any supplied canonical token or cache detail is negative, fractional, non-finite, or non-numeric, token accounting shall be `'unavailable'` per [ENG-027](../engine.md#eng-027).
+
 ### GEMINI-005
 
 The adapter shall map process exit codes to `done` status:

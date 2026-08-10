@@ -79,10 +79,42 @@ describe('formatCligentEvent', () => {
   it('formats done events with status and usage', () => {
     const event = makeEvent('done', {
       status: 'success',
-      usage: { inputTokens: 100, outputTokens: 50, toolUses: 2 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 100,
+        outputTokens: 50,
+        toolUses: 2,
+      },
       durationMs: 5000,
     });
     expect(formatCligentEvent(event)).toBe('\n[success | in: 100 out: 50]\n');
+  });
+
+  it('does not render unavailable token placeholders as measured zeroes', () => {
+    const event = makeEvent('done', {
+      status: 'interrupted',
+      usage: {
+        tokenAvailability: 'unavailable',
+        inputTokens: 0,
+        outputTokens: 0,
+        toolUses: 3,
+      },
+      durationMs: 5000,
+    });
+    expect(formatCligentEvent(event)).toBe(
+      '\n[interrupted | tokens: unavailable]\n',
+    );
+  });
+
+  it('treats legacy done events without availability as unavailable', () => {
+    const event = makeEvent('done', {
+      status: 'success',
+      usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+      durationMs: 5000,
+    });
+    expect(formatCligentEvent(event)).toBe(
+      '\n[success | tokens: unavailable]\n',
+    );
   });
 
   it('returns null for unknown event types', () => {
