@@ -129,10 +129,13 @@ managed runs shall return the iterator, close the client, abort active session
 work where required, terminate only the managed server, and emit exactly one
 terminal event when caller abort and inactivity race. Deterministic race probes
 shall cover an already-ready terminal event and abort during prompt dispatch;
-the latter shall abort the already-created external session. A deadline above
-the host timer maximum shall remain pending until real relevant activity, and
-an owned managed child that ignores `SIGTERM` shall receive `SIGKILL` after its
-grace.
+the latter shall abort the already-created external session. The legacy SDK
+probe shall put the same working directory in the top-level `query.directory`
+of create and prompt calls and omit it from the prompt body. A managed caller
+abort shall deterministically order the active-session abort, interrupted
+`done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
+remain pending until real relevant activity, and an owned managed child that
+ignores `SIGTERM` shall receive `SIGKILL` after its grace.
 Where the OpenCode CLI and SDK are available, when a credential-free real
 managed server creates an idle session whose terminal SSE event is withheld,
 the short-deadline acceptance probe shall recover through the real

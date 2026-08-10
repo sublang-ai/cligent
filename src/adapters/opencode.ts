@@ -955,7 +955,14 @@ export function wrapOpencodeClient(
                 },
                 signal ? { signal } : undefined,
               )
-            : sessionCreate(signal ? { signal } : undefined)),
+            : sessionCreate(
+                cwdVal || signal
+                  ? {
+                      ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                      ...(signal ? { signal } : {}),
+                    }
+                  : undefined,
+              )),
         );
         throwIfSdkResultError(created, 'OpenCode session.create failed');
         sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
@@ -971,7 +978,6 @@ export function wrapOpencodeClient(
         parts: [{ type: 'text', text: options.prompt }],
         ...(modelVal ? { model: modelVal } : {}),
         ...(variantVal ? { variant: variantVal } : {}),
-        ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.steps !== undefined ? { steps: options.steps } : {}),
         ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
         ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
@@ -1001,10 +1007,10 @@ export function wrapOpencodeClient(
                 signal ? { signal } : undefined,
               )
             : eventSubscribe(
-                signal
+                cwdVal || signal
                   ? {
-                      signal,
                       ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                      ...(signal ? { signal } : {}),
                     }
                   : undefined,
               ),
@@ -1032,6 +1038,7 @@ export function wrapOpencodeClient(
               ? v2PromptParameters
               : {
                   path: { id: promptSessionId },
+                  ...(cwdVal ? { query: { directory: cwdVal } } : {}),
                   body: promptBody,
                   ...(signal ? { signal } : {}),
                 },
@@ -1046,6 +1053,7 @@ export function wrapOpencodeClient(
               ? v2PromptParameters
               : {
                   path: { id: promptSessionId },
+                  ...(cwdVal ? { query: { directory: cwdVal } } : {}),
                   body: promptBody,
                   ...(signal ? { signal } : {}),
                 },
@@ -1360,13 +1368,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       abortRequested = true;
       eventStreamController.abort();
       resolveCallerAbort();
-      if (serverProcess && !serverClosed) {
-        try {
-          serverProcess.kill('SIGTERM');
-        } catch {
-          // ignore kill errors during shutdown
-        }
-      }
     };
 
     if (abortRequested) {
@@ -1611,10 +1612,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ]);
         inactivityTimer.cancel();
 
-        if (
-          raceResult.kind === 'caller_abort' ||
-          (raceResult.kind === 'event' && abortRequested)
-        ) {
+        if (raceResult.kind === 'caller_abort' || abortRequested) {
           nextPromise.catch(() => {});
           await abortActiveSession(false);
           yield createEvent(

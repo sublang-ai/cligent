@@ -145,12 +145,18 @@ When caller abort arrives during SDK session creation or prompt dispatch, the
 adapter shall propagate cancellation into supported SDK request surfaces,
 abort any session whose identifier has already been created, and bound how
 long it waits for the raced dispatch to settle.
+On the legacy SDK path, the adapter shall scope session creation, prompt, status,
+and abort requests to the same working directory through each generated
+method's top-level `query.directory` field rather than placing the directory in
+a request body.
 After any terminal path, the adapter shall cancel and return the pending event
 iterator, make bounded SDK-client close and shutdown attempts, and terminate
 its managed server, escalating its owned child from `SIGTERM` to `SIGKILL`
-after a bounded grace when necessary; external mode shall leave the
-caller-owned server running while still aborting active session work on
-interruption or non-idle inactivity.
+after a bounded grace when necessary. On caller interruption, any known active
+session abort shall be attempted before the interrupted `done`, and managed
+process termination shall begin only after that terminal event; external mode
+shall leave the caller-owned server running while still aborting active session
+work on interruption or non-idle inactivity.
 
 ## Resume Token
 

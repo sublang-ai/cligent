@@ -55,7 +55,10 @@ Complete
 - Pending SSE iteration, active session work, SDK client resources, and the
   managed server are cleaned up; external caller abort cannot hang on an
   iterator that ignores its signal or leave a known prompt-dispatch session
-  active, and a managed child cannot survive by ignoring `SIGTERM`.
+  active, legacy control requests share the create/prompt working-directory
+  scope, caller interruption aborts the active session before terminal output
+  and managed-server termination, and a managed child cannot survive by
+  ignoring `SIGTERM`.
 - Caller abort racing inactivity or an already-ready terminal event produces
   exactly one interrupted `done`.
 - Unit, type, lint, build, and focused real-server acceptance checks pass.

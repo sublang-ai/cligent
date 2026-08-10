@@ -44,7 +44,10 @@ interface MockOpenCodeClient {
 }
 
 class MockServerProcess extends EventEmitter {
-  constructor(private readonly ignoreSigterm = false) {
+  constructor(
+    private readonly ignoreSigterm = false,
+    private readonly onKill?: (signal?: NodeJS.Signals | number) => void,
+  ) {
     super();
   }
 
@@ -56,6 +59,7 @@ class MockServerProcess extends EventEmitter {
 
   kill(signal?: NodeJS.Signals | number): boolean {
     this.killSignals.push(signal);
+    this.onKill?.(signal);
     if (signal === 'SIGTERM' && this.ignoreSigterm) return true;
     queueMicrotask(() => {
       this.stdout.end();
@@ -77,7 +81,10 @@ interface SpawnInvocation {
   process: MockServerProcess;
 }
 
-function makeSpawn(processBehavior: { ignoreSigterm?: boolean } = {}): {
+function makeSpawn(processBehavior: {
+  ignoreSigterm?: boolean;
+  onKill?: (signal?: NodeJS.Signals | number) => void;
+} = {}): {
   spawnProcess: (
     command: string,
     args: readonly string[],
@@ -92,7 +99,10 @@ function makeSpawn(processBehavior: { ignoreSigterm?: boolean } = {}): {
     args: readonly string[],
     options: SpawnOptionsWithoutStdio,
   ): ChildProcessWithoutNullStreams => {
-    const process = new MockServerProcess(processBehavior.ignoreSigterm);
+    const process = new MockServerProcess(
+      processBehavior.ignoreSigterm,
+      processBehavior.onKill,
+    );
     invocations.push({ command, args, options, process });
     return process as unknown as ChildProcessWithoutNullStreams;
   };
@@ -871,7 +881,12 @@ describe('OpenCodeAdapter', () => {
 
   it('propagates abort signal and emits interrupted done in managed mode', async () => {
     const controller = new AbortController();
-    const { spawnProcess, invocations } = makeSpawn();
+    const shutdownOrder: string[] = [];
+    const { spawnProcess, invocations } = makeSpawn({
+      onKill(signal) {
+        if (signal === 'SIGTERM') shutdownOrder.push('SIGTERM');
+      },
+    });
     let capturedEventSignal: AbortSignal | undefined;
 
     const adapter = new OpenCodeAdapter(
@@ -898,6 +913,9 @@ describe('OpenCodeAdapter', () => {
               },
             };
           },
+          onAbortSession() {
+            shutdownOrder.push('session.abort');
+          },
         }),
         spawnProcess,
         probeCliAvailability: async () => true,
@@ -912,6 +930,11 @@ describe('OpenCodeAdapter', () => {
       collected.push(event);
       if (event.type === 'init') {
         controller.abort();
+      } else if (
+        event.type === 'done' &&
+        event.payload.status === 'interrupted'
+      ) {
+        shutdownOrder.push('done.interrupted');
       }
     }
 
@@ -922,6 +945,11 @@ describe('OpenCodeAdapter', () => {
 
     expect(capturedEventSignal).toBeDefined();
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
+    expect(shutdownOrder).toEqual([
+      'session.abort',
+      'done.interrupted',
+      'SIGTERM',
+    ]);
   });
 
   it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {
@@ -2681,7 +2709,8 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     );
   });
 
-  it('forwards steps, permission, and tools to session.prompt body', async () => {
+  it('scopes v1 create and prompt requests through query.directory', async () => {
+    let capturedCreateArgs: unknown;
     let capturedPromptArgs: unknown;
 
     const adapter = new OpenCodeAdapter(
@@ -2699,6 +2728,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
                 usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
               };
             })(),
+          },
+          onCreateSession(args) {
+            capturedCreateArgs = args;
           },
           onPrompt(args) {
             capturedPromptArgs = args;
@@ -2722,19 +2754,28 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       }),
     );
 
+    const createArgs = capturedCreateArgs as {
+      query: { directory?: string };
+      signal?: AbortSignal;
+    };
     const promptArgs = capturedPromptArgs as {
+      query: { directory?: string };
+      signal?: AbortSignal;
       body: {
         parts: unknown[];
         model?: string;
-        cwd?: string;
         steps?: number;
         permission?: { edit: string; bash: string; webfetch: string };
         tools?: Record<string, boolean>;
       };
     };
 
+    expect(createArgs.query).toEqual({ directory: '/workspace' });
+    expect(createArgs.signal).toBeInstanceOf(AbortSignal);
+    expect(promptArgs.query).toEqual({ directory: '/workspace' });
+    expect(promptArgs.signal).toBe(createArgs.signal);
     expect(promptArgs.body.model).toBe('kimi-k2');
-    expect(promptArgs.body.cwd).toBe('/workspace');
+    expect(promptArgs.body).not.toHaveProperty('cwd');
     expect(promptArgs.body.steps).toBe(5);
     expect(promptArgs.body.permission).toEqual({
       edit: 'allow',
