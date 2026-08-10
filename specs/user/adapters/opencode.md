@@ -43,7 +43,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | assistant `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` / `permission.asked` | `permission_request` |
+| `permission.updated` / `permission.asked` | `permission_request` plus the headless reply behavior in [OPENCODE-020](#opencode-020) |
 | `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
@@ -97,6 +97,12 @@ While the SSE stream carries events for all sessions, the adapter shall emit onl
 ### OPENCODE-007
 
 Where a `PermissionPolicy` is provided, the adapter shall map it to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
+Where `PermissionPolicy.mode` is `auto`, the adapter shall represent
+OpenCode's global `"permission": "allow"` setting as `{ "*": "allow" }` on
+the v1 path and as the v2 rule
+`{ permission: "*", pattern: "*", action: "allow" }`, so permissions outside
+the three portable capability names are covered by the same native global
+setting.
 Where the OpenCode v2 SDK path is active, the adapter shall apply the
 equivalent `PermissionRuleset` at `session.create` for fresh sessions and at
 `session.update` before prompting resumed sessions, because the v2 prompt body
@@ -108,6 +114,34 @@ Where `PermissionPolicy.writablePaths` is non-empty per
 `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with
 `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
 permission and tool mapping unchanged.
+
+### OPENCODE-020
+
+While an OpenCode run is headless, when a `permission.updated` or
+`permission.asked` event belonging to its session reaches the adapter, the
+adapter shall emit the normalized `permission_request` for observability and
+reject the request exactly once through the applicable SDK permission-response
+route, including for permission names unknown to cligent.
+The response shall preserve the native request identifier and, where the SDK
+route requires it, the session identifier; permission events belonging to
+other sessions shall receive no response per [OPENCODE-006](#opencode-006).
+Where the event has no request identifier, or the applicable response route is
+unavailable, rejects, returns an SDK error, or does not settle within five
+seconds, the adapter shall emit a non-recoverable permission error whose
+message names the session identifier, request identifier (or its absence), and
+permission name, then emit `done` with `status: 'error'` rather than continue
+waiting on the SSE stream.
+The adapter shall drive the active SSE subscription and permission response
+with a run-owned abort signal. On the five-second response timeout, it shall
+abort that signal and close the SSE iterator so the underlying response and
+stream I/O are cancelled before run cleanup completes.
+When `AbortSignal` fires while the adapter awaits either the next SSE event or
+a permission response, the adapter shall propagate it through the run-owned
+signal to cancel active transport I/O, preempt that wait, and emit one `done`
+with `status: 'interrupted'`. The ensuing teardown shall release the abort
+listener, terminate the managed server per [OPENCODE-009](#opencode-009), and
+perform bounded iterator and SDK client cleanup per
+[OPENCODE-008](#opencode-008).
 
 ### OPENCODE-013
 
@@ -125,14 +159,82 @@ Where managed mode is configured, the adapter shall spawn `opencode serve`
 with the configured `--hostname` and `--port`, wait for ready, then connect the
 SDK client per [[2]]. When the run completes or aborts, the adapter shall
 gracefully shut down the managed server.
+Run teardown shall request managed server termination before invoking or
+awaiting SDK iterator and client cleanup. Waits for iterator return, client
+close, and client shutdown shall be bounded, so a non-settling SDK cleanup
+hook cannot keep the managed server alive or prevent generator completion.
 
 ### OPENCODE-009
 
-When `AbortSignal` fires, the adapter shall yield `done` (`status: 'interrupted'`), then send `SIGTERM` to the managed server.
+When `AbortSignal` fires, the adapter shall preempt its active wait, yield
+`done` (`status: 'interrupted'`), then send `SIGTERM` to the managed server;
+the signal shall not be sent before the interrupted terminal event is yielded.
 
 ### OPENCODE-010
 
 When the managed server crashes, the adapter shall yield an `error` event (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) and clean up resources.
+
+### OPENCODE-018
+
+Where `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is omitted, the adapter
+shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
+provided, the adapter shall require a finite number greater than zero and use
+that value. The deadline shall use monotonic elapsed time and split waits above
+the host timer's maximum delay into safe chunks rather than expiring early.
+While a run is awaiting OpenCode's global SSE stream, when an event survives
+the current-session filtering of [OPENCODE-006](#opencode-006), including an
+untagged pass-through event, the adapter shall restart the deadline; an event
+explicitly tagged for another session shall not restart it.
+When the deadline expires, the adapter shall cancel the pending SSE read and
+query the active session's current status through the SDK, bounding that query
+to the lesser of 10,000 ms and the configured inactivity deadline.
+Where the query reports `idle`, including the OpenCode status map omitting the
+session because idle entries are not retained, the adapter shall emit one
+recoverable `error`
+with code `OPENCODE_INACTIVITY_IDLE_RECOVERED` followed by exactly one terminal
+`done`, using `success` unless an earlier session error requires `error`,
+without waiting for another SSE event.
+Where the query reports `busy`, `retry`, or another non-idle state, the adapter
+shall abort that session and emit one non-recoverable `error` with code
+`OPENCODE_INACTIVITY_TIMEOUT` followed by exactly one error `done`.
+Where the status request fails or times out, the adapter shall make a bounded
+best-effort session abort and emit one
+non-recoverable `error` with code
+`OPENCODE_INACTIVITY_STATUS_QUERY_FAILED` followed by exactly one error
+`done`.
+Each inactivity diagnostic shall identify the session, last relevant event,
+elapsed inactivity, configured deadline, server mode and state, queried state
+or query failure, and session-abort outcome where attempted.
+When caller abort races a pending SSE read, status query, or inactivity
+recovery in either server mode, the adapter shall give the caller abort
+terminal precedence once observed, including when a terminal SSE event is
+already ready in the same race turn, and emit exactly one interrupted `done`.
+When caller abort arrives during SDK session creation or prompt dispatch, the
+adapter shall propagate cancellation into supported SDK request surfaces,
+abort any session whose identifier has already been created, and bound how
+long it waits for the raced dispatch to settle. Where that dispatch concurrently
+settles with a session and event iterator, the adapter shall capture their
+cleanup ownership, abort the known session, and return the iterator before
+emitting interrupted `done`. Any eager event iterator opened before prompt
+dispatch shall be returned on dispatch abort or failure, and the dispatch-scoped
+abort listener shall be removed on every exit. A backend session identifier
+created before dispatch abort shall remain the interrupted resume token per
+[OPENCODE-011](#opencode-011), including when the wrapper reports the abort as a
+failed run result.
+On the legacy SDK path, the adapter shall scope session creation, prompt, status,
+and abort requests to the same working directory through each generated
+method's top-level `query.directory` field rather than placing the directory in
+a request body.
+After any terminal path, the adapter shall cancel and return the pending event
+iterator, make independent bounded SDK-client close and shutdown attempts even
+when an earlier cleanup rejects, and terminate its managed server, escalating
+its owned child from `SIGTERM` to `SIGKILL` after a bounded grace when necessary.
+Instance disposal shall carry the run working directory as `directory` on the
+v2 SDK path or `query.directory` on the legacy path. On caller interruption, any
+known active session abort shall be attempted before the interrupted `done`, and
+managed process termination shall begin only after that terminal event;
+external mode shall leave the caller-owned server running while still aborting
+active session work on interruption or non-idle inactivity.
 
 ## Resume Token
 

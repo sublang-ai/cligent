@@ -9,6 +9,8 @@
 // terminal tool_result). Filesystem state is the ground truth that a tool
 // actually ran; the stream assertions are invariants, not exact sequences,
 // because model behavior varies between runs.
+// TADAPT-037 reuses that real managed-mode harness to pin permission liveness
+// for an absolute /tmp write under the native global auto rule.
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -60,7 +62,10 @@ describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
       }
 
       const probe = await probeWithRetry();
-      expect(probe.fileContentMatches).toBe(true);
+      expect(
+        probe.fileContentMatches,
+        summarizeEvents(probe.events),
+      ).toBe(true);
 
       const toolUses = probe.events.filter((e) => e.type === 'tool_use');
       const toolUseIds = toolUses.map(
@@ -103,6 +108,40 @@ describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
       const donePayload = done!.payload as DonePayload;
       expect(donePayload.status).toBe('success');
       expect(donePayload.usage.toolUses).toBe(toolUses.length);
+    },
+    PROBE_TIMEOUT_MS,
+  );
+
+  acceptanceIt(
+    'resolves an absolute /tmp write without a permission wait (TADAPT-037)',
+    async () => {
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing OpenCode permission acceptance dependencies: ${missing.join(', ')}`,
+        );
+      }
+
+      const probe = await permissionProbeWithRetry();
+      expect(
+        probe.fileContentMatches,
+        summarizeEvents(probe.events),
+      ).toBe(true);
+      expect(
+        probe.events.filter((event) => event.type === 'permission_request'),
+      ).toEqual([]);
+      expect(
+        probe.events.filter(
+          (event) =>
+            event.type === 'tool_result' &&
+            (event.payload as ToolResultPayload).status === 'denied',
+        ),
+      ).toEqual([]);
+      expect(
+        probe.events.filter((event) => event.type === 'error'),
+      ).toEqual([]);
+      const done = probe.events.filter((event) => event.type === 'done');
+      expect(done).toHaveLength(1);
+      expect((done[0]!.payload as DonePayload).status).toBe('success');
     },
     PROBE_TIMEOUT_MS,
   );
@@ -155,12 +194,75 @@ async function runLifecycleProbe(): Promise<LifecycleProbe> {
   }
 }
 
+async function permissionProbeWithRetry(): Promise<LifecycleProbe> {
+  for (let attempt = 1; attempt <= MAX_PROBE_ATTEMPTS; attempt++) {
+    const probe = await runPermissionProbe();
+    const transient = transientFailure(probe.events);
+    if (!transient) return probe;
+    if (attempt === MAX_PROBE_ATTEMPTS) {
+      throw new Error(
+        `opencode permission acceptance failed after ${MAX_PROBE_ATTEMPTS} ` +
+          `consecutive transient upstream attempts: ${transient}`,
+      );
+    }
+    process.stderr.write(
+      `opencode permission acceptance attempt ${attempt} hit transient ` +
+        `upstream error: ${transient}\n`,
+    );
+  }
+  throw new Error(
+    'opencode permission acceptance exhausted its retry loop unexpectedly',
+  );
+}
+
+async function runPermissionProbe(): Promise<LifecycleProbe> {
+  const cwd = mkdtempSync(join(process.cwd(), 'cligent-ocpermission-'));
+  const filePath = join(
+    '/tmp',
+    `cligent-opencode-permission-${randomUUID()}.txt`,
+  );
+
+  try {
+    execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
+    const cligent = new Cligent(new OpenCodeAdapter(), {
+      permissions: { mode: 'auto' },
+      cwd,
+      model: OPENCODE_MODEL,
+    });
+    const events: CligentEvent[] = [];
+    for await (const event of cligent.run(permissionPrompt(filePath))) {
+      events.push(event);
+    }
+
+    return {
+      events,
+      fileContentMatches:
+        existsSync(filePath) &&
+        readFileSync(filePath, 'utf8') === 'permission-liveness\n',
+    };
+  } finally {
+    rmSync(filePath, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 function lifecyclePrompt(fileName: string): string {
   const path = `'./${fileName}'`;
   return [
     'Run this exact shell command in the current working directory:',
     '```sh',
     `printf '%s\\n' lifecycle > ${path} && test "$(cat ${path})" = lifecycle`,
+    '```',
+    'Do not ask for permission or confirmation. After it succeeds, reply only "created".',
+  ].join('\n');
+}
+
+function permissionPrompt(filePath: string): string {
+  const path = `'${filePath}'`;
+  return [
+    'Run this exact shell command:',
+    '```sh',
+    `printf '%s\\n' permission-liveness > ${path} && test "$(cat ${path})" = permission-liveness`,
     '```',
     'Do not ask for permission or confirmation. After it succeeds, reply only "created".',
   ].join('\n');
@@ -234,6 +336,12 @@ function witnessedInvariantViolation(
     (payload) =>
       payload.status === 'denied' || !announced.has(payload.toolUseId),
   );
+}
+
+function summarizeEvents(events: readonly CligentEvent[]): string {
+  return events
+    .map((event) => `${event.type}: ${JSON.stringify(event.payload)}`)
+    .join('\n');
 }
 
 function missingDeps(): string[] {
