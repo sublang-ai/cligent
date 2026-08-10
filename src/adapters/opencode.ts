@@ -1161,10 +1161,54 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // Part events can precede the message.updated envelope that supplies the
     // role, so content stays pending until its message role is known.
     const messageRoles = new Map<string, OpenCodeMessageRole>();
-    const pendingContentEvents = new Map<
-      string,
-      Array<{ eventType: string; event: Record<string, unknown> }>
-    >();
+    const pendingContentEvents: Array<{
+      eventType: string;
+      event: Record<string, unknown>;
+      messageId?: string;
+    }> = [];
+
+    const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
+      const normalizedEvents: AgentEvent[] = [];
+
+      while (pendingContentEvents.length > 0) {
+        const item = pendingContentEvents[0]!;
+        const role = item.messageId
+          ? messageRoles.get(item.messageId)
+          : 'assistant';
+
+        if (!role && !dropUnresolved) break;
+        pendingContentEvents.shift();
+
+        if (role === 'assistant') {
+          const normalized = normalizeOpenCodeContentEvent(
+            item.eventType,
+            item.event,
+            sessionId,
+          );
+          if (normalized) normalizedEvents.push(normalized);
+        }
+      }
+
+      return normalizedEvents;
+    };
+
+    const queueRoleAwareContent = (
+      eventType: string,
+      event: Record<string, unknown>,
+    ): AgentEvent[] => {
+      const messageId = loadOpenCodePartMessageId(event);
+      const inlineRole = loadOpenCodeMessageRole(event);
+      if (messageId && inlineRole) {
+        messageRoles.set(messageId, inlineRole);
+      }
+
+      pendingContentEvents.push({
+        eventType,
+        event,
+        ...(messageId ? { messageId } : {}),
+      });
+      return drainPendingContent();
+    };
 
     const onAbort = () => {
       abortRequested = true;
@@ -1303,6 +1347,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           nextPromise.catch(() => {});
 
           if (doneYielded) break;
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
 
           if (abortRequested || options?.abortSignal?.aborted) {
             yield createEvent(
@@ -1387,18 +1434,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const role = loadOpenCodeMessageRole(event);
           if (messageId && role) {
             messageRoles.set(messageId, role);
-            const pending = pendingContentEvents.get(messageId) ?? [];
-            pendingContentEvents.delete(messageId);
-
-            if (role === 'assistant') {
-              for (const item of pending) {
-                const normalized = normalizeOpenCodeContentEvent(
-                  item.eventType,
-                  item.event,
-                  sessionId,
-                );
-                if (normalized) yield normalized;
-              }
+            for (const normalized of drainPendingContent()) {
+              yield normalized;
             }
           }
           continue;
@@ -1406,43 +1443,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
         const contentKind = loadOpenCodeContentKind(eventType, event);
         if (contentKind) {
-          const messageId = loadOpenCodePartMessageId(event);
-          const inlineRole = loadOpenCodeMessageRole(event);
-          const role = inlineRole ?? (messageId ? messageRoles.get(messageId) : undefined);
-
-          if (messageId && inlineRole) {
-            messageRoles.set(messageId, inlineRole);
-            const pending = pendingContentEvents.get(messageId) ?? [];
-            pendingContentEvents.delete(messageId);
-
-            if (inlineRole === 'assistant') {
-              for (const item of pending) {
-                const normalized = normalizeOpenCodeContentEvent(
-                  item.eventType,
-                  item.event,
-                  sessionId,
-                );
-                if (normalized) yield normalized;
-              }
-            }
-          }
-
-          if (messageId && !role) {
-            const pending = pendingContentEvents.get(messageId) ?? [];
-            pending.push({ eventType, event });
-            pendingContentEvents.set(messageId, pending);
-            continue;
-          }
-
-          // Legacy event shapes without a message identifier have no role to
-          // correlate and retain their historical pass-through behavior.
-          if (role !== 'user') {
-            const normalized = normalizeOpenCodeContentEvent(
-              eventType,
-              event,
-              sessionId,
-            );
-            if (normalized) yield normalized;
+          for (const normalized of queueRoleAwareContent(eventType, event)) {
+            yield normalized;
           }
           continue;
         }
@@ -1710,6 +1712,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           (eventType === 'session.status' &&
             asString(asRecord(event.status).type) === 'idle')
         ) {
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
           const status = sessionErrorObserved
             ? 'error'
             : mapDoneStatus(asString(event.status));
@@ -1755,6 +1760,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
           yield createEvent(
             'done',
@@ -1829,6 +1837,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
           yield createEvent(
             'done',
