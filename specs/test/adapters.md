@@ -125,6 +125,18 @@ Removing a message with held content shall discard that content and unblock
 later events without waiting for terminal completion. Role metadata from a
 foreign session shall not resolve current-session content.
 
+### TADAPT-036
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-017](../user/adapters/opencode.md#opencode-017), [OPENCODE-019](../user/adapters/opencode.md#opencode-019)
+
+Given canonical v1 sibling-delta, v2 explicitly typed delta, and v2 generic
+delta events interleaving assistant text, assistant reasoning, and user text,
+the adapter shall reconstruct assistant output through `text_delta` without
+reasoning or user contamination. Generic deltas shall classify correctly when
+part metadata arrives before or after them, while unresolved types shall not
+default to output. Reasoning shall appear only through settled `thinking`
+snapshots, duplicate settled snapshots shall emit once, and the joined output
+deltas shall equal the final assistant text.
+
 ## Tool Filtering
 
 ### TADAPT-009

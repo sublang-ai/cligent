@@ -92,6 +92,7 @@ meta.md     The spec of specs
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
 | IR-044 | [044-opencode-message-roles.md](iterations/044-opencode-message-roles.md) | Correlate OpenCode message roles and suppress replayed user content |
+| IR-045 | [045-opencode-delta-classification.md](iterations/045-opencode-delta-classification.md) | Classify OpenCode deltas by part type and suppress duplicate reasoning streams |
 
 ## Packages
 
@@ -150,7 +151,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role-aware SSE normalization, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -169,7 +170,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode message-role plus `callID`-correlated tool-lifecycle handling |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode message-role, delta-type, and `callID`-correlated tool-lifecycle handling |
 
 ### TMUX
 
