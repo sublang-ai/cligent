@@ -59,6 +59,11 @@ Complete
   scope, caller interruption aborts the active session before terminal output
   and managed-server termination, and a managed child cannot survive by
   ignoring `SIGTERM`.
+- Prompt-dispatch exits return any eagerly started SSE iterator and unregister
+  their abort listener; a concurrently settled result transfers session and
+  iterator cleanup ownership before interrupted output; rejected client cleanup
+  phases do not suppress later shutdown or managed-process cleanup; instance
+  disposal targets the run's working directory on both SDK paths.
 - Caller abort racing inactivity or an already-ready terminal event produces
   exactly one interrupted `done`.
 - Unit, type, lint, build, and focused real-server acceptance checks pass.

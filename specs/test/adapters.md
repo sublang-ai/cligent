@@ -136,6 +136,15 @@ abort shall deterministically order the active-session abort, interrupted
 `done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
 remain pending until real relevant activity, and an owned managed child that
 ignores `SIGTERM` shall receive `SIGKILL` after its grace.
+Prompt-dispatch abort and failure probes shall return an eagerly started SSE
+iterator and remove their dispatch-scoped abort listener, and a fresh backend
+session created before abort shall remain the interrupted resume token. A run
+result settling concurrently with caller abort shall transfer its session and
+iterator to outer cleanup, which shall abort and return them before interrupted
+`done`. Rejected close and shutdown operations shall remain independent and
+shall not prevent managed process termination. Legacy and v2 instance-disposal
+probes shall carry the run directory through `query.directory` and `directory`,
+respectively.
 Where the OpenCode CLI and SDK are available, when a credential-free real
 managed server creates an idle session whose terminal SSE event is withheld,
 the short-deadline acceptance probe shall recover through the real

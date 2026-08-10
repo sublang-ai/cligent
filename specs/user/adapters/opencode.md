@@ -144,19 +144,29 @@ already ready in the same race turn, and emit exactly one interrupted `done`.
 When caller abort arrives during SDK session creation or prompt dispatch, the
 adapter shall propagate cancellation into supported SDK request surfaces,
 abort any session whose identifier has already been created, and bound how
-long it waits for the raced dispatch to settle.
+long it waits for the raced dispatch to settle. Where that dispatch concurrently
+settles with a session and event iterator, the adapter shall capture their
+cleanup ownership, abort the known session, and return the iterator before
+emitting interrupted `done`. Any eager event iterator opened before prompt
+dispatch shall be returned on dispatch abort or failure, and the dispatch-scoped
+abort listener shall be removed on every exit. A backend session identifier
+created before dispatch abort shall remain the interrupted resume token per
+[OPENCODE-011](#opencode-011), including when the wrapper reports the abort as a
+failed run result.
 On the legacy SDK path, the adapter shall scope session creation, prompt, status,
 and abort requests to the same working directory through each generated
 method's top-level `query.directory` field rather than placing the directory in
 a request body.
 After any terminal path, the adapter shall cancel and return the pending event
-iterator, make bounded SDK-client close and shutdown attempts, and terminate
-its managed server, escalating its owned child from `SIGTERM` to `SIGKILL`
-after a bounded grace when necessary. On caller interruption, any known active
-session abort shall be attempted before the interrupted `done`, and managed
-process termination shall begin only after that terminal event; external mode
-shall leave the caller-owned server running while still aborting active session
-work on interruption or non-idle inactivity.
+iterator, make independent bounded SDK-client close and shutdown attempts even
+when an earlier cleanup rejects, and terminate its managed server, escalating
+its owned child from `SIGTERM` to `SIGKILL` after a bounded grace when necessary.
+Instance disposal shall carry the run working directory as `directory` on the
+v2 SDK path or `query.directory` on the legacy path. On caller interruption, any
+known active session abort shall be attempted before the interrupted `done`, and
+managed process termination shall begin only after that terminal event;
+external mode shall leave the caller-owned server running while still aborting
+active session work on interruption or non-idle inactivity.
 
 ## Resume Token
 

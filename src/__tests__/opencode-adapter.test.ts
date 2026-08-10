@@ -1514,14 +1514,28 @@ describe('OpenCodeAdapter', () => {
       });
       let createSignal: AbortSignal | undefined;
       let promptSignal: AbortSignal | undefined;
+      let runAbortListenerRemoved = false;
+      let rawIteratorReturns = 0;
       let wrappedRunSettled = false;
       const abortCalls: unknown[] = [];
 
       const real = {
         session: {
           async create(_args: unknown, requestOptions?: unknown) {
-            createSignal = (requestOptions as { signal?: AbortSignal } | undefined)
+            const sdkSignal = (
+              requestOptions as { signal?: AbortSignal } | undefined
+            )
               ?.signal;
+            createSignal = sdkSignal;
+            if (sdkSignal) {
+              const originalRemove = sdkSignal.removeEventListener.bind(sdkSignal);
+              sdkSignal.removeEventListener = ((
+                ...args: Parameters<AbortSignal['removeEventListener']>
+              ) => {
+                if (args[0] === 'abort') runAbortListenerRemoved = true;
+                originalRemove(...args);
+              }) as AbortSignal['removeEventListener'];
+            }
             return { data: { id: 'dispatch-abort-session' } };
           },
           async promptAsync(_args: unknown, requestOptions?: unknown) {
@@ -1556,6 +1570,10 @@ describe('OpenCodeAdapter', () => {
                           { once: true },
                         );
                       }),
+                    async return(value?: unknown) {
+                      rawIteratorReturns++;
+                      return { done: true, value };
+                    },
                   };
                 },
               },
@@ -1605,12 +1623,93 @@ describe('OpenCodeAdapter', () => {
       expect(promptSignal).toBe(createSignal);
       expect(createSignal?.aborted).toBe(true);
       expect(wrappedRunSettled).toBe(true);
+      expect(runAbortListenerRemoved).toBe(true);
+      expect(rawIteratorReturns).toBe(1);
       expect(abortCalls).toEqual([
         { sessionID: 'dispatch-abort-session', directory: '/repo' },
       ]);
       expect(events.map((event) => event.type)).toEqual(['init', 'done']);
-      expect(events.at(-1)?.payload).toMatchObject({ status: 'interrupted' });
+      expect(events.at(-1)?.payload).toMatchObject({
+        status: 'interrupted',
+        resumeToken: 'dispatch-abort-session',
+      });
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    });
+
+    it('captures a raced run result before emitting interrupted done', async () => {
+      const controller = new AbortController();
+      const cleanupOrder: string[] = [];
+      const abortCalls: Array<{ sessionId: string; cwd?: string }> = [];
+      const racedEvents: AsyncIterable<unknown> = {
+        [Symbol.asyncIterator](): AsyncIterator<unknown> {
+          return {
+            next: () => new Promise<IteratorResult<unknown>>(() => {}),
+            async return(value?: unknown) {
+              cleanupOrder.push('iterator.return');
+              return { done: true, value };
+            },
+          };
+        },
+      };
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 1_000,
+        },
+        {
+          loadSdk: async () => ({
+            createClient() {
+              return {
+                run() {
+                  const result = new Promise<unknown>((resolve) => {
+                    queueMicrotask(() => {
+                      resolve({
+                        sessionId: 'raced-dispatch-session',
+                        events: racedEvents,
+                      });
+                    });
+                  });
+                  controller.abort();
+                  return result;
+                },
+                async abortSession(options: {
+                  sessionId: string;
+                  cwd?: string;
+                }) {
+                  abortCalls.push(options);
+                  cleanupOrder.push('session.abort');
+                },
+                async close() {},
+                async shutdown() {},
+              } as unknown as MockOpenCodeClient;
+            },
+          }),
+        },
+      );
+
+      const events: AgentEvent[] = [];
+      for await (const event of adapter.run('prompt', {
+        abortSignal: controller.signal,
+        cwd: '/repo',
+      })) {
+        events.push(event);
+        if (event.type === 'done') cleanupOrder.push('done.interrupted');
+      }
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(events.at(-1)?.payload).toMatchObject({
+        status: 'interrupted',
+        resumeToken: 'raced-dispatch-session',
+      });
+      expect(abortCalls).toEqual([
+        { sessionId: 'raced-dispatch-session', cwd: '/repo' },
+      ]);
+      expect(cleanupOrder).toEqual([
+        'session.abort',
+        'iterator.return',
+        'done.interrupted',
+      ]);
     });
 
     it('bounds client disposal and still attempts the shutdown fallback', async () => {
@@ -1643,6 +1742,48 @@ describe('OpenCodeAdapter', () => {
       expect(Date.now() - startedAt).toBeLessThan(1_000);
       expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
       expect(shutdownCalls).toBe(1);
+    });
+
+    it('isolates rejected cleanup phases and still terminates the managed server', async () => {
+      const cleanupOrder: string[] = [];
+      const { spawnProcess, invocations } = makeSpawn({
+        onKill(signal) {
+          if (signal === 'SIGTERM') cleanupOrder.push('SIGTERM');
+        },
+      });
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'managed',
+          serverUrl: 'http://127.0.0.1:4782',
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'rejected-cleanup' },
+            events: [
+              {
+                type: 'session.idle',
+                sessionId: 'rejected-cleanup',
+              },
+            ],
+            async onClose() {
+              cleanupOrder.push('close');
+              throw new Error('close failed');
+            },
+            async onShutdown() {
+              cleanupOrder.push('shutdown');
+              throw new Error('shutdown failed');
+            },
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4782',
+        },
+      );
+
+      const events = await collect(adapter.run('prompt'));
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(cleanupOrder).toEqual(['close', 'shutdown', 'SIGTERM']);
+      expect(invocations[0]?.process.killSignals).toEqual(['SIGTERM']);
     });
 
     it('emits one interrupted terminal when caller abort races timeout status', async () => {
@@ -2164,7 +2305,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     onCreateSession?: (args: unknown) => void;
     onPrompt?: (args: unknown) => void;
     onSubscribe?: (args: unknown) => void;
-    onDispose?: () => void;
+    onDispose?: (args: unknown) => void;
   }): Record<string, unknown> {
     return {
       session: {
@@ -2184,8 +2325,8 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         },
       },
       instance: {
-        async dispose(): Promise<void> {
-          config.onDispose?.();
+        async dispose(args?: unknown): Promise<void> {
+          config.onDispose?.(args);
         },
       },
     };
@@ -2709,6 +2850,68 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     );
   });
 
+  it('cleans up the eager SSE iterator and abort listener when prompting fails', async () => {
+    const controller = new AbortController();
+    let abortListenerRemovals = 0;
+    let iteratorNextCalls = 0;
+    let iteratorReturns = 0;
+    let resolveNext: ((result: IteratorResult<unknown>) => void) | undefined;
+    const originalRemove = controller.signal.removeEventListener.bind(
+      controller.signal,
+    );
+    controller.signal.removeEventListener = ((
+      ...args: Parameters<AbortSignal['removeEventListener']>
+    ) => {
+      if (args[0] === 'abort') abortListenerRemovals++;
+      originalRemove(...args);
+    }) as AbortSignal['removeEventListener'];
+
+    const client = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'prompt-failure-cleanup' } };
+          },
+          async promptAsync() {
+            throw new Error('prompt dispatch failed');
+          },
+        },
+        event: {
+          async subscribe() {
+            return {
+              stream: {
+                [Symbol.asyncIterator](): AsyncIterator<unknown> {
+                  return {
+                    next: () => {
+                      iteratorNextCalls++;
+                      return new Promise<IteratorResult<unknown>>((resolve) => {
+                        resolveNext = resolve;
+                      });
+                    },
+                    async return(value?: unknown) {
+                      iteratorReturns++;
+                      const result = { done: true as const, value };
+                      resolveNext?.(result);
+                      return result;
+                    },
+                  };
+                },
+              },
+            };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    await expect(
+      client.run?.({ prompt: 'fail', signal: controller.signal }),
+    ).rejects.toThrow('prompt dispatch failed');
+    expect(iteratorNextCalls).toBe(1);
+    expect(iteratorReturns).toBe(1);
+    expect(abortListenerRemovals).toBe(1);
+  });
+
   it('scopes v1 create and prompt requests through query.directory', async () => {
     let capturedCreateArgs: unknown;
     let capturedPromptArgs: unknown;
@@ -2848,19 +3051,50 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(toolUse.payload.input).toEqual({ command: 'echo hi' });
   });
 
-  it('calls instance.dispose on close', async () => {
-    let disposeCalled = false;
+  it('scopes instance.dispose to the run directory on v1 and v2', async () => {
+    const v1DisposeCalls: unknown[] = [];
+    const v1 = wrapOpencodeClient(
+      makeV1Sdk({
+        onDispose(args) {
+          v1DisposeCalls.push(args);
+        },
+      }),
+    );
+    await v1.run?.({ prompt: 'v1 dispose', cwd: '/v1-workspace' });
+    await v1.close?.();
 
-    const real = makeV1Sdk({
-      onDispose() {
-        disposeCalled = true;
+    const v2DisposeCalls: unknown[] = [];
+    const v2 = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'v2-dispose' } };
+          },
+          async promptAsync() {
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+        instance: {
+          async dispose(args?: unknown) {
+            v2DisposeCalls.push(args);
+            return { data: true };
+          },
+        },
       },
-    });
+      { apiVersion: 'v2' },
+    );
+    await v2.run?.({ prompt: 'v2 dispose', cwd: '/v2-workspace' });
+    await v2.close?.();
 
-    const client = wrapOpencodeClient(real);
-    await client.close?.();
-
-    expect(disposeCalled).toBe(true);
+    expect(v1DisposeCalls).toEqual([
+      { query: { directory: '/v1-workspace' } },
+    ]);
+    expect(v2DisposeCalls).toEqual([{ directory: '/v2-workspace' }]);
   });
 
   it('maps v2 session status and abort through the real SDK service seam', async () => {
