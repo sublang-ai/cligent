@@ -133,9 +133,14 @@ delta events interleaving assistant text, assistant reasoning, and user text,
 the adapter shall reconstruct assistant output through `text_delta` without
 reasoning or user contamination. Generic deltas shall classify correctly when
 part metadata arrives before or after them, while unresolved types shall not
-default to output. Reasoning shall appear only through settled `thinking`
-snapshots, duplicate settled snapshots shall emit once, and the joined output
-deltas shall equal the final assistant text.
+default to output or block later known content. Interleaved part identifiers
+shall preserve stream order when later metadata resolves first, and removing a
+part shall discard content still pending on either kind or role. Reasoning
+shall appear only through settled `thinking` snapshots, nonconsecutive
+duplicate settled snapshots shall emit once, and an exact settled replay of a
+part's `textID`-correlated deltas shall not duplicate the combined `text` plus
+`text_delta` reconstruction. Incident-scale pending queues shall drain in
+order, and removing a message shall clear the state of every owned part.
 
 ## Tool Filtering
 
