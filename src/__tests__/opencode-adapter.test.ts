@@ -2353,6 +2353,70 @@ describe('OpenCode SSE event structure', () => {
     ).toEqual(['first', 'second', 'legacy third']);
   });
 
+  it('removes unresolved message content without blocking later output', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'removed-message',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.removed',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'removed-message',
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-known',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'keep me' });
+  });
+
   it('drops an unresolved head item without losing later known output', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
