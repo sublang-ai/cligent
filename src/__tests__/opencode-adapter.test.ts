@@ -2280,6 +2280,136 @@ describe('OpenCode SSE event structure', () => {
     expect(events[4]?.payload).toEqual({ content: prompt });
   });
 
+  it('preserves content order across interleaved unresolved message roles', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-a',
+                  type: 'text',
+                  text: 'first',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-b',
+                  type: 'text',
+                  text: 'second',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-b',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: { type: 'text', text: 'legacy third' },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-a',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(
+      events
+        .filter((event) => event.type === 'text')
+        .map((event) => (event.payload as { content: string }).content),
+    ).toEqual(['first', 'second', 'legacy third']);
+  });
+
+  it('drops an unresolved head item without losing later known output', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'never-resolved',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-known',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'keep me' });
+  });
+
   it('does not use foreign-session role metadata to release pending content', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
