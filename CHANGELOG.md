@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The OpenCode adapter now correlates streamed content with each message's `user` or `assistant` role before emitting normalized output. OpenCode replays the submitted prompt on its shared SSE stream as an ordinary user text part, and the adapter previously discarded the role-bearing `message.updated` envelope, so callers received that prompt again as assistant `text`. Text, deltas, and reasoning with a message id now wait when necessary for their role: assistant content is released in stream order, user content is suppressed, and unresolved identifier-bearing content fails closed at terminal completion. Legacy events without a message id retain their prior normalization, and legitimate assistant output remains untouched even when it exactly matches the prompt — OPENCODE-017
+- OpenCode reasoning deltas no longer masquerade as assistant output or duplicate the settled `thinking` stream. Canonical v1 sibling deltas and explicit v2 text/reasoning events are classified directly; generic v2 deltas wait for their `partID` to resolve to a text, reasoning, or non-content part, and unknown types fail closed instead of becoming `text_delta`. Text deltas remain ordered output, reasoning deltas are suppressed in favor of settled snapshots, user deltas remain filtered by message role, and exact duplicate settled snapshots emit once — OPENCODE-019
 
 ## [0.19.0] - 2026-08-07
 
