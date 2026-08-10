@@ -2106,6 +2106,221 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 });
 
 describe('OpenCode SSE event structure', () => {
+  it('suppresses user content whether role metadata arrives before or after parts', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'user-before',
+                  sessionID: 'role-session',
+                  role: 'user',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-before',
+                  type: 'text',
+                  text: 'the submitted prompt',
+                },
+              },
+            },
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'user-before',
+                delta: 'prompt delta',
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-after',
+                  type: 'reasoning',
+                  text: 'prompt reasoning',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-after',
+                  type: 'text',
+                  text: 'another submitted prompt',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'user-after',
+                  sessionID: 'role-session',
+                  role: 'user',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('the submitted prompt'));
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+  });
+
+  it('emits assistant content in stream order without comparing it to the prompt', async () => {
+    const prompt = 'the same bytes can be a legitimate answer';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-after',
+                  type: 'text',
+                  text: 'buffered answer',
+                },
+              },
+            },
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'assistant-after',
+                delta: ' buffered delta',
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'assistant-after',
+                  sessionID: 'role-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'assistant-before',
+                  sessionID: 'role-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-before',
+                  type: 'thinking',
+                  summary: 'known-role reasoning',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-before',
+                  type: 'text',
+                  text: prompt,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run(prompt));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'text_delta',
+      'thinking',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'buffered answer' });
+    expect(events[2]?.payload).toEqual({ delta: ' buffered delta' });
+    expect(events[3]?.payload).toEqual({ summary: 'known-role reasoning' });
+    expect(events[4]?.payload).toEqual({ content: prompt });
+  });
+
+  it('does not use foreign-session role metadata to release pending content', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'shared-message',
+                  sessionID: 'foreign-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'shared-message',
+                  type: 'text',
+                  text: 'must stay pending',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+  });
+
   it('unwraps properties envelope and handles message.part.delta', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
