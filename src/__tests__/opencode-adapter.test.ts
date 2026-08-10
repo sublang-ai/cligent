@@ -2990,6 +2990,7 @@ describe('OpenCode SSE event structure', () => {
             secondMetadata,
             firstMetadata,
             {
+              id: 'ordered-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'ordered-session' },
             } satisfies EventSessionIdle,
@@ -3042,6 +3043,7 @@ describe('OpenCode SSE event structure', () => {
               'assistant',
             ),
             {
+              id: 'removed-part-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'removed-part-session' },
             } satisfies EventSessionIdle,
@@ -3091,6 +3093,7 @@ describe('OpenCode SSE event structure', () => {
               text: 'same output',
             }),
             {
+              id: 'removed-message-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'removed-message-session' },
             } satisfies EventSessionIdle,
@@ -3145,6 +3148,7 @@ describe('OpenCode SSE event structure', () => {
               text: 'A',
             }, 3),
             {
+              id: 'snapshot-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'snapshot-session' },
             } satisfies EventSessionIdle,
@@ -3189,6 +3193,7 @@ describe('OpenCode SSE event structure', () => {
               text: 'valid output',
             }),
             {
+              id: 'malformed-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'malformed-session' },
             } satisfies EventSessionIdle,
@@ -3239,6 +3244,7 @@ describe('OpenCode SSE event structure', () => {
               text: '',
             }),
             {
+              id: 'bulk-session-idle',
               type: 'session.idle',
               properties: { sessionID: 'bulk-session' },
             } satisfies EventSessionIdle,
