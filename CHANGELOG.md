@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode headless runs can no longer wait forever for a permission answer no interactive client exists to provide. `permissions: { mode: 'auto' }` claimed to represent OpenCode's global `"permission": "allow"` setting but expanded only `edit`, `bash`, and `webfetch`, leaving permissions such as `external_directory` at a user-configured `ask`; two dogfooding runs consequently stalled when their tools touched `/tmp`. Auto mode now preserves OpenCode's actual wildcard allow rule as `{ "*": "allow" }` on the v1 prompt path and the equivalent wildcard `PermissionRuleset` on v2 fresh and resumed sessions. Any permission request that still reaches a headless run — including an unknown future permission — is emitted for observability and rejected exactly once through the active SDK response route, correlated by session and request id; a missing id, absent or failed response API, SDK error, or five-second response timeout yields a terminal diagnostic naming the session, request, and permission instead of resuming the unbounded SSE wait. Caller abort and reply timeout now propagate through a run-owned SDK signal and cancel the underlying response and SSE transport. Abort yields its interrupted terminal event before managed `SIGTERM`; teardown requests server termination before bounded iterator return, client close, and client shutdown waits, so a non-settling SDK cleanup cannot keep the control plane or generator alive. Canonical v1/v2 fixtures cover mapping, correlation, failure, transport cancellation, and ordered bounded cleanup, and a real managed-mode acceptance leg verifies an absolute `/tmp` write completes without a permission request, denial, error, or harness-side timeout — IR-042, OPENCODE-007, OPENCODE-020, TADAPT-037
+
 ## [0.19.0] - 2026-08-07
 
 ### Added

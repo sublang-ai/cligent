@@ -70,6 +70,9 @@ Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surface
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-010](../user/adapters/opencode.md#opencode-010)
 
 The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [OPENCODE-006](../user/adapters/opencode.md#opencode-006), emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
+Where the managed server remains running, teardown shall send `SIGTERM` before
+invoking SDK disposal and shall complete within a bounded interval when
+iterator return, client close, and client shutdown all remain pending.
 
 ### TADAPT-027
 Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013)
@@ -108,6 +111,44 @@ request named only the permission it gates. Given a rejected reply that
 resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
+
+### TADAPT-037
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
+
+Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
+use each supported SDK path, the observable v1 prompt permission map shall be
+`{ "*": "allow" }` and the observable v2 session permission ruleset shall
+contain the wildcard allow rule.
+Where canonical v1 `permission.updated` and v2 `permission.asked` events are
+supplied, including an unknown permission name, when the adapter handles
+requests for its current session, it shall emit each normalized
+`permission_request` and reject its native request exactly once through the
+matching SDK route with the request and session correlation intact.
+Where interleaved foreign-session events and repeated local events occur, the
+adapter shall respond only to the local request and shall not respond twice.
+Where a request has a missing identifier, unavailable or failed reply route,
+SDK result error, or reply that stays pending for five seconds, the adapter
+shall terminate with the permission error and one error-status `done`, with
+the session, request (or missing marker), and permission named in the error.
+For a pending response in external mode, the five-second timeout shall abort
+the SDK request's run-owned signal and cancel the underlying response I/O.
+While a permission response is pending in managed mode, when `AbortSignal`
+fires, the adapter shall terminate with one interrupted `done`, abort the
+run-owned signal observed by both the SSE subscription and permission
+response, close the underlying SSE iterator and SDK client, and send `SIGTERM`
+to the managed server without waiting for that response. The interrupted
+`done` shall be yielded before `SIGTERM`, and managed termination shall begin
+before the bounded SDK cleanup waits.
+Canonical wrapper fixtures shall prove that aborting a pending v1 and v2 SSE
+request rejects the underlying subscription operation on the run-owned signal,
+and that aborting pending v1 and v2 permission-response HTTP calls rejects each
+native SDK operation on that same signal.
+Where the exact OpenCode conformance target and credentials are available,
+when a real managed-mode `mode: 'auto'` run writes and verifies a unique
+absolute `/tmp` file, the run shall complete without an outer timeout,
+`permission_request`, denied `tool_result`, or `error`, and shall emit exactly
+one success-status `done`; the leg shall use the same missing-dependency and
+transient-upstream gating as the existing OpenCode real-run acceptance.
 
 ## Tool Filtering
 
