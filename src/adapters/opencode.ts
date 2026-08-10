@@ -1161,12 +1161,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // Part events can precede the message.updated envelope that supplies the
     // role, so content stays pending until its message role is known.
     const messageRoles = new Map<string, OpenCodeMessageRole>();
-    const pendingContentEvents: Array<{
-      eventType: string;
-      event: Record<string, unknown>;
-      messageId?: string;
-      removed?: boolean;
-    }> = [];
+    const pendingContentEvents: Array<
+      | { removed: true }
+      | {
+          removed?: false;
+          eventType: string;
+          event: Record<string, unknown>;
+          messageId?: string;
+        }
+    > = [];
     let pendingContentHead = 0;
 
     const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
@@ -1454,8 +1457,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               index < pendingContentEvents.length;
               index++
             ) {
-              if (pendingContentEvents[index]?.messageId === messageId) {
-                pendingContentEvents[index]!.removed = true;
+              const item = pendingContentEvents[index];
+              if (!item?.removed && item.messageId === messageId) {
+                // Replace rather than annotate so a removed message's raw
+                // payload is released even while an earlier item blocks head.
+                pendingContentEvents[index] = { removed: true };
               }
             }
             messageRoles.delete(messageId);
