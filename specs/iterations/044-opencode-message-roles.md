@@ -43,8 +43,10 @@ at its boundary.
 - User text, text deltas, and reasoning produce no normalized conversational
   events whether role metadata arrives before or after their parts.
 - Assistant content is emitted in original stream order after its role is
-  known, including output whose bytes equal the prompt.
+  known across interleaved message identifiers, including output whose bytes
+  equal the prompt.
 - Identifier-bearing content remains pending until its role resolves and is
-  not emitted if the run terminates first.
+  not emitted if the run terminates first; later known assistant content still
+  flushes in order before terminal `done`.
 - Role correlation is per run and occurs only after session filtering.
 - Legacy content without a message identifier retains its prior behavior.

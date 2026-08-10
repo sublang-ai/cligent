@@ -70,10 +70,13 @@ comparing its bytes to the submitted prompt.
 Where a part event carrying a message identifier arrives before its role, the
 adapter shall hold that event until the matching message role arrives. It shall
 then release held assistant events in their original order or discard held
-user events. Identifier-bearing content whose role never becomes known shall
-remain un-emitted when the run terminates. Legacy content events carrying no
-message identifier shall retain their existing normalization because no role
-can be correlated.
+user events. This ordering shall hold across interleaved message identifiers:
+a later message whose role resolves first shall not overtake earlier pending
+content. At terminal completion, unresolved content shall be discarded and
+later role-resolved assistant content shall then be emitted in its original
+order. Legacy content events carrying no message identifier shall retain their
+existing normalization because no role can be correlated, while respecting
+the same ordering gate.
 
 Session filtering per [OPENCODE-006](#opencode-006) shall precede role
 correlation, so metadata from another session cannot release or discard the
