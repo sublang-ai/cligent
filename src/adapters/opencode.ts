@@ -46,6 +46,7 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
 type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type OpenCodeMessageRole = 'user' | 'assistant';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
 type OpenCodeV2Tools = NonNullable<OpenCodeV2PromptBody['tools']>;
 
@@ -260,6 +261,125 @@ function loadStreamSessionId(message: unknown): string | undefined {
     asString(session.id) ??
     asString(thread.id)
   );
+}
+
+function loadOpenCodeMessageRole(message: unknown): OpenCodeMessageRole | undefined {
+  const record = asRecord(message);
+  const info = asRecord(record.info);
+  const nestedMessage = asRecord(record.message);
+  const role = (
+    asString(record.role) ??
+    asString(info.role) ??
+    asString(nestedMessage.role)
+  )?.toLowerCase();
+
+  return role === 'user' || role === 'assistant' ? role : undefined;
+}
+
+function loadOpenCodePartMessageId(event: Record<string, unknown>): string | undefined {
+  const part = asRecord(
+    event.part ?? asRecord(event.message).part ?? event.data,
+  );
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(part.messageID) ??
+    asString(part.messageId) ??
+    asString(part.message_id) ??
+    asString(message.id)
+  );
+}
+
+function loadOpenCodeUpdatedMessageId(
+  event: Record<string, unknown>,
+): string | undefined {
+  const info = asRecord(event.info);
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(info.id) ??
+    asString(message.id) ??
+    asString(event.id)
+  );
+}
+
+function loadOpenCodeContentKind(
+  eventType: string,
+  event: Record<string, unknown>,
+): 'text' | 'reasoning' | undefined {
+  if (eventType === 'message.part.delta') return 'text';
+  if (eventType !== 'message.part.updated') return undefined;
+
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const partType = asString(part.type)?.toLowerCase();
+
+  if (
+    partType === 'text' ||
+    partType === 'output_text' ||
+    partType === 'message_text'
+  ) {
+    return 'text';
+  }
+  if (partType === 'thinking' || partType === 'reasoning') {
+    return 'reasoning';
+  }
+
+  return undefined;
+}
+
+function normalizeOpenCodeContentEvent(
+  eventType: string,
+  event: Record<string, unknown>,
+  sessionId: string,
+): AgentEvent | undefined {
+  if (eventType === 'message.part.delta') {
+    const delta = asString(event.delta);
+    return delta
+      ? createEvent('text_delta', AGENT, { delta }, sessionId)
+      : undefined;
+  }
+
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const partType = asString(part.type)?.toLowerCase();
+
+  if (
+    partType === 'text' ||
+    partType === 'output_text' ||
+    partType === 'message_text'
+  ) {
+    const delta = asString(part.delta);
+    if (delta) {
+      return createEvent('text_delta', AGENT, { delta }, sessionId);
+    }
+
+    const content =
+      asString(part.text) ??
+      asString(part.content) ??
+      asString(asRecord(part.content).text);
+    return content
+      ? createEvent('text', AGENT, { content }, sessionId)
+      : undefined;
+  }
+
+  if (partType === 'thinking' || partType === 'reasoning') {
+    const summary =
+      asString(part.summary) ??
+      asString(part.text) ??
+      asString(part.content);
+    return summary
+      ? createEvent('thinking', AGENT, { summary }, sessionId)
+      : undefined;
+  }
+
+  return undefined;
 }
 
 function toErrorPayload(message: unknown): {
@@ -1037,6 +1157,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       string,
       { toolUseId: string; toolName: string }
     >();
+    // OpenCode's shared SSE stream publishes user and assistant messages.
+    // Part events can precede the message.updated envelope that supplies the
+    // role, so content stays pending until its message role is known.
+    const messageRoles = new Map<string, OpenCodeMessageRole>();
+    const pendingContentEvents = new Map<
+      string,
+      Array<{ eventType: string; event: Record<string, unknown> }>
+    >();
 
     const onAbort = () => {
       abortRequested = true;
@@ -1240,6 +1368,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         // that could match message/event IDs and cause false filtering.
         const eventSessionId =
           loadStreamSessionId(event) ??
+          loadStreamSessionId(event.info) ??
           loadStreamSessionId(event.data) ??
           loadStreamSessionId(event.message) ??
           loadStreamSessionId(asRecord(event.part));
@@ -1253,10 +1382,67 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           backendProvidedSessionId = true;
         }
 
-        if (eventType === 'message.part.delta') {
-          const delta = asString(event.delta);
-          if (delta) {
-            yield createEvent('text_delta', AGENT, { delta }, sessionId);
+        if (eventType === 'message.updated') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          const role = loadOpenCodeMessageRole(event);
+          if (messageId && role) {
+            messageRoles.set(messageId, role);
+            const pending = pendingContentEvents.get(messageId) ?? [];
+            pendingContentEvents.delete(messageId);
+
+            if (role === 'assistant') {
+              for (const item of pending) {
+                const normalized = normalizeOpenCodeContentEvent(
+                  item.eventType,
+                  item.event,
+                  sessionId,
+                );
+                if (normalized) yield normalized;
+              }
+            }
+          }
+          continue;
+        }
+
+        const contentKind = loadOpenCodeContentKind(eventType, event);
+        if (contentKind) {
+          const messageId = loadOpenCodePartMessageId(event);
+          const inlineRole = loadOpenCodeMessageRole(event);
+          const role = inlineRole ?? (messageId ? messageRoles.get(messageId) : undefined);
+
+          if (messageId && inlineRole) {
+            messageRoles.set(messageId, inlineRole);
+            const pending = pendingContentEvents.get(messageId) ?? [];
+            pendingContentEvents.delete(messageId);
+
+            if (inlineRole === 'assistant') {
+              for (const item of pending) {
+                const normalized = normalizeOpenCodeContentEvent(
+                  item.eventType,
+                  item.event,
+                  sessionId,
+                );
+                if (normalized) yield normalized;
+              }
+            }
+          }
+
+          if (messageId && !role) {
+            const pending = pendingContentEvents.get(messageId) ?? [];
+            pending.push({ eventType, event });
+            pendingContentEvents.set(messageId, pending);
+            continue;
+          }
+
+          // Legacy event shapes without a message identifier have no role to
+          // correlate and retain their historical pass-through behavior.
+          if (role !== 'user') {
+            const normalized = normalizeOpenCodeContentEvent(
+              eventType,
+              event,
+              sessionId,
+            );
+            if (normalized) yield normalized;
           }
           continue;
         }
@@ -1265,28 +1451,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const message = asRecord(event.message);
           const part = asRecord(event.part ?? message.part ?? event.data);
           const partType = asString(part.type)?.toLowerCase();
-
-          if (
-            partType === 'text' ||
-            partType === 'output_text' ||
-            partType === 'message_text'
-          ) {
-            const delta = asString(part.delta);
-            if (delta) {
-              yield createEvent('text_delta', AGENT, { delta }, sessionId);
-              continue;
-            }
-
-            const content =
-              asString(part.text) ??
-              asString(part.content) ??
-              asString(asRecord(part.content).text);
-
-            if (content) {
-              yield createEvent('text', AGENT, { content }, sessionId);
-            }
-            continue;
-          }
 
           if (
             partType === 'tool' ||
@@ -1379,17 +1543,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 },
                 sessionId,
               );
-            }
-            continue;
-          }
-
-          if (partType === 'thinking' || partType === 'reasoning') {
-            const summary =
-              asString(part.summary) ??
-              asString(part.text) ??
-              asString(part.content);
-            if (summary) {
-              yield createEvent('thinking', AGENT, { summary }, sessionId);
             }
             continue;
           }
