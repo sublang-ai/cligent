@@ -70,6 +70,9 @@ Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surface
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-010](../user/adapters/opencode.md#opencode-010)
 
 The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [OPENCODE-006](../user/adapters/opencode.md#opencode-006), emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
+Where the managed server remains running, teardown shall send `SIGTERM` before
+invoking SDK disposal and shall complete within a bounded interval when
+iterator return, client close, and client shutdown all remain pending.
 
 ### TADAPT-027
 Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013)
@@ -108,6 +111,119 @@ request named only the permission it gates. Given a rejected reply that
 resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
+
+### TADAPT-034
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-017](../user/adapters/opencode.md#opencode-017)
+
+Given canonical user and assistant message envelopes and conversational part
+events, when role metadata arrives both before and after its parts, the adapter
+shall emit only assistant `text`, `text_delta`, and `thinking` events, preserve
+their stream order across interleaved message identifiers even where a later
+role resolves first, and emit no user content. An assistant reply byte-equal
+to the submitted prompt shall still be emitted. Content with a message
+identifier whose role never resolves shall not be emitted, shall not prevent
+later known assistant content from flushing before terminal `done`, and legacy
+content without a message identifier shall preserve its prior normalization.
+Removing a message with held content shall discard that content and unblock
+later events without waiting for terminal completion. Role metadata from a
+foreign session shall not resolve current-session content.
+
+### TADAPT-035
+Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
+
+Given short injected inactivity deadlines and canned OpenCode streams, when a
+current session becomes permanently silent, the adapter shall query its status
+and terminate within a bounded interval: idle shall produce one recoverable
+idle-recovery diagnostic and one successful `done`; busy and retry shall each
+abort the session and produce one non-recoverable timeout diagnostic plus one
+error `done`; an omitted status-map entry shall exercise OpenCode's idle
+representation; and a rejected or non-settling status query
+shall make a bounded abort attempt and produce one status-query diagnostic plus
+one error `done`.
+Given current-session progress events whose spacing stays below the deadline,
+the adapter shall not query status, while repeated events explicitly tagged for
+another session shall not postpone the current session's deadline.
+Given pending iterators that do and do not honor `AbortSignal`, external and
+managed runs shall return the iterator, close the client, abort active session
+work where required, terminate only the managed server, and emit exactly one
+terminal event when caller abort and inactivity race. Deterministic race probes
+shall cover an already-ready terminal event and abort during prompt dispatch;
+the latter shall abort the already-created external session. The legacy SDK
+probe shall put the same working directory in the top-level `query.directory`
+of create and prompt calls and omit it from the prompt body. A managed caller
+abort shall deterministically order the active-session abort, interrupted
+`done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
+remain pending until real relevant activity, and an owned managed child that
+ignores `SIGTERM` shall receive `SIGKILL` after its grace.
+Prompt-dispatch abort and failure probes shall return an eagerly started SSE
+iterator and remove their dispatch-scoped abort listener, and a fresh backend
+session created before abort shall remain the interrupted resume token. A run
+result settling concurrently with caller abort shall transfer its session and
+iterator to outer cleanup, which shall abort and return them before interrupted
+`done`. Rejected close and shutdown operations shall remain independent and
+shall not prevent managed process termination. Legacy and v2 instance-disposal
+probes shall carry the run directory through `query.directory` and `directory`,
+respectively.
+Where the OpenCode CLI and SDK are available, when a credential-free real
+managed server creates an idle session whose terminal SSE event is withheld,
+the short-deadline acceptance probe shall recover through the real
+`session.status` endpoint, dispose the SDK client, and observe the managed
+server process exit without a multi-minute wait.
+
+### TADAPT-036
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-017](../user/adapters/opencode.md#opencode-017), [OPENCODE-019](../user/adapters/opencode.md#opencode-019)
+
+Given canonical v1 sibling-delta, v2 explicitly typed delta, and v2 generic
+delta events interleaving assistant text, assistant reasoning, and user text,
+the adapter shall reconstruct assistant output through `text_delta` without
+reasoning or user contamination. Generic deltas shall classify correctly when
+part metadata arrives before or after them, while unresolved types shall not
+default to output or block later known content. Interleaved part identifiers
+shall preserve stream order when later metadata resolves first, and removing a
+part shall discard content still pending on either kind or role. Reasoning
+shall appear only through settled `thinking` snapshots, nonconsecutive
+duplicate settled snapshots shall emit once, and an exact settled replay of a
+part's `textID`-correlated deltas shall not duplicate the combined `text` plus
+`text_delta` reconstruction. Incident-scale pending queues shall drain in
+order, and removing a message shall clear the state of every owned part.
+
+### TADAPT-037
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
+
+Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
+use each supported SDK path, the observable v1 prompt permission map shall be
+`{ "*": "allow" }` and the observable v2 session permission ruleset shall
+contain the wildcard allow rule.
+Where canonical v1 `permission.updated` and v2 `permission.asked` events are
+supplied, including an unknown permission name, when the adapter handles
+requests for its current session, it shall emit each normalized
+`permission_request` and reject its native request exactly once through the
+matching SDK route with the request and session correlation intact.
+Where interleaved foreign-session events and repeated local events occur, the
+adapter shall respond only to the local request and shall not respond twice.
+Where a request has a missing identifier, unavailable or failed reply route,
+SDK result error, or reply that stays pending for five seconds, the adapter
+shall terminate with the permission error and one error-status `done`, with
+the session, request (or missing marker), and permission named in the error.
+For a pending response in external mode, the five-second timeout shall abort
+the SDK request's run-owned signal and cancel the underlying response I/O.
+While a permission response is pending in managed mode, when `AbortSignal`
+fires, the adapter shall terminate with one interrupted `done`, abort the
+run-owned signal observed by both the SSE subscription and permission
+response, close the underlying SSE iterator and SDK client, and send `SIGTERM`
+to the managed server without waiting for that response. The interrupted
+`done` shall be yielded before `SIGTERM`, and managed termination shall begin
+before the bounded SDK cleanup waits.
+Canonical wrapper fixtures shall prove that aborting a pending v1 and v2 SSE
+request rejects the underlying subscription operation on the run-owned signal,
+and that aborting pending v1 and v2 permission-response HTTP calls rejects each
+native SDK operation on that same signal.
+Where the exact OpenCode conformance target and credentials are available,
+when a real managed-mode `mode: 'auto'` run writes and verifies a unique
+absolute `/tmp` file, the run shall complete without an outer timeout,
+`permission_request`, denied `tool_result`, or `error`, and shall emit exactly
+one success-status `done`; the leg shall use the same missing-dependency and
+transient-upstream gating as the existing OpenCode real-run acceptance.
 
 ## Tool Filtering
 

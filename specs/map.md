@@ -35,7 +35,7 @@ meta.md     The spec of specs
 | DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model, token-usage availability |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
-| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; network-widening alternative recorded and rolled back); no project-wide default |
+| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; OpenCode residual requests reject fail-closed); no project-wide default |
 | DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept them on otherwise supported policies and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode+Kimi `ambient`), with Codex profile enforcement the release bar |
 | DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
 | DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md) | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()` |
@@ -91,6 +91,10 @@ meta.md     The spec of specs
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
+| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with global wildcard auto mapping, deterministic SDK rejection, and abort-safe cleanup |
+| IR-043 | [043-opencode-event-inactivity.md](iterations/043-opencode-event-inactivity.md) | Give OpenCode runs a finite relevant-event deadline with status-based idle recovery and deterministic silent-session cleanup |
+| IR-044 | [044-opencode-message-roles.md](iterations/044-opencode-message-roles.md) | Correlate OpenCode message roles and suppress replayed user content |
+| IR-045 | [045-opencode-delta-classification.md](iterations/045-opencode-delta-classification.md) | Classify OpenCode deltas by part type and suppress duplicate reasoning streams |
 | IR-046 | [046-token-usage-availability.md](iterations/046-token-usage-availability.md) | Distinguish reported token totals, including zero, from unavailable accounting across every terminal path |
 
 ## Packages
@@ -150,7 +154,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization including canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, wildcard auto permissions with deterministic headless replies, two modes, current-session filtering, finite relevant-event inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -169,7 +173,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including reported/unavailable token usage, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including reported/unavailable token usage, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
 
 ### TMUX
 

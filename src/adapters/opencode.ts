@@ -6,6 +6,7 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
@@ -37,6 +38,13 @@ import { isUsageRecord, readUsageCounter } from './usage.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
+const DEFAULT_EVENT_INACTIVITY_TIMEOUT_MS = 300_000;
+const MAX_STATUS_QUERY_TIMEOUT_MS = 10_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+const ITERATOR_CLEANUP_TIMEOUT_MS = 250;
+const DEFAULT_MANAGED_SERVER_TERM_GRACE_MS = 1_500;
+const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
+const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   tokenAvailability: 'unavailable',
@@ -48,6 +56,9 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
 type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type OpenCodeMessageRole = 'user' | 'assistant';
+type OpenCodeContentKind = 'text' | 'reasoning';
+type OpenCodePartKind = OpenCodeContentKind | 'other';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
 type OpenCodeV2Tools = NonNullable<OpenCodeV2PromptBody['tools']>;
 
@@ -67,6 +78,21 @@ interface OpenCodeClient {
   query?: (options: Record<string, unknown>) => Promise<unknown>;
   events?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
   subscribe?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
+  getSessionStatus?: (options: {
+    sessionId: string;
+    cwd?: string;
+  }) => Promise<unknown>;
+  abortSession?: (options: {
+    sessionId: string;
+    cwd?: string;
+  }) => Promise<void>;
+  replyPermission?: (options: {
+    sessionId: string;
+    requestId: string;
+    permission: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<void>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
 }
@@ -75,10 +101,19 @@ interface OpenCodeSdk {
   createClient: (options?: { baseUrl?: string }) => OpenCodeClient;
 }
 
-interface OpenCodeAdapterConfig {
+class OpenCodePromptDispatchAbortError extends Error {
+  constructor(readonly sessionId?: string) {
+    super('OpenCode run aborted during prompt dispatch');
+    this.name = 'OpenCodePromptDispatchAbortError';
+  }
+}
+
+export interface OpenCodeAdapterConfig {
   mode?: OpenCodeMode;
   serverUrl?: string;
   readyTimeoutMs?: number;
+  /** Maximum silence between relevant events for the active session. */
+  eventInactivityTimeoutMs?: number;
 }
 
 interface OpenCodeAdapterDeps {
@@ -89,14 +124,12 @@ interface OpenCodeAdapterDeps {
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
   ) => Promise<string>;
+  managedServerTermGraceMs?: number;
+  managedServerKillGraceMs?: number;
 }
 
 interface OpenCodePermissionOptions {
-  permission?: {
-    edit: PermissionLevel;
-    bash: PermissionLevel;
-    webfetch: PermissionLevel;
-  };
+  permission?: Record<string, PermissionLevel>;
   writablePaths?: WritablePathsPermissionMapping;
   tools?: {
     core?: string[];
@@ -254,6 +287,24 @@ function mapUsage(
   };
 }
 
+const OPENCODE_EVENT_TOKEN_COUNTER_KEYS = [
+  'inputTokens',
+  'input_tokens',
+  'cacheReadInputTokens',
+  'cache_read_input_tokens',
+  'cacheCreationInputTokens',
+  'cache_creation_input_tokens',
+  'outputTokens',
+  'output_tokens',
+] as const;
+
+function hasOpenCodeEventTokenCounters(rawUsage: unknown): boolean {
+  if (!isUsageRecord(rawUsage)) return false;
+  return OPENCODE_EVENT_TOKEN_COUNTER_KEYS.some((key) =>
+    Object.prototype.hasOwnProperty.call(rawUsage, key),
+  );
+}
+
 /** Broad extractor — used for runResult where `id` plausibly is the session. */
 function loadSessionId(message: unknown): string | undefined {
   const record = asRecord(message);
@@ -286,6 +337,142 @@ function loadStreamSessionId(message: unknown): string | undefined {
     asString(session.id) ??
     asString(thread.id)
   );
+}
+
+function loadOpenCodeMessageRole(message: unknown): OpenCodeMessageRole | undefined {
+  const record = asRecord(message);
+  const info = asRecord(record.info);
+  const nestedMessage = asRecord(record.message);
+  const role = (
+    asString(record.role) ??
+    asString(info.role) ??
+    asString(nestedMessage.role)
+  )?.toLowerCase();
+
+  return role === 'user' || role === 'assistant' ? role : undefined;
+}
+
+function loadOpenCodePartMessageId(event: Record<string, unknown>): string | undefined {
+  const part = asRecord(
+    event.part ?? asRecord(event.message).part ?? event.data,
+  );
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(event.assistantMessageID) ??
+    asString(event.assistantMessageId) ??
+    asString(part.messageID) ??
+    asString(part.messageId) ??
+    asString(part.message_id) ??
+    asString(message.id)
+  );
+}
+
+function loadOpenCodePartId(event: Record<string, unknown>): string | undefined {
+  const part = asRecord(
+    event.part ?? asRecord(event.message).part ?? event.data,
+  );
+
+  return (
+    asString(event.partID) ??
+    asString(event.partId) ??
+    asString(event.part_id) ??
+    asString(event.textID) ??
+    asString(event.textId) ??
+    asString(event.reasoningID) ??
+    asString(event.reasoningId) ??
+    asString(part.id)
+  );
+}
+
+function loadOpenCodeUpdatedMessageId(
+  event: Record<string, unknown>,
+): string | undefined {
+  const info = asRecord(event.info);
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(info.id) ??
+    asString(message.id) ??
+    asString(event.id)
+  );
+}
+
+function loadOpenCodePartKind(
+  event: Record<string, unknown>,
+): OpenCodePartKind | undefined {
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const partType = asString(part.type)?.toLowerCase();
+
+  if (!partType) return undefined;
+
+  if (
+    partType === 'text' ||
+    partType === 'output_text' ||
+    partType === 'message_text'
+  ) {
+    return 'text';
+  }
+  if (partType === 'thinking' || partType === 'reasoning') {
+    return 'reasoning';
+  }
+
+  return 'other';
+}
+
+function isOpenCodeDeltaEvent(eventType: string): boolean {
+  return (
+    eventType === 'message.part.delta' ||
+    eventType === 'session.next.text.delta' ||
+    eventType === 'session.next.reasoning.delta'
+  );
+}
+
+function normalizeOpenCodeContentEvent(
+  eventType: string,
+  event: Record<string, unknown>,
+  contentKind: OpenCodeContentKind,
+  sessionId: string,
+): AgentEvent | undefined {
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const delta = asString(event.delta) ?? asString(part.delta);
+
+  // Canonical v1 message.part.updated places delta beside part. Canonical v2
+  // uses generic or explicitly typed delta events. Reasoning deltas are
+  // intentionally suppressed in favor of the settled thinking snapshots.
+  if (isOpenCodeDeltaEvent(eventType) || delta) {
+    if (contentKind === 'reasoning') return undefined;
+
+    return delta
+      ? createEvent('text_delta', AGENT, { delta }, sessionId)
+      : undefined;
+  }
+
+  if (contentKind === 'text') {
+    const content =
+      asString(part.text) ??
+      asString(part.content) ??
+      asString(asRecord(part.content).text);
+    return content
+      ? createEvent('text', AGENT, { content }, sessionId)
+      : undefined;
+  }
+
+  const summary =
+    asString(part.summary) ??
+    asString(part.text) ??
+    asString(part.content);
+  return summary
+    ? createEvent('thinking', AGENT, { summary }, sessionId)
+    : undefined;
 }
 
 function toErrorPayload(message: unknown): {
@@ -338,10 +525,121 @@ function maybeCallAsync(fn: (() => Promise<void> | void) | undefined): Promise<v
 
   try {
     const result = fn();
-    return Promise.resolve(result).then(() => {});
+    return Promise.resolve(result).then(
+      () => {},
+      () => {},
+    );
   } catch {
     return Promise.resolve();
   }
+}
+
+async function maybeCallAsyncWithin(
+  fn: (() => Promise<void> | void) | undefined,
+  timeoutMs: number,
+): Promise<void> {
+  if (!fn) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      maybeCallAsync(fn),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function promiseSettlesWithin(
+  promise: Promise<unknown>,
+  timeoutMs: number,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function createMonotonicInactivityTimer(
+  lastActivityAt: number,
+  timeoutMs: number,
+): {
+  promise: Promise<{ kind: 'inactivity' }>;
+  cancel: () => void;
+} {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+  let resolveDeadline!: (value: { kind: 'inactivity' }) => void;
+  const promise = new Promise<{ kind: 'inactivity' }>((resolve) => {
+    resolveDeadline = resolve;
+  });
+
+  const scheduleNextChunk = () => {
+    if (cancelled) return;
+    const elapsedMs = performance.now() - lastActivityAt;
+    const remainingMs = timeoutMs - elapsedMs;
+    if (remainingMs <= 0) {
+      resolveDeadline({ kind: 'inactivity' });
+      return;
+    }
+
+    timer = setTimeout(
+      scheduleNextChunk,
+      Math.min(MAX_TIMER_DELAY_MS, Math.max(1, Math.ceil(remainingMs))),
+    );
+  };
+
+  scheduleNextChunk();
+  return {
+    promise,
+    cancel() {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+function assertFinitePositiveTimeout(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${name} must be a finite number greater than 0`);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function diagnosticJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function unwrapSdkData(value: unknown): unknown {
+  const record = asRecord(value);
+  return Object.prototype.hasOwnProperty.call(record, 'data')
+    ? record.data
+    : value;
+}
+
+function sessionStatusType(value: unknown): string | undefined {
+  return asString(asRecord(value).type)?.toLowerCase() ??
+    asString(value)?.toLowerCase();
 }
 
 function defaultSpawnProcess(
@@ -548,12 +846,12 @@ export function mapPermissionsToOpenCodeOptions(
   }
 
   if (policy.mode === 'auto') {
-    // SDK equivalent of opencode.json's `"permission": "allow"` global
-    // setting: every per-tool permission set to 'allow'. The per-capability
-    // path is short-circuited; user-passed allowedTools / disallowedTools
-    // (independent from `permissions`) still apply.
+    // OpenCode normalizes opencode.json's global `"permission": "allow"`
+    // setting to the wildcard rule `* = allow`. Keep that wildcard intact:
+    // enumerating today's portable keys would leave every other current or
+    // future OpenCode permission at its native default.
     return {
-      permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+      permission: { '*': 'allow' },
       ...(writablePaths ? { writablePaths } : {}),
       ...(tools ? { tools } : {}),
     };
@@ -630,10 +928,10 @@ function toOpenCodeV2PermissionRuleset(
   const record = asRecord(permission);
   const rules: PermissionRuleset = [];
 
-  for (const key of ['edit', 'bash', 'webfetch'] as const) {
-    const action = asPermissionAction(record[key]);
+  for (const [permissionName, value] of Object.entries(record)) {
+    const action = asPermissionAction(value);
     if (action) {
-      rules.push({ permission: key, pattern: '*', action });
+      rules.push({ permission: permissionName, pattern: '*', action });
     }
   }
 
@@ -691,6 +989,7 @@ export function wrapOpencodeClient(
   const session = real.session as Record<string, unknown> | undefined;
   const event = real.event as Record<string, unknown> | undefined;
   const instance = real.instance as Record<string, unknown> | undefined;
+  const permission = real.permission as Record<string, unknown> | undefined;
 
   if (!session || typeof session.create !== 'function') {
     throw new Error('OpenCode SDK client.session.create() not available');
@@ -703,162 +1002,424 @@ export function wrapOpencodeClient(
   }
 
   // Bind methods to their owning service objects to preserve `this`.
-  const sessionCreate = session.create.bind(session) as (body?: unknown) => Promise<unknown>;
+  const sessionCreate = session.create.bind(session) as (
+    body?: unknown,
+    requestOptions?: unknown,
+  ) => Promise<unknown>;
   const sessionUpdate = typeof session.update === 'function'
-    ? (session.update.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.update.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
     : undefined;
   const sessionPromptAsync = typeof session.promptAsync === 'function'
-    ? (session.promptAsync.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.promptAsync.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
     : undefined;
   const sessionPromptSync = typeof session.prompt === 'function'
-    ? (session.prompt.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.prompt.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
     : undefined;
-  const eventSubscribe = event.subscribe.bind(event) as (args?: unknown) => Promise<unknown>;
+  const sessionStatus = typeof session.status === 'function'
+    ? (session.status.bind(session) as (args?: unknown) => Promise<unknown>)
+    : undefined;
+  const sessionAbort = typeof session.abort === 'function'
+    ? (session.abort.bind(session) as (args: unknown) => Promise<unknown>)
+    : undefined;
+  const eventSubscribe = event.subscribe.bind(event) as (
+    args?: unknown,
+    requestOptions?: unknown,
+  ) => Promise<unknown>;
   const instanceDispose = instance && typeof instance.dispose === 'function'
-    ? (instance.dispose.bind(instance) as () => Promise<void>)
+    ? (instance.dispose.bind(instance) as (args?: unknown) => Promise<unknown>)
     : undefined;
+  const permissionReply =
+    permission && typeof permission.reply === 'function'
+      ? (permission.reply.bind(permission) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const permissionRespond =
+    permission && typeof permission.respond === 'function'
+      ? (permission.respond.bind(permission) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const legacyPermissionReply =
+    typeof real.postSessionIdPermissionsPermissionId === 'function'
+      ? (real.postSessionIdPermissionsPermissionId.bind(real) as (
+          args: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  let instanceDirectory: string | undefined;
+
+  const abortSessionViaSdk = async (
+    sessionId: string,
+    cwd: string | undefined,
+  ): Promise<void> => {
+    if (!sessionAbort) {
+      throw new Error('OpenCode SDK client.session.abort() not available');
+    }
+
+    const result = await sessionAbort(
+      apiVersion === 'v2'
+        ? {
+            sessionID: sessionId,
+            ...(cwd ? { directory: cwd } : {}),
+          }
+        : {
+            path: { id: sessionId },
+            ...(cwd ? { query: { directory: cwd } } : {}),
+          },
+    );
+    throwIfSdkResultError(result, 'OpenCode session.abort failed');
+    if (unwrapSdkData(result) === false) {
+      throw new Error(`OpenCode session.abort declined session ${sessionId}`);
+    }
+  };
 
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
       const resumeId = asString(options.sessionId);
       const cwdVal = asString(options.cwd);
+      instanceDirectory = cwdVal;
       const permissionObj = options.permission;
       const toolsObj = options.tools;
       const v1Tools = toOpenCodeV1Tools(toolsObj);
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
+      const signal = options.signal instanceof AbortSignal
+        ? options.signal
+        : undefined;
       const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
       const v2Tools = toOpenCodeV2Tools(toolsObj);
 
       let sessionId: string | undefined;
-
-      if (resumeId) {
-        // Resume an existing session instead of creating a new one.
-        sessionId = resumeId;
-        if (apiVersion === 'v2' && v2PermissionRuleset) {
-          if (!sessionUpdate) {
-            throw new Error(
-              'OpenCode SDK client.session.update() not available for v2 permission updates',
-            );
-          }
-          const updated = await sessionUpdate({
-            sessionID: resumeId,
-            ...(cwdVal ? { directory: cwdVal } : {}),
-            permission: v2PermissionRuleset,
-          });
-          throwIfSdkResultError(updated, 'OpenCode session.update failed');
-        }
-      } else {
-        const created = asRecord(
-          await sessionCreate(
-            apiVersion === 'v2'
-              ? {
-                  ...(cwdVal ? { directory: cwdVal } : {}),
-                  ...(v2PermissionRuleset
-                    ? { permission: v2PermissionRuleset }
-                    : {}),
-                }
-              : undefined,
-          ),
-        );
-        throwIfSdkResultError(created, 'OpenCode session.create failed');
-        sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
-      }
-
-      if (!sessionId) {
-        sessionId = generateSessionId();
-      }
-      const promptSessionId = sessionId;
-
-      const promptBody = {
-        parts: [{ type: 'text', text: options.prompt }],
-        ...(modelVal ? { model: modelVal } : {}),
-        ...(variantVal ? { variant: variantVal } : {}),
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        ...(options.steps !== undefined ? { steps: options.steps } : {}),
-        ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-        ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
-      };
-
-      const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
-        directory?: string;
-      } = {
-        sessionID: promptSessionId,
-        parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
-        ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
-        ...(variantVal ? { variant: variantVal } : {}),
-        ...(cwdVal ? { directory: cwdVal } : {}),
-        ...(v2Tools ? { tools: v2Tools } : {}),
-      };
-
-      // The SDK's event stream is a lazy async generator — the HTTP
-      // fetch inside it only fires on the first .next() call (see
-      // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
-      // the SSE connection BEFORE sending the prompt so fast early
-      // events are not lost on the live-only (no replay) endpoint.
-      const subResult = asRecord(
-        await eventSubscribe(
-          apiVersion === 'v2' && cwdVal ? { directory: cwdVal } : undefined,
-        ),
-      );
-      const rawStream = subResult.stream ?? subResult.events ?? subResult;
-      let events: AsyncIterable<unknown> | undefined;
+      let resolveRunAbort!: () => void;
+      const runAbortPromise = new Promise<void>((resolve) => {
+        resolveRunAbort = resolve;
+      });
+      let dispatchAbortPromise: Promise<void> | undefined;
       let eagerFirst: Promise<IteratorResult<unknown>> | undefined;
       let rawIterator: AsyncIterator<unknown> | undefined;
-
-      if (isAsyncIterable(rawStream)) {
-        rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-        eagerFirst = rawIterator.next(); // triggers fetch()
-      }
-
-      if (sessionPromptAsync) {
-        // Fire-and-forget: promptAsync returns 204 immediately.
-        const promptResult = await sessionPromptAsync(
-          apiVersion === 'v2'
-            ? v2PromptParameters
-            : {
-                path: { id: promptSessionId },
-                body: promptBody,
-              },
-        );
-        throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
-      } else if (sessionPromptSync) {
-        const promptResult = await sessionPromptSync(
-          apiVersion === 'v2'
-            ? v2PromptParameters
-            : {
-                path: { id: promptSessionId },
-                body: promptBody,
-              },
-        );
-        throwIfSdkResultError(promptResult, 'OpenCode session.prompt failed');
-      }
-
-      // Wrap the iterator so the eagerly-fetched first result is not lost.
-      if (eagerFirst && rawIterator) {
-        const first = eagerFirst;
-        const rest = rawIterator;
-        events = {
-          [Symbol.asyncIterator](): AsyncIterator<unknown> {
-            let consumedFirst = false;
-            return {
-              async next() {
-                if (!consumedFirst) {
-                  consumedFirst = true;
-                  return first;
-                }
-                return rest.next();
-              },
-            };
-          },
-        };
-      }
-
-      return {
-        id: sessionId,
-        sessionId,
-        ...(events ? { events } : {}),
+      let rawIteratorTransferred = false;
+      let events: AsyncIterable<unknown> | undefined;
+      const abortKnownSession = (): Promise<void> => {
+        if (!sessionId) return Promise.resolve();
+        dispatchAbortPromise ??= abortSessionViaSdk(sessionId, cwdVal);
+        return dispatchAbortPromise;
       };
+      const onRunAbort = () => {
+        resolveRunAbort();
+        void abortKnownSession().catch(() => {});
+      };
+      if (signal) {
+        if (signal.aborted) onRunAbort();
+        else signal.addEventListener('abort', onRunAbort, { once: true });
+      }
+
+      const stopAbortedDispatch = async (): Promise<never> => {
+        await promiseSettlesWithin(
+          abortKnownSession(),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        );
+        throw new OpenCodePromptDispatchAbortError(sessionId);
+      };
+
+      const raceRunOperation = async <T>(operation: Promise<T>): Promise<T> => {
+        const outcome = await Promise.race([
+          operation.then(
+            (value) => ({ kind: 'success' as const, value }),
+            (error: unknown) => ({ kind: 'failure' as const, error }),
+          ),
+          runAbortPromise.then(() => ({ kind: 'abort' as const })),
+        ]);
+        if (outcome.kind === 'abort') return stopAbortedDispatch();
+        if (outcome.kind === 'failure') throw outcome.error;
+        return outcome.value;
+      };
+
+      try {
+        if (resumeId) {
+          // Resume an existing session instead of creating a new one.
+          sessionId = resumeId;
+          if (signal?.aborted) return stopAbortedDispatch();
+          if (apiVersion === 'v2' && v2PermissionRuleset) {
+            if (!sessionUpdate) {
+              throw new Error(
+                'OpenCode SDK client.session.update() not available for v2 permission updates',
+              );
+            }
+            const updated = await raceRunOperation(
+              sessionUpdate(
+                {
+                  sessionID: resumeId,
+                  ...(cwdVal ? { directory: cwdVal } : {}),
+                  permission: v2PermissionRuleset,
+                },
+                signal ? { signal } : undefined,
+              ),
+            );
+            throwIfSdkResultError(updated, 'OpenCode session.update failed');
+          }
+        } else {
+          const created = asRecord(
+            await (apiVersion === 'v2'
+              ? sessionCreate(
+                  {
+                    ...(cwdVal ? { directory: cwdVal } : {}),
+                    ...(v2PermissionRuleset
+                      ? { permission: v2PermissionRuleset }
+                      : {}),
+                  },
+                  signal ? { signal } : undefined,
+                )
+              : sessionCreate(
+                  cwdVal || signal
+                    ? {
+                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                        ...(signal ? { signal } : {}),
+                      }
+                    : undefined,
+                )),
+          );
+          throwIfSdkResultError(created, 'OpenCode session.create failed');
+          sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
+        }
+
+        if (!sessionId) {
+          sessionId = generateSessionId();
+        }
+        if (signal?.aborted) return stopAbortedDispatch();
+        const promptSessionId = sessionId;
+
+        const promptBody = {
+          parts: [{ type: 'text', text: options.prompt }],
+          ...(modelVal ? { model: modelVal } : {}),
+          ...(variantVal ? { variant: variantVal } : {}),
+          ...(options.steps !== undefined ? { steps: options.steps } : {}),
+          ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
+          ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
+        };
+
+        const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
+          directory?: string;
+        } = {
+          sessionID: promptSessionId,
+          parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
+          ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
+          ...(variantVal ? { variant: variantVal } : {}),
+          ...(cwdVal ? { directory: cwdVal } : {}),
+          ...(v2Tools ? { tools: v2Tools } : {}),
+        };
+
+        // The SDK's event stream is a lazy async generator — the HTTP
+        // fetch inside it only fires on the first .next() call (see
+        // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
+        // the SSE connection BEFORE sending the prompt so fast early
+        // events are not lost on the live-only (no replay) endpoint.
+        const subResult = asRecord(
+          await raceRunOperation(
+            apiVersion === 'v2'
+              ? eventSubscribe(
+                  cwdVal ? { directory: cwdVal } : undefined,
+                  signal ? { signal } : undefined,
+                )
+              : eventSubscribe(
+                  cwdVal || signal
+                    ? {
+                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                        ...(signal ? { signal } : {}),
+                      }
+                    : undefined,
+                ),
+          ),
+        );
+        const rawStream = subResult.stream ?? subResult.events ?? subResult;
+
+        if (isAsyncIterable(rawStream)) {
+          rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+          eagerFirst = rawIterator.next(); // triggers fetch()
+          // A prompt-dispatch abort can reject this eager read before the run
+          // returns its wrapper. Keep the original rejection for consumers,
+          // while also marking it handled if dispatch abort discards the stream.
+          void eagerFirst.catch(() => {});
+        }
+
+        if (sessionPromptAsync) {
+          // Fire-and-forget: promptAsync returns 204 immediately.
+          const promptResult = await raceRunOperation(
+            sessionPromptAsync(
+              apiVersion === 'v2'
+                ? v2PromptParameters
+                : {
+                    path: { id: promptSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    body: promptBody,
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
+        } else if (sessionPromptSync) {
+          const promptResult = await raceRunOperation(
+            sessionPromptSync(
+              apiVersion === 'v2'
+                ? v2PromptParameters
+                : {
+                    path: { id: promptSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    body: promptBody,
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(promptResult, 'OpenCode session.prompt failed');
+        }
+
+        if (signal?.aborted) return stopAbortedDispatch();
+
+        // Wrap the iterator so the eagerly-fetched first result is not lost.
+        if (eagerFirst && rawIterator) {
+          const first = eagerFirst;
+          const rest = rawIterator;
+          events = {
+            [Symbol.asyncIterator](): AsyncIterator<unknown> {
+              let consumedFirst = false;
+              return {
+                async next() {
+                  if (!consumedFirst) {
+                    consumedFirst = true;
+                    return first;
+                  }
+                  return rest.next();
+                },
+                async return(value?: unknown) {
+                  consumedFirst = true;
+                  return rest.return
+                    ? rest.return(value)
+                    : { done: true, value };
+                },
+                async throw(error?: unknown) {
+                  consumedFirst = true;
+                  if (rest.throw) return rest.throw(error);
+                  throw error;
+                },
+              };
+            },
+          };
+        }
+
+        rawIteratorTransferred = true;
+        return {
+          id: sessionId,
+          sessionId,
+          ...(events ? { events } : {}),
+        };
+      } finally {
+        signal?.removeEventListener('abort', onRunAbort);
+        if (!rawIteratorTransferred && rawIterator?.return) {
+          try {
+            await promiseSettlesWithin(
+              Promise.resolve(rawIterator.return()),
+              ITERATOR_CLEANUP_TIMEOUT_MS,
+            );
+          } catch {
+            // The request signal and outer adapter cleanup remain the final
+            // cancellation boundaries when explicit iterator return rejects.
+          }
+        }
+      }
+    },
+
+    async getSessionStatus({ sessionId, cwd }): Promise<unknown> {
+      if (!sessionStatus) {
+        throw new Error('OpenCode SDK client.session.status() not available');
+      }
+
+      const result = await sessionStatus(
+        apiVersion === 'v2'
+          ? (cwd ? { directory: cwd } : undefined)
+          : (cwd ? { query: { directory: cwd } } : undefined),
+      );
+      throwIfSdkResultError(result, 'OpenCode session.status failed');
+      const statuses = asRecord(unwrapSdkData(result));
+      const statusMap = Object.prototype.hasOwnProperty.call(statuses, 'sessions')
+        ? asRecord(statuses.sessions)
+        : statuses;
+
+      // OpenCode's status service keeps only non-idle sessions in its
+      // in-memory map. Transitioning to idle deletes the entry, so absence is
+      // the canonical idle representation returned by /session/status.
+      return statusMap[sessionId] ?? { type: 'idle' };
+    },
+
+    async abortSession({ sessionId, cwd }): Promise<void> {
+      await abortSessionViaSdk(sessionId, cwd);
+    },
+
+    async replyPermission(options): Promise<void> {
+      const operation =
+        'OpenCode permission reply failed ' +
+        `(sessionID=${JSON.stringify(options.sessionId)}, ` +
+        `requestID=${JSON.stringify(options.requestId)}, ` +
+        `permission=${JSON.stringify(options.permission)})`;
+      let result: unknown;
+
+      if (apiVersion === 'v2') {
+        if (!permissionReply) {
+          throw new Error(
+            `${operation}: SDK client.permission.reply() not available`,
+          );
+        }
+        result = await permissionReply(
+          {
+            requestID: options.requestId,
+            ...(options.cwd ? { directory: options.cwd } : {}),
+            reply: 'reject',
+            message:
+              'Cligent headless runs reject unresolved permission requests',
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+      } else if (legacyPermissionReply) {
+        result = await legacyPermissionReply({
+          path: {
+            id: options.sessionId,
+            permissionID: options.requestId,
+          },
+          body: { response: 'reject' },
+          ...(options.cwd ? { query: { directory: options.cwd } } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+      } else if (permissionRespond) {
+        result = await permissionRespond(
+          {
+            sessionID: options.sessionId,
+            permissionID: options.requestId,
+            ...(options.cwd ? { directory: options.cwd } : {}),
+            response: 'reject',
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+      } else {
+        throw new Error(
+          `${operation}: SDK permission response API not available`,
+        );
+      }
+
+      throwIfSdkResultError(result, operation);
+      if (unwrapSdkData(result) === false) {
+        throw new Error(`${operation}: SDK declined the rejection response`);
+      }
     },
 
     events(options?: Record<string, unknown>): AsyncIterable<unknown> {
@@ -887,6 +1448,14 @@ export function wrapOpencodeClient(
 
               return innerIterator.next();
             },
+            async return(value?: unknown): Promise<IteratorResult<unknown>> {
+              if (innerIterator?.return) return innerIterator.return(value);
+              return { done: true, value };
+            },
+            async throw(error?: unknown): Promise<IteratorResult<unknown>> {
+              if (innerIterator?.throw) return innerIterator.throw(error);
+              throw error;
+            },
           };
         },
       };
@@ -894,7 +1463,14 @@ export function wrapOpencodeClient(
 
     async close(): Promise<void> {
       if (instanceDispose) {
-        await instanceDispose();
+        const result = await instanceDispose(
+          apiVersion === 'v2'
+            ? (instanceDirectory ? { directory: instanceDirectory } : undefined)
+            : (instanceDirectory
+                ? { query: { directory: instanceDirectory } }
+                : undefined),
+        );
+        throwIfSdkResultError(result, 'OpenCode instance.dispose failed');
       }
     },
   };
@@ -962,6 +1538,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
   private readonly readyTimeoutMs: number;
 
+  private readonly eventInactivityTimeoutMs: number;
+
   private readonly loadSdkFn: () => Promise<OpenCodeSdk>;
 
   private readonly spawnProcess: SpawnProcessFn;
@@ -973,6 +1551,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     timeoutMs: number,
   ) => Promise<string>;
 
+  private readonly managedServerTermGraceMs: number;
+
+  private readonly managedServerKillGraceMs: number;
+
   constructor(
     config: OpenCodeAdapterConfig = {},
     deps: OpenCodeAdapterDeps = {},
@@ -980,10 +1562,20 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     this.mode = config.mode ?? 'managed';
     this.serverUrl = config.serverUrl ?? DEFAULT_MANAGED_URL;
     this.readyTimeoutMs = config.readyTimeoutMs ?? 5000;
+    this.eventInactivityTimeoutMs =
+      config.eventInactivityTimeoutMs ?? DEFAULT_EVENT_INACTIVITY_TIMEOUT_MS;
+    assertFinitePositiveTimeout(
+      'OpenCodeAdapter eventInactivityTimeoutMs',
+      this.eventInactivityTimeoutMs,
+    );
     this.loadSdkFn = deps.loadSdk ?? loadOpenCodeSdk;
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
     this.probeCliAvailability = deps.probeCliAvailability ?? defaultProbeCliAvailability;
     this.waitForServerReady = deps.waitForServerReady ?? defaultWaitForServerReady;
+    this.managedServerTermGraceMs =
+      deps.managedServerTermGraceMs ?? DEFAULT_MANAGED_SERVER_TERM_GRACE_MS;
+    this.managedServerKillGraceMs =
+      deps.managedServerKillGraceMs ?? DEFAULT_MANAGED_SERVER_KILL_GRACE_MS;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -1042,6 +1634,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
+    let sessionAbortAttempted = false;
 
     // Accumulate usage from step-finish parts (OpenCode's session.idle
     // event doesn't carry usage data).
@@ -1051,6 +1644,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let accumulatedCost = 0;
     let accumulatedTokenUsageObserved = false;
     let accumulatedTokenUsageComplete = true;
+
+    const eventStreamController = new AbortController();
+    let resolveCallerAbort!: () => void;
+    const callerAbortPromise = new Promise<void>((resolve) => {
+      resolveCallerAbort = resolve;
+    });
+    let iterator: AsyncIterator<unknown> | undefined;
+    const returnActiveIterator = async (): Promise<void> => {
+      const activeIterator = iterator;
+      iterator = undefined;
+      if (!activeIterator?.return) return;
+
+      await maybeCallAsyncWithin(
+        () => Promise.resolve(activeIterator.return!()).then(() => {}),
+        ITERATOR_CLEANUP_TIMEOUT_MS,
+      );
+    };
 
     // OpenCode re-sends the whole ToolPart on every lifecycle transition
     // (pending → running → completed/error), so tool events must be
@@ -1065,23 +1675,219 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       string,
       { toolUseId: string; toolName: string }
     >();
+    const repliedPermissionRequests = new Set<string>();
+    const permissionRequestKey = (requestId: string) =>
+      `${sessionId}\u0000${requestId}`;
+
+    // OpenCode's shared SSE stream publishes user and assistant messages.
+    // Part events can precede the message.updated envelope that supplies the
+    // role, so content stays pending until its message role is known.
+    const messageRoles = new Map<string, OpenCodeMessageRole>();
+    const partKinds = new Map<string, OpenCodePartKind>();
+    const partOwners = new Map<string, string>();
+    const settledPartSnapshots = new Map<string, Set<string>>();
+    const emittedTextDeltas = new Map<
+      string,
+      { chunks: string[]; length: number }
+    >();
+    const pendingContentEvents: Array<
+      | { removed: true }
+      | {
+          removed?: false;
+          eventType: string;
+          event: Record<string, unknown>;
+          messageId?: string;
+          partId?: string;
+          contentKind?: OpenCodeContentKind;
+        }
+    > = [];
+    let pendingContentHead = 0;
+
+    const normalizeContentOnce = (
+      eventType: string,
+      event: Record<string, unknown>,
+      contentKind: OpenCodeContentKind,
+    ): AgentEvent | undefined => {
+      const message = asRecord(event.message);
+      const part = asRecord(event.part ?? message.part ?? event.data);
+      const delta = asString(event.delta) ?? asString(part.delta);
+      const partId = loadOpenCodePartId(event);
+
+      if (eventType === 'message.part.updated') {
+        const hasDelta = delta !== undefined;
+
+        if (!hasDelta && partId) {
+          const content = contentKind === 'text'
+            ? asString(part.text) ??
+              asString(part.content) ??
+              asString(asRecord(part.content).text)
+            : asString(part.summary) ??
+              asString(part.text) ??
+              asString(part.content);
+
+          if (content) {
+            const signature = `${contentKind}\0${content}`;
+            const signatures = settledPartSnapshots.get(partId) ?? new Set();
+            if (signatures.has(signature)) {
+              return undefined;
+            }
+            signatures.add(signature);
+            settledPartSnapshots.set(partId, signatures);
+
+            // OpenCode commonly streams every text delta and then sends the
+            // same settled text snapshot. Cligent consumers concatenate text
+            // and text_delta, so forwarding both would duplicate the answer.
+            if (
+              contentKind === 'text' &&
+              emittedTextDeltas.get(partId)?.length === content.length &&
+              emittedTextDeltas.get(partId)?.chunks.join('') === content
+            ) {
+              return undefined;
+            }
+          }
+        }
+      }
+
+      const normalized = normalizeOpenCodeContentEvent(
+        eventType,
+        event,
+        contentKind,
+        sessionId,
+      );
+      if (normalized && contentKind === 'text' && partId && delta) {
+        const emitted = emittedTextDeltas.get(partId) ?? {
+          chunks: [],
+          length: 0,
+        };
+        emitted.chunks.push(delta);
+        emitted.length += delta.length;
+        emittedTextDeltas.set(partId, emitted);
+      }
+      return normalized;
+    };
+
+    const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
+      const normalizedEvents: AgentEvent[] = [];
+
+      while (pendingContentHead < pendingContentEvents.length) {
+        const item = pendingContentEvents[pendingContentHead]!;
+        if (item.removed) {
+          pendingContentHead++;
+          continue;
+        }
+        // Legacy event shapes without a message identifier have no role to
+        // correlate and retain their historical assistant behavior.
+        const role = item.messageId
+          ? messageRoles.get(item.messageId)
+          : 'assistant';
+        const contentKind =
+          item.contentKind ??
+          (item.partId ? partKinds.get(item.partId) : undefined);
+        const knownDiscard = role === 'user' || contentKind === 'other';
+
+        if (!knownDiscard && (!role || !contentKind) && !dropUnresolved) {
+          break;
+        }
+
+        pendingContentHead++;
+        if (role === 'assistant' && contentKind && contentKind !== 'other') {
+          const normalized = normalizeContentOnce(
+            item.eventType,
+            item.event,
+            contentKind,
+          );
+          if (normalized) normalizedEvents.push(normalized);
+        }
+      }
+
+      // Avoid O(n²) Array.shift() behavior on the 30k–44k-delta streams
+      // observed in the dogfooding evidence while bounding retained slots.
+      if (
+        pendingContentHead > 1024 &&
+        pendingContentHead * 2 >= pendingContentEvents.length
+      ) {
+        pendingContentEvents.splice(0, pendingContentHead);
+        pendingContentHead = 0;
+      }
+
+      return normalizedEvents;
+    };
+
+    const queueContent = (
+      eventType: string,
+      event: Record<string, unknown>,
+      contentKind?: OpenCodeContentKind,
+    ): AgentEvent[] => {
+      const messageId = loadOpenCodePartMessageId(event);
+      const partId = loadOpenCodePartId(event);
+      const explicitAssistantDelta =
+        eventType === 'session.next.text.delta' ||
+        eventType === 'session.next.reasoning.delta';
+      const inlineRole = explicitAssistantDelta
+        ? 'assistant'
+        : loadOpenCodeMessageRole(event);
+      const inlinePartKind = loadOpenCodePartKind(event);
+
+      if (messageId && inlineRole) {
+        messageRoles.set(messageId, inlineRole);
+      }
+      if (partId && inlinePartKind) {
+        partKinds.set(partId, inlinePartKind);
+      }
+      if (partId && messageId) {
+        partOwners.set(partId, messageId);
+      }
+
+      pendingContentEvents.push({
+        eventType,
+        event,
+        ...(messageId ? { messageId } : {}),
+        ...(partId ? { partId } : {}),
+        ...(contentKind ? { contentKind } : {}),
+      });
+      return drainPendingContent();
+    };
 
     const onAbort = () => {
       abortRequested = true;
-      if (serverProcess && !serverClosed) {
-        try {
-          serverProcess.kill('SIGTERM');
-        } catch {
-          // ignore kill errors during shutdown
-        }
-      }
+      eventStreamController.abort();
+      resolveCallerAbort();
     };
 
-    if (options?.abortSignal && !options.abortSignal.aborted) {
+    if (abortRequested) {
+      onAbort();
+    } else if (options?.abortSignal) {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
     }
 
     let client: OpenCodeClient | undefined;
+    const abortKnownSessionBeforeTerminal = async (): Promise<void> => {
+      const activeClient = client;
+      const abortSession = activeClient?.abortSession;
+      if (!abortSession || sessionAbortAttempted) return;
+      sessionAbortAttempted = true;
+
+      await maybeCallAsyncWithin(
+        () =>
+          abortSession.call(activeClient, {
+            sessionId,
+            ...(options?.cwd ? { cwd: options.cwd } : {}),
+          }),
+        Math.min(MAX_STATUS_QUERY_TIMEOUT_MS, this.eventInactivityTimeoutMs),
+      );
+    };
+
+    const accumulatedUsage = (): DonePayload['usage'] => ({
+      // Error, interruption, inactivity, and exhaustion are synthesized
+      // terminal paths: partial step counters must not be presented as a
+      // complete provider measurement, but independently observed tool uses
+      // and compatibility-shaped numeric fields remain available.
+      tokenAvailability: 'unavailable',
+      inputTokens: accumulatedInputTokens,
+      outputTokens: accumulatedOutputTokens,
+      toolUses: accumulatedToolUses,
+      ...(accumulatedCost > 0 ? { totalCostUsd: accumulatedCost } : {}),
+    });
 
     try {
       if (this.mode === 'managed') {
@@ -1121,20 +1927,94 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode SDK client does not provide run()/query()');
       }
 
-      const runResult = await runFn({
+      if (abortRequested) {
+        throw new Error('OpenCode run aborted before prompt dispatch');
+      }
+
+      const runPromise = runFn({
         prompt,
         cwd: options?.cwd,
         model: options?.model,
+        signal: eventStreamController.signal,
         ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(options?.resume ? { sessionId: options.resume } : {}),
         ...mappedPermissions,
       });
+      const runOutcomePromise = runPromise.then(
+        (value) => ({ kind: 'success' as const, value }),
+        (error: unknown) => ({ kind: 'failure' as const, error }),
+      );
+      let runOutcome = await Promise.race([
+        runOutcomePromise,
+        callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+      ]);
+      if (runOutcome.kind === 'caller_abort') {
+        let captureTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const captured = await Promise.race([
+            runOutcomePromise.then((outcome) => ({
+              kind: 'settled' as const,
+              outcome,
+            })),
+            new Promise<{ kind: 'timeout' }>((resolve) => {
+              captureTimer = setTimeout(
+                () => resolve({ kind: 'timeout' }),
+                ITERATOR_CLEANUP_TIMEOUT_MS,
+              );
+            }),
+          ]);
+          if (captured.kind === 'timeout') {
+            throw new Error('OpenCode run aborted during prompt dispatch');
+          }
+          runOutcome = captured.outcome;
+        } finally {
+          if (captureTimer) clearTimeout(captureTimer);
+        }
+      }
+      if (runOutcome.kind === 'failure') {
+        if (runOutcome.error instanceof OpenCodePromptDispatchAbortError) {
+          // The wrapper already attempted to cancel any session created before
+          // prompt dispatch was interrupted.
+          sessionAbortAttempted = true;
+          if (runOutcome.error.sessionId) {
+            sessionId = runOutcome.error.sessionId;
+            backendProvidedSessionId = true;
+          }
+        }
+        throw runOutcome.error;
+      }
+      const runResult = runOutcome.value;
 
       const loadedId = loadSessionId(runResult);
       if (loadedId) {
         sessionId = loadedId;
         backendProvidedSessionId = true;
+      }
+      const stream = resolveEventStream(
+        client,
+        runResult,
+        eventStreamController.signal,
+      );
+      if (stream) {
+        iterator = stream[Symbol.asyncIterator]();
+      }
+      if (abortRequested) {
+        if (client.abortSession) {
+          sessionAbortAttempted = true;
+          await promiseSettlesWithin(
+            client.abortSession({
+              sessionId,
+              ...(options?.cwd ? { cwd: options.cwd } : {}),
+            }),
+            ITERATOR_CLEANUP_TIMEOUT_MS,
+          );
+        }
+        await returnActiveIterator();
+        throw new Error('OpenCode run aborted during prompt dispatch');
+      }
+      if (!stream || !iterator) {
+        throw new Error('OpenCode SDK client does not provide an SSE event stream');
       }
 
       if (!initYielded) {
@@ -1178,31 +2058,397 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         initYielded = true;
       }
 
-      const stream = resolveEventStream(client, runResult, options?.abortSignal);
-      if (!stream) {
-        throw new Error('OpenCode SDK client does not provide an SSE event stream');
-      }
+      let lastRelevantActivityAt = performance.now();
+      let lastRelevantEvent = 'prompt.dispatched';
+      const controlTimeoutMs = Math.min(
+        MAX_STATUS_QUERY_TIMEOUT_MS,
+        this.eventInactivityTimeoutMs,
+      );
+      const serverRacePromise =
+        this.mode === 'managed' && serverExitPromise
+          ? serverExitPromise.then((exit) => ({
+              kind: 'server_exit' as const,
+              exit,
+            }))
+          : new Promise<never>(() => {});
 
-      const iterator = stream[Symbol.asyncIterator]();
+      type ControlOutcome<T> =
+        | { kind: 'success'; value: T }
+        | { kind: 'failure'; error: unknown }
+        | { kind: 'timeout' }
+        | { kind: 'caller_abort' };
+
+      const runControlOperation = async <T>(
+        operation: () => Promise<T>,
+        raceCallerAbort: boolean,
+      ): Promise<ControlOutcome<T>> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<ControlOutcome<T>>((resolve) => {
+          timer = setTimeout(() => resolve({ kind: 'timeout' }), controlTimeoutMs);
+        });
+        const operationPromise = operation()
+          .then<ControlOutcome<T>>((value) => ({ kind: 'success', value }))
+          .catch<ControlOutcome<T>>((error: unknown) => ({
+            kind: 'failure',
+            error,
+          }));
+
+        try {
+          return await Promise.race([
+            operationPromise,
+            timeoutPromise,
+            ...(raceCallerAbort
+              ? [
+                  callerAbortPromise.then<ControlOutcome<T>>(() => ({
+                    kind: 'caller_abort',
+                  })),
+                ]
+              : []),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+
+      const abortActiveSession = (raceCallerAbort: boolean) =>
+        runControlOperation<void>(async () => {
+          if (!client?.abortSession) {
+            throw new Error('OpenCode SDK client does not provide session.abort()');
+          }
+          await client.abortSession({
+            sessionId,
+            ...(options?.cwd ? { cwd: options.cwd } : {}),
+          });
+        }, raceCallerAbort);
+
+      const describeControlOutcome = (outcome: ControlOutcome<unknown>): string => {
+        if (outcome.kind === 'success') return 'succeeded';
+        if (outcome.kind === 'failure') {
+          return `failed: ${errorMessage(outcome.error)}`;
+        }
+        if (outcome.kind === 'timeout') {
+          return `timed out after ${controlTimeoutMs}ms`;
+        }
+        return 'superseded by caller abort';
+      };
 
       while (true) {
         const nextPromise = iterator.next();
+        const inactivityTimer = createMonotonicInactivityTimer(
+          lastRelevantActivityAt,
+          this.eventInactivityTimeoutMs,
+        );
 
-        const raceResult =
-          this.mode === 'managed' && serverExitPromise
-            ? await Promise.race([
-                nextPromise.then((result) => ({ kind: 'event' as const, result })),
-                serverExitPromise.then((exit) => ({ kind: 'server_exit' as const, exit })),
-              ])
-            : ({
-                kind: 'event' as const,
-                result: await nextPromise,
-              } as const);
+        const raceResult = await Promise.race([
+          nextPromise.then(
+            (result) => ({ kind: 'event' as const, result }),
+            (error: unknown) => ({ kind: 'iterator_error' as const, error }),
+          ),
+          serverRacePromise,
+          callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+          inactivityTimer.promise,
+        ]);
+        inactivityTimer.cancel();
+
+        if (raceResult.kind === 'inactivity') {
+          // Stop the read that missed its deadline before yielding queued
+          // content. A consumer may suspend us at each yield, and fresh SSE
+          // traffic must not stay live while timeout recovery is underway.
+          nextPromise.catch(() => {});
+          eventStreamController.abort();
+        }
+
+        if (
+          raceResult.kind === 'caller_abort' ||
+          raceResult.kind === 'inactivity'
+        ) {
+          yield* drainPendingContent(true);
+        }
+
+        if (raceResult.kind === 'caller_abort' || abortRequested) {
+          nextPromise.catch(() => {});
+          await abortActiveSession(false);
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
+              usage: accumulatedUsage(),
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          break;
+        }
+
+        if (raceResult.kind === 'iterator_error') {
+          throw raceResult.error;
+        }
+
+        if (raceResult.kind === 'inactivity') {
+          const elapsedInactivityMs = Math.max(
+            0,
+            Math.round(performance.now() - lastRelevantActivityAt),
+          );
+          const serverState =
+            this.mode === 'external'
+              ? 'external'
+              : serverClosed
+                ? 'closed'
+                : 'running';
+          const diagnosticBase =
+            `OpenCode event inactivity deadline expired: session=${sessionId}; ` +
+            `lastRelevantEvent=${lastRelevantEvent}; ` +
+            `inactiveMs=${elapsedInactivityMs}; ` +
+            `deadlineMs=${this.eventInactivityTimeoutMs}; ` +
+            `serverMode=${this.mode}; serverState=${serverState}`;
+
+          const statusOutcome = await runControlOperation(
+            async () => {
+              if (!client?.getSessionStatus) {
+                throw new Error(
+                  'OpenCode SDK client does not provide session.status()',
+                );
+              }
+              return client.getSessionStatus({
+                sessionId,
+                ...(options?.cwd ? { cwd: options.cwd } : {}),
+              });
+            },
+            true,
+          );
+
+          if (statusOutcome.kind === 'caller_abort' || abortRequested) {
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          if (statusOutcome.kind !== 'success') {
+            const abortOutcome = await abortActiveSession(true);
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_INACTIVITY_STATUS_QUERY_FAILED',
+                message:
+                  `${diagnosticBase}; statusQuery=` +
+                  `${describeControlOutcome(statusOutcome)}; ` +
+                  `sessionAbort=${describeControlOutcome(abortOutcome)}`,
+                recoverable: false,
+              },
+              sessionId,
+            );
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const queriedStatus = statusOutcome.value;
+          const queriedStatusType = sessionStatusType(queriedStatus);
+          if (queriedStatusType === 'idle') {
+            const recoveredStatus = sessionErrorObserved ? 'error' : 'success';
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_INACTIVITY_IDLE_RECOVERED',
+                message:
+                  `${diagnosticBase}; queriedSessionState=` +
+                  diagnosticJson(queriedStatus),
+                recoverable: true,
+              },
+              sessionId,
+            );
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: recoveredStatus,
+                ...doneResumeTokenPayload(
+                  recoveredStatus,
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const abortOutcome = await abortActiveSession(true);
+          if (abortRequested) {
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          yield createEvent(
+            'error',
+            AGENT,
+            {
+              code: 'OPENCODE_INACTIVITY_TIMEOUT',
+              message:
+                `${diagnosticBase}; queriedSessionState=` +
+                `${diagnosticJson(queriedStatus)}; ` +
+                `sessionAbort=${describeControlOutcome(abortOutcome)}`,
+              recoverable: false,
+            },
+            sessionId,
+          );
+          if (abortRequested) {
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'error',
+              usage: accumulatedUsage(),
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          break;
+        }
 
         if (raceResult.kind === 'server_exit') {
           nextPromise.catch(() => {});
 
           if (doneYielded) break;
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
 
           if (abortRequested || options?.abortSignal?.aborted) {
             yield createEvent(
@@ -1216,10 +2462,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: {
-                  ...DEFAULT_DONE_USAGE,
-                  toolUses: accumulatedToolUses,
-                },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -1243,10 +2486,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: accumulatedToolUses,
-              },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1272,11 +2512,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
         // Use strict extractor — only explicit session fields, no generic `id`
         // that could match message/event IDs and cause false filtering.
+        const canonicalSessionInfoId =
+          eventType === 'session.created' ||
+          eventType === 'session.updated' ||
+          eventType === 'session.deleted'
+            ? asString(asRecord(event.info).id)
+            : undefined;
         const eventSessionId =
           loadStreamSessionId(event) ??
           loadStreamSessionId(event.data) ??
+          loadStreamSessionId(event.info) ??
           loadStreamSessionId(event.message) ??
-          loadStreamSessionId(asRecord(event.part));
+          loadStreamSessionId(asRecord(event.part)) ??
+          canonicalSessionInfoId;
 
         if (eventSessionId) {
           if (eventSessionId !== sessionId) {
@@ -1287,10 +2535,110 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           backendProvidedSessionId = true;
         }
 
+        // OPENCODE-018: only activity that survives current-session
+        // filtering resets the liveness deadline. Explicitly foreign traffic
+        // on the global multiplexed stream must not keep this run alive.
+        lastRelevantActivityAt = performance.now();
+        lastRelevantEvent = eventType;
+
+        if (eventType === 'message.removed') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          if (messageId) {
+            for (
+              let index = pendingContentHead;
+              index < pendingContentEvents.length;
+              index++
+            ) {
+              const item = pendingContentEvents[index];
+              if (!item?.removed && item.messageId === messageId) {
+                // Replace rather than annotate so a removed message's raw
+                // payload is released even while an earlier item blocks head.
+                pendingContentEvents[index] = { removed: true };
+              }
+            }
+            messageRoles.delete(messageId);
+            for (const [partId, ownerId] of partOwners) {
+              if (ownerId !== messageId) continue;
+              partOwners.delete(partId);
+              partKinds.delete(partId);
+              settledPartSnapshots.delete(partId);
+              emittedTextDeltas.delete(partId);
+            }
+          }
+          for (const normalized of drainPendingContent()) {
+            yield normalized;
+          }
+          continue;
+        }
+
+        if (eventType === 'message.updated') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          const role = loadOpenCodeMessageRole(event);
+          if (messageId && role) {
+            messageRoles.set(messageId, role);
+            for (const normalized of drainPendingContent()) {
+              yield normalized;
+            }
+          }
+          continue;
+        }
+
+        if (eventType === 'message.part.removed') {
+          const partId = loadOpenCodePartId(event);
+          if (partId) {
+            for (
+              let index = pendingContentHead;
+              index < pendingContentEvents.length;
+              index++
+            ) {
+              const item = pendingContentEvents[index];
+              if (!item?.removed && item.partId === partId) {
+                pendingContentEvents[index] = { removed: true };
+              }
+            }
+            partKinds.delete(partId);
+            partOwners.delete(partId);
+            settledPartSnapshots.delete(partId);
+            emittedTextDeltas.delete(partId);
+          }
+          for (const normalized of drainPendingContent()) {
+            yield normalized;
+          }
+          continue;
+        }
+
+        if (
+          eventType === 'session.next.text.delta' ||
+          eventType === 'session.next.reasoning.delta'
+        ) {
+          const contentKind = eventType === 'session.next.text.delta'
+            ? 'text'
+            : 'reasoning';
+          for (const normalized of queueContent(
+            eventType,
+            event,
+            contentKind,
+          )) {
+            yield normalized;
+          }
+          continue;
+        }
+
         if (eventType === 'message.part.delta') {
-          const delta = asString(event.delta);
-          if (delta) {
-            yield createEvent('text_delta', AGENT, { delta }, sessionId);
+          const partId = loadOpenCodePartId(event);
+          const inlinePartKind = loadOpenCodePartKind(event);
+          // A generic delta without either a correlatable part identifier or
+          // inline part metadata can never become classifiable. Fail closed
+          // immediately so malformed traffic cannot hold the ordered queue.
+          if (!partId && !inlinePartKind) continue;
+          if (inlinePartKind === 'other') continue;
+
+          for (const normalized of queueContent(
+            eventType,
+            event,
+            inlinePartKind,
+          )) {
+            yield normalized;
           }
           continue;
         }
@@ -1299,25 +2647,25 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const message = asRecord(event.message);
           const part = asRecord(event.part ?? message.part ?? event.data);
           const partType = asString(part.type)?.toLowerCase();
+          const partId = loadOpenCodePartId(event);
+          const messageId = loadOpenCodePartMessageId(event);
+          const partKind = loadOpenCodePartKind(event);
 
-          if (
-            partType === 'text' ||
-            partType === 'output_text' ||
-            partType === 'message_text'
-          ) {
-            const delta = asString(part.delta);
-            if (delta) {
-              yield createEvent('text_delta', AGENT, { delta }, sessionId);
-              continue;
+          if (partId && partKind) {
+            partKinds.set(partId, partKind);
+            if (messageId) partOwners.set(partId, messageId);
+            for (const normalized of drainPendingContent()) {
+              yield normalized;
             }
+          }
 
-            const content =
-              asString(part.text) ??
-              asString(part.content) ??
-              asString(asRecord(part.content).text);
-
-            if (content) {
-              yield createEvent('text', AGENT, { content }, sessionId);
+          if (partKind === 'text' || partKind === 'reasoning') {
+            for (const normalized of queueContent(
+              eventType,
+              event,
+              partKind,
+            )) {
+              yield normalized;
             }
             continue;
           }
@@ -1417,17 +2765,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             continue;
           }
 
-          if (partType === 'thinking' || partType === 'reasoning') {
-            const summary =
-              asString(part.summary) ??
-              asString(part.text) ??
-              asString(part.content);
-            if (summary) {
-              yield createEvent('thinking', AGENT, { summary }, sessionId);
-            }
-            continue;
-          }
-
           if (partType === 'file' || partType === 'file_part') {
             yield createEvent('opencode:file_part', AGENT, part, sessionId);
             continue;
@@ -1473,31 +2810,46 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           continue;
         }
 
-        if (eventType === 'permission.updated' || eventType === 'permission.asked') {
+        if (
+          eventType === 'permission.updated' ||
+          eventType === 'permission.asked'
+        ) {
+          const nestedPermission = asRecord(event.permission);
           const permission =
-            eventType === 'permission.asked' ? event : asRecord(event.permission);
+            eventType === 'permission.asked' ||
+            Object.keys(nestedPermission).length === 0
+              ? event
+              : nestedPermission;
           const reason = asString(permission.reason) ?? asString(event.reason);
           const toolName =
+            (eventType === 'permission.updated'
+              ? asString(props.type)
+              : undefined) ??
             asString(permission.permission) ??
             asString(permission.toolName) ??
             asString(permission.name) ??
             asString(event.toolName) ??
             'unknown_tool';
           const requestId =
-            asString(permission.requestID) ?? asString(permission.id);
+            asString(permission.requestID) ??
+            asString(permission.id) ??
+            asString(event.requestID);
           const toolUseId =
-            requestId ??
             asString(asRecord(permission.tool).callID) ??
+            asString(permission.callID) ??
             asString(permission.toolUseId) ??
             asString(event.toolUseId) ??
+            requestId ??
             generateSessionId();
 
           if (requestId) {
             // permission.replied carries only requestID; remember which
             // tool call (callID) a later denial must resolve to.
-            permissionRequests.set(requestId, {
+            permissionRequests.set(permissionRequestKey(requestId), {
               toolUseId:
-                asString(asRecord(permission.tool).callID) ?? toolUseId,
+                asString(asRecord(permission.tool).callID) ??
+                asString(permission.callID) ??
+                toolUseId,
               toolName,
             });
           }
@@ -1515,6 +2867,247 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             },
             sessionId,
           );
+
+          if (abortRequested || options?.abortSignal?.aborted) {
+            yield* drainPendingContent(true);
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          if (!requestId) {
+            // No deterministic reply is possible, so stop the transport before
+            // yielding queued output on this terminal path.
+            eventStreamController.abort();
+            yield* drainPendingContent(true);
+            await abortActiveSession(false);
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_PERMISSION_REQUEST_INVALID',
+                message:
+                  'Cannot resolve OpenCode headless permission request ' +
+                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  'requestID="<missing>", ' +
+                  `permission=${JSON.stringify(toolName)}): ` +
+                  'the event did not include a permission request ID',
+                recoverable: false,
+              },
+              sessionId,
+            );
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const requestKey = permissionRequestKey(requestId);
+          if (repliedPermissionRequests.has(requestKey)) {
+            continue;
+          }
+          repliedPermissionRequests.add(requestKey);
+
+          const replyPromise = client?.replyPermission
+            ? client.replyPermission({
+                sessionId,
+                requestId,
+                permission: toolName,
+                ...(options?.cwd ? { cwd: options.cwd } : {}),
+                signal: eventStreamController.signal,
+              })
+            : Promise.reject(
+                new Error('SDK client permission reply API not available'),
+              );
+          let replyTimeout: ReturnType<typeof setTimeout> | undefined;
+          const replyRace = await Promise.race([
+            replyPromise.then(
+              () => ({ kind: 'replied' as const }),
+              (error: unknown) => ({ kind: 'error' as const, error }),
+            ),
+            callerAbortPromise.then(() => ({ kind: 'abort' as const })),
+            new Promise<{ kind: 'timeout' }>((resolve) => {
+              replyTimeout = setTimeout(
+                () => resolve({ kind: 'timeout' }),
+                PERMISSION_REPLY_TIMEOUT_MS,
+              );
+            }),
+          ]);
+          if (replyTimeout) clearTimeout(replyTimeout);
+
+          if (
+            replyRace.kind === 'abort' ||
+            abortRequested ||
+            options?.abortSignal?.aborted
+          ) {
+            replyPromise.catch(() => {});
+            yield* drainPendingContent(true);
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
+            // Cancel the failed response request and paired SSE transport
+            // before yielding queued output. The caller may suspend the
+            // generator at that yield, but native I/O must already be stopped.
+            eventStreamController.abort();
+            replyPromise.catch(() => {});
+            yield* drainPendingContent(true);
+            await abortActiveSession(false);
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            const detail =
+              replyRace.kind === 'timeout'
+                ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
+                : replyRace.error instanceof Error
+                  ? replyRace.error.message
+                  : String(replyRace.error);
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_PERMISSION_REPLY_FAILED',
+                message:
+                  'Failed to reject OpenCode headless permission request ' +
+                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  `requestID=${JSON.stringify(requestId)}, ` +
+                  `permission=${JSON.stringify(toolName)}): ${detail}`,
+                recoverable: false,
+              },
+              sessionId,
+            );
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: accumulatedUsage(),
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
           continue;
         }
 
@@ -1525,6 +3118,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             asString(event.decision) ??
             asString(permission.status) ??
             asString(event.status) ??
+            asString(permission.response) ??
+            asString(event.response) ??
             asString(event.reply) ??
             ''
           ).toLowerCase();
@@ -1535,10 +3130,16 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             decision === 'reject'
           ) {
             const requestId =
-              asString(permission.requestID) ?? asString(event.requestID);
+              asString(permission.requestID) ??
+              asString(event.requestID) ??
+              asString(permission.permissionID) ??
+              asString(event.permissionID);
             const asked = requestId
-              ? permissionRequests.get(requestId)
+              ? permissionRequests.get(permissionRequestKey(requestId))
               : undefined;
+            if (requestId) {
+              permissionRequests.delete(permissionRequestKey(requestId));
+            }
             const toolUseId =
               asked?.toolUseId ??
               asString(asRecord(permission.tool).callID) ??
@@ -1614,30 +3215,71 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           (eventType === 'session.status' &&
             asString(asRecord(event.status).type) === 'idle')
         ) {
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
+          if (abortRequested || options?.abortSignal?.aborted) {
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
           const status = sessionErrorObserved
             ? 'error'
             : mapDoneStatus(asString(event.status));
           // Use event-provided usage if available, otherwise fall back to
           // values accumulated from step-finish parts.
           const eventUsage = mapUsage(event.usage, accumulatedToolUses);
-          const usage = eventUsage.tokenAvailability === 'reported'
-            ? eventUsage
-            : {
+          const eventTokenUsageObserved = hasOpenCodeEventTokenCounters(
+            event.usage,
+          );
+          const accumulatedEventUsage: DonePayload['usage'] = {
+            tokenAvailability:
+              accumulatedTokenUsageObserved &&
+              accumulatedTokenUsageComplete
+                ? 'reported'
+                : 'unavailable',
+            inputTokens: accumulatedInputTokens,
+            outputTokens: accumulatedOutputTokens,
+            toolUses: Math.max(eventUsage.toolUses, accumulatedToolUses),
+            ...(accumulatedCost > 0
+              ? { totalCostUsd: accumulatedCost }
+              : {}),
+          };
+          const usage: DonePayload['usage'] = eventTokenUsageObserved
+            ? {
+                ...eventUsage,
+                // A malformed mapped counter from either provider source
+                // poisons availability; a valid source must not hide it.
                 tokenAvailability:
-                  accumulatedTokenUsageObserved &&
-                  accumulatedTokenUsageComplete
-                  ? ('reported' as const)
-                  : ('unavailable' as const),
-                inputTokens: accumulatedInputTokens,
-                outputTokens: accumulatedOutputTokens,
+                  eventUsage.tokenAvailability === 'reported' &&
+                  (!accumulatedTokenUsageObserved ||
+                    accumulatedTokenUsageComplete)
+                    ? 'reported'
+                    : 'unavailable',
                 toolUses: Math.max(
                   eventUsage.toolUses,
                   accumulatedToolUses,
                 ),
-                ...(accumulatedCost > 0
-                  ? { totalCostUsd: accumulatedCost }
-                  : {}),
-              };
+              }
+            : accumulatedTokenUsageObserved
+              ? accumulatedEventUsage
+              : eventUsage;
 
           yield createEvent(
             'done',
@@ -1665,7 +3307,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
+          await abortKnownSessionBeforeTerminal();
           yield createEvent(
             'done',
             AGENT,
@@ -1677,10 +3323,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: accumulatedToolUses,
-              },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1702,10 +3345,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: accumulatedToolUses,
-              },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1745,7 +3385,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
+          await abortKnownSessionBeforeTerminal();
           yield createEvent(
             'done',
             AGENT,
@@ -1757,10 +3401,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: accumulatedToolUses,
-              },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1785,10 +3426,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: accumulatedToolUses,
-              },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1801,9 +3439,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         options.abortSignal.removeEventListener('abort', onAbort);
       }
 
-      await maybeCallAsync(client?.close?.bind(client));
-      await maybeCallAsync(client?.shutdown?.bind(client));
+      eventStreamController.abort();
 
+      // The managed control plane must begin shutting down before any SDK
+      // cleanup wait. Each SDK cleanup attempt is independently bounded, so
+      // a rejected or non-settling hook cannot suppress the others or child
+      // termination.
       if (serverProcess && !serverClosed) {
         try {
           serverProcess.kill('SIGTERM');
@@ -1811,14 +3452,43 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           // ignore cleanup errors
         }
 
-        if (serverExitPromise) {
-          try {
-            await Promise.race([
+      }
+
+      const sdkCleanup = Promise.all([
+        returnActiveIterator(),
+        maybeCallAsyncWithin(
+          client?.close?.bind(client),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        ),
+        maybeCallAsyncWithin(
+          client?.shutdown?.bind(client),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        ),
+      ]).then(() => {});
+      const termCleanup =
+        serverProcess && !serverClosed && serverExitPromise
+          ? promiseSettlesWithin(
               serverExitPromise,
-              new Promise((resolve) => setTimeout(resolve, 1500)),
-            ]);
+              this.managedServerTermGraceMs,
+            ).then(() => {})
+          : Promise.resolve();
+
+      await Promise.all([sdkCleanup, termCleanup]);
+
+      if (serverProcess && !serverClosed) {
+        if (!serverClosed) {
+          try {
+            serverProcess.kill('SIGKILL');
           } catch {
-            // ignore cleanup errors
+            // The adapter owns this child, but there is no stronger process
+            // primitive after a failed SIGKILL attempt.
+          }
+
+          if (serverExitPromise) {
+            await promiseSettlesWithin(
+              serverExitPromise,
+              this.managedServerKillGraceMs,
+            );
           }
         }
       }
