@@ -37,10 +37,10 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 
 | SSE Event | AgentEvent |
 | --- | --- |
-| `message.part.updated` (text, no delta) | `text` |
-| `message.part.updated` (text, with delta) | `text_delta` |
+| assistant `message.part.updated` (text, no delta) | `text` |
+| assistant `message.part.updated` (text, with delta) | `text_delta` |
 | `message.part.updated` (tool part, per [OPENCODE-016](#opencode-016)) | `tool_use` / `tool_result` |
-| `message.part.updated` (thinking) | `thinking` |
+| assistant `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
 | `permission.updated` / `permission.asked` | `permission_request` |
@@ -57,6 +57,27 @@ Repeated running or terminal snapshots for one correlated call shall add no furt
 Where a rejected permission reply per [OPENCODE-005](#opencode-005) resolves — via the permission request's tool reference — to a correlated call, its denied `tool_result` shall carry that call's `callID` and tracked tool name rather than the permission name from the request, and afterwards tool-state updates for that call shall add neither a second terminal `tool_result` nor a `tool_use` behind the terminal result.
 Where the rejected reply resolves to a call whose terminal `tool_result` was already emitted, the adapter shall emit no denied `tool_result`.
 Tool-part snapshots without lifecycle state shall keep their pre-lifecycle normalization: one immediate `tool_use` per correlated identifier from top-level fields.
+
+### OPENCODE-017
+
+The adapter shall correlate conversational part events to their OpenCode
+message by message identifier and use the message role from `message.updated`
+or equivalent inline metadata before normalizing `text`, `text_delta`, or
+`thinking` output. Only content belonging to an `assistant` message shall be
+emitted; content belonging to a `user` message shall be discarded, without
+comparing its bytes to the submitted prompt.
+
+Where a part event carrying a message identifier arrives before its role, the
+adapter shall hold that event until the matching message role arrives. It shall
+then release held assistant events in their original order or discard held
+user events. Identifier-bearing content whose role never becomes known shall
+remain un-emitted when the run terminates. Legacy content events carrying no
+message identifier shall retain their existing normalization because no role
+can be correlated.
+
+Session filtering per [OPENCODE-006](#opencode-006) shall precede role
+correlation, so metadata from another session cannot release or discard the
+current session's pending content.
 
 ## Session Filtering
 
