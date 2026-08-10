@@ -10,9 +10,13 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 import type {
+  EventMessagePartDelta,
   EventSessionError,
   EventSessionIdle,
+  EventSessionNextReasoningDelta,
+  EventSessionNextTextDelta,
 } from '@opencode-ai/sdk/v2';
+import type { EventMessagePartUpdated as V1EventMessagePartUpdated } from '@opencode-ai/sdk';
 
 import {
   OpenCodeAdapter,
@@ -2199,6 +2203,7 @@ describe('OpenCode SSE event structure', () => {
               type: 'message.part.updated',
               properties: {
                 part: {
+                  id: 'assistant-after-part',
                   sessionID: 'role-session',
                   messageID: 'assistant-after',
                   type: 'text',
@@ -2211,6 +2216,7 @@ describe('OpenCode SSE event structure', () => {
               properties: {
                 sessionID: 'role-session',
                 messageID: 'assistant-after',
+                partID: 'assistant-after-part',
                 delta: ' buffered delta',
               },
             },
@@ -2515,7 +2521,7 @@ describe('OpenCode SSE event structure', () => {
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
   });
 
-  it('unwraps properties envelope and handles message.part.delta', async () => {
+  it('unwraps properties and classifies generic deltas by part id', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -2523,9 +2529,36 @@ describe('OpenCode SSE event structure', () => {
           runResult: { sessionId: 'sse-session' },
           events: [
             {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'sse-session',
+                info: {
+                  id: 'assistant-message',
+                  sessionID: 'sse-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'sse-session',
+                part: {
+                  id: 'text-part',
+                  sessionID: 'sse-session',
+                  messageID: 'assistant-message',
+                  type: 'text',
+                  text: '',
+                },
+              },
+            },
+            {
               type: 'message.part.delta',
               properties: {
                 sessionID: 'sse-session',
+                messageID: 'assistant-message',
+                partID: 'text-part',
+                field: 'text',
                 delta: 'hello',
               },
             },
@@ -2533,6 +2566,9 @@ describe('OpenCode SSE event structure', () => {
               type: 'message.part.delta',
               properties: {
                 sessionID: 'sse-session',
+                messageID: 'assistant-message',
+                partID: 'text-part',
+                field: 'text',
                 delta: ' world',
               },
             },
@@ -2556,6 +2592,298 @@ describe('OpenCode SSE event structure', () => {
 
     const d2 = events[2] as AgentEvent & { payload: { delta: string } };
     expect(d2.payload.delta).toBe(' world');
+  });
+
+  it('keeps interleaved reasoning out of typed and generic output deltas', async () => {
+    const genericTextBeforeMetadata = {
+      id: 'generic-text-late',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'text-late',
+        field: 'text',
+        delta: 'late',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericReasoningBeforeMetadata = {
+      id: 'generic-reasoning-late',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'reasoning-late',
+        field: 'text',
+        delta: 'secret late',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericTextAfterMetadata = {
+      id: 'generic-text-early',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'text-early',
+        field: 'text',
+        delta: ' output',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericReasoningAfterMetadata = {
+      id: 'generic-reasoning-early',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'reasoning-early',
+        field: 'text',
+        delta: 'secret early',
+      },
+    } satisfies EventMessagePartDelta;
+    const explicitTextDelta = {
+      id: 'explicit-text',
+      type: 'session.next.text.delta',
+      properties: {
+        timestamp: 1,
+        sessionID: 'typed-session',
+        assistantMessageID: 'assistant-message',
+        textID: 'explicit-text-part',
+        delta: ' explicit',
+      },
+    } satisfies EventSessionNextTextDelta;
+    const explicitReasoningDelta = {
+      id: 'explicit-reasoning',
+      type: 'session.next.reasoning.delta',
+      properties: {
+        timestamp: 2,
+        sessionID: 'typed-session',
+        assistantMessageID: 'assistant-message',
+        reasoningID: 'explicit-reasoning-part',
+        delta: 'secret explicit',
+      },
+    } satisfies EventSessionNextReasoningDelta;
+    const v1TextDelta = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-text',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'text',
+          text: 'late output explicit v1',
+        },
+        delta: ' v1',
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const v1ReasoningDelta = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-reasoning',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'reasoning',
+          text: 'partial thought',
+          time: { start: 1 },
+        },
+        delta: 'secret v1',
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const v1ReasoningFinal = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-reasoning',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'reasoning',
+          text: 'settled v1 thought',
+          time: { start: 1, end: 4 },
+        },
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const finalTextSnapshot = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'final-text',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'text',
+          text: 'late output explicit v1',
+        },
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const unresolvedDelta = {
+      id: 'generic-unresolved',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'never-described',
+        field: 'text',
+        delta: 'must not default to output',
+      },
+    } satisfies EventMessagePartDelta;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'typed-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'typed-session',
+                info: {
+                  id: 'assistant-message',
+                  sessionID: 'typed-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            genericTextBeforeMetadata,
+            genericReasoningBeforeMetadata,
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'typed-session',
+                part: {
+                  id: 'text-late',
+                  sessionID: 'typed-session',
+                  messageID: 'assistant-message',
+                  type: 'text',
+                  text: '',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'typed-session',
+                part: {
+                  id: 'reasoning-late',
+                  sessionID: 'typed-session',
+                  messageID: 'assistant-message',
+                  type: 'reasoning',
+                  text: 'settled late thought',
+                  time: { start: 1, end: 2 },
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'typed-session',
+                part: {
+                  id: 'text-early',
+                  sessionID: 'typed-session',
+                  messageID: 'assistant-message',
+                  type: 'text',
+                  text: '',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'typed-session',
+                part: {
+                  id: 'reasoning-early',
+                  sessionID: 'typed-session',
+                  messageID: 'assistant-message',
+                  type: 'reasoning',
+                  text: 'settled early thought',
+                  time: { start: 2, end: 3 },
+                },
+              },
+            },
+            genericTextAfterMetadata,
+            genericReasoningAfterMetadata,
+            explicitTextDelta,
+            explicitReasoningDelta,
+            v1TextDelta,
+            v1ReasoningDelta,
+            v1ReasoningFinal,
+            v1ReasoningFinal,
+            unresolvedDelta,
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'typed-session',
+                info: {
+                  id: 'user-message',
+                  sessionID: 'typed-session',
+                  role: 'user',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'typed-session',
+                part: {
+                  id: 'user-text',
+                  sessionID: 'typed-session',
+                  messageID: 'user-message',
+                  type: 'text',
+                  text: '',
+                },
+              },
+            },
+            {
+              id: 'generic-user',
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'typed-session',
+                messageID: 'user-message',
+                partID: 'user-text',
+                field: 'text',
+                delta: 'user prompt delta',
+              },
+            } satisfies EventMessagePartDelta,
+            finalTextSnapshot,
+            finalTextSnapshot,
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'typed-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('user prompt delta'));
+    const deltas = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => (event.payload as { delta: string }).delta);
+    const thoughts = events
+      .filter((event) => event.type === 'thinking')
+      .map((event) => (event.payload as { summary: string }).summary);
+    const texts = events
+      .filter((event) => event.type === 'text')
+      .map((event) => (event.payload as { content: string }).content);
+
+    expect(deltas.join('')).toBe('late output explicit v1');
+    expect(deltas).toEqual(['late', ' output', ' explicit', ' v1']);
+    expect(thoughts).toEqual([
+      'settled late thought',
+      'settled early thought',
+      'settled v1 thought',
+    ]);
+    expect(texts).toEqual(['late output explicit v1']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text_delta',
+      'thinking',
+      'thinking',
+      'text_delta',
+      'text_delta',
+      'text_delta',
+      'thinking',
+      'text',
+      'done',
+    ]);
   });
 
   it('handles session.error events', async () => {
