@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode runs can no longer occupy a headless concurrency slot forever when the global SSE connection and server stay alive but the active session stops emitting events. `OpenCodeAdapter` now enforces a finite, configurable `eventInactivityTimeoutMs` (five minutes by default), restarted only by events relevant to the current session — explicitly foreign multiplexed traffic does not postpone it. On expiry it cancels the pending read and performs a bounded SDK status query: a missed idle event yields an explicit recoverable diagnostic and successful terminal outcome, while busy/retry state is aborted and a failed or hung status query produces its own non-recoverable diagnostic after a bounded cleanup attempt. Every timeout message identifies the session, last relevant event, elapsed/deadline timing, managed/external server state, and query/abort result. Pending iterators, SDK clients, session work, and managed servers are released on every path; external-mode caller abort now wins independently of whether the SDK iterator honors its signal, and abort/inactivity races emit exactly one terminal `done`. Canned short-deadline coverage spans all branches, and a credential-free real managed-server probe verifies status recovery and process cleanup without a multi-minute test — OPENCODE-018, IR-043, TADAPT-035
+
 ## [0.19.0] - 2026-08-07
 
 ### Added

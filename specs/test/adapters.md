@@ -109,6 +109,31 @@ resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
 
+### TADAPT-035
+Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
+
+Given short injected inactivity deadlines and canned OpenCode streams, when a
+current session becomes permanently silent, the adapter shall query its status
+and terminate within a bounded interval: idle shall produce one recoverable
+idle-recovery diagnostic and one successful `done`; busy and retry shall each
+abort the session and produce one non-recoverable timeout diagnostic plus one
+error `done`; an omitted status-map entry shall exercise OpenCode's idle
+representation; and a rejected or non-settling status query
+shall make a bounded abort attempt and produce one status-query diagnostic plus
+one error `done`.
+Given current-session progress events whose spacing stays below the deadline,
+the adapter shall not query status, while repeated events explicitly tagged for
+another session shall not postpone the current session's deadline.
+Given pending iterators that do and do not honor `AbortSignal`, external and
+managed runs shall return the iterator, close the client, abort active session
+work where required, terminate only the managed server, and emit exactly one
+terminal event when caller abort and inactivity race.
+Where the OpenCode CLI and SDK are available, when a credential-free real
+managed server creates an idle session whose terminal SSE event is withheld,
+the short-deadline acceptance probe shall recover through the real
+`session.status` endpoint, dispose the SDK client, and observe the managed
+server process exit without a multi-minute wait.
+
 ## Tool Filtering
 
 ### TADAPT-009

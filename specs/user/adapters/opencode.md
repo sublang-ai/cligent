@@ -106,6 +106,45 @@ When `AbortSignal` fires, the adapter shall yield `done` (`status: 'interrupted'
 
 When the managed server crashes, the adapter shall yield an `error` event (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) and clean up resources.
 
+### OPENCODE-018
+
+Where `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is omitted, the adapter
+shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
+provided, the adapter shall require a finite number greater than zero and use
+that value.
+While a run is awaiting OpenCode's global SSE stream, when an event survives
+the current-session filtering of [OPENCODE-006](#opencode-006), including an
+untagged pass-through event, the adapter shall restart the deadline; an event
+explicitly tagged for another session shall not restart it.
+When the deadline expires, the adapter shall cancel the pending SSE read and
+query the active session's current status through the SDK, bounding that query
+to the lesser of 10,000 ms and the configured inactivity deadline.
+Where the query reports `idle`, including the OpenCode status map omitting the
+session because idle entries are not retained, the adapter shall emit one
+recoverable `error`
+with code `OPENCODE_INACTIVITY_IDLE_RECOVERED` followed by exactly one terminal
+`done`, using `success` unless an earlier session error requires `error`,
+without waiting for another SSE event.
+Where the query reports `busy`, `retry`, or another non-idle state, the adapter
+shall abort that session and emit one non-recoverable `error` with code
+`OPENCODE_INACTIVITY_TIMEOUT` followed by exactly one error `done`.
+Where the status request fails or times out, the adapter shall make a bounded
+best-effort session abort and emit one
+non-recoverable `error` with code
+`OPENCODE_INACTIVITY_STATUS_QUERY_FAILED` followed by exactly one error
+`done`.
+Each inactivity diagnostic shall identify the session, last relevant event,
+elapsed inactivity, configured deadline, server mode and state, queried state
+or query failure, and session-abort outcome where attempted.
+When caller abort races a pending SSE read, status query, or inactivity
+recovery in either server mode, the adapter shall give the caller abort
+terminal precedence once observed and emit exactly one interrupted `done`.
+After any terminal path, the adapter shall cancel and return the pending event
+iterator, make bounded SDK-client close and shutdown attempts, and terminate
+its managed server; external mode shall leave the caller-owned server running
+while still aborting active session work on interruption or non-idle
+inactivity.
+
 ## Resume Token
 
 ### OPENCODE-011
