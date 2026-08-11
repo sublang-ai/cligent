@@ -174,6 +174,10 @@ Otherwise it shall report `ambient` enforcement and keep command/tool approval c
 OpenCode shall accept valid non-empty `writablePaths` and report `ambient` enforcement.
 Its documented permission rules can allow or deny tool inputs and shell command patterns, but they are not a filesystem sandbox profile equivalent to Codex workspace-root write grants [[8]].
 The OpenCode adapter shall keep mapping `fileWrite` / `shellExecute` / `networkAccess` to `edit` / `bash` / `webfetch`; `writablePaths` does not add path-level enforcement for those tools.
+`writablePaths` is reporting, not confinement: the OpenCode process retains
+ambient host filesystem authority, while `external_directory` is a
+tool-approval rule rather than an OS sandbox.
+OpenCode native auto may approve a surviving `external_directory` ask.
 
 Kimi shall accept valid non-empty `writablePaths` alongside its supported `mode: 'auto'` policy and report `ambient` enforcement.
 Cligent advertises no ACP filesystem capability, so Kimi retains its process-local filesystem implementation and the field adds no path-level enforcement [[16]].

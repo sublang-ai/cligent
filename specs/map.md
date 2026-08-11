@@ -35,7 +35,7 @@ meta.md     The spec of specs
 | DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model |
 | DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md) | Cligent class, role attribution, session continuity, option merge |
 | DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md) | tmux-play Captain/player architecture, records, presenter boundary |
-| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; network-widening alternative recorded and rolled back); no project-wide default |
+| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md) | YAML `permissions` through `CligentOptions` (typed `PermissionPolicy`); `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; OpenCode native auto replies and non-auto residual requests reject fail-closed); no project-wide default |
 | DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md) | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept them on otherwise supported policies and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode+Kimi `ambient`), with Codex profile enforcement the release bar |
 | DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md) | tmux-play dynamic player visibility: static union roster, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails |
 | DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md) | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()` |
@@ -83,7 +83,7 @@ meta.md     The spec of specs
 | IR-031 | [031-adapter-scoped-effort-and-config-migration.md](iterations/031-adapter-scoped-effort-and-config-migration.md) | Implement DR-009 adapter-scoped effort, metadata, mappings, and legacy tmux-play YAML migration |
 | IR-032 | [032-agent-runtime-and-package-readiness.md](iterations/032-agent-runtime-and-package-readiness.md) | Refresh all four coding-agent runtimes and harden packaging and live acceptance |
 | IR-033 | [033-effort-surface-simplification.md](iterations/033-effort-surface-simplification.md) | Replace lossless migration with best-effort compatibility, derive effort types from runtime metadata, and consolidate redundant tests |
-| IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls and enforce explicit allowlists across adapters |
+| IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls with adapter enforcement or fail-closed rejection; its original OpenCode mapping is superseded by IR-042 |
 | IR-035 | [035-headless-auto-mode-posture.md](iterations/035-headless-auto-mode-posture.md) | Record the headless auto-mode posture: `permissions.mode: 'auto'` stays SDK-native with no cligent-selected grants (network-widening alternative rolled back); no adapter behavior change |
 | IR-036 | [036-kimi-code-adapter.md](iterations/036-kimi-code-adapter.md) | Add the maintained Kimi Code CLI through ACP with session continuity, public integration, and exact conformance targets |
 | IR-037 | [037-codex-executable-resolution.md](iterations/037-codex-executable-resolution.md) | Resolve the Codex executable from the SDK-owned tree across hoisted, global, and non-hoisted installs, with actionable failure diagnostics |
@@ -91,6 +91,7 @@ meta.md     The spec of specs
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
+| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies, deterministic fail-closed handling, abort-safe cleanup, and rejection of unsafe prompt tool filters |
 
 ## Packages
 
@@ -149,7 +150,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, `callID`-correlated tool lifecycle, native auto permission replies with fail-closed handling, explicit tool-list rejection, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -168,7 +169,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection plus its `callID`-correlated tool lifecycle and live-run counterpart |
 
 ### TMUX
 

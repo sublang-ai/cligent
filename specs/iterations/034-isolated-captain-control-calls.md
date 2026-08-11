@@ -11,6 +11,15 @@ Implement [DR-010](../decisions/010-isolated-captain-control-calls.md) so a Capt
 
 Complete
 
+The OpenCode-specific enforcement claims below record the original delivery
+and are superseded by the current
+[OPENCODE-015](../user/adapters/opencode.md#opencode-015) contract.
+OpenCode 1.18.13 merges prompt `tools` into persistent permission rules instead
+of exposing an independent exact tool registry, so the current adapter rejects
+every explicitly present tool-list option before SDK loading.
+The Captain control boundary remains fail-closed; OpenCode can no longer
+implement a tool-free Captain call.
+
 ## Deliverables
 
 - [x] `callCaptain` exposes and forwards per-call resume selection and explicit allowlists.

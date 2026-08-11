@@ -70,16 +70,21 @@ Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surface
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-010](../user/adapters/opencode.md#opencode-010)
 
 The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [OPENCODE-006](../user/adapters/opencode.md#opencode-006), emit `opencode:file_part` and `opencode:image_part` extension events, manage the server lifecycle in managed mode, and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash.
+Where the managed server remains running, teardown shall send `SIGTERM` before
+invoking SDK disposal and shall complete within a bounded interval when
+iterator return, client close, and client shutdown all remain pending.
+If the server ignores `SIGTERM`, teardown shall send `SIGKILL` after a bounded
+grace and shall bound the final close wait.
 
 ### TADAPT-027
-Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013), [OPENCODE-015](../user/adapters/opencode.md#opencode-015)
 
 Where no `PermissionPolicy` is supplied, when OpenCode starts fresh and resumed
 runs through each supported SDK path, fresh-session creation and prompt calls
 shall omit permission data and a resumed run shall issue no permission-bearing
-session update. Independent tool-list restrictions shall still reach the
-prompt. Where an empty policy is supplied instead, fresh and resumed runs
-shall carry `ask` rules for `edit`, `bash`, and `webfetch`.
+session update. Prompt calls shall also omit tool-list data when both tool-list
+options are absent. Where an empty policy is supplied instead, fresh and
+resumed runs shall carry `ask` rules for `edit`, `bash`, and `webfetch`.
 
 ### TADAPT-028
 Verifies: [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [PKG-012](../dev/package.md#pkg-012)
@@ -109,6 +114,54 @@ resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
 
+### TADAPT-037
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
+
+Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
+use each supported SDK path, neither the observable v1 prompt nor the v2
+session ruleset shall contain an adapter-generated wildcard. Explicitly
+supplied capability levels shall still map, including denies, while omitted
+capabilities preserve native rules.
+Where canonical v1 `permission.updated` and v2 `permission.asked` events are
+supplied, including an unknown permission name, when the adapter handles
+requests for its current session under auto, it shall emit no normalized
+`permission_request` and answer each native request `once` through the matching
+SDK route with request and session correlation intact, then emit exactly one
+`opencode:permission_decision` extension carrying the request identifier,
+permission, patterns, tool-use correlation, completed `once` decision,
+automated marker, normalized input, and optional reason. Outside auto it shall
+emit the normalized request and answer `reject` without the extension.
+Where interleaved foreign-session events and repeated local events occur, the
+adapter shall respond only to the local request and shall not respond twice.
+Where a request has a missing identifier, unavailable or failed reply route,
+SDK result error, or reply that stays pending for five seconds, the adapter
+shall terminate with the permission error and one error-status `done`, with
+the session, request (or missing marker), and permission named in the error.
+Failed, timed-out, and aborted replies shall emit no
+`opencode:permission_decision` extension.
+For a pending response in external mode, the five-second timeout shall abort
+the SDK request's run-owned signal and cancel the underlying response I/O.
+While a permission response is pending in managed mode, when `AbortSignal`
+fires, the adapter shall terminate with one interrupted `done`, abort the
+run-owned signal observed by both the SSE subscription and permission
+response, close the underlying SSE iterator and SDK client, and send `SIGTERM`
+to the managed server without waiting for that response. The interrupted
+`done` shall be yielded before `SIGTERM`, and managed termination shall begin
+before the bounded SDK cleanup waits.
+Canonical wrapper fixtures shall prove that aborting a pending v1 and v2 SSE
+request rejects the underlying subscription operation on the run-owned signal,
+and that aborting pending v1 and v2 permission-response HTTP calls rejects each
+native SDK operation on that same signal.
+Where the exact OpenCode conformance target and credentials are available,
+when a real managed-mode `mode: 'auto'` run writes and verifies a unique
+absolute `/tmp` file by requesting an exact shell command under an explicit
+`shellExecute: 'ask'` rule, the run shall emit a `bash` `tool_use` and at least
+one successful automated `once` audit event for the `bash` permission,
+complete without an outer timeout, `permission_request`, denied `tool_result`,
+or `error`, and emit exactly one success-status `done`; the leg shall use the
+same missing-dependency and transient-upstream gating as the existing OpenCode
+real-run acceptance.
+
 ## Tool Filtering
 
 ### TADAPT-009
@@ -119,9 +172,9 @@ Given `allowedTools` and `disallowedTools` options, each adapter shall enforce w
 ### TADAPT-029
 Verifies: [ENG-017](../user/engine.md#eng-017), [CLAUDE-009](../user/adapters/claude-code.md#claude-009), [CODEX-011](../user/adapters/codex.md#codex-011), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-016](../user/adapters/gemini.md#gemini-016), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
 
-Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set: Claude Code receives SDK `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true`; Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set; and OpenCode receives the prompt tool map `{ "*": false }` and reports a configured known empty set.
-Where a non-empty allowlist and disallowed identifiers are provided, when Claude Code, Gemini, and OpenCode run, each adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence, while Claude Code shall also reject ambient MCP additions.
-Where an OpenCode tool-list entry contains `*`, when the adapter runs, it shall reject before prompting instead of interpreting the entry as a provider wildcard.
+Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported: Claude Code receives SDK `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true`; and Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set.
+Where a non-empty allowlist and disallowed identifiers are provided, when Claude Code and Gemini run, each adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence, while Claude Code shall also reject ambient MCP additions.
+Where either tool-list field is explicitly provided to OpenCode, including an empty array and including alongside a portable permission rule such as `shellExecute: 'deny'`, when the adapter runs, it shall reject before its SDK loader, compatibility wrapper, session creation, subscription, or backend prompt is invoked. Direct permission-mapper calls with either field present shall reject by the same contract. The diagnostic shall explain that OpenCode 1.18.13 merges prompt `tools` into persistent session permission rules, which can override native or explicit denies and cannot provide exact per-call tool availability.
 Where either tool-list field is explicitly provided to Codex, including an empty array, when the adapter runs, it shall reject before its SDK loader or client is invoked.
 Where either tool-list field is explicitly provided to Kimi, including an empty array, when the adapter runs, it shall reject before spawning `kimi acp`.
 

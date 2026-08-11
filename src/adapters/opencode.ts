@@ -36,6 +36,10 @@ import {
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
+const PERMISSION_REPLY_TIMEOUT_MS = 5000;
+const SDK_CLEANUP_TIMEOUT_MS = 1000;
+const MANAGED_SERVER_SHUTDOWN_TIMEOUT_MS = 1500;
+const MANAGED_SERVER_KILL_TIMEOUT_MS = 500;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   inputTokens: 0,
@@ -47,7 +51,6 @@ type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
-type OpenCodeV2Tools = NonNullable<OpenCodeV2PromptBody['tools']>;
 
 type SpawnProcessFn = (
   command: string,
@@ -60,11 +63,31 @@ interface ServerCloseInfo {
   signal: NodeJS.Signals | null;
 }
 
+type StreamWaitResult =
+  | { kind: 'event'; result: IteratorResult<unknown> }
+  | { kind: 'stream_error'; error: unknown }
+  | { kind: 'abort' }
+  | { kind: 'server_exit'; exit: ServerCloseInfo };
+
+type PermissionReplyWaitResult =
+  | { kind: 'replied' }
+  | { kind: 'error'; error: unknown }
+  | { kind: 'abort' }
+  | { kind: 'timeout' };
+
 interface OpenCodeClient {
   run?: (options: Record<string, unknown>) => Promise<unknown>;
   query?: (options: Record<string, unknown>) => Promise<unknown>;
   events?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
   subscribe?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
+  replyPermission?: (options: {
+    sessionId: string;
+    requestId: string;
+    permission: string;
+    decision: 'once' | 'reject';
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<void>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
 }
@@ -90,16 +113,8 @@ interface OpenCodeAdapterDeps {
 }
 
 interface OpenCodePermissionOptions {
-  permission?: {
-    edit: PermissionLevel;
-    bash: PermissionLevel;
-    webfetch: PermissionLevel;
-  };
+  permission?: Record<string, PermissionLevel>;
   writablePaths?: WritablePathsPermissionMapping;
-  tools?: {
-    core?: string[];
-    exclude?: string[];
-  };
 }
 
 interface WrapOpencodeClientOptions {
@@ -167,6 +182,18 @@ function parseToolInput(value: unknown): Record<string, unknown> {
   }
 
   return asRecord(value);
+}
+
+function parsePermissionPatterns(...values: unknown[]): string[] {
+  for (const value of values) {
+    const pattern = asString(value);
+    if (pattern) return [pattern];
+
+    const patterns = asStringArray(value);
+    if (patterns.length > 0) return patterns;
+  }
+
+  return [];
 }
 
 function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
@@ -307,7 +334,9 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   );
 }
 
-function maybeCallAsync(fn: (() => Promise<void> | void) | undefined): Promise<void> {
+function maybeCallAsync(
+  fn: (() => Promise<unknown> | unknown) | undefined,
+): Promise<void> {
   if (!fn) return Promise.resolve();
 
   try {
@@ -315,6 +344,25 @@ function maybeCallAsync(fn: (() => Promise<void> | void) | undefined): Promise<v
     return Promise.resolve(result).then(() => {});
   } catch {
     return Promise.resolve();
+  }
+}
+
+async function settleAllWithin(
+  promises: readonly Promise<unknown>[],
+  timeoutMs: number,
+): Promise<void> {
+  if (promises.length === 0) return;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled(promises).then(() => {}),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -471,36 +519,13 @@ export function mapPermissionsToOpenCodeOptions(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
-  for (const [option, tools] of [
-    ['allowedTools', options?.allowedTools],
-    ['disallowedTools', options?.disallowedTools],
-  ] as const) {
-    if (tools?.some((tool) => tool.includes('*'))) {
-      throw new TypeError(
-        `OpenCode ${option} accepts exact tool identifiers, not wildcard patterns`,
-      );
-    }
-  }
+  assertOpenCodeToolRestrictionsUnsupported(options);
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
-  const allowedListProvided = options?.allowedTools !== undefined;
-  const exclude = [...new Set(options?.disallowedTools ?? [])];
-  const excluded = new Set(exclude);
-  const core = [...new Set(options?.allowedTools ?? [])].filter(
-    (tool) => !excluded.has(tool),
-  );
-  const tools =
-    allowedListProvided || exclude.length > 0
-      ? {
-          ...(allowedListProvided ? { core } : {}),
-          ...(exclude.length > 0 ? { exclude } : {}),
-        }
-      : undefined;
 
   if (policy === undefined) {
-    return tools ? { tools } : {};
+    return {};
   }
 
-  // ENG-021: session-wide mode takes precedence over per-capability levels.
   if (policy.mode === 'bypass') {
     // The cligent opencode adapter spawns `opencode serve` and drives it
     // via the SDK — it does not invoke the `opencode run` CLI, so
@@ -515,21 +540,33 @@ export function mapPermissionsToOpenCodeOptions(
       "opencode adapter does not support PermissionPolicy.mode: 'bypass': " +
         'the cligent opencode adapter drives an `opencode serve` SDK/server ' +
         'session, so the `--dangerously-skip-permissions` CLI flag has no ' +
-        "place to attach. Use mode: 'auto' (the SDK equivalent of " +
-        'opencode.json\'s "permission": "allow") or set the per-capability ' +
-        'fileWrite / shellExecute / networkAccess levels explicitly.',
+        "place to attach. Use mode: 'auto' to answer surviving native " +
+        'permission asks once while preserving configured rules, or set the ' +
+        'per-capability fileWrite / shellExecute / networkAccess levels ' +
+        'explicitly.',
     );
   }
 
   if (policy.mode === 'auto') {
-    // SDK equivalent of opencode.json's `"permission": "allow"` global
-    // setting: every per-tool permission set to 'allow'. The per-capability
-    // path is short-circuited; user-passed allowedTools / disallowedTools
-    // (independent from `permissions`) still apply.
+    // OpenCode's native --auto behavior approves only permission asks that
+    // survive its configured rules. Do not append a wildcard allow rule:
+    // PermissionRuleset uses last-match-wins, so that would override native
+    // and user-configured denies. The automation posture and portable
+    // capability rules are independent axes; omitted capabilities preserve
+    // OpenCode's native rules.
+    const permission: Record<string, PermissionLevel> = {};
+    if (policy.fileWrite !== undefined) {
+      permission.edit = policy.fileWrite;
+    }
+    if (policy.shellExecute !== undefined) {
+      permission.bash = policy.shellExecute;
+    }
+    if (policy.networkAccess !== undefined) {
+      permission.webfetch = policy.networkAccess;
+    }
     return {
-      permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+      ...(Object.keys(permission).length > 0 ? { permission } : {}),
       ...(writablePaths ? { writablePaths } : {}),
-      ...(tools ? { tools } : {}),
     };
   }
 
@@ -542,8 +579,27 @@ export function mapPermissionsToOpenCodeOptions(
       webfetch: normalized.networkAccess,
     },
     ...(writablePaths ? { writablePaths } : {}),
-    ...(tools ? { tools } : {}),
   };
+}
+
+function assertOpenCodeToolRestrictionsUnsupported(
+  options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
+): void {
+  if (
+    options?.allowedTools === undefined &&
+    options?.disallowedTools === undefined
+  ) {
+    return;
+  }
+
+  throw new Error(
+    'OpenCode adapter does not support explicit allowedTools or ' +
+      'disallowedTools: OpenCode 1.18.13 merges prompt `tools` into ' +
+      'persistent session permission rules, where they can override native ' +
+      'or explicit denies, and exposes no independent exact per-call tool ' +
+      'registry surface. Omit both options or choose an adapter with exact ' +
+      'tool filtering.',
+  );
 }
 
 export function mapEffortToOpenCodeVariant(
@@ -604,44 +660,14 @@ function toOpenCodeV2PermissionRuleset(
   const record = asRecord(permission);
   const rules: PermissionRuleset = [];
 
-  for (const key of ['edit', 'bash', 'webfetch'] as const) {
-    const action = asPermissionAction(record[key]);
+  for (const [permissionName, value] of Object.entries(record)) {
+    const action = asPermissionAction(value);
     if (action) {
-      rules.push({ permission: key, pattern: '*', action });
+      rules.push({ permission: permissionName, pattern: '*', action });
     }
   }
 
   return rules.length > 0 ? rules : undefined;
-}
-
-function toOpenCodeV2Tools(tools: unknown): OpenCodeV2Tools | undefined {
-  const record = asRecord(tools);
-  const hasExplicitCore = Object.prototype.hasOwnProperty.call(record, 'core');
-  const core = asStringArray(record.core);
-  const exclude = asStringArray(record.exclude);
-  const mapped: OpenCodeV2Tools = {};
-
-  if (core.some((tool) => tool.includes('*'))) {
-    throw new TypeError(
-      'OpenCode prompt allowlist accepts exact tool identifiers, not wildcard patterns',
-    );
-  }
-
-  if (hasExplicitCore) {
-    mapped['*'] = false;
-  }
-  for (const tool of core) {
-    mapped[tool] = true;
-  }
-  for (const tool of exclude) {
-    mapped[tool] = false;
-  }
-
-  return Object.keys(mapped).length > 0 ? mapped : undefined;
-}
-
-function toOpenCodeV1Tools(tools: unknown): unknown {
-  return toOpenCodeV2Tools(tools);
 }
 
 function throwIfSdkResultError(result: unknown, operation: string): void {
@@ -665,6 +691,7 @@ export function wrapOpencodeClient(
   const session = real.session as Record<string, unknown> | undefined;
   const event = real.event as Record<string, unknown> | undefined;
   const instance = real.instance as Record<string, unknown> | undefined;
+  const permission = real.permission as Record<string, unknown> | undefined;
 
   if (!session || typeof session.create !== 'function') {
     throw new Error('OpenCode SDK client.session.create() not available');
@@ -687,22 +714,52 @@ export function wrapOpencodeClient(
   const sessionPromptSync = typeof session.prompt === 'function'
     ? (session.prompt.bind(session) as (args: unknown) => Promise<unknown>)
     : undefined;
-  const eventSubscribe = event.subscribe.bind(event) as (args?: unknown) => Promise<unknown>;
+  const eventSubscribe = event.subscribe.bind(event) as (
+    parameters?: unknown,
+    requestOptions?: unknown,
+  ) => Promise<unknown>;
   const instanceDispose = instance && typeof instance.dispose === 'function'
     ? (instance.dispose.bind(instance) as () => Promise<void>)
     : undefined;
+  const permissionReply =
+    permission && typeof permission.reply === 'function'
+      ? (permission.reply.bind(permission) as (
+          args: unknown,
+          options?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const permissionRespond =
+    permission && typeof permission.respond === 'function'
+      ? (permission.respond.bind(permission) as (
+          args: unknown,
+          options?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const legacyPermissionReply =
+    typeof real.postSessionIdPermissionsPermissionId === 'function'
+      ? (real.postSessionIdPermissionsPermissionId.bind(real) as (
+          args: unknown,
+        ) => Promise<unknown>)
+      : undefined;
 
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
+      if (options.tools !== undefined) {
+        throw new Error(
+          'OpenCode compatibility client does not support prompt `tools`: ' +
+            'OpenCode 1.18.13 merges them into persistent session permission ' +
+            'rules, where they can override native or explicit denies, ' +
+            'instead of enforcing an independent exact tool registry. Omit ' +
+            '`tools` or choose an adapter with exact tool filtering.',
+        );
+      }
       const resumeId = asString(options.sessionId);
       const cwdVal = asString(options.cwd);
       const permissionObj = options.permission;
-      const toolsObj = options.tools;
-      const v1Tools = toOpenCodeV1Tools(toolsObj);
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
+      const runSignal = options.signal as AbortSignal | undefined;
       const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
-      const v2Tools = toOpenCodeV2Tools(toolsObj);
 
       let sessionId: string | undefined;
 
@@ -751,7 +808,6 @@ export function wrapOpencodeClient(
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.steps !== undefined ? { steps: options.steps } : {}),
         ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-        ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
       };
 
       const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
@@ -762,7 +818,6 @@ export function wrapOpencodeClient(
         ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
         ...(variantVal ? { variant: variantVal } : {}),
         ...(cwdVal ? { directory: cwdVal } : {}),
-        ...(v2Tools ? { tools: v2Tools } : {}),
       };
 
       // The SDK's event stream is a lazy async generator — the HTTP
@@ -771,9 +826,12 @@ export function wrapOpencodeClient(
       // the SSE connection BEFORE sending the prompt so fast early
       // events are not lost on the live-only (no replay) endpoint.
       const subResult = asRecord(
-        await eventSubscribe(
-          apiVersion === 'v2' && cwdVal ? { directory: cwdVal } : undefined,
-        ),
+        await (apiVersion === 'v2'
+          ? eventSubscribe(
+              cwdVal ? { directory: cwdVal } : undefined,
+              runSignal ? { signal: runSignal } : undefined,
+            )
+          : eventSubscribe(runSignal ? { signal: runSignal } : undefined)),
       );
       const rawStream = subResult.stream ?? subResult.events ?? subResult;
       let events: AsyncIterable<unknown> | undefined;
@@ -783,6 +841,10 @@ export function wrapOpencodeClient(
       if (isAsyncIterable(rawStream)) {
         rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
         eagerFirst = rawIterator.next(); // triggers fetch()
+        // If prompting fails before the wrapper returns the stream, the
+        // run-owned signal still cancels this eager request. Keep its
+        // rejection observed until a consumer receives the same promise.
+        eagerFirst.catch(() => {});
       }
 
       if (sessionPromptAsync) {
@@ -815,13 +877,33 @@ export function wrapOpencodeClient(
         events = {
           [Symbol.asyncIterator](): AsyncIterator<unknown> {
             let consumedFirst = false;
+            let closed = false;
             return {
               async next() {
+                if (closed) {
+                  return { done: true, value: undefined };
+                }
                 if (!consumedFirst) {
                   consumedFirst = true;
                   return first;
                 }
                 return rest.next();
+              },
+              async return(value?: unknown) {
+                if (closed) {
+                  return { done: true, value };
+                }
+                closed = true;
+                return typeof rest.return === 'function'
+                  ? rest.return(value)
+                  : { done: true, value };
+              },
+              async throw(error?: unknown) {
+                closed = true;
+                if (typeof rest.throw === 'function') {
+                  return rest.throw(error);
+                }
+                throw error;
               },
             };
           },
@@ -835,6 +917,63 @@ export function wrapOpencodeClient(
       };
     },
 
+    async replyPermission(options): Promise<void> {
+      const operation =
+        'OpenCode permission reply failed ' +
+        `(sessionID=${JSON.stringify(options.sessionId)}, ` +
+        `requestID=${JSON.stringify(options.requestId)}, ` +
+        `permission=${JSON.stringify(options.permission)})`;
+      let result: unknown;
+
+      if (apiVersion === 'v2') {
+        if (!permissionReply) {
+          throw new Error(
+            `${operation}: SDK client.permission.reply() not available`,
+          );
+        }
+        result = await permissionReply(
+          {
+            requestID: options.requestId,
+            ...(options.cwd ? { directory: options.cwd } : {}),
+            reply: options.decision,
+            ...(options.decision === 'reject'
+              ? {
+                  message:
+                    'Cligent headless runs reject unresolved permission requests',
+                }
+              : {}),
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+      } else if (legacyPermissionReply) {
+        result = await legacyPermissionReply({
+          path: {
+            id: options.sessionId,
+            permissionID: options.requestId,
+          },
+          body: { response: options.decision },
+          ...(options.cwd ? { query: { directory: options.cwd } } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+      } else if (permissionRespond) {
+        result = await permissionRespond(
+          {
+            sessionID: options.sessionId,
+            permissionID: options.requestId,
+            ...(options.cwd ? { directory: options.cwd } : {}),
+            response: options.decision,
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+      } else {
+        throw new Error(
+          `${operation}: SDK permission response API not available`,
+        );
+      }
+
+      throwIfSdkResultError(result, operation);
+    },
+
     events(options?: Record<string, unknown>): AsyncIterable<unknown> {
       // Return an async iterable that lazily calls subscribe
       return {
@@ -846,7 +985,16 @@ export function wrapOpencodeClient(
             async next(): Promise<IteratorResult<unknown>> {
               if (!started) {
                 started = true;
-                const subResult = asRecord(await eventSubscribe(options));
+                const eventSignal = options?.signal as AbortSignal | undefined;
+                const directory = asString(options?.directory);
+                const subResult = asRecord(
+                  await (apiVersion === 'v2'
+                    ? eventSubscribe(
+                        directory ? { directory } : undefined,
+                        eventSignal ? { signal: eventSignal } : undefined,
+                      )
+                    : eventSubscribe(options)),
+                );
                 const stream = subResult.stream ?? subResult.events ?? subResult;
                 if (isAsyncIterable(stream)) {
                   innerIterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
@@ -860,6 +1008,17 @@ export function wrapOpencodeClient(
               }
 
               return innerIterator.next();
+            },
+            async return(value?: unknown): Promise<IteratorResult<unknown>> {
+              return typeof innerIterator?.return === 'function'
+                ? innerIterator.return(value)
+                : { done: true, value };
+            },
+            async throw(error?: unknown): Promise<IteratorResult<unknown>> {
+              if (typeof innerIterator?.throw === 'function') {
+                return innerIterator.throw(error);
+              }
+              throw error;
             },
           };
         },
@@ -978,6 +1137,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     prompt: string,
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    assertOpenCodeToolRestrictionsUnsupported(options);
+
     let sdk: OpenCodeSdk;
     try {
       sdk = await this.loadSdkFn();
@@ -1012,7 +1173,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
     let serverClosed = false;
+    let serverTerminationRequested = false;
     let serverExitPromise: Promise<ServerCloseInfo> | undefined;
+    let serverExitInfo: ServerCloseInfo | undefined;
+    let finishStreamWait: ((result: StreamWaitResult) => void) | undefined;
+    let abortPermissionWait: (() => void) | undefined;
+
+    const terminateManagedServer = () => {
+      if (!serverProcess || serverClosed || serverTerminationRequested) {
+        return;
+      }
+      serverTerminationRequested = true;
+      try {
+        serverProcess.kill('SIGTERM');
+      } catch {
+        // ignore kill errors during shutdown
+      }
+    };
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
@@ -1037,23 +1214,37 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       string,
       { toolUseId: string; toolName: string }
     >();
+    const repliedPermissionRequests = new Set<string>();
+    const permissionRequestKey = (requestId: string) =>
+      `${sessionId}\u0000${requestId}`;
+
+    // Own every cancellable SDK operation for this run. The caller's signal
+    // drives this controller, while adapter timeouts can also cancel the
+    // underlying HTTP/SSE work without mutating the caller's controller.
+    const runAbortController = new AbortController();
+    const abortRunIo = () => {
+      if (!runAbortController.signal.aborted) {
+        runAbortController.abort();
+      }
+    };
+    let abortListenerAttached = false;
 
     const onAbort = () => {
       abortRequested = true;
-      if (serverProcess && !serverClosed) {
-        try {
-          serverProcess.kill('SIGTERM');
-        } catch {
-          // ignore kill errors during shutdown
-        }
-      }
+      finishStreamWait?.({ kind: 'abort' });
+      abortPermissionWait?.();
+      abortRunIo();
     };
 
-    if (options?.abortSignal && !options.abortSignal.aborted) {
+    if (options?.abortSignal?.aborted) {
+      onAbort();
+    } else if (options?.abortSignal) {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
+      abortListenerAttached = true;
     }
 
     let client: OpenCodeClient | undefined;
+    let streamIterator: AsyncIterator<unknown> | undefined;
 
     try {
       if (this.mode === 'managed') {
@@ -1076,6 +1267,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
         serverExitPromise = waitForProcessClose(serverProcess).then((info) => {
           serverClosed = true;
+          serverExitInfo = info;
+          finishStreamWait?.({ kind: 'server_exit', exit: info });
           return info;
         });
 
@@ -1097,6 +1290,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         prompt,
         cwd: options?.cwd,
         model: options?.model,
+        signal: runAbortController.signal,
         ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(options?.resume ? { sessionId: options.resume } : {}),
@@ -1111,9 +1305,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
       if (!initYielded) {
         const runRecord = asRecord(runResult);
-        const configuredTools = asStringArray(mappedPermissions.tools?.core ?? []);
         const runTools = asStringArray(runRecord.tools);
-        const configuredAllowlist = options?.allowedTools !== undefined;
 
         yield createEvent(
           'init',
@@ -1121,28 +1313,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           {
             model: options?.model ?? asString(runRecord.model) ?? 'unknown',
             cwd: options?.cwd ?? asString(runRecord.cwd) ?? process.cwd(),
-            tools: configuredAllowlist
-              ? configuredTools
-              : runTools.length > 0
-                ? runTools
-                : configuredTools,
+            tools: runTools,
             capabilities: {
               mode: this.mode,
-              toolsKnown:
-                configuredAllowlist ||
-                runTools.length > 0 ||
-                configuredTools.length > 0,
-              toolsSource:
-                configuredAllowlist
-                  ? 'configured'
-                  : runTools.length > 0
-                    ? 'sdk'
-                    : configuredTools.length > 0
-                      ? 'configured'
-                      : 'unavailable',
-              ...(mappedPermissions.tools?.exclude
-                ? { disallowedTools: mappedPermissions.tools.exclude }
-                : {}),
+              toolsKnown: runTools.length > 0,
+              toolsSource: runTools.length > 0 ? 'sdk' : 'unavailable',
             },
           },
           sessionId,
@@ -1150,26 +1325,74 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         initYielded = true;
       }
 
-      const stream = resolveEventStream(client, runResult, options?.abortSignal);
+      const stream = resolveEventStream(
+        client,
+        runResult,
+        runAbortController.signal,
+      );
       if (!stream) {
         throw new Error('OpenCode SDK client does not provide an SSE event stream');
       }
 
-      const iterator = stream[Symbol.asyncIterator]();
+      streamIterator = stream[Symbol.asyncIterator]();
 
       while (true) {
-        const nextPromise = iterator.next();
+        const nextPromise = streamIterator.next();
 
-        const raceResult =
-          this.mode === 'managed' && serverExitPromise
-            ? await Promise.race([
-                nextPromise.then((result) => ({ kind: 'event' as const, result })),
-                serverExitPromise.then((exit) => ({ kind: 'server_exit' as const, exit })),
-              ])
-            : ({
-                kind: 'event' as const,
-                result: await nextPromise,
-              } as const);
+        // Keep one replaceable control waiter rather than adding a fresh
+        // reaction to run-lifetime abort/server promises for every SSE event.
+        // Once an event wins, the control callback is released immediately.
+        const raceResult = await new Promise<StreamWaitResult>((resolve) => {
+          let settled = false;
+          const finish = (result: StreamWaitResult) => {
+            if (settled) return;
+            settled = true;
+            if (finishStreamWait === finish) {
+              finishStreamWait = undefined;
+            }
+            resolve(result);
+          };
+
+          finishStreamWait = finish;
+          nextPromise.then(
+            (result) => finish({ kind: 'event', result }),
+            (error: unknown) => finish({ kind: 'stream_error', error }),
+          );
+
+          // Preserve abort precedence when multiple controls were already
+          // settled before this wait was armed.
+          if (abortRequested || options?.abortSignal?.aborted) {
+            finish({ kind: 'abort' });
+          } else if (serverExitInfo) {
+            finish({ kind: 'server_exit', exit: serverExitInfo });
+          }
+        });
+
+        if (raceResult.kind === 'stream_error') {
+          throw raceResult.error;
+        }
+
+        if (raceResult.kind === 'abort') {
+          nextPromise.catch(() => {});
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
+              usage: { ...DEFAULT_DONE_USAGE },
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          break;
+        }
 
         if (raceResult.kind === 'server_exit') {
           nextPromise.catch(() => {});
@@ -1416,11 +1639,21 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           continue;
         }
 
-        if (eventType === 'permission.updated' || eventType === 'permission.asked') {
+        if (
+          eventType === 'permission.updated' ||
+          eventType === 'permission.asked'
+        ) {
+          const nestedPermission = asRecord(event.permission);
           const permission =
-            eventType === 'permission.asked' ? event : asRecord(event.permission);
+            eventType === 'permission.asked' ||
+            Object.keys(nestedPermission).length === 0
+              ? event
+              : nestedPermission;
           const reason = asString(permission.reason) ?? asString(event.reason);
           const toolName =
+            (eventType === 'permission.updated'
+              ? asString(props.type)
+              : undefined) ??
             asString(permission.permission) ??
             asString(permission.toolName) ??
             asString(permission.name) ??
@@ -1429,45 +1662,241 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const requestId =
             asString(permission.requestID) ?? asString(permission.id);
           const toolUseId =
-            requestId ??
             asString(asRecord(permission.tool).callID) ??
+            asString(permission.callID) ??
             asString(permission.toolUseId) ??
             asString(event.toolUseId) ??
+            requestId ??
             generateSessionId();
+          const input = parseToolInput(
+            permission.input ?? permission.metadata ?? event.input ?? {},
+          );
+          const patterns = parsePermissionPatterns(
+            permission.patterns,
+            permission.pattern,
+            event.patterns,
+            event.pattern,
+          );
 
           if (requestId) {
+            const requestKey = permissionRequestKey(requestId);
+            if (repliedPermissionRequests.has(requestKey)) {
+              continue;
+            }
             // permission.replied carries only requestID; remember which
             // tool call (callID) a later denial must resolve to.
-            permissionRequests.set(requestId, {
+            permissionRequests.set(requestKey, {
               toolUseId:
-                asString(asRecord(permission.tool).callID) ?? toolUseId,
+                asString(asRecord(permission.tool).callID) ??
+                asString(permission.callID) ??
+                toolUseId,
               toolName,
             });
           }
 
-          yield createEvent(
-            'permission_request',
-            AGENT,
-            {
-              toolName,
-              toolUseId,
-              input: parseToolInput(
-                permission.input ?? permission.metadata ?? event.input ?? {},
-              ),
-              ...(reason ? { reason } : {}),
+          if (options?.permissions?.mode !== 'auto') {
+            yield createEvent(
+              'permission_request',
+              AGENT,
+              {
+                toolName,
+                toolUseId,
+                input,
+                ...(reason ? { reason } : {}),
+              },
+              sessionId,
+            );
+          }
+
+          if (!requestId) {
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_PERMISSION_REQUEST_INVALID',
+                message:
+                  'Cannot resolve OpenCode headless permission request ' +
+                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  'requestID="<missing>", ' +
+                  `permission=${JSON.stringify(toolName)}): ` +
+                  'the event did not include a permission request ID',
+                recoverable: false,
+              },
+              sessionId,
+            );
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const requestKey = permissionRequestKey(requestId);
+          repliedPermissionRequests.add(requestKey);
+
+          const decision =
+            options?.permissions?.mode === 'auto' ? 'once' : 'reject';
+          const replyPromise = client?.replyPermission
+            ? client.replyPermission({
+                sessionId,
+                requestId,
+                permission: toolName,
+                decision,
+                ...(options?.cwd ? { cwd: options.cwd } : {}),
+                signal: runAbortController.signal,
+              })
+            : Promise.reject(
+                new Error('SDK client permission reply API not available'),
+              );
+          const replyRace = await new Promise<PermissionReplyWaitResult>(
+            (resolve) => {
+              let settled = false;
+              let replyTimeout: ReturnType<typeof setTimeout> | undefined;
+              const finish = (result: PermissionReplyWaitResult) => {
+                if (settled) return;
+                settled = true;
+                if (replyTimeout) clearTimeout(replyTimeout);
+                if (abortPermissionWait === abortCurrentReply) {
+                  abortPermissionWait = undefined;
+                }
+                resolve(result);
+              };
+              const abortCurrentReply = () => finish({ kind: 'abort' });
+
+              abortPermissionWait = abortCurrentReply;
+              replyPromise.then(
+                () => finish({ kind: 'replied' }),
+                (error: unknown) => finish({ kind: 'error', error }),
+              );
+              replyTimeout = setTimeout(
+                () => finish({ kind: 'timeout' }),
+                PERMISSION_REPLY_TIMEOUT_MS,
+              );
+
+              if (abortRequested || options?.abortSignal?.aborted) {
+                abortCurrentReply();
+              }
             },
-            sessionId,
           );
+
+          if (replyRace.kind === 'replied' && decision === 'once') {
+            yield createEvent(
+              'opencode:permission_decision',
+              AGENT,
+              {
+                requestId,
+                permission: toolName,
+                patterns,
+                toolUseId,
+                decision,
+                automated: true,
+                input,
+                ...(reason ? { reason } : {}),
+              },
+              sessionId,
+            );
+          }
+
+          if (
+            replyRace.kind === 'abort' ||
+            abortRequested ||
+            options?.abortSignal?.aborted
+          ) {
+            replyPromise.catch(() => {});
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
+            if (replyRace.kind === 'timeout') {
+              // Stop the actual reply request and the paired SSE transport;
+              // returning an error without cancelling them would preserve the
+              // external-mode leak this timeout is meant to bound.
+              abortRunIo();
+            }
+            replyPromise.catch(() => {});
+            const detail =
+              replyRace.kind === 'timeout'
+                ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
+                : replyRace.error instanceof Error
+                  ? replyRace.error.message
+                  : String(replyRace.error);
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_PERMISSION_REPLY_FAILED',
+                message:
+                  'Failed to resolve OpenCode headless permission request ' +
+                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  `requestID=${JSON.stringify(requestId)}, ` +
+                  `permission=${JSON.stringify(toolName)}): ${detail}`,
+                recoverable: false,
+              },
+              sessionId,
+            );
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
           continue;
         }
 
         if (eventType === 'permission.replied') {
           const permission = asRecord(event.permission);
+          const requestId =
+            asString(permission.requestID) ??
+            asString(event.requestID) ??
+            asString(permission.permissionID) ??
+            asString(event.permissionID);
+          const asked = requestId
+            ? permissionRequests.get(permissionRequestKey(requestId))
+            : undefined;
+          if (requestId) {
+            // A reply is terminal correlation state regardless of decision.
+            // Keeping successful `once` replies would grow the correlation
+            // state for the lifetime of a long-running session.
+            permissionRequests.delete(permissionRequestKey(requestId));
+          }
           const decision = (
             asString(permission.decision) ??
             asString(event.decision) ??
             asString(permission.status) ??
             asString(event.status) ??
+            asString(permission.response) ??
+            asString(event.response) ??
             asString(event.reply) ??
             ''
           ).toLowerCase();
@@ -1477,11 +1906,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             decision === 'rejected' ||
             decision === 'reject'
           ) {
-            const requestId =
-              asString(permission.requestID) ?? asString(event.requestID);
-            const asked = requestId
-              ? permissionRequests.get(requestId)
-              : undefined;
             const toolUseId =
               asked?.toolUseId ??
               asString(asRecord(permission.tool).callID) ??
@@ -1646,28 +2070,17 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
     } catch (error) {
       if (!initYielded) {
-        const configuredAllowlist = options?.allowedTools !== undefined;
-        const configuredTools = asStringArray(
-          mappedPermissions.tools?.core ?? [],
-        );
         yield createEvent(
           'init',
           AGENT,
           {
             model: options?.model ?? 'unknown',
             cwd: options?.cwd ?? process.cwd(),
-            tools: configuredTools,
+            tools: [],
             capabilities: {
               mode: this.mode,
-              toolsKnown:
-                configuredAllowlist || configuredTools.length > 0,
-              toolsSource:
-                configuredAllowlist || configuredTools.length > 0
-                  ? 'configured'
-                  : 'unavailable',
-              ...(mappedPermissions.tools?.exclude
-                ? { disallowedTools: mappedPermissions.tools.exclude }
-                : {}),
+              toolsKnown: false,
+              toolsSource: 'unavailable',
             },
           },
           sessionId,
@@ -1722,31 +2135,53 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } finally {
-      if (options?.abortSignal && !options.abortSignal.aborted) {
+      if (options?.abortSignal && abortListenerAttached) {
         options.abortSignal.removeEventListener('abort', onAbort);
       }
 
-      await maybeCallAsync(client?.close?.bind(client));
-      await maybeCallAsync(client?.shutdown?.bind(client));
+      abortRunIo();
+      const pendingServerExit =
+        serverProcess && !serverClosed ? serverExitPromise : undefined;
 
-      if (serverProcess && !serverClosed) {
-        try {
-          serverProcess.kill('SIGTERM');
-        } catch {
-          // ignore cleanup errors
-        }
+      // A managed server must not remain alive behind a stuck SDK dispose.
+      // Request its termination before invoking any client cleanup hooks.
+      terminateManagedServer();
 
-        if (serverExitPromise) {
-          try {
-            await Promise.race([
-              serverExitPromise,
-              new Promise((resolve) => setTimeout(resolve, 1500)),
-            ]);
-          } catch {
-            // ignore cleanup errors
-          }
-        }
-      }
+      const activeIterator = streamIterator;
+      const iteratorReturn =
+        typeof activeIterator?.return === 'function'
+          ? activeIterator.return.bind(activeIterator)
+          : undefined;
+      const sdkCleanup = settleAllWithin(
+        [
+          maybeCallAsync(iteratorReturn),
+          maybeCallAsync(client?.close?.bind(client)),
+          maybeCallAsync(client?.shutdown?.bind(client)),
+        ],
+        SDK_CLEANUP_TIMEOUT_MS,
+      );
+      const serverCleanup = pendingServerExit
+        ? (async () => {
+            await settleAllWithin(
+              [pendingServerExit],
+              MANAGED_SERVER_SHUTDOWN_TIMEOUT_MS,
+            );
+            if (serverClosed || !serverProcess) return;
+
+            try {
+              serverProcess.kill('SIGKILL');
+            } catch {
+              // The bounded close wait below still prevents teardown from
+              // hanging if the process rejects the escalation request.
+            }
+            await settleAllWithin(
+              [pendingServerExit],
+              MANAGED_SERVER_KILL_TIMEOUT_MS,
+            );
+          })()
+        : Promise.resolve();
+
+      await Promise.all([sdkCleanup, serverCleanup]);
     }
   }
 }
