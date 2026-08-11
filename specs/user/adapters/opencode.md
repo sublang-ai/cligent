@@ -45,7 +45,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | assistant `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` / `permission.asked` | `permission_request` plus the headless reply behavior in [OPENCODE-020](#opencode-020) |
+| `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
 | `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
@@ -136,12 +136,20 @@ While the SSE stream carries events for all sessions, the adapter shall emit onl
 ### OPENCODE-007
 
 Where a `PermissionPolicy` is provided, the adapter shall map it to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
-Where `PermissionPolicy.mode` is `auto`, the adapter shall represent
-OpenCode's global `"permission": "allow"` setting as `{ "*": "allow" }` on
-the v1 path and as the v2 rule
-`{ permission: "*", pattern: "*", action: "allow" }`, so permissions outside
-the three portable capability names are covered by the same native global
-setting.
+Where `PermissionPolicy.mode` is `auto`, the adapter shall reproduce
+OpenCode's native auto posture: it shall append no wildcard permission rule
+and shall answer only permission asks that survive OpenCode's configured rules
+with `once` per [OPENCODE-020](#opencode-020).
+This preserves native and user-configured explicit denies, which OpenCode
+resolves before emitting an ask.
+OpenCode models that automation posture independently from its permission
+rules.
+This independence covers explicitly supplied portable capability levels, not
+`AgentOptions` tool lists, which are unsupported per
+[OPENCODE-015](#opencode-015).
+When `mode: 'auto'` accompanies explicitly supplied portable capability levels,
+the adapter shall map only those present fields; omitted fields shall remain
+absent so OpenCode's native and user rules retain authority.
 Where the OpenCode v2 SDK path is active, the adapter shall apply the
 equivalent `PermissionRuleset` at `session.create` for fresh sessions and at
 `session.update` before prompting resumed sessions, because the v2 prompt body
@@ -152,15 +160,30 @@ Where `PermissionPolicy.writablePaths` is non-empty per
 [ENG-022](../engine.md#eng-022), the adapter shall accept valid entries, expose
 `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with
 `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
-permission and tool mapping unchanged.
+permission mapping unchanged.
+`writablePaths` is reporting, not confinement: the OpenCode process retains
+ambient host filesystem authority, while `external_directory` is a
+tool-approval rule rather than an OS sandbox.
+Native auto may answer a surviving `external_directory` ask `once` without a
+human.
 
 ### OPENCODE-020
 
 While an OpenCode run is headless, when a `permission.updated` or
 `permission.asked` event belonging to its session reaches the adapter, the
-adapter shall emit the normalized `permission_request` for observability and
-reject the request exactly once through the applicable SDK permission-response
-route, including for permission names unknown to cligent.
+adapter shall resolve it exactly once through the applicable SDK
+permission-response route, including for permission names unknown to cligent.
+Under `mode: 'auto'`, it shall answer `once` and shall not emit a normalized
+`permission_request`, preserving the headless auto-mode contract.
+After the applicable SDK route confirms a successful auto `once` reply, the
+adapter shall emit exactly one `opencode:permission_decision` extension event
+with the native request identifier, permission name, patterns, correlated tool
+use identifier, `decision: 'once'`, `automated: true`, normalized input, and
+optional reason.
+The extension event shall record a completed automated decision and shall not
+be substituted for the interactive `permission_request` event.
+Outside auto mode, it shall emit `permission_request` for observability and
+answer `reject` fail-closed without emitting an automated-decision extension.
 The response shall preserve the native request identifier and, where the SDK
 route requires it, the session identifier; permission events belonging to
 other sessions shall receive no response per [OPENCODE-006](#opencode-006).
@@ -170,6 +193,8 @@ seconds, the adapter shall emit a non-recoverable permission error whose
 message names the session identifier, request identifier (or its absence), and
 permission name, then emit `done` with `status: 'error'` rather than continue
 waiting on the SSE stream.
+Missing, failed, timed-out, or aborted replies shall emit no
+`opencode:permission_decision` event.
 The adapter shall drive the active SSE subscription and permission response
 with a run-owned abort signal. On the five-second response timeout, it shall
 abort that signal and close the SSE iterator so the underlying response and
@@ -181,14 +206,16 @@ with `status: 'interrupted'`. The ensuing teardown shall release the abort
 listener, terminate the managed server per [OPENCODE-009](#opencode-009), and
 perform bounded iterator and SDK client cleanup per
 [OPENCODE-008](#opencode-008).
+Retained wait-control state shall remain bounded independently of the number of
+completed SSE events and permission responses.
 
 ### OPENCODE-013
 
 Where `PermissionPolicy` is absent, the adapter shall omit adapter-generated
 permission data from fresh-session creation, resumed-session updates, and
 prompt requests on every supported SDK path. OpenCode's native permission
-defaults shall remain in effect while independent `allowedTools` or
-`disallowedTools` restrictions still apply to the prompt.
+defaults shall remain in effect. If either tool-list option is explicitly
+present, [OPENCODE-015](#opencode-015) shall reject the run before SDK loading.
 
 ## Server Lifecycle
 
@@ -202,6 +229,8 @@ Run teardown shall request managed server termination before invoking or
 awaiting SDK iterator and client cleanup. Waits for iterator return, client
 close, and client shutdown shall be bounded, so a non-settling SDK cleanup
 hook cannot keep the managed server alive or prevent generator completion.
+If the server remains alive after a bounded `SIGTERM` grace, teardown shall
+send `SIGKILL` and bound the final close wait.
 
 ### OPENCODE-009
 
@@ -309,11 +338,25 @@ Where effort is outside the OpenCode portable vocabulary, including `ultracode` 
 
 ### OPENCODE-015
 
-Where `AgentOptions.allowedTools` is provided, the adapter shall map the OpenCode prompt tool wildcard to `false`, each effective allowed identifier to `true`, and each disallowed identifier to `false`, so every unlisted prompt tool is unavailable and explicit denies take precedence.
-An explicit empty allowlist shall therefore map to `{ "*": false }`, disabling all prompt tools rather than omitting the tool map.
-Where an allowed or disallowed tool identifier contains OpenCode's `*` wildcard syntax, the adapter shall reject before prompting because [ENG-017](../engine.md#eng-017) requires exact identifiers and a wildcard allow could reopen the provider registry.
-The adapter's `init` event shall report an explicit allowlist as a configured, known tool set even when the effective set is empty.
-Where `allowedTools` is omitted, the adapter shall preserve OpenCode's native available-tool set subject to any independently provided `disallowedTools`.
+Where either `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is
+explicitly present, including as an empty array, the adapter shall reject
+before loading the SDK or invoking the backend.
+The exported permission mapper shall reject either option before returning a
+provider mapping, and the exported compatibility wrapper shall reject any
+direct prompt `tools` value before session creation, update, subscription, or
+prompt invocation.
+OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
+control: the provider converts its booleans into persistent session permission
+rules, replacing prior session rules [[5]].
+Because permission evaluation is last-match-wins and session rules follow agent
+rules, an enabled tool can override a native or explicitly supplied deny, and a
+prompt-scoped request can change a resumed session after that cligent call ends
+[[6]][[7]].
+The provider also canonicalizes some tool identifiers to shared permission
+names, so this surface cannot guarantee
+[ENG-017](../engine.md#eng-017)'s exact identifier semantics [[6]].
+When both options are omitted, the adapter shall send no prompt `tools` data
+and preserve OpenCode's native available-tool surface.
 
 ## References
 
@@ -321,3 +364,6 @@ Where `allowedTools` is omitted, the adapter shall preserve OpenCode's native av
 [2]: https://opencode.ai/docs/server/ "OpenCode server"
 [3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 "OpenCode 1.18.13 step-finish token split"
 [4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 "OpenCode 1.18.13 token roll-up"
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluation"
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"

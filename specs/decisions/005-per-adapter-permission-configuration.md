@@ -21,7 +21,7 @@ Each coding-agent SDK ships its own permission/approval model:
 | `codex` | `ThreadOptions.approvalPolicy`; `CodexOptions.config.default_permissions` (modern permission profile) and `CodexOptions.config.approvals_reviewer` [[2]][[6]][[7]][[8]] | `approval_policy = on-request` + `approvals_reviewer = auto_review` + a `default_permissions` profile (eligible approval requests route to a reviewer agent without broadening the profile's filesystem/network limits). The legacy `sandbox_mode` knob is not used: per [[8]] a present `sandbox_mode` makes Codex ignore `default_permissions`. |
 | `gemini` | `--approval-mode` / `--yolo` [[3]] | `yolo` (no further prompts) |
 | `kimi` | ACP session mode plus `session/request_permission` reverse requests [[9]][[10]] | `auto` is native protected automation; `yolo` retains higher-priority rules and is not an unchecked bypass |
-| `opencode` | per-tool `allow` / `ask` / `deny` rules in `opencode.json` [[4]] | `--dangerously-skip-permissions` on `opencode run` [[5]], or `"permission": "allow"` in `opencode.json` [[4]] |
+| `opencode` | per-tool `allow` / `ask` / `deny` access rules; `opencode run --auto`; `--dangerously-skip-permissions` [[4]][[5]][[11]][[12]] | `--auto` preserves the access rules and answers surviving asks `once`; dangerous-skip is unchecked bypass |
 
 Claude's `'auto'` runs its classifier on a separate classifier model — Sonnet 5 by default, with model-dependent fallbacks (an Opus model for Fable 5 sessions) and a server-side override, none user-configurable — and fails closed:
 while the classifier model is unavailable, non-read-only tool calls outside allow rules and working-directory edits are denied outright naming that model, and repeated blocks abort a non-interactive session because the prompt fallback needs a user [[1]].
@@ -33,7 +33,7 @@ Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolic
 Today's gap is two-layered:
 
 - **YAML reachability**: tmux-play's `PlayerConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
-- **Auto-mode vocabulary**: `PermissionPolicy` cannot express auto-mode intent (classifier-, sandbox-, or reviewer-protected `auto` vs unchecked `bypass`). The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's reviewer-protected `on-request + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
+- **Auto-mode vocabulary**: `PermissionPolicy` cannot express provider-native automation posture (`auto`, protected where the provider supplies protection) versus unchecked `bypass`. The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's reviewer-protected `on-request + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
@@ -59,7 +59,7 @@ Rationale: a typed surface preserves cross-adapter substitutability — a user w
 
 ### Auto-mode — expand PermissionPolicy
 
-`PermissionPolicy` shall be extended to express auto-mode intent: classifier-, sandbox-, or reviewer-protected automation distinct from unchecked bypass.
+`PermissionPolicy` shall be extended to express provider-native automation posture (`auto`, protected where the provider supplies protection) distinct from unchecked bypass.
 The exact field name and shape is IR-level work; the DR's constraint is that the addition is a typed PermissionPolicy field, not a new top-level YAML escape hatch.
 
 Each adapter's mapping function shall translate the new vocabulary to its SDK's auto-mode value:
@@ -70,16 +70,36 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | `codex` | `ThreadOptions: { approvalPolicy: 'on-request' }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review', default_permissions: <profile> }` — see *Codex — modern permission-profile model* below | `ThreadOptions: { approvalPolicy: 'never' }` plus `CodexOptions.config: { default_permissions: ':danger-full-access' }` |
 | `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
 | `kimi` | ACP `session/set_config_option` with `mode = 'auto'` | Reject: ACP `yolo` is not unchecked bypass |
-| `opencode` | `permission: 'allow'` config, or `--dangerously-skip-permissions` flag [[5]] (after adding permission options to the adapter) | — |
+| `opencode` | Preserve configured rules and answer surviving permission asks `once`, matching native `--auto` response behavior | Reject: the SDK/server session has no unchecked-bypass route |
 
 ### Headless auto-mode posture
 
-Cligent runs are headless: the interactive prompt fallback each SDK's protected auto-mode leans on has no user to answer it.
-`mode: 'auto'` shall nevertheless map to each SDK's native protected auto-mode exactly, adding no cligent-selected capability grants; headless auto is accepted as semi-equivalent to the interactive CLI — identical automation minus the human fallback, so actions the SDK would refer to a user (including every classifier-band action while Claude's classifier model is unavailable) end in denial rather than approval.
+Cligent runs are headless: some native auto modes have an interactive fallback that no user can answer.
+`mode: 'auto'` shall nevertheless map to each SDK's native auto-mode exactly, adding no cligent-selected capability grants.
+Headless fallback resolution is adapter-specific: classifier/reviewer-protected modes fail closed where their native implementation does, while OpenCode's native `--auto` answers surviving asks `once`.
 An alternative that widened auto with cligent-chosen network grants — pre-approved Claude `WebFetch` / `WebSearch` / `Bash(curl:*)` allow rules ahead of the classifier, a generated Codex profile extending `:workspace` with `network = { enabled = true }` (grammar validated credential-free via `codex sandbox`), and an opencode `websearch: 'allow'` pin — was implemented and rolled back: a curated grant list is ad hoc, cannot anticipate the next task's tools, and blurs the auto/bypass distinction this DR exists to keep.
-Callers that need unattended capabilities beyond the SDK's protected auto shall say so explicitly (`mode: 'bypass'`); a typed opt-in that widens specific capabilities under auto stays open for a future revision.
-OpenCode's permission vocabulary includes keys such as `websearch` that are distinct from the portable `webfetch` mapping [[4]], so its global `"permission": "allow"` auto posture shall remain a wildcard rule rather than an enumeration of today's portable keys.
-For headless liveness, any OpenCode permission request that survives that rule shall be emitted for observability and rejected fail-closed through the active SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020); a missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
+Callers that need unattended capabilities beyond native auto shall say so explicitly (`mode: 'bypass'`) where supported; a typed opt-in that widens specific capabilities under auto stays open for a future revision.
+OpenCode's native CLI auto posture is response behavior, not a wildcard grant: configured rules are evaluated first, explicit denies resolve without an ask, and only a surviving ask is answered `once` [[11]][[12]].
+OpenCode labels `--auto` dangerous because those asks are approved without a human.
+The adapter shall reproduce that separation.
+It shall append no wildcard allow rule, because OpenCode merges agent and session rules and evaluates them last-match-wins, so a session wildcard would override provider and user denies [[12]][[13]].
+Explicitly supplied portable capability levels remain an independent permission-rule axis; omitted levels preserve native rules.
+That independence applies to `PermissionPolicy` capability levels, not to
+`AgentOptions.allowedTools` or `AgentOptions.disallowedTools`.
+OpenCode 1.18.13 marks prompt `tools` as merged with permissions and turns its
+booleans into a persistent replacement for the session permission rules
+[[14]].
+Because OpenCode then evaluates the combined agent and session rules
+last-match-wins, an enabled prompt tool can override an earlier native or
+explicitly supplied deny, and the replacement can outlive the call on a
+resumed session [[12]][[13]].
+The adapter therefore rejects either explicitly present tool-list option,
+including an empty array, before loading the SDK; OpenCode exposes no
+independent surface that can satisfy cligent's exact per-call tool availability
+contract.
+For headless liveness, an OpenCode permission request under `mode: 'auto'` shall be answered `once` without exposing an interactive `permission_request`; outside auto it shall be emitted for observability and rejected fail-closed through the active SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
+Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
+A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
 Kimi shall therefore reject a provided no-mode capability policy, emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [KIMI-007](../user/adapters/kimi.md#kimi-007).
 
@@ -134,7 +154,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 - DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
-- The original four adapters retain their established mappings, while Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
+- Claude, Codex, and Gemini retain their established mappings; OpenCode's corrected native-auto mapping preserves configured rules, answers surviving asks `once`, and rejects explicit tool lists before SDK loading; Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
 - Cligent ships no default permission posture; user choice is explicit per config.
 - Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `player_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.
@@ -153,3 +173,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 [8]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
 [9]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
 [10]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code permission rules"
+[11]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/cli/cmd/run.ts "OpenCode 1.18.13 native run auto responder"
+[12]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluator"
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
+[14]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"

@@ -53,6 +53,7 @@ interface MockOpenCodeClient {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }): Promise<void>;
@@ -144,6 +145,7 @@ function makeLoader(config: {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }) => void;
@@ -151,6 +153,7 @@ function makeLoader(config: {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }) => Promise<void>;
@@ -511,53 +514,20 @@ describe('OpenCodeAdapter', () => {
             networkAccess,
           };
 
-          const mapped = mapPermissionsToOpenCodeOptions(policy, {
-            allowedTools: ['custom-a'],
-            disallowedTools: ['custom-b'],
-          });
+          const mapped = mapPermissionsToOpenCodeOptions(policy);
 
           expect(mapped.permission).toEqual({
             edit: fileWrite,
             bash: shellExecute,
             webfetch: networkAccess,
           });
-          expect(mapped.tools?.core).toEqual(['custom-a']);
-          expect(mapped.tools?.exclude).toEqual(['custom-b']);
         }
       }
     }
   });
 
   it('distinguishes an absent permission policy from an explicit empty policy', () => {
-    expect(
-      mapPermissionsToOpenCodeOptions(undefined, {
-        allowedTools: ['edit', 'edit'],
-        disallowedTools: ['webfetch', 'webfetch'],
-      }),
-    ).toEqual({
-      tools: {
-        core: ['edit'],
-        exclude: ['webfetch'],
-      },
-    });
     expect(mapPermissionsToOpenCodeOptions(undefined)).toEqual({});
-    expect(
-      mapPermissionsToOpenCodeOptions(undefined, { allowedTools: [] }),
-    ).toEqual({ tools: { core: [] } });
-    expect(
-      mapPermissionsToOpenCodeOptions(undefined, {
-        allowedTools: ['edit', 'bash'],
-        disallowedTools: ['bash'],
-      }),
-    ).toEqual({ tools: { core: ['edit'], exclude: ['bash'] } });
-    expect(() =>
-      mapPermissionsToOpenCodeOptions(undefined, { allowedTools: ['*'] }),
-    ).toThrow(/exact tool identifiers, not wildcard patterns/);
-    expect(() =>
-      mapPermissionsToOpenCodeOptions(undefined, {
-        disallowedTools: ['prefix-*'],
-      }),
-    ).toThrow(/exact tool identifiers, not wildcard patterns/);
     expect(mapPermissionsToOpenCodeOptions({}).permission).toEqual({
       edit: 'ask',
       bash: 'ask',
@@ -565,48 +535,41 @@ describe('OpenCodeAdapter', () => {
     });
   });
 
-  it('reports an explicit empty allowlist as configured and known', async () => {
-    let runOptions: Record<string, unknown> | undefined;
-    const adapter = new OpenCodeAdapter(
-      {
-        mode: 'external',
-        serverUrl: 'http://opencode.local:7777',
-      },
-      {
-        loadSdk: makeLoader({
-          runResult: {
-            sessionId: 'tool-free-session',
-            tools: ['edit', 'bash'],
-          },
-          events: [
-            {
-              type: 'session.idle',
-              sessionId: 'tool-free-session',
-              status: 'success',
-            },
-          ],
-          onRun(options) {
-            runOptions = options;
-          },
-        }),
-      },
-    );
+  it('rejects every explicit tool-list form before loading the SDK', async () => {
+    const rejection =
+      /does not support explicit allowedTools or disallowedTools.*override native or explicit denies.*independent exact per-call tool registry/;
+    const cases: AgentOptions<OpenCodeEffort>[] = [
+      { allowedTools: [] },
+      { allowedTools: ['bash'] },
+      { disallowedTools: [] },
+      { disallowedTools: ['write'] },
+      { allowedTools: ['bash'], disallowedTools: ['bash'] },
+      { permissions: { shellExecute: 'deny' }, allowedTools: ['bash'] },
+      { permissions: { shellExecute: 'ask' }, allowedTools: ['bash'] },
+      { resume: 'existing-session', allowedTools: ['bash'] },
+    ];
 
-    const events = await collect(
-      adapter.run('route only', { allowedTools: [] }),
-    );
-    expect(runOptions).toMatchObject({ tools: { core: [] } });
-    const init = events[0] as AgentEvent & {
-      payload: {
-        tools: string[];
-        capabilities: Record<string, unknown>;
-      };
-    };
-    expect(init.payload.tools).toEqual([]);
-    expect(init.payload.capabilities).toMatchObject({
-      toolsKnown: true,
-      toolsSource: 'configured',
-    });
+    for (const options of cases) {
+      expect(() =>
+        mapPermissionsToOpenCodeOptions(options.permissions, options),
+      ).toThrow(rejection);
+
+      let loadCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: async () => {
+            loadCalls++;
+            throw new Error('SDK loader must not run');
+          },
+        },
+      );
+
+      await expect(
+        collect(adapter.run('tool restriction', options)),
+      ).rejects.toThrow(rejection);
+      expect(loadCalls).toBe(0);
+    }
   });
 
   it('runs in managed mode with server spawn, ready wait, and graceful shutdown', async () => {
@@ -913,6 +876,7 @@ describe('OpenCodeAdapter', () => {
       sessionId: string;
       requestId: string;
       permission: string;
+      decision: 'once' | 'reject';
       signal?: AbortSignal;
     }> = [];
 
@@ -988,11 +952,13 @@ describe('OpenCodeAdapter', () => {
         sessionId: 'permission-v1-session',
         requestId: 'permission-v1-request',
         permission: 'external_directory',
+        decision: 'reject',
       },
       {
         sessionId: 'permission-v2-session',
         requestId: 'permission-v2-request',
         permission: 'future_permission',
+        decision: 'reject',
       },
     ]);
     expect(replies[0]?.signal).toBeDefined();
@@ -1000,6 +966,176 @@ describe('OpenCodeAdapter', () => {
     expect(replies[1]?.signal).toBeDefined();
     expect(replies[1]?.signal?.aborted).toBe(true);
     expect(replies[0]?.signal).not.toBe(replies[1]?.signal);
+  });
+
+  it('audits successful v1 and v2 auto approvals without an interactive request', async () => {
+    const replies: Array<{
+      requestId: string;
+      decision: 'once' | 'reject';
+    }> = [];
+    const fixtures = [
+      {
+        sessionId: 'auto-v1-session',
+        requestId: 'auto-v1-request',
+        event: {
+          type: 'permission.updated',
+          properties: {
+            id: 'auto-v1-request',
+            sessionID: 'auto-v1-session',
+            type: 'external_directory',
+            pattern: '/tmp/*',
+            callID: 'auto-v1-call',
+            metadata: { path: '/tmp/audit-v1' },
+            reason: 'outside workspace',
+          },
+        },
+        expectedPayload: {
+          requestId: 'auto-v1-request',
+          permission: 'external_directory',
+          patterns: ['/tmp/*'],
+          toolUseId: 'auto-v1-call',
+          decision: 'once',
+          automated: true,
+          input: { path: '/tmp/audit-v1' },
+          reason: 'outside workspace',
+        },
+      },
+      {
+        sessionId: 'auto-v2-session',
+        requestId: 'auto-v2-request',
+        event: {
+          type: 'permission.asked',
+          properties: {
+            id: 'auto-v2-request',
+            sessionID: 'auto-v2-session',
+            permission: 'future_permission',
+            patterns: ['scope:a', 'scope:b'],
+            metadata: { future: true },
+            always: [],
+            tool: { callID: 'auto-v2-call' },
+          },
+        },
+        expectedPayload: {
+          requestId: 'auto-v2-request',
+          permission: 'future_permission',
+          patterns: ['scope:a', 'scope:b'],
+          toolUseId: 'auto-v2-call',
+          decision: 'once',
+          automated: true,
+          input: { future: true },
+        },
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: fixture.sessionId },
+            events: [
+              fixture.event,
+              {
+                type: 'session.idle',
+                properties: { sessionID: fixture.sessionId },
+              },
+            ],
+            onReplyPermission(options) {
+              replies.push({
+                requestId: options.requestId,
+                decision: options.decision,
+              });
+            },
+          }),
+        },
+      );
+
+      const events = await collect(
+        adapter.run('native auto probe', { permissions: { mode: 'auto' } }),
+      );
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'opencode:permission_decision',
+        'done',
+      ]);
+      expect(events[1]!.payload).toEqual(fixture.expectedPayload);
+    }
+
+    expect(replies).toEqual([
+      { requestId: 'auto-v1-request', decision: 'once' },
+      { requestId: 'auto-v2-request', decision: 'once' },
+    ]);
+  });
+
+  it('releases permission correlation after every replied decision', async () => {
+    const replies: string[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'correlation-cleanup-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reused-request',
+                sessionID: 'correlation-cleanup-session',
+                permission: 'edit',
+                tool: { callID: 'stale-call' },
+              },
+            },
+            {
+              type: 'permission.replied',
+              properties: {
+                sessionID: 'correlation-cleanup-session',
+                requestID: 'reused-request',
+                reply: 'once',
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reused-request',
+                sessionID: 'correlation-cleanup-session',
+                permission: 'edit',
+                tool: { callID: 'duplicate-call' },
+              },
+            },
+            {
+              type: 'permission.replied',
+              properties: {
+                sessionID: 'correlation-cleanup-session',
+                requestID: 'reused-request',
+                reply: 'reject',
+                toolUseId: 'current-call',
+                toolName: 'write',
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'correlation-cleanup-session' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push(options.requestId);
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('correlation cleanup probe', {
+        permissions: { mode: 'auto' },
+      }),
+    );
+    const denied = events.find((event) => event.type === 'tool_result') as
+      | (AgentEvent & { payload: { toolUseId: string; status: string } })
+      | undefined;
+    expect(denied?.payload).toMatchObject({
+      toolUseId: 'current-call',
+      status: 'denied',
+    });
+    expect(replies).toEqual(['reused-request']);
   });
 
   it('ignores foreign-session asks and replies once to a repeated local request', async () => {
@@ -1059,7 +1195,16 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    await collect(adapter.run('concurrency probe'));
+    const events = await collect(
+      adapter.run('concurrency probe', { permissions: { mode: 'auto' } }),
+    );
+    const auditRequestIds = events
+      .filter((event) => event.type === 'opencode:permission_decision')
+      .map(
+        (event) =>
+          (event.payload as { requestId: string }).requestId,
+      );
+    expect(auditRequestIds).toEqual(['request-local-a', 'request-local-b']);
     expect(replies).toEqual([
       {
         sessionId: 'session-local',
@@ -1098,21 +1243,22 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    const events = await collect(adapter.run('failure probe'));
+    const events = await collect(
+      adapter.run('failure probe', { permissions: { mode: 'auto' } }),
+    );
     expect(events.map((event) => event.type)).toEqual([
       'init',
-      'permission_request',
       'error',
       'done',
     ]);
-    const error = events[2] as AgentEvent & {
+    const error = events[1] as AgentEvent & {
       payload: { code?: string; message: string };
     };
     expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
     expect(error.payload.message).toContain('reply-failure-session');
     expect(error.payload.message).toContain('reply-failure-request');
     expect(error.payload.message).toContain('unknown_future_permission');
-    expect((events[3]!.payload as { status: string }).status).toBe('error');
+    expect((events[2]!.payload as { status: string }).status).toBe('error');
   });
 
   it('bounds a permission reply that never settles', async () => {
@@ -1159,9 +1305,10 @@ describe('OpenCodeAdapter', () => {
         },
       );
 
-      const stream = adapter.run('timeout probe');
+      const stream = adapter.run('timeout probe', {
+        permissions: { mode: 'auto' },
+      });
       expect((await stream.next()).value?.type).toBe('init');
-      expect((await stream.next()).value?.type).toBe('permission_request');
 
       const pendingError = stream.next();
       await vi.advanceTimersByTimeAsync(5_000);
@@ -1232,6 +1379,10 @@ describe('OpenCodeAdapter', () => {
     let eventSignal: AbortSignal | undefined;
     let replySignal: AbortSignal | undefined;
     let replyCancelled = false;
+    let resolveReplyStarted: () => void = () => {};
+    const replyStarted = new Promise<void>((resolve) => {
+      resolveReplyStarted = resolve;
+    });
     const adapter = new OpenCodeAdapter(
       { mode: 'managed', serverUrl: 'http://127.0.0.1:4998' },
       {
@@ -1256,6 +1407,7 @@ describe('OpenCodeAdapter', () => {
           replyPermissionFactory: async (options) =>
             new Promise<void>((_resolve, reject) => {
               replySignal = options.signal;
+              resolveReplyStarted();
               const cancel = () => {
                 replyCancelled = true;
                 reject(new Error('reply request cancelled'));
@@ -1281,11 +1433,12 @@ describe('OpenCodeAdapter', () => {
 
     const stream = adapter.run('abort permission probe', {
       abortSignal: controller.signal,
+      permissions: { mode: 'auto' },
     });
     expect((await stream.next()).value?.type).toBe('init');
-    expect((await stream.next()).value?.type).toBe('permission_request');
 
     const terminal = stream.next();
+    await replyStarted;
     controller.abort();
     const done = await terminal;
     expect(done.value?.type).toBe('done');
@@ -1375,6 +1528,45 @@ describe('OpenCodeAdapter', () => {
       ]);
 
       await vi.advanceTimersByTimeAsync(2_000);
+      expect((await teardown).done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('escalates managed teardown to SIGKILL after a bounded SIGTERM grace', async () => {
+    vi.useFakeTimers();
+    try {
+      const { spawnProcess, invocations } = makeSpawn({ ignoreSigterm: true });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4996' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'term-resistant-session' },
+            events: [
+              {
+                type: 'session.idle',
+                properties: { sessionID: 'term-resistant-session' },
+              },
+            ],
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4996',
+        },
+      );
+
+      const stream = adapter.run('term resistant probe');
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('done');
+      const teardown = stream.next();
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.runAllTimersAsync();
+      expect(invocations[0]?.process.killSignals).toEqual([
+        'SIGTERM',
+        'SIGKILL',
+      ]);
       expect((await teardown).done).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -1744,6 +1936,53 @@ describe('OpenCodeAdapter', () => {
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
     expect(createClientBaseUrl).toBe('http://external-host:7000');
     expect(spawnCalled).toBe(false);
+  });
+
+  it('does not accumulate reactions on run-lifetime controls per SSE event', async () => {
+    const originalThen = Promise.prototype.then;
+    const reactionCounts = new WeakMap<Promise<unknown>, number>();
+    let maxReactions = 0;
+    Promise.prototype.then = function (
+      this: Promise<unknown>,
+      ...args: unknown[]
+    ): Promise<unknown> {
+      const count = (reactionCounts.get(this) ?? 0) + 1;
+      reactionCounts.set(this, count);
+      maxReactions = Math.max(maxReactions, count);
+      return Reflect.apply(originalThen, this, args) as Promise<unknown>;
+    } as typeof originalThen;
+
+    try {
+      const { spawnProcess } = makeSpawn();
+      const events = Array.from({ length: 4_096 }, () => ({
+        type: 'server.connected',
+      }));
+      events.push({
+        type: 'session.idle',
+        properties: { sessionID: 'reaction-session' },
+      } as { type: string });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4995' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'reaction-session' },
+            events,
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4995',
+        },
+      );
+
+      const output = await collect(adapter.run('reaction retention probe'));
+      expect(output.map((event) => event.type)).toEqual(['init', 'done']);
+      // A run-lifetime promise raced once per event reaches 4,097 here. The
+      // re-armed waiter keeps every observed promise at a constant reaction
+      // count independent of stream length.
+      expect(maxReactions).toBeLessThan(16);
+    } finally {
+      Promise.prototype.then = originalThen;
+    }
   });
 
   it('emits error + done when managed server crashes mid-stream', async () => {
@@ -3151,19 +3390,9 @@ describe('OpenCodeAdapter', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('maps PermissionPolicy.mode = "auto" to SDK permission: allow per ENG-021', () => {
+  it('preserves native rules when selecting OpenCode auto mode per ENG-021', () => {
     const auto = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
-    expect(auto.permission).toEqual({ '*': 'allow' });
-
-    // User-passed allowedTools / disallowedTools (independent from
-    // `permissions`) still flow through to `tools`.
-    const withUserTools = mapPermissionsToOpenCodeOptions(
-      { mode: 'auto' },
-      { allowedTools: ['custom-a'], disallowedTools: ['custom-b'] },
-    );
-    expect(withUserTools.permission).toEqual({ '*': 'allow' });
-    expect(withUserTools.tools?.core).toEqual(['custom-a']);
-    expect(withUserTools.tools?.exclude).toEqual(['custom-b']);
+    expect(auto.permission).toBeUndefined();
   });
 
   it('rejects PermissionPolicy.mode = "bypass" with an SDK/server architecture error per IR-014', () => {
@@ -3175,18 +3404,16 @@ describe('OpenCodeAdapter', () => {
     );
   });
 
-  it('mode overrides per-capability levels in opencode per ENG-021', () => {
-    // mode: 'auto' set together with explicit per-capability denies: the
-    // per-capability path is short-circuited so the deny levels do not
-    // appear in the emitted SDK permission body. Only the session-wide
-    // `permission: allow` shape applies.
+  it('keeps explicit capabilities independent from OpenCode auto mode', () => {
     const config = mapPermissionsToOpenCodeOptions({
       mode: 'auto',
       fileWrite: 'deny',
-      shellExecute: 'deny',
-      networkAccess: 'deny',
+      networkAccess: 'allow',
     });
-    expect(config.permission).toEqual({ '*': 'allow' });
+    expect(config.permission).toEqual({
+      edit: 'deny',
+      webfetch: 'allow',
+    });
   });
 
   it('accepts writablePaths and reports ambient enforcement', () => {
@@ -3195,7 +3422,7 @@ describe('OpenCodeAdapter', () => {
       writablePaths: ['./.git/', 'generated/./cache//'],
     });
 
-    expect(mapped.permission).toEqual({ '*': 'allow' });
+    expect(mapped.permission).toBeUndefined();
     expect(mapped.writablePaths).toEqual({
       paths: ['.git', 'generated/cache'],
       enforcement: 'ambient',
@@ -3399,14 +3626,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       },
     };
     const client = wrapOpencodeClient(real);
-    const toolRestrictions = {
-      allowedTools: ['edit'],
-      disallowedTools: ['webfetch'],
-    };
-    const unmanaged = mapPermissionsToOpenCodeOptions(
-      undefined,
-      toolRestrictions,
-    );
+    const unmanaged = mapPermissionsToOpenCodeOptions(undefined);
 
     await client.run?.({ prompt: 'fresh native', ...unmanaged });
     await client.run?.({
@@ -3420,11 +3640,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     for (const call of promptCalls) {
       const body = (call as { body: Record<string, unknown> }).body;
       expect(body).not.toHaveProperty('permission');
-      expect(body.tools).toEqual({
-        '*': false,
-        edit: true,
-        webfetch: false,
-      });
+      expect(body).not.toHaveProperty('tools');
     }
 
     const explicitlyManaged = mapPermissionsToOpenCodeOptions({});
@@ -3533,14 +3749,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       },
     };
     const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
-    const toolRestrictions = {
-      allowedTools: ['edit'],
-      disallowedTools: ['webfetch'],
-    };
-    const unmanaged = mapPermissionsToOpenCodeOptions(
-      undefined,
-      toolRestrictions,
-    );
+    const unmanaged = mapPermissionsToOpenCodeOptions(undefined);
 
     await client.run?.({ prompt: 'fresh native', ...unmanaged });
     await client.run?.({
@@ -3554,15 +3763,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptCalls).toHaveLength(2);
     for (const call of promptCalls) {
       expect(call).not.toHaveProperty('permission');
-      expect(call).toEqual(
-        expect.objectContaining({
-          tools: {
-            '*': false,
-            edit: true,
-            webfetch: false,
-          },
-        }),
-      );
+      expect(call).not.toHaveProperty('tools');
     }
 
     const explicitlyManaged = mapPermissionsToOpenCodeOptions({});
@@ -3590,8 +3791,12 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     ]);
   });
 
-  it('maps auto mode to wildcard allow on v1 and v2 permission paths', async () => {
+  it('keeps native rules in auto and retains explicit denies on v1 and v2', async () => {
     const mapped = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
+    const mappedWithDeny = mapPermissionsToOpenCodeOptions({
+      mode: 'auto',
+      fileWrite: 'deny',
+    });
     const v1Prompts: unknown[] = [];
     const v1 = wrapOpencodeClient(
       makeV1Sdk({
@@ -3601,30 +3806,34 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       }),
     );
     await v1.run?.({ prompt: 'v1 auto', ...mapped });
-    expect(v1Prompts[0]).toMatchObject({
-      body: { permission: { '*': 'allow' } },
-    });
+    expect(
+      (v1Prompts[0] as { body: { permission?: unknown } }).body.permission,
+    ).toBeUndefined();
     await v1.run?.({
       prompt: 'v1 resumed auto',
       sessionId: 'v1-existing',
       ...mapped,
     });
-    expect(v1Prompts[1]).toMatchObject({
-      path: { id: 'v1-existing' },
-      body: { permission: { '*': 'allow' } },
+    expect(v1Prompts[1]).toMatchObject({ path: { id: 'v1-existing' } });
+    expect(
+      (v1Prompts[1] as { body: { permission?: unknown } }).body.permission,
+    ).toBeUndefined();
+    await v1.run?.({ prompt: 'v1 explicit deny', ...mappedWithDeny });
+    expect(v1Prompts[2]).toMatchObject({
+      body: { permission: { edit: 'deny' } },
     });
 
-    let v2Create: unknown;
-    let v2Update: unknown;
+    const v2Create: unknown[] = [];
+    const v2Update: unknown[] = [];
     const v2 = wrapOpencodeClient(
       {
         session: {
           async create(args: unknown) {
-            v2Create = args;
+            v2Create.push(args);
             return { data: { id: 'v2-auto' } };
           },
           async update(args: unknown) {
-            v2Update = args;
+            v2Update.push(args);
             return {};
           },
           async promptAsync() {
@@ -3640,9 +3849,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { apiVersion: 'v2' },
     );
     await v2.run?.({ prompt: 'v2 auto', ...mapped });
-    expect(v2Create).toEqual({
-      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
-    });
+    expect(v2Create[0]).toEqual({});
 
     await v2.run?.({
       prompt: 'v2 resumed auto',
@@ -3650,19 +3857,33 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       cwd: '/workspace',
       ...mapped,
     });
-    expect(v2Update).toEqual({
-      sessionID: 'v2-existing',
-      directory: '/workspace',
-      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
+    expect(v2Update).toEqual([]);
+
+    await v2.run?.({ prompt: 'v2 explicit deny', ...mappedWithDeny });
+    expect(v2Create[1]).toEqual({
+      permission: [{ permission: 'edit', pattern: '*', action: 'deny' }],
     });
+    await v2.run?.({
+      prompt: 'v2 resumed explicit deny',
+      sessionId: 'v2-existing',
+      cwd: '/workspace',
+      ...mappedWithDeny,
+    });
+    expect(v2Update).toEqual([
+      {
+        sessionID: 'v2-existing',
+        directory: '/workspace',
+        permission: [{ permission: 'edit', pattern: '*', action: 'deny' }],
+      },
+    ]);
   });
 
-  it('uses the legacy v1 permission response endpoint with session correlation', async () => {
-    let replyArgs: unknown;
+  it('uses once and reject on the correlated legacy v1 response endpoint', async () => {
+    const replyArgs: unknown[] = [];
     const controller = new AbortController();
     const real = makeV1Sdk({});
     real.postSessionIdPermissionsPermissionId = async (args: unknown) => {
-      replyArgs = args;
+      replyArgs.push(args);
       return {};
     };
     const client = wrapOpencodeClient(real);
@@ -3671,15 +3892,27 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       sessionId: 'legacy-session',
       requestId: 'legacy-request',
       permission: 'external_directory',
+      decision: 'reject',
       cwd: '/workspace',
       signal: controller.signal,
     });
 
-    expect(replyArgs).toEqual({
+    await client.replyPermission?.({
+      sessionId: 'legacy-session',
+      requestId: 'legacy-auto-request',
+      permission: 'external_directory',
+      decision: 'once',
+    });
+
+    expect(replyArgs[0]).toEqual({
       path: { id: 'legacy-session', permissionID: 'legacy-request' },
       body: { response: 'reject' },
       query: { directory: '/workspace' },
       signal: controller.signal,
+    });
+    expect(replyArgs[1]).toEqual({
+      path: { id: 'legacy-session', permissionID: 'legacy-auto-request' },
+      body: { response: 'once' },
     });
   });
 
@@ -3706,8 +3939,8 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       permission: {
         async reply(parameters: unknown, requestOptions?: unknown) {
           replyCalls.push({ parameters, requestOptions });
-          if (replyCalls.length === 1) return {};
-          if (replyCalls.length === 2) {
+          if (replyCalls.length <= 2) return {};
+          if (replyCalls.length === 3) {
             return { error: { data: { message: 'request disappeared' } } };
           }
           return { data: false };
@@ -3720,6 +3953,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       sessionId: 'v2-reply-session',
       requestId: 'v2-reply-request',
       permission: 'future_permission',
+      decision: 'once',
       cwd: '/workspace',
       signal: controller.signal,
     });
@@ -3727,11 +3961,24 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       parameters: {
         requestID: 'v2-reply-request',
         directory: '/workspace',
-        reply: 'reject',
-        message:
-          'Cligent headless runs reject unresolved permission requests',
+        reply: 'once',
       },
       requestOptions: { signal: controller.signal },
+    });
+
+    await client.replyPermission?.({
+      sessionId: 'v2-reply-session',
+      requestId: 'v2-reject-request',
+      permission: 'future_permission',
+      decision: 'reject',
+    });
+    expect(replyCalls[1]).toEqual({
+      parameters: {
+        requestID: 'v2-reject-request',
+        reply: 'reject',
+        message: 'Cligent headless runs reject unresolved permission requests',
+      },
+      requestOptions: undefined,
     });
 
     await expect(
@@ -3739,6 +3986,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'v2-reply-session',
         requestId: 'v2-missing-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="v2-reply-session".*requestID="v2-missing-request".*permission="future_permission".*request disappeared/,
@@ -3749,6 +3997,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'v2-reply-session',
         requestId: 'v2-declined-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="v2-reply-session".*requestID="v2-declined-request".*permission="future_permission".*declined/,
@@ -3780,66 +4029,69 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'no-reply-route-session',
         requestId: 'no-reply-route-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="no-reply-route-session".*requestID="no-reply-route-request".*permission="future_permission".*permission\.reply\(\) not available/,
     );
   });
 
-  it('maps an explicit empty allowlist to wildcard deny prompts', async () => {
-    let v1Prompt: unknown;
+  it('rejects legacy prompt tools before v1 or v2 SDK calls', async () => {
+    const rejection =
+      /does not support prompt `tools`.*override native or explicit denies.*independent exact tool registry/;
+    let v1CreateCalls = 0;
+    let v1PromptCalls = 0;
+    let v1SubscribeCalls = 0;
     const v1 = wrapOpencodeClient(
       makeV1Sdk({
-        onPrompt(args) {
-          v1Prompt = args;
+        onCreateSession() {
+          v1CreateCalls++;
+        },
+        onPrompt() {
+          v1PromptCalls++;
+        },
+        onSubscribe() {
+          v1SubscribeCalls++;
         },
       }),
     );
-    await v1.run?.({ prompt: 'v1 tool-free', tools: { core: [] } });
-    expect(v1Prompt).toMatchObject({ body: { tools: { '*': false } } });
+    await expect(
+      v1.run?.({ prompt: 'v1 tool-free', tools: { core: [] } }),
+    ).rejects.toThrow(rejection);
+    await expect(
+      v1.run?.({
+        prompt: 'v1 resumed restriction',
+        sessionId: 'v1-existing',
+        tools: { exclude: ['bash'] },
+      }),
+    ).rejects.toThrow(rejection);
+    expect(v1CreateCalls).toBe(0);
+    expect(v1PromptCalls).toBe(0);
+    expect(v1SubscribeCalls).toBe(0);
 
-    let v2Prompt: unknown;
+    let v2CreateCalls = 0;
+    let v2UpdateCalls = 0;
+    let v2PromptCalls = 0;
+    let v2SubscribeCalls = 0;
     const v2 = wrapOpencodeClient(
       {
         session: {
           async create() {
+            v2CreateCalls++;
             return { data: { id: 'v2-tool-free' } };
           },
-          async promptAsync(args: unknown) {
-            v2Prompt = args;
+          async update() {
+            v2UpdateCalls++;
+            return {};
+          },
+          async promptAsync() {
+            v2PromptCalls++;
             return {};
           },
         },
         event: {
           async subscribe() {
-            return { stream: (async function* () {})() };
-          },
-        },
-      },
-      { apiVersion: 'v2' },
-    );
-    await v2.run?.({ prompt: 'v2 tool-free', tools: { core: [] } });
-    expect(v2Prompt).toMatchObject({ tools: { '*': false } });
-  });
-
-  it('rejects wildcard allow entries on v1 and v2 prompt paths', async () => {
-    const v1 = wrapOpencodeClient(makeV1Sdk());
-    await expect(
-      v1.run?.({ prompt: 'v1 wildcard', tools: { core: ['*'] } }),
-    ).rejects.toThrow(/exact tool identifiers, not wildcard patterns/);
-
-    const v2 = wrapOpencodeClient(
-      {
-        session: {
-          async create() {
-            return { data: { id: 'v2-wildcard' } };
-          },
-          async promptAsync() {
-            throw new Error('prompt must not run');
-          },
-        },
-        event: {
-          async subscribe() {
+            v2SubscribeCalls++;
             return { stream: (async function* () {})() };
           },
         },
@@ -3847,11 +4099,23 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { apiVersion: 'v2' },
     );
     await expect(
-      v2.run?.({ prompt: 'v2 wildcard', tools: { core: ['*'] } }),
-    ).rejects.toThrow(/exact tool identifiers, not wildcard patterns/);
+      v2.run?.({ prompt: 'v2 restricted', tools: { core: ['bash'] } }),
+    ).rejects.toThrow(rejection);
+    await expect(
+      v2.run?.({
+        prompt: 'v2 resumed restriction',
+        sessionId: 'v2-existing',
+        permission: { bash: 'deny' },
+        tools: { core: ['bash'] },
+      }),
+    ).rejects.toThrow(rejection);
+    expect(v2CreateCalls).toBe(0);
+    expect(v2UpdateCalls).toBe(0);
+    expect(v2PromptCalls).toBe(0);
+    expect(v2SubscribeCalls).toBe(0);
   });
 
-  it('maps v1 permission and tools options onto the v2 session and prompt surfaces', async () => {
+  it('maps v1 permission options onto the v2 session surface', async () => {
     let capturedCreateArgs: unknown;
     let capturedPromptArgs: unknown;
     const real = {
@@ -3882,10 +4146,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         bash: 'ask',
         webfetch: 'deny',
       },
-      tools: {
-        core: ['edit', 'bash'],
-        exclude: ['webfetch'],
-      },
     });
 
     expect(capturedCreateArgs).toEqual({
@@ -3900,16 +4160,11 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       expect.objectContaining({
         sessionID: 'v2-session-permissions',
         directory: '/workspace',
-        tools: {
-          '*': false,
-          edit: true,
-          bash: true,
-          webfetch: false,
-        },
         parts: [{ type: 'text', text: 'test options' }],
       }),
     );
     expect(capturedPromptArgs).not.toHaveProperty('permission');
+    expect(capturedPromptArgs).not.toHaveProperty('tools');
   });
 
   it('updates v2 resumed sessions with the mapped permission ruleset before prompting', async () => {
@@ -4102,8 +4357,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
           shellExecute: 'ask',
           networkAccess: 'deny',
         },
-        allowedTools: ['edit', 'bash'],
-        disallowedTools: ['webfetch'],
       }),
     );
 
@@ -4119,7 +4372,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         model?: string;
         steps?: number;
         permission?: { edit: string; bash: string; webfetch: string };
-        tools?: Record<string, boolean>;
       };
     };
 
@@ -4135,12 +4387,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       bash: 'ask',
       webfetch: 'deny',
     });
-    expect(promptArgs.body.tools).toEqual({
-      '*': false,
-      edit: true,
-      bash: true,
-      webfetch: false,
-    });
+    expect(promptArgs.body).not.toHaveProperty('tools');
   });
 
   it('streams events through event.subscribe and yields unified events', async () => {

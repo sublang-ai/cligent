@@ -5,10 +5,10 @@
 
 ## Goal
 
-End indefinite OpenCode headless waits on permission requests by mapping
-`permissions.mode: 'auto'` to OpenCode's actual global allow rule and by
-deterministically rejecting any permission request that still reaches the
-adapter ([issue #36](https://github.com/sublang-ai/cligent/issues/36)).
+End indefinite OpenCode headless waits on permission requests by reproducing
+OpenCode's native auto response behavior and deterministically resolving any
+permission request that reaches the adapter
+([issue #36](https://github.com/sublang-ai/cligent/issues/36)).
 
 ## Status
 
@@ -16,61 +16,94 @@ Complete
 
 ## Deliverables
 
-- [x] [OPENCODE-007](../user/adapters/opencode.md#opencode-007) specifies the
-      global wildcard auto mapping on the active v1 and v2 SDK paths.
+- [x] [OPENCODE-007](../user/adapters/opencode.md#opencode-007) specifies
+      native auto replies without a session wildcard on the active v1 and v2
+      SDK paths.
 - [x] [OPENCODE-008](../user/adapters/opencode.md#opencode-008) and
       [OPENCODE-020](../user/adapters/opencode.md#opencode-020) specify
       session-correlated, fail-closed permission replies, bounded reply
-      failure, transport-level abort cleanup, and bounded SDK teardown for
-      headless runs.
-- [x] The adapter rejects residual v1 `permission.updated` and v2
-      `permission.asked` requests through their version-correct SDK routes,
-      with session and request identifiers preserved in calls and failures.
+      failure, transport-level abort cleanup, event-count-independent control
+      waits, bounded SDK teardown, and `SIGTERM`-to-`SIGKILL` escalation for
+      headless runs, with a namespaced audit record after successful auto
+      replies.
+- [x] The adapter answers auto-mode v1 `permission.updated` and v2
+      `permission.asked` requests `once`, and rejects non-auto residual
+      requests through their version-correct SDK routes, with session and
+      request identifiers preserved in calls and failures.
 - [x] [TADAPT-037](../test/adapters.md#tadapt-037) covers both SDK paths,
       unknown permissions, concurrency, bounded failures, underlying I/O
       cancellation, ordered and bounded abort cleanup, and a real
-      `mode: 'auto'` write outside the working directory.
+      `mode: 'auto'` write outside the working directory that proves an
+      explicit `bash` ask was answered `once`.
 - [x] [DR-005](../decisions/005-per-adapter-permission-configuration.md), the
       historical headless-posture record, the spec map, and the changelog
       reflect the resolved hazard.
+- [x] Review follow-up closes the adjacent prompt-tool hazard: OpenCode 1.18.13
+      rewrites prompt `tools` into persistent permission rules, so
+      [OPENCODE-015](../user/adapters/opencode.md#opencode-015) rejects every
+      explicitly present tool-list option before SDK loading instead of
+      letting an enabled tool override a native or portable deny.
 
 ## Tasks
 
-The tasks below are reviewable work units delivered together in one cohesive
-commit. Build, typecheck, lint, and unit verification apply to that completed
-change rather than artificial per-task commit boundaries.
+Each task below is one-commit size.
+Tasks 1–3 describe the original cohesive implementation; Task 4 is a separate
+review follow-up.
+Build, typecheck, lint, and unit verification apply at each completed change
+boundary.
 
 1. [x] **Specify deterministic headless permission handling.**
    Correct the OpenCode auto mapping and replace the known-hazard posture with
-   the fail-closed reply contract and its acceptance criteria.
+   native auto replies plus the non-auto fail-closed contract and acceptance
+   criteria.
 2. [x] **Implement mapping and reply liveness.**
-   Preserve OpenCode's wildcard allow rule across v1 and v2, reject residual
-   requests once through the matching SDK route, bound reply waits, and cancel
-   both underlying SSE and permission-response I/O while releasing managed
-   resources ahead of bounded SDK disposal.
+   Preserve OpenCode's configured rules across v1 and v2, answer auto asks
+   `once`, reject non-auto requests through the matching SDK route, bound reply
+   waits, audit successful auto decisions, and cancel both underlying SSE and
+   permission-response I/O while releasing managed resources ahead of bounded
+   SDK disposal.
 3. [x] **Verify canonical and real behavior.**
    Exercise canonical v1/v2 events, request failures and correlation, pending
    abort cleanup, and a real managed-mode absolute `/tmp` write.
+4. [x] **Fail closed on unsafe prompt tool filters.**
+   Remove the public adapter and compatibility-wrapper paths that emitted
+   prompt `tools`, reject explicit tool-list presence before SDK loading, and
+   cover empty, non-empty, combined, and permission-policy interactions.
 
 ## Acceptance criteria
 
-- `permissions: { mode: 'auto' }` reaches v1 as `{ "*": "allow" }` and v2 as
-  a wildcard `PermissionRuleset`, rather than an allowlist limited to three
-  portable capability keys.
-- Canonical v1 `permission.updated` and v2 `permission.asked` requests are
-  emitted for observability and rejected exactly once through the applicable
-  SDK response route.
+- `permissions: { mode: 'auto' }` appends no v1 or v2 wildcard rule, preserving
+  native and user-configured explicit denies; explicitly present portable
+  capability levels still map on their independent rule axis.
+- Canonical v1 `permission.updated` and v2 `permission.asked` requests under
+  auto are answered `once` without normalized interactive events; non-auto
+  requests are emitted for observability and rejected exactly once through the
+  applicable SDK response route. Each successful auto reply emits one
+  namespaced automated-decision audit event with native and tool correlation.
 - Residual and unknown permission names cannot wait indefinitely: missing
   request identifiers, unavailable or failed reply APIs, and reply timeouts
   terminate with an error naming the session, request, and permission.
 - Foreign-session requests are ignored and concurrent requests remain
   correlated by session and request identifier.
+- Streaming any number of SSE events leaves only a constant number of
+  reactions on run-lifetime controls; completed events do not accumulate
+  abort or server-exit reactions.
 - Abort preempts a pending SSE or permission-reply wait, propagates through the
   run-owned SDK signal, closes the SSE iterator, yields one interrupted terminal
   event before managed `SIGTERM`, and closes the SDK client and managed server.
   Managed termination begins before bounded iterator/client cleanup, so a
   non-settling cleanup hook cannot block generator completion. A reply timeout
   likewise cancels the underlying response and SSE I/O before cleanup completes.
+- A managed server that remains alive after the bounded `SIGTERM` grace
+  receives `SIGKILL`, and the final close wait is bounded.
 - A real managed-mode `mode: 'auto'` run writes and verifies an absolute `/tmp`
-  file without a permission request, denial, error event, or harness-side
+  file by requesting an exact shell command with `shellExecute: 'ask'`, emits
+  a `bash` tool invocation plus its successful `once` audit record, produces no
+  interactive permission request, denial, error event, or harness-side
   timeout, and ends with one successful terminal event.
+- Any explicitly present `allowedTools` or `disallowedTools`, including empty
+  arrays and a combination such as `shellExecute: 'deny'` with
+  `allowedTools: ['bash']`, fails before the SDK loader, session, subscription,
+  or prompt. Direct permission-mapper and low-level compatibility-wrapper
+  calls cannot reintroduce OpenCode's persistent prompt-tool permission
+  rewrite.
