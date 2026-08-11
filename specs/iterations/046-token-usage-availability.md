@@ -44,6 +44,12 @@ Complete
    Export the public types, render unavailable and legacy payloads honestly,
    cover the model at runtime and compile time, and record compatibility
    guidance in the changelog.
+4. [x] **Reconcile provider-native accounting.**
+   Fold OpenCode's disjoint reasoning into output, fail closed on Gemini's
+   unpartitioned aggregate, and isolate optional Kimi usage from prompt status.
+   Amend the affected shared and adapter contracts, ACP decision, provider
+   citations, regression coverage, adjacent OpenCode test wording, and
+   changelog.
 
 ## Acceptance criteria
 

@@ -14,12 +14,17 @@ unpublished SDK build artifact.
 
 Done
 
+The malformed-usage rejection below records the behavior when this iteration
+completed.
+[KIMI-005](../user/adapters/kimi.md#kimi-005) later supersedes it by
+failure-isolating optional prompt usage as unavailable accounting, while
+[KIMI-006](../user/adapters/kimi.md#kimi-006) keeps control traffic strict.
+
 ## Deliverables
 
 - [x] The adapter validates inbound ACP traffic against schemas this project
-      owns, covering exactly the fields it consumes, rejecting malformed
-      control payloads, failure-isolating optional usage, and ignoring
-      everything else.
+      owns, covering exactly the fields it consumes, rejecting a payload that
+      violates them and ignoring everything else.
 - [x] DR-011 records that wire-schema ownership sits with the adapter rather
       than with the protocol SDK, and why the SDK's generated schemas cannot
       hold that role.
@@ -54,10 +59,9 @@ checks green at its boundary.
   being silently repaired.
 - Every field the adapter reads off a message is covered by the owned
   schemas, because the protocol SDK parses the same traffic behind them and
-  since `1.3.0` salvages what it cannot read. A malformed optional usage field
-  is intentionally isolated as unavailable accounting, while malformed
-  control fields are rejected here rather than dropped behind the adapter.
-  A text chunk missing its text, a tool call carrying a
+  since `1.3.0` salvages what it cannot read: a consumed field left
+  unvalidated is dropped there instead of rejected here, and the turn ends
+  reporting success. A text chunk missing its text, a tool call carrying a
   status or title of the wrong type, nested tool content missing its own text,
   a permission request without its tool call or with an option missing a name
   or carrying an unrecognized kind, a plan whose entry carries an
