@@ -381,6 +381,14 @@ event stream includes an `opencode:permission_decision` audit event with the
 native request, permission scope, and tool correlation. It remains distinct
 from `permission_request`, which means a human decision is needed.
 
+OpenCode does not support explicit `allowedTools` or `disallowedTools`,
+including empty arrays. In OpenCode 1.18.13 the prompt `tools` field is merged
+into persistent session permission rules rather than applied as an independent
+per-call tool registry; an enabled tool can therefore override a native or
+explicit deny and affect later resumed calls. Cligent rejects either option
+before loading the OpenCode SDK. Omit both options or choose an adapter with
+exact tool filtering.
+
 Kimi has a deliberately narrower headless permission surface:
 
 - Omit `permissions` to preserve the Kimi CLI's native configured rules.

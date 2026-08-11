@@ -77,6 +77,9 @@ This preserves native and user-configured explicit denies, which OpenCode
 resolves before emitting an ask.
 OpenCode models that automation posture independently from its permission
 rules.
+This independence covers explicitly supplied portable capability levels, not
+`AgentOptions` tool lists, which are unsupported per
+[OPENCODE-015](#opencode-015).
 When `mode: 'auto'` accompanies explicitly supplied portable capability levels,
 the adapter shall map only those present fields; omitted fields shall remain
 absent so OpenCode's native and user rules retain authority.
@@ -90,7 +93,7 @@ Where `PermissionPolicy.writablePaths` is non-empty per
 [ENG-022](../engine.md#eng-022), the adapter shall accept valid entries, expose
 `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with
 `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
-permission and tool mapping unchanged.
+permission mapping unchanged.
 `writablePaths` is reporting, not confinement: the OpenCode process retains
 ambient host filesystem authority, while `external_directory` is a
 tool-approval rule rather than an OS sandbox.
@@ -144,8 +147,8 @@ completed SSE events and permission responses.
 Where `PermissionPolicy` is absent, the adapter shall omit adapter-generated
 permission data from fresh-session creation, resumed-session updates, and
 prompt requests on every supported SDK path. OpenCode's native permission
-defaults shall remain in effect while independent `allowedTools` or
-`disallowedTools` restrictions still apply to the prompt.
+defaults shall remain in effect. If either tool-list option is explicitly
+present, [OPENCODE-015](#opencode-015) shall reject the run before SDK loading.
 
 ## Server Lifecycle
 
@@ -206,13 +209,30 @@ Where effort is outside the OpenCode portable vocabulary, including `ultracode` 
 
 ### OPENCODE-015
 
-Where `AgentOptions.allowedTools` is provided, the adapter shall map the OpenCode prompt tool wildcard to `false`, each effective allowed identifier to `true`, and each disallowed identifier to `false`, so every unlisted prompt tool is unavailable and explicit denies take precedence.
-An explicit empty allowlist shall therefore map to `{ "*": false }`, disabling all prompt tools rather than omitting the tool map.
-Where an allowed or disallowed tool identifier contains OpenCode's `*` wildcard syntax, the adapter shall reject before prompting because [ENG-017](../engine.md#eng-017) requires exact identifiers and a wildcard allow could reopen the provider registry.
-The adapter's `init` event shall report an explicit allowlist as a configured, known tool set even when the effective set is empty.
-Where `allowedTools` is omitted, the adapter shall preserve OpenCode's native available-tool set subject to any independently provided `disallowedTools`.
+Where either `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is
+explicitly present, including as an empty array, the adapter shall reject
+before loading the SDK or invoking the backend.
+The exported permission mapper shall reject either option before returning a
+provider mapping, and the exported compatibility wrapper shall reject any
+direct prompt `tools` value before session creation, update, subscription, or
+prompt invocation.
+OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
+control: the provider converts its booleans into persistent session permission
+rules, replacing prior session rules [[3]].
+Because permission evaluation is last-match-wins and session rules follow agent
+rules, an enabled tool can override a native or explicitly supplied deny, and a
+prompt-scoped request can change a resumed session after that cligent call ends
+[[4]][[5]].
+The provider also canonicalizes some tool identifiers to shared permission
+names, so this surface cannot guarantee
+[ENG-017](../engine.md#eng-017)'s exact identifier semantics [[4]].
+When both options are omitted, the adapter shall send no prompt `tools` data
+and preserve OpenCode's native available-tool surface.
 
 ## References
 
 [1]: https://opencode.ai/docs/models/ "OpenCode model configuration"
 [2]: https://opencode.ai/docs/server/ "OpenCode server"
+[3]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
+[4]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluation"
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"

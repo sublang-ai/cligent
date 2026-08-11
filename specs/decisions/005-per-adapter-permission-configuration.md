@@ -84,6 +84,19 @@ OpenCode labels `--auto` dangerous because those asks are approved without a hum
 The adapter shall reproduce that separation.
 It shall append no wildcard allow rule, because OpenCode merges agent and session rules and evaluates them last-match-wins, so a session wildcard would override provider and user denies [[12]][[13]].
 Explicitly supplied portable capability levels remain an independent permission-rule axis; omitted levels preserve native rules.
+That independence applies to `PermissionPolicy` capability levels, not to
+`AgentOptions.allowedTools` or `AgentOptions.disallowedTools`.
+OpenCode 1.18.13 marks prompt `tools` as merged with permissions and turns its
+booleans into a persistent replacement for the session permission rules
+[[14]].
+Because OpenCode then evaluates the combined agent and session rules
+last-match-wins, an enabled prompt tool can override an earlier native or
+explicitly supplied deny, and the replacement can outlive the call on a
+resumed session [[12]][[13]].
+The adapter therefore rejects either explicitly present tool-list option,
+including an empty array, before loading the SDK; OpenCode exposes no
+independent surface that can satisfy cligent's exact per-call tool availability
+contract.
 For headless liveness, an OpenCode permission request under `mode: 'auto'` shall be answered `once` without exposing an interactive `permission_request`; outside auto it shall be emitted for observability and rejected fail-closed through the active SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
@@ -141,7 +154,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 - DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
-- Claude, Codex, and Gemini retain their established mappings; OpenCode's corrected native-auto mapping preserves configured rules and answers surviving asks `once`; Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
+- Claude, Codex, and Gemini retain their established mappings; OpenCode's corrected native-auto mapping preserves configured rules, answers surviving asks `once`, and rejects explicit tool lists before SDK loading; Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
 - Cligent ships no default permission posture; user choice is explicit per config.
 - Startup-phase option failures abort the launcher with a stderr message and nonzero exit; mid-session failures route through `player_finished` / `captain_finished` `status: 'error'`. Implementers shall not introduce a `runtime_error` path for startup option failures.
@@ -163,3 +176,4 @@ The DR does not introduce new error machinery; it constrains where errors should
 [11]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/cli/cmd/run.ts "OpenCode 1.18.13 native run auto responder"
 [12]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluator"
 [13]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
+[14]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"

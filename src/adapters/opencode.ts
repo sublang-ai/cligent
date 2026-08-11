@@ -51,7 +51,6 @@ type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
-type OpenCodeV2Tools = NonNullable<OpenCodeV2PromptBody['tools']>;
 
 type SpawnProcessFn = (
   command: string,
@@ -116,10 +115,6 @@ interface OpenCodeAdapterDeps {
 interface OpenCodePermissionOptions {
   permission?: Record<string, PermissionLevel>;
   writablePaths?: WritablePathsPermissionMapping;
-  tools?: {
-    core?: string[];
-    exclude?: string[];
-  };
 }
 
 interface WrapOpencodeClientOptions {
@@ -524,33 +519,11 @@ export function mapPermissionsToOpenCodeOptions(
   policy: PermissionPolicy | undefined,
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
-  for (const [option, tools] of [
-    ['allowedTools', options?.allowedTools],
-    ['disallowedTools', options?.disallowedTools],
-  ] as const) {
-    if (tools?.some((tool) => tool.includes('*'))) {
-      throw new TypeError(
-        `OpenCode ${option} accepts exact tool identifiers, not wildcard patterns`,
-      );
-    }
-  }
+  assertOpenCodeToolRestrictionsUnsupported(options);
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
-  const allowedListProvided = options?.allowedTools !== undefined;
-  const exclude = [...new Set(options?.disallowedTools ?? [])];
-  const excluded = new Set(exclude);
-  const core = [...new Set(options?.allowedTools ?? [])].filter(
-    (tool) => !excluded.has(tool),
-  );
-  const tools =
-    allowedListProvided || exclude.length > 0
-      ? {
-          ...(allowedListProvided ? { core } : {}),
-          ...(exclude.length > 0 ? { exclude } : {}),
-        }
-      : undefined;
 
   if (policy === undefined) {
-    return tools ? { tools } : {};
+    return {};
   }
 
   if (policy.mode === 'bypass') {
@@ -594,7 +567,6 @@ export function mapPermissionsToOpenCodeOptions(
     return {
       ...(Object.keys(permission).length > 0 ? { permission } : {}),
       ...(writablePaths ? { writablePaths } : {}),
-      ...(tools ? { tools } : {}),
     };
   }
 
@@ -607,8 +579,27 @@ export function mapPermissionsToOpenCodeOptions(
       webfetch: normalized.networkAccess,
     },
     ...(writablePaths ? { writablePaths } : {}),
-    ...(tools ? { tools } : {}),
   };
+}
+
+function assertOpenCodeToolRestrictionsUnsupported(
+  options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
+): void {
+  if (
+    options?.allowedTools === undefined &&
+    options?.disallowedTools === undefined
+  ) {
+    return;
+  }
+
+  throw new Error(
+    'OpenCode adapter does not support explicit allowedTools or ' +
+      'disallowedTools: OpenCode 1.18.13 merges prompt `tools` into ' +
+      'persistent session permission rules, where they can override native ' +
+      'or explicit denies, and exposes no independent exact per-call tool ' +
+      'registry surface. Omit both options or choose an adapter with exact ' +
+      'tool filtering.',
+  );
 }
 
 export function mapEffortToOpenCodeVariant(
@@ -677,36 +668,6 @@ function toOpenCodeV2PermissionRuleset(
   }
 
   return rules.length > 0 ? rules : undefined;
-}
-
-function toOpenCodeV2Tools(tools: unknown): OpenCodeV2Tools | undefined {
-  const record = asRecord(tools);
-  const hasExplicitCore = Object.prototype.hasOwnProperty.call(record, 'core');
-  const core = asStringArray(record.core);
-  const exclude = asStringArray(record.exclude);
-  const mapped: OpenCodeV2Tools = {};
-
-  if (core.some((tool) => tool.includes('*'))) {
-    throw new TypeError(
-      'OpenCode prompt allowlist accepts exact tool identifiers, not wildcard patterns',
-    );
-  }
-
-  if (hasExplicitCore) {
-    mapped['*'] = false;
-  }
-  for (const tool of core) {
-    mapped[tool] = true;
-  }
-  for (const tool of exclude) {
-    mapped[tool] = false;
-  }
-
-  return Object.keys(mapped).length > 0 ? mapped : undefined;
-}
-
-function toOpenCodeV1Tools(tools: unknown): unknown {
-  return toOpenCodeV2Tools(tools);
 }
 
 function throwIfSdkResultError(result: unknown, operation: string): void {
@@ -783,16 +744,22 @@ export function wrapOpencodeClient(
 
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
+      if (options.tools !== undefined) {
+        throw new Error(
+          'OpenCode compatibility client does not support prompt `tools`: ' +
+            'OpenCode 1.18.13 merges them into persistent session permission ' +
+            'rules, where they can override native or explicit denies, ' +
+            'instead of enforcing an independent exact tool registry. Omit ' +
+            '`tools` or choose an adapter with exact tool filtering.',
+        );
+      }
       const resumeId = asString(options.sessionId);
       const cwdVal = asString(options.cwd);
       const permissionObj = options.permission;
-      const toolsObj = options.tools;
-      const v1Tools = toOpenCodeV1Tools(toolsObj);
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
       const runSignal = options.signal as AbortSignal | undefined;
       const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
-      const v2Tools = toOpenCodeV2Tools(toolsObj);
 
       let sessionId: string | undefined;
 
@@ -841,7 +808,6 @@ export function wrapOpencodeClient(
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.steps !== undefined ? { steps: options.steps } : {}),
         ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-        ...(toolsObj !== undefined ? { tools: v1Tools } : {}),
       };
 
       const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
@@ -852,7 +818,6 @@ export function wrapOpencodeClient(
         ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
         ...(variantVal ? { variant: variantVal } : {}),
         ...(cwdVal ? { directory: cwdVal } : {}),
-        ...(v2Tools ? { tools: v2Tools } : {}),
       };
 
       // The SDK's event stream is a lazy async generator — the HTTP
@@ -1172,6 +1137,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     prompt: string,
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    assertOpenCodeToolRestrictionsUnsupported(options);
+
     let sdk: OpenCodeSdk;
     try {
       sdk = await this.loadSdkFn();
@@ -1338,9 +1305,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
       if (!initYielded) {
         const runRecord = asRecord(runResult);
-        const configuredTools = asStringArray(mappedPermissions.tools?.core ?? []);
         const runTools = asStringArray(runRecord.tools);
-        const configuredAllowlist = options?.allowedTools !== undefined;
 
         yield createEvent(
           'init',
@@ -1348,28 +1313,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           {
             model: options?.model ?? asString(runRecord.model) ?? 'unknown',
             cwd: options?.cwd ?? asString(runRecord.cwd) ?? process.cwd(),
-            tools: configuredAllowlist
-              ? configuredTools
-              : runTools.length > 0
-                ? runTools
-                : configuredTools,
+            tools: runTools,
             capabilities: {
               mode: this.mode,
-              toolsKnown:
-                configuredAllowlist ||
-                runTools.length > 0 ||
-                configuredTools.length > 0,
-              toolsSource:
-                configuredAllowlist
-                  ? 'configured'
-                  : runTools.length > 0
-                    ? 'sdk'
-                    : configuredTools.length > 0
-                      ? 'configured'
-                      : 'unavailable',
-              ...(mappedPermissions.tools?.exclude
-                ? { disallowedTools: mappedPermissions.tools.exclude }
-                : {}),
+              toolsKnown: runTools.length > 0,
+              toolsSource: runTools.length > 0 ? 'sdk' : 'unavailable',
             },
           },
           sessionId,
@@ -2122,28 +2070,17 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
     } catch (error) {
       if (!initYielded) {
-        const configuredAllowlist = options?.allowedTools !== undefined;
-        const configuredTools = asStringArray(
-          mappedPermissions.tools?.core ?? [],
-        );
         yield createEvent(
           'init',
           AGENT,
           {
             model: options?.model ?? 'unknown',
             cwd: options?.cwd ?? process.cwd(),
-            tools: configuredTools,
+            tools: [],
             capabilities: {
               mode: this.mode,
-              toolsKnown:
-                configuredAllowlist || configuredTools.length > 0,
-              toolsSource:
-                configuredAllowlist || configuredTools.length > 0
-                  ? 'configured'
-                  : 'unavailable',
-              ...(mappedPermissions.tools?.exclude
-                ? { disallowedTools: mappedPermissions.tools.exclude }
-                : {}),
+              toolsKnown: false,
+              toolsSource: 'unavailable',
             },
           },
           sessionId,
