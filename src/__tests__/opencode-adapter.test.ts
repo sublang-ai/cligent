@@ -35,6 +35,7 @@ interface MockOpenCodeClient {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }): Promise<void>;
@@ -49,12 +50,23 @@ class MockServerProcess extends EventEmitter {
 
   killSignals: Array<NodeJS.Signals | number | undefined> = [];
 
+  constructor(private readonly ignoreSigterm = false) {
+    super();
+  }
+
   kill(signal?: NodeJS.Signals | number): boolean {
     this.killSignals.push(signal);
+    if (signal === 'SIGTERM' && this.ignoreSigterm) {
+      return true;
+    }
     queueMicrotask(() => {
       this.stdout.end();
       this.stderr.end();
-      this.emit('close', null, signal === 'SIGTERM' ? 'SIGTERM' : null);
+      this.emit(
+        'close',
+        null,
+        signal === 'SIGTERM' || signal === 'SIGKILL' ? signal : null,
+      );
     });
     return true;
   }
@@ -67,7 +79,7 @@ interface SpawnInvocation {
   process: MockServerProcess;
 }
 
-function makeSpawn(): {
+function makeSpawn(mockOptions: { ignoreSigterm?: boolean } = {}): {
   spawnProcess: (
     command: string,
     args: readonly string[],
@@ -82,7 +94,7 @@ function makeSpawn(): {
     args: readonly string[],
     options: SpawnOptionsWithoutStdio,
   ): ChildProcessWithoutNullStreams => {
-    const process = new MockServerProcess();
+    const process = new MockServerProcess(mockOptions.ignoreSigterm);
     invocations.push({ command, args, options, process });
     return process as unknown as ChildProcessWithoutNullStreams;
   };
@@ -101,6 +113,7 @@ function makeLoader(config: {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }) => void;
@@ -108,6 +121,7 @@ function makeLoader(config: {
     sessionId: string;
     requestId: string;
     permission: string;
+    decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
   }) => Promise<void>;
@@ -784,6 +798,7 @@ describe('OpenCodeAdapter', () => {
       sessionId: string;
       requestId: string;
       permission: string;
+      decision: 'once' | 'reject';
       signal?: AbortSignal;
     }> = [];
 
@@ -859,11 +874,13 @@ describe('OpenCodeAdapter', () => {
         sessionId: 'permission-v1-session',
         requestId: 'permission-v1-request',
         permission: 'external_directory',
+        decision: 'reject',
       },
       {
         sessionId: 'permission-v2-session',
         requestId: 'permission-v2-request',
         permission: 'future_permission',
+        decision: 'reject',
       },
     ]);
     expect(replies[0]?.signal).toBeDefined();
@@ -871,6 +888,121 @@ describe('OpenCodeAdapter', () => {
     expect(replies[1]?.signal).toBeDefined();
     expect(replies[1]?.signal?.aborted).toBe(true);
     expect(replies[0]?.signal).not.toBe(replies[1]?.signal);
+  });
+
+  it('auto-approves residual asks once without exposing an interactive request', async () => {
+    const replies: Array<{
+      requestId: string;
+      decision: 'once' | 'reject';
+    }> = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'auto-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'auto-request',
+                sessionID: 'auto-session',
+                permission: 'external_directory',
+                patterns: ['/tmp/*'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'auto-session' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push({
+              requestId: options.requestId,
+              decision: options.decision,
+            });
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('native auto probe', { permissions: { mode: 'auto' } }),
+    );
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(replies).toEqual([{ requestId: 'auto-request', decision: 'once' }]);
+  });
+
+  it('releases permission correlation after every replied decision', async () => {
+    const replies: string[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'correlation-cleanup-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reused-request',
+                sessionID: 'correlation-cleanup-session',
+                permission: 'edit',
+                tool: { callID: 'stale-call' },
+              },
+            },
+            {
+              type: 'permission.replied',
+              properties: {
+                sessionID: 'correlation-cleanup-session',
+                requestID: 'reused-request',
+                reply: 'once',
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reused-request',
+                sessionID: 'correlation-cleanup-session',
+                permission: 'edit',
+                tool: { callID: 'duplicate-call' },
+              },
+            },
+            {
+              type: 'permission.replied',
+              properties: {
+                sessionID: 'correlation-cleanup-session',
+                requestID: 'reused-request',
+                reply: 'reject',
+                toolUseId: 'current-call',
+                toolName: 'write',
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'correlation-cleanup-session' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push(options.requestId);
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('correlation cleanup probe', {
+        permissions: { mode: 'auto' },
+      }),
+    );
+    const denied = events.find((event) => event.type === 'tool_result') as
+      | (AgentEvent & { payload: { toolUseId: string; status: string } })
+      | undefined;
+    expect(denied?.payload).toMatchObject({
+      toolUseId: 'current-call',
+      status: 'denied',
+    });
+    expect(replies).toEqual(['reused-request']);
   });
 
   it('ignores foreign-session asks and replies once to a repeated local request', async () => {
@@ -1252,6 +1384,45 @@ describe('OpenCodeAdapter', () => {
     }
   });
 
+  it('escalates managed teardown to SIGKILL after a bounded SIGTERM grace', async () => {
+    vi.useFakeTimers();
+    try {
+      const { spawnProcess, invocations } = makeSpawn({ ignoreSigterm: true });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4996' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'term-resistant-session' },
+            events: [
+              {
+                type: 'session.idle',
+                properties: { sessionID: 'term-resistant-session' },
+              },
+            ],
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4996',
+        },
+      );
+
+      const stream = adapter.run('term resistant probe');
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('done');
+      const teardown = stream.next();
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.runAllTimersAsync();
+      expect(invocations[0]?.process.killSignals).toEqual([
+        'SIGTERM',
+        'SIGKILL',
+      ]);
+      expect((await teardown).done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels a pending v1 canonical SSE request and closes its iterator', async () => {
     const controller = new AbortController();
     let subscriptionSignal: AbortSignal | undefined;
@@ -1615,6 +1786,53 @@ describe('OpenCodeAdapter', () => {
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
     expect(createClientBaseUrl).toBe('http://external-host:7000');
     expect(spawnCalled).toBe(false);
+  });
+
+  it('does not accumulate reactions on run-lifetime controls per SSE event', async () => {
+    const originalThen = Promise.prototype.then;
+    const reactionCounts = new WeakMap<Promise<unknown>, number>();
+    let maxReactions = 0;
+    Promise.prototype.then = function (
+      this: Promise<unknown>,
+      ...args: unknown[]
+    ): Promise<unknown> {
+      const count = (reactionCounts.get(this) ?? 0) + 1;
+      reactionCounts.set(this, count);
+      maxReactions = Math.max(maxReactions, count);
+      return Reflect.apply(originalThen, this, args) as Promise<unknown>;
+    } as typeof originalThen;
+
+    try {
+      const { spawnProcess } = makeSpawn();
+      const events = Array.from({ length: 4_096 }, () => ({
+        type: 'server.connected',
+      }));
+      events.push({
+        type: 'session.idle',
+        properties: { sessionID: 'reaction-session' },
+      } as { type: string });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4995' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'reaction-session' },
+            events,
+          }),
+          spawnProcess,
+          probeCliAvailability: async () => true,
+          waitForServerReady: async () => 'http://127.0.0.1:4995',
+        },
+      );
+
+      const output = await collect(adapter.run('reaction retention probe'));
+      expect(output.map((event) => event.type)).toEqual(['init', 'done']);
+      // A run-lifetime promise raced once per event reaches 4,097 here. The
+      // re-armed waiter keeps every observed promise at a constant reaction
+      // count independent of stream length.
+      expect(maxReactions).toBeLessThan(16);
+    } finally {
+      Promise.prototype.then = originalThen;
+    }
   });
 
   it('emits error + done when managed server crashes mid-stream', async () => {
@@ -2093,9 +2311,9 @@ describe('OpenCodeAdapter', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('maps PermissionPolicy.mode = "auto" to SDK permission: allow per ENG-021', () => {
+  it('preserves native rules when selecting OpenCode auto mode per ENG-021', () => {
     const auto = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
-    expect(auto.permission).toEqual({ '*': 'allow' });
+    expect(auto.permission).toBeUndefined();
 
     // User-passed allowedTools / disallowedTools (independent from
     // `permissions`) still flow through to `tools`.
@@ -2103,7 +2321,7 @@ describe('OpenCodeAdapter', () => {
       { mode: 'auto' },
       { allowedTools: ['custom-a'], disallowedTools: ['custom-b'] },
     );
-    expect(withUserTools.permission).toEqual({ '*': 'allow' });
+    expect(withUserTools.permission).toBeUndefined();
     expect(withUserTools.tools?.core).toEqual(['custom-a']);
     expect(withUserTools.tools?.exclude).toEqual(['custom-b']);
   });
@@ -2117,18 +2335,16 @@ describe('OpenCodeAdapter', () => {
     );
   });
 
-  it('mode overrides per-capability levels in opencode per ENG-021', () => {
-    // mode: 'auto' set together with explicit per-capability denies: the
-    // per-capability path is short-circuited so the deny levels do not
-    // appear in the emitted SDK permission body. Only the session-wide
-    // `permission: allow` shape applies.
+  it('keeps explicit capabilities independent from OpenCode auto mode', () => {
     const config = mapPermissionsToOpenCodeOptions({
       mode: 'auto',
       fileWrite: 'deny',
-      shellExecute: 'deny',
-      networkAccess: 'deny',
+      networkAccess: 'allow',
     });
-    expect(config.permission).toEqual({ '*': 'allow' });
+    expect(config.permission).toEqual({
+      edit: 'deny',
+      webfetch: 'allow',
+    });
   });
 
   it('accepts writablePaths and reports ambient enforcement', () => {
@@ -2137,7 +2353,7 @@ describe('OpenCodeAdapter', () => {
       writablePaths: ['./.git/', 'generated/./cache//'],
     });
 
-    expect(mapped.permission).toEqual({ '*': 'allow' });
+    expect(mapped.permission).toBeUndefined();
     expect(mapped.writablePaths).toEqual({
       paths: ['.git', 'generated/cache'],
       enforcement: 'ambient',
@@ -2532,8 +2748,12 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     ]);
   });
 
-  it('maps auto mode to wildcard allow on v1 and v2 permission paths', async () => {
+  it('keeps native rules in auto and retains explicit denies on v1 and v2', async () => {
     const mapped = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
+    const mappedWithDeny = mapPermissionsToOpenCodeOptions({
+      mode: 'auto',
+      fileWrite: 'deny',
+    });
     const v1Prompts: unknown[] = [];
     const v1 = wrapOpencodeClient(
       makeV1Sdk({
@@ -2543,30 +2763,34 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       }),
     );
     await v1.run?.({ prompt: 'v1 auto', ...mapped });
-    expect(v1Prompts[0]).toMatchObject({
-      body: { permission: { '*': 'allow' } },
-    });
+    expect(
+      (v1Prompts[0] as { body: { permission?: unknown } }).body.permission,
+    ).toBeUndefined();
     await v1.run?.({
       prompt: 'v1 resumed auto',
       sessionId: 'v1-existing',
       ...mapped,
     });
-    expect(v1Prompts[1]).toMatchObject({
-      path: { id: 'v1-existing' },
-      body: { permission: { '*': 'allow' } },
+    expect(v1Prompts[1]).toMatchObject({ path: { id: 'v1-existing' } });
+    expect(
+      (v1Prompts[1] as { body: { permission?: unknown } }).body.permission,
+    ).toBeUndefined();
+    await v1.run?.({ prompt: 'v1 explicit deny', ...mappedWithDeny });
+    expect(v1Prompts[2]).toMatchObject({
+      body: { permission: { edit: 'deny' } },
     });
 
-    let v2Create: unknown;
-    let v2Update: unknown;
+    const v2Create: unknown[] = [];
+    const v2Update: unknown[] = [];
     const v2 = wrapOpencodeClient(
       {
         session: {
           async create(args: unknown) {
-            v2Create = args;
+            v2Create.push(args);
             return { data: { id: 'v2-auto' } };
           },
           async update(args: unknown) {
-            v2Update = args;
+            v2Update.push(args);
             return {};
           },
           async promptAsync() {
@@ -2582,9 +2806,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { apiVersion: 'v2' },
     );
     await v2.run?.({ prompt: 'v2 auto', ...mapped });
-    expect(v2Create).toEqual({
-      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
-    });
+    expect(v2Create[0]).toEqual({});
 
     await v2.run?.({
       prompt: 'v2 resumed auto',
@@ -2592,19 +2814,33 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       cwd: '/workspace',
       ...mapped,
     });
-    expect(v2Update).toEqual({
-      sessionID: 'v2-existing',
-      directory: '/workspace',
-      permission: [{ permission: '*', pattern: '*', action: 'allow' }],
+    expect(v2Update).toEqual([]);
+
+    await v2.run?.({ prompt: 'v2 explicit deny', ...mappedWithDeny });
+    expect(v2Create[1]).toEqual({
+      permission: [{ permission: 'edit', pattern: '*', action: 'deny' }],
     });
+    await v2.run?.({
+      prompt: 'v2 resumed explicit deny',
+      sessionId: 'v2-existing',
+      cwd: '/workspace',
+      ...mappedWithDeny,
+    });
+    expect(v2Update).toEqual([
+      {
+        sessionID: 'v2-existing',
+        directory: '/workspace',
+        permission: [{ permission: 'edit', pattern: '*', action: 'deny' }],
+      },
+    ]);
   });
 
-  it('uses the legacy v1 permission response endpoint with session correlation', async () => {
-    let replyArgs: unknown;
+  it('uses once and reject on the correlated legacy v1 response endpoint', async () => {
+    const replyArgs: unknown[] = [];
     const controller = new AbortController();
     const real = makeV1Sdk({});
     real.postSessionIdPermissionsPermissionId = async (args: unknown) => {
-      replyArgs = args;
+      replyArgs.push(args);
       return {};
     };
     const client = wrapOpencodeClient(real);
@@ -2613,15 +2849,27 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       sessionId: 'legacy-session',
       requestId: 'legacy-request',
       permission: 'external_directory',
+      decision: 'reject',
       cwd: '/workspace',
       signal: controller.signal,
     });
 
-    expect(replyArgs).toEqual({
+    await client.replyPermission?.({
+      sessionId: 'legacy-session',
+      requestId: 'legacy-auto-request',
+      permission: 'external_directory',
+      decision: 'once',
+    });
+
+    expect(replyArgs[0]).toEqual({
       path: { id: 'legacy-session', permissionID: 'legacy-request' },
       body: { response: 'reject' },
       query: { directory: '/workspace' },
       signal: controller.signal,
+    });
+    expect(replyArgs[1]).toEqual({
+      path: { id: 'legacy-session', permissionID: 'legacy-auto-request' },
+      body: { response: 'once' },
     });
   });
 
@@ -2648,7 +2896,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       permission: {
         async reply(parameters: unknown, requestOptions?: unknown) {
           replyCalls.push({ parameters, requestOptions });
-          return replyCalls.length === 1
+          return replyCalls.length < 3
             ? {}
             : { error: { data: { message: 'request disappeared' } } };
         },
@@ -2660,6 +2908,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       sessionId: 'v2-reply-session',
       requestId: 'v2-reply-request',
       permission: 'future_permission',
+      decision: 'once',
       cwd: '/workspace',
       signal: controller.signal,
     });
@@ -2667,11 +2916,24 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       parameters: {
         requestID: 'v2-reply-request',
         directory: '/workspace',
-        reply: 'reject',
-        message:
-          'Cligent headless runs reject unresolved permission requests',
+        reply: 'once',
       },
       requestOptions: { signal: controller.signal },
+    });
+
+    await client.replyPermission?.({
+      sessionId: 'v2-reply-session',
+      requestId: 'v2-reject-request',
+      permission: 'future_permission',
+      decision: 'reject',
+    });
+    expect(replyCalls[1]).toEqual({
+      parameters: {
+        requestID: 'v2-reject-request',
+        reply: 'reject',
+        message: 'Cligent headless runs reject unresolved permission requests',
+      },
+      requestOptions: undefined,
     });
 
     await expect(
@@ -2679,6 +2941,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'v2-reply-session',
         requestId: 'v2-missing-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="v2-reply-session".*requestID="v2-missing-request".*permission="future_permission".*request disappeared/,
@@ -2710,6 +2973,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'no-reply-route-session',
         requestId: 'no-reply-route-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="no-reply-route-session".*requestID="no-reply-route-request".*permission="future_permission".*permission\.reply\(\) not available/,

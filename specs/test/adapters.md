@@ -73,6 +73,8 @@ The OpenCode adapter shall filter events by `sessionId`, pass through events wit
 Where the managed server remains running, teardown shall send `SIGTERM` before
 invoking SDK disposal and shall complete within a bounded interval when
 iterator return, client close, and client shutdown all remain pending.
+If the server ignores `SIGTERM`, teardown shall send `SIGKILL` after a bounded
+grace and shall bound the final close wait.
 
 ### TADAPT-027
 Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-013](../user/adapters/opencode.md#opencode-013)
@@ -116,14 +118,16 @@ usage count shall duplicate.
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
 
 Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
-use each supported SDK path, the observable v1 prompt permission map shall be
-`{ "*": "allow" }` and the observable v2 session permission ruleset shall
-contain the wildcard allow rule.
+use each supported SDK path, neither the observable v1 prompt nor the v2
+session ruleset shall contain an adapter-generated wildcard. Explicitly
+supplied capability levels shall still map, including denies, while omitted
+capabilities preserve native rules.
 Where canonical v1 `permission.updated` and v2 `permission.asked` events are
 supplied, including an unknown permission name, when the adapter handles
-requests for its current session, it shall emit each normalized
-`permission_request` and reject its native request exactly once through the
-matching SDK route with the request and session correlation intact.
+requests for its current session under auto, it shall emit no normalized
+`permission_request` and answer each native request `once` through the matching
+SDK route with request and session correlation intact. Outside auto it shall
+emit the normalized request and answer `reject`.
 Where interleaved foreign-session events and repeated local events occur, the
 adapter shall respond only to the local request and shall not respond twice.
 Where a request has a missing identifier, unavailable or failed reply route,

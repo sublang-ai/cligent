@@ -14,8 +14,9 @@ Complete
 The OpenCode permission hang described below records the posture when this
 iteration completed.
 [OPENCODE-020](../user/adapters/opencode.md#opencode-020) later supersedes that
-known-hazard disposition with a wildcard auto rule and deterministic
-fail-closed replies for any residual request.
+known-hazard disposition by reproducing native auto response behavior:
+configured rules remain authoritative, surviving asks are answered `once`,
+and non-auto residual requests receive deterministic fail-closed replies.
 
 ## Deliverables
 

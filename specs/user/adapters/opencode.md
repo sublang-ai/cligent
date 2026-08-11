@@ -43,7 +43,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` / `permission.asked` | `permission_request` plus the headless reply behavior in [OPENCODE-020](#opencode-020) |
+| `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `permission_request` outside auto mode |
 | `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
@@ -69,12 +69,17 @@ While the SSE stream carries events for all sessions, the adapter shall emit onl
 ### OPENCODE-007
 
 Where a `PermissionPolicy` is provided, the adapter shall map it to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md#unified-permission-model-upm): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
-Where `PermissionPolicy.mode` is `auto`, the adapter shall represent
-OpenCode's global `"permission": "allow"` setting as `{ "*": "allow" }` on
-the v1 path and as the v2 rule
-`{ permission: "*", pattern: "*", action: "allow" }`, so permissions outside
-the three portable capability names are covered by the same native global
-setting.
+Where `PermissionPolicy.mode` is `auto`, the adapter shall reproduce
+OpenCode's native auto posture: it shall append no wildcard permission rule
+and shall answer only permission asks that survive OpenCode's configured rules
+with `once` per [OPENCODE-020](#opencode-020).
+This preserves native and user-configured explicit denies, which OpenCode
+resolves before emitting an ask.
+OpenCode models that automation posture independently from its permission
+rules.
+When `mode: 'auto'` accompanies explicitly supplied portable capability levels,
+the adapter shall map only those present fields; omitted fields shall remain
+absent so OpenCode's native and user rules retain authority.
 Where the OpenCode v2 SDK path is active, the adapter shall apply the
 equivalent `PermissionRuleset` at `session.create` for fresh sessions and at
 `session.update` before prompting resumed sessions, because the v2 prompt body
@@ -86,14 +91,22 @@ Where `PermissionPolicy.writablePaths` is non-empty per
 `WritablePathsPermissionMapping` per [ENG-023](../engine.md#eng-023) with
 `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
 permission and tool mapping unchanged.
+`writablePaths` is reporting, not confinement: the OpenCode process retains
+ambient host filesystem authority, while `external_directory` is a
+tool-approval rule rather than an OS sandbox.
+Native auto may answer a surviving `external_directory` ask `once` without a
+human.
 
 ### OPENCODE-020
 
 While an OpenCode run is headless, when a `permission.updated` or
 `permission.asked` event belonging to its session reaches the adapter, the
-adapter shall emit the normalized `permission_request` for observability and
-reject the request exactly once through the applicable SDK permission-response
-route, including for permission names unknown to cligent.
+adapter shall resolve it exactly once through the applicable SDK
+permission-response route, including for permission names unknown to cligent.
+Under `mode: 'auto'`, it shall answer `once` and shall not emit a normalized
+`permission_request`, preserving the headless auto-mode contract.
+Outside auto mode, it shall emit `permission_request` for observability and
+answer `reject` fail-closed.
 The response shall preserve the native request identifier and, where the SDK
 route requires it, the session identifier; permission events belonging to
 other sessions shall receive no response per [OPENCODE-006](#opencode-006).
@@ -114,6 +127,8 @@ with `status: 'interrupted'`. The ensuing teardown shall release the abort
 listener, terminate the managed server per [OPENCODE-009](#opencode-009), and
 perform bounded iterator and SDK client cleanup per
 [OPENCODE-008](#opencode-008).
+Retained wait-control state shall remain bounded independently of the number of
+completed SSE events and permission responses.
 
 ### OPENCODE-013
 
@@ -135,6 +150,8 @@ Run teardown shall request managed server termination before invoking or
 awaiting SDK iterator and client cleanup. Waits for iterator return, client
 close, and client shutdown shall be bounded, so a non-settling SDK cleanup
 hook cannot keep the managed server alive or prevent generator completion.
+If the server remains alive after a bounded `SIGTERM` grace, teardown shall
+send `SIGKILL` and bound the final close wait.
 
 ### OPENCODE-009
 
