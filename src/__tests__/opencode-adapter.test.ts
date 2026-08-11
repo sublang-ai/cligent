@@ -5891,7 +5891,7 @@ describe('OpenCode SSE event structure', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('accumulates step-finish token usage for done event', async () => {
+  it('accumulates cache and reasoning step usage exactly once', async () => {
     const firstStep = {
       id: 'step-1',
       sessionID: 'usage-session',
@@ -5952,7 +5952,7 @@ describe('OpenCode SSE event structure', () => {
     const payload = done.payload as DonePayload;
     expect(payload.usage.tokenAvailability).toBe('reported');
     expect(payload.usage.inputTokens).toBe(200);
-    expect(payload.usage.outputTokens).toBe(80);
+    expect(payload.usage.outputTokens).toBe(110);
     expect(payload.usage.totalCostUsd).toBe(0.005);
   });
 

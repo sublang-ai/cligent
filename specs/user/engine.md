@@ -104,7 +104,9 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 Where token accounting is `'reported'`, `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation).
 Where a provider defines its base input counter as cache-exclusive, the adapter shall sum provider-specific cache-read and cache-write fields into `inputTokens` exactly once.
 Where a provider defines its base input counter as cache-inclusive, including Codex `input_tokens` and Gemini `StreamStats.input_tokens`, the adapter shall preserve that base total and validate separately reported cache subset/detail counters without adding them again.
-Cache fields shall not make incomplete base input and output accounting `'reported'`; availability shall remain governed by [ENG-027](#eng-027).
+Where token accounting is `'reported'`, `outputTokens` shall include every model-generated output token, including reasoning or thinking tokens.
+Where a provider reports reasoning or thinking separately from a visible or candidate output base, the adapter shall add that disjoint detail exactly once; where an aggregate exposes additional token use without partitioning it between normalized input and output, the adapter shall mark accounting unavailable rather than allocate the residual by estimation.
+Cache or reasoning details shall not make incomplete base input and output accounting `'reported'`; availability shall remain governed by [ENG-027](#eng-027).
 
 ## Effort
 
@@ -175,7 +177,7 @@ Where an adapter's runtime is an executable found through `PATH`, the adapter sh
 ### ENG-027
 
 Every `DonePayload.usage` shall carry the required `tokenAvailability` discriminator with the closed values `'reported' | 'unavailable'` per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#key-payloads).
-Where upstream supplies complete finite non-negative integer input and output counters, including explicit zeroes, and every present mapped cache counter has the same form, the adapter shall set `'reported'`, shall preserve the mapped counters and [ENG-019](#eng-019) cache treatment, and shall not estimate any missing component.
+Where upstream supplies complete finite non-negative integer input and output counters, including explicit zeroes, and every present mapped cache or reasoning counter has the same form, the adapter shall set `'reported'`, shall preserve the mapped counters and [ENG-019](#eng-019) composition rules, and shall not estimate any missing component.
 Where an optional cache counter is absent, its contribution shall be zero without invalidating otherwise complete accounting; where a required counter is absent or any present mapped token or cache counter is non-finite, negative, fractional, or non-numeric, the producer shall set `'unavailable'` rather than silently substituting a reported zero.
 Where complete upstream token counters are absent, malformed, or unavailable on a synthesized, errored, interrupted, exhausted, or other terminal path, the producer shall set `'unavailable'`; numeric token fields shall remain present for object-shape compatibility but consumers shall not treat them as measurements.
 Where either availability state applies, the producer shall preserve an independently known `toolUses` count from observed tool lifecycles or a valid provider-reported count instead of deriving its availability from token accounting.

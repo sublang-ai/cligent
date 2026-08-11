@@ -2793,7 +2793,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               inputTokens.value +
               cacheReadTokens.value +
               cacheWriteTokens.value;
-            accumulatedOutputTokens += outputTokens.value;
+            accumulatedOutputTokens +=
+              outputTokens.value + reasoningTokens.value;
             if (
               !inputTokens.valid ||
               !outputTokens.valid ||

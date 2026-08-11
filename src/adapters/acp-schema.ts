@@ -12,16 +12,16 @@ import { z } from 'zod';
  * map and became unreachable the moment it did — a dependency on a build
  * artifact, not on an interface. The generated schemas also validate the whole
  * protocol, while the adapter reads a small, stable subset of it, and their
- * newer generation deliberately salvages malformed payloads (dropping an
- * invalid `usage` rather than rejecting it) where this adapter must reject:
- * per [KIMI-006](../../specs/user/adapters/kimi.md) malformed traffic is an
- * actionable error, not something to repair silently.
+ * newer generation deliberately salvages malformed payloads. This adapter
+ * keeps control fields strict per KIMI-006, while failure-isolating optional
+ * accounting per KIMI-005 so bad telemetry cannot change a completed turn's
+ * terminal status.
  *
- * These schemas therefore encode one rule: every field the adapter actually
- * consumes is validated strictly, and everything else is ignored. Unknown keys
- * are stripped rather than rejected, so an agent may add fields — and, for the
- * variant unions, whole cases — without this client calling valid traffic
- * malformed.
+ * These schemas therefore encode one rule: protocol structure the adapter
+ * relies on and every field it consumes are validated strictly, while
+ * everything else is ignored. Unknown keys are stripped rather than rejected,
+ * so an agent may add fields — and, for the variant unions, whole cases —
+ * without this client calling valid traffic malformed.
  */
 
 /** A JSON-RPC 2.0 error object, as carried on an ACP error response. */
@@ -84,8 +84,11 @@ export const zAcpSetSessionConfigOptionResponse = z.object({
 });
 
 /**
- * Token accounting. ACP counters are unsigned integers. Nullable optional
- * counters remain absent accounting; malformed present numbers are rejected.
+ * Token accounting structure used by the adapter. ACP's required total and
+ * mapped counters are unsigned integers. Nullable optional counters remain
+ * absent accounting; malformed mapped counters make the optional usage field
+ * unavailable. Unconsumed details such as thoughtTokens remain loose extension
+ * data.
  */
 const zAcpTokenCounter = z.number().int().nonnegative();
 
@@ -93,7 +96,6 @@ export const zAcpUsage = z.looseObject({
   totalTokens: zAcpTokenCounter,
   inputTokens: zAcpTokenCounter,
   outputTokens: zAcpTokenCounter,
-  thoughtTokens: zAcpTokenCounter.nullish(),
   cachedReadTokens: zAcpTokenCounter.nullish(),
   cachedWriteTokens: zAcpTokenCounter.nullish(),
 });
@@ -114,7 +116,7 @@ export const zAcpPromptResponse = z.object({
     'refusal',
     'cancelled',
   ]),
-  usage: zAcpUsage.nullish(),
+  usage: zAcpUsage.nullish().catch(null),
 });
 
 /**

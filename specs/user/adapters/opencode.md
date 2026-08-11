@@ -50,7 +50,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
 
-Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, and shall accumulate the resulting input and output totals across steps without adding the separately validated reasoning detail to output.
+Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
 
 ### OPENCODE-016
 
@@ -319,3 +319,5 @@ Where `allowedTools` is omitted, the adapter shall preserve OpenCode's native av
 
 [1]: https://opencode.ai/docs/models/ "OpenCode model configuration"
 [2]: https://opencode.ai/docs/server/ "OpenCode server"
+[3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 "OpenCode 1.18.13 step-finish token split"
+[4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 "OpenCode 1.18.13 token roll-up"

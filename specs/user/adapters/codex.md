@@ -47,7 +47,7 @@ The `tool_result` payload shall map native status `failed` to `status: 'error'` 
 Where an `item.completed` item instead carries legacy alias tool shapes — `tool_call`, `function_call`, or `tool_use` calls and `tool_result`, `function_call_result`, or `tool_output` results, at item top level or among content blocks — the adapter shall normalize them to the same `tool_use` and `tool_result` events as a compatibility fallback, preserving their native status (including `denied`) and duration detail, with their identifiers counted through the same unique-`toolUseId` rule below.
 
 Because the SDK usage object carries token counts but no tool-count metric, the adapter shall report `DonePayload.usage.toolUses` on every terminal `done` event as the number of unique `toolUseId` values observed during the run — for canonical SDK streams, the unique `command_execution` and `mcp_tool_call` item `id`s — independent of token-usage fields.
-Where the SDK supplies canonical `Usage`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and shall not add those detail counters to the inclusive input or output total a second time [[1]].
+Where the SDK supplies canonical `Usage`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and shall not add those detail counters to the inclusive input or output total a second time [[6]][[7]].
 
 When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream. This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
 
@@ -126,3 +126,5 @@ Where both fields are omitted, the adapter shall preserve Codex's native availab
 [3]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
 [4]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
 [5]: https://openai.com/index/gpt-5-6/ "Introducing GPT-5.6"
+[6]: https://github.com/openai/codex/blob/rust-v0.146.0/sdk/typescript/src/events.ts#L20-L36 "Codex SDK 0.146.0 turn usage"
+[7]: https://github.com/openai/codex/blob/rust-v0.146.0/codex-rs/protocol/src/protocol.rs#L2215-L2230 "Codex 0.146.0 token-usage protocol"

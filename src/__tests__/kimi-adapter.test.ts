@@ -549,29 +549,79 @@ describe('KimiAdapter', () => {
     });
   });
 
-  it('rejects malformed ACP token accounting as unavailable', async () => {
+  it('degrades malformed ACP accounting without failing the turn', async () => {
     const fake = new FakeKimi({
-      prompt: async () => ({
-        stopReason: 'end_turn',
-        usage: {
-          totalTokens: 1,
-          inputTokens: -1,
-          outputTokens: 2,
-        },
-      }),
+      prompt: async (connection, request) => {
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'kept' },
+          },
+        });
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'usage-tool',
+            title: 'Read',
+            kind: 'read',
+            rawInput: { path: 'README.md' },
+          },
+        });
+        return {
+          stopReason: 'end_turn',
+          usage: {
+            totalTokens: 1,
+            inputTokens: -1,
+            outputTokens: 2,
+          },
+        };
+      },
     });
     const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
 
     const events = await collect(adapter.run('Do nothing'));
-    expect(eventOf(events, 'error').payload).toMatchObject({
-      code: 'KIMI_ACP_ERROR',
-      message: expect.stringContaining('invalid session/prompt response result'),
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload).toMatchObject({
+      status: 'success',
+      result: 'kept',
+      usage: {
+        tokenAvailability: 'unavailable',
+        inputTokens: 0,
+        outputTokens: 0,
+        toolUses: 1,
+      },
     });
-    expect(eventOf(events, 'done').payload.usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
-      toolUses: 0,
+  });
+
+  it('ignores unused thought detail and nullable optional caches', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => ({
+        stopReason: 'end_turn',
+        usage: {
+          totalTokens: 8,
+          inputTokens: 5,
+          outputTokens: 3,
+          thoughtTokens: 2.5,
+          cachedReadTokens: null,
+          cachedWriteTokens: null,
+        },
+      }),
+    });
+
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Do nothing'),
+    );
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload).toMatchObject({
+      status: 'success',
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 5,
+        outputTokens: 3,
+        toolUses: 0,
+      },
     });
   });
 

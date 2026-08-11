@@ -48,10 +48,14 @@ Complete
 ## Acceptance criteria
 
 - Complete finite non-negative integer upstream input and output counters set
-  `'reported'`, including when both counters are zero; every present mapped
-  cache counter must have the same form.
+  `'reported'`, including when both counters are zero; output includes
+  disjoint reasoning or thinking detail exactly once, and every present mapped
+  cache or reasoning counter must have the same form.
 - Missing or incomplete upstream counters and every synthesized terminal path
-  set `'unavailable'`; no adapter estimates tokens.
+  set `'unavailable'`; an unpartitioned aggregate residual is not assigned by
+  estimation.
+- Malformed optional Kimi accounting degrades to unavailable usage without
+  changing an otherwise valid prompt terminal status.
 - Cache-read and cache-write counters are folded exactly once for providers
   whose base excludes them and are not double-added where the base is
   inclusive.

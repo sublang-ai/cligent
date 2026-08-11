@@ -162,6 +162,12 @@ input and output counters, including when both are zero, and every present
 mapped cache counter is valid.
 Provider cache-read and cache-write counters are either already included in an
 inclusive provider input total or folded into an exclusive base exactly once.
+The output total includes all model-generated output tokens, including
+reasoning or thinking tokens; a provider's disjoint reasoning detail is folded
+into an exclusive visible-output base exactly once.
+Where an aggregate exposes token use that the provider does not partition
+between normalized input and output, accounting is unavailable rather than
+allocating the residual by estimation.
 `'unavailable'` means complete token totals were not supplied, including every
 engine- or adapter-synthesized terminal path; the numeric token fields retain
 their stable object shape for compatibility but are not measurements and shall

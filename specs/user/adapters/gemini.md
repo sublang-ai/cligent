@@ -49,8 +49,9 @@ The adapter shall normalize NDJSON objects to `AgentEvent` types:
 
 When `parseNDJSON()` yields `{ ok: false }`, the adapter shall emit an `error` event with `recoverable: true`.
 
-Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate the `total_tokens`, `cached`, and uncached `input` details without adding either input detail to the inclusive total a second time, and shall map valid `tool_calls` to `toolUses` while retaining any greater independently observed tool-call count.
-Where any supplied canonical token or cache detail is negative, fractional, non-finite, or non-numeric, token accounting shall be `'unavailable'` per [ENG-027](../engine.md#eng-027).
+Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate the `total_tokens`, `cached`, and uncached `input` details without adding either input detail to the inclusive total a second time, and shall map valid `tool_calls` to `toolUses` while retaining any greater independently observed tool-call count [[5]][[6]].
+Canonical `output_tokens` contains candidates but omits separately tracked thinking and tool-use-prompt tokens; where `total_tokens` does not equal `input_tokens + output_tokens`, the omitted residual is not partitioned well enough to normalize without estimation, so token accounting shall be `'unavailable'` rather than reporting the candidate count as complete or assigning the residual to output [[6]][[7]].
+Where any supplied canonical token or cache detail is absent, negative, fractional, non-finite, or non-numeric, token accounting shall likewise be `'unavailable'` per [ENG-027](../engine.md#eng-027).
 
 ### GEMINI-005
 
@@ -178,3 +179,6 @@ When terminal `done` is not interrupted and no session identifier was received, 
 [2]: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md "Google Gemini CLI: Configuration reference"
 [3]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI: Policy engine"
 [4]: https://geminicli.com/docs/cli/cli-reference/ "Gemini CLI: CLI reference"
+[5]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/types.ts#L81-L109 "Gemini CLI 0.53.1 stream output types"
+[6]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/stream-json-formatter.ts#L37-L86 "Gemini CLI 0.53.1 StreamStats construction"
+[7]: https://ai.google.dev/api/generate-content#UsageMetadata "Gemini API UsageMetadata"

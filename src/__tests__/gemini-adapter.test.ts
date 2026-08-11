@@ -2067,6 +2067,68 @@ describe('GeminiAdapter', () => {
         models: {},
       },
     ],
+    [
+      'unpartitioned aggregate residual',
+      {
+        total_tokens: 4,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'aggregate below mapped input and output',
+      {
+        total_tokens: 2,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical aggregate',
+      {
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical cached detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical uncached-input detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
   ])('marks %s accounting unavailable', async (_case, stats) => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(

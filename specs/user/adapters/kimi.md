@@ -55,15 +55,16 @@ The adapter shall normalize ACP traffic to `AgentEvent` values:
 Tool state shall be keyed by ACP `toolCallId` and shall tolerate a pending lazy-create notification whose parsed `rawInput` arrives in a later update.
 The adapter shall use the best structured `rawInput` available and shall not emit duplicate `tool_use` or terminal `tool_result` events for one call.
 Assistant text deltas shall be accumulated in order for `DonePayload.result`.
-When the ACP prompt response supplies schema-valid unsigned-integer usage, including explicit zeroes for required `totalTokens`, `inputTokens`, and `outputTokens` and for any present optional counter, the adapter shall mark token accounting as `'reported'`, shall fold `cachedReadTokens` and `cachedWriteTokens` into `inputTokens`, and shall preserve `outputTokens`.
-Where any supplied ACP token or cache counter is negative, fractional, non-finite, or non-numeric, the adapter shall reject the malformed protocol response and its terminal error `done` shall mark token accounting as `'unavailable'`.
+When the ACP prompt response supplies schema-valid unsigned-integer usage, including explicit zeroes for required `totalTokens`, `inputTokens`, and `outputTokens` and for any present optional cache counter, the adapter shall mark token accounting as `'reported'`, shall fold `cachedReadTokens` and `cachedWriteTokens` into `inputTokens`, and shall preserve `outputTokens`.
+Where required usage structure or any consumed token or cache counter is negative, fractional, non-finite, or non-numeric, the adapter shall isolate the optional accounting failure: the prompt's schema-valid `stopReason` shall still determine terminal status, token accounting shall be `'unavailable'`, and accumulated result text and tool use shall remain intact.
+Unconsumed usage extension details such as `thoughtTokens` shall not affect availability, and a null optional cache counter shall be treated as absent.
 When ACP omits usage, the adapter shall mark token accounting as `'unavailable'` and retain zero-valued compatibility placeholders rather than reporting measured zero or estimating tokens.
 In either state, `toolUses` shall equal the emitted tool calls independently of token accounting.
 
 ### KIMI-006
 
 ACP stop reason `end_turn` shall map to `done.status: 'success'`; `cancelled` shall map to `'interrupted'`; `max_tokens` and `max_turn_requests` shall map to `'max_turns'`; and `refusal` shall emit a non-recoverable error followed by `done.status: 'error'`.
-Structured JSON-RPC errors, malformed protocol traffic, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
+Structured JSON-RPC errors, malformed control protocol traffic outside [KIMI-005](#kimi-005)'s failure-isolated optional usage, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
 Kimi Code `0.31.1` gates ACP session creation on any of three routes: the OAuth credential written by `kimi login`; a configured default model whose alias resolves to a provider holding non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[8]].
 A bare provider key such as `MOONSHOT_API_KEY` or `KIMI_API_KEY` satisfies none of them, because it establishes no default model alias.
 Authentication guidance shall name `kimi login`; the adapter shall never launch login itself.

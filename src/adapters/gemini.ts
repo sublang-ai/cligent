@@ -178,21 +178,47 @@ function mapUsage(
     ['inputTokens', 'input_tokens'],
     true,
   );
+  const canonicalStreamStats = [
+    'total_tokens',
+    'cached',
+    'input',
+    'tool_calls',
+    'models',
+  ].some((key) => Object.prototype.hasOwnProperty.call(rawUsage, key));
   const totalTokens = readUsageCounter(
     rawUsage,
     ['totalTokens', 'total_tokens'],
-    false,
+    canonicalStreamStats,
   );
   // Gemini StreamStats.input_tokens already includes cached input. Validate
   // the canonical cached/uncached detail counters without adding either one
   // to the inclusive provider total.
-  const cachedInput = readUsageCounter(rawUsage, ['cached'], false);
-  const uncachedInput = readUsageCounter(rawUsage, ['input'], false);
+  const cachedInput = readUsageCounter(
+    rawUsage,
+    ['cached'],
+    canonicalStreamStats,
+  );
+  const uncachedInput = readUsageCounter(
+    rawUsage,
+    ['input'],
+    canonicalStreamStats,
+  );
   const outputTokens = readUsageCounter(
     rawUsage,
     ['outputTokens', 'output_tokens'],
     true,
   );
+  const totalTokensObserved = ['totalTokens', 'total_tokens'].some((key) =>
+    Object.prototype.hasOwnProperty.call(rawUsage, key),
+  );
+  // Canonical StreamStats output covers candidates, while its aggregate may
+  // also contain thoughts and tool-use-prompt input it does not partition.
+  // Only an exact reconciliation proves the normalized input/output pair is
+  // complete; allocating an unexplained residual would be an estimate.
+  const totalTokensReconciled =
+    !totalTokensObserved ||
+    (totalTokens.valid &&
+      totalTokens.value === baseInput.value + outputTokens.value);
   const reportedToolUses = readUsageCounter(
     rawUsage,
     ['toolCalls', 'tool_calls', 'toolUses', 'tool_uses'],
@@ -212,7 +238,8 @@ function mapUsage(
       totalTokens.valid &&
       cachedInput.valid &&
       uncachedInput.valid &&
-      outputTokens.valid
+      outputTokens.valid &&
+      totalTokensReconciled
         ? 'reported'
         : 'unavailable',
     inputTokens: baseInput.value,
