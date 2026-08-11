@@ -175,6 +175,68 @@ the signal shall not be sent before the interrupted terminal event is yielded.
 
 When the managed server crashes, the adapter shall yield an `error` event (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) and clean up resources.
 
+### OPENCODE-018
+
+Where `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is omitted, the adapter
+shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
+provided, the adapter shall require a finite number greater than zero and use
+that value. The deadline shall use monotonic elapsed time and split waits above
+the host timer's maximum delay into safe chunks rather than expiring early.
+While a run is awaiting OpenCode's global SSE stream, when an event survives
+the current-session filtering of [OPENCODE-006](#opencode-006), including an
+untagged pass-through event, the adapter shall restart the deadline; an event
+explicitly tagged for another session shall not restart it.
+When the deadline expires, the adapter shall cancel the pending SSE read and
+query the active session's current status through the SDK, bounding that query
+to the lesser of 10,000 ms and the configured inactivity deadline.
+Where the query reports `idle`, including the OpenCode status map omitting the
+session because idle entries are not retained, the adapter shall emit one
+recoverable `error`
+with code `OPENCODE_INACTIVITY_IDLE_RECOVERED` followed by exactly one terminal
+`done`, using `success` unless an earlier session error requires `error`,
+without waiting for another SSE event.
+Where the query reports `busy`, `retry`, or another non-idle state, the adapter
+shall abort that session and emit one non-recoverable `error` with code
+`OPENCODE_INACTIVITY_TIMEOUT` followed by exactly one error `done`.
+Where the status request fails or times out, the adapter shall make a bounded
+best-effort session abort and emit one
+non-recoverable `error` with code
+`OPENCODE_INACTIVITY_STATUS_QUERY_FAILED` followed by exactly one error
+`done`.
+Each inactivity diagnostic shall identify the session, last relevant event,
+elapsed inactivity, configured deadline, server mode and state, queried state
+or query failure, and session-abort outcome where attempted.
+When caller abort races a pending SSE read, status query, or inactivity
+recovery in either server mode, the adapter shall give the caller abort
+terminal precedence once observed, including when a terminal SSE event is
+already ready in the same race turn, and emit exactly one interrupted `done`.
+When caller abort arrives during SDK session creation or prompt dispatch, the
+adapter shall propagate cancellation into supported SDK request surfaces,
+abort any session whose identifier has already been created, and bound how
+long it waits for the raced dispatch to settle. Where that dispatch concurrently
+settles with a session and event iterator, the adapter shall capture their
+cleanup ownership, abort the known session, and return the iterator before
+emitting interrupted `done`. Any eager event iterator opened before prompt
+dispatch shall be returned on dispatch abort or failure, and the dispatch-scoped
+abort listener shall be removed on every exit. A backend session identifier
+created before dispatch abort shall remain the interrupted resume token per
+[OPENCODE-011](#opencode-011), including when the wrapper reports the abort as a
+failed run result.
+On the legacy SDK path, the adapter shall scope session creation, prompt, status,
+and abort requests to the same working directory through each generated
+method's top-level `query.directory` field rather than placing the directory in
+a request body.
+After any terminal path, the adapter shall cancel and return the pending event
+iterator, make independent bounded SDK-client close and shutdown attempts even
+when an earlier cleanup rejects, and terminate its managed server, escalating
+its owned child from `SIGTERM` to `SIGKILL` after a bounded grace when necessary.
+Instance disposal shall carry the run working directory as `directory` on the
+v2 SDK path or `query.directory` on the legacy path. On caller interruption, any
+known active session abort shall be attempted before the interrupted `done`, and
+managed process termination shall begin only after that terminal event;
+external mode shall leave the caller-owned server running while still aborting
+active session work on interruption or non-idle inactivity.
+
 ## Resume Token
 
 ### OPENCODE-011

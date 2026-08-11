@@ -114,6 +114,48 @@ resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
 
+### TADAPT-035
+Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
+
+Given short injected inactivity deadlines and canned OpenCode streams, when a
+current session becomes permanently silent, the adapter shall query its status
+and terminate within a bounded interval: idle shall produce one recoverable
+idle-recovery diagnostic and one successful `done`; busy and retry shall each
+abort the session and produce one non-recoverable timeout diagnostic plus one
+error `done`; an omitted status-map entry shall exercise OpenCode's idle
+representation; and a rejected or non-settling status query
+shall make a bounded abort attempt and produce one status-query diagnostic plus
+one error `done`.
+Given current-session progress events whose spacing stays below the deadline,
+the adapter shall not query status, while repeated events explicitly tagged for
+another session shall not postpone the current session's deadline.
+Given pending iterators that do and do not honor `AbortSignal`, external and
+managed runs shall return the iterator, close the client, abort active session
+work where required, terminate only the managed server, and emit exactly one
+terminal event when caller abort and inactivity race. Deterministic race probes
+shall cover an already-ready terminal event and abort during prompt dispatch;
+the latter shall abort the already-created external session. The legacy SDK
+probe shall put the same working directory in the top-level `query.directory`
+of create and prompt calls and omit it from the prompt body. A managed caller
+abort shall deterministically order the active-session abort, interrupted
+`done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
+remain pending until real relevant activity, and an owned managed child that
+ignores `SIGTERM` shall receive `SIGKILL` after its grace.
+Prompt-dispatch abort and failure probes shall return an eagerly started SSE
+iterator and remove their dispatch-scoped abort listener, and a fresh backend
+session created before abort shall remain the interrupted resume token. A run
+result settling concurrently with caller abort shall transfer its session and
+iterator to outer cleanup, which shall abort and return them before interrupted
+`done`. Rejected close and shutdown operations shall remain independent and
+shall not prevent managed process termination. Legacy and v2 instance-disposal
+probes shall carry the run directory through `query.directory` and `directory`,
+respectively.
+Where the OpenCode CLI and SDK are available, when a credential-free real
+managed server creates an idle session whose terminal SSE event is withheld,
+the short-deadline acceptance probe shall recover through the real
+`session.status` endpoint, dispose the SDK client, and observe the managed
+server process exit without a multi-minute wait.
+
 ### TADAPT-037
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
 
