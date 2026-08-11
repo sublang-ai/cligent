@@ -85,6 +85,7 @@ The adapter shall reproduce that separation.
 It shall append no wildcard allow rule, because OpenCode merges agent and session rules and evaluates them last-match-wins, so a session wildcard would override provider and user denies [[12]][[13]].
 Explicitly supplied portable capability levels remain an independent permission-rule axis; omitted levels preserve native rules.
 For headless liveness, an OpenCode permission request under `mode: 'auto'` shall be answered `once` without exposing an interactive `permission_request`; outside auto it shall be emitted for observability and rejected fail-closed through the active SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
+Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
 Kimi shall therefore reject a provided no-mode capability policy, emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [KIMI-007](../user/adapters/kimi.md#kimi-007).

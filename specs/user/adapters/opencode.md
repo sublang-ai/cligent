@@ -43,7 +43,7 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `permission_request` outside auto mode |
+| `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
 | `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
@@ -105,8 +105,15 @@ adapter shall resolve it exactly once through the applicable SDK
 permission-response route, including for permission names unknown to cligent.
 Under `mode: 'auto'`, it shall answer `once` and shall not emit a normalized
 `permission_request`, preserving the headless auto-mode contract.
+After the applicable SDK route confirms a successful auto `once` reply, the
+adapter shall emit exactly one `opencode:permission_decision` extension event
+with the native request identifier, permission name, patterns, correlated tool
+use identifier, `decision: 'once'`, `automated: true`, normalized input, and
+optional reason.
+The extension event shall record a completed automated decision and shall not
+be substituted for the interactive `permission_request` event.
 Outside auto mode, it shall emit `permission_request` for observability and
-answer `reject` fail-closed.
+answer `reject` fail-closed without emitting an automated-decision extension.
 The response shall preserve the native request identifier and, where the SDK
 route requires it, the session identifier; permission events belonging to
 other sessions shall receive no response per [OPENCODE-006](#opencode-006).
@@ -116,6 +123,8 @@ seconds, the adapter shall emit a non-recoverable permission error whose
 message names the session identifier, request identifier (or its absence), and
 permission name, then emit `done` with `status: 'error'` rather than continue
 waiting on the SSE stream.
+Missing, failed, timed-out, or aborted replies shall emit no
+`opencode:permission_decision` event.
 The adapter shall drive the active SSE subscription and permission response
 with a run-owned abort signal. On the five-second response timeout, it shall
 abort that signal and close the SSE iterator so the underlying response and

@@ -10,7 +10,7 @@
 // actually ran; the stream assertions are invariants, not exact sequences,
 // because model behavior varies between runs.
 // TADAPT-037 reuses that real managed-mode harness to pin permission liveness
-// for an absolute /tmp write under the native global auto rule.
+// for an explicit bash ask and absolute /tmp write under native auto replies.
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -49,6 +49,12 @@ const acceptanceIt = missing.length === 0 || process.env.CI ? it : it.skip;
 interface LifecycleProbe {
   readonly events: readonly CligentEvent[];
   readonly fileContentMatches: boolean;
+}
+
+interface OpenCodePermissionDecisionPayload {
+  readonly permission: string;
+  readonly decision: 'once';
+  readonly automated: true;
 }
 
 describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
@@ -129,6 +135,26 @@ describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
       expect(
         probe.events.filter((event) => event.type === 'permission_request'),
       ).toEqual([]);
+      expect(
+        probe.events.some(
+          (event) =>
+            event.type === 'tool_use' &&
+            (event.payload as ToolUsePayload).toolName === 'bash',
+        ),
+        summarizeEvents(probe.events),
+      ).toBe(true);
+      expect(
+        probe.events.some((event) => {
+          if (event.type !== 'opencode:permission_decision') return false;
+          const payload = event.payload as OpenCodePermissionDecisionPayload;
+          return (
+            payload.permission === 'bash' &&
+            payload.decision === 'once' &&
+            payload.automated === true
+          );
+        }),
+        summarizeEvents(probe.events),
+      ).toBe(true);
       expect(
         probe.events.filter(
           (event) =>
@@ -225,7 +251,7 @@ async function runPermissionProbe(): Promise<LifecycleProbe> {
   try {
     execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
     const cligent = new Cligent(new OpenCodeAdapter(), {
-      permissions: { mode: 'auto' },
+      permissions: { mode: 'auto', shellExecute: 'ask' },
       cwd,
       model: OPENCODE_MODEL,
     });

@@ -189,6 +189,18 @@ function parseToolInput(value: unknown): Record<string, unknown> {
   return asRecord(value);
 }
 
+function parsePermissionPatterns(...values: unknown[]): string[] {
+  for (const value of values) {
+    const pattern = asString(value);
+    if (pattern) return [pattern];
+
+    const patterns = asStringArray(value);
+    if (patterns.length > 0) return patterns;
+  }
+
+  return [];
+}
+
 function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   if (!rawStatus) return 'success';
 
@@ -1708,6 +1720,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             asString(event.toolUseId) ??
             requestId ??
             generateSessionId();
+          const input = parseToolInput(
+            permission.input ?? permission.metadata ?? event.input ?? {},
+          );
+          const patterns = parsePermissionPatterns(
+            permission.patterns,
+            permission.pattern,
+            event.patterns,
+            event.pattern,
+          );
 
           if (requestId) {
             const requestKey = permissionRequestKey(requestId);
@@ -1732,9 +1753,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               {
                 toolName,
                 toolUseId,
-                input: parseToolInput(
-                  permission.input ?? permission.metadata ?? event.input ?? {},
-                ),
+                input,
                 ...(reason ? { reason } : {}),
               },
               sessionId,
@@ -1818,6 +1837,24 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               }
             },
           );
+
+          if (replyRace.kind === 'replied' && decision === 'once') {
+            yield createEvent(
+              'opencode:permission_decision',
+              AGENT,
+              {
+                requestId,
+                permission: toolName,
+                patterns,
+                toolUseId,
+                decision,
+                automated: true,
+                input,
+                ...(reason ? { reason } : {}),
+              },
+              sessionId,
+            );
+          }
 
           if (
             replyRace.kind === 'abort' ||
