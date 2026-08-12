@@ -122,14 +122,15 @@ export interface WritablePathsPermissionMapping {
 
 export interface PermissionPolicy {
   /**
-   * Session-wide automation posture per ENG-021. When set, takes precedence
-   * over the per-capability levels at the adapter's SDK-knob selection
-   * step: adapters map `'auto'` to their classifier-, sandbox-, or
-   * reviewer-protected auto-mode, and `'bypass'` to their unchecked-bypass
-   * mode where the SDK supports one (adapters without a bypass equivalent
-   * reject `'bypass'` at mapping time). When `mode` is unset, the adapter
-   * derives an effective posture from `fileWrite` / `shellExecute` /
-   * `networkAccess` as before.
+   * Session-wide automation posture per ENG-021. When set, it selects the
+   * adapter's automation-posture knob: `'auto'` maps to the adapter/provider's
+   * native automation, whose protection and approval semantics are
+   * adapter-specific, and `'bypass'` maps to unchecked bypass where supported
+   * (other adapters reject it at mapping time). Where the SDK models local
+   * capability rules independently, explicitly supplied
+   * `fileWrite` / `shellExecute` / `networkAccess` levels may compose with
+   * `mode`; otherwise `mode` takes precedence. When unset, those levels derive
+   * the effective posture as before.
    */
   mode?: 'auto' | 'bypass';
   fileWrite?: PermissionLevel;

@@ -123,15 +123,11 @@ Linux, the Windows generic notification sound on Windows, and no-op elsewhere.
 Desktop notifications are best-effort: `osascript` on macOS, `notify-send` on
 Linux, and no-op elsewhere.
 
-The shipped default applies `permissions: { mode: 'auto' }` to the
-Captain and both players. That runs each adapter's classifier-, sandbox-,
-or reviewer-protected auto-mode, reducing routine permission prompts
-during a session. Prompts are not eliminated: Claude's `auto`
-still blocks high-risk actions and falls back to prompts after repeated
-denies, and Codex's `on-request + :workspace + auto_review` keeps the
-same network limits while routing eligible approval requests to a
-reviewer agent. Remove the blocks to fall back to each adapter's SDK
-default; cligent itself ships no project-wide permission posture.
+The shipped default applies `permissions: { mode: 'auto' }` to the Captain and both players.
+That selects each adapter/provider's native auto posture, whose protection and approval semantics are adapter-specific, reducing routine permission prompts during a session.
+Claude's `auto` still blocks high-risk actions and falls back to prompts after repeated denies, and Codex's `on-request + :workspace + auto_review` keeps the same network limits while routing eligible approval requests to a reviewer agent.
+OpenCode retains configured rules but may answer permission asks that survive rule evaluation `once` without a human, which OpenCode labels dangerous.
+Remove the blocks to fall back to each adapter's SDK default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
@@ -268,12 +264,15 @@ players:
       mode: auto # Kimi's native ACP auto mode
 ```
 
-- `mode: 'auto'` selects each adapter's classifier-, sandbox-, or reviewer-protected
-  auto-mode (claude `permissionMode: auto`, codex `approval_policy:
+- `mode: 'auto'` selects each adapter/provider's native automation posture,
+  whose protection and approval semantics are adapter-specific (claude
+  `permissionMode: auto`, codex `approval_policy:
 on-request + default_permissions: :workspace + approvals_reviewer:
 auto_review` with user config ignored for that managed run, gemini
-  `--approval-mode yolo`, kimi ACP `mode: auto`, opencode `permission: allow`
-  SDK body).
+  `--approval-mode yolo`, kimi ACP `mode: auto`; opencode retains configured
+  rules and answers surviving asks `once`, which OpenCode labels dangerous).
+  For OpenCode, explicitly supplied capability fields compose with auto while
+  omitted fields preserve provider and user rules.
   `mode: 'bypass'` selects each adapter's
   unchecked-bypass mode where the SDK supports one; the
   opencode adapter rejects `bypass` because the cligent opencode path
@@ -403,6 +402,9 @@ auto-resume behavior. Persist and reuse only result-level resume tokens —
 plus `visibility: 'visible' | 'hidden'` and `allowedTools`. Its returned
 `CaptainRunResult.resumeToken` is the opaque handle to persist when a later
 Captain call must explicitly continue that backend session.
+Tool-list support is adapter-specific: adapters with no independent exact
+tool-registry surface, including Codex, Kimi, and OpenCode 1.18.13, reject an
+explicit list before backend invocation.
 
 ```js
 export default function createCaptain(options = {}) {
