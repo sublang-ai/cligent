@@ -126,14 +126,19 @@ Where canonical v1 `permission.updated` and v2 `permission.asked` events are
 supplied, including an unknown permission name, when the adapter handles
 requests for its current session under auto, it shall emit no normalized
 `permission_request` and answer each native request `once` through the matching
-SDK route with request and session correlation intact. Outside auto it shall
-emit the normalized request and answer `reject`.
+SDK route with request and session correlation intact, then emit exactly one
+`opencode:permission_decision` extension carrying the request identifier,
+permission, patterns, tool-use correlation, completed `once` decision,
+automated marker, normalized input, and optional reason. Outside auto it shall
+emit the normalized request and answer `reject` without the extension.
 Where interleaved foreign-session events and repeated local events occur, the
 adapter shall respond only to the local request and shall not respond twice.
 Where a request has a missing identifier, unavailable or failed reply route,
 SDK result error, or reply that stays pending for five seconds, the adapter
 shall terminate with the permission error and one error-status `done`, with
 the session, request (or missing marker), and permission named in the error.
+Failed, timed-out, and aborted replies shall emit no
+`opencode:permission_decision` extension.
 For a pending response in external mode, the five-second timeout shall abort
 the SDK request's run-owned signal and cancel the underlying response I/O.
 While a permission response is pending in managed mode, when `AbortSignal`
@@ -149,10 +154,13 @@ and that aborting pending v1 and v2 permission-response HTTP calls rejects each
 native SDK operation on that same signal.
 Where the exact OpenCode conformance target and credentials are available,
 when a real managed-mode `mode: 'auto'` run writes and verifies a unique
-absolute `/tmp` file, the run shall complete without an outer timeout,
-`permission_request`, denied `tool_result`, or `error`, and shall emit exactly
-one success-status `done`; the leg shall use the same missing-dependency and
-transient-upstream gating as the existing OpenCode real-run acceptance.
+absolute `/tmp` file by requesting an exact shell command under an explicit
+`shellExecute: 'ask'` rule, the run shall emit a `bash` `tool_use` and at least
+one successful automated `once` audit event for the `bash` permission,
+complete without an outer timeout, `permission_request`, denied `tool_result`,
+or `error`, and emit exactly one success-status `done`; the leg shall use the
+same missing-dependency and transient-upstream gating as the existing OpenCode
+real-run acceptance.
 
 ## Tool Filtering
 

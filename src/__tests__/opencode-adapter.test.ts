@@ -890,48 +890,103 @@ describe('OpenCodeAdapter', () => {
     expect(replies[0]?.signal).not.toBe(replies[1]?.signal);
   });
 
-  it('auto-approves residual asks once without exposing an interactive request', async () => {
+  it('audits successful v1 and v2 auto approvals without an interactive request', async () => {
     const replies: Array<{
       requestId: string;
       decision: 'once' | 'reject';
     }> = [];
-    const adapter = new OpenCodeAdapter(
-      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+    const fixtures = [
       {
-        loadSdk: makeLoader({
-          runResult: { sessionId: 'auto-session' },
-          events: [
-            {
-              type: 'permission.asked',
-              properties: {
-                id: 'auto-request',
-                sessionID: 'auto-session',
-                permission: 'external_directory',
-                patterns: ['/tmp/*'],
-                metadata: {},
-                always: [],
-              },
-            },
-            {
-              type: 'session.idle',
-              properties: { sessionID: 'auto-session' },
-            },
-          ],
-          onReplyPermission(options) {
-            replies.push({
-              requestId: options.requestId,
-              decision: options.decision,
-            });
+        sessionId: 'auto-v1-session',
+        requestId: 'auto-v1-request',
+        event: {
+          type: 'permission.updated',
+          properties: {
+            id: 'auto-v1-request',
+            sessionID: 'auto-v1-session',
+            type: 'external_directory',
+            pattern: '/tmp/*',
+            callID: 'auto-v1-call',
+            metadata: { path: '/tmp/audit-v1' },
+            reason: 'outside workspace',
           },
-        }),
+        },
+        expectedPayload: {
+          requestId: 'auto-v1-request',
+          permission: 'external_directory',
+          patterns: ['/tmp/*'],
+          toolUseId: 'auto-v1-call',
+          decision: 'once',
+          automated: true,
+          input: { path: '/tmp/audit-v1' },
+          reason: 'outside workspace',
+        },
       },
-    );
+      {
+        sessionId: 'auto-v2-session',
+        requestId: 'auto-v2-request',
+        event: {
+          type: 'permission.asked',
+          properties: {
+            id: 'auto-v2-request',
+            sessionID: 'auto-v2-session',
+            permission: 'future_permission',
+            patterns: ['scope:a', 'scope:b'],
+            metadata: { future: true },
+            always: [],
+            tool: { callID: 'auto-v2-call' },
+          },
+        },
+        expectedPayload: {
+          requestId: 'auto-v2-request',
+          permission: 'future_permission',
+          patterns: ['scope:a', 'scope:b'],
+          toolUseId: 'auto-v2-call',
+          decision: 'once',
+          automated: true,
+          input: { future: true },
+        },
+      },
+    ];
 
-    const events = await collect(
-      adapter.run('native auto probe', { permissions: { mode: 'auto' } }),
-    );
-    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
-    expect(replies).toEqual([{ requestId: 'auto-request', decision: 'once' }]);
+    for (const fixture of fixtures) {
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: fixture.sessionId },
+            events: [
+              fixture.event,
+              {
+                type: 'session.idle',
+                properties: { sessionID: fixture.sessionId },
+              },
+            ],
+            onReplyPermission(options) {
+              replies.push({
+                requestId: options.requestId,
+                decision: options.decision,
+              });
+            },
+          }),
+        },
+      );
+
+      const events = await collect(
+        adapter.run('native auto probe', { permissions: { mode: 'auto' } }),
+      );
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'opencode:permission_decision',
+        'done',
+      ]);
+      expect(events[1]!.payload).toEqual(fixture.expectedPayload);
+    }
+
+    expect(replies).toEqual([
+      { requestId: 'auto-v1-request', decision: 'once' },
+      { requestId: 'auto-v2-request', decision: 'once' },
+    ]);
   });
 
   it('releases permission correlation after every replied decision', async () => {
@@ -1062,7 +1117,16 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    await collect(adapter.run('concurrency probe'));
+    const events = await collect(
+      adapter.run('concurrency probe', { permissions: { mode: 'auto' } }),
+    );
+    const auditRequestIds = events
+      .filter((event) => event.type === 'opencode:permission_decision')
+      .map(
+        (event) =>
+          (event.payload as { requestId: string }).requestId,
+      );
+    expect(auditRequestIds).toEqual(['request-local-a', 'request-local-b']);
     expect(replies).toEqual([
       {
         sessionId: 'session-local',
@@ -1101,21 +1165,22 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    const events = await collect(adapter.run('failure probe'));
+    const events = await collect(
+      adapter.run('failure probe', { permissions: { mode: 'auto' } }),
+    );
     expect(events.map((event) => event.type)).toEqual([
       'init',
-      'permission_request',
       'error',
       'done',
     ]);
-    const error = events[2] as AgentEvent & {
+    const error = events[1] as AgentEvent & {
       payload: { code?: string; message: string };
     };
     expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
     expect(error.payload.message).toContain('reply-failure-session');
     expect(error.payload.message).toContain('reply-failure-request');
     expect(error.payload.message).toContain('unknown_future_permission');
-    expect((events[3]!.payload as { status: string }).status).toBe('error');
+    expect((events[2]!.payload as { status: string }).status).toBe('error');
   });
 
   it('bounds a permission reply that never settles', async () => {
@@ -1162,9 +1227,10 @@ describe('OpenCodeAdapter', () => {
         },
       );
 
-      const stream = adapter.run('timeout probe');
+      const stream = adapter.run('timeout probe', {
+        permissions: { mode: 'auto' },
+      });
       expect((await stream.next()).value?.type).toBe('init');
-      expect((await stream.next()).value?.type).toBe('permission_request');
 
       const pendingError = stream.next();
       await vi.advanceTimersByTimeAsync(5_000);
@@ -1235,6 +1301,10 @@ describe('OpenCodeAdapter', () => {
     let eventSignal: AbortSignal | undefined;
     let replySignal: AbortSignal | undefined;
     let replyCancelled = false;
+    let resolveReplyStarted: () => void = () => {};
+    const replyStarted = new Promise<void>((resolve) => {
+      resolveReplyStarted = resolve;
+    });
     const adapter = new OpenCodeAdapter(
       { mode: 'managed', serverUrl: 'http://127.0.0.1:4998' },
       {
@@ -1259,6 +1329,7 @@ describe('OpenCodeAdapter', () => {
           replyPermissionFactory: async (options) =>
             new Promise<void>((_resolve, reject) => {
               replySignal = options.signal;
+              resolveReplyStarted();
               const cancel = () => {
                 replyCancelled = true;
                 reject(new Error('reply request cancelled'));
@@ -1284,11 +1355,12 @@ describe('OpenCodeAdapter', () => {
 
     const stream = adapter.run('abort permission probe', {
       abortSignal: controller.signal,
+      permissions: { mode: 'auto' },
     });
     expect((await stream.next()).value?.type).toBe('init');
-    expect((await stream.next()).value?.type).toBe('permission_request');
 
     const terminal = stream.next();
+    await replyStarted;
     controller.abort();
     const done = await terminal;
     expect(done.value?.type).toBe('done');
