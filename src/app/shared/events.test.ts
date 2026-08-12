@@ -90,6 +90,40 @@ describe('formatCligentEvent', () => {
     expect(formatCligentEvent(event)).toBe('\n[success | in: 100 out: 50]\n');
   });
 
+  it('renders only the breakdown components the producer measured', () => {
+    const event = makeEvent('done', {
+      status: 'success',
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 100,
+        outputTokens: 50,
+        toolUses: 2,
+        // Input side only, with a measured zero — the shape Claude Code and
+        // Gemini produce when a cache tier is genuinely unused.
+        breakdown: { input: 40, cacheRead: 60, cacheWrite: 0 },
+      },
+      durationMs: 5000,
+    });
+    expect(formatCligentEvent(event)).toBe(
+      '\n[success | in: 100 out: 50 (fresh 40, cache-read 60, cache-write 0)]\n',
+    );
+  });
+
+  it('formats done events unchanged when no breakdown is published', () => {
+    const event = makeEvent('done', {
+      status: 'success',
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 7,
+        outputTokens: 3,
+        toolUses: 0,
+        breakdown: undefined,
+      },
+      durationMs: 10,
+    });
+    expect(formatCligentEvent(event)).toBe('\n[success | in: 7 out: 3]\n');
+  });
+
   it('does not render unavailable token placeholders as measured zeroes', () => {
     const event = makeEvent('done', {
       status: 'interrupted',

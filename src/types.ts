@@ -84,6 +84,31 @@ export interface ToolResultPayload {
 
 export type TokenUsageAvailability = 'reported' | 'unavailable';
 
+/**
+ * Disjoint partition of `DoneUsage.inputTokens` and `DoneUsage.outputTokens`
+ * per DR-014. Every token is counted by at most one member.
+ *
+ * A present member is a measured count; an absent member means the runtime
+ * does not report that quantity. A present `0` is therefore a measurement,
+ * never a stand-in for an unreported component.
+ *
+ * Members form two sides — `input`/`cacheRead`/`cacheWrite` and
+ * `output`/`reasoning` — each published in full or omitted in full. Where a
+ * side is present, its members sum exactly to the matching aggregate.
+ */
+export interface TokenBreakdown {
+  /** Input tokens neither read from nor written to the prompt cache. */
+  input?: number;
+  /** Input tokens served from the prompt cache. */
+  cacheRead?: number;
+  /** Input tokens written into the prompt cache. */
+  cacheWrite?: number;
+  /** Model output tokens excluding reasoning. */
+  output?: number;
+  /** Reasoning or thinking tokens. */
+  reasoning?: number;
+}
+
 export interface DoneUsage {
   /**
    * Whether inputTokens and outputTokens came from upstream accounting.
@@ -96,6 +121,12 @@ export interface DoneUsage {
   outputTokens: number;
   toolUses: number;
   totalCostUsd?: number;
+  /**
+   * Component partition of the aggregates above, present only where the
+   * runtime measures it. Always absent when tokenAvailability is
+   * 'unavailable'.
+   */
+  breakdown?: TokenBreakdown;
 }
 
 export interface DonePayload {

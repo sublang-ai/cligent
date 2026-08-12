@@ -34,6 +34,7 @@ import type {
   DonePayload,
   DoneUsage,
   TextPayload,
+  TokenBreakdown,
   TokenUsageAvailability,
   PermissionCapability,
   PermissionPolicy,
@@ -173,6 +174,45 @@ describe('core types', () => {
       toolUses: 0,
     };
     void invalid;
+  });
+
+  it('keeps every token breakdown component optional and numeric', () => {
+    const full: TokenBreakdown = {
+      input: 1,
+      cacheRead: 2,
+      cacheWrite: 3,
+      output: 4,
+      reasoning: 5,
+    };
+    // A runtime that measures only its input side omits the rest; absence is
+    // the encoding for "this runtime does not report it" (ENG-028).
+    const inputSideOnly: TokenBreakdown = { input: 1, cacheRead: 2, cacheWrite: 0 };
+    expectTypeOf(full.cacheRead).toEqualTypeOf<number | undefined>();
+    expectTypeOf(inputSideOnly).toMatchTypeOf<TokenBreakdown>();
+
+    const usage: DoneUsage = {
+      tokenAvailability: 'reported',
+      inputTokens: 3,
+      outputTokens: 9,
+      toolUses: 0,
+      breakdown: full,
+    };
+    expectTypeOf(usage.breakdown).toEqualTypeOf<TokenBreakdown | undefined>();
+
+    // Breakdown stays optional so existing producers keep compiling.
+    const withoutBreakdown: DoneUsage = {
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    };
+    void withoutBreakdown;
+
+    const unknownComponent: TokenBreakdown = {
+      // @ts-expect-error - the component vocabulary is closed.
+      cachedTokens: 1,
+    };
+    void unknownComponent;
   });
 
   it('exports exact adapter-scoped effort metadata types', () => {

@@ -14,6 +14,7 @@ export type {
   ToolUsePayload,
   ToolResultPayload,
   TokenUsageAvailability,
+  TokenBreakdown,
   DoneUsage,
   DonePayload,
   AgentEvent,
