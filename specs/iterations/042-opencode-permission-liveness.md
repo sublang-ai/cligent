@@ -38,13 +38,19 @@ Complete
 - [x] [DR-005](../decisions/005-per-adapter-permission-configuration.md), the
       historical headless-posture record, the spec map, and the changelog
       reflect the resolved hazard.
+- [x] Review follow-up closes the adjacent prompt-tool hazard: OpenCode 1.18.13
+      rewrites prompt `tools` into persistent permission rules, so
+      [OPENCODE-015](../user/adapters/opencode.md#opencode-015) rejects every
+      explicitly present tool-list option before SDK loading instead of
+      letting an enabled tool override a native or portable deny.
 
 ## Tasks
 
-The tasks below are reviewable work units delivered together in one cohesive
-commit.
-Build, typecheck, lint, and unit verification apply to that completed
-change rather than artificial per-task commit boundaries.
+Each task below is one-commit size.
+Tasks 1–3 describe the original cohesive implementation; Task 4 is a separate
+review follow-up.
+Build, typecheck, lint, and unit verification apply at each completed change
+boundary.
 
 1. [x] **Specify deterministic headless permission handling.**
    Correct the OpenCode auto mapping and replace the known-hazard posture with
@@ -59,6 +65,10 @@ change rather than artificial per-task commit boundaries.
 3. [x] **Verify canonical and real behavior.**
    Exercise canonical v1/v2 events, request failures and correlation, pending
    abort cleanup, and a real managed-mode absolute `/tmp` write.
+4. [x] **Fail closed on unsafe prompt tool filters.**
+   Remove the public adapter and compatibility-wrapper paths that emitted
+   prompt `tools`, reject explicit tool-list presence before SDK loading, and
+   cover empty, non-empty, combined, and permission-policy interactions.
 
 ## Acceptance criteria
 
@@ -91,3 +101,9 @@ change rather than artificial per-task commit boundaries.
   a `bash` tool invocation plus its successful `once` audit record, produces no
   interactive permission request, denial, error event, or harness-side
   timeout, and ends with one successful terminal event.
+- Any explicitly present `allowedTools` or `disallowedTools`, including empty
+  arrays and a combination such as `shellExecute: 'deny'` with
+  `allowedTools: ['bash']`, fails before the SDK loader, session, subscription,
+  or prompt. Direct permission-mapper and low-level compatibility-wrapper
+  calls cannot reintroduce OpenCode's persistent prompt-tool permission
+  rewrite.

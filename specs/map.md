@@ -83,7 +83,7 @@ meta.md     The spec of specs
 | IR-031 | [031-adapter-scoped-effort-and-config-migration.md](iterations/031-adapter-scoped-effort-and-config-migration.md) | Implement DR-009 adapter-scoped effort, metadata, mappings, and legacy tmux-play YAML migration |
 | IR-032 | [032-agent-runtime-and-package-readiness.md](iterations/032-agent-runtime-and-package-readiness.md) | Refresh all four coding-agent runtimes and harden packaging and live acceptance |
 | IR-033 | [033-effort-surface-simplification.md](iterations/033-effort-surface-simplification.md) | Replace lossless migration with best-effort compatibility, derive effort types from runtime metadata, and consolidate redundant tests |
-| IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls and enforce explicit allowlists across adapters |
+| IR-034 | [034-isolated-captain-control-calls.md](iterations/034-isolated-captain-control-calls.md) | Forward fresh/tool-free Captain call controls with adapter enforcement or fail-closed rejection; its original OpenCode mapping is superseded by IR-042 |
 | IR-035 | [035-headless-auto-mode-posture.md](iterations/035-headless-auto-mode-posture.md) | Record the headless auto-mode posture: `permissions.mode: 'auto'` stays SDK-native with no cligent-selected grants (network-widening alternative rolled back); no adapter behavior change |
 | IR-036 | [036-kimi-code-adapter.md](iterations/036-kimi-code-adapter.md) | Add the maintained Kimi Code CLI through ACP with session continuity, public integration, and exact conformance targets |
 | IR-037 | [037-codex-executable-resolution.md](iterations/037-codex-executable-resolution.md) | Resolve the Codex executable from the SDK-owned tree across hoisted, global, and non-hoisted installs, with actionable failure diagnostics |
@@ -91,7 +91,7 @@ meta.md     The spec of specs
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
-| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies, deterministic fail-closed handling, and abort-safe cleanup |
+| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies, deterministic fail-closed handling, abort-safe cleanup, and rejection of unsafe prompt tool filters |
 
 ## Packages
 
@@ -150,7 +150,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, `callID`-correlated tool lifecycle, native auto permission replies with fail-closed handling, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: SSE normalization, `callID`-correlated tool lifecycle, native auto permission replies with fail-closed handling, explicit tool-list rejection, two modes, session filtering, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -169,7 +169,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and the OpenCode `callID`-correlated tool lifecycle with its live-run counterpart |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection plus its `callID`-correlated tool lifecycle and live-run counterpart |
 
 ### TMUX
 
