@@ -138,6 +138,42 @@ interface MockCodexClient {
   resumeThread?(threadId: string, options?: MockThreadOptions): MockCodexThread;
 }
 
+/**
+ * Replay a different event batch per `run()`, so a test can observe how the
+ * adapter treats successive turns on one thread.
+ */
+function makeQueuedLoader(
+  batches: unknown[][],
+): () => Promise<{ Codex: new () => MockCodexClient }> {
+  let index = 0;
+  const nextBatch = (): unknown[] => batches[Math.min(index++, batches.length - 1)] ?? [];
+
+  async function* eventStream(batch: unknown[]): AsyncGenerator<unknown, void, void> {
+    for (const event of batch) yield event;
+  }
+
+  const thread = (): MockCodexThread => {
+    const batch = nextBatch();
+    return {
+      async runStreamed(): Promise<{ events: AsyncIterable<unknown> }> {
+        return { events: { [Symbol.asyncIterator]: () => eventStream(batch) } };
+      },
+    };
+  };
+
+  return async () => ({
+    Codex: class {
+      startThread(): MockCodexThread {
+        return thread();
+      }
+
+      resumeThread(): MockCodexThread {
+        return thread();
+      }
+    },
+  });
+}
+
 function makeLoader(config: {
   events: unknown[];
   onConstruct?: (options: MockCodexConstructorOptions | undefined) => void;
@@ -329,6 +365,124 @@ describe('CodexAdapter', () => {
       inputTokens: 0,
       outputTokens: 0,
       toolUses: 0,
+    });
+  });
+
+  it('reports the turn delta of the cumulative thread snapshot', async () => {
+    // Codex attaches the thread's running total to every turn.completed, so
+    // turn two's snapshot already contains turn one.
+    const turns = [
+      [
+        { type: 'thread.started', thread_id: 'thread-delta' },
+        {
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 100,
+            cached_input_tokens: 40,
+            cache_write_input_tokens: 10,
+            output_tokens: 30,
+            reasoning_output_tokens: 12,
+          },
+        },
+      ],
+      [
+        {
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 260,
+            cached_input_tokens: 90,
+            cache_write_input_tokens: 10,
+            output_tokens: 55,
+            reasoning_output_tokens: 20,
+          },
+        },
+      ],
+    ];
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader(turns),
+    });
+
+    const first = await collect(adapter.run('one'));
+    expect(donePayload(first.at(-1)!).usage).toMatchObject({
+      tokenAvailability: 'reported',
+      inputTokens: 100,
+      outputTokens: 30,
+    });
+
+    const second = await collect(
+      adapter.run('two', { resume: 'thread-delta' }),
+    );
+    expect(donePayload(second.at(-1)!).usage).toMatchObject({
+      tokenAvailability: 'reported',
+      inputTokens: 160,
+      outputTokens: 25,
+    });
+  });
+
+  it('reports unavailable for a resumed thread it holds no baseline for', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 900, output_tokens: 400 },
+          },
+        ],
+      ]),
+    });
+
+    const events = await collect(
+      adapter.run('resumed', { resume: 'thread-unseen' }),
+    );
+    expect(donePayload(events.at(-1)!).usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
+  });
+
+  it('reports unavailable when the cumulative snapshot decreases', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-reset' },
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 500, output_tokens: 200 },
+          },
+        ],
+        [
+          // Compaction restarts the thread's accounting; the drop cannot be
+          // attributed to this turn.
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 120, output_tokens: 40 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 200, output_tokens: 90 },
+          },
+        ],
+      ]),
+    });
+
+    await collect(adapter.run('one'));
+    const reset = await collect(adapter.run('two', { resume: 'thread-reset' }));
+    expect(donePayload(reset.at(-1)!).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
+
+    // The baseline advanced anyway, so the next turn is attributable again.
+    const recovered = await collect(
+      adapter.run('three', { resume: 'thread-reset' }),
+    );
+    expect(donePayload(recovered.at(-1)!).usage).toMatchObject({
+      tokenAvailability: 'reported',
+      inputTokens: 80,
+      outputTokens: 50,
     });
   });
 

@@ -96,6 +96,8 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 ### ENG-018
 
 `AgentAdapter.run()` shall be safe for concurrent calls on the same adapter instance unless the adapter explicitly documents an environmental constraint. Each call shall create fresh local state and `run()` shall not mutate adapter instance state per [DR-003](../decisions/003-role-scoped-session-management.md#adapter-thread-safety).
+Where a backend reports token accounting cumulatively per session rather than per turn, the adapter shall be permitted to retain one usage baseline per backend session identifier across calls, as the sole exception, because the turn's own usage is otherwise unrecoverable.
+That baseline shall be keyed by backend session identity so concurrent runs on different sessions cannot observe each other's counters, and an adapter holding no baseline for a session it did not observe shall report token accounting as `'unavailable'` per [ENG-027](#eng-027) rather than attribute the session's accumulated total to one turn.
 
 ## Usage Reporting
 

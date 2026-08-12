@@ -119,6 +119,15 @@ Mapping `ultra` shall leave independently mapped permission-profile, approval, s
 Where `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is provided, including an empty array, the adapter shall reject before loading or invoking the Codex SDK with an error that states the installed Codex integration cannot enforce explicit tool restrictions.
 Where both fields are omitted, the adapter shall preserve Codex's native available-tool set.
 
+### CODEX-012
+
+The usage attached to `turn.completed` is the thread's cumulative total rather than the completed turn's, so the adapter shall report the difference between that snapshot and the snapshot it last observed for the same thread.
+Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall report token accounting as `'unavailable'` per [ENG-027](../engine.md#eng-027), because the thread's accumulated total includes turns this run did not perform.
+Where the run created the thread, the absent baseline shall be treated as zero, since the thread's first snapshot is that turn's usage.
+Where any counter in the new snapshot is smaller than the corresponding baseline counter, the thread's accounting has restarted and the adapter shall report `'unavailable'` rather than attribute an unexplained decrease to the turn.
+In every case the adapter shall retain the newest snapshot as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
+The baseline shall be retained per backend thread identifier under [ENG-018](../engine.md#eng-018).
+
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"

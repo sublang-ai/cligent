@@ -415,6 +415,83 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
+/** Cumulative thread counters as Codex reports them on `turn.completed`. */
+interface CodexUsageSnapshot {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+
+const CODEX_USAGE_ALIASES: ReadonlyArray<
+  readonly [keyof CodexUsageSnapshot, readonly string[], boolean]
+> = [
+  ['inputTokens', ['inputTokens', 'input_tokens'], true],
+  ['cachedInputTokens', ['cachedInputTokens', 'cached_input_tokens'], false],
+  [
+    'cacheWriteInputTokens',
+    ['cacheWriteInputTokens', 'cache_write_input_tokens'],
+    false,
+  ],
+  ['outputTokens', ['outputTokens', 'output_tokens'], true],
+  [
+    'reasoningOutputTokens',
+    ['reasoningOutputTokens', 'reasoning_output_tokens'],
+    false,
+  ],
+];
+
+/**
+ * Read the cumulative snapshot Codex attaches to `turn.completed`. Returns
+ * undefined when any consumed counter is missing or malformed, which keeps
+ * the caller on the ENG-027 unavailable path instead of differencing
+ * against a partial snapshot.
+ */
+function readCodexUsageSnapshot(
+  rawUsage: unknown,
+): CodexUsageSnapshot | undefined {
+  if (!isUsageRecord(rawUsage)) return undefined;
+
+  const snapshot: CodexUsageSnapshot = {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+
+  for (const [field, aliases, required] of CODEX_USAGE_ALIASES) {
+    const reading = readUsageCounter(rawUsage, aliases, required);
+    if (!reading.valid) return undefined;
+    snapshot[field] = reading.value;
+  }
+
+  return snapshot;
+}
+
+/**
+ * CODEX-012: subtract the previous cumulative snapshot to obtain this turn's
+ * usage. A snapshot that decreased means the thread's accounting restarted
+ * (compaction or a context-window refill), which cannot be attributed to one
+ * turn, so the caller fails closed rather than reporting a guess.
+ */
+function codexTurnDelta(
+  snapshot: CodexUsageSnapshot,
+  baseline: CodexUsageSnapshot | undefined,
+): CodexUsageSnapshot | undefined {
+  if (!baseline) return snapshot;
+
+  const delta: CodexUsageSnapshot = { ...snapshot };
+  for (const [field] of CODEX_USAGE_ALIASES) {
+    const difference = snapshot[field] - baseline[field];
+    if (difference < 0) return undefined;
+    delta[field] = difference;
+  }
+
+  return delta;
+}
+
 // The SDK usage object carries token counts only; toolUses is derived from
 // the unique tool item ids observed during the run (CODEX-003), so the
 // caller supplies it rather than this parser reading a usage field.
@@ -1153,8 +1230,69 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
 
   private readonly loadSdk: () => Promise<CodexSdk>;
 
+  /**
+   * CODEX-012: `turn.completed.usage` reports the thread's cumulative total,
+   * so the turn's own usage is the delta against the previous snapshot. The
+   * baseline is keyed by backend thread identity, not by run, because a
+   * later run resumes the same thread. ENG-018 permits exactly this state.
+   */
+  private readonly threadUsageBaselines = new Map<string, CodexUsageSnapshot>();
+
   constructor(deps: CodexAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadCodexSdk;
+  }
+
+  /**
+   * CODEX-012: turn the cumulative `turn.completed` snapshot into this turn's
+   * usage. A fresh thread starts from zero, so its first snapshot is already
+   * the turn. A resumed thread this adapter never observed has no baseline to
+   * subtract, and reporting the thread total as the turn's would overstate it
+   * by every earlier turn, so accounting is unavailable instead.
+   */
+  private resolveTurnUsage(
+    rawUsage: unknown,
+    toolUses: number,
+    threadId: string | undefined,
+    resumed: boolean,
+  ): DonePayload['usage'] {
+    const snapshot = readCodexUsageSnapshot(rawUsage);
+    if (!snapshot || !threadId) {
+      return mapUsage(rawUsage, toolUses);
+    }
+
+    const baseline = this.threadUsageBaselines.get(threadId);
+    // Always advance the baseline, so a thread recovers on its next turn even
+    // when this one could not be attributed.
+    this.threadUsageBaselines.set(threadId, snapshot);
+
+    if (!baseline && resumed) {
+      return { ...DEFAULT_DONE_USAGE, toolUses };
+    }
+
+    const delta = codexTurnDelta(snapshot, baseline);
+    if (!delta) {
+      return { ...DEFAULT_DONE_USAGE, toolUses };
+    }
+
+    const source = isUsageRecord(rawUsage) ? rawUsage : {};
+    return mapUsage(
+      {
+        // Carry any non-token fields through unchanged; only the counters
+        // are differenced.
+        ...source,
+        input_tokens: delta.inputTokens,
+        inputTokens: delta.inputTokens,
+        cached_input_tokens: delta.cachedInputTokens,
+        cachedInputTokens: delta.cachedInputTokens,
+        cache_write_input_tokens: delta.cacheWriteInputTokens,
+        cacheWriteInputTokens: delta.cacheWriteInputTokens,
+        output_tokens: delta.outputTokens,
+        outputTokens: delta.outputTokens,
+        reasoning_output_tokens: delta.reasoningOutputTokens,
+        reasoningOutputTokens: delta.reasoningOutputTokens,
+      },
+      toolUses,
+    );
   }
 
   async isAvailable(): Promise<boolean> {
@@ -1487,9 +1625,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: mapUsage(
+              usage: this.resolveTurnUsage(
                 turn.usage ?? event.usage,
                 observedToolUseIds.size,
+                // A resumed turn need not repeat thread.started, so the
+                // inbound token identifies the same thread.
+                backendProvidedSessionId ? sessionId : options?.resume,
+                options?.resume !== undefined,
               ),
               durationMs,
             },
