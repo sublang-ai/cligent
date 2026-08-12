@@ -594,10 +594,7 @@ async function promiseSettlesWithin(
   }
 }
 
-function createMonotonicInactivityTimer(
-  lastActivityAt: number,
-  timeoutMs: number,
-): {
+function createMonotonicInactivityTimer(timeoutMs: number): {
   promise: Promise<{ kind: 'inactivity' }>;
   cancel: () => void;
 } {
@@ -607,11 +604,11 @@ function createMonotonicInactivityTimer(
   const promise = new Promise<{ kind: 'inactivity' }>((resolve) => {
     resolveDeadline = resolve;
   });
+  const deadline = performance.now() + timeoutMs;
 
   const scheduleNextChunk = () => {
     if (cancelled) return;
-    const elapsedMs = performance.now() - lastActivityAt;
-    const remainingMs = timeoutMs - elapsedMs;
+    const remainingMs = deadline - performance.now();
     if (remainingMs <= 0) {
       resolveDeadline({ kind: 'inactivity' });
       return;
@@ -1029,6 +1026,12 @@ export function wrapOpencodeClient(
   const sessionAbort = typeof session.abort === 'function'
     ? (session.abort.bind(session) as (args: unknown) => Promise<unknown>)
     : undefined;
+  const sessionChildren = typeof session.children === 'function'
+    ? (session.children.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
+    : undefined;
   const eventSubscribe = event.subscribe.bind(event) as (
     args?: unknown,
     requestOptions?: unknown,
@@ -1098,6 +1101,13 @@ export function wrapOpencodeClient(
       const cwdVal = asString(options.cwd);
       instanceDirectory = cwdVal;
       const permissionObj = options.permission;
+      const lineageDiscoveryTimeoutMs =
+        asNumber(options.lineageDiscoveryTimeoutMs) ??
+        MAX_STATUS_QUERY_TIMEOUT_MS;
+      assertFinitePositiveTimeout(
+        'lineageDiscoveryTimeoutMs',
+        lineageDiscoveryTimeoutMs,
+      );
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
       const signal = options.signal instanceof AbortSignal
@@ -1115,9 +1125,17 @@ export function wrapOpencodeClient(
       let rawIterator: AsyncIterator<unknown> | undefined;
       let rawIteratorTransferred = false;
       let events: AsyncIterable<unknown> | undefined;
+      const ownedSessionIds = new Set<string>();
+      const observeSessionId = options.onSessionId;
+      const observeSessionAbort = options.onSessionAbortStarted;
       const abortKnownSession = (): Promise<void> => {
         if (!sessionId) return Promise.resolve();
-        dispatchAbortPromise ??= abortSessionViaSdk(sessionId, cwdVal);
+        if (!dispatchAbortPromise) {
+          dispatchAbortPromise = abortSessionViaSdk(sessionId, cwdVal);
+          if (typeof observeSessionAbort === 'function') {
+            observeSessionAbort(dispatchAbortPromise);
+          }
+        }
         return dispatchAbortPromise;
       };
       const onRunAbort = () => {
@@ -1129,11 +1147,8 @@ export function wrapOpencodeClient(
         else signal.addEventListener('abort', onRunAbort, { once: true });
       }
 
-      const stopAbortedDispatch = async (): Promise<never> => {
-        await promiseSettlesWithin(
-          abortKnownSession(),
-          ITERATOR_CLEANUP_TIMEOUT_MS,
-        );
+      const stopAbortedDispatch = (): never => {
+        void abortKnownSession().catch(() => {});
         throw new OpenCodePromptDispatchAbortError(sessionId);
       };
 
@@ -1148,6 +1163,76 @@ export function wrapOpencodeClient(
         if (outcome.kind === 'abort') return stopAbortedDispatch();
         if (outcome.kind === 'failure') throw outcome.error;
         return outcome.value;
+      };
+      const discoverOwnedSessionLineage = async (
+        rootSessionId: string,
+      ): Promise<void> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const lineageController = new AbortController();
+        const abortLineage = () => lineageController.abort();
+        if (signal?.aborted) abortLineage();
+        else signal?.addEventListener('abort', abortLineage, { once: true });
+        const lineageDeadline = performance.now() + lineageDiscoveryTimeoutMs;
+        const lineageTimeoutError = () =>
+          new Error(
+            'OpenCode session.children timed out after ' +
+              `${lineageDiscoveryTimeoutMs}ms`,
+          );
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            lineageController.abort();
+            reject(lineageTimeoutError());
+          }, lineageDiscoveryTimeoutMs);
+        });
+        try {
+          const pendingParents = [rootSessionId];
+          for (let index = 0; index < pendingParents.length; index++) {
+            if (performance.now() >= lineageDeadline) {
+              lineageController.abort();
+              throw lineageTimeoutError();
+            }
+            const parentSessionId = pendingParents[index]!;
+            const childrenResult = await raceRunOperation(
+              Promise.race([
+                sessionChildren!(
+                  apiVersion === 'v2'
+                    ? {
+                        sessionID: parentSessionId,
+                        ...(cwdVal ? { directory: cwdVal } : {}),
+                      }
+                    : {
+                        path: { id: parentSessionId },
+                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                        signal: lineageController.signal,
+                      },
+                  apiVersion === 'v2'
+                    ? { signal: lineageController.signal }
+                    : undefined,
+                ),
+                timeoutPromise,
+              ]),
+            );
+            throwIfSdkResultError(
+              childrenResult,
+              'OpenCode session.children failed',
+            );
+            const children = unwrapSdkData(childrenResult);
+            if (!Array.isArray(children)) {
+              throw new Error(
+                'OpenCode session.children returned a non-array response',
+              );
+            }
+            for (const child of children) {
+              const childId = asString(asRecord(child).id);
+              if (!childId || ownedSessionIds.has(childId)) continue;
+              ownedSessionIds.add(childId);
+              pendingParents.push(childId);
+            }
+          }
+        } finally {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener('abort', abortLineage);
+        }
       };
 
       try {
@@ -1200,6 +1285,20 @@ export function wrapOpencodeClient(
 
         if (!sessionId) {
           sessionId = generateSessionId();
+        } else if (typeof observeSessionId === 'function') {
+          observeSessionId(sessionId);
+        }
+        ownedSessionIds.add(sessionId);
+
+        if (resumeId) {
+          if (!sessionChildren) {
+            throw new Error(
+              'OpenCode SDK client.session.children() not available for ' +
+                'resumed permission ownership discovery',
+            );
+          }
+
+          await discoverOwnedSessionLineage(sessionId);
         }
         if (signal?.aborted) return stopAbortedDispatch();
         const promptSessionId = sessionId;
@@ -1325,6 +1424,7 @@ export function wrapOpencodeClient(
         return {
           id: sessionId,
           sessionId,
+          ownedSessionIds: [...ownedSessionIds],
           ...(events ? { events } : {}),
         };
       } finally {
@@ -1647,6 +1747,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
     let sessionAbortAttempted = false;
+    let sessionAbortPromise: Promise<void> | undefined;
+    const permissionSessionIds = new Set<string>();
 
     // Accumulate usage from step-finish parts (OpenCode's session.idle
     // event doesn't carry usage data).
@@ -1663,15 +1765,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       resolveCallerAbort = resolve;
     });
     let iterator: AsyncIterator<unknown> | undefined;
-    const returnActiveIterator = async (): Promise<void> => {
+    let iteratorReturnPromise: Promise<void> | undefined;
+    const returnActiveIterator = (): Promise<void> => {
+      if (iteratorReturnPromise) return iteratorReturnPromise;
+
       const activeIterator = iterator;
       iterator = undefined;
-      if (!activeIterator?.return) return;
+      if (!activeIterator?.return) return Promise.resolve();
 
-      await maybeCallAsyncWithin(
+      iteratorReturnPromise = maybeCallAsyncWithin(
         () => Promise.resolve(activeIterator.return!()).then(() => {}),
         ITERATOR_CLEANUP_TIMEOUT_MS,
       );
+      return iteratorReturnPromise;
     };
 
     // OpenCode re-sends the whole ToolPart on every lifecycle transition
@@ -1688,8 +1794,26 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       { toolUseId: string; toolName: string }
     >();
     const repliedPermissionRequests = new Set<string>();
-    const permissionRequestKey = (requestId: string) =>
-      `${sessionId}\u0000${requestId}`;
+    const permissionRequestKey = (
+      permissionSessionId: string,
+      requestId: string,
+    ) => `${permissionSessionId}\u0000${requestId}`;
+    const correlatePermissionSessionId = (
+      eventSessionId: string | undefined,
+      requestId: string | undefined,
+    ): string => {
+      if (eventSessionId || !requestId) return eventSessionId ?? sessionId;
+      for (const ownedSessionId of permissionSessionIds) {
+        const requestKey = permissionRequestKey(ownedSessionId, requestId);
+        if (
+          permissionRequests.has(requestKey) ||
+          repliedPermissionRequests.has(requestKey)
+        ) {
+          return ownedSessionId;
+        }
+      }
+      return sessionId;
+    };
 
     // OpenCode's shared SSE stream publishes user and assistant messages.
     // Part events can precede the message.updated envelope that supplies the
@@ -1875,20 +1999,33 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     }
 
     let client: OpenCodeClient | undefined;
-    const abortKnownSessionBeforeTerminal = async (): Promise<void> => {
+    const startKnownSessionAbort = (): Promise<void> => {
       const activeClient = client;
       const abortSession = activeClient?.abortSession;
-      if (!abortSession || sessionAbortAttempted) return;
+      if (sessionAbortPromise) return sessionAbortPromise;
+      if (sessionAbortAttempted) return Promise.resolve();
       sessionAbortAttempted = true;
 
-      await maybeCallAsyncWithin(
-        () =>
+      if (!abortSession) {
+        sessionAbortPromise = Promise.reject(
+          new Error('OpenCode SDK client does not provide session.abort()'),
+        );
+        void sessionAbortPromise.catch(() => {});
+        return sessionAbortPromise;
+      }
+
+      try {
+        sessionAbortPromise = Promise.resolve(
           abortSession.call(activeClient, {
             sessionId,
             ...(options?.cwd ? { cwd: options.cwd } : {}),
           }),
-        Math.min(MAX_STATUS_QUERY_TIMEOUT_MS, this.eventInactivityTimeoutMs),
-      );
+        ).then(() => {});
+      } catch (error) {
+        sessionAbortPromise = Promise.reject(error);
+      }
+      void sessionAbortPromise.catch(() => {});
+      return sessionAbortPromise;
     };
 
     const accumulatedUsage = (): DonePayload['usage'] => ({
@@ -1947,11 +2084,30 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode run aborted before prompt dispatch');
       }
 
+      const observeRunSessionId = (observedSessionId: unknown) => {
+        const observed = asString(observedSessionId);
+        if (!observed) return;
+        sessionId = observed;
+        backendProvidedSessionId = true;
+        permissionSessionIds.add(observed);
+      };
+      const observeRunSessionAbort = (abortPromise: unknown) => {
+        sessionAbortAttempted = true;
+        if (sessionAbortPromise || !(abortPromise instanceof Promise)) return;
+        sessionAbortPromise = abortPromise.then(() => {});
+        void sessionAbortPromise.catch(() => {});
+      };
       const runPromise = runFn({
         prompt,
         cwd: options?.cwd,
         model: options?.model,
         signal: eventStreamController.signal,
+        onSessionId: observeRunSessionId,
+        onSessionAbortStarted: observeRunSessionAbort,
+        lineageDiscoveryTimeoutMs: Math.min(
+          MAX_STATUS_QUERY_TIMEOUT_MS,
+          this.eventInactivityTimeoutMs,
+        ),
         ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(options?.resume ? { sessionId: options.resume } : {}),
@@ -2007,6 +2163,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         sessionId = loadedId;
         backendProvidedSessionId = true;
       }
+      permissionSessionIds.add(sessionId);
+      for (const ownedSessionId of asStringArray(
+        asRecord(runResult).ownedSessionIds,
+      )) {
+        permissionSessionIds.add(ownedSessionId);
+      }
       const stream = resolveEventStream(
         client,
         runResult,
@@ -2016,17 +2178,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         iterator = stream[Symbol.asyncIterator]();
       }
       if (abortRequested) {
-        if (client.abortSession) {
-          sessionAbortAttempted = true;
-          await promiseSettlesWithin(
-            client.abortSession({
-              sessionId,
-              ...(options?.cwd ? { cwd: options.cwd } : {}),
-            }),
-            ITERATOR_CLEANUP_TIMEOUT_MS,
-          );
-        }
-        await returnActiveIterator();
+        startKnownSessionAbort();
+        void returnActiveIterator();
         throw new Error('OpenCode run aborted during prompt dispatch');
       }
       if (!stream || !iterator) {
@@ -2055,7 +2208,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         initYielded = true;
       }
 
-      let lastRelevantActivityAt = performance.now();
+      let remainingInactivityMs = this.eventInactivityTimeoutMs;
       let lastRelevantEvent = 'prompt.dispatched';
       const controlTimeoutMs = Math.min(
         MAX_STATUS_QUERY_TIMEOUT_MS,
@@ -2100,15 +2253,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       };
 
       const abortActiveSession = (raceCallerAbort: boolean) =>
-        runControlOperation<void>(async () => {
-          if (!client?.abortSession) {
-            throw new Error('OpenCode SDK client does not provide session.abort()');
-          }
-          await client.abortSession({
-            sessionId,
-            ...(options?.cwd ? { cwd: options.cwd } : {}),
-          });
-        }, raceCallerAbort);
+        runControlOperation<void>(startKnownSessionAbort, raceCallerAbort);
 
       const describeControlOutcome = (outcome: ControlOutcome<unknown>): string => {
         if (outcome.kind === 'success') return 'succeeded';
@@ -2122,49 +2267,63 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       };
 
       while (true) {
-        const nextPromise = iterator.next();
-        const inactivityTimer = createMonotonicInactivityTimer(
-          lastRelevantActivityAt,
-          this.eventInactivityTimeoutMs,
-        );
+        let nextPromise: Promise<IteratorResult<unknown>> | undefined;
+        let inactivityTimer:
+          ReturnType<typeof createMonotonicInactivityTimer> | undefined;
+        let raceResult: StreamWaitResult;
+        const waitStartedAt = performance.now();
 
-        // Keep one replaceable control waiter rather than adding a fresh
-        // reaction to run-lifetime abort/server promises for every SSE event.
-        // Once an event or inactivity deadline wins, the control callback is
-        // released immediately.
-        const raceResult = await new Promise<StreamWaitResult>((resolve) => {
-          let settled = false;
-          const finish = (result: StreamWaitResult) => {
-            if (settled) return;
-            settled = true;
-            if (finishStreamWait === finish) {
-              finishStreamWait = undefined;
-            }
-            resolve(result);
-          };
-
-          finishStreamWait = finish;
-          inactivityTimer.promise.then(finish);
-          nextPromise.then(
-            (result) => finish({ kind: 'event', result }),
-            (error: unknown) => finish({ kind: 'iterator_error', error }),
+        if (remainingInactivityMs <= 0) {
+          raceResult = { kind: 'inactivity' };
+        } else {
+          nextPromise = iterator.next();
+          inactivityTimer = createMonotonicInactivityTimer(
+            remainingInactivityMs,
           );
 
-          // Preserve abort precedence when multiple controls were already
-          // settled before this wait was armed.
-          if (abortRequested || options?.abortSignal?.aborted) {
-            finish({ kind: 'caller_abort' });
-          } else if (serverExitInfo) {
-            finish({ kind: 'server_exit', exit: serverExitInfo });
-          }
-        });
-        inactivityTimer.cancel();
+          // Keep one replaceable control waiter rather than adding a fresh
+          // reaction to run-lifetime abort/server promises for every SSE
+          // event. A buffered provider event is registered before the timer;
+          // non-relevant buffered traffic still consumes the carried active
+          // wait budget and cannot starve an expired deadline.
+          raceResult = await new Promise<StreamWaitResult>((resolve) => {
+            let settled = false;
+            const finish = (result: StreamWaitResult) => {
+              if (settled) return;
+              settled = true;
+              if (finishStreamWait === finish) {
+                finishStreamWait = undefined;
+              }
+              resolve(result);
+            };
+
+            finishStreamWait = finish;
+            nextPromise!.then(
+              (result) => finish({ kind: 'event', result }),
+              (error: unknown) => finish({ kind: 'iterator_error', error }),
+            );
+            inactivityTimer!.promise.then(finish);
+
+            // Preserve abort precedence when multiple controls were already
+            // settled before this wait was armed.
+            if (abortRequested || options?.abortSignal?.aborted) {
+              finish({ kind: 'caller_abort' });
+            } else if (serverExitInfo) {
+              finish({ kind: 'server_exit', exit: serverExitInfo });
+            }
+          });
+          inactivityTimer.cancel();
+          remainingInactivityMs = Math.max(
+            0,
+            remainingInactivityMs - (performance.now() - waitStartedAt),
+          );
+        }
 
         if (raceResult.kind === 'inactivity') {
           // Stop the read that missed its deadline before yielding queued
           // content. A consumer may suspend us at each yield, and fresh SSE
           // traffic must not stay live while timeout recovery is underway.
-          nextPromise.catch(() => {});
+          nextPromise?.catch(() => {});
           eventStreamController.abort();
         }
 
@@ -2177,8 +2336,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (raceResult.kind === 'caller_abort' || abortRequested) {
-          nextPromise.catch(() => {});
-          await abortActiveSession(false);
+          nextPromise?.catch(() => {});
+          startKnownSessionAbort();
           yield createEvent(
             'done',
             AGENT,
@@ -2206,7 +2365,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         if (raceResult.kind === 'inactivity') {
           const elapsedInactivityMs = Math.max(
             0,
-            Math.round(performance.now() - lastRelevantActivityAt),
+            Math.round(this.eventInactivityTimeoutMs - remainingInactivityMs),
           );
           const serverState =
             this.mode === 'external'
@@ -2237,7 +2396,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           );
 
           if (statusOutcome.kind === 'caller_abort' || abortRequested) {
-            await abortActiveSession(false);
+            startKnownSessionAbort();
             yield createEvent(
               'done',
               AGENT,
@@ -2319,6 +2478,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               AGENT,
               {
                 status: 'error',
+                ...doneResumeTokenPayload(
+                  'error',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
                 usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
@@ -2444,6 +2609,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
+              ...doneResumeTokenPayload(
+                'error',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
@@ -2454,7 +2625,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (raceResult.kind === 'server_exit') {
-          nextPromise.catch(() => {});
+          nextPromise?.catch(() => {});
 
           if (doneYielded) break;
           for (const normalized of drainPendingContent(true)) {
@@ -2497,6 +2668,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
+              ...doneResumeTokenPayload(
+                'error',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
@@ -2536,21 +2713,73 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           loadStreamSessionId(event.message) ??
           loadStreamSessionId(asRecord(event.part)) ??
           canonicalSessionInfoId;
+        const sessionInfo = asRecord(event.info);
+        const sessionLifecycle =
+          eventType === 'session.created' ||
+          eventType === 'session.updated' ||
+          eventType === 'session.deleted';
+        const lifecycleSessionId = sessionLifecycle
+          ? (asString(sessionInfo.id) ?? eventSessionId)
+          : undefined;
+        const lifecycleParentId = sessionLifecycle
+          ? asString(sessionInfo.parentID)
+          : undefined;
+        if (
+          eventType !== 'session.deleted' &&
+          lifecycleSessionId &&
+          lifecycleParentId &&
+          permissionSessionIds.has(lifecycleParentId)
+        ) {
+          permissionSessionIds.add(lifecycleSessionId);
+        }
 
-        if (eventSessionId) {
-          if (eventSessionId !== sessionId) {
-            continue;
-          }
+        const permissionControlEvent =
+          eventType === 'permission.updated' ||
+          eventType === 'permission.asked' ||
+          eventType === 'permission.replied';
+        const ownedPermissionControl =
+          permissionControlEvent &&
+          eventSessionId !== undefined &&
+          permissionSessionIds.has(eventSessionId);
+        const ownedSessionLifecycle =
+          sessionLifecycle &&
+          lifecycleSessionId !== undefined &&
+          permissionSessionIds.has(lifecycleSessionId);
+        const rootSessionEvent = eventSessionId === sessionId;
+
+        if (
+          eventSessionId &&
+          !rootSessionEvent &&
+          !ownedPermissionControl &&
+          !ownedSessionLifecycle
+        ) {
+          continue;
+        }
+        if (rootSessionEvent) {
           // Only mark backend-provided after confirming the event belongs
           // to this session — foreign events must not flip the flag.
           backendProvidedSessionId = true;
         }
 
-        // OPENCODE-018: only activity that survives current-session
-        // filtering resets the liveness deadline. Explicitly foreign traffic
-        // on the global multiplexed stream must not keep this run alive.
-        lastRelevantActivityAt = performance.now();
-        lastRelevantEvent = eventType;
+        // Output remains root-scoped, but permission control and lifecycle
+        // for descendants owned by this run are liveness-relevant. Untagged
+        // global events may still normalize per OPENCODE-006, but cannot
+        // prove that the active run progressed.
+        if (
+          rootSessionEvent ||
+          ownedPermissionControl ||
+          ownedSessionLifecycle
+        ) {
+          remainingInactivityMs = this.eventInactivityTimeoutMs;
+          lastRelevantEvent = eventType;
+        }
+
+        if (ownedSessionLifecycle && !rootSessionEvent) {
+          if (eventType === 'session.deleted' && lifecycleSessionId) {
+            permissionSessionIds.delete(lifecycleSessionId);
+          }
+          continue;
+        }
 
         if (eventType === 'message.removed') {
           const messageId = loadOpenCodeUpdatedMessageId(event);
@@ -2826,6 +3055,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           eventType === 'permission.updated' ||
           eventType === 'permission.asked'
         ) {
+          const permissionSessionId = eventSessionId ?? sessionId;
           const nestedPermission = asRecord(event.permission);
           const permission =
             eventType === 'permission.asked' ||
@@ -2864,7 +3094,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           );
 
           if (requestId) {
-            const requestKey = permissionRequestKey(requestId);
+            const requestKey = permissionRequestKey(
+              permissionSessionId,
+              requestId,
+            );
             if (repliedPermissionRequests.has(requestKey)) {
               continue;
             }
@@ -2895,7 +3128,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
           if (abortRequested || options?.abortSignal?.aborted) {
             yield* drainPendingContent(true);
-            await abortActiveSession(false);
+            startKnownSessionAbort();
             yield createEvent(
               'done',
               AGENT,
@@ -2921,7 +3154,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // yielding queued output on this terminal path.
             eventStreamController.abort();
             yield* drainPendingContent(true);
-            await abortActiveSession(false);
+            await abortActiveSession(true);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
                 'done',
@@ -2949,7 +3182,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 code: 'OPENCODE_PERMISSION_REQUEST_INVALID',
                 message:
                   'Cannot resolve OpenCode headless permission request ' +
-                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
                   'requestID="<missing>", ' +
                   `permission=${JSON.stringify(toolName)}): ` +
                   'the event did not include a permission request ID',
@@ -2982,6 +3215,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               AGENT,
               {
                 status: 'error',
+                ...doneResumeTokenPayload(
+                  'error',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
                 usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
@@ -2991,14 +3230,17 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             break;
           }
 
-          const requestKey = permissionRequestKey(requestId);
+          const requestKey = permissionRequestKey(
+            permissionSessionId,
+            requestId,
+          );
           repliedPermissionRequests.add(requestKey);
 
           const decision =
             options?.permissions?.mode === 'auto' ? 'once' : 'reject';
           const replyPromise = client?.replyPermission
             ? client.replyPermission({
-                sessionId,
+                sessionId: permissionSessionId,
                 requestId,
                 permission: toolName,
                 decision,
@@ -3045,6 +3287,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               AGENT,
               {
                 requestId,
+                nativeSessionId: permissionSessionId,
                 permission: toolName,
                 patterns,
                 toolUseId,
@@ -3064,7 +3307,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           ) {
             replyPromise.catch(() => {});
             yield* drainPendingContent(true);
-            await abortActiveSession(false);
+            startKnownSessionAbort();
             yield createEvent(
               'done',
               AGENT,
@@ -3092,7 +3335,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             eventStreamController.abort();
             replyPromise.catch(() => {});
             yield* drainPendingContent(true);
-            await abortActiveSession(false);
+            await abortActiveSession(true);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
                 'done',
@@ -3126,7 +3369,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 code: 'OPENCODE_PERMISSION_REPLY_FAILED',
                 message:
                   'Failed to resolve OpenCode headless permission request ' +
-                  `(sessionID=${JSON.stringify(sessionId)}, ` +
+                  `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
                   `requestID=${JSON.stringify(requestId)}, ` +
                   `permission=${JSON.stringify(toolName)}): ${detail}`,
                 recoverable: false,
@@ -3158,6 +3401,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               AGENT,
               {
                 status: 'error',
+                ...doneResumeTokenPayload(
+                  'error',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
                 usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
@@ -3176,14 +3425,25 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             asString(event.requestID) ??
             asString(permission.permissionID) ??
             asString(event.permissionID);
+          const permissionSessionId = correlatePermissionSessionId(
+            eventSessionId,
+            requestId,
+          );
           const asked = requestId
-            ? permissionRequests.get(permissionRequestKey(requestId))
+            ? permissionRequests.get(
+                permissionRequestKey(permissionSessionId, requestId),
+              )
             : undefined;
           if (requestId) {
             // A reply is terminal correlation state regardless of decision.
             // Keeping successful `once` replies would grow the correlation
             // state for the lifetime of a long-running session.
-            permissionRequests.delete(permissionRequestKey(requestId));
+            permissionRequests.delete(
+              permissionRequestKey(permissionSessionId, requestId),
+            );
+          }
+          if (permissionSessionId !== sessionId) {
+            continue;
           }
           const decision = (
             asString(permission.decision) ??
@@ -3280,7 +3540,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             yield normalized;
           }
           if (abortRequested || options?.abortSignal?.aborted) {
-            await abortActiveSession(false);
+            startKnownSessionAbort();
             yield createEvent(
               'done',
               AGENT,
@@ -3372,7 +3632,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           yield normalized;
         }
         if (abortRequested || options?.abortSignal?.aborted) {
-          await abortKnownSessionBeforeTerminal();
+          startKnownSessionAbort();
           yield createEvent(
             'done',
             AGENT,
@@ -3406,6 +3666,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
+              ...doneResumeTokenPayload(
+                'error',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
@@ -3439,7 +3705,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           yield normalized;
         }
         if (abortRequested || options?.abortSignal?.aborted) {
-          await abortKnownSessionBeforeTerminal();
+          startKnownSessionAbort();
           yield createEvent(
             'done',
             AGENT,
@@ -3476,6 +3742,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
+              ...doneResumeTokenPayload(
+                'error',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
               usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
@@ -3505,6 +3777,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       const sdkCleanup = Promise.all([
+        sessionAbortPromise
+          ? promiseSettlesWithin(
+              sessionAbortPromise,
+              ITERATOR_CLEANUP_TIMEOUT_MS,
+            ).then(() => {})
+          : Promise.resolve(),
         returnActiveIterator(),
         maybeCallAsyncWithin(
           client?.close?.bind(client),

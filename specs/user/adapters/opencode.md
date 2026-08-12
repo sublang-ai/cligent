@@ -129,7 +129,13 @@ message shall clear the same per-part state even when no individual
 
 ### OPENCODE-006
 
-While the SSE stream carries events for all sessions, the adapter shall emit only events matching the current `sessionId`. Events that carry no session or thread identifier shall pass through unfiltered, since many event types in a multiplexed stream lack explicit session tags.
+While the SSE stream carries events for all sessions, the adapter shall emit
+ordinary output only for the current `sessionId`. Events that carry no session
+or thread identifier shall pass through unfiltered, since many event types in
+a multiplexed stream lack explicit session tags. Permission-control events for
+a descendant session owned by the current run are the narrow exception defined
+by [OPENCODE-020](#opencode-020); they shall not widen ordinary child-session
+output.
 
 ## Permission Mapping
 
@@ -170,23 +176,28 @@ human.
 ### OPENCODE-020
 
 While an OpenCode run is headless, when a `permission.updated` or
-`permission.asked` event belonging to its session reaches the adapter, the
-adapter shall resolve it exactly once through the applicable SDK
+`permission.asked` event belonging to its root session or a descendant session
+owned by that run reaches the adapter, the adapter shall resolve it exactly
+once through the applicable SDK
 permission-response route, including for permission names unknown to cligent.
 Under `mode: 'auto'`, it shall answer `once` and shall not emit a normalized
 `permission_request`, preserving the headless auto-mode contract.
 After the applicable SDK route confirms a successful auto `once` reply, the
 adapter shall emit exactly one `opencode:permission_decision` extension event
-with the native request identifier, permission name, patterns, correlated tool
-use identifier, `decision: 'once'`, `automated: true`, normalized input, and
-optional reason.
+with the native request and session identifiers, permission name, patterns,
+correlated tool use identifier, `decision: 'once'`, `automated: true`,
+normalized input, and optional reason.
 The extension event shall record a completed automated decision and shall not
 be substituted for the interactive `permission_request` event.
 Outside auto mode, it shall emit `permission_request` for observability and
 answer `reject` fail-closed without emitting an automated-decision extension.
-The response shall preserve the native request identifier and, where the SDK
-route requires it, the session identifier; permission events belonging to
-other sessions shall receive no response per [OPENCODE-006](#opencode-006).
+The response and correlation key shall preserve the native request and
+originating session identifiers. The adapter shall discover pre-existing
+descendants recursively before prompting a resumed root session and shall
+extend that owned control scope from ordered session lifecycle events, while
+permission events belonging to an unrelated session tree receive no response
+per [OPENCODE-006](#opencode-006). Descendant discovery shall be bounded and a
+failure shall terminate before the resumed prompt is dispatched.
 Where the event has no request identifier, or the applicable response route is
 unavailable, rejects, returns an SDK error, or does not settle within five
 seconds, the adapter shall emit a non-recoverable permission error whose
@@ -249,10 +260,18 @@ shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
 provided, the adapter shall require a finite number greater than zero and use
 that value. The deadline shall use monotonic elapsed time and split waits above
 the host timer's maximum delay into safe chunks rather than expiring early.
-While a run is awaiting OpenCode's global SSE stream, when an event survives
-the current-session filtering of [OPENCODE-006](#opencode-006), including an
-untagged pass-through event, the adapter shall restart the deadline; an event
-explicitly tagged for another session shall not restart it.
+The deadline shall measure only time actively awaiting OpenCode's global SSE
+stream. Time spent normalizing an event or suspended while a downstream
+consumer processes a yielded event shall not consume the silence budget.
+An event explicitly tagged for the current root session, or a permission or
+session-lifecycle control event for a run-owned descendant per
+[OPENCODE-020](#opencode-020), shall restart the deadline. Tagged events from
+an unrelated session and untagged global pass-through events shall not restart
+it; pass-through eligibility under [OPENCODE-006](#opencode-006) is not proof
+of active-session progress. A buffered relevant event already available when
+the consumer resumes shall be processed before timeout recovery, while an
+always-ready stream of non-relevant events shall still exhaust the carried
+active-wait budget.
 When the deadline expires, the adapter shall cancel the pending SSE read and
 query the active session's current status through the SDK, bounding that query
 to the lesser of 10,000 ms and the configured inactivity deadline.
@@ -298,9 +317,12 @@ iterator, make independent bounded SDK-client close and shutdown attempts even
 when an earlier cleanup rejects, and terminate its managed server, escalating
 its owned child from `SIGTERM` to `SIGKILL` after a bounded grace when necessary.
 Instance disposal shall carry the run working directory as `directory` on the
-v2 SDK path or `query.directory` on the legacy path. On caller interruption, any
-known active session abort shall be attempted before the interrupted `done`, and
-managed process termination shall begin only after that terminal event;
+v2 SDK path or `query.directory` on the legacy path. On caller interruption,
+the adapter shall initiate any known active-session abort before promptly
+emitting the interrupted `done`, without waiting for that control request to
+settle beyond the engine's bounded abort-drain window. It shall retain and
+bound the cancellation attempt during post-terminal cleanup. Managed process
+termination shall begin only after that terminal event;
 external mode shall leave the caller-owned server running while still aborting
 active session work on interruption or non-idle inactivity.
 

@@ -91,8 +91,8 @@ meta.md     The spec of specs
 | IR-039 | [039-owned-acp-wire-schemas.md](iterations/039-owned-acp-wire-schemas.md) | Own the ACP wire schemas for the protocol subset the Kimi adapter consumes, and move the ACP SDK and Kimi CLI conformance targets |
 | IR-040 | [040-consented-runtime-provisioning.md](iterations/040-consented-runtime-provisioning.md) | Runtime compatibility descriptor, load-time version gate, and structured readiness verdict, then consented peer-SDK provisioning |
 | IR-041 | [041-opencode-tool-lifecycle.md](iterations/041-opencode-tool-lifecycle.md) | Correlate OpenCode tool-part snapshots into one `tool_use`/`tool_result` pair per `callID` |
-| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies, deterministic fail-closed handling, abort-safe cleanup, and rejection of unsafe prompt tool filters |
-| IR-043 | [043-opencode-event-inactivity.md](iterations/043-opencode-event-inactivity.md) | Give OpenCode runs a finite relevant-event deadline with status-based idle recovery and deterministic silent-session cleanup |
+| IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies across run-owned session descendants, deterministic fail-closed handling, abort-safe cleanup, and rejection of unsafe prompt tool filters |
+| IR-043 | [043-opencode-event-inactivity.md](iterations/043-opencode-event-inactivity.md) | Give OpenCode runs a finite active-SSE-wait deadline with status-based idle recovery, prompt interrupted continuity, and deterministic silent-session cleanup |
 | IR-044 | [044-opencode-message-roles.md](iterations/044-opencode-message-roles.md) | Correlate OpenCode message roles and suppress replayed user content |
 | IR-045 | [045-opencode-delta-classification.md](iterations/045-opencode-delta-classification.md) | Classify OpenCode deltas by part type and suppress duplicate reasoning streams |
 | IR-046 | [046-token-usage-availability.md](iterations/046-token-usage-availability.md) | Distinguish reported token totals, including zero, from unavailable accounting across every terminal path |
@@ -117,7 +117,7 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
-| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability and formatting, and effort API verification |
+| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability, and effort API verification |
 
 ### GEMINI
 
@@ -154,7 +154,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, native auto permission replies with fail-closed handling, explicit tool-list rejection, two modes, current-session filtering, finite relevant-event inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 

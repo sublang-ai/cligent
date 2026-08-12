@@ -143,18 +143,26 @@ representation; and a rejected or non-settling status query
 shall make a bounded abort attempt and produce one status-query diagnostic plus
 one error `done`.
 Given current-session progress events whose spacing stays below the deadline,
-the adapter shall not query status, while repeated events explicitly tagged for
-another session shall not postpone the current session's deadline.
+the adapter shall not query status, while repeated events explicitly tagged
+for another session and repeated untagged workspace-global events shall not
+postpone the current session's deadline. When a consumer pauses after a
+normalized event for longer than the configured deadline, that downstream
+backpressure shall not consume the provider-silence budget, and a buffered
+current-session terminal event shall complete without status recovery. An
+always-ready non-relevant backlog shall still expire.
 Given pending iterators that do and do not honor `AbortSignal`, external and
-managed runs shall return the iterator, close the client, abort active session
-work where required, terminate only the managed server, and emit exactly one
+managed runs shall return the iterator, close the client, initiate active
+session cancellation where required, terminate only the managed server, and
+emit exactly one
 terminal event when caller abort and inactivity race. Deterministic race probes
 shall cover an already-ready terminal event and abort during prompt dispatch;
 the latter shall abort the already-created external session. The legacy SDK
 probe shall put the same working directory in the top-level `query.directory`
-of create and prompt calls and omit it from the prompt body. A managed caller
-abort shall deterministically order the active-session abort, interrupted
-`done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
+of create and prompt calls and omit it from the prompt body. A caller abort
+shall start active-session cancellation before delivering an adapter-emitted
+interrupted `done` within the engine drain window, retain the backend resume
+token, and complete bounded cancellation cleanup afterwards; managed
+`SIGTERM` shall still follow `done`. A deadline above the host timer maximum shall
 remain pending until real relevant activity, and an owned managed child that
 ignores `SIGTERM` shall receive `SIGKILL` after its grace.
 Prompt-dispatch abort and failure probes shall stop any event stream opened
@@ -200,15 +208,23 @@ supplied capability levels shall still map, including denies, while omitted
 capabilities preserve native rules.
 Where canonical v1 `permission.updated` and v2 `permission.asked` events are
 supplied, including an unknown permission name, when the adapter handles
-requests for its current session under auto, it shall emit no normalized
+requests for its root session or a run-owned descendant under auto, it shall
+emit no normalized
 `permission_request` and answer each native request `once` through the matching
 SDK route with request and session correlation intact, then emit exactly one
 `opencode:permission_decision` extension carrying the request identifier,
-permission, patterns, tool-use correlation, completed `once` decision,
+native session identifier, permission, patterns, tool-use correlation,
+completed `once` decision,
 automated marker, normalized input, and optional reason. Outside auto it shall
 emit the normalized request and answer `reject` without the extension.
-Where interleaved foreign-session events and repeated local events occur, the
-adapter shall respond only to the local request and shall not respond twice.
+Where a resumed root already owns child or grandchild sessions, the wrapper
+shall recursively discover them through version-correct `session.children`
+routes under one whole-traversal deadline before prompt dispatch. Ordered
+lifecycle events shall add fresh descendants. Child permission asks shall use
+the child identifier on session-scoped reply routes, while child conversational
+output remains filtered.
+Where interleaved unrelated-session events and repeated owned events occur, the
+adapter shall respond only to owned requests and shall not respond twice.
 Where a request has a missing identifier, unavailable or failed reply route,
 SDK result error, or reply that stays pending for five seconds, the adapter
 shall terminate with the permission error and one error-status `done`, with

@@ -43,12 +43,15 @@ Complete
       [OPENCODE-015](../user/adapters/opencode.md#opencode-015) rejects every
       explicitly present tool-list option before SDK loading instead of
       letting an enabled tool override a native or portable deny.
+- [x] Review follow-up separates root-only output from run-owned descendant
+      permission control, including resumed child discovery and child-scoped
+      replies.
 
 ## Tasks
 
 Each task below is one-commit size.
-Tasks 1–3 describe the original cohesive implementation; Task 4 is a separate
-review follow-up.
+Tasks 1–3 describe the original cohesive implementation; Tasks 4–5 are
+separate review follow-ups.
 Build, typecheck, lint, and unit verification apply at each completed change
 boundary.
 
@@ -69,6 +72,10 @@ boundary.
    Remove the public adapter and compatibility-wrapper paths that emitted
    prompt `tools`, reject explicit tool-list presence before SDK loading, and
    cover empty, non-empty, combined, and permission-policy interactions.
+5. [x] **Resolve descendant permission control.**
+   Preserve root-only output filtering while tracking the root's owned session
+   lineage, discover descendants before resumed prompts, and correlate replies
+   with the native descendant session identifier.
 
 ## Acceptance criteria
 
@@ -83,8 +90,9 @@ boundary.
 - Residual and unknown permission names cannot wait indefinitely: missing
   request identifiers, unavailable or failed reply APIs, and reply timeouts
   terminate with an error naming the session, request, and permission.
-- Foreign-session requests are ignored and concurrent requests remain
-  correlated by session and request identifier.
+- Root and run-owned descendant requests are handled while unrelated session
+  trees are ignored; concurrent requests remain correlated by native session
+  and request identifier, and descendant content remains filtered.
 - Streaming any number of SSE events leaves only a constant number of
   reactions on run-lifetime controls; completed events do not accumulate
   abort or server-exit reactions.

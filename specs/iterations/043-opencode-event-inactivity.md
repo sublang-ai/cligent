@@ -27,6 +27,9 @@ Complete
       oversized host timers, and forced managed-child termination.
 - [x] A credential-free real managed-server acceptance probe exercises the
       vendor status endpoint and resource-cleanup seam without a long wait.
+- [x] Review follow-up measures only active SSE wait time, excludes untagged
+      global traffic from progress, and delivers interrupted continuity within
+      the engine abort drain while retaining bounded cleanup ownership.
 
 ## Tasks
 
@@ -40,13 +43,18 @@ Complete
 3. [x] **Verify canned and real-server paths.**
        Cover every status outcome and race with injected deadlines, then exercise
        idle recovery and cleanup against a real managed OpenCode server.
+4. [x] **Reconcile liveness clocks and abort delivery.**
+       Carry a provider-wait silence budget across non-relevant traffic, pause it
+       during downstream backpressure, and initiate session cancellation before
+       promptly emitting a resumable interrupted terminal.
 
 ## Acceptance criteria
 
 - A permanently pending stream terminates within its configured inactivity
   deadline plus the bounded status/abort cleanup interval.
-- Current-session progress restarts the deadline; explicitly foreign traffic
-  does not.
+- Current-session and run-owned descendant control progress restarts the
+  deadline; explicitly foreign and untagged global traffic does not, and
+  downstream backpressure consumes none of the provider-wait budget.
 - Idle recovery, busy/retry abort, and status-query failure each emit the
   diagnostics and single terminal outcome required by
   [OPENCODE-018](../user/adapters/opencode.md#opencode-018).
@@ -56,9 +64,10 @@ Complete
   managed server are cleaned up; external caller abort cannot hang on an
   iterator that ignores its signal or leave a known prompt-dispatch session
   active, legacy control requests share the create/prompt working-directory
-  scope, caller interruption aborts the active session before terminal output
-  and managed-server termination, and a managed child cannot survive by
-  ignoring `SIGTERM`.
+  scope, caller interruption starts active-session cancellation before
+  resumable terminal output and bounds its completion during later cleanup,
+  managed-server termination follows terminal output, and a managed child
+  cannot survive by ignoring `SIGTERM`.
 - Prompt-dispatch exits return any eagerly started SSE iterator and unregister
   their abort listener; a concurrently settled result transfers session and
   iterator cleanup ownership before interrupted output; rejected client cleanup

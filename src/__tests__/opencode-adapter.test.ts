@@ -30,6 +30,7 @@ import {
   mapPermissionsToOpenCodeOptions,
   wrapOpencodeClient,
 } from '../adapters/opencode.js';
+import { Cligent } from '../cligent.js';
 import type {
   AgentEvent,
   AgentOptions,
@@ -992,6 +993,7 @@ describe('OpenCodeAdapter', () => {
         },
         expectedPayload: {
           requestId: 'auto-v1-request',
+          nativeSessionId: 'auto-v1-session',
           permission: 'external_directory',
           patterns: ['/tmp/*'],
           toolUseId: 'auto-v1-call',
@@ -1018,6 +1020,7 @@ describe('OpenCodeAdapter', () => {
         },
         expectedPayload: {
           requestId: 'auto-v2-request',
+          nativeSessionId: 'auto-v2-session',
           permission: 'future_permission',
           patterns: ['scope:a', 'scope:b'],
           toolUseId: 'auto-v2-call',
@@ -1220,6 +1223,225 @@ describe('OpenCodeAdapter', () => {
     ]);
   });
 
+  it('answers descendant permission controls without emitting child output', async () => {
+    const replies: Array<{ sessionId: string; requestId: string }> = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'root-session' },
+          events: [
+            {
+              type: 'session.created',
+              properties: {
+                sessionID: 'child-session',
+                info: {
+                  id: 'child-session',
+                  parentID: 'root-session',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'child-session',
+                part: { type: 'text', text: 'hidden child output' },
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'child-request',
+                sessionID: 'child-session',
+                permission: 'doom_loop',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'session.created',
+              properties: {
+                sessionID: 'grandchild-session',
+                info: {
+                  id: 'grandchild-session',
+                  parentID: 'child-session',
+                },
+              },
+            },
+            {
+              type: 'permission.updated',
+              properties: {
+                id: 'grandchild-request',
+                sessionID: 'grandchild-session',
+                type: 'external_directory',
+                pattern: '/tmp/*',
+                metadata: { path: '/tmp/probe' },
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'foreign-request',
+                sessionID: 'foreign-session',
+                permission: 'doom_loop',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'child-request',
+                sessionID: 'child-session',
+                permission: 'doom_loop',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'root-session' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push({
+              sessionId: options.sessionId,
+              requestId: options.requestId,
+            });
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('descendant permission probe', {
+        permissions: { mode: 'auto' },
+      }),
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'opencode:permission_decision',
+      'opencode:permission_decision',
+      'done',
+    ]);
+    expect(
+      events
+        .filter((event) => event.type === 'opencode:permission_decision')
+        .map(
+          (event) =>
+            (event.payload as { nativeSessionId: string }).nativeSessionId,
+        ),
+    ).toEqual(['child-session', 'grandchild-session']);
+    expect(replies).toEqual([
+      { sessionId: 'child-session', requestId: 'child-request' },
+      { sessionId: 'grandchild-session', requestId: 'grandchild-request' },
+    ]);
+  });
+
+  it('uses the resumed lineage snapshot for a reused child permission ask', async () => {
+    const replies: string[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: {
+            sessionId: 'resumed-root',
+            ownedSessionIds: ['resumed-root', 'reused-child'],
+          },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reused-request',
+                sessionID: 'reused-child',
+                permission: 'read',
+                patterns: ['*.env'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'resumed-root' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push(options.sessionId);
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('resume child task', {
+        resume: 'resumed-root',
+        permissions: { mode: 'auto' },
+      }),
+    );
+    expect(replies).toEqual(['reused-child']);
+    expect(events[1]).toMatchObject({
+      type: 'opencode:permission_decision',
+      payload: { nativeSessionId: 'reused-child' },
+    });
+  });
+
+  it('correlates an untagged child permission reply without emitting child output', async () => {
+    const replies: string[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'root-session' },
+          events: [
+            {
+              type: 'session.created',
+              properties: {
+                sessionID: 'child-session',
+                info: { id: 'child-session', parentID: 'root-session' },
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'child-request',
+                sessionID: 'child-session',
+                permission: 'doom_loop',
+                patterns: ['*'],
+                metadata: {},
+                always: [],
+              },
+            },
+            {
+              type: 'permission.replied',
+              properties: {
+                requestID: 'child-request',
+                decision: 'rejected',
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'root-session' },
+            },
+          ],
+          onReplyPermission(options) {
+            replies.push(options.sessionId);
+          },
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('child reply correlation'));
+    expect(replies).toEqual(['child-session']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'permission_request',
+      'done',
+    ]);
+  });
+
   it('terminates with request identifiers when a permission reply fails', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
@@ -1259,7 +1481,10 @@ describe('OpenCodeAdapter', () => {
     expect(error.payload.message).toContain('reply-failure-session');
     expect(error.payload.message).toContain('reply-failure-request');
     expect(error.payload.message).toContain('unknown_future_permission');
-    expect((events[2]!.payload as { status: string }).status).toBe('error');
+    expect(events[2]!.payload).toMatchObject({
+      status: 'error',
+      resumeToken: 'reply-failure-session',
+    });
   });
 
   it('bounds a permission reply that never settles', async () => {
@@ -1328,7 +1553,10 @@ describe('OpenCodeAdapter', () => {
 
       const done = (await stream.next()).value;
       expect(done?.type).toBe('done');
-      expect((done?.payload as { status: string }).status).toBe('error');
+      expect(done?.payload).toMatchObject({
+        status: 'error',
+        resumeToken: 'reply-timeout-session',
+      });
       await stream.next();
     } finally {
       vi.useRealTimers();
@@ -1370,6 +1598,10 @@ describe('OpenCodeAdapter', () => {
     expect(error.payload.code).toBe('OPENCODE_PERMISSION_REQUEST_INVALID');
     expect(error.payload.message).toContain('requestID="<missing>"');
     expect(error.payload.message).toContain('future_permission');
+    expect(events[3]?.payload).toMatchObject({
+      status: 'error',
+      resumeToken: 'invalid-request-session',
+    });
   });
 
   it('aborts a pending permission reply and cleans up the managed server', async () => {
@@ -2034,7 +2266,10 @@ describe('OpenCodeAdapter', () => {
     expect(error.payload.code).toBe('OPENCODE_SERVER_EXIT');
 
     const done = rest.at(-1) as AgentEvent & { payload: { status: string } };
-    expect(done.payload.status).toBe('error');
+    expect(done.payload).toMatchObject({
+      status: 'error',
+      resumeToken: 'crash-1',
+    });
   });
 
   it('propagates abort signal and emits interrupted done in managed mode', async () => {
@@ -2167,6 +2402,71 @@ describe('OpenCodeAdapter', () => {
       interruptedResumeToken({ resume: 'opencode-abort-resume' }),
     ).resolves.toBe('opencode-abort-resume');
     await expect(interruptedResumeToken({})).resolves.toBeUndefined();
+  });
+
+  it('delivers interrupted continuity within the engine abort drain', async () => {
+    const controller = new AbortController();
+    const runOptions: Record<string, unknown>[] = [];
+    let streamCount = 0;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+        eventInactivityTimeoutMs: 1_000,
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'engine-abort-session' },
+          onRun(options) {
+            runOptions.push(options);
+          },
+          eventStreamFactory: () => {
+            streamCount++;
+            if (streamCount === 1) {
+              return {
+                async *[Symbol.asyncIterator]() {
+                  await new Promise<void>(() => {});
+                },
+              };
+            }
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield {
+                  type: 'session.idle',
+                  properties: { sessionID: 'engine-abort-session' },
+                };
+              },
+            };
+          },
+          onAbortSession: () => new Promise<void>(() => {}),
+        }),
+      },
+    );
+    const agent = new Cligent(adapter);
+    const firstRun = agent.run('first', { abortSignal: controller.signal });
+    expect((await firstRun.next()).value).toMatchObject({ type: 'init' });
+
+    const startedAt = Date.now();
+    controller.abort();
+    const interrupted = await firstRun.next();
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(interrupted.value).toMatchObject({
+      type: 'done',
+      payload: {
+        status: 'interrupted',
+        resumeToken: 'engine-abort-session',
+      },
+    });
+    expect((await firstRun.next()).done).toBe(true);
+
+    const secondRun = await collect(agent.run('second'));
+    expect(secondRun.at(-1)).toMatchObject({
+      type: 'done',
+      payload: { status: 'success' },
+    });
+    expect(runOptions[1]).toMatchObject({
+      sessionId: 'engine-abort-session',
+    });
   });
 
   describe('event inactivity liveness (TADAPT-035)', () => {
@@ -2318,7 +2618,10 @@ describe('OpenCodeAdapter', () => {
       expect((events[1]?.payload as { message: string }).message).toContain(
         `queriedSessionState=${JSON.stringify(statusResult)}`,
       );
-      expect(events[2]?.payload).toMatchObject({ status: 'error' });
+      expect(events[2]?.payload).toMatchObject({
+        status: 'error',
+        resumeToken: `silent-${statusResult.type}`,
+      });
       expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     });
@@ -2455,7 +2758,53 @@ describe('OpenCodeAdapter', () => {
       expect((events[1]?.payload as { message: string }).message).toContain(
         'statusQuery=failed: status endpoint unavailable',
       );
-      expect(events[2]?.payload).toMatchObject({ status: 'error' });
+      expect(events[2]?.payload).toMatchObject({
+        status: 'error',
+        resumeToken: 'silent-query-failure',
+      });
+    });
+
+    it('reports an unavailable session-abort route as cleanup failure', async () => {
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 5,
+        },
+        {
+          loadSdk: async () => ({
+            createClient() {
+              return {
+                async run() {
+                  return {
+                    sessionId: 'missing-abort-route',
+                    events: (async function* () {
+                      await new Promise<void>(() => {});
+                    })(),
+                  };
+                },
+                async getSessionStatus() {
+                  throw new Error('status endpoint unavailable');
+                },
+                async close() {},
+                async shutdown() {},
+              };
+            },
+          }),
+        },
+      );
+
+      const events = await collect(adapter.run('prompt'));
+      expect(events[1]?.payload).toMatchObject({
+        code: 'OPENCODE_INACTIVITY_STATUS_QUERY_FAILED',
+      });
+      expect((events[1]?.payload as { message: string }).message).toContain(
+        'sessionAbort=failed: OpenCode SDK client does not provide session.abort()',
+      );
+      expect(events[2]?.payload).toMatchObject({
+        status: 'error',
+        resumeToken: 'missing-abort-route',
+      });
     });
 
     it('bounds a status query that itself becomes silent', async () => {
@@ -2623,6 +2972,117 @@ describe('OpenCodeAdapter', () => {
       );
     });
 
+    it('does not let untagged workspace traffic reset the deadline', async () => {
+      let statusCalls = 0;
+      let abortCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 35,
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'untagged-current' },
+            statusResult: { type: 'busy' },
+            eventStreamFactory: (streamOptions) => ({
+              async *[Symbol.asyncIterator]() {
+                const signal = streamOptions?.signal as AbortSignal;
+                while (!signal.aborted) {
+                  await new Promise((resolve) => setTimeout(resolve, 8));
+                  yield {
+                    type: 'file.watcher.updated',
+                    properties: { file: '/repo/other.ts', event: 'change' },
+                  };
+                }
+              },
+            }),
+            onGetSessionStatus() {
+              statusCalls++;
+            },
+            onAbortSession() {
+              abortCalls++;
+            },
+          }),
+        },
+      );
+
+      const events = await collect(adapter.run('prompt'));
+      expect(statusCalls).toBe(1);
+      expect(abortCalls).toBe(1);
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]).toMatchObject({
+        payload: {
+          code: 'OPENCODE_INACTIVITY_TIMEOUT',
+          message: expect.stringContaining(
+            'lastRelevantEvent=prompt.dispatched',
+          ),
+        },
+      });
+    });
+
+    it('does not count downstream backpressure as provider silence', async () => {
+      let statusCalls = 0;
+      let abortCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 15,
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'backpressure-session' },
+            events: [
+              makeV2MessageUpdated(
+                'backpressure-session',
+                'assistant-message',
+                'assistant',
+              ),
+              makeV2PartUpdated({
+                id: 'assistant-part',
+                sessionID: 'backpressure-session',
+                messageID: 'assistant-message',
+                type: 'text',
+                text: 'buffered answer',
+                time: { start: 1, end: 2 },
+              }),
+              {
+                id: 'backpressure-idle',
+                type: 'session.idle',
+                properties: { sessionID: 'backpressure-session' },
+              } satisfies EventSessionIdle,
+            ],
+            onGetSessionStatus() {
+              statusCalls++;
+            },
+            onAbortSession() {
+              abortCalls++;
+            },
+          }),
+        },
+      );
+
+      const stream = adapter.run('prompt');
+      expect((await stream.next()).value).toMatchObject({ type: 'init' });
+      expect((await stream.next()).value).toMatchObject({
+        type: 'text',
+        payload: { content: 'buffered answer' },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect((await stream.next()).value).toMatchObject({
+        type: 'done',
+        payload: { status: 'success' },
+      });
+      expect((await stream.next()).done).toBe(true);
+      expect(statusCalls).toBe(0);
+      expect(abortCalls).toBe(0);
+    });
+
     it('expires without draining an always-ready foreign event backlog', async () => {
       let monotonicNow = 0;
       let nextCalls = 0;
@@ -2788,9 +3248,9 @@ describe('OpenCodeAdapter', () => {
             resolvePromptStarted();
             return new Promise<never>(() => {});
           },
-          async abort(args: unknown) {
+          abort(args: unknown) {
             abortCalls.push(args);
-            return { data: true };
+            return new Promise<never>(() => {});
           },
         },
         event: {
@@ -2814,9 +3274,9 @@ describe('OpenCodeAdapter', () => {
                           { once: true },
                         );
                       }),
-                    async return(value?: unknown) {
+                    return() {
                       rawIteratorReturns++;
-                      return { done: true, value };
+                      return new Promise<IteratorResult<unknown>>(() => {});
                     },
                   };
                 },
@@ -2853,13 +3313,23 @@ describe('OpenCodeAdapter', () => {
         },
       );
 
-      const eventsPromise = collect(
-        adapter.run('prompt', {
+      let abortStartedAt = 0;
+      let interruptedDoneElapsedMs: number | undefined;
+      const eventsPromise = (async () => {
+        const events: AgentEvent[] = [];
+        for await (const event of adapter.run('prompt', {
           abortSignal: controller.signal,
           cwd: '/repo',
-        }),
-      );
+        })) {
+          events.push(event);
+          if (event.type === 'done' && abortStartedAt > 0) {
+            interruptedDoneElapsedMs = Date.now() - abortStartedAt;
+          }
+        }
+        return events;
+      })();
       await promptStarted;
+      abortStartedAt = Date.now();
       controller.abort();
       const events = await eventsPromise;
 
@@ -2877,6 +3347,7 @@ describe('OpenCodeAdapter', () => {
         status: 'interrupted',
         resumeToken: 'dispatch-abort-session',
       });
+      expect(interruptedDoneElapsedMs).toBeLessThan(500);
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     });
 
@@ -3167,7 +3638,6 @@ describe('OpenCodeAdapter', () => {
       await sessionAbortStarted;
       expect(order).toEqual(['session-abort-started']);
 
-      resolveSessionAbort();
       const terminal = await terminalPromise;
       order.push('interrupted-done');
       expect(terminal.value).toMatchObject({
@@ -3177,14 +3647,16 @@ describe('OpenCodeAdapter', () => {
           resumeToken: 'abort-rejection-race',
         },
       });
-      expect(order).toEqual([
-        'session-abort-started',
-        'session-abort-settled',
-        'interrupted-done',
-      ]);
+      expect(order).toEqual(['session-abort-started', 'interrupted-done']);
 
+      resolveSessionAbort();
       const complete = await stream.next();
       expect(complete.done).toBe(true);
+      expect(order).toEqual([
+        'session-abort-started',
+        'interrupted-done',
+        'session-abort-settled',
+      ]);
     });
 
     it('flushes queued assistant output when abort follows a stream rejection', async () => {
@@ -3668,6 +4140,8 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     onPrompt?: (args: unknown) => void;
     onSubscribe?: (args: unknown) => void;
     onDispose?: (args: unknown) => void;
+    onChildren?: (args: unknown) => void;
+    childrenResult?: unknown;
   }): Record<string, unknown> {
     return {
       session: {
@@ -3678,6 +4152,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         async prompt(args: unknown): Promise<unknown> {
           config.onPrompt?.(args);
           return config.promptResult ?? {};
+        },
+        async children(args: unknown): Promise<unknown> {
+          config.onChildren?.(args);
+          return config.childrenResult ?? { data: [] };
         },
       },
       event: {
@@ -3786,6 +4264,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
   it('resumes existing session instead of creating a new one', async () => {
     let createCalled = false;
     let capturedPromptArgs: unknown;
+    let capturedChildrenArgs: unknown;
 
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://v1.local:7000' },
@@ -3808,6 +4287,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
           onPrompt(args) {
             capturedPromptArgs = args;
           },
+          onChildren(args) {
+            capturedChildrenArgs = args;
+          },
         }),
       },
     );
@@ -3823,6 +4305,174 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     // session.prompt must target the resumed session ID
     const promptArgs = capturedPromptArgs as { path: { id: string } };
     expect(promptArgs.path.id).toBe('resumed-session');
+    expect(capturedChildrenArgs).toMatchObject({
+      path: { id: 'resumed-session' },
+    });
+    expect(
+      (capturedChildrenArgs as { signal?: AbortSignal }).signal,
+    ).toBeInstanceOf(AbortSignal);
+  });
+
+  it('snapshots a resumed v2 session lineage before prompting', async () => {
+    const childrenCalls: unknown[] = [];
+    let promptCalled = false;
+    const client = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            throw new Error('resume must not create');
+          },
+          async children(args: unknown) {
+            childrenCalls.push(args);
+            const sessionID = (args as { sessionID: string }).sessionID;
+            if (sessionID === 'lineage-root') {
+              return {
+                data: [{ id: 'lineage-child', parentID: 'lineage-root' }],
+              };
+            }
+            if (sessionID === 'lineage-child') {
+              return {
+                data: [{ id: 'lineage-grandchild', parentID: 'lineage-child' }],
+              };
+            }
+            return { data: [] };
+          },
+          async promptAsync() {
+            promptCalled = true;
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    const result = (await client.run?.({
+      prompt: 'resume lineage',
+      sessionId: 'lineage-root',
+      cwd: '/repo',
+    })) as { ownedSessionIds: string[] };
+    expect(childrenCalls).toEqual([
+      { sessionID: 'lineage-root', directory: '/repo' },
+      { sessionID: 'lineage-child', directory: '/repo' },
+      { sessionID: 'lineage-grandchild', directory: '/repo' },
+    ]);
+    expect(result.ownedSessionIds).toEqual([
+      'lineage-root',
+      'lineage-child',
+      'lineage-grandchild',
+    ]);
+    expect(promptCalled).toBe(true);
+  });
+
+  it('fails before a resumed prompt when lineage discovery stalls', async () => {
+    let lineageSignal: AbortSignal | undefined;
+    let promptCalled = false;
+    const client = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            throw new Error('resume must not create');
+          },
+          async children(
+            _args: unknown,
+            requestOptions?: unknown,
+          ): Promise<unknown> {
+            lineageSignal = (
+              requestOptions as { signal?: AbortSignal } | undefined
+            )?.signal;
+            return new Promise(() => {});
+          },
+          async promptAsync() {
+            promptCalled = true;
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    await expect(
+      client.run?.({
+        prompt: 'resume lineage',
+        sessionId: 'lineage-root',
+        lineageDiscoveryTimeoutMs: 5,
+      }),
+    ).rejects.toThrow('session.children timed out after 5ms');
+    expect(lineageSignal?.aborted).toBe(true);
+    expect(promptCalled).toBe(false);
+  });
+
+  it('bounds recursive lineage discovery with one shared deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const childrenCalls: string[] = [];
+      const lineageSignals: AbortSignal[] = [];
+      let promptCalled = false;
+      const client = wrapOpencodeClient(
+        {
+          session: {
+            async create() {
+              throw new Error('resume must not create');
+            },
+            children(args: unknown, requestOptions?: unknown) {
+              const sessionID = (args as { sessionID: string }).sessionID;
+              childrenCalls.push(sessionID);
+              const lineageSignal = (
+                requestOptions as { signal?: AbortSignal } | undefined
+              )?.signal;
+              if (lineageSignal) lineageSignals.push(lineageSignal);
+              if (sessionID === 'lineage-root') {
+                return new Promise((resolve) => {
+                  setTimeout(
+                    () => resolve({ data: [{ id: 'lineage-child' }] }),
+                    4,
+                  );
+                });
+              }
+              return new Promise(() => {});
+            },
+            async promptAsync() {
+              promptCalled = true;
+              return {};
+            },
+          },
+          event: {
+            async subscribe() {
+              return { stream: (async function* () {})() };
+            },
+          },
+        },
+        { apiVersion: 'v2' },
+      );
+
+      const runPromise = client.run?.({
+        prompt: 'resume lineage',
+        sessionId: 'lineage-root',
+        lineageDiscoveryTimeoutMs: 5,
+      });
+      const rejection = expect(runPromise).rejects.toThrow(
+        'session.children timed out after 5ms',
+      );
+      await vi.advanceTimersByTimeAsync(4);
+      expect(childrenCalls).toEqual(['lineage-root', 'lineage-child']);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(new Set(lineageSignals).size).toBe(1);
+      expect(lineageSignals[0]?.aborted).toBe(true);
+      expect(promptCalled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('preserves native permissions on v1 fresh and resumed runs', async () => {
@@ -3894,6 +4544,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
           promptCalls.push(args);
           return {};
         },
+        async children() {
+          return { data: [] };
+        },
       },
       event: {
         async subscribe() {
@@ -3960,6 +4613,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         async promptAsync(args: unknown) {
           promptCalls.push(args);
           return {};
+        },
+        async children() {
+          return { data: [] };
         },
       },
       event: {
@@ -4058,6 +4714,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
           },
           async promptAsync() {
             return {};
+          },
+          async children() {
+            return { data: [] };
           },
         },
         event: {
@@ -4404,6 +5063,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         async promptAsync(args: unknown) {
           promptCalls.push(args);
           return {};
+        },
+        async children() {
+          return { data: [] };
         },
       },
       event: {
@@ -5424,7 +6086,7 @@ describe('OpenCode SSE event structure', () => {
       replyPermissionError: new Error('reply route unavailable'),
     },
   ])(
-    'awaits session cancellation before interrupted done after $label queue flush',
+    'starts session cancellation before interrupted done after $label queue flush',
     async ({ permission, replyPermissionError }) => {
       const controller = new AbortController();
       let abortCalls = 0;
@@ -5500,14 +6162,13 @@ describe('OpenCode SSE event structure', () => {
         return terminal;
       });
       await vi.waitFor(() => expect(abortCalls).toBe(1));
-      expect(terminalSettled).toBe(false);
-
-      releaseAbort?.();
       const terminal = await terminalPromise;
+      expect(terminalSettled).toBe(true);
       expect(terminal.value).toMatchObject({
         type: 'done',
         payload: { status: 'interrupted' },
       });
+      releaseAbort?.();
       expect((await run.next()).done).toBe(true);
     },
   );

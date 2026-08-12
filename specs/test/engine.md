@@ -115,4 +115,3 @@ Verifies: [ENG-013](../user/engine.md#eng-013), [ENG-027](../user/engine.md#eng-
 
 Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `tokenAvailability` and shall reject values outside `'reported' | 'unavailable'`.
 When the engine synthesizes any terminal `done`, its zero-valued token fields shall carry `'unavailable'` and its `toolUses` shall preserve the unique tool calls already observed on that stream.
-When `formatCligentEvent()` receives reported usage, it shall render the numeric input and output counts; when it receives unavailable usage or a persisted legacy payload without the discriminator, it shall render `tokens: unavailable` and shall not render the numeric placeholders as measured zeroes.

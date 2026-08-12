@@ -97,7 +97,11 @@ The adapter therefore rejects either explicitly present tool-list option,
 including an empty array, before loading the SDK; OpenCode exposes no
 independent surface that can satisfy cligent's exact per-call tool availability
 contract.
-For headless liveness, an OpenCode permission request under `mode: 'auto'` shall be answered `once` without exposing an interactive `permission_request`; outside auto it shall be emitted for observability and rejected fail-closed through the active SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
+For headless liveness, an OpenCode permission request belonging to the active
+root or one of its run-owned descendants under `mode: 'auto'` shall be answered
+`once` without exposing an interactive `permission_request`; outside auto it
+shall be emitted for observability and rejected fail-closed through the active
+SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
