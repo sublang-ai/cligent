@@ -32,6 +32,7 @@ import type {
   CodexEffort,
   PermissionLevel,
   PermissionPolicy,
+  TokenBreakdown,
 } from '../types.js';
 import {
   CANONICAL_THREAD_ID,
@@ -91,6 +92,7 @@ interface DoneAssertion {
     outputTokens: number;
     toolUses: number;
     totalCostUsd?: number;
+    breakdown?: TokenBreakdown;
   };
   durationMs: number;
 }
@@ -326,6 +328,15 @@ describe('CodexAdapter', () => {
       inputTokens: 33,
       outputTokens: 44,
       toolUses: 2,
+      // Codex reports cache and reasoning as subsets, so each exclusive
+      // component is a subtraction and each side sums back to its aggregate.
+      breakdown: {
+        input: 16,
+        cacheRead: 12,
+        cacheWrite: 5,
+        output: 38,
+        reasoning: 6,
+      },
     });
   });
 
@@ -365,6 +376,9 @@ describe('CodexAdapter', () => {
       inputTokens: 0,
       outputTokens: 0,
       toolUses: 0,
+      // No cache or reasoning counters in the payload, so only the base
+      // input component is measured and the output side stays withheld.
+      breakdown: { input: 0 },
     });
   });
 
@@ -417,6 +431,58 @@ describe('CodexAdapter', () => {
       inputTokens: 160,
       outputTokens: 25,
     });
+  });
+
+  it('withholds the output side when no reasoning counter is reported', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-no-reasoning' },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 90,
+              cached_input_tokens: 30,
+              output_tokens: 20,
+            },
+          },
+        ],
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    // Without a reasoning counter there is no measured visible-output
+    // component, so the side is omitted rather than equated to the total.
+    expect(donePayload(events.at(-1)!).usage.breakdown).toEqual({
+      input: 60,
+      cacheRead: 30,
+    });
+  });
+
+  it('withholds a side whose subtraction would go negative', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-inconsistent' },
+          {
+            type: 'turn.completed',
+            usage: {
+              // cached exceeds the inclusive base, so no exclusive input
+              // component exists; clamping would overstate the partition.
+              input_tokens: 10,
+              cached_input_tokens: 40,
+              output_tokens: 8,
+              reasoning_output_tokens: 3,
+            },
+          },
+        ],
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const usage = donePayload(events.at(-1)!).usage;
+    expect(usage.inputTokens).toBe(10);
+    expect(usage.breakdown).toEqual({ output: 5, reasoning: 3 });
   });
 
   it('reports unavailable for a resumed thread it holds no baseline for', async () => {
@@ -797,6 +863,7 @@ describe('CodexAdapter', () => {
       outputTokens: 44,
       toolUses: 1,
       totalCostUsd: 0.17,
+      breakdown: { input: 33 },
     });
     expect(done.durationMs).toBe(222);
   });

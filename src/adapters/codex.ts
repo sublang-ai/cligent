@@ -30,7 +30,12 @@ import {
   assertRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
-import { isUsageRecord, readUsageCounter } from './usage.js';
+import {
+  buildTokenBreakdown,
+  exclusiveBase,
+  isUsageRecord,
+  readUsageCounter,
+} from './usage.js';
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
@@ -450,24 +455,26 @@ const CODEX_USAGE_ALIASES: ReadonlyArray<
  */
 function readCodexUsageSnapshot(
   rawUsage: unknown,
-): CodexUsageSnapshot | undefined {
+): { values: CodexUsageSnapshot; present: Set<keyof CodexUsageSnapshot> } | undefined {
   if (!isUsageRecord(rawUsage)) return undefined;
 
-  const snapshot: CodexUsageSnapshot = {
+  const values: CodexUsageSnapshot = {
     inputTokens: 0,
     cachedInputTokens: 0,
     cacheWriteInputTokens: 0,
     outputTokens: 0,
     reasoningOutputTokens: 0,
   };
+  const present = new Set<keyof CodexUsageSnapshot>();
 
   for (const [field, aliases, required] of CODEX_USAGE_ALIASES) {
     const reading = readUsageCounter(rawUsage, aliases, required);
     if (!reading.valid) return undefined;
-    snapshot[field] = reading.value;
+    values[field] = reading.value;
+    if (reading.present) present.add(field);
   }
 
-  return snapshot;
+  return { values, present };
 }
 
 /**
@@ -531,19 +538,61 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
   const totalCostUsd =
     asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
+  const reported =
+    baseInput.valid &&
+    cachedInput.valid &&
+    cacheWriteInput.valid &&
+    outputTokens.valid &&
+    reasoningOutput.valid;
+
+  // CODEX-013: both Codex counters are inclusive — cached and cache-write are
+  // subsets of input_tokens, reasoning is a subset of output_tokens — so each
+  // exclusive component comes from a guarded subtraction. A side whose
+  // subtraction would go negative is dropped rather than clamped.
+  const breakdown = reported
+    ? buildTokenBreakdown(
+        {
+          inputTokens: baseInput.value,
+          outputTokens: outputTokens.value,
+        },
+        {
+          ...(cachedInput.present || cacheWriteInput.present
+            ? {
+                input: exclusiveBase(
+                  baseInput.value,
+                  cachedInput.present ? cachedInput.value : undefined,
+                  cacheWriteInput.present ? cacheWriteInput.value : undefined,
+                ),
+                ...(cachedInput.present
+                  ? { cacheRead: cachedInput.value }
+                  : {}),
+                ...(cacheWriteInput.present
+                  ? { cacheWrite: cacheWriteInput.value }
+                  : {}),
+              }
+            : { input: baseInput.value }),
+          // Without a reasoning counter the visible-output component cannot
+          // be stated, so the whole output side stays withheld.
+          ...(reasoningOutput.present
+            ? {
+                output: exclusiveBase(
+                  outputTokens.value,
+                  reasoningOutput.value,
+                ),
+                reasoning: reasoningOutput.value,
+              }
+            : {}),
+        },
+      )
+    : undefined;
+
   return {
-    tokenAvailability:
-      baseInput.valid &&
-      cachedInput.valid &&
-      cacheWriteInput.valid &&
-      outputTokens.valid &&
-      reasoningOutput.valid
-        ? 'reported'
-        : 'unavailable',
+    tokenAvailability: reported ? 'reported' : 'unavailable',
     inputTokens: baseInput.value,
     outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+    ...(breakdown ? { breakdown } : {}),
   };
 }
 
@@ -1263,36 +1312,32 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const baseline = this.threadUsageBaselines.get(threadId);
     // Always advance the baseline, so a thread recovers on its next turn even
     // when this one could not be attributed.
-    this.threadUsageBaselines.set(threadId, snapshot);
+    this.threadUsageBaselines.set(threadId, snapshot.values);
 
     if (!baseline && resumed) {
       return { ...DEFAULT_DONE_USAGE, toolUses };
     }
 
-    const delta = codexTurnDelta(snapshot, baseline);
+    const delta = codexTurnDelta(snapshot.values, baseline);
     if (!delta) {
       return { ...DEFAULT_DONE_USAGE, toolUses };
     }
 
-    const source = isUsageRecord(rawUsage) ? rawUsage : {};
-    return mapUsage(
-      {
-        // Carry any non-token fields through unchanged; only the counters
-        // are differenced.
-        ...source,
-        input_tokens: delta.inputTokens,
-        inputTokens: delta.inputTokens,
-        cached_input_tokens: delta.cachedInputTokens,
-        cachedInputTokens: delta.cachedInputTokens,
-        cache_write_input_tokens: delta.cacheWriteInputTokens,
-        cacheWriteInputTokens: delta.cacheWriteInputTokens,
-        output_tokens: delta.outputTokens,
-        outputTokens: delta.outputTokens,
-        reasoning_output_tokens: delta.reasoningOutputTokens,
-        reasoningOutputTokens: delta.reasoningOutputTokens,
-      },
-      toolUses,
-    );
+    // Rebuild only the counters the snapshot actually carried, so a counter
+    // Codex never sent does not become a measured zero (ENG-028).
+    const differenced: Record<string, unknown> = {
+      ...(isUsageRecord(rawUsage) ? rawUsage : {}),
+    };
+    for (const [field, aliases] of CODEX_USAGE_ALIASES) {
+      if (!snapshot.present.has(field)) continue;
+      for (const alias of aliases) {
+        if (Object.prototype.hasOwnProperty.call(differenced, alias)) {
+          differenced[alias] = delta[field];
+        }
+      }
+    }
+
+    return mapUsage(differenced, toolUses);
   }
 
   async isAvailable(): Promise<boolean> {
