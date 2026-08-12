@@ -114,6 +114,22 @@ resolves to a call whose terminal result was already emitted, no denied
 `tool_result` shall follow. Given repeated terminal snapshots, no event or
 usage count shall duplicate.
 
+### TADAPT-034
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-017](../user/adapters/opencode.md#opencode-017)
+
+Given canonical user and assistant message envelopes and conversational part
+events, when role metadata arrives both before and after its parts, the adapter
+shall emit only assistant `text`, `text_delta`, and `thinking` events, preserve
+their stream order across interleaved message identifiers even where a later
+role resolves first, and emit no user content. An assistant reply byte-equal
+to the submitted prompt shall still be emitted. Content with a message
+identifier whose role never resolves shall not be emitted, shall not prevent
+later known assistant content from flushing before terminal `done`, and legacy
+content without a message identifier shall preserve its prior normalization.
+Removing a message with held content shall discard that content and unblock
+later events without waiting for terminal completion. Role metadata from a
+foreign session shall not resolve current-session content.
+
 ### TADAPT-035
 Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
 

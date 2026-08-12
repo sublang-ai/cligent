@@ -37,10 +37,10 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 
 | SSE Event | AgentEvent |
 | --- | --- |
-| `message.part.updated` (text, no delta) | `text` |
-| `message.part.updated` (text, with delta) | `text_delta` |
+| assistant `message.part.updated` (text, no delta) | `text` |
+| assistant `message.part.updated` (text, with delta) | `text_delta` |
 | `message.part.updated` (tool part, per [OPENCODE-016](#opencode-016)) | `tool_use` / `tool_result` |
-| `message.part.updated` (thinking) | `thinking` |
+| assistant `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
 | `message.part.updated` (image part) | `opencode:image_part` (extension) |
 | `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
@@ -57,6 +57,34 @@ Repeated running or terminal snapshots for one correlated call shall add no furt
 Where a rejected permission reply per [OPENCODE-005](#opencode-005) resolves — via the permission request's tool reference — to a correlated call, its denied `tool_result` shall carry that call's `callID` and tracked tool name rather than the permission name from the request, and afterwards tool-state updates for that call shall add neither a second terminal `tool_result` nor a `tool_use` behind the terminal result.
 Where the rejected reply resolves to a call whose terminal `tool_result` was already emitted, the adapter shall emit no denied `tool_result`.
 Tool-part snapshots without lifecycle state shall keep their pre-lifecycle normalization: one immediate `tool_use` per correlated identifier from top-level fields.
+
+### OPENCODE-017
+
+The adapter shall correlate conversational part events to their OpenCode
+message by message identifier and use the message role from `message.updated`
+or equivalent inline metadata before normalizing `text`, `text_delta`, or
+`thinking` output. Only content belonging to an `assistant` message shall be
+emitted; content belonging to a `user` message shall be discarded, without
+comparing its bytes to the submitted prompt.
+
+Where a part event carrying a message identifier arrives before its role, the
+adapter shall hold that event until the matching message role arrives. It shall
+then release held assistant events in their original order or discard held
+user events. This ordering shall hold across interleaved message identifiers:
+a later message whose role resolves first shall not overtake earlier pending
+content. At terminal completion, unresolved content shall be discarded and
+later role-resolved assistant content shall then be emitted in its original
+order. Legacy content events carrying no message identifier shall retain their
+existing normalization because no role can be correlated, while respecting
+the same ordering gate.
+
+When `message.removed` identifies a message with held content, the adapter
+shall discard that content and release any now-unblocked later events. Removed
+content shall neither remain resident nor hold the global ordering gate open.
+
+Session filtering per [OPENCODE-006](#opencode-006) shall precede role
+correlation, so metadata from another session cannot release or discard the
+current session's pending content.
 
 ## Session Filtering
 

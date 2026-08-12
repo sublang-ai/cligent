@@ -3103,6 +3103,78 @@ describe('OpenCodeAdapter', () => {
       expect(complete.done).toBe(true);
     });
 
+    it('flushes queued assistant output when abort follows a stream rejection', async () => {
+      const controller = new AbortController();
+      let abortCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        {
+          mode: 'external',
+          serverUrl: 'http://opencode.local:7777',
+          eventInactivityTimeoutMs: 1_000,
+        },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'role-session' },
+            eventStreamFactory: async function* () {
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'never-resolved',
+                    type: 'text',
+                    text: 'drop me',
+                  },
+                },
+              };
+              yield {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  info: { id: 'assistant-known', role: 'assistant' },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'assistant-known',
+                    type: 'text',
+                    text: 'keep me',
+                  },
+                },
+              };
+              await new Promise<void>((_, reject) => {
+                queueMicrotask(() => {
+                  reject(new Error('co-ready stream rejection'));
+                  queueMicrotask(() => controller.abort());
+                });
+              });
+            },
+            onAbortSession() {
+              abortCalls++;
+            },
+          }),
+        },
+      );
+
+      const events = await collect(
+        adapter.run('prompt', { abortSignal: controller.signal }),
+      );
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'text',
+        'done',
+      ]);
+      expect(events[1]?.payload).toEqual({ content: 'keep me' });
+      expect(events[2]?.payload).toMatchObject({
+        status: 'interrupted',
+        resumeToken: 'role-session',
+      });
+      expect(abortCalls).toBe(1);
+    });
+
     it('gives caller abort terminal precedence after a timeout diagnostic is yielded', async () => {
       const controller = new AbortController();
       const adapter = new OpenCodeAdapter(
@@ -4743,6 +4815,617 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 });
 
 describe('OpenCode SSE event structure', () => {
+  it('suppresses user content whether role metadata arrives before or after parts', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'user-before',
+                  sessionID: 'role-session',
+                  role: 'user',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-before',
+                  type: 'text',
+                  text: 'the submitted prompt',
+                },
+              },
+            },
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'user-before',
+                delta: 'prompt delta',
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-after',
+                  type: 'reasoning',
+                  text: 'prompt reasoning',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'user-after',
+                  type: 'text',
+                  text: 'another submitted prompt',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'user-after',
+                  sessionID: 'role-session',
+                  role: 'user',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('the submitted prompt'));
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+  });
+
+  it('emits assistant content in stream order without comparing it to the prompt', async () => {
+    const prompt = 'the same bytes can be a legitimate answer';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-after',
+                  type: 'text',
+                  text: 'buffered answer',
+                },
+              },
+            },
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'assistant-after',
+                delta: ' buffered delta',
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'assistant-after',
+                  sessionID: 'role-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'assistant-before',
+                  sessionID: 'role-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-before',
+                  type: 'thinking',
+                  summary: 'known-role reasoning',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'assistant-before',
+                  type: 'text',
+                  text: prompt,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run(prompt));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'text_delta',
+      'thinking',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'buffered answer' });
+    expect(events[2]?.payload).toEqual({ delta: ' buffered delta' });
+    expect(events[3]?.payload).toEqual({ summary: 'known-role reasoning' });
+    expect(events[4]?.payload).toEqual({ content: prompt });
+  });
+
+  it('preserves content order across interleaved unresolved message roles', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-a',
+                  type: 'text',
+                  text: 'first',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-b',
+                  type: 'text',
+                  text: 'second',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-b',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: { type: 'text', text: 'legacy third' },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-a',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(
+      events
+        .filter((event) => event.type === 'text')
+        .map((event) => (event.payload as { content: string }).content),
+    ).toEqual(['first', 'second', 'legacy third']);
+  });
+
+  it('removes unresolved message content without blocking later output', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'removed-message',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.removed',
+              properties: {
+                sessionID: 'role-session',
+                messageID: 'removed-message',
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-known',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'keep me' });
+  });
+
+  it('drops an unresolved head item without losing later known output', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'never-resolved',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: {
+                  id: 'assistant-known',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'keep me' });
+  });
+
+  it('flushes known assistant output before inactivity recovery terminates', async () => {
+    let streamSignal: AbortSignal | undefined;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'external',
+        serverUrl: 'http://opencode.local:7777',
+        eventInactivityTimeoutMs: 15,
+      },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          statusResult: { type: 'idle' },
+          eventStreamFactory: (streamOptions) => ({
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'never-resolved',
+                    type: 'text',
+                    text: 'drop me',
+                  },
+                },
+              };
+              yield {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  info: { id: 'assistant-known', role: 'assistant' },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'assistant-known',
+                    type: 'text',
+                    text: 'keep me',
+                  },
+                },
+              };
+              const signal = streamOptions?.signal as AbortSignal;
+              streamSignal = signal;
+              await new Promise<void>((resolve) => {
+                signal.addEventListener('abort', () => resolve(), { once: true });
+              });
+            },
+          }),
+        }),
+      },
+    );
+
+    const run = adapter.run('prompt');
+    const init = await run.next();
+    const flushed = await run.next();
+    expect(init.value).toMatchObject({ type: 'init' });
+    expect(flushed.value).toMatchObject({
+      type: 'text',
+      payload: { content: 'keep me' },
+    });
+    expect(streamSignal?.aborted).toBe(true);
+
+    const terminal = await collect(run);
+    expect(terminal.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(terminal[0]?.payload).toMatchObject({
+      code: 'OPENCODE_INACTIVITY_IDLE_RECOVERED',
+    });
+    expect(terminal[1]?.payload).toMatchObject({ status: 'success' });
+  });
+
+  it('flushes known assistant output before a permission failure terminates', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'never-resolved',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: { id: 'assistant-known', role: 'assistant' },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                sessionID: 'role-session',
+                permission: 'future_permission',
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'permission_request',
+      'text',
+      'error',
+      'done',
+    ]);
+    expect(events[2]?.payload).toEqual({ content: 'keep me' });
+    expect(events[3]?.payload).toMatchObject({
+      code: 'OPENCODE_PERMISSION_REQUEST_INVALID',
+    });
+    expect(events[4]?.payload).toMatchObject({ status: 'error' });
+  });
+
+  it('gives caller abort precedence after terminal role-queue flushing', async () => {
+    const controller = new AbortController();
+    let abortCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'never-resolved',
+                  type: 'text',
+                  text: 'drop me',
+                },
+              },
+            },
+            {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'role-session',
+                info: { id: 'assistant-known', role: 'assistant' },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'role-session',
+                part: {
+                  messageID: 'assistant-known',
+                  type: 'text',
+                  text: 'keep me',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+          onAbortSession() {
+            abortCalls++;
+          },
+        }),
+      },
+    );
+
+    const events: AgentEvent[] = [];
+    for await (const event of adapter.run('prompt', {
+      abortSignal: controller.signal,
+    })) {
+      events.push(event);
+      if (event.type === 'text') controller.abort();
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[2]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(abortCalls).toBe(1);
+  });
+
+  it('does not use foreign-session role metadata to release pending content', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'role-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'shared-message',
+                  sessionID: 'foreign-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'role-session',
+                  messageID: 'shared-message',
+                  type: 'text',
+                  text: 'must stay pending',
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'role-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+  });
+
   it('unwraps properties envelope and handles message.part.delta', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },

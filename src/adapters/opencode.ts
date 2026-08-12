@@ -54,6 +54,7 @@ const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
 type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type OpenCodeMessageRole = 'user' | 'assistant';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
 
 type SpawnProcessFn = (
@@ -311,6 +312,125 @@ function loadStreamSessionId(message: unknown): string | undefined {
     asString(session.id) ??
     asString(thread.id)
   );
+}
+
+function loadOpenCodeMessageRole(message: unknown): OpenCodeMessageRole | undefined {
+  const record = asRecord(message);
+  const info = asRecord(record.info);
+  const nestedMessage = asRecord(record.message);
+  const role = (
+    asString(record.role) ??
+    asString(info.role) ??
+    asString(nestedMessage.role)
+  )?.toLowerCase();
+
+  return role === 'user' || role === 'assistant' ? role : undefined;
+}
+
+function loadOpenCodePartMessageId(event: Record<string, unknown>): string | undefined {
+  const part = asRecord(
+    event.part ?? asRecord(event.message).part ?? event.data,
+  );
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(part.messageID) ??
+    asString(part.messageId) ??
+    asString(part.message_id) ??
+    asString(message.id)
+  );
+}
+
+function loadOpenCodeUpdatedMessageId(
+  event: Record<string, unknown>,
+): string | undefined {
+  const info = asRecord(event.info);
+  const message = asRecord(event.message);
+
+  return (
+    asString(event.messageID) ??
+    asString(event.messageId) ??
+    asString(event.message_id) ??
+    asString(info.id) ??
+    asString(message.id) ??
+    asString(event.id)
+  );
+}
+
+function loadOpenCodeContentKind(
+  eventType: string,
+  event: Record<string, unknown>,
+): 'text' | 'reasoning' | undefined {
+  if (eventType === 'message.part.delta') return 'text';
+  if (eventType !== 'message.part.updated') return undefined;
+
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const partType = asString(part.type)?.toLowerCase();
+
+  if (
+    partType === 'text' ||
+    partType === 'output_text' ||
+    partType === 'message_text'
+  ) {
+    return 'text';
+  }
+  if (partType === 'thinking' || partType === 'reasoning') {
+    return 'reasoning';
+  }
+
+  return undefined;
+}
+
+function normalizeOpenCodeContentEvent(
+  eventType: string,
+  event: Record<string, unknown>,
+  sessionId: string,
+): AgentEvent | undefined {
+  if (eventType === 'message.part.delta') {
+    const delta = asString(event.delta);
+    return delta
+      ? createEvent('text_delta', AGENT, { delta }, sessionId)
+      : undefined;
+  }
+
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const partType = asString(part.type)?.toLowerCase();
+
+  if (
+    partType === 'text' ||
+    partType === 'output_text' ||
+    partType === 'message_text'
+  ) {
+    const delta = asString(part.delta);
+    if (delta) {
+      return createEvent('text_delta', AGENT, { delta }, sessionId);
+    }
+
+    const content =
+      asString(part.text) ??
+      asString(part.content) ??
+      asString(asRecord(part.content).text);
+    return content
+      ? createEvent('text', AGENT, { content }, sessionId)
+      : undefined;
+  }
+
+  if (partType === 'thinking' || partType === 'reasoning') {
+    const summary =
+      asString(part.summary) ??
+      asString(part.text) ??
+      asString(part.content);
+    return summary
+      ? createEvent('thinking', AGENT, { summary }, sessionId)
+      : undefined;
+  }
+
+  return undefined;
 }
 
 function toErrorPayload(message: unknown): {
@@ -1463,6 +1583,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
+    let sessionAbortAttempted = false;
 
     // Accumulate usage from step-finish parts (OpenCode's session.idle
     // event doesn't carry usage data).
@@ -1505,6 +1626,79 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     const permissionRequestKey = (requestId: string) =>
       `${sessionId}\u0000${requestId}`;
 
+    // OpenCode's shared SSE stream publishes user and assistant messages.
+    // Part events can precede the message.updated envelope that supplies the
+    // role, so content stays pending until its message role is known.
+    const messageRoles = new Map<string, OpenCodeMessageRole>();
+    const pendingContentEvents: Array<
+      | { removed: true }
+      | {
+          removed?: false;
+          eventType: string;
+          event: Record<string, unknown>;
+          messageId?: string;
+        }
+    > = [];
+    let pendingContentHead = 0;
+
+    const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
+      const normalizedEvents: AgentEvent[] = [];
+
+      while (pendingContentHead < pendingContentEvents.length) {
+        const item = pendingContentEvents[pendingContentHead]!;
+        if (item.removed) {
+          pendingContentHead++;
+          continue;
+        }
+        const role = item.messageId
+          ? messageRoles.get(item.messageId)
+          : 'assistant';
+
+        if (!role && !dropUnresolved) break;
+        pendingContentHead++;
+
+        if (role === 'assistant') {
+          const normalized = normalizeOpenCodeContentEvent(
+            item.eventType,
+            item.event,
+            sessionId,
+          );
+          if (normalized) normalizedEvents.push(normalized);
+        }
+      }
+
+      // Incident captures contain tens of thousands of content events.
+      // Advance a cursor instead of shifting the array for each item, then
+      // compact occasionally to keep draining linear and memory bounded.
+      if (
+        pendingContentHead > 1024 &&
+        pendingContentHead * 2 >= pendingContentEvents.length
+      ) {
+        pendingContentEvents.splice(0, pendingContentHead);
+        pendingContentHead = 0;
+      }
+
+      return normalizedEvents;
+    };
+
+    const queueRoleAwareContent = (
+      eventType: string,
+      event: Record<string, unknown>,
+    ): AgentEvent[] => {
+      const messageId = loadOpenCodePartMessageId(event);
+      const inlineRole = loadOpenCodeMessageRole(event);
+      if (messageId && inlineRole) {
+        messageRoles.set(messageId, inlineRole);
+      }
+
+      pendingContentEvents.push({
+        eventType,
+        event,
+        ...(messageId ? { messageId } : {}),
+      });
+      return drainPendingContent();
+    };
+
     const onAbort = () => {
       abortRequested = true;
       eventStreamController.abort();
@@ -1520,6 +1714,21 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     }
 
     let client: OpenCodeClient | undefined;
+    const abortKnownSessionBeforeTerminal = async (): Promise<void> => {
+      const activeClient = client;
+      const abortSession = activeClient?.abortSession;
+      if (!abortSession || sessionAbortAttempted) return;
+      sessionAbortAttempted = true;
+
+      await maybeCallAsyncWithin(
+        () =>
+          abortSession.call(activeClient, {
+            sessionId,
+            ...(options?.cwd ? { cwd: options.cwd } : {}),
+          }),
+        Math.min(MAX_STATUS_QUERY_TIMEOUT_MS, this.eventInactivityTimeoutMs),
+      );
+    };
 
     try {
       if (this.mode === 'managed') {
@@ -1607,12 +1816,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
       if (runOutcome.kind === 'failure') {
-        if (
-          runOutcome.error instanceof OpenCodePromptDispatchAbortError &&
-          runOutcome.error.sessionId
-        ) {
-          sessionId = runOutcome.error.sessionId;
-          backendProvidedSessionId = true;
+        if (runOutcome.error instanceof OpenCodePromptDispatchAbortError) {
+          // The wrapper already attempted to cancel any session created before
+          // prompt dispatch was interrupted.
+          sessionAbortAttempted = true;
+          if (runOutcome.error.sessionId) {
+            sessionId = runOutcome.error.sessionId;
+            backendProvidedSessionId = true;
+          }
         }
         throw runOutcome.error;
       }
@@ -1633,6 +1844,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
       if (abortRequested) {
         if (client.abortSession) {
+          sessionAbortAttempted = true;
           await promiseSettlesWithin(
             client.abortSession({
               sessionId,
@@ -1781,6 +1993,22 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         });
         inactivityTimer.cancel();
 
+        if (raceResult.kind === 'inactivity') {
+          // Stop the read that missed its deadline before yielding queued
+          // content. A consumer may suspend us at each yield, and fresh SSE
+          // traffic must not stay live while timeout recovery is underway.
+          nextPromise.catch(() => {});
+          eventStreamController.abort();
+        }
+
+        if (
+          raceResult.kind === 'abort' ||
+          raceResult.kind === 'inactivity' ||
+          abortRequested
+        ) {
+          yield* drainPendingContent(true);
+        }
+
         if (raceResult.kind === 'abort' || abortRequested) {
           nextPromise.catch(() => {});
           await abortActiveSession(false);
@@ -1809,8 +2037,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (raceResult.kind === 'inactivity') {
-          nextPromise.catch(() => {});
-          eventStreamController.abort();
           const elapsedInactivityMs = Math.max(
             0,
             Math.round(performance.now() - lastRelevantActivityAt),
@@ -2064,6 +2290,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           nextPromise.catch(() => {});
 
           if (doneYielded) break;
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
 
           if (abortRequested || options?.abortSignal?.aborted) {
             yield createEvent(
@@ -2156,10 +2385,45 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         lastRelevantActivityAt = performance.now();
         lastRelevantEvent = eventType;
 
-        if (eventType === 'message.part.delta') {
-          const delta = asString(event.delta);
-          if (delta) {
-            yield createEvent('text_delta', AGENT, { delta }, sessionId);
+        if (eventType === 'message.removed') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          if (messageId) {
+            for (
+              let index = pendingContentHead;
+              index < pendingContentEvents.length;
+              index++
+            ) {
+              const item = pendingContentEvents[index];
+              if (!item?.removed && item.messageId === messageId) {
+                // Replace rather than annotate so a removed message's raw
+                // payload is released even while an earlier item blocks head.
+                pendingContentEvents[index] = { removed: true };
+              }
+            }
+            messageRoles.delete(messageId);
+          }
+          for (const normalized of drainPendingContent()) {
+            yield normalized;
+          }
+          continue;
+        }
+
+        if (eventType === 'message.updated') {
+          const messageId = loadOpenCodeUpdatedMessageId(event);
+          const role = loadOpenCodeMessageRole(event);
+          if (messageId && role) {
+            messageRoles.set(messageId, role);
+            for (const normalized of drainPendingContent()) {
+              yield normalized;
+            }
+          }
+          continue;
+        }
+
+        const contentKind = loadOpenCodeContentKind(eventType, event);
+        if (contentKind) {
+          for (const normalized of queueRoleAwareContent(eventType, event)) {
+            yield normalized;
           }
           continue;
         }
@@ -2168,28 +2432,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const message = asRecord(event.message);
           const part = asRecord(event.part ?? message.part ?? event.data);
           const partType = asString(part.type)?.toLowerCase();
-
-          if (
-            partType === 'text' ||
-            partType === 'output_text' ||
-            partType === 'message_text'
-          ) {
-            const delta = asString(part.delta);
-            if (delta) {
-              yield createEvent('text_delta', AGENT, { delta }, sessionId);
-              continue;
-            }
-
-            const content =
-              asString(part.text) ??
-              asString(part.content) ??
-              asString(asRecord(part.content).text);
-
-            if (content) {
-              yield createEvent('text', AGENT, { content }, sessionId);
-            }
-            continue;
-          }
 
           if (
             partType === 'tool' ||
@@ -2282,17 +2524,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 },
                 sessionId,
               );
-            }
-            continue;
-          }
-
-          if (partType === 'thinking' || partType === 'reasoning') {
-            const summary =
-              asString(part.summary) ??
-              asString(part.text) ??
-              asString(part.content);
-            if (summary) {
-              yield createEvent('thinking', AGENT, { summary }, sessionId);
             }
             continue;
           }
@@ -2391,6 +2622,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (abortRequested || options?.abortSignal?.aborted) {
+            yield* drainPendingContent(true);
             await abortActiveSession(false);
             yield createEvent(
               'done',
@@ -2413,6 +2645,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (!requestId) {
+            // No deterministic reply is possible, so stop the transport before
+            // yielding queued output on this terminal path.
+            eventStreamController.abort();
+            yield* drainPendingContent(true);
             await abortActiveSession(true);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
@@ -2555,6 +2791,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             options?.abortSignal?.aborted
           ) {
             replyPromise.catch(() => {});
+            yield* drainPendingContent(true);
             await abortActiveSession(false);
             yield createEvent(
               'done',
@@ -2577,12 +2814,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
-            if (replyRace.kind === 'timeout') {
-              // Cancel the actual response request and paired SSE transport;
-              // the caller's abort state remains distinct from this failure.
-              eventStreamController.abort();
-            }
+            // Cancel the failed response request and paired SSE transport
+            // before yielding queued output. The caller may suspend the
+            // generator at that yield, but native I/O must already be stopped.
+            eventStreamController.abort();
             replyPromise.catch(() => {});
+            yield* drainPendingContent(true);
             await abortActiveSession(true);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
@@ -2767,6 +3004,30 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           (eventType === 'session.status' &&
             asString(asRecord(event.status).type) === 'idle')
         ) {
+          for (const normalized of drainPendingContent(true)) {
+            yield normalized;
+          }
+          if (abortRequested || options?.abortSignal?.aborted) {
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
           const status = sessionErrorObserved
             ? 'error'
             : mapDoneStatus(asString(event.status));
@@ -2812,7 +3073,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
+          await abortKnownSessionBeforeTerminal();
           yield createEvent(
             'done',
             AGENT,
@@ -2875,7 +3140,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       if (!doneYielded) {
+        for (const normalized of drainPendingContent(true)) {
+          yield normalized;
+        }
         if (abortRequested || options?.abortSignal?.aborted) {
+          await abortKnownSessionBeforeTerminal();
           yield createEvent(
             'done',
             AGENT,
