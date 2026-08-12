@@ -227,6 +227,34 @@ describe('fanout Captain', () => {
     expect(captainPrompts[0]).toContain('review notes');
   });
 
+  it('summarizes directly through the Captain when no players are configured', async () => {
+    const captain = createFanoutCaptain();
+    let playerCalls = 0;
+    const captainPrompts: string[] = [];
+    const context: CaptainContext = {
+      signal: new AbortController().signal,
+      players: [],
+      async callPlayer() {
+        playerCalls += 1;
+        throw new Error('no player call expected');
+      },
+      async callCaptain(prompt) {
+        captainPrompts.push(prompt);
+        return {
+          status: 'ok',
+          turnId: 1,
+          finalText: 'captain-only result',
+        };
+      },
+    };
+
+    await captain.handleBossTurn(turn('Handle it directly'), context);
+
+    expect(playerCalls).toBe(0);
+    expect(captainPrompts).toHaveLength(1);
+    expect(captainPrompts[0]).toContain('Handle it directly');
+  });
+
   it('includes failed player status and error text', () => {
     const prompt = summaryPrompt('Explain', [
       {

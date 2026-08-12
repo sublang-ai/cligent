@@ -38,6 +38,8 @@ type ResolvedPlayerByAdapter = {
     adapter: A;
     model?: string;
     instruction?: string;
+    permissions?: PermissionPolicy;
+    effort?: EffortForAgent<A>;
     cligent: Cligent<EffortForAgent<A>>;
   };
 };
@@ -74,7 +76,7 @@ interface UnvalidatedPlayerConfig {
   adapter: string;
 }
 
-const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*$/;
+const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/;
 
 export const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
   claude: async () =>
@@ -127,6 +129,22 @@ export async function createPlayerCligent<A extends PlayerAdapterName>(
   adapterName: A,
   options: CreatePlayerCligentOptions<NoInfer<A>> = {},
 ): Promise<Cligent<EffortForAgent<A>>> {
+  return createPlayerCligentInternal(adapterName, options, true);
+}
+
+/** @internal tmux-play keeps call defaults outside runtime-owned Cligent. */
+export async function createRuntimePlayerCligent<A extends PlayerAdapterName>(
+  adapterName: A,
+  options: CreatePlayerCligentOptions<NoInfer<A>> = {},
+): Promise<Cligent<EffortForAgent<A>>> {
+  return createPlayerCligentInternal(adapterName, options, false);
+}
+
+async function createPlayerCligentInternal<A extends PlayerAdapterName>(
+  adapterName: A,
+  options: CreatePlayerCligentOptions<NoInfer<A>>,
+  inheritCallDefaults: boolean,
+): Promise<Cligent<EffortForAgent<A>>> {
   if (!isKnownPlayerAdapter(adapterName)) {
     throw new Error(
       `Unknown adapter "${adapterName}". ` +
@@ -137,10 +155,14 @@ export async function createPlayerCligent<A extends PlayerAdapterName>(
   const AdapterClass = await adapterImports[adapterName]();
   return new Cligent(new AdapterClass(), {
     cwd: options.cwd,
-    model: options.model,
     role: options.role,
-    permissions: options.permissions,
-    effort: options.effort,
+    ...(inheritCallDefaults
+      ? {
+          model: options.model,
+          permissions: options.permissions,
+          effort: options.effort,
+        }
+      : {}),
   });
 }
 
@@ -148,13 +170,36 @@ export async function resolvePlayers(
   configs: readonly PlayerConfig[],
   options: ResolvePlayersOptions = {},
 ): Promise<ResolvedPlayer[]> {
+  return resolvePlayersInternal(configs, options, true);
+}
+
+/** @internal tmux-play keeps call defaults outside runtime-owned Cligent. */
+export async function resolveRuntimePlayers(
+  configs: readonly PlayerConfig[],
+  options: ResolvePlayersOptions = {},
+): Promise<ResolvedPlayer[]> {
+  return resolvePlayersInternal(configs, options, false);
+}
+
+async function resolvePlayersInternal(
+  configs: readonly PlayerConfig[],
+  options: ResolvePlayersOptions,
+  inheritCallDefaults: boolean,
+): Promise<ResolvedPlayer[]> {
   validatePlayerConfigs(configs);
 
   const adapterImports = options.adapterImports ?? DEFAULT_ADAPTER_IMPORTS;
   const players: ResolvedPlayer[] = [];
 
   for (const config of configs) {
-    players.push(await resolvePlayer(config, options.cwd, adapterImports));
+    players.push(
+      await resolvePlayer(
+        config,
+        options.cwd,
+        adapterImports,
+        inheritCallDefaults,
+      ),
+    );
   }
 
   return players;
@@ -164,20 +209,27 @@ async function resolvePlayer<A extends PlayerAdapterName>(
   config: PlayerConfig<A>,
   cwd: string | undefined,
   adapterImports: PlayerAdapterImports,
+  inheritCallDefaults: boolean,
 ): Promise<ResolvedPlayer<A>> {
-  const cligent = await createPlayerCligent(config.adapter, {
-    adapterImports,
-    cwd,
-    model: config.model,
-    role: config.id,
-    permissions: config.permissions,
-    effort: config.effort,
-  });
+  const cligent = await createPlayerCligentInternal(
+    config.adapter,
+    {
+      adapterImports,
+      cwd,
+      model: config.model,
+      role: config.id,
+      permissions: config.permissions,
+      effort: config.effort,
+    },
+    inheritCallDefaults,
+  );
   return {
     id: config.id,
     adapter: config.adapter,
     model: config.model,
     instruction: config.instruction,
+    permissions: config.permissions,
+    effort: config.effort,
     cligent,
   } as ResolvedPlayer<A>;
 }

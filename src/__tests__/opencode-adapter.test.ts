@@ -31,6 +31,7 @@ import {
   wrapOpencodeClient,
 } from '../adapters/opencode.js';
 import { Cligent } from '../cligent.js';
+import { createPermissionPolicyReset } from '../internal/permission-reset.js';
 import type {
   AgentEvent,
   AgentOptions,
@@ -5274,6 +5275,68 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         directory: '/workspace',
         parts: [{ type: 'text', text: 'continue' }],
       }),
+    ]);
+  });
+
+  it('clears a v2 resumed session permission ruleset before prompting', async () => {
+    const events: string[] = [];
+    const updateCalls: unknown[] = [];
+    const real = {
+      session: {
+        async create() {
+          throw new Error('create should not be called');
+        },
+        async update(args: unknown) {
+          events.push('update');
+          updateCalls.push(args);
+          return {};
+        },
+        async promptAsync() {
+          events.push('prompt');
+          return {};
+        },
+        async children() {
+          return { data: [] };
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+    };
+    const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
+
+    await client.run?.({
+      prompt: 'install policy',
+      sessionId: 'existing-session',
+      permission: { edit: 'allow' },
+    });
+    await client.run?.({
+      prompt: 'preserve policy',
+      sessionId: 'existing-session',
+    });
+    await client.run?.({
+      prompt: 'clear policy',
+      sessionId: 'existing-session',
+      ...mapPermissionsToOpenCodeOptions(createPermissionPolicyReset()),
+    });
+
+    expect(updateCalls).toEqual([
+      {
+        sessionID: 'existing-session',
+        permission: [
+          { permission: 'edit', pattern: '*', action: 'allow' },
+        ],
+      },
+      { sessionID: 'existing-session', permission: [] },
+    ]);
+    expect(events).toEqual([
+      'update',
+      'prompt',
+      'prompt',
+      'update',
+      'prompt',
     ]);
   });
 

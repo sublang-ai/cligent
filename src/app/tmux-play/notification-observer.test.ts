@@ -259,7 +259,14 @@ describe('NotificationObserver', () => {
       spawnDetached,
     });
 
-    for (const reason of ['ESC', 'SIGINT', 'SIGTERM', 'EOF', 'runtime disposed']) {
+    for (const reason of [
+      'ESC',
+      'SIGHUP',
+      'SIGINT',
+      'SIGTERM',
+      'EOF',
+      'runtime disposed',
+    ]) {
       observer.onRecord(turnAborted(reason));
     }
     observer.onRecord(turnAborted('captain failed'));

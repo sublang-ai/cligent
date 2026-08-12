@@ -19,6 +19,7 @@ import {
   killTmuxSession,
   queryPaneTargetsByTitle,
   runTmux,
+  runTmuxOutput,
   setOrchestratorTmuxEnv,
 } from './tmux.js';
 
@@ -57,6 +58,17 @@ describe('tmux helpers', () => {
       'tmux',
       ['new-session', '-d', '-s', 'fanout-123'],
       { stdio: 'pipe' },
+    );
+  });
+
+  it('returns trimmed tmux command output', () => {
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from('%42\n'),
+    });
+
+    expect(runTmuxOutput('new-session', '-P', '-F', '#{pane_id}', '-d')).toBe(
+      '%42',
     );
   });
 

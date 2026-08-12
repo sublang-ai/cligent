@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -14,7 +14,10 @@ import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
 import { ObserverDispatchError, type TmuxPlayRecord } from './records.js';
 import {
   readConfigSnapshot,
+  runManagedTmuxPlaySession,
+  runTmuxPlaySession,
   TmuxPlaySession,
+  type ManagedTmuxPlayLifecycle,
   type TmuxPlaySessionOptions,
 } from './session.js';
 import { TmuxPresenter } from './presenter-tmux.js';
@@ -22,6 +25,15 @@ import { FollowObserver } from './follow-observer.js';
 import { NotificationObserver } from './notification-observer.js';
 import { LayoutObserver } from './layout-observer.js';
 import type { TimingObserverHandle } from './timing-observer.js';
+import {
+  isOrchestratorInTmux,
+  setOrchestratorTmuxEnv,
+} from '../shared/tmux.js';
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 class FakeReadline extends EventEmitter {
   promptCount = 0;
@@ -78,14 +90,14 @@ class TtyOutput extends MemoryOutput {
 
 class SignalHub extends EventEmitter {
   override on(
-    event: 'SIGINT' | 'SIGTERM',
+    event: 'SIGHUP' | 'SIGINT' | 'SIGTERM',
     listener: () => void,
   ): this {
     return super.on(event, listener);
   }
 
   override off(
-    event: 'SIGINT' | 'SIGTERM',
+    event: 'SIGHUP' | 'SIGINT' | 'SIGTERM',
     listener: () => void,
   ): this {
     return super.off(event, listener);
@@ -412,37 +424,41 @@ describe('TmuxPlaySession', () => {
     expect(queryPaneWidths).toHaveBeenCalledTimes(2);
   });
 
-  it('handles SIGINT by closing the readline session', async () => {
-    tempDir = makeWorkDir();
-    const readline = new FakeReadline();
-    const signals = new SignalHub();
-    const dispose = vi.fn(async () => undefined);
-    const abortActiveTurn = vi.fn();
-    const killSession = vi.fn();
-    const session = new TmuxPlaySession({
-      ...baseOptions(tempDir),
-      createReadline: () => readline,
-      createRuntime: async () => ({
-        abortActiveTurn,
-        dispose,
-        runBossTurn: async () => undefined,
-      }),
-      importCaptain: async () => ({ default: () => captain() }),
-      killSession,
-      removeWorkDir: vi.fn(),
-      signalTarget: signals,
-    });
+  it.each(['SIGHUP', 'SIGINT'] as const)(
+    'handles %s by closing the readline session',
+    async (signal) => {
+      tempDir = makeWorkDir();
+      const readline = new FakeReadline();
+      const signals = new SignalHub();
+      const dispose = vi.fn(async () => undefined);
+      const abortActiveTurn = vi.fn();
+      const killSession = vi.fn();
+      const session = new TmuxPlaySession({
+        ...baseOptions(tempDir),
+        createReadline: () => readline,
+        createRuntime: async () => ({
+          abortActiveTurn,
+          dispose,
+          runBossTurn: async () => undefined,
+        }),
+        importCaptain: async () => ({ default: () => captain() }),
+        killSession,
+        removeWorkDir: vi.fn(),
+        signalTarget: signals,
+      });
 
-    await session.start();
-    signals.emit('SIGINT');
-    await session.done;
+      await session.start();
+      signals.emit(signal);
+      await session.done;
 
-    expect(abortActiveTurn).toHaveBeenCalledWith('SIGINT');
-    expect(dispose).toHaveBeenCalledTimes(1);
-    expect(killSession).toHaveBeenCalledWith('tmux-play-abc123');
-    expect(signals.listenerCount('SIGINT')).toBe(0);
-    expect(signals.listenerCount('SIGTERM')).toBe(0);
-  });
+      expect(abortActiveTurn).toHaveBeenCalledWith(signal);
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(killSession).toHaveBeenCalledWith('tmux-play-abc123');
+      expect(signals.listenerCount('SIGHUP')).toBe(0);
+      expect(signals.listenerCount('SIGINT')).toBe(0);
+      expect(signals.listenerCount('SIGTERM')).toBe(0);
+    },
+  );
 
   it('aborts an active turn on bare ESC without treating arrow keys as aborts', async () => {
     tempDir = makeWorkDir();
@@ -496,7 +512,9 @@ describe('TmuxPlaySession', () => {
     input.write('retained');
     input.write('\x1b');
     await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
-    await waitUntil(() => records.some((record) => record.type === 'turn_aborted'));
+    await waitUntil(() =>
+      records.some((record) => record.type === 'turn_aborted'),
+    );
 
     expect(abortActiveTurn).toHaveBeenCalledTimes(1);
     expect(abortActiveTurn).toHaveBeenCalledWith('ESC');
@@ -814,6 +832,705 @@ describe('TmuxPlaySession', () => {
       'second',
     ]);
   });
+
+  it('gates managed input and releases buffered replies only after the settled-turn hook', async () => {
+    tempDir = makeWorkDir({ emptyPlayers: true });
+    const readinessPath = join(tempDir, 'managed-ready.json');
+    const inputGatePath = join(tempDir, 'managed-input-ready');
+    const inputActivePath = join(tempDir, 'managed-input-active');
+    const shutdownRequestPath = join(tempDir, 'managed-shutdown-request');
+    const shutdownCompletePath = join(tempDir, 'managed-shutdown-complete');
+    const readline = new FakeReadline();
+    const initialized = deferred<void>();
+    const releaseInitialization = deferred<void>();
+    const order: string[] = [];
+    const visibleRecords: TmuxPlayRecord[] = [];
+    const activationSeenAtBefore: boolean[] = [];
+    let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+    const dispose = vi.fn(async () => {
+      order.push('runtime.dispose');
+    });
+    const lifecycle: ManagedTmuxPlayLifecycle = {
+      async initializeRuntime(context) {
+        order.push('initialize');
+        expect(context.config.players).toEqual([]);
+        expect(context.config.layout.initialVisible).toEqual([]);
+        expect(context.config.layout.columnWeights).toEqual([1]);
+        runtimeObserver = context.observers[0]!;
+        initialized.resolve();
+        await releaseInitialization.promise;
+        return {
+          abortActiveTurn: vi.fn(),
+          dispose,
+          async runBossTurn() {
+            order.push('run');
+            await runtimeObserver.onRecord({
+              type: 'captain_reply',
+              turnId: 1,
+              timestamp: 1,
+              text: 'durable reply',
+            });
+            await runtimeObserver.onRecord({
+              type: 'turn_finished',
+              turnId: 1,
+              timestamp: 2,
+            });
+            order.push('runtime fence');
+          },
+        };
+      },
+      async beforeNonEmptyTurn() {
+        order.push('before');
+        activationSeenAtBefore.push(existsSync(inputActivePath));
+      },
+      async afterTurn(context) {
+        order.push('after');
+        expect(context.replies).toMatchObject([
+          { type: 'captain_reply', text: 'durable reply' },
+        ]);
+        expect(
+          visibleRecords.some((record) => record.type === 'captain_reply'),
+        ).toBe(false);
+        expect(context.terminal).toEqual({
+          type: 'turn_finished',
+          turnId: 1,
+          timestamp: 2,
+        });
+      },
+      async shutdown() {
+        order.push('shutdown');
+      },
+    };
+
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      readinessPath,
+      inputGatePath,
+      inputActivePath,
+      shutdownRequestPath,
+      shutdownCompletePath,
+      lifecycle,
+      createReadline: () => readline,
+      observers: [
+        {
+          onRecord(record) {
+            visibleRecords.push(record);
+            if (record.type === 'captain_reply') order.push('reply visible');
+          },
+        },
+      ],
+    });
+
+    await initialized.promise;
+    releaseInitialization.resolve();
+    await waitUntil(() => existsSync(readinessPath));
+    expect(order).toEqual(['initialize']);
+
+    // A line received after initialized readiness but before the embedding
+    // frontend activates input is queued, not lost or run prematurely.
+    readline.emitLine('work');
+    await Promise.resolve();
+    expect(order).toEqual(['initialize']);
+    writeFileSync(inputGatePath, 'ready\n', { mode: 0o600 });
+    await waitUntil(() => existsSync(inputActivePath));
+    await waitUntil(() => order.includes('reply visible'));
+    expect(order).toEqual([
+      'initialize',
+      'before',
+      'run',
+      'runtime fence',
+      'after',
+      'reply visible',
+    ]);
+    expect(activationSeenAtBefore).toEqual([true]);
+
+    readline.close();
+    await running;
+    expect(order.slice(-2)).toEqual(['runtime.dispose', 'shutdown']);
+  });
+
+  it('isolates agents before managed runtime initialization (TMUX-074)', async () => {
+    tempDir = makeWorkDir({ emptyPlayers: true });
+    const paths = managedPaths(tempDir);
+    const readline = new FakeReadline();
+    const savedTmux = process.env.TMUX;
+    const savedPane = process.env.TMUX_PANE;
+    const savedTmpDir = process.env.TMUX_TMPDIR;
+    process.env.TMUX = '/private/tmp/tmux-501/default,456,0';
+    process.env.TMUX_PANE = '%7';
+    delete process.env.TMUX_TMPDIR;
+    let observed:
+      | {
+          tmux: string | undefined;
+          pane: string | undefined;
+          tmpDir: string | undefined;
+          orchestratorInTmux: boolean;
+        }
+      | undefined;
+    try {
+      const running = runManagedTmuxPlaySession({
+        ...baseOptions(tempDir),
+        ...paths,
+        createReadline: () => readline,
+        lifecycle: {
+          async initializeRuntime() {
+            observed = {
+              tmux: process.env.TMUX,
+              pane: process.env.TMUX_PANE,
+              tmpDir: process.env.TMUX_TMPDIR,
+              orchestratorInTmux: isOrchestratorInTmux(),
+            };
+            return {
+              abortActiveTurn: vi.fn(),
+              dispose: vi.fn(),
+              runBossTurn: vi.fn(),
+            };
+          },
+          async beforeNonEmptyTurn() {},
+          async afterTurn() {},
+          async shutdown() {},
+        },
+      });
+
+      await waitUntil(() => existsSync(paths.readinessPath));
+      expect(observed?.tmux).toBeUndefined();
+      expect(observed?.pane).toBeUndefined();
+      expect(observed?.tmpDir).toBeDefined();
+      expect(observed?.tmpDir).not.toBe('/private/tmp/tmux-501');
+      expect(observed?.orchestratorInTmux).toBe(true);
+      readline.close();
+      await running;
+    } finally {
+      setOrchestratorTmuxEnv(undefined);
+      const sandbox = process.env.TMUX_TMPDIR;
+      restoreEnv('TMUX', savedTmux);
+      restoreEnv('TMUX_PANE', savedPane);
+      restoreEnv('TMUX_TMPDIR', savedTmpDir);
+      if (sandbox && sandbox !== savedTmpDir) {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('isolates agents before stock runtime construction (TMUX-074)', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const savedTmux = process.env.TMUX;
+    const savedPane = process.env.TMUX_PANE;
+    const savedTmpDir = process.env.TMUX_TMPDIR;
+    process.env.TMUX = '/private/tmp/tmux-501/default,456,0';
+    process.env.TMUX_PANE = '%7';
+    delete process.env.TMUX_TMPDIR;
+    let observed:
+      | {
+          tmux: string | undefined;
+          pane: string | undefined;
+          tmpDir: string | undefined;
+          orchestratorInTmux: boolean;
+        }
+      | undefined;
+    try {
+      const running = runTmuxPlaySession({
+        ...baseOptions(tempDir),
+        createReadline: () => readline,
+        createRuntime: async () => {
+          observed = {
+            tmux: process.env.TMUX,
+            pane: process.env.TMUX_PANE,
+            tmpDir: process.env.TMUX_TMPDIR,
+            orchestratorInTmux: isOrchestratorInTmux(),
+          };
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            runBossTurn: vi.fn(),
+          };
+        },
+        importCaptain: async () => ({
+          default: () => ({ async handleBossTurn() {} }),
+        }),
+      });
+
+      await waitUntil(() => observed !== undefined);
+      expect(observed?.tmux).toBeUndefined();
+      expect(observed?.pane).toBeUndefined();
+      expect(observed?.tmpDir).toBeDefined();
+      expect(observed?.tmpDir).not.toBe('/private/tmp/tmux-501');
+      expect(observed?.orchestratorInTmux).toBe(true);
+      readline.close();
+      await running;
+    } finally {
+      setOrchestratorTmuxEnv(undefined);
+      const sandbox = process.env.TMUX_TMPDIR;
+      restoreEnv('TMUX', savedTmux);
+      restoreEnv('TMUX_PANE', savedPane);
+      restoreEnv('TMUX_TMPDIR', savedTmpDir);
+      if (sandbox && sandbox !== savedTmpDir) {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it.each(['before', 'after'] as const)(
+    'withholds managed replies and awaits shutdown when the %s hook fails',
+    async (failingHook) => {
+      tempDir = makeWorkDir();
+      const readline = new FakeReadline();
+      const visibleRecords: TmuxPlayRecord[] = [];
+      const order: string[] = [];
+      let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+      const lifecycle: ManagedTmuxPlayLifecycle = {
+        async initializeRuntime(context) {
+          runtimeObserver = context.observers[0]!;
+          return {
+            abortActiveTurn: vi.fn(),
+            async dispose() {
+              order.push('dispose');
+            },
+            async runBossTurn() {
+              order.push('run');
+              await runtimeObserver.onRecord({
+                type: 'captain_reply',
+                turnId: 1,
+                timestamp: 1,
+                text: 'must stay hidden',
+              });
+              await runtimeObserver.onRecord({
+                type: 'turn_finished',
+                turnId: 1,
+                timestamp: 2,
+              });
+              order.push('fence');
+            },
+          };
+        },
+        async beforeNonEmptyTurn() {
+          order.push('before');
+          if (failingHook === 'before') throw new Error('write-ahead failed');
+        },
+        async afterTurn() {
+          order.push('after');
+          if (failingHook === 'after') throw new Error('settlement failed');
+        },
+        async shutdown(context) {
+          order.push(`shutdown:${testErrorMessage(context.error)}`);
+        },
+      };
+      const readinessPath = join(tempDir, 'managed-ready.json');
+      const inputGatePath = join(tempDir, 'managed-input-ready');
+      const inputActivePath = join(tempDir, 'managed-input-active');
+      const shutdownRequestPath = join(tempDir, 'managed-shutdown-request');
+      const shutdownCompletePath = join(tempDir, 'managed-shutdown-complete');
+      const running = runManagedTmuxPlaySession({
+        ...baseOptions(tempDir),
+        readinessPath,
+        inputGatePath,
+        inputActivePath,
+        shutdownRequestPath,
+        shutdownCompletePath,
+        lifecycle,
+        createReadline: () => readline,
+        observers: [{ onRecord: (record) => visibleRecords.push(record) }],
+      });
+
+      await waitUntil(() => existsSync(readinessPath));
+      writeFileSync(inputGatePath, 'ready\n', { mode: 0o600 });
+      await waitUntil(() => existsSync(inputActivePath));
+      readline.emitLine('work');
+
+      await expect(running).rejects.toThrow(
+        failingHook === 'before' ? 'write-ahead failed' : 'settlement failed',
+      );
+      expect(
+        visibleRecords.some((record) => record.type === 'captain_reply'),
+      ).toBe(false);
+      expect(order).toEqual(
+        failingHook === 'before'
+          ? ['before', 'dispose', 'shutdown:write-ahead failed']
+          : [
+              'before',
+              'run',
+              'fence',
+              'after',
+              'dispose',
+              'shutdown:settlement failed',
+            ],
+      );
+    },
+  );
+
+  it('passes an aborted terminal outcome to settlement and never releases its buffered reply', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const visibleRecords: TmuxPlayRecord[] = [];
+    let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+    const afterTurn = vi.fn();
+    const paths = managedPaths(tempDir);
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      observers: [{ onRecord: (record) => visibleRecords.push(record) }],
+      lifecycle: {
+        async initializeRuntime(context) {
+          runtimeObserver = context.observers[0]!;
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            async runBossTurn() {
+              await runtimeObserver.onRecord({
+                type: 'captain_reply',
+                turnId: 7,
+                timestamp: 1,
+                text: 'partial reply',
+              });
+              await runtimeObserver.onRecord({
+                type: 'turn_aborted',
+                turnId: 7,
+                timestamp: 2,
+                reason: 'ESC',
+              });
+            },
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn(context) {
+          afterTurn(context);
+        },
+        async shutdown() {},
+      },
+    });
+
+    await activateManagedSession(paths);
+    readline.emitLine('work');
+    await waitUntil(() => afterTurn.mock.calls.length === 1);
+
+    expect(afterTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: {
+          type: 'turn_aborted',
+          turnId: 7,
+          timestamp: 2,
+          reason: 'ESC',
+        },
+      }),
+    );
+    expect(
+      visibleRecords.some((record) => record.type === 'captain_reply'),
+    ).toBe(false);
+
+    readline.close();
+    await running;
+  });
+
+  it('preserves a fenced runtime failure when terminal settlement also rejects', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const visibleRecords: TmuxPlayRecord[] = [];
+    const order: string[] = [];
+    let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+    const paths = managedPaths(tempDir);
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      observers: [{ onRecord: (record) => visibleRecords.push(record) }],
+      lifecycle: {
+        async initializeRuntime(context) {
+          runtimeObserver = context.observers[0]!;
+          return {
+            abortActiveTurn: vi.fn(),
+            async dispose() {
+              order.push('dispose');
+            },
+            async runBossTurn() {
+              order.push('run');
+              await runtimeObserver.onRecord({
+                type: 'captain_reply',
+                turnId: 11,
+                timestamp: 1,
+                text: 'withheld partial reply',
+              });
+              await runtimeObserver.onRecord({
+                type: 'turn_aborted',
+                turnId: 11,
+                timestamp: 2,
+                reason: 'captain failed',
+              });
+              throw new Error('captain failed');
+            },
+          };
+        },
+        async beforeNonEmptyTurn() {
+          order.push('before');
+        },
+        async afterTurn(context) {
+          order.push(`after:${context.terminal.type}`);
+          expect(context.replies).toEqual([
+            expect.objectContaining({ text: 'withheld partial reply' }),
+          ]);
+          expect(context.terminal).toEqual(
+            expect.objectContaining({
+              type: 'turn_aborted',
+              turnId: 11,
+              reason: 'captain failed',
+            }),
+          );
+          throw new Error('settlement also failed');
+        },
+        async shutdown(context) {
+          order.push(`shutdown:${testErrorMessage(context.error)}`);
+        },
+      },
+    });
+
+    await activateManagedSession(paths);
+    readline.emitLine('work');
+
+    await expect(running).rejects.toThrow('captain failed');
+    expect(order).toEqual([
+      'before',
+      'run',
+      'after:turn_aborted',
+      'dispose',
+      'shutdown:captain failed',
+    ]);
+    expect(
+      visibleRecords.some((record) => record.type === 'captain_reply'),
+    ).toBe(false);
+  });
+
+  it('queues a pre-activation bracketed paste as one newline-preserving prompt', async () => {
+    tempDir = makeWorkDir();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const runBossTurn = vi.fn(async () => undefined);
+    let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+    const paths = managedPaths(tempDir);
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      input,
+      output,
+      lifecycle: {
+        async initializeRuntime(context) {
+          runtimeObserver = context.observers[0]!;
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            async runBossTurn(prompt) {
+              await runBossTurn(prompt);
+              await runtimeObserver.onRecord({
+                type: 'turn_finished',
+                turnId: 1,
+                timestamp: 1,
+              });
+            },
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {},
+        async shutdown() {},
+      },
+    });
+
+    await waitUntil(() => existsSync(paths.readinessPath));
+    input.write('\x1b[200~Alpha\nBravo\nCharlie\x1b[201~\n');
+    await delay(READLINE_ESCAPE_CODE_TIMEOUT_MS + 20);
+    expect(runBossTurn).not.toHaveBeenCalled();
+
+    writeFileSync(paths.inputGatePath, 'ready\n', { mode: 0o600 });
+    await waitUntil(() => existsSync(paths.inputActivePath));
+    await waitUntil(() => runBossTurn.mock.calls.length === 1);
+    expect(runBossTurn).toHaveBeenCalledWith('Alpha\nBravo\nCharlie');
+
+    input.end();
+    await running;
+  });
+
+  it.each(['before', 'after'] as const)(
+    'awaits the active managed %s hook before lifecycle shutdown and withholds replies',
+    async (blockedHook) => {
+      tempDir = makeWorkDir();
+      const readline = new FakeReadline();
+      const signalTarget = new SignalHub();
+      const entered = deferred<void>();
+      const release = deferred<void>();
+      const order: string[] = [];
+      const visibleRecords: TmuxPlayRecord[] = [];
+      let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+      const paths = managedPaths(tempDir);
+      const running = runManagedTmuxPlaySession({
+        ...baseOptions(tempDir),
+        ...paths,
+        signalTarget,
+        createReadline: () => readline,
+        observers: [{ onRecord: (record) => visibleRecords.push(record) }],
+        lifecycle: {
+          async initializeRuntime(context) {
+            runtimeObserver = context.observers[0]!;
+            return {
+              abortActiveTurn() {
+                order.push('abort');
+              },
+              async dispose() {
+                order.push('dispose');
+              },
+              async runBossTurn() {
+                order.push('run');
+                await runtimeObserver.onRecord({
+                  type: 'captain_reply',
+                  turnId: 3,
+                  timestamp: 1,
+                  text: 'withhold during shutdown',
+                });
+                await runtimeObserver.onRecord({
+                  type: 'turn_finished',
+                  turnId: 3,
+                  timestamp: 2,
+                });
+              },
+            };
+          },
+          async beforeNonEmptyTurn() {
+            order.push('before:start');
+            if (blockedHook === 'before') {
+              entered.resolve();
+              await release.promise;
+            }
+            order.push('before:end');
+          },
+          async afterTurn() {
+            order.push('after:start');
+            if (blockedHook === 'after') {
+              entered.resolve();
+              await release.promise;
+            }
+            order.push('after:end');
+          },
+          async shutdown() {
+            order.push('shutdown');
+          },
+        },
+      });
+
+      await activateManagedSession(paths);
+      readline.emitLine('work');
+      await entered.promise;
+      signalTarget.emit('SIGTERM');
+      await Promise.resolve();
+      expect(order).not.toContain('shutdown');
+
+      release.resolve();
+      await running;
+
+      expect(order.indexOf('shutdown')).toBeGreaterThan(
+        order.indexOf(`${blockedHook}:end`),
+      );
+      expect(order.indexOf('shutdown')).toBeGreaterThan(
+        order.indexOf('dispose'),
+      );
+      expect(order.filter((entry) => entry === 'shutdown')).toHaveLength(1);
+      expect(order.at(-1)).toBe('shutdown');
+      expect(
+        visibleRecords.some((record) => record.type === 'captain_reply'),
+      ).toBe(false);
+      if (blockedHook === 'before') {
+        expect(order).not.toContain('run');
+      }
+    },
+  );
+
+  it('publishes no managed readiness or activation after shutdown starts during initialization', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const signalTarget = new SignalHub();
+    const initializeEntered = deferred<void>();
+    const releaseInitialization = deferred<void>();
+    const paths = managedPaths(tempDir);
+    const shutdown = vi.fn();
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      signalTarget,
+      createReadline: () => readline,
+      lifecycle: {
+        async initializeRuntime() {
+          initializeEntered.resolve();
+          await releaseInitialization.promise;
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            runBossTurn: vi.fn(),
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {},
+        async shutdown(context) {
+          shutdown(context);
+        },
+      },
+    });
+
+    await initializeEntered.promise;
+    signalTarget.emit('SIGHUP');
+    releaseInitialization.resolve();
+    await running;
+
+    expect(existsSync(paths.readinessPath)).toBe(false);
+    expect(existsSync(paths.inputActivePath)).toBe(false);
+    expect(shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledges a managed shutdown request only after ordered one-time cleanup', async () => {
+    tempDir = makeWorkDir();
+    const paths = managedPaths(tempDir);
+    const readline = new FakeReadline();
+    const order: string[] = [];
+    const abortActiveTurn = vi.fn((reason?: string) => {
+      order.push(`abort:${reason}`);
+    });
+    const lifecycleShutdown = vi.fn(async (context) => {
+      expect(existsSync(paths.shutdownCompletePath)).toBe(false);
+      order.push(`lifecycle:${context.reason}`);
+    });
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      removeWorkDir() {
+        expect(existsSync(paths.shutdownCompletePath)).toBe(false);
+        order.push('workdir');
+      },
+      lifecycle: {
+        async initializeRuntime() {
+          return {
+            abortActiveTurn,
+            async dispose() {
+              order.push('runtime.dispose');
+            },
+            runBossTurn: vi.fn(),
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {},
+        shutdown: lifecycleShutdown,
+      },
+    });
+
+    await waitUntil(() => existsSync(paths.readinessPath));
+    writeFileSync(paths.shutdownRequestPath, 'shutdown\n', { mode: 0o600 });
+    await running;
+
+    expect(order).toEqual([
+      'abort:SIGHUP',
+      'runtime.dispose',
+      'lifecycle:SIGHUP',
+      'workdir',
+    ]);
+    expect(lifecycleShutdown).toHaveBeenCalledTimes(1);
+    expect(existsSync(paths.shutdownCompletePath)).toBe(true);
+  });
 });
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
@@ -834,6 +1551,32 @@ function baseOptions(workDir: string): TmuxPlaySessionOptions {
   };
 }
 
+function managedPaths(workDir: string): {
+  readinessPath: string;
+  inputGatePath: string;
+  inputActivePath: string;
+  shutdownRequestPath: string;
+  shutdownCompletePath: string;
+} {
+  return {
+    readinessPath: join(workDir, 'managed-ready.json'),
+    inputGatePath: join(workDir, 'managed-input-ready'),
+    inputActivePath: join(workDir, 'managed-input-active'),
+    shutdownRequestPath: join(workDir, 'managed-shutdown-request'),
+    shutdownCompletePath: join(workDir, 'managed-shutdown-complete'),
+  };
+}
+
+async function activateManagedSession(paths: {
+  readinessPath: string;
+  inputGatePath: string;
+  inputActivePath: string;
+}): Promise<void> {
+  await waitUntil(() => existsSync(paths.readinessPath));
+  writeFileSync(paths.inputGatePath, 'ready\n', { mode: 0o600 });
+  await waitUntil(() => existsSync(paths.inputActivePath));
+}
+
 function removeTempDir(path: string): void {
   rmSync(path, {
     recursive: true,
@@ -852,10 +1595,14 @@ function noopTimingObserver(): TimingObserverHandle {
 }
 
 function makeWorkDir(
-  overrides: { theme?: 'mocha' | 'latte' } = {},
+  overrides: {
+    theme?: 'mocha' | 'latte';
+    emptyPlayers?: boolean;
+  } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
   writeFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'abc123');
+  const emptyPlayers = overrides.emptyPlayers === true;
   const snapshot: Record<string, unknown> = {
     captain: {
       from: '@sublang/cligent/captains/fanout',
@@ -864,25 +1611,30 @@ function makeWorkDir(
       effort: 'ultracode',
       options: { tone: 'direct' },
     },
-    players: [
-      {
-        id: 'coder',
-        adapter: 'codex',
-        effort: 'ultra',
-      },
-    ],
+    players: emptyPlayers
+      ? []
+      : [
+          {
+            id: 'coder',
+            adapter: 'codex',
+            effort: 'ultra',
+          },
+        ],
     layout: {
       window: { columns: 174, rows: 49 },
-      initialVisible: ['coder'],
+      initialVisible: emptyPlayers ? [] : ['coder'],
       singlePlayerColumnWeights: [1, 1],
       multiPlayerColumnWeights: [1, 1, 1],
-      columnWeights: [1, 1],
+      columnWeights: emptyPlayers ? [1] : [1, 1],
     },
   };
   if (overrides.theme !== undefined) {
     snapshot.theme = overrides.theme;
   }
-  writeFileSync(join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT), JSON.stringify(snapshot));
+  writeFileSync(
+    join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
+    JSON.stringify(snapshot),
+  );
   return workDir;
 }
 
@@ -894,7 +1646,7 @@ async function waitUntil(
     if (predicate()) {
       return;
     }
-    await Promise.resolve();
+    await delay(0);
   }
   throw new Error('condition was not met');
 }
@@ -904,6 +1656,10 @@ function stripAnsi(value: string): string {
   // paste toggles) so a colored `boss> ` prompt collapses to literal `boss> `
   // and is detectable by substring search.
   return value.replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '');
+}
+
+function testErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function delay(ms: number): Promise<void> {

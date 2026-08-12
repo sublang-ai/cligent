@@ -276,6 +276,17 @@ describe('configuredAdapterRoles', () => {
       { adapter: 'codex', roles: ['player "coder"'] },
     ]);
   });
+
+  it('keeps the Captain readiness role when the player roster is empty', () => {
+    const roles = configuredAdapterRoles({
+      config: {
+        captain: { adapter: 'claude' },
+        players: [],
+      },
+    });
+
+    expect(roles).toEqual([{ adapter: 'claude', roles: ['captain'] }]);
+  });
 });
 
 describe('assertConfiguredAdaptersReady', () => {

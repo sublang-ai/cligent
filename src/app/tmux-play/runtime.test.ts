@@ -3,7 +3,12 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { createEvent } from '../../events.js';
+import { isPermissionPolicyReset } from '../../internal/permission-reset.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
+import {
+  AgentCallSettingsError,
+  isAgentCallSettingsError,
+} from './contract.js';
 import type {
   Captain,
   CaptainContext,
@@ -48,7 +53,9 @@ function adapterClass(
 }
 
 function adapterImports(
-  scripts: Partial<Record<PlayerAdapterName, { agent: string; run: RunScript }>>,
+  scripts: Partial<
+    Record<PlayerAdapterName, { agent: string; run: RunScript }>
+  >,
 ): PlayerAdapterImports {
   const fallback: { agent: string; run: RunScript } = {
     agent: 'test-agent',
@@ -119,6 +126,21 @@ function deferred<T = void>(): {
     resolve = r;
   });
   return { promise, resolve };
+}
+
+async function expectAgentCallSettingsRejection(
+  call: Promise<unknown>,
+  diagnostic: string,
+): Promise<void> {
+  const rejection = await call.catch((error: unknown) => error);
+  expect(rejection).toBeInstanceOf(AgentCallSettingsError);
+  expect(isAgentCallSettingsError(rejection)).toBe(true);
+  expect(rejection).toMatchObject({
+    message: expect.stringContaining(diagnostic),
+    cause: expect.objectContaining({
+      message: expect.stringContaining(diagnostic),
+    }),
+  });
 }
 
 describe('TmuxPlayRuntime', () => {
@@ -199,6 +221,774 @@ describe('TmuxPlayRuntime', () => {
       'Player instruction.\n\nimplement feature',
       'Captain instruction.\n\nsummarize player done',
     ]);
+  });
+
+  it.each([
+    ['claude', 'claude-code', 'high', false],
+    ['codex', 'codex', 'high', 'existing-session'],
+    ['gemini', 'gemini', 'high', 'existing-session'],
+  ] as const)(
+    'forwards explicit provider defaults to %s by omitting configured tuning',
+    async (adapter, agent, configuredEffort, resume) => {
+      const observed: Array<AgentOptions | undefined> = [];
+      const captain: Captain = {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('dev.worker', 'work', {
+            resume,
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'provider-default' },
+            },
+          });
+        },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [
+          {
+            id: 'dev.worker',
+            adapter,
+            model: 'configured-model',
+            effort: configuredEffort,
+            instruction: 'Configured instruction.',
+            permissions: { mode: 'auto' },
+          },
+        ] as never,
+        adapterImports: adapterImports({
+          [adapter]: {
+            agent,
+            async *run(prompt, options) {
+              observed.push(options);
+              expect(prompt).toBe('work');
+              yield doneEvent(agent, 'done', 'success', 'next-session');
+            },
+          },
+        }),
+      });
+
+      await runtime.runBossTurn('go');
+
+      expect(observed).toHaveLength(1);
+      expect(observed[0]).toMatchObject({
+        resume: resume === false ? undefined : resume,
+      });
+      expect(observed[0]?.model).toBeUndefined();
+      expect(observed[0]?.effort).toBeUndefined();
+      expect(observed[0]?.permissions).toBeUndefined();
+    },
+  );
+
+  it('fails closed for a resumed Claude default-model reset before records and preserves continuity', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const observed: AgentOptions[] = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('dev.worker', 'seed');
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.worker', 'reset model', {
+              settings: {
+                model: { kind: 'provider-default' },
+                effort: { kind: 'provider-default' },
+              },
+            }),
+            'Claude cannot restore the provider-default model on a resumed session',
+          );
+          await context.callPlayer('dev.worker', 'continue');
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'dev.worker', adapter: 'claude' }],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run(_prompt, options) {
+            observed.push(options ?? {});
+            yield doneEvent(
+              'claude-code',
+              'done',
+              'success',
+              'kept-claude-session',
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toHaveLength(2);
+    expect(observed[1]).toMatchObject({ resume: 'kept-claude-session' });
+    expect(
+      records
+        .filter((record) => record.type === 'player_prompt')
+        .map((record) => record.prompt),
+    ).toEqual(['seed', 'continue']);
+  });
+
+  it('fails closed for resumed OpenCode default-model reset and clears omitted permissions with a concrete model', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const observed: AgentOptions[] = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('dev.worker', 'install policy', {
+            settings: {
+              model: { kind: 'value', value: 'openai/gpt-5' },
+              effort: { kind: 'value', value: 'high' },
+              permissions: { mode: 'auto', fileWrite: 'allow' },
+            },
+          });
+          await context.callPlayer('dev.worker', 'preserve configured policy');
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.worker', 'reset model', {
+              settings: {
+                model: { kind: 'provider-default' },
+                effort: { kind: 'provider-default' },
+              },
+            }),
+            'OpenCode cannot restore the provider-default model on a resumed session',
+          );
+          await context.callPlayer('dev.worker', 'clear policy', {
+            settings: {
+              model: { kind: 'value', value: 'openai/gpt-5' },
+              effort: { kind: 'provider-default' },
+            },
+          });
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'dev.worker', adapter: 'opencode' }],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        opencode: {
+          agent: 'opencode',
+          async *run(_prompt, options) {
+            observed.push(options ?? {});
+            yield doneEvent(
+              'opencode',
+              'done',
+              'success',
+              'kept-opencode-session',
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toHaveLength(3);
+    expect(observed[1]).toMatchObject({
+      resume: 'kept-opencode-session',
+      permissions: undefined,
+    });
+    expect(isPermissionPolicyReset(observed[1]?.permissions)).toBe(false);
+    expect(observed[2]).toMatchObject({
+      resume: 'kept-opencode-session',
+      model: 'openai/gpt-5',
+      effort: undefined,
+    });
+    expect(isPermissionPolicyReset(observed[2]?.permissions)).toBe(true);
+    expect(
+      records
+        .filter((record) => record.type === 'player_prompt')
+        .map((record) => record.prompt),
+    ).toEqual(['install policy', 'preserve configured policy', 'clear policy']);
+  });
+
+  it('snapshots complete player and Captain settings without merging configured values', async () => {
+    const observed: Array<{
+      prompt: string;
+      options: AgentOptions | undefined;
+    }> = [];
+    const playerPermissions = {
+      fileWrite: 'allow' as const,
+      writablePaths: ['generated'],
+    };
+    const playerSettings = {
+      model: { kind: 'value' as const, value: 'codex-current' },
+      effort: { kind: 'value' as const, value: 'xhigh' as const },
+      instruction: 'Current player instruction.',
+      permissions: playerPermissions,
+    };
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        const playerCall = context.callPlayer('dev.coder', 'implement', {
+          settings: playerSettings,
+        });
+        playerSettings.model.value = 'mutated-model';
+        playerPermissions.writablePaths.push('mutated');
+        await playerCall;
+
+        await context.callCaptain('summarize', {
+          settings: {
+            model: { kind: 'value', value: 'claude-current' },
+            effort: { kind: 'value', value: 'high' },
+          },
+        });
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: {
+        adapter: 'claude',
+        model: 'claude-configured',
+        effort: 'ultracode',
+        instruction: 'Configured Captain instruction.',
+        permissions: { mode: 'auto' },
+      },
+      players: [
+        {
+          id: 'dev.coder',
+          adapter: 'codex',
+          model: 'codex-configured',
+          effort: 'ultra',
+          instruction: 'Configured player instruction.',
+          permissions: { mode: 'auto' },
+        },
+      ],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(prompt, options) {
+            observed.push({ prompt, options });
+            yield doneEvent('codex', 'done');
+          },
+        },
+        claude: {
+          agent: 'claude-code',
+          async *run(prompt, options) {
+            observed.push({ prompt, options });
+            yield doneEvent('claude-code', 'done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toEqual([
+      {
+        prompt: 'Current player instruction.\n\nimplement',
+        options: expect.objectContaining({
+          model: 'codex-current',
+          effort: 'xhigh',
+          permissions: {
+            fileWrite: 'allow',
+            writablePaths: ['generated'],
+          },
+        }),
+      },
+      {
+        prompt: 'summarize',
+        options: expect.objectContaining({
+          model: 'claude-current',
+          effort: 'high',
+          permissions: undefined,
+        }),
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      'unknown fields',
+      {
+        model: { kind: 'value', value: 'gpt-5.6-codex' },
+        effort: { kind: 'value', value: 'high' },
+        extra: true,
+      },
+      'unknown field "extra"',
+    ],
+    [
+      'a missing model selection',
+      { effort: { kind: 'value', value: 'high' } },
+      'model must be a tuning selection',
+    ],
+    [
+      'an incomplete effort selection',
+      {
+        model: { kind: 'value', value: 'gpt-5.6-codex' },
+        effort: { kind: 'value' },
+      },
+      'effort must select a non-empty value or provider-default',
+    ],
+  ])(
+    'rejects complete settings with %s as a typed preflight failure',
+    async (_case, settings, diagnostic) => {
+      const records: TmuxPlayRecord[] = [];
+      let providerRuns = 0;
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('dev.coder', 'work', {
+                settings: settings as never,
+              }),
+              diagnostic,
+            );
+          },
+        },
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'dev.coder', adapter: 'codex' }],
+        observers: [{ onRecord: (record) => records.push(record) }],
+        adapterImports: adapterImports({
+          codex: {
+            agent: 'codex',
+            async *run() {
+              providerRuns += 1;
+              yield doneEvent('codex', 'done');
+            },
+          },
+        }),
+      });
+
+      await runtime.runBossTurn('go');
+
+      expect(providerRuns).toBe(0);
+      expect(records.some((record) => record.type === 'player_prompt')).toBe(
+        false,
+      );
+    },
+  );
+
+  it('rejects accessor-backed complete settings before a prompt record or provider run', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let providerRuns = 0;
+    let rejection: unknown;
+    const settings = Object.defineProperty(
+      {
+        effort: { kind: 'value' as const, value: 'high' as const },
+      },
+      'model',
+      {
+        enumerable: true,
+        get() {
+          return { kind: 'value', value: 'gpt-5.6-codex' };
+        },
+      },
+    );
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          rejection = await context
+            .callPlayer('dev.coder', 'work', { settings })
+            .catch((error: unknown) => error);
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'dev.coder', adapter: 'codex' }],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run() {
+            providerRuns += 1;
+            yield doneEvent('codex', 'done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(rejection).toBeInstanceOf(AgentCallSettingsError);
+    expect(isAgentCallSettingsError(rejection)).toBe(true);
+    expect(rejection).toMatchObject({
+      message: expect.stringContaining('model must not be an accessor'),
+      cause: expect.objectContaining({
+        name: 'TypeError',
+        message: expect.stringContaining('model must not be an accessor'),
+      }),
+    });
+    expect(providerRuns).toBe(0);
+    expect(records.some((record) => record.type === 'player_prompt')).toBe(
+      false,
+    );
+  });
+
+  it('classifies only complete-settings preflight rejections', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let captainRejection: unknown;
+    let unknownPlayerRejection: unknown;
+    let providerResult: PlayerRunResult | undefined;
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          captainRejection = await context
+            .callCaptain('invalid tuning', {
+              settings: {
+                model: { kind: 'value', value: 'claude-opus-5' },
+                effort: { kind: 'value', value: 'invalid' },
+              } as never,
+            })
+            .catch((error: unknown) => error);
+          unknownPlayerRejection = await context
+            .callPlayer('missing', 'invalid route', {
+              settings: {} as never,
+            })
+            .catch((error: unknown) => error);
+          providerResult = await context.callPlayer(
+            'dev.coder',
+            'provider failure',
+          );
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'dev.coder', adapter: 'codex' }],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run() {
+            yield doneEvent('claude-code', 'unused');
+          },
+        },
+        codex: {
+          agent: 'codex',
+          async *run() {
+            throw new Error('provider failed');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(captainRejection).toBeInstanceOf(AgentCallSettingsError);
+    expect(isAgentCallSettingsError(captainRejection)).toBe(true);
+    expect(captainRejection).toMatchObject({
+      message:
+        'Unsupported claude-code effort "invalid" in tmux-play call settings',
+      cause: expect.objectContaining({
+        message:
+          'Unsupported claude-code effort "invalid" in tmux-play call settings',
+      }),
+    });
+    expect(isAgentCallSettingsError(unknownPlayerRejection)).toBe(false);
+    expect(unknownPlayerRejection).toMatchObject({
+      message: 'Unknown player: missing',
+    });
+    expect(providerResult).toMatchObject({
+      status: 'error',
+      error: 'provider failed',
+    });
+    expect(isAgentCallSettingsError(providerResult)).toBe(false);
+    expect(
+      records
+        .filter((record) => record.type === 'player_prompt')
+        .map((record) => record.prompt),
+    ).toEqual(['provider failure']);
+    expect(records.some((record) => record.type === 'captain_prompt')).toBe(
+      false,
+    );
+  });
+
+  it('rejects unsupported Kimi resume resets and un-enforceable effort mappings before records or provider work', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const kimiOptions: AgentOptions[] = [];
+    let geminiRuns = 0;
+    let openCodeRuns = 0;
+    const captain: Captain = {
+      async handleBossTurn(_turn, context) {
+        await context.callPlayer('dev.kimi', 'first');
+        await expectAgentCallSettingsRejection(
+          context.callPlayer('dev.kimi', 'reset', {
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'provider-default' },
+            },
+          }),
+          'Kimi cannot restore provider-default',
+        );
+        await expectAgentCallSettingsRejection(
+          context.callPlayer('dev.kimi', 'reset permissions', {
+            settings: {
+              model: { kind: 'value', value: 'kimi-k2-current' },
+              effort: { kind: 'value', value: 'off' },
+            },
+          }),
+          'or permissions on a resumed session',
+        );
+        await context.callPlayer('dev.kimi', 'retune', {
+          settings: {
+            model: { kind: 'value', value: 'kimi-k2-current' },
+            effort: { kind: 'value', value: 'off' },
+            permissions: { mode: 'auto' },
+          },
+        });
+        await expectAgentCallSettingsRejection(
+          context.callPlayer('dev.gemini', 'invalid mapping', {
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'value', value: 'high' },
+            },
+          }),
+          'Gemini requires a supported concrete model',
+        );
+        await expectAgentCallSettingsRejection(
+          context.callPlayer('dev.opencode', 'invalid mapping', {
+            settings: {
+              model: { kind: 'value', value: 'unsupported/model' },
+              effort: { kind: 'value', value: 'high' },
+            },
+          }),
+          'OpenCode requires a supported provider/model',
+        );
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [
+        {
+          id: 'dev.kimi',
+          adapter: 'kimi',
+          model: 'kimi-configured',
+          effort: 'on',
+        },
+        {
+          id: 'dev.gemini',
+          adapter: 'gemini',
+          model: 'gemini-3-pro',
+          effort: 'high',
+        },
+        {
+          id: 'dev.opencode',
+          adapter: 'opencode',
+        },
+      ],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        kimi: {
+          agent: 'kimi',
+          async *run(_prompt, options) {
+            kimiOptions.push(options ?? {});
+            yield doneEvent('kimi', 'done', 'success', 'kimi-session');
+          },
+        },
+        gemini: {
+          agent: 'gemini',
+          async *run() {
+            geminiRuns += 1;
+            yield doneEvent('gemini', 'done');
+          },
+        },
+        opencode: {
+          agent: 'opencode',
+          async *run() {
+            openCodeRuns += 1;
+            yield doneEvent('opencode', 'done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(kimiOptions).toHaveLength(2);
+    expect(kimiOptions[1]).toMatchObject({
+      resume: 'kimi-session',
+      model: 'kimi-k2-current',
+      effort: 'off',
+    });
+    expect(geminiRuns).toBe(0);
+    expect(openCodeRuns).toBe(0);
+    expect(
+      records.filter((record) => record.type === 'player_prompt'),
+    ).toMatchObject([
+      { playerId: 'dev.kimi', prompt: 'first' },
+      { playerId: 'dev.kimi', prompt: 'retune' },
+    ]);
+  });
+
+  it.each([
+    ['mode', 'unattended'],
+    ['fileWrite', 'sometimes'],
+    ['shellExecute', true],
+    ['networkAccess', 'prompt'],
+    ['writablePaths', ['../outside']],
+  ])(
+    'rejects invalid complete-settings permission %s before prompt records and provider work',
+    async (field, value) => {
+      const records: TmuxPlayRecord[] = [];
+      let providerRuns = 0;
+      const captain: Captain = {
+        async handleBossTurn(_turn, context) {
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.coder', 'work', {
+              settings: {
+                model: { kind: 'value', value: 'gpt-5.6-codex' },
+                effort: { kind: 'value', value: 'high' },
+                permissions: { [field]: value } as never,
+              },
+            }),
+            `permissions.${field}`,
+          );
+        },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'dev.coder', adapter: 'codex' }],
+        observers: [{ onRecord: (record) => records.push(record) }],
+        adapterImports: adapterImports({
+          codex: {
+            agent: 'codex',
+            async *run() {
+              providerRuns += 1;
+              yield doneEvent('codex', 'done');
+            },
+          },
+        }),
+      });
+
+      await runtime.runBossTurn('go');
+
+      expect(providerRuns).toBe(0);
+      expect(records.some((record) => record.type === 'player_prompt')).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each([
+    [
+      'kimi',
+      { model: 'kimi-k2', effort: 'on', permissions: {} },
+      'requires permissions.mode "auto"',
+    ],
+    [
+      'kimi',
+      {
+        model: 'kimi-k2',
+        effort: 'on',
+        permissions: { fileWrite: 'allow' },
+      },
+      'requires permissions.mode "auto"',
+    ],
+    [
+      'kimi',
+      { model: 'kimi-k2', effort: 'on', permissions: { mode: 'bypass' } },
+      'yolo mode is not an unchecked bypass',
+    ],
+    [
+      'opencode',
+      {
+        model: 'openai/gpt-5',
+        effort: 'high',
+        permissions: { mode: 'bypass' },
+      },
+      "does not support PermissionPolicy.mode: 'bypass'",
+    ],
+    [
+      'codex',
+      {
+        model: 'gpt-5.6-codex',
+        effort: 'high',
+        permissions: { fileWrite: 'deny', writablePaths: ['.git'] },
+      },
+      'cannot combine non-empty writablePaths with read-only local access',
+    ],
+  ] as const)(
+    'rejects adapter-unenforceable %s permissions before records or provider work without losing continuity',
+    async (adapter, invalid, message) => {
+      const records: TmuxPlayRecord[] = [];
+      const observed: AgentOptions[] = [];
+      const agent = adapter === 'kimi' ? 'kimi' : adapter;
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            await context.callPlayer('dev.worker', 'first');
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('dev.worker', 'invalid', {
+                settings: {
+                  model: { kind: 'value', value: invalid.model },
+                  effort: { kind: 'value', value: invalid.effort },
+                  permissions: invalid.permissions,
+                } as never,
+              }),
+              message,
+            );
+            await context.callPlayer('dev.worker', 'after');
+          },
+        },
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'dev.worker', adapter }] as never,
+        observers: [{ onRecord: (record) => records.push(record) }],
+        adapterImports: adapterImports({
+          [adapter]: {
+            agent,
+            async *run(_prompt, options) {
+              observed.push(options ?? {});
+              yield doneEvent(agent, 'done', 'success', 'kept-session');
+            },
+          },
+        } as never),
+      });
+
+      await runtime.runBossTurn('go');
+
+      expect(observed).toHaveLength(2);
+      expect(observed[1]).toMatchObject({ resume: 'kept-session' });
+      expect(
+        records
+          .filter((record) => record.type === 'player_prompt')
+          .map((record) => record.prompt),
+      ).toEqual(['first', 'after']);
+    },
+  );
+
+  it('rejects an accessor-backed writablePaths index without invoking it', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const indexGetter = vi.fn(() => '../outside');
+    const writablePaths: string[] = [];
+    Object.defineProperty(writablePaths, '0', {
+      enumerable: true,
+      configurable: true,
+      get: indexGetter,
+    });
+    writablePaths.length = 1;
+    let providerRuns = 0;
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.coder', 'work', {
+              settings: {
+                model: { kind: 'value', value: 'gpt-5.6-codex' },
+                effort: { kind: 'value', value: 'high' },
+                permissions: { writablePaths },
+              },
+            }),
+            'writablePaths[0] must not be an accessor',
+          );
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'dev.coder', adapter: 'codex' }],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run() {
+            providerRuns += 1;
+            yield doneEvent('codex', 'done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(indexGetter).not.toHaveBeenCalled();
+    expect(providerRuns).toBe(0);
+    expect(records.some((record) => record.type === 'player_prompt')).toBe(
+      false,
+    );
   });
 
   it('tags Captain records with visibility and returns finalText for hidden calls', async () => {
@@ -408,9 +1198,7 @@ describe('TmuxPlayRuntime', () => {
     expect(types).toContain('captain_finished');
     expect(types[types.length - 1]).toBe('turn_finished');
     expect(
-      records.every(
-        (record) => record.turnId === null || record.turnId === 1,
-      ),
+      records.every((record) => record.turnId === null || record.turnId === 1),
     ).toBe(true);
   });
 
@@ -640,6 +1428,7 @@ describe('TmuxPlayRuntime', () => {
 
     expect(observed).toBeInstanceOf(Error);
     expect((observed as Error).message).toContain('observer failed');
+    expect(isAgentCallSettingsError(observed)).toBe(false);
   });
 
   it('emits a turn-bound captain_reply for a context emitReply call', async () => {
@@ -717,9 +1506,7 @@ describe('TmuxPlayRuntime', () => {
     );
 
     const replies = records.filter((record) => record.type === 'captain_reply');
-    expect(replies).toMatchObject([
-      { turnId: 2, text: 'current turn reply' },
-    ]);
+    expect(replies).toMatchObject([{ turnId: 2, text: 'current turn reply' }]);
   });
 
   it('rejects a stashed emitReply once turn_finished dispatches, keeping the terminal record last', async () => {
@@ -911,7 +1698,11 @@ describe('TmuxPlayRuntime', () => {
     expect(records).toMatchObject([
       { type: 'turn_started', turnId: 1 },
       { type: 'turn_finished', turnId: 1 },
-      { type: 'player_view_changed', turnId: null, visiblePlayerIds: ['coder'] },
+      {
+        type: 'player_view_changed',
+        turnId: null,
+        visiblePlayerIds: ['coder'],
+      },
     ]);
   });
 
@@ -1116,9 +1907,9 @@ describe('TmuxPlayRuntime', () => {
         await expect(staleContext.callCaptain('stale control')).rejects.toThrow(
           'turn-scoped',
         );
-        await expect(
-          staleContext.setVisiblePlayers(['coder']),
-        ).rejects.toThrow('turn-scoped');
+        await expect(staleContext.setVisiblePlayers(['coder'])).rejects.toThrow(
+          'turn-scoped',
+        );
         // ...while the active turn's own context still works.
         await context.setVisiblePlayers(['coder']);
       },
@@ -1140,18 +1931,22 @@ describe('TmuxPlayRuntime', () => {
     await expect(
       staleContext.callPlayer('coder', 'between turns'),
     ).rejects.toThrow('turn-scoped');
-    await expect(
-      staleContext.setVisiblePlayers(['coder']),
-    ).rejects.toThrow('turn-scoped');
+    await expect(staleContext.setVisiblePlayers(['coder'])).rejects.toThrow(
+      'turn-scoped',
+    );
     await runtime.runBossTurn('second');
     await runtime.dispose();
     // After shutdown the session gate rejects first, mirroring emitStatus.
     await expect(
       staleContext.callPlayer('coder', 'after dispose'),
     ).rejects.toThrow('tmux-play session emissions are closed');
-    await expect(staleContext.callCaptain('after dispose')).rejects.toThrow(
-      'tmux-play session emissions are closed',
-    );
+    const closedScopeError = await staleContext
+      .callCaptain('after dispose', { settings: {} as never })
+      .catch((error: unknown) => error);
+    expect(closedScopeError).toMatchObject({
+      message: 'tmux-play session emissions are closed',
+    });
+    expect(isAgentCallSettingsError(closedScopeError)).toBe(false);
 
     const views = records.filter(
       (record) => record.type === 'player_view_changed',
@@ -2147,6 +2942,75 @@ describe('TmuxPlayRuntime', () => {
     expect(views[1]?.visiblePlayerIds).toEqual(['coder', 'reviewer']);
   });
 
+  it('runs a Captain-only session with empty manifests and accepted empty visibility records (TTMUX-029, TTMUX-083)', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let sessionPlayers: readonly { id: string }[] | undefined;
+    let contextPlayers: readonly { id: string }[] | undefined;
+    const captain: Captain = {
+      async init(session) {
+        sessionPlayers = session.players.map(({ id }) => ({ id }));
+        await session.setVisiblePlayers([]);
+      },
+      async handleBossTurn(_turn, context) {
+        contextPlayers = context.players.map(({ id }) => ({ id }));
+        await context.setVisiblePlayers([]);
+        const result = await context.callCaptain('work without players');
+        expect(result.finalText).toBe('captain-only result');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run(prompt) {
+            expect(prompt).toBe('work without players');
+            yield textEvent('claude-code', 'captain-only text');
+            yield doneEvent('claude-code', 'captain-only result');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(sessionPlayers).toEqual([]);
+    expect(contextPlayers).toEqual([]);
+    const views = records.filter(
+      (record): record is PlayerViewChangedRecord =>
+        record.type === 'player_view_changed',
+    );
+    expect(
+      views.map(({ turnId, visiblePlayerIds }) => ({
+        turnId,
+        visiblePlayerIds,
+      })),
+    ).toEqual([
+      { turnId: null, visiblePlayerIds: [] },
+      { turnId: 1, visiblePlayerIds: [] },
+    ]);
+    expect(records.map((record) => record.type)).toEqual([
+      'player_view_changed',
+      'turn_started',
+      'player_view_changed',
+      'captain_prompt',
+      'captain_event',
+      'captain_event',
+      'captain_finished',
+      'turn_finished',
+    ]);
+    expect(
+      records.some(
+        (record) =>
+          record.type.startsWith('player_') &&
+          record.type !== 'player_view_changed',
+      ),
+    ).toBe(false);
+  });
+
   it('rejects an invalid setVisiblePlayers without emitting a record and lets the Captain continue (TTMUX-083)', async () => {
     const records: TmuxPlayRecord[] = [];
     const errors: string[] = [];
@@ -2179,7 +3043,9 @@ describe('TmuxPlayRuntime', () => {
     await runtime.runBossTurn('go');
 
     expect(errors).toHaveLength(3);
-    expect(errors[0]).toContain('at least one player');
+    expect(errors[0]).toContain(
+      'may be empty only when the configured players roster is empty',
+    );
     expect(errors[1]).toContain('duplicate player id "coder"');
     expect(errors[2]).toContain('unknown player id "ghost"');
     // Only the single valid call produced a record.
@@ -2259,7 +3125,9 @@ describe('TmuxPlayRuntime', () => {
     const playerWrites: string[] = [];
     const presenter = createTmuxPresenter({
       boss: { write: (value) => bossWrites.push(value) },
-      players: new Map([['coder', { write: (value) => playerWrites.push(value) }]]),
+      players: new Map([
+        ['coder', { write: (value) => playerWrites.push(value) }],
+      ]),
     });
 
     // Follow: returns no pane to its live tail.

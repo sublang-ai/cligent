@@ -1,0 +1,33 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
+
+# IR-048: Namespaced Settings and Managed tmux Lifecycle
+
+## Goal
+
+Let an embedding playbook bind namespaced players to independent sessions, replace an agent's effective settings per call, and own durable interactive-session transactions without exposing replies before settlement.
+
+## Deliverables
+
+- [x] tmux-play accepts dot-delimited player IDs and complete per-call model, effort, instruction, and permission settings.
+- [x] Provider-default selections reset supported fresh or resumed calls by omission, while unenforceable settings fail with a typed public rejection before provider work without losing continuity.
+- [x] A public prepared launcher and managed pane-session lifecycle expose initialized readiness, caller-controlled activation, fenced turn hooks, reply gating, and serialized shutdown.
+- [x] An empty roster runs as a Boss/Captain-only session with no player panes while preserving runtime records, presentation, and managed settlement.
+- [x] Specs, documentation, package declarations, and regression coverage describe and verify the complete surface.
+
+## Tasks
+
+1. [x] **Add namespaced calls and transactional managed sessions.**
+       Amend [TMUX-007](../user/tmux-play.md#tmux-007) and [TMUX-041](../user/tmux-play.md#tmux-041), add [TMUX-093](../user/tmux-play.md#tmux-093), [TMUX-094](../user/tmux-play.md#tmux-094), [TTMUX-096](../test/tmux-play.md#ttmux-096), and [TTMUX-097](../test/tmux-play.md#ttmux-097); implement detached complete call settings, adapter-owned mapping preflight, segmented player IDs, prepared activation/attach, terminal-aware reply settlement, serialized managed shutdown, and the strict empty-roster Boss/Captain-only shape; export and document the APIs and record the change in the changelog.
+
+## Acceptance criteria
+
+- Dotted player IDs resolve without changing ordinary single-segment IDs or log/pane behavior.
+- A supplied settings object is a closed detached replacement, and every rejection is distinguishable through the public settings-error predicate, precedes call records and provider work, preserves its diagnostic and cause, and retains the selected token.
+- Codex and Gemini can select provider defaults on fresh and resumed calls; Claude and OpenCode can do so when fresh and can reset resumed effort beside a concrete model, but fail closed for an unrestorable resumed default model; fresh Kimi can select defaults, while resumed Kimi fails closed when ACP cannot restore a model, effort, or permission default.
+- A managed launcher returns only after child initialization while input remains gated behind atomic control markers until the caller reports the public id and explicitly attaches; queued multiline paste retains one semantic prompt.
+- The managed session runner isolates agent subprocesses from the hosting tmux server before embedding-owned runtime initialization, even when invoked without the tmux-play CLI dispatcher.
+- A managed turn presents replies only after a finished terminal has crossed the runtime fence and settlement hook; aborted and failed transactions present none, and a fenced terminal still reaches settlement when the runtime then rejects.
+- Shutdown aborts active work and awaits the full transaction and runtime disposal before lifecycle release and returned-promise settlement.
+- Empty `players` plus omitted or empty `layout.initialVisible` launches one full-width Boss/Captain pane, exposes empty runtime manifests, accepts empty visibility records, and preserves managed reply settlement; a nonempty roster still rejects an empty visible set.
+- Existing nonempty-roster tmux-play launch/session/runtime behavior and generic `Cligent` option merging remain unchanged.

@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { existsSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createInterface, emitKeypressEvents } from 'node:readline';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { closeLogStreams, openAppendLogStreams } from '../shared/logs.js';
 import {
-  closeLogStreams,
-  openAppendLogStreams,
-} from '../shared/logs.js';
-import {
+  isolateOrchestratorFromAgents,
   isOrchestratorInTmux,
   killTmuxSession,
   queryPaneWidthsByTitle,
@@ -33,7 +37,14 @@ import {
   presenterPalette,
   type CatppuccinFlavor,
 } from './player-colors.js';
-import { ObserverDispatchError, type RecordObserver } from './records.js';
+import {
+  ObserverDispatchError,
+  type CaptainReplyRecord,
+  type RecordObserver,
+  type TmuxPlayRecord,
+  type TurnAbortedRecord,
+  type TurnFinishedRecord,
+} from './records.js';
 import { createFollowObserver } from './follow-observer.js';
 import { wrapScrollbackSafeOutput } from './scrollback-safe-output.js';
 import { createNotificationObserver } from './notification-observer.js';
@@ -51,10 +62,50 @@ import {
 } from './players.js';
 import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
 
-type RuntimeHandle = Pick<
+export type TmuxPlayRuntimeHandle = Pick<
   TmuxPlayRuntime,
   'abortActiveTurn' | 'dispose' | 'runBossTurn'
 >;
+
+export interface ManagedTmuxPlayInitializeContext {
+  readonly sessionId: string;
+  readonly config: TmuxPlayConfig;
+  readonly observers: readonly RecordObserver[];
+  readonly cwd?: string;
+}
+
+export interface ManagedTmuxPlayTurnContext {
+  readonly sessionId: string;
+  readonly prompt: string;
+}
+
+export interface ManagedTmuxPlayAfterTurnContext extends ManagedTmuxPlayTurnContext {
+  readonly replies: readonly CaptainReplyRecord[];
+  readonly terminal: ManagedTmuxPlayTerminalRecord;
+}
+
+export type ManagedTmuxPlayTerminalRecord =
+  TurnFinishedRecord | TurnAbortedRecord;
+
+export interface ManagedTmuxPlayShutdownContext {
+  readonly sessionId: string;
+  readonly reason: string;
+  readonly error?: unknown;
+}
+
+/**
+ * Lifecycle owned by an embedding session process. Initialization returns an
+ * already initialized-or-restored runtime and must register the supplied
+ * observers. Turn hooks bracket agent work and transactional reply release.
+ */
+export interface ManagedTmuxPlayLifecycle {
+  initializeRuntime(
+    context: ManagedTmuxPlayInitializeContext,
+  ): Promise<TmuxPlayRuntimeHandle>;
+  beforeNonEmptyTurn(context: ManagedTmuxPlayTurnContext): Promise<void>;
+  afterTurn(context: ManagedTmuxPlayAfterTurnContext): Promise<void>;
+  shutdown(context: ManagedTmuxPlayShutdownContext): Promise<void>;
+}
 
 const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
 const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
@@ -73,10 +124,12 @@ interface ReadlineLike {
   close(): void;
 }
 
+type ShutdownSignal = 'SIGHUP' | 'SIGINT' | 'SIGTERM';
+
 interface SignalTarget {
-  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
-  off?(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
-  removeListener?(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
+  on(event: ShutdownSignal, listener: () => void): unknown;
+  off?(event: ShutdownSignal, listener: () => void): unknown;
+  removeListener?(event: ShutdownSignal, listener: () => void): unknown;
 }
 
 interface LogCloser {
@@ -98,7 +151,7 @@ export interface TmuxPlaySessionOptions {
   }) => ReadlineLike;
   readonly createRuntime?: (
     options: RunTmuxPlayOptions,
-  ) => Promise<RuntimeHandle>;
+  ) => Promise<TmuxPlayRuntimeHandle>;
   readonly createTimingObserver?: (
     options: CreateTimingObserverOptions,
   ) => TimingObserverHandle;
@@ -110,29 +163,59 @@ export interface TmuxPlaySessionOptions {
   // tmux query that returns an empty map outside tmux; tests can stub this to
   // pin widths without spawning tmux.
   readonly queryPaneWidths?: (sessionName: string) => Map<string, number>;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedLifecycle?: ManagedTmuxPlayLifecycle;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedReadinessPath?: string;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedInputGatePath?: string;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedInputActivePath?: string;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedShutdownRequestPath?: string;
+  /** @internal Used by runManagedTmuxPlaySession. */
+  readonly managedShutdownCompletePath?: string;
 }
+
+export type ManagedTmuxPlaySessionOptions = Omit<
+  TmuxPlaySessionOptions,
+  | 'createRuntime'
+  | 'importCaptain'
+  | 'managedLifecycle'
+  | 'managedReadinessPath'
+  | 'managedInputGatePath'
+  | 'managedInputActivePath'
+  | 'managedShutdownRequestPath'
+  | 'managedShutdownCompletePath'
+> & {
+  readonly readinessPath: string;
+  readonly inputGatePath: string;
+  readonly inputActivePath: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly lifecycle: ManagedTmuxPlayLifecycle;
+};
 
 export class TmuxPlaySession {
   private readonly options: TmuxPlaySessionOptions;
   private readonly doneDeferred = deferred<void>();
   private readonly signalHandlers: Array<{
-    readonly event: 'SIGINT' | 'SIGTERM';
+    readonly event: ShutdownSignal;
     readonly listener: () => void;
   }> = [];
   private readline: ReadlineLike | undefined;
-  private runtime: RuntimeHandle | undefined;
+  private runtime: TmuxPlayRuntimeHandle | undefined;
   private logStreams: Map<string, LogCloser> | undefined;
   private timingObserver: TimingObserverHandle | undefined;
   private pending = Promise.resolve();
+  private startup = Promise.resolve();
   private shuttingDown = false;
   private playerPaneWidths: Map<string, number> = new Map();
   private resizeTarget: Writable | undefined;
   private resizeListener: (() => void) | undefined;
   private keypressTarget: Readable | undefined;
-  private keypressListener: ((
-    str: string | undefined,
-    key: Keypress,
-  ) => void) | undefined;
+  private keypressListener:
+    ((str: string | undefined, key: Keypress) => void) | undefined;
   private activeBossTurn = false;
   // TMUX-075: count of Boss turns that have been submitted but not yet finished
   // — the one currently running plus any lines the Boss submitted behind it that
@@ -152,6 +235,13 @@ export class TmuxPlaySession {
   private pasteAwaitingSubmit = false;
   private pasteBuffer: string[] = [];
   private exitPasteCleanup: (() => void) | undefined;
+  private presentationGate: ManagedPresentationGate | undefined;
+  private acceptingInput = false;
+  private readonly preActivationPrompts: string[] = [];
+  private shutdownPromise: Promise<void> | undefined;
+  private readonly shutdownErrors: unknown[] = [];
+  private managedReadinessPublished = false;
+  private managedShutdownPoll: ReturnType<typeof setTimeout> | undefined;
 
   readonly done: Promise<void> = this.doneDeferred.promise;
 
@@ -161,11 +251,6 @@ export class TmuxPlaySession {
 
   async start(): Promise<void> {
     const config = await readConfigSnapshot(this.options.workDir);
-    const captain = await loadCaptain(
-      config.captain.from,
-      config.captain.options,
-      this.options.importCaptain,
-    );
     const playerIds = config.players.map((player) => player.id);
     const output = this.options.output ?? process.stdout;
     const logStreams = openAppendLogStreams(
@@ -182,8 +267,9 @@ export class TmuxPlaySession {
     const playerWidths = new Map<string, WidthSource>();
     for (const player of config.players) {
       const title = playerPaneTitle(player.id, player.adapter);
-      playerWidths.set(player.id, () =>
-        this.playerPaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
+      playerWidths.set(
+        player.id,
+        () => this.playerPaneWidths.get(title) ?? Number.POSITIVE_INFINITY,
       );
     }
     const playerAdapters = new Map(
@@ -247,22 +333,39 @@ export class TmuxPlaySession {
         ),
     });
 
-    const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
-    this.runtime = await createRuntime({
-      captain,
-      captainConfig: runtimeCaptain(config.captain),
-      players: runtimePlayers(config.players),
-      observers: [
-        layoutObserver,
-        presenter,
-        followObserver,
-        timingObserver,
-        notificationObserver,
-        ...(this.options.observers ?? []),
-      ],
-      cwd: this.options.cwd,
-      adapterImports: this.options.adapterImports,
-    });
+    const observers = [
+      layoutObserver,
+      presenter,
+      followObserver,
+      timingObserver,
+      notificationObserver,
+      ...(this.options.observers ?? []),
+    ];
+    if (this.options.managedLifecycle) {
+      this.presentationGate = new ManagedPresentationGate(observers);
+      this.runtime = await this.options.managedLifecycle.initializeRuntime({
+        sessionId: this.options.sessionId,
+        config,
+        observers: [this.presentationGate],
+        cwd: this.options.cwd,
+      });
+      if (this.shuttingDown) return;
+    } else {
+      const captain = await loadCaptain(
+        config.captain.from,
+        config.captain.options,
+        this.options.importCaptain,
+      );
+      const createRuntime = this.options.createRuntime ?? createTmuxPlayRuntime;
+      this.runtime = await createRuntime({
+        captain,
+        captainConfig: runtimeCaptain(config.captain),
+        players: runtimePlayers(config.players),
+        observers,
+        cwd: this.options.cwd,
+        adapterImports: this.options.adapterImports,
+      });
+    }
 
     const input = this.options.input ?? process.stdin;
     this.terminalInput = isTty(input);
@@ -291,19 +394,73 @@ export class TmuxPlaySession {
     )}boss> ${SGR_RESET}`;
     this.readline.setPrompt(this.bossPrompt);
     this.readline.on('line', (line) => {
+      if (!this.acceptingInput) {
+        if (this.options.managedLifecycle && !this.shuttingDown) {
+          this.routeInputLine(line, (prompt) => {
+            this.preActivationPrompts.push(prompt);
+          });
+        }
+        return;
+      }
       this.handleLine(line);
     });
     this.readline.on('close', () => {
       void this.shutdown('EOF');
     });
     this.installInputKeypressHandling(input, output);
-    this.registerSignal('SIGINT');
-    this.registerSignal('SIGTERM');
+    if (!this.options.managedLifecycle) {
+      this.registerSignal('SIGHUP');
+      this.registerSignal('SIGINT');
+      this.registerSignal('SIGTERM');
+    }
     this.readline.prompt();
+    if (this.options.managedReadinessPath) {
+      if (this.shuttingDown) return;
+      publishManagedReadiness(this.options.managedReadinessPath, {
+        status: 'ready',
+      });
+      this.managedReadinessPublished = true;
+      void this.activateManagedInput().catch((error) => {
+        void this.shutdown('input activation failure', error);
+      });
+    } else {
+      this.acceptingInput = true;
+    }
   }
 
   async run(): Promise<void> {
-    await this.start();
+    if (this.options.managedLifecycle) {
+      // A managed host may receive termination while its durable runtime is
+      // still restoring. Register before that await and make shutdown join it.
+      this.registerSignal('SIGHUP');
+      this.registerSignal('SIGINT');
+      this.registerSignal('SIGTERM');
+    }
+    const startup = this.start();
+    this.startup = startup.catch(() => undefined);
+    if (this.options.managedLifecycle) {
+      this.watchManagedShutdownRequest();
+    }
+    try {
+      await startup;
+    } catch (error) {
+      if (!this.options.managedLifecycle) throw error;
+      if (
+        this.options.managedReadinessPath &&
+        !this.managedReadinessPublished &&
+        !this.shuttingDown
+      ) {
+        try {
+          publishManagedReadiness(this.options.managedReadinessPath, {
+            status: 'error',
+            message: errorMessage(error),
+          });
+        } catch {
+          // The launcher will also detect that its pane child exited.
+        }
+      }
+      await this.shutdown('startup failure', error);
+    }
     await this.done;
   }
 
@@ -320,55 +477,122 @@ export class TmuxPlaySession {
     }
 
     this.pendingTurns += 1;
-    this.pending = this.pending
-      .then(async () => {
+    const operation = this.pending.then(async () => {
+      try {
+        if (this.shuttingDown) {
+          return;
+        }
+        this.refreshPlayerPaneWidths();
+        this.activeBossTurn = true;
+        this.suspendPrompt();
         try {
-          if (this.shuttingDown) {
-            return;
+          this.presentationGate?.beginTurn();
+          if (this.options.managedLifecycle) {
+            await this.options.managedLifecycle.beforeNonEmptyTurn({
+              sessionId: this.options.sessionId,
+              prompt,
+            });
+            if (this.shuttingDown) {
+              this.presentationGate?.discardReplies();
+              return;
+            }
           }
-          this.refreshPlayerPaneWidths();
-          this.activeBossTurn = true;
-          this.suspendPrompt();
+          let runtimeFailure: unknown;
           try {
             await this.runtime?.runBossTurn(prompt);
           } catch (error) {
-            // Non-observer failures are already emitted as runtime_error
-            // records by the runtime and rendered by the tmux presenter.
-            // Observer dispatch failures bypass that path because the failing
-            // observer is the presenter itself, so we emit the line directly
-            // under the TMUX-039 bracketed-tag grammar.
-            if (error instanceof ObserverDispatchError) {
-              this.writeOutput(
-                `captain> [runtime error] ${errorMessage(error)}\n`,
+            runtimeFailure = error;
+          }
+          if (this.options.managedLifecycle && this.presentationGate) {
+            const replies = this.presentationGate.bufferedReplies();
+            const terminal = this.presentationGate.capturedTerminalRecord();
+            if (!terminal && runtimeFailure === undefined) {
+              throw new Error(
+                'managed tmux-play turn ended without a terminal record',
               );
             }
+            if (terminal) {
+              try {
+                await this.options.managedLifecycle.afterTurn({
+                  sessionId: this.options.sessionId,
+                  prompt,
+                  replies,
+                  terminal,
+                });
+              } catch (settlementFailure) {
+                if (runtimeFailure !== undefined) {
+                  // The runtime rejection caused this shutdown. Retain a
+                  // simultaneous settlement failure for cleanup accounting,
+                  // but do not replace the original fenced runtime failure.
+                  if (!this.shutdownErrors.includes(runtimeFailure)) {
+                    this.shutdownErrors.push(runtimeFailure);
+                  }
+                  if (!this.shutdownErrors.includes(settlementFailure)) {
+                    this.shutdownErrors.push(settlementFailure);
+                  }
+                  throw runtimeFailure;
+                }
+                throw settlementFailure;
+              }
+              if (
+                runtimeFailure === undefined &&
+                !this.shuttingDown &&
+                terminal.type === 'turn_finished'
+              ) {
+                await this.presentationGate.releaseReplies();
+              } else {
+                this.presentationGate.discardReplies();
+              }
+            }
           }
-        } finally {
-          // TMUX-075: this finally runs on every settle path — normal
-          // completion, ESC abort, the runtime-error / observer-dispatch
-          // branches above, an early shutdown return, or any unexpected throw —
-          // so the increment in `enqueueLine` is always balanced. It restores
-          // the colored prompt, then paints a fresh ready prompt only once the
-          // queue of submitted Boss lines drains (`pendingTurns === 0`): when
-          // another line is queued behind this turn the next turn begins under
-          // the same suspension, so no spurious `boss> ` appears between
-          // consecutive turns. Any type-ahead the Boss buffered surfaces on
-          // that final restored prompt.
-          this.activeBossTurn = false;
-          this.pendingTurns -= 1;
-          this.restorePrompt();
-          if (this.pendingTurns === 0 && !this.shuttingDown) {
-            this.readline?.prompt();
+          if (runtimeFailure !== undefined) throw runtimeFailure;
+        } catch (error) {
+          this.presentationGate?.discardReplies();
+          if (this.options.managedLifecycle) {
+            throw error;
+          }
+          // Non-observer failures are already emitted as runtime_error
+          // records by the runtime and rendered by the tmux presenter.
+          // Observer dispatch failures bypass that path because the failing
+          // observer is the presenter itself, so we emit the line directly
+          // under the TMUX-039 bracketed-tag grammar.
+          if (error instanceof ObserverDispatchError) {
+            this.writeOutput(
+              `captain> [runtime error] ${errorMessage(error)}\n`,
+            );
           }
         }
-      })
-      .catch((error) => {
-        // Same TMUX-039 bracketed-tag grammar for the catch-all failure
-        // path: bracketed tag carries the kind, message sits outside.
-        this.writeOutput(
-          `captain> [runtime error] ${errorMessage(error)}\n`,
-        );
-      });
+      } finally {
+        // TMUX-075: this finally runs on every settle path — normal
+        // completion, ESC abort, the runtime-error / observer-dispatch
+        // branches above, an early shutdown return, or any unexpected throw —
+        // so the increment in `enqueueLine` is always balanced. It restores
+        // the colored prompt, then paints a fresh ready prompt only once the
+        // queue of submitted Boss lines drains (`pendingTurns === 0`): when
+        // another line is queued behind this turn the next turn begins under
+        // the same suspension, so no spurious `boss> ` appears between
+        // consecutive turns. Any type-ahead the Boss buffered surfaces on
+        // that final restored prompt.
+        this.activeBossTurn = false;
+        this.pendingTurns -= 1;
+        this.restorePrompt();
+        if (this.pendingTurns === 0 && !this.shuttingDown) {
+          this.readline?.prompt();
+        }
+      }
+    });
+    // Keep the serialization tail fulfilled so one rejected operation cannot
+    // strand shutdown while preserving the operation's own rejection below.
+    this.pending = operation.catch(() => undefined);
+    void operation.catch((error) => {
+      if (this.options.managedLifecycle) {
+        void this.shutdown('turn failure', error);
+        return;
+      }
+      // Same TMUX-039 bracketed-tag grammar for the catch-all failure
+      // path: bracketed tag carries the kind, message sits outside.
+      this.writeOutput(`captain> [runtime error] ${errorMessage(error)}\n`);
+    });
   }
 
   // TMUX-075: while a Boss turn is active, blank the live readline prompt so
@@ -393,50 +617,141 @@ export class TmuxPlaySession {
     this.readline?.setPrompt(this.bossPrompt);
   }
 
-  private registerSignal(event: 'SIGINT' | 'SIGTERM'): void {
+  private registerSignal(event: ShutdownSignal): void {
     const target = this.options.signalTarget ?? process;
     const listener = () => {
       void this.shutdown(event);
-      this.readline?.close();
     };
     target.on(event, listener);
     this.signalHandlers.push({ event, listener });
   }
 
-  private async shutdown(reason: string): Promise<void> {
-    if (this.shuttingDown) {
-      return;
+  private async shutdown(reason: string, failure?: unknown): Promise<void> {
+    if (
+      failure !== undefined &&
+      !this.shutdownErrors.some((recorded) => recorded === failure)
+    ) {
+      this.shutdownErrors.push(failure);
     }
+    if (this.shutdownPromise) return this.shutdownPromise;
     this.shuttingDown = true;
+    this.acceptingInput = false;
+    this.preActivationPrompts.splice(0);
+    this.stopManagedShutdownRequestWatcher();
     this.unregisterSignals();
     this.unsubscribeFromResize();
     this.removeKeypressListener();
     this.disableBracketedPaste();
     this.runtime?.abortActiveTurn(reason);
 
-    const errors: unknown[] = [];
-    await runShutdownStep(errors, () => this.runtime?.dispose());
-    await runShutdownStep(errors, () => this.timingObserver?.dispose());
-    await runShutdownStep(errors, () =>
-      closeLogStreams(this.logStreams?.values() ?? []),
-    );
-    await runShutdownStep(errors, () => this.cleanupWorkDir());
-    await runShutdownStep(errors, () =>
-      (this.options.killSession ?? killTmuxSession)(this.sessionName()),
-    );
+    const activeTransactions = Promise.all([this.startup, this.pending]);
+    this.shutdownPromise = (async () => {
+      const errors = this.shutdownErrors;
+      // Managed hooks can own durable write-ahead and settlement. Never
+      // release their lease or dispose the runtime concurrently with a turn.
+      await runShutdownStep(errors, async () => {
+        await activeTransactions;
+      });
+      await runShutdownStep(errors, () => this.runtime?.dispose());
+      await runShutdownStep(errors, () =>
+        this.options.managedLifecycle?.shutdown({
+          sessionId: this.options.sessionId,
+          reason,
+          ...(errors[0] !== undefined ? { error: errors[0] } : {}),
+        }),
+      );
+      await runShutdownStep(errors, () => this.timingObserver?.dispose());
+      await runShutdownStep(errors, () =>
+        closeLogStreams(this.logStreams?.values() ?? []),
+      );
+      await runShutdownStep(errors, () => this.cleanupWorkDir());
+      await runShutdownStep(errors, () => {
+        if (this.options.managedShutdownCompletePath) {
+          publishManagedShutdownComplete(
+            this.options.managedShutdownCompletePath,
+          );
+        }
+      });
+      await runShutdownStep(errors, () =>
+        (this.options.killSession ?? killTmuxSession)(this.sessionName()),
+      );
 
-    if (errors.length > 0) {
-      this.doneDeferred.reject(errors[0]);
-    } else {
-      this.doneDeferred.resolve();
+      if (errors.length > 0) {
+        this.doneDeferred.reject(errors[0]);
+      } else {
+        this.doneDeferred.resolve();
+      }
+    })();
+    this.readline?.close();
+    return this.shutdownPromise;
+  }
+
+  private async activateManagedInput(): Promise<void> {
+    const gatePath = this.options.managedInputGatePath;
+    const activePath = this.options.managedInputActivePath;
+    if (!gatePath || !activePath) {
+      throw new Error('managed tmux-play input boundary is incomplete');
     }
+    while (!this.shuttingDown) {
+      if (existsSync(gatePath)) {
+        if (readFileSync(gatePath, 'utf8').trim() !== 'ready') {
+          throw new Error(
+            'managed tmux-play launcher wrote an invalid input gate',
+          );
+        }
+        if (this.shuttingDown) return;
+        this.acceptingInput = true;
+        const queued = this.preActivationPrompts.splice(0);
+        publishManagedInputActive(activePath);
+        for (const prompt of queued) this.enqueueLine(prompt);
+        return;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+  }
 
+  private watchManagedShutdownRequest(): void {
+    const requestPath = this.options.managedShutdownRequestPath;
+    if (!requestPath) return;
+    const poll = (): void => {
+      this.managedShutdownPoll = undefined;
+      if (this.shuttingDown) return;
+      try {
+        if (existsSync(requestPath)) {
+          if (readFileSync(requestPath, 'utf8').trim() !== 'shutdown') {
+            void this.shutdown(
+              'managed shutdown request failure',
+              new Error(
+                'managed tmux-play launcher wrote an invalid shutdown request',
+              ),
+            );
+          } else {
+            void this.shutdown('SIGHUP');
+          }
+          return;
+        }
+      } catch (error) {
+        void this.shutdown('managed shutdown request failure', error);
+        return;
+      }
+      this.managedShutdownPoll = setTimeout(poll, 10);
+    };
+    poll();
+  }
+
+  private stopManagedShutdownRequestWatcher(): void {
+    if (this.managedShutdownPoll !== undefined) {
+      clearTimeout(this.managedShutdownPoll);
+      this.managedShutdownPoll = undefined;
+    }
   }
 
   private cleanupWorkDir(): void {
     const markerPath = join(this.options.workDir, TMUX_PLAY_SESSION_MARKER);
     if (existsSync(markerPath)) {
-      (this.options.removeWorkDir ?? defaultRemoveWorkDir)(this.options.workDir);
+      (this.options.removeWorkDir ?? defaultRemoveWorkDir)(
+        this.options.workDir,
+      );
     }
   }
 
@@ -460,15 +775,19 @@ export class TmuxPlaySession {
   }
 
   private handleLine(line: string): void {
+    this.routeInputLine(line, (prompt) => this.enqueueLine(prompt));
+  }
+
+  private routeInputLine(line: string, submit: (prompt: string) => void): void {
     if (this.inPaste) {
       this.pasteBuffer.push(line);
       return;
     }
     if (this.pasteAwaitingSubmit) {
-      this.enqueueLine(this.flushPastedPrompt(line));
+      submit(this.flushPastedPrompt(line));
       return;
     }
-    this.enqueueLine(line);
+    submit(line);
   }
 
   private flushPastedPrompt(line: string): string {
@@ -481,7 +800,10 @@ export class TmuxPlaySession {
     return prompt;
   }
 
-  private installInputKeypressHandling(input: Readable, output: Writable): void {
+  private installInputKeypressHandling(
+    input: Readable,
+    output: Writable,
+  ): void {
     if (!isTty(input)) {
       return;
     }
@@ -597,6 +919,60 @@ export class TmuxPlaySession {
   }
 }
 
+class ManagedPresentationGate implements RecordObserver {
+  private readonly observers: readonly RecordObserver[];
+  private replies: CaptainReplyRecord[] = [];
+  private terminal: ManagedTmuxPlayTerminalRecord | undefined;
+
+  constructor(observers: readonly RecordObserver[]) {
+    this.observers = observers;
+  }
+
+  async onRecord(record: TmuxPlayRecord): Promise<void> {
+    if (record.type === 'captain_reply') {
+      this.replies.push(Object.freeze({ ...record }));
+      return;
+    }
+    if (record.type === 'turn_finished' || record.type === 'turn_aborted') {
+      this.terminal = Object.freeze({ ...record });
+    }
+    await this.dispatch(record);
+  }
+
+  beginTurn(): void {
+    if (this.replies.length > 0 || this.terminal) {
+      throw new Error('managed tmux-play reply buffer was not settled');
+    }
+  }
+
+  bufferedReplies(): readonly CaptainReplyRecord[] {
+    return Object.freeze([...this.replies]);
+  }
+
+  capturedTerminalRecord(): ManagedTmuxPlayTerminalRecord | undefined {
+    return this.terminal;
+  }
+
+  async releaseReplies(): Promise<void> {
+    for (const reply of this.replies) {
+      await this.dispatch(reply);
+    }
+    this.replies = [];
+    this.terminal = undefined;
+  }
+
+  discardReplies(): void {
+    this.replies = [];
+    this.terminal = undefined;
+  }
+
+  private async dispatch(record: TmuxPlayRecord): Promise<void> {
+    for (const observer of this.observers) {
+      await observer.onRecord(record);
+    }
+  }
+}
+
 function defaultQueryPaneWidths(sessionName: string): Map<string, number> {
   // TMUX-074: the orchestrator scrubs TMUX from process.env to sandbox player agents
   // (see isolateOrchestratorFromAgents), so consult the pinned tmux env rather
@@ -623,7 +999,96 @@ function isTty(stream: Readable | Writable): boolean {
 export async function runTmuxPlaySession(
   options: TmuxPlaySessionOptions,
 ): Promise<void> {
+  // TMUX-074: public embedders can enter session mode without passing
+  // through the CLI dispatcher. Isolate at the construction boundary so
+  // every runtime and adapter inherits the scrubbed agent environment.
+  isolateOrchestratorFromAgents();
   await new TmuxPlaySession(options).run();
+}
+
+/**
+ * Run the interactive pane process under an embedding host's transactional
+ * lifecycle. The readiness marker is published only after the supplied
+ * runtime has initialized or restored and input handling is installed.
+ */
+export async function runManagedTmuxPlaySession(
+  options: ManagedTmuxPlaySessionOptions,
+): Promise<void> {
+  isolateOrchestratorFromAgents();
+  const {
+    lifecycle,
+    readinessPath,
+    inputGatePath,
+    inputActivePath,
+    shutdownRequestPath,
+    shutdownCompletePath,
+    ...sessionOptions
+  } = options;
+  await new TmuxPlaySession({
+    ...sessionOptions,
+    managedLifecycle: lifecycle,
+    managedReadinessPath: readinessPath,
+    managedInputGatePath: inputGatePath,
+    managedInputActivePath: inputActivePath,
+    managedShutdownRequestPath: shutdownRequestPath,
+    managedShutdownCompletePath: shutdownCompletePath,
+  }).run();
+}
+
+function publishManagedReadiness(
+  path: string,
+  value:
+    | { readonly status: 'ready' }
+    | {
+        readonly status: 'error';
+        readonly message: string;
+      },
+): void {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, `${JSON.stringify(value)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  });
+  renameSync(temporaryPath, path);
+}
+
+function publishManagedInputActive(path: string): void {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, 'active\n', {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  });
+  renameSync(temporaryPath, path);
+}
+
+function publishManagedShutdownComplete(path: string): void {
+  // Detached activation deliberately closes the launcher's coordination
+  // boundary. Signals and EOF still run the managed lifecycle, but there is
+  // no outer request waiter to acknowledge after that point.
+  if (!existsSync(dirname(path))) return;
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporaryPath, 'complete\n', {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    renameSync(temporaryPath, path);
+  } catch (error) {
+    if (isMissingPathError(error)) return;
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
 }
 
 export async function readConfigSnapshot(
@@ -641,7 +1106,9 @@ async function loadCaptain(
   const mod = await importCaptain(specifier);
   const factory = (mod as { default?: unknown }).default;
   if (typeof factory !== 'function') {
-    throw new Error(`Captain module ${specifier} must export a default factory`);
+    throw new Error(
+      `Captain module ${specifier} must export a default factory`,
+    );
   }
   return (await (factory as (options: unknown) => Captain | Promise<Captain>)(
     options,

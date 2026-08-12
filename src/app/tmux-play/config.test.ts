@@ -461,11 +461,17 @@ describe('tmux-play config loading', () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const missingCaptain = join(workDir, 'missing-captain.yaml');
     const missingFrom = join(workDir, 'missing-from.yaml');
+    const missingPlayers = join(workDir, 'missing-players.yaml');
+    const nonArrayPlayers = join(workDir, 'non-array-players.yaml');
     writeFileSync(missingCaptain, 'players:\n  - id: coder\n    adapter: codex\n');
     writeFileSync(
       missingFrom,
       'captain:\n  adapter: claude\n  options: {}\nplayers:\n  - id: coder\n    adapter: codex\n',
     );
+    const captain =
+      "captain:\n  from: '@sublang/cligent/captains/fanout'\n  adapter: claude\n  options: {}\n";
+    writeFileSync(missingPlayers, captain);
+    writeFileSync(nonArrayPlayers, `${captain}players: {}\n`);
 
     await expect(
       loadTmuxPlayConfig({ cwd: workDir, configPath: missingCaptain }),
@@ -473,6 +479,12 @@ describe('tmux-play config loading', () => {
     await expect(
       loadTmuxPlayConfig({ cwd: workDir, configPath: missingFrom }),
     ).rejects.toThrow('captain.from must be a non-empty string');
+    await expect(
+      loadTmuxPlayConfig({ cwd: workDir, configPath: missingPlayers }),
+    ).rejects.toThrow('players must be an array');
+    await expect(
+      loadTmuxPlayConfig({ cwd: workDir, configPath: nonArrayPlayers }),
+    ).rejects.toThrow('players must be an array');
   });
 
   it('rejects unknown adapters for Captain and players', async () => {
@@ -1876,6 +1888,47 @@ describe('tmux-play config loading', () => {
     expect(single.config.layout.columnWeights).toEqual([1, 1]);
   });
 
+  it('resolves an empty roster to the Boss-only layout and snapshots it (TTMUX-080)', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const sessionWorkDir = join(workDir, 'session');
+    const captain = [
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      '  adapter: claude',
+      '  options: {}',
+      'players: []',
+      '',
+    ];
+
+    const omittedPath = join(workDir, 'omitted.yaml');
+    writeFileSync(omittedPath, captain.join('\n'));
+    const omitted = await loadTmuxPlayConfig({ configPath: omittedPath });
+    expect(omitted.config.players).toEqual([]);
+    expect(omitted.config.layout.initialVisible).toEqual([]);
+    expect(omitted.config.layout.columnWeights).toEqual([1]);
+
+    const explicitPath = join(workDir, 'explicit.yaml');
+    writeFileSync(
+      explicitPath,
+      ['layout:', '  initialVisible: []', ...captain].join('\n'),
+    );
+    const explicit = await loadTmuxPlayConfig({ configPath: explicitPath });
+    expect(explicit.config.players).toEqual([]);
+    expect(explicit.config.layout.initialVisible).toEqual([]);
+    expect(explicit.config.layout.columnWeights).toEqual([1]);
+
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(
+      explicit,
+      sessionWorkDir,
+    );
+    const snapshot = JSON.parse(
+      readFileSync(snapshotPath, 'utf8'),
+    ) as TmuxPlayConfig;
+    expect(snapshot.players).toEqual([]);
+    expect(snapshot.layout.initialVisible).toEqual([]);
+    expect(snapshot.layout.columnWeights).toEqual([1]);
+  });
+
   it('rejects a malformed layout.initialVisible (TTMUX-080)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const captain = [
@@ -1908,7 +1961,7 @@ describe('tmux-play config loading', () => {
     writeFileSync(unknownPath, withInitial(['    - alpha', '    - ghost']));
 
     await expect(loadTmuxPlayConfig({ configPath: emptyPath })).rejects.toThrow(
-      'layout.initialVisible must name at least one player',
+      'layout.initialVisible may be empty only when the configured players roster is empty',
     );
     await expect(loadTmuxPlayConfig({ configPath: dupPath })).rejects.toThrow(
       'layout.initialVisible[1] "alpha" is a duplicate player id',

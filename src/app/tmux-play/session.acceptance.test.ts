@@ -107,7 +107,13 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
         join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
         JSON.stringify({
           theme: 'mocha',
-          layout: { window: { columns: 120, rows: 40 }, columnWeights: [1, 1] },
+          layout: {
+            window: { columns: 120, rows: 40 },
+            initialVisible: [],
+            singlePlayerColumnWeights: [1, 1],
+            multiPlayerColumnWeights: [1, 1, 1],
+            columnWeights: [1],
+          },
           captain: { from: 'stub-captain', adapter: 'claude', options: {} },
           players: [],
         }),
@@ -244,7 +250,13 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
         join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
         JSON.stringify({
           theme: 'mocha',
-          layout: { window: { columns: 120, rows: 40 }, columnWeights: [1, 1] },
+          layout: {
+            window: { columns: 120, rows: 40 },
+            initialVisible: [],
+            singlePlayerColumnWeights: [1, 1],
+            multiPlayerColumnWeights: [1, 1, 1],
+            columnWeights: [1],
+          },
           notifications: {
             player_finished: 'off',
             turn_finished: 'desktop',

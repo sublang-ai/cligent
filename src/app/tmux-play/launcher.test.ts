@@ -11,24 +11,39 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   attachTmuxSessionMock,
+  hasTmuxPaneMock,
   isTmuxAvailableMock,
+  killTmuxSessionMock,
   runTmuxMock,
+  runTmuxOutputMock,
   isGlowAvailableMock,
 } = vi.hoisted(() => ({
   attachTmuxSessionMock: vi.fn(),
+  hasTmuxPaneMock: vi.fn(),
   isTmuxAvailableMock: vi.fn(),
+  killTmuxSessionMock: vi.fn(),
   runTmuxMock: vi.fn(),
+  runTmuxOutputMock: vi.fn(),
   isGlowAvailableMock: vi.fn(),
 }));
 
 vi.mock('../shared/tmux.js', () => ({
   attachTmuxSession: attachTmuxSessionMock,
+  hasTmuxPane: hasTmuxPaneMock,
+  isolateOrchestratorFromAgents: vi.fn(),
+  isOrchestratorInTmux: () => false,
   isTmuxAvailable: isTmuxAvailableMock,
+  killTmuxSession: killTmuxSessionMock,
   runTmux: runTmuxMock,
+  runTmuxOutput: runTmuxOutputMock,
+  queryPaneTargetsByTitle: () => new Map(),
+  queryPaneWidthsByTitle: () => new Map(),
 }));
 
 vi.mock('../shared/glow.js', () => ({
@@ -38,9 +53,11 @@ vi.mock('../shared/glow.js', () => ({
 
 import {
   buildPlayerArea,
+  launchManagedTmuxPlay,
   launchTmuxPlay,
   legacyEffortReporter,
   parseOsc11BackgroundFlavor,
+  publishManagedControlMarker,
   TMUX_PLAY_SESSION_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
@@ -55,6 +72,7 @@ import {
 } from './timer-options.js';
 import { shellQuote } from '../shared/shell.js';
 import { cligentPackageRoot, resolveInstallRoot } from './readiness.js';
+import { runManagedTmuxPlaySession } from './session.js';
 
 class MemoryOutput {
   chunks: string[] = [];
@@ -69,6 +87,28 @@ class MemoryOutput {
   }
 }
 
+class ManagedTestReadline {
+  private readonly events = new EventEmitter();
+  private closed = false;
+
+  setPrompt(): void {}
+  prompt(): void {}
+  on(event: 'line', listener: (line: string) => void): this;
+  on(event: 'close', listener: () => void): this;
+  on(
+    event: 'line' | 'close',
+    listener: ((line: string) => void) | (() => void),
+  ): this {
+    this.events.on(event, listener);
+    return this;
+  }
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.events.emit('close');
+  }
+}
+
 describe('launchTmuxPlay', () => {
   let tempDir: string | undefined;
 
@@ -80,6 +120,11 @@ describe('launchTmuxPlay', () => {
     isTmuxAvailableMock.mockReturnValue(true);
     isGlowAvailableMock.mockReturnValue(true);
     runTmuxMock.mockReset();
+    runTmuxOutputMock.mockReset();
+    runTmuxOutputMock.mockReturnValue('%42');
+    hasTmuxPaneMock.mockReset();
+    hasTmuxPaneMock.mockReturnValue(true);
+    killTmuxSessionMock.mockReset();
     attachTmuxSessionMock.mockReset();
     delete process.env.TERM_PROGRAM;
   });
@@ -283,6 +328,512 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  it('uses a caller-owned pane command and waits for child readiness before attaching', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const workDir = join(tempDir, 'managed work');
+    const order: string[] = [];
+    attachTmuxSessionMock.mockImplementation(() => {
+      order.push('attach');
+    });
+
+    const result = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: '8f45153e-2c91-4561-a99f-77d0f0a45881',
+      workDir,
+      createSessionCommand: (context) => {
+        order.push('command');
+        expect(context).toMatchObject({
+          sessionId: '8f45153e-2c91-4561-a99f-77d0f0a45881',
+          sessionName: 'tmux-play-8f45153e-2c91-4561-a99f-77d0f0a45881',
+          workDir,
+          snapshotPath: join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
+        });
+        setTimeout(() => {
+          order.push('ready');
+          writeFileSync(
+            context.readinessPath,
+            `${JSON.stringify({ status: 'ready' })}\n`,
+            { mode: 0o600 },
+          );
+        }, 0);
+        const acknowledgeInput = (): void => {
+          if (!existsSync(context.inputGatePath)) {
+            setTimeout(acknowledgeInput, 0);
+            return;
+          }
+          order.push('input active');
+          writeFileSync(context.inputActivePath, 'active\n', { mode: 0o600 });
+        };
+        setTimeout(acknowledgeInput, 0);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    expect(result.sessionId).toBe('8f45153e-2c91-4561-a99f-77d0f0a45881');
+    expect(runTmuxOutputMock.mock.calls[0]?.at(-1)).toBe(
+      'node /embedding/session-process.mjs',
+    );
+    order.push('reported id');
+    expect(order).toEqual(['command', 'ready', 'reported id']);
+
+    await result.attach();
+
+    expect(order).toEqual([
+      'command',
+      'ready',
+      'reported id',
+      'input active',
+      'attach',
+    ]);
+    expect(runTmuxOutputMock).toHaveReturnedWith('%42');
+  });
+
+  it.each([
+    ['input gate', 'ready\n'],
+    ['shutdown request', 'shutdown\n'],
+  ])(
+    'publishes the managed %s atomically and only once',
+    async (_label, contents) => {
+      tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-marker-'));
+      const markerPath = join(tempDir, 'marker');
+
+      await publishManagedControlMarker(
+        markerPath,
+        contents,
+        (temporaryPath) => {
+          expect(existsSync(markerPath)).toBe(false);
+          expect(readFileSync(temporaryPath, 'utf8')).toBe(contents);
+        },
+      );
+
+      expect(readFileSync(markerPath, 'utf8')).toBe(contents);
+      await expect(
+        publishManagedControlMarker(markerPath, 'replacement\n'),
+      ).rejects.toMatchObject({ code: 'EEXIST' });
+      expect(readFileSync(markerPath, 'utf8')).toBe(contents);
+    },
+  );
+
+  it('kills a managed session when its original Boss pane exits before readiness', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    hasTmuxPaneMock.mockReturnValue(false);
+
+    await expect(
+      launchManagedTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: 'managed-pane-death',
+        workDir: join(tempDir, 'work'),
+        createSessionCommand: () => 'node /embedding/session-process.mjs',
+      }),
+    ).rejects.toThrow('process exited before initialization');
+
+    expect(runTmuxOutputMock).toHaveBeenCalledWith(
+      'new-session',
+      '-P',
+      '-F',
+      '#{pane_id}',
+      '-d',
+      '-x',
+      '174',
+      '-y',
+      '49',
+      '-s',
+      'tmux-play-managed-pane-death',
+      'node /embedding/session-process.mjs',
+    );
+    expect(hasTmuxPaneMock).toHaveBeenCalledWith('%42');
+    expect(killTmuxSessionMock).toHaveBeenCalledWith(
+      'tmux-play-managed-pane-death',
+    );
+    expect(existsSync(join(tempDir, 'work'))).toBe(true);
+  });
+
+  it('removes only launcher-owned work directories on pre-child failure', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    let ownedWorkDir = '';
+    await expect(
+      launchManagedTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: 'managed-owned-work',
+        createSessionCommand(context) {
+          ownedWorkDir = context.workDir;
+          throw new Error('command construction failed');
+        },
+      }),
+    ).rejects.toThrow('command construction failed');
+    expect(ownedWorkDir).not.toBe('');
+    expect(existsSync(ownedWorkDir)).toBe(false);
+
+    const callerWorkDir = join(tempDir, 'caller-work');
+    await expect(
+      launchManagedTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: 'managed-caller-work',
+        workDir: callerWorkDir,
+        createSessionCommand() {
+          throw new Error('command construction failed');
+        },
+      }),
+    ).rejects.toThrow('command construction failed');
+    expect(existsSync(callerWorkDir)).toBe(true);
+  });
+
+  it('uses the resolved managed layout only after explicit activation', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = join(tempDir, 'tmux-play.config.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'layout:',
+        '  window:',
+        '    columns: 201',
+        '    rows: 63',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: dev.coder',
+        '    adapter: codex',
+        '',
+      ].join('\n'),
+    );
+    const stdout = new MemoryOutput();
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-layout',
+      workDir: join(tempDir, 'work'),
+      stdout,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        const acknowledge = (): void => {
+          if (!existsSync(context.inputGatePath)) {
+            setTimeout(acknowledge, 0);
+            return;
+          }
+          writeFileSync(context.inputActivePath, 'active\n');
+        };
+        setTimeout(acknowledge, 0);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    expect(stdout.text()).toBe('');
+    await prepared.attach();
+    expect(stdout.text()).toBe('\x1b[8;63;201t');
+    expect(attachTmuxSessionMock).toHaveBeenCalledWith(
+      'tmux-play-managed-layout',
+    );
+    expect(runTmuxOutputMock.mock.calls[0]).toEqual([
+      'new-session',
+      '-P',
+      '-F',
+      '#{pane_id}',
+      '-d',
+      '-x',
+      '201',
+      '-y',
+      '63',
+      '-s',
+      'tmux-play-managed-layout',
+      'node /embedding/session-process.mjs',
+    ]);
+  });
+
+  it('cancels a prepared managed launch without activating input', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    let inputGatePath = '';
+    const order: string[] = [];
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-cancel',
+      workDir: join(tempDir, 'work'),
+      readinessTimeoutMs: 20,
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        inputGatePath = context.inputGatePath;
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedShutdown(context, order, 40);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    await prepared.cancel();
+
+    expect(existsSync(inputGatePath)).toBe(false);
+    expect(order).toEqual(['shutdown request', 'shutdown complete']);
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('force-terminates when an acknowledged managed child does not exit', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const order: string[] = [];
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-resistant-cancel',
+      workDir: join(tempDir, 'work'),
+      shutdownTimeoutMs: 20,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        const acknowledge = (): void => {
+          if (!existsSync(context.shutdownRequestPath)) {
+            setTimeout(acknowledge, 0);
+            return;
+          }
+          order.push('shutdown complete');
+          writeFileSync(context.shutdownCompletePath, 'complete\n');
+        };
+        setTimeout(acknowledge, 0);
+        return 'node /embedding/resistant-session-process.mjs';
+      },
+    });
+
+    await prepared.cancel();
+
+    expect(order).toEqual(['shutdown complete']);
+    expect(killTmuxSessionMock).toHaveBeenCalledWith(
+      'tmux-play-managed-resistant-cancel',
+    );
+  });
+
+  it('carries cancellation across the launcher/session shutdown boundary', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const order: string[] = [];
+    killTmuxSessionMock.mockImplementation(() => order.push('forced kill'));
+    let child: Promise<void> | undefined;
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-cross-process-cancel',
+      workDir: join(tempDir, 'work'),
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        child = runManagedTmuxPlaySession({
+          sessionId: context.sessionId,
+          workDir: context.workDir,
+          readinessPath: context.readinessPath,
+          inputGatePath: context.inputGatePath,
+          inputActivePath: context.inputActivePath,
+          shutdownRequestPath: context.shutdownRequestPath,
+          shutdownCompletePath: context.shutdownCompletePath,
+          input: new PassThrough(),
+          output: new PassThrough(),
+          signalTarget: new EventEmitter(),
+          createReadline: () => new ManagedTestReadline(),
+          createTimingObserver: () => ({
+            onRecord() {},
+            refresh() {},
+            dispose() {},
+          }),
+          queryPaneWidths: () => new Map(),
+          removeWorkDir() {
+            order.push('workdir cleanup');
+          },
+          killSession() {
+            order.push('pane exit');
+            hasTmuxPaneMock.mockReturnValue(false);
+          },
+          lifecycle: {
+            async initializeRuntime() {
+              order.push('initialize');
+              return {
+                abortActiveTurn(reason) {
+                  order.push(`abort:${reason}`);
+                },
+                async dispose() {
+                  order.push('runtime dispose');
+                },
+                async runBossTurn() {},
+              };
+            },
+            async beforeNonEmptyTurn() {},
+            async afterTurn() {},
+            async shutdown(context) {
+              order.push(`lifecycle:${context.reason}`);
+            },
+          },
+        });
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    await prepared.cancel();
+    await child;
+
+    expect(order).toEqual([
+      'initialize',
+      'abort:SIGHUP',
+      'runtime dispose',
+      'lifecycle:SIGHUP',
+      'workdir cleanup',
+      'pane exit',
+    ]);
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('lets a detached managed child shut down after coordination closes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const order: string[] = [];
+    const readline = new ManagedTestReadline();
+    let child: Promise<void> | undefined;
+    let coordinationDir = '';
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-detached',
+      workDir: join(tempDir, 'work'),
+      attach: false,
+      createSessionCommand(context) {
+        coordinationDir = join(context.readinessPath, '..');
+        child = runManagedTmuxPlaySession({
+          sessionId: context.sessionId,
+          workDir: context.workDir,
+          readinessPath: context.readinessPath,
+          inputGatePath: context.inputGatePath,
+          inputActivePath: context.inputActivePath,
+          shutdownRequestPath: context.shutdownRequestPath,
+          shutdownCompletePath: context.shutdownCompletePath,
+          input: new PassThrough(),
+          output: new PassThrough(),
+          signalTarget: new EventEmitter(),
+          createReadline: () => readline,
+          createTimingObserver: () => ({
+            onRecord() {},
+            refresh() {},
+            dispose() {},
+          }),
+          queryPaneWidths: () => new Map(),
+          removeWorkDir() {
+            order.push('workdir cleanup');
+          },
+          killSession() {
+            order.push('pane exit');
+            hasTmuxPaneMock.mockReturnValue(false);
+          },
+          lifecycle: {
+            async initializeRuntime() {
+              order.push('initialize');
+              return {
+                abortActiveTurn(reason) {
+                  order.push(`abort:${reason}`);
+                },
+                async dispose() {
+                  order.push('runtime dispose');
+                },
+                async runBossTurn() {},
+              };
+            },
+            async beforeNonEmptyTurn() {},
+            async afterTurn() {},
+            async shutdown(context) {
+              order.push(`lifecycle:${context.reason}`);
+            },
+          },
+        });
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    await prepared.attach();
+    expect(existsSync(coordinationDir)).toBe(false);
+    readline.close();
+    await child;
+
+    expect(order).toEqual([
+      'initialize',
+      'abort:EOF',
+      'runtime dispose',
+      'lifecycle:EOF',
+      'workdir cleanup',
+      'pane exit',
+    ]);
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('awaits graceful child cleanup when initialized attachment fails', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const order: string[] = [];
+    let readinessPath = '';
+    attachTmuxSessionMock.mockImplementation(() => {
+      order.push('attach');
+      throw new Error('attach failed');
+    });
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-attach-failure',
+      workDir: join(tempDir, 'work'),
+      readinessTimeoutMs: 500,
+      createSessionCommand(context) {
+        readinessPath = context.readinessPath;
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedActivation(context, order);
+        acknowledgeManagedShutdown(context, order);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    await expect(prepared.attach()).rejects.toThrow('attach failed');
+
+    expect(order).toEqual([
+      'input active',
+      'attach',
+      'shutdown request',
+      'shutdown complete',
+    ]);
+    expect(existsSync(readinessPath)).toBe(false);
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('awaits the child shutdown acknowledgement after initialization error', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const order: string[] = [];
+
+    await expect(
+      launchManagedTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: 'managed-init-failure',
+        workDir: join(tempDir, 'work'),
+        readinessTimeoutMs: 500,
+        createSessionCommand(context) {
+          order.push('initialization error');
+          writeFileSync(
+            context.readinessPath,
+            '{"status":"error","message":"restore failed"}\n',
+          );
+          acknowledgeManagedShutdown(context, order);
+          return 'node /embedding/session-process.mjs';
+        },
+      }),
+    ).rejects.toThrow('restore failed');
+
+    expect(order).toEqual([
+      'initialization error',
+      'shutdown request',
+      'shutdown complete',
+    ]);
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
   it('builds startup panes only for the initial visible subset, in order (TTMUX-082)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = join(tempDir, 'tmux-play.config.yaml');
@@ -360,10 +911,75 @@ describe('launchTmuxPlay', () => {
     );
     // The hidden reviewer gets no pane and no title.
     expect(
-      runTmuxMock.mock.calls.some(
-        (call) => call.at(-1) === 'Reviewer · codex',
-      ),
+      runTmuxMock.mock.calls.some((call) => call.at(-1) === 'Reviewer · codex'),
     ).toBe(false);
+  });
+
+  it('builds a safe Boss-only tmux session for an empty roster (TTMUX-014, TTMUX-082)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, []);
+    const workDir = join(tempDir, 'work');
+    const sessionName = 'tmux-play-boss-only';
+
+    await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'boss-only',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    expect(
+      runTmuxMock.mock.calls.filter((call) => call[0] === 'split-window'),
+    ).toEqual([]);
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'select-pane',
+      '-t',
+      `${sessionName}:0.0`,
+      '-T',
+      'Captain · claude',
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-option',
+      '-p',
+      '-t',
+      `${sessionName}:0.0`,
+      TMUX_PANE_TIMER_TEXT_OPTION,
+      '00:00:00',
+    );
+
+    const mouseDownBindings = runTmuxMock.mock.calls.filter(
+      (call) => call[0] === 'bind-key' && call[3] === 'MouseDown1Pane',
+    );
+    expect(mouseDownBindings).toHaveLength(3);
+    for (const binding of mouseDownBindings) {
+      const command = binding.map(String).join(' ');
+      expect(command).toContain(`${sessionName}:0.0`);
+      expect(command).not.toContain(`${sessionName}:0.1`);
+    }
+
+    const layoutHooks = runTmuxMock.mock.calls.filter(
+      (call) =>
+        call[0] === 'set-hook' &&
+        (call[3] === 'client-resized' || call[3] === 'after-resize-window'),
+    );
+    expect(layoutHooks).toHaveLength(2);
+    for (const hook of layoutHooks) {
+      expect(String(hook.at(-1))).toContain('display-message');
+      expect(String(hook.at(-1))).not.toContain('resize-pane');
+      expect(String(hook.at(-1))).not.toContain(':0.1');
+    }
+
+    const snapshot = JSON.parse(
+      readFileSync(join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT), 'utf8'),
+    ) as {
+      players: unknown[];
+      layout: { initialVisible: unknown[]; columnWeights: number[] };
+    };
+    expect(snapshot.players).toEqual([]);
+    expect(snapshot.layout.initialVisible).toEqual([]);
+    expect(snapshot.layout.columnWeights).toEqual([1]);
   });
 
   it('uses the single-player column shape when one player is initially visible (TTMUX-082)', async () => {
@@ -1720,7 +2336,9 @@ describe('launchTmuxPlay', () => {
     expect(error!.message).toContain(
       `npm install --global=false --location=project --prefix ${expectedPrefix} @anthropic-ai/claude-agent-sdk`,
     );
-    expect(error!.message).toContain('codex (player "coder", player "reviewer")');
+    expect(error!.message).toContain(
+      'codex (player "coder", player "reviewer")',
+    );
     expect(error!.message).toContain(
       `npm install --global=false --location=project --prefix ${expectedPrefix} @openai/codex-sdk`,
     );
@@ -1754,15 +2372,14 @@ describe('launchTmuxPlay', () => {
 function adapterImportsReporting(
   available: (adapter: PlayerAdapterName) => boolean,
 ): PlayerAdapterImports {
-  const adapterFor = (adapter: PlayerAdapterName) =>
-    async () =>
-      class {
-        readonly name = adapter;
-        async isAvailable(): Promise<boolean> {
-          return available(adapter);
-        }
-        async *run(): AsyncGenerator<never, void, void> {}
-      } as unknown as new () => never;
+  const adapterFor = (adapter: PlayerAdapterName) => async () =>
+    class {
+      readonly name = adapter;
+      async isAvailable(): Promise<boolean> {
+        return available(adapter);
+      }
+      async *run(): AsyncGenerator<never, void, void> {}
+    } as unknown as new () => never;
   return {
     claude: adapterFor('claude'),
     codex: adapterFor('codex'),
@@ -1776,8 +2393,54 @@ function availableAdapterImports(): PlayerAdapterImports {
   return adapterImportsReporting(() => true);
 }
 
+function acknowledgeManagedActivation(
+  context: {
+    readonly inputGatePath: string;
+    readonly inputActivePath: string;
+  },
+  order: string[],
+): void {
+  const acknowledge = (): void => {
+    if (!existsSync(context.inputGatePath)) {
+      setTimeout(acknowledge, 0);
+      return;
+    }
+    order.push('input active');
+    writeFileSync(context.inputActivePath, 'active\n', { mode: 0o600 });
+  };
+  setTimeout(acknowledge, 0);
+}
+
+function acknowledgeManagedShutdown(
+  context: {
+    readonly shutdownRequestPath: string;
+    readonly shutdownCompletePath: string;
+  },
+  order: string[],
+  delayMs = 0,
+): void {
+  const acknowledge = (): void => {
+    if (!existsSync(context.shutdownRequestPath)) {
+      setTimeout(acknowledge, 0);
+      return;
+    }
+    order.push('shutdown request');
+    writeFileSync(context.shutdownCompletePath, 'complete\n', { mode: 0o600 });
+    order.push('shutdown complete');
+    hasTmuxPaneMock.mockReturnValue(false);
+  };
+  setTimeout(acknowledge, delayMs);
+}
+
 function writeConfig(dir: string, playerIds: readonly string[]): string {
   const configPath = join(dir, 'tmux-play.config.yaml');
+  const players =
+    playerIds.length === 0
+      ? ['players: []']
+      : [
+          'players:',
+          ...playerIds.flatMap((id) => [`  - id: ${id}`, '    adapter: codex']),
+        ];
   writeFileSync(
     configPath,
     [
@@ -1785,8 +2448,7 @@ function writeConfig(dir: string, playerIds: readonly string[]): string {
       "  from: '@sublang/cligent/captains/fanout'",
       '  adapter: claude',
       '  options: {}',
-      'players:',
-      ...playerIds.flatMap((id) => [`  - id: ${id}`, '    adapter: codex']),
+      ...players,
       '',
     ].join('\n'),
   );

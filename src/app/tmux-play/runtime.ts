@@ -5,24 +5,44 @@ import type { Cligent } from '../../cligent.js';
 import type {
   CligentEvent,
   DonePayload,
+  Effort,
   ErrorPayload,
+  GeminiEffort,
+  OpenCodeEffort,
+  PermissionPolicy,
   TextDeltaPayload,
   TextPayload,
 } from '../../types.js';
-import type {
-  BossTurn,
-  CallCaptainOptions,
-  CallPlayerOptions,
-  Captain,
-  CaptainContext,
-  CaptainRunResult,
-  CaptainSession,
-  CaptainTelemetry,
-  PlayerHandle,
-  PlayerRunResult,
-  RecordVisibility,
-  RunStatus,
-  RunTmuxPlayOptions,
+import { getEffortSupport } from '../../effort.js';
+import { normalizeWritablePaths } from '../../permissions.js';
+import { createPermissionPolicyReset } from '../../internal/permission-reset.js';
+import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
+import { mapPermissionsToCodexOptions } from '../../adapters/codex.js';
+import {
+  mapEffortToGeminiModelAlias,
+  mapPermissionsToGeminiToolConfig,
+} from '../../adapters/gemini.js';
+import { mapPermissionsToKimiOptions } from '../../adapters/kimi.js';
+import {
+  mapEffortToOpenCodeVariant,
+  mapPermissionsToOpenCodeOptions,
+} from '../../adapters/opencode.js';
+import {
+  AgentCallSettingsError,
+  type AgentCallSettings,
+  type BossTurn,
+  type CallCaptainOptions,
+  type CallPlayerOptions,
+  type Captain,
+  type CaptainContext,
+  type CaptainRunResult,
+  type CaptainSession,
+  type CaptainTelemetry,
+  type PlayerHandle,
+  type PlayerRunResult,
+  type RecordVisibility,
+  type RunStatus,
+  type RunTmuxPlayOptions,
 } from './contract.js';
 import {
   ObserverDispatchError,
@@ -33,8 +53,8 @@ import {
   type RuntimeErrorRecord,
 } from './records.js';
 import {
-  createPlayerCligent,
-  resolvePlayers,
+  createRuntimePlayerCligent,
+  resolveRuntimePlayers,
   type ResolvedPlayer,
 } from './players.js';
 
@@ -54,7 +74,11 @@ interface ActiveTurn {
 interface RunCligentCallOptions {
   readonly cligent: Cligent;
   readonly prompt: string;
+  readonly model?: string;
+  readonly effort?: Effort;
   readonly instruction?: string;
+  readonly permissions?: PermissionPolicy;
+  readonly resetPermissionPolicy?: boolean;
   readonly signal: AbortSignal;
   readonly resume?: string | false;
   readonly allowedTools?: readonly string[];
@@ -68,10 +92,24 @@ interface CligentCallResult {
   readonly error?: string;
 }
 
+interface ConfiguredAgentCallSettings {
+  readonly model?: string;
+  readonly effort?: Effort;
+  readonly instruction?: string;
+  readonly permissions?: PermissionPolicy;
+}
+
+interface EffectiveAgentCallSettings extends ConfiguredAgentCallSettings {
+  readonly explicit: boolean;
+  readonly modelUsesProviderDefault: boolean;
+  readonly effortUsesProviderDefault: boolean;
+  readonly resetPermissionPolicy: boolean;
+}
+
 export class TmuxPlayRuntime {
   private readonly captain: Captain;
   private readonly captainCligent: Cligent;
-  private readonly captainInstruction: string | undefined;
+  private readonly captainSettings: ConfiguredAgentCallSettings;
   private readonly playerHandles: readonly PlayerHandle[];
   private readonly playersById: ReadonlyMap<string, ResolvedPlayer>;
   private readonly sessionController = new AbortController();
@@ -96,7 +134,12 @@ export class TmuxPlayRuntime {
   ) {
     this.captain = options.captain;
     this.captainCligent = captainCligent;
-    this.captainInstruction = options.captainConfig.instruction;
+    this.captainSettings = {
+      model: options.captainConfig.model,
+      effort: options.captainConfig.effort,
+      instruction: options.captainConfig.instruction,
+      permissions: options.captainConfig.permissions,
+    };
     this.playerHandles = players.map((player) => ({
       id: player.id,
       adapter: player.adapter,
@@ -402,6 +445,18 @@ export class TmuxPlayRuntime {
     if (!player) {
       throw new Error(`Unknown player: ${playerId}`);
     }
+    const settings = resolveAgentCallSettings(
+      player.adapter,
+      {
+        model: player.model,
+        effort: player.effort,
+        instruction: player.instruction,
+        permissions: player.permissions,
+      },
+      options?.settings,
+      player.cligent,
+      options?.resume,
+    );
 
     const release = this.admitCall();
     try {
@@ -414,7 +469,11 @@ export class TmuxPlayRuntime {
       const call = await runCligentCall({
         cligent: player.cligent,
         prompt,
-        instruction: player.instruction,
+        model: settings.model,
+        effort: settings.effort,
+        instruction: settings.instruction,
+        permissions: settings.permissions,
+        resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         ...(options?.resume !== undefined ? { resume: options.resume } : {}),
         emitEvent: (event) =>
@@ -459,6 +518,13 @@ export class TmuxPlayRuntime {
     // lets the tmux presenter skip Boss-pane output while non-presenter
     // observers keep the full trace; the returned result is unaffected.
     const visibility: RecordVisibility = options?.visibility ?? 'visible';
+    const settings = resolveAgentCallSettings(
+      this.captainCligent.agentType,
+      this.captainSettings,
+      options?.settings,
+      this.captainCligent,
+      options?.resume,
+    );
 
     const release = this.admitCall();
     try {
@@ -471,7 +537,11 @@ export class TmuxPlayRuntime {
       const call = await runCligentCall({
         cligent: this.captainCligent,
         prompt,
-        instruction: this.captainInstruction,
+        model: settings.model,
+        effort: settings.effort,
+        instruction: settings.instruction,
+        permissions: settings.permissions,
+        resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         ...(options?.resume !== undefined ? { resume: options.resume } : {}),
         ...(options?.allowedTools !== undefined
@@ -633,9 +703,9 @@ export class TmuxPlayRuntime {
   }
 
   private validatedVisiblePlayerIds(playerIds: readonly string[]): string[] {
-    if (playerIds.length === 0) {
+    if (playerIds.length === 0 && this.playerHandles.length > 0) {
       throw new Error(
-        'setVisiblePlayers requires at least one player id: tmux-play has no zero-player visible layout',
+        'setVisiblePlayers may be empty only when the configured players roster is empty',
       );
     }
     const seen = new Set<string>();
@@ -757,11 +827,11 @@ function throwFailures(failures: readonly unknown[], context: string): never {
 export async function createTmuxPlayRuntime(
   options: RunTmuxPlayOptions,
 ): Promise<TmuxPlayRuntime> {
-  const players = await resolvePlayers(options.players, {
+  const players = await resolveRuntimePlayers(options.players, {
     cwd: options.cwd,
     adapterImports: options.adapterImports,
   });
-  const captainCligent = await createPlayerCligent(
+  const captainCligent = await createRuntimePlayerCligent(
     options.captainConfig.adapter,
     {
       cwd: options.cwd,
@@ -784,6 +854,12 @@ async function runCligentCall(
     composePrompt(options.instruction, options.prompt),
     {
       abortSignal: options.signal,
+      model: options.model,
+      effort: options.effort,
+      permissions: options.permissions,
+      ...(options.resetPermissionPolicy
+        ? { permissions: createPermissionPolicyReset() }
+        : {}),
       ...(options.resume !== undefined ? { resume: options.resume } : {}),
       ...(options.allowedTools !== undefined
         ? { allowedTools: [...options.allowedTools] }
@@ -851,7 +927,395 @@ async function runCligentCall(
   };
 }
 
-function composePrompt(instruction: string | undefined, prompt: string): string {
+function resolveAgentCallSettings(
+  adapter: string,
+  configured: ConfiguredAgentCallSettings,
+  supplied: AgentCallSettings | undefined,
+  cligent: Cligent,
+  resume: string | false | undefined,
+): EffectiveAgentCallSettings {
+  if (supplied === undefined) {
+    return {
+      ...configured,
+      explicit: false,
+      modelUsesProviderDefault: false,
+      effortUsesProviderDefault: false,
+      resetPermissionPolicy: false,
+    };
+  }
+
+  try {
+    const snapshot = snapshotAgentCallSettings(supplied);
+    const modelUsesProviderDefault = snapshot.model.kind === 'provider-default';
+    const effortUsesProviderDefault =
+      snapshot.effort.kind === 'provider-default';
+    const settings: EffectiveAgentCallSettings = {
+      model: snapshot.model.kind === 'value' ? snapshot.model.value : undefined,
+      effort:
+        snapshot.effort.kind === 'value' ? snapshot.effort.value : undefined,
+      instruction: snapshot.instruction,
+      permissions: snapshot.permissions,
+      explicit: true,
+      modelUsesProviderDefault,
+      effortUsesProviderDefault,
+      resetPermissionPolicy: false,
+    };
+
+    assertCompleteSettingsEnforceable(adapter, settings, cligent, resume);
+    return withProviderPermissionReset(adapter, settings, cligent, resume);
+  } catch (cause) {
+    throw new AgentCallSettingsError(errorMessage(cause), cause);
+  }
+}
+
+function withProviderPermissionReset(
+  adapter: string,
+  settings: EffectiveAgentCallSettings,
+  cligent: Cligent,
+  resume: string | false | undefined,
+): EffectiveAgentCallSettings {
+  if (
+    adapter !== 'opencode' ||
+    settings.permissions !== undefined ||
+    !isResumedCall(cligent, resume)
+  ) {
+    return settings;
+  }
+  return { ...settings, resetPermissionPolicy: true };
+}
+
+function snapshotAgentCallSettings(
+  supplied: AgentCallSettings,
+): AgentCallSettings {
+  const fields = ownDataFields(supplied, 'tmux-play call settings');
+  if (!fields) {
+    throw new TypeError('tmux-play call settings must be a plain object');
+  }
+  const unknown = Object.keys(fields).filter(
+    (key) =>
+      key !== 'model' &&
+      key !== 'effort' &&
+      key !== 'instruction' &&
+      key !== 'permissions',
+  );
+  if (unknown.length > 0) {
+    throw new TypeError(
+      `tmux-play call settings contain unknown field "${unknown[0]}"`,
+    );
+  }
+  const model = snapshotTuningSelection('model', fields.model);
+  const effort = snapshotTuningSelection(
+    'effort',
+    fields.effort,
+  ) as AgentCallSettings['effort'];
+  const instruction = fields.instruction;
+  if (instruction !== undefined && typeof instruction !== 'string') {
+    throw new TypeError('tmux-play call settings instruction must be a string');
+  }
+  const permissions = snapshotPermissionPolicy(fields.permissions);
+  return Object.freeze({
+    model,
+    effort,
+    ...(instruction !== undefined ? { instruction } : {}),
+    ...(permissions !== undefined ? { permissions } : {}),
+  });
+}
+
+function snapshotTuningSelection(
+  field: 'model' | 'effort',
+  selection: unknown,
+): AgentCallSettings[typeof field] {
+  const fields = ownDataFields(selection, `tmux-play call settings ${field}`);
+  if (!fields) {
+    throw new TypeError(
+      `tmux-play call settings ${field} must be a tuning selection`,
+    );
+  }
+  if (fields.kind === 'provider-default') {
+    if (Object.keys(fields).length !== 1) {
+      throw new TypeError(
+        `tmux-play call settings ${field} provider-default selection must not carry a value`,
+      );
+    }
+    return Object.freeze({ kind: 'provider-default' });
+  }
+  if (
+    fields.kind === 'value' &&
+    typeof fields.value === 'string' &&
+    fields.value.length > 0 &&
+    Object.keys(fields).every((key) => key === 'kind' || key === 'value')
+  ) {
+    return Object.freeze({ kind: 'value', value: fields.value });
+  }
+  throw new TypeError(
+    `tmux-play call settings ${field} must select a non-empty value or provider-default`,
+  );
+}
+
+function assertCompleteSettingsEnforceable(
+  adapter: string,
+  settings: EffectiveAgentCallSettings,
+  cligent: Cligent,
+  resume: string | false | undefined,
+): void {
+  if (
+    (adapter === 'claude' || adapter === 'claude-code') &&
+    isResumedCall(cligent, resume) &&
+    settings.modelUsesProviderDefault
+  ) {
+    throw new Error(
+      'Claude cannot restore the provider-default model on a resumed session',
+    );
+  }
+  if (
+    adapter === 'kimi' &&
+    isResumedCall(cligent, resume) &&
+    (settings.modelUsesProviderDefault ||
+      settings.effortUsesProviderDefault ||
+      settings.permissions === undefined)
+  ) {
+    throw new Error(
+      'Kimi cannot restore provider-default model, effort, or permissions on a resumed session',
+    );
+  }
+  if (
+    adapter === 'opencode' &&
+    isResumedCall(cligent, resume) &&
+    settings.modelUsesProviderDefault
+  ) {
+    throw new Error(
+      'OpenCode cannot restore the provider-default model on a resumed session',
+    );
+  }
+
+  assertPermissionsEnforceable(adapter, settings.permissions);
+
+  if (settings.effort === undefined) return;
+  const support = getEffortSupport(
+    adapter === 'claude' ? 'claude-code' : adapter,
+  );
+  if (!support?.values.includes(settings.effort)) {
+    throw new Error(
+      `Unsupported ${adapter} effort "${settings.effort}" in tmux-play call settings`,
+    );
+  }
+
+  if (adapter === 'gemini') {
+    if (
+      !mapEffortToGeminiModelAlias(
+        settings.model,
+        settings.effort as GeminiEffort,
+      )
+    ) {
+      throw new Error(
+        'Gemini requires a supported concrete model to enforce a concrete per-call effort',
+      );
+    }
+  }
+  if (adapter === 'opencode') {
+    if (
+      !mapEffortToOpenCodeVariant(
+        settings.model,
+        settings.effort as OpenCodeEffort,
+      )
+    ) {
+      throw new Error(
+        'OpenCode requires a supported provider/model to enforce a concrete per-call effort',
+      );
+    }
+  }
+}
+
+function assertPermissionsEnforceable(
+  adapter: string,
+  permissions: PermissionPolicy | undefined,
+): void {
+  switch (adapter) {
+    case 'claude':
+    case 'claude-code':
+      mapPermissionsToClaudeOptions(permissions);
+      return;
+    case 'codex':
+      mapPermissionsToCodexOptions(permissions);
+      return;
+    case 'gemini':
+      mapPermissionsToGeminiToolConfig(permissions);
+      return;
+    case 'kimi':
+      mapPermissionsToKimiOptions(permissions);
+      return;
+    case 'opencode':
+      mapPermissionsToOpenCodeOptions(permissions);
+      return;
+  }
+}
+
+function isResumedCall(
+  cligent: Cligent,
+  resume: string | false | undefined,
+): boolean {
+  if (resume === false) return false;
+  if (typeof resume === 'string') return resume.length > 0;
+  return (
+    typeof cligent.resumeToken === 'string' && cligent.resumeToken.length > 0
+  );
+}
+
+function ownDataFields(
+  value: unknown,
+  path: string,
+): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return undefined;
+  const symbols = Object.getOwnPropertySymbols(value);
+  if (symbols.length > 0) {
+    throw new TypeError(`${path} must not contain symbol fields`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: Record<string, unknown> = Object.create(null);
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (!descriptor.enumerable) {
+      throw new TypeError(`${path}.${key} must be enumerable`);
+    }
+    if (!('value' in descriptor)) {
+      throw new TypeError(`${path}.${key} must not be an accessor`);
+    }
+    result[key] = descriptor.value;
+  }
+  return result;
+}
+
+function snapshotPermissionPolicy(
+  value: unknown,
+): PermissionPolicy | undefined {
+  if (value === undefined) return undefined;
+  const fields = ownDataFields(value, 'tmux-play call settings permissions');
+  if (!fields) {
+    throw new TypeError(
+      'tmux-play call settings permissions must be a plain object',
+    );
+  }
+  const allowed = new Set([
+    'mode',
+    'fileWrite',
+    'shellExecute',
+    'networkAccess',
+    'writablePaths',
+  ]);
+  const unknown = Object.keys(fields).find((key) => !allowed.has(key));
+  if (unknown) {
+    throw new TypeError(
+      `tmux-play call settings permissions contain unknown field "${unknown}"`,
+    );
+  }
+  const permission = fields as PermissionPolicy;
+  const mode = optionalEnum(
+    permission.mode,
+    ['auto', 'bypass'],
+    'tmux-play call settings permissions.mode',
+  );
+  const fileWrite = optionalEnum(
+    permission.fileWrite,
+    ['allow', 'ask', 'deny'],
+    'tmux-play call settings permissions.fileWrite',
+  );
+  const shellExecute = optionalEnum(
+    permission.shellExecute,
+    ['allow', 'ask', 'deny'],
+    'tmux-play call settings permissions.shellExecute',
+  );
+  const networkAccess = optionalEnum(
+    permission.networkAccess,
+    ['allow', 'ask', 'deny'],
+    'tmux-play call settings permissions.networkAccess',
+  );
+  const writablePathSnapshot = snapshotDenseStringArray(
+    permission.writablePaths,
+    'tmux-play call settings permissions.writablePaths',
+  );
+  const writablePaths = normalizeWritablePaths(
+    writablePathSnapshot,
+    'tmux-play call settings permissions.writablePaths',
+  );
+  return Object.freeze({
+    ...(mode !== undefined ? { mode } : {}),
+    ...(fileWrite !== undefined ? { fileWrite } : {}),
+    ...(shellExecute !== undefined ? { shellExecute } : {}),
+    ...(networkAccess !== undefined ? { networkAccess } : {}),
+    ...(permission.writablePaths !== undefined
+      ? { writablePaths: Object.freeze(writablePaths) as string[] }
+      : {}),
+  });
+}
+
+function optionalEnum<T extends string>(
+  value: unknown,
+  values: readonly T[],
+  path: string,
+): T | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    throw new TypeError(`${path} must be one of: ${values.join(', ')}`);
+  }
+  return value as T;
+}
+
+function snapshotDenseStringArray(
+  value: unknown,
+  path: string,
+): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype
+  ) {
+    throw new TypeError(`${path} must be an ordinary array`);
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new TypeError(`${path} must not contain symbol fields`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value) as Record<
+    string,
+    PropertyDescriptor
+  >;
+  const unknown = Object.keys(descriptors).find(
+    (key) => key !== 'length' && !/^(0|[1-9][0-9]*)$/u.test(key),
+  );
+  if (unknown) {
+    throw new TypeError(`${path} contains unknown field "${unknown}"`);
+  }
+  const lengthDescriptor = descriptors.length;
+  if (
+    !lengthDescriptor ||
+    !('value' in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== 'number'
+  ) {
+    throw new TypeError(`${path} must have a data length`);
+  }
+  const snapshot: string[] = [];
+  for (let index = 0; index < lengthDescriptor.value; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (!descriptor) {
+      throw new TypeError(`${path} must be dense`);
+    }
+    if (!('value' in descriptor)) {
+      throw new TypeError(`${path}[${index}] must not be an accessor`);
+    }
+    if (typeof descriptor.value !== 'string') {
+      throw new TypeError(`${path}[${index}] must be a string`);
+    }
+    snapshot.push(descriptor.value);
+  }
+  return Object.freeze(snapshot);
+}
+
+function composePrompt(
+  instruction: string | undefined,
+  prompt: string,
+): string {
   return instruction ? `${instruction}\n\n${prompt}` : prompt;
 }
 

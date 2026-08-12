@@ -117,7 +117,7 @@ turn-completion bell to the outer terminal for Dock/badge handling; users with
 audible bell enabled may hear a terminal or system bell. Other desktop
 notification events do not write terminal BEL or notification escape bytes.
 `turn_aborted` is off by default; when enabled, user cancellations such as ESC,
-SIGINT, SIGTERM, EOF, and runtime disposal stay silent. Sound cues are
+SIGHUP, SIGINT, SIGTERM, EOF, and runtime disposal stay silent. Sound cues are
 best-effort: Hero via `afplay` on macOS, the freedesktop `complete` cue on
 Linux, the Windows generic notification sound on Windows, and no-op elsewhere.
 Desktop notifications are best-effort: `osascript` on macOS, `notify-send` on
@@ -130,7 +130,7 @@ OpenCode retains configured rules but may answer permission asks that survive ru
 Remove the blocks to fall back to each adapter's SDK default; cligent itself ships no project-wide permission posture.
 
 - Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
-- Player IDs match `^[a-z][a-z0-9_-]*$`, are unique, and may not be `captain`. Multiple players may share an adapter or model.
+- Player IDs match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$`, are unique, and may not be `captain`. Dot-delimited IDs such as `dev.coder` provide namespacing. Multiple players may share an adapter or model; `players: []` selects the Boss/Captain-only form.
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
 
@@ -306,8 +306,9 @@ auto_review` with user config ignored for that managed run, gemini
 Boss/Captain occupies the left pane; the visible players fill the right in
 order. Sessions start on a 174×49 grid. The visible columns derive from the
 _visible_ player set (see `layout.initialVisible` below), not the full
-roster: two columns with one visible player, three with two or more, and the
-first player column holds `ceil(visibleCount / 2)` players from top to bottom.
+roster: an empty roster uses one full-width Boss/Captain column, one visible
+player uses two columns, and two or more use three. The first player column
+holds `ceil(visibleCount / 2)` players from top to bottom.
 
 The optional top-level `layout` block tunes the window grid, the per-column
 weights, and which players are visible at startup:
@@ -337,9 +338,11 @@ layout:
   `multiPlayerColumnWeights`. Setting `columnWeights` together with the
   matching canonical field is rejected; a home config that still uses
   `columnWeights` is migrated to the canonical field in place.
-- `initialVisible` is an optional, non-empty, duplicate-free subset of the
-  configured player IDs naming the players whose panes appear at startup, in
-  that order. Omitting it shows every configured player in `players` order.
+- `initialVisible` is an optional, duplicate-free subset of the configured
+  player IDs naming the players whose panes appear at startup, in that order.
+  It may be `[]` only when `players` itself is empty; that Boss/Captain-only
+  session has no player pane or log-tail process. Omitting it shows every
+  configured player in `players` order, including the empty set.
   Hidden players stay live and keep accumulating output to their per-player
   logs; a Captain can change the visible set during the session via
   `setVisiblePlayers`, and a re-shown player's pane is rebuilt from the recent
@@ -374,10 +377,11 @@ emissions remain live; it runs after the active turn settles and before the
 session signal aborts. Use `dispose()` only for post-close resource release —
 session emissions reject there.
 Both `session` and per-turn `context` expose `setVisiblePlayers(playerIds)`;
-pass a non-empty, duplicate-free subset of configured player IDs to choose
-which player panes are visible. The roster stays unchanged, hidden players
-keep their logs, and awaiting the call lets the pane rebuild finish before
-later player output is presented.
+pass a duplicate-free subset of configured player IDs to choose which player
+panes are visible. An empty list is accepted only when the configured roster
+is empty; a nonempty roster cannot be hidden completely. The roster stays
+unchanged, hidden players keep their logs, and awaiting the call lets the pane
+rebuild finish before later player output is presented.
 
 Every turn-scoped `CaptainContext` surface — `callPlayer`, `callCaptain`,
 `setVisiblePlayers`, and `emitReply` — accepts new work only until the runtime
@@ -405,6 +409,79 @@ Captain call must explicitly continue that backend session.
 Tool-list support is adapter-specific: adapters with no independent exact
 tool-registry surface, including Codex, Kimi, and OpenCode 1.18.13, reject an
 explicit list before backend invocation.
+
+Both call surfaces also accept a complete `settings` replacement:
+
+```js
+await context.callPlayer('dev.coder', prompt, {
+  settings: {
+    model: { kind: 'provider-default' },
+    effort: { kind: 'value', value: 'high' },
+    instruction: 'Implement the smallest coherent change.',
+    permissions: { mode: 'auto', writablePaths: ['.git'] },
+  },
+});
+```
+
+Player IDs may use dot-delimited namespaces such as `dev.coder` and
+`dev.reviewer`. A supplied `settings` object is the entire effective call
+configuration: omitted `instruction` and `permissions` mean none, and neither
+is merged with YAML defaults. Each `model` and `effort` selector is either a
+concrete value or `provider-default`; the latter omits that option so Codex or
+Gemini chooses its current default even on a resumed call. Claude and OpenCode
+support provider defaults on fresh calls and can use default effort beside a
+concrete resumed model, but a resumed provider-default model fails closed:
+Claude Code restores the transcript model, while OpenCode persists its session
+model without exposing a reset. Omitted permissions on
+a resumed OpenCode complete-settings call clear the prior Cligent-owned session
+ruleset. Kimi supports default reset only for a fresh call because ACP cannot
+restore a resumed session's provider default. Invalid or unenforceable settings
+fail before an agent call begins and do not discard the stored resume token.
+Those failures reject with the public `AgentCallSettingsError`, preserving the
+original diagnostic and `cause`. Use `isAgentCallSettingsError(error)` from
+`@sublang/cligent/tmux-play` when deciding whether to retain the selected
+session and ask for corrected settings. The predicate remains valid across
+duplicate package instances and does not match turn-scope, unknown-player,
+provider-execution, or observer-dispatch failures.
+
+## Embedding a managed interactive session
+
+`launchManagedTmuxPlay` and `runManagedTmuxPlaySession` are the public boundary
+for a front end that owns durable session state. The launcher requires the
+front end's public session ID and returns a prepared handle only after the pane
+child has initialized or restored its runtime. Input is still gated then, so
+the front end can report that ID before it calls `await prepared.attach()`.
+Use `await prepared.cancel()` if reporting or handoff fails.
+
+The session-command context also supplies shutdown-request and shutdown-complete
+paths. Cancellation and post-start launch failures request graceful child
+shutdown, await cleanup acknowledgement and pane exit under the independent
+`shutdownTimeoutMs`, and only then use a forced tmux kill as a bounded fallback.
+Input-gate and shutdown-request markers are atomically published, so a polling
+child cannot mistake an in-progress write for an invalid control message.
+Launcher-created work directories are
+removed when no child can own cleanup; caller-supplied directories are left
+alone. With `attach: false`, activation completes without an outer client,
+closes the launcher coordination boundary, and leaves signals or EOF as the
+child-owned cleanup path.
+
+The child supplies lifecycle hooks to `runManagedTmuxPlaySession`. The runner
+first removes the hosting session's `TMUX` and `TMUX_PANE` handles from the
+environment inherited by agent subprocesses, just like stock session mode;
+the orchestrator retains a private snapshot for its own tmux operations. A nonempty
+turn awaits `beforeNonEmptyTurn`, crosses the runtime's complete turn fence,
+then invokes `afterTurn` with detached Captain replies and the exact
+`turn_finished` or `turn_aborted` record. Replies remain invisible until a
+finished turn's `afterTurn` succeeds; aborted and failed turns release none.
+Pre-activation input remains queued as semantic prompts, including one
+newline-preserving prompt for a bracketed multiline paste. If the fenced
+runtime rejects after emitting its terminal record, `afterTurn` still receives
+that record before the original failure enters managed shutdown.
+Shutdown from EOF, SIGHUP, SIGINT, SIGTERM, or the embedding request first
+aborts active work, then awaits the full hook/turn transaction
+and runtime disposal before the lifecycle shutdown hook, so an embedding host
+can release its lease without racing write-ahead, settlement, or semantic
+runtime disposal. The child publishes shutdown completion only after cleanup.
 
 ```js
 export default function createCaptain(options = {}) {

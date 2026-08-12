@@ -32,7 +32,8 @@ Given a `tmux-play.config.{mjs,js,json}` in cwd and no cwd YAML, when launching,
 ### TTMUX-005
 Verifies: [TMUX-005](../user/tmux-play.md#tmux-005), [TMUX-006](../user/tmux-play.md#tmux-006), [TMUX-007](../user/tmux-play.md#tmux-007), [TMUX-008](../user/tmux-play.md#tmux-008)
 
-Given malformed YAML or a config that violates the schema (unknown adapter, unknown field, invalid player id, duplicate player id, player id `captain`, empty players), when launching, the launcher shall fail with an error naming the offending file or path.
+Given malformed YAML or a config that violates the schema (unknown adapter, unknown field, invalid player id, duplicate player id, player id `captain`, or missing/non-array `players`), when launching, the launcher shall fail with an error naming the offending file or path.
+Given an empty `players` array, when loading the config, the launcher shall accept it per [TMUX-005](../user/tmux-play.md#tmux-005).
 
 ### TTMUX-006
 Verifies: [TMUX-013](../user/tmux-play.md#tmux-013)
@@ -60,6 +61,7 @@ When a Captain emits `emitStatus` from `init`, the resulting `captain_status` re
 Verifies: [TMUX-024](../user/tmux-play.md#tmux-024), [TMUX-026](../user/tmux-play.md#tmux-026)
 
 When the abort signal fires during a turn, the runtime shall emit `turn_aborted` (not `turn_finished`); turn-bound emissions enqueued before the abort shall drain first.
+Where session mode receives SIGHUP, SIGINT, SIGTERM, or stdin EOF, it shall abort active work and complete the shutdown lifecycle per [TMUX-026](../user/tmux-play.md#tmux-026).
 
 ### TTMUX-011
 Verifies: [TMUX-025](../user/tmux-play.md#tmux-025)
@@ -93,6 +95,8 @@ Given `tmux-play --theme-diagnostics` is invoked with a YAML config, the CLI sha
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027), [TMUX-028](../user/tmux-play.md#tmux-028), [TMUX-064](../user/tmux-play.md#tmux-064)
 
 Given N configured players and `layout.initialVisible` omitted — so all N configured players are visible per [TMUX-080](../user/tmux-play.md#tmux-080) — when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2 the first player column shall hold `ceil(N / 2)` players top-to-bottom. (Visible-subset startup topology is covered by [TTMUX-082](#ttmux-082).)
+Given N = 0, when the launcher constructs the tmux session, it shall create exactly one full-width Boss/Captain pane, no split or player log-tail process, and shall still apply the Captain title, timer options, input and mouse bindings, and resize hooks safely.
+When that real tmux window is resized, the sole pane shall remain full-width.
 Given a YAML config that omits `layout.columnWeights`, each visible column shall occupy its share of the window width per the shipped defaults of [TMUX-064](../user/tmux-play.md#tmux-064): with N = 1 the weights are `[1, 1]` (Boss/Captain and player each 1/2); with N ≥ 2 the weights are `[1, 1, 1]` (Boss/Captain and each player column each 1/3, rightmost absorbing the remainder).
 Given a YAML config that supplies an explicit `layout.columnWeights`, the resolved region widths shall follow that ratio at the resolved `layout.window.columns` per [TMUX-028](../user/tmux-play.md#tmux-028) and [TMUX-044](../user/tmux-play.md#tmux-044).
 
@@ -118,14 +122,16 @@ Given a `NotificationObserver` configured with `turn_finished: desktop`, when it
 Given a `NotificationObserver` configured with `player_finished: desktop` or `turn_aborted: desktop`, when it receives the matching record on macOS, it shall launch exactly one detached best-effort `osascript` notification command with lowercase title `spex` and shall write no terminal BEL (`\x07`) or terminal notification escape bytes to orchestrator stdout.
 Given a `NotificationObserver` configured with `turn_finished: desktop`, when it receives one `turn_finished` record on Linux, it shall launch exactly one detached best-effort `notify-send` OS notification command with lowercase title `spex` and shall write no terminal BEL (`\x07`) or terminal notification escape; on other platforms it shall launch no command and write no terminal BEL.
 Given a built `TmuxPlaySession` running in pane 0 on macOS with `turn_finished: desktop` and an attached real tmux client, when a Boss turn finishes, tmux shall raise an `alert-bell` for the raw terminal BEL emitted from pane 0.
-Given a `NotificationObserver` configured with `turn_aborted: bell`, when it receives `turn_aborted` records whose reason is `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`, it shall launch no sound command; when it receives a non-user-cancellation reason, it shall notify through the configured sink.
+Given a `NotificationObserver` configured with `turn_aborted: bell`, when it receives `turn_aborted` records whose reason is `ESC`, `SIGHUP`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`, it shall launch no sound command; when it receives a non-user-cancellation reason, it shall notify through the configured sink.
 Given notification sinks throw, spawn fails, or a `runtime_error` record arrives, `NotificationObserver.onRecord` shall not throw.
 Given a `TmuxPlaySession` starts, the runtime observer array shall contain the notification observer registered with the existing presenter, follow, and timing observers before any opt-in test/user observers.
 
 ### TTMUX-073
 Verifies: [TMUX-074](../user/tmux-play.md#tmux-074)
 
-Given session mode whose inherited environment carries a `TMUX` handle, when it performs the [TMUX-074](../user/tmux-play.md#tmux-074) isolation step, `TMUX` and `TMUX_PANE` shall be absent from the environment subsequently inherited by spawned player agents and `TMUX_TMPDIR` shall point to a private directory other than the run's tmux socket directory, so an agent's `tmux` resolves to an isolated server. The orchestrator shall still report itself attached to tmux so pane-width queries run, and its own tmux commands shall execute with the pinned pre-scrub environment carrying the original `TMUX` handle so they target the run's session rather than the agents' sandbox. Given no inherited `TMUX` handle, the isolation step shall be a no-op that leaves `TMUX_TMPDIR` unset.
+Given either public session runner whose inherited environment carries a `TMUX` handle, when it performs the [TMUX-074](../user/tmux-play.md#tmux-074) isolation step, `TMUX` and `TMUX_PANE` shall be absent before runtime construction from the environment subsequently inherited by spawned player agents and `TMUX_TMPDIR` shall point to a private directory other than the run's tmux socket directory, so an agent's `tmux` resolves to an isolated server.
+The orchestrator shall still report itself attached to tmux so pane-width queries run, and its own tmux commands shall execute with the pinned pre-scrub environment carrying the original `TMUX` handle so they target the run's session rather than the agents' sandbox.
+Given no inherited `TMUX` handle, the isolation step shall be a no-op that leaves `TMUX_TMPDIR` unset.
 
 ## Built-in Fanout Captain (Acceptance)
 
@@ -138,6 +144,7 @@ Given the built-in fanout Captain and the five supported adapters (`claude`, `co
 Verifies: [TMUX-030](../user/tmux-play.md#tmux-030)
 
 Given the fanout Captain and N configured players, when handling a Boss turn, all N `player_prompt` records shall be emitted before any `player_finished` record (concurrent dispatch), and the `captain_prompt` record shall be emitted only after every `player_finished`.
+Given the fanout Captain and N = 0 configured players, when handling a Boss turn, the Captain shall make no player call and exactly one Captain call.
 
 ### TTMUX-055
 Verifies: [TMUX-030](../user/tmux-play.md#tmux-030), [TMUX-052](../user/tmux-play.md#tmux-052)
@@ -554,7 +561,8 @@ Verifies: [TMUX-080](../user/tmux-play.md#tmux-080), [TMUX-064](../user/tmux-pla
 
 Given a YAML config whose `layout.initialVisible` names a non-empty, duplicate-free subset of configured player IDs, when the config is loaded the resolved startup-visible set shall equal that list in its given order, and the snapshot per [TMUX-034](../user/tmux-play.md#tmux-034) shall carry that list.
 Given a config that omits `layout.initialVisible`, the resolved startup-visible set shall be every configured player in `players` order.
-Given a `layout.initialVisible` that is empty, contains a duplicate, or names an ID absent from `players`, the loader shall reject the config with an error naming the offending path per [TMUX-008](../user/tmux-play.md#tmux-008).
+Given an empty configured roster, omitted or explicit `layout.initialVisible: []` shall resolve and snapshot an empty startup-visible set with active weights `[1]`.
+Given a non-empty roster and `layout.initialVisible: []`, or any roster with a duplicate or an ID absent from `players`, the loader shall reject the config with an error naming the offending path per [TMUX-008](../user/tmux-play.md#tmux-008).
 Given a `layout.initialVisible` that selects a single player from a multi-player roster, the resolved visible-column shape shall be the two-column single-player shape and the resolved weights shall come from `singlePlayerColumnWeights` per [TMUX-064](../user/tmux-play.md#tmux-064); given one that selects two or more, the shape shall be the three-column multi-player shape and the weights shall come from `multiPlayerColumnWeights`.
 
 ### TTMUX-081
@@ -574,13 +582,15 @@ Verifies: [TMUX-080](../user/tmux-play.md#tmux-080), [TMUX-028](../user/tmux-pla
 Given a YAML config with three configured players and `layout.initialVisible: [b, a]` (a two-player subset in that order), when `launchTmuxPlay({ attach: false })` builds the session on a real tmux server, the main window shall contain the Boss/Captain pane plus exactly two player panes created in the order `b` then `a`, each tailing its own `<player>.log`, and the third configured player shall have no pane.
 Given a config that omits `layout.initialVisible`, the launcher shall create one player pane per configured player in `players` order, reproducing the prior startup topology.
 The startup column geometry shall follow the visible-column shape of the startup-visible set per [TMUX-028](../user/tmux-play.md#tmux-028) — a two-player visible set yields the three-column multi-player shape, a one-player visible set yields the two-column single-player shape — using the resolved weights per [TMUX-064](../user/tmux-play.md#tmux-064).
+Given an empty configured roster with omitted or explicit `layout.initialVisible: []`, the launcher shall create only the full-width Boss/Captain pane and no player pane or player log-tail process, while retaining safe Captain title, timer, input, mouse, and resize behavior.
 
 ### TTMUX-083
 Verifies: [TMUX-081](../user/tmux-play.md#tmux-081), [TMUX-082](../user/tmux-play.md#tmux-082)
 
 Given a running runtime driven headlessly per [TMUX-029](../user/tmux-play.md#tmux-029) and a Captain that calls `setVisiblePlayers` with a non-empty, duplicate-free subset of configured player IDs, the call shall resolve and the runtime shall emit exactly one `player_view_changed` record whose `visiblePlayerIds` equals the requested list in order.
 A call from `CaptainContext` during a turn shall carry that turn's `turnId: number`; a call from `CaptainSession` shall carry the active turn's `turnId: number` when a turn is in flight and `turnId: null` when no turn is active.
-Given a call whose argument is empty, contains a duplicate, or names an unknown player ID, the returned Promise shall reject, no `player_view_changed` record shall be emitted, and the tracked visible set shall be unchanged; a Captain that catches the rejection shall be able to continue the turn.
+Given an empty configured roster, empty calls through `CaptainSession` and `CaptainContext` shall both resolve, expose empty `players` manifests, and emit the corresponding null-turn and active-turn `player_view_changed` records before ordinary Captain call and terminal records continue.
+Given a non-empty roster and an empty argument, or any roster with a duplicate or unknown player ID, the returned Promise shall reject, no `player_view_changed` record shall be emitted, and the tracked visible set shall be unchanged; a Captain that catches the rejection shall be able to continue the turn.
 Across an accepted call, the runtime shall not alter the configured `players` roster, the `players` manifest exposed to the Captain, or any player's `Cligent` continuity.
 
 ### TTMUX-084
@@ -594,6 +604,7 @@ Verifies: [TMUX-083](../user/tmux-play.md#tmux-083), [TMUX-084](../user/tmux-pla
 
 Given a real tmux server with a Boss/Captain pane plus player panes for an initial visible set, when the layout observer handles a `player_view_changed` whose `visiblePlayerIds` differs from the tracked set, the observer shall kill every main-window pane except the Boss/Captain pane and recreate one read-only pane per requested player in `visiblePlayerIds` order, each running `tail -n 200 -f <player>.log`, with pane titles, timer options, read-only input, mouse-selection bindings, layout hooks, and Boss-pane focus reapplied.
 Given a `player_view_changed` whose `visiblePlayerIds` equals the tracked set in the same order, the observer shall issue no tmux commands.
+Given an empty roster whose tracked set starts empty, when the observer receives an accepted empty `player_view_changed`, it shall issue no tmux commands and leave the sole Boss/Captain pane intact.
 Given a player that was hidden and is then named in a later `visiblePlayerIds`, its recreated pane shall display the recent tail of its `<player>.log` — the durable backlog living in the log file, not in tmux pane scrollback — per [TMUX-084](../user/tmux-play.md#tmux-084).
 Given a tmux command failure mid-rebuild, the observer shall not throw into record dispatch and shall not abort the Boss turn, and the tracked visible set shall not advance for an incomplete reconciliation.
 Given an awaited `setVisiblePlayers(next)` followed by a `callPlayer()` for a newly visible player, the successful pane rebuild shall complete before that player's `player_prompt` / `player_event` records are presented, per [TMUX-083](../user/tmux-play.md#tmux-083)'s ordered-dispatch guarantee.
@@ -606,7 +617,7 @@ Verifies: [TMUX-057](../user/tmux-play.md#tmux-057), [TMUX-026](../user/tmux-pla
 Given a `TmuxPlaySession` running against TTY-like input with an active Boss turn in flight, when the input delivers a bare ESC byte and the readline escape timeout elapses, observers shall capture one `turn_aborted` record with reason `ESC`, the Boss/Captain pane shall capture the `captain> [turn aborted] ESC` status line, no `runtime_error` record shall be emitted, and the session shall remain open.
 Given the same session, when the input delivers the arrow-up sequence `\x1b[A`, no `turn_aborted` record shall be emitted.
 Given the Boss readline edit buffer contained user-typed bytes when the bare ESC arrived, when the Boss presses Enter after the abort, the next Boss turn shall receive those retained bytes as its prompt.
-Given non-TTY input, the ESC keybinding shall not be installed and SIGINT/SIGTERM/EOF shutdown behavior shall remain governed by [TMUX-026](../user/tmux-play.md#tmux-026).
+Given non-TTY input, the ESC keybinding shall not be installed and SIGHUP/SIGINT/SIGTERM/EOF shutdown behavior shall remain governed by [TMUX-026](../user/tmux-play.md#tmux-026).
 
 ### TTMUX-060
 Verifies: [TMUX-058](../user/tmux-play.md#tmux-058)
@@ -666,3 +677,20 @@ The test suite shall additionally fail unless every peer-SDK command — global 
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011)
 
 Where the home and cwd are empty and exactly one supported adapter runtime is installed, when the config is resolved, the created YAML shall wire the Captain and a single player on that adapter, shall carry `model` and `effort` only where that adapter is one this project pins, and the stdout notice shall name that adapter. Where more than two adapter runtimes are installed, the generated roster shall hold the first two in canonical adapter order. Where no supported adapter runtime is installed, no file shall be created, and the failure shall name every supported adapter with the commands that install what it requires.
+
+### TTMUX-096
+Verifies: [TMUX-007](../user/tmux-play.md#tmux-007), [TMUX-041](../user/tmux-play.md#tmux-041), [TMUX-093](../user/tmux-play.md#tmux-093)
+
+Where player IDs contain one or more dot-delimited namespace segments and complete call settings select concrete or provider-default values, when tmux-play resolves and runs those calls, it shall accept the IDs, apply the complete detached settings without merging omitted instruction or permissions, use each enforceable provider default by omission, and preserve explicit or automatic session selection.
+Where settings contain accessors, unknown or incomplete values, an adapter-invalid effort, an unmappable Gemini alias or OpenCode variant, a permission policy rejected by the adapter-owned mapping, a resumed Claude or OpenCode provider-default model, or a provider-default model, effort, or permission reset that resumed Kimi cannot enforce, the call shall fail before its prompt record and provider run while preserving its stored resume token.
+Each such supplied-settings rejection shall be an `AgentCallSettingsError` recognized by `isAgentCallSettingsError()`, with its prior message and original cause preserved; the predicate shall reject turn or session scope errors, unknown-player errors, provider execution failures, and observer dispatch errors.
+Where one OpenCode call installs a session permission ruleset and a later resumed complete-settings call supplies a concrete model but omits permissions, the adapter shall update the session to an empty permission ruleset before prompting; the concrete model with provider-default effort shall also clear a prior variant without rejecting.
+Package declaration verification shall expose `TuningSelection`, `AgentCallSettings`, `AgentCallSettingsError`, `isAgentCallSettingsError`, `LaunchManagedTmuxPlayOptions`, `LaunchTmuxPlayResult`, `ManagedTmuxPlayLaunchContext`, `PreparedManagedTmuxPlayLaunch`, `ManagedTmuxPlayInitializeContext`, `ManagedTmuxPlayTurnContext`, `ManagedTmuxPlayAfterTurnContext`, `ManagedTmuxPlayTerminalRecord`, `ManagedTmuxPlayShutdownContext`, `ManagedTmuxPlayLifecycle`, `ManagedTmuxPlaySessionOptions`, and `TmuxPlayRuntimeHandle`; package runtime verification shall expose `AgentCallSettingsError`, `isAgentCallSettingsError`, `launchManagedTmuxPlay`, and `runManagedTmuxPlaySession`.
+
+### TTMUX-097
+Verifies: [TMUX-094](../user/tmux-play.md#tmux-094)
+
+Where an embedding front end prepares a managed tmux-play launch, the test suite shall prove that initialized readiness precedes return, caller reporting can occur before input activation and attach, launcher-to-child gate and shutdown markers are atomic complete create-once publications, the stable original Boss pane id—not a renumberable positional target—guards bounded readiness, pre-child failure removes only launcher-owned work state, activation is acknowledged before coordination cleanup, configured layout reaches attach behavior, and cancellation, initialization error, or attachment failure requests graceful shutdown, awaits the child's post-cleanup acknowledgement and pane exit under a shutdown bound independent of the readiness bound, then uses forced tmux teardown only as a bounded fallback.
+Where managed input, including a bracketed multiline paste, arrives before activation or shutdown occurs during either turn hook, SIGHUP, or an embedding shutdown request, the test suite shall prove that input is queued as the same semantic prompt without early runtime work, shutdown aborts and then awaits the whole hook/runtime/settlement transaction and runtime disposal before one lifecycle release, publishes its shutdown acknowledgement only after ordered cleanup, no readiness or activation is published after shutdown starts, and no buffered reply becomes visible before a successful finished-turn settlement.
+The managed runner shall also prove that it applies [TMUX-074](../user/tmux-play.md#tmux-074) isolation before its initialization hook, even when no CLI dispatcher invoked it.
+Where a runtime emits an aborted terminal after a buffered reply and then resolves or rejects, the after hook shall receive that exact terminal record before settlement or propagated failure and the reply shall remain hidden; where initialization or any hook fails, the returned session promise shall reject only after awaited cleanup and shall release no reply.

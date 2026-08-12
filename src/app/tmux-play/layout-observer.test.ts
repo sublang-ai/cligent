@@ -104,6 +104,22 @@ describe('LayoutObserver', () => {
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
+  it('treats the empty record in a Boss-only session as a no-op (TTMUX-085)', () => {
+    const observer = makeObserver({
+      players: [],
+      initialVisible: [],
+      layout: {
+        ...LAYOUT,
+        initialVisible: [],
+        columnWeights: [1],
+      },
+    });
+
+    observer.onRecord(viewChanged([]));
+
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
   it('treats a reordering of the same players as a change', () => {
     const observer = makeObserver();
     observer.onRecord(viewChanged(['reviewer', 'coder']));

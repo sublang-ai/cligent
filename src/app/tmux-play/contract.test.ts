@@ -4,8 +4,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  AgentCallSettingsError,
   KNOWN_PLAYER_ADAPTERS,
   createTmuxPlayRuntime,
+  isAgentCallSettingsError,
+  launchManagedTmuxPlay,
+  runManagedTmuxPlaySession,
+  type AgentCallSettings,
   type BossTurn,
   type CallCaptainOptions,
   type CallPlayerOptions,
@@ -14,6 +19,14 @@ import {
   type CaptainRunResult,
   type CaptainSession,
   type CaptainTelemetry,
+  type LaunchManagedTmuxPlayOptions,
+  type ManagedTmuxPlayAfterTurnContext,
+  type ManagedTmuxPlayLaunchContext,
+  type ManagedTmuxPlayLifecycle,
+  type ManagedTmuxPlaySessionOptions,
+  type ManagedTmuxPlayShutdownContext,
+  type ManagedTmuxPlayTerminalRecord,
+  type PreparedManagedTmuxPlayLaunch,
   type RecordObserver,
   type RuntimeCaptainConfig,
   type PlayerHandle,
@@ -23,6 +36,57 @@ import {
 } from './index.js';
 
 describe('tmux-play public contract', () => {
+  it('exports a stable complete-settings rejection discriminator', () => {
+    const cause = new TypeError('invalid settings');
+    const error = new AgentCallSettingsError(cause.message, cause);
+
+    expect(error).toMatchObject({
+      name: 'AgentCallSettingsError',
+      message: 'invalid settings',
+      cause,
+    });
+    expect(isAgentCallSettingsError(error)).toBe(true);
+    expect(isAgentCallSettingsError(new Error('provider failed'))).toBe(false);
+
+    const errorFromAnotherPackageCopy = new Error('invalid settings');
+    Object.defineProperty(
+      errorFromAnotherPackageCopy,
+      Symbol.for('cligent.agentCallSettingsError'),
+      { value: true },
+    );
+    expect(isAgentCallSettingsError(errorFromAnotherPackageCopy)).toBe(true);
+
+    let accessorCalls = 0;
+    const accessorMarker = Object.defineProperty(
+      new Error('accessor marker'),
+      Symbol.for('cligent.agentCallSettingsError'),
+      {
+        get() {
+          accessorCalls += 1;
+          return true;
+        },
+      },
+    );
+    expect(isAgentCallSettingsError(accessorMarker)).toBe(false);
+    expect(accessorCalls).toBe(0);
+
+    const brandedPrototype = Object.defineProperty(
+      {},
+      Symbol.for('cligent.agentCallSettingsError'),
+      { value: true },
+    );
+    expect(
+      isAgentCallSettingsError(Object.create(brandedPrototype) as unknown),
+    ).toBe(false);
+
+    const throwingProxy = new Proxy(new Error('proxy marker'), {
+      getOwnPropertyDescriptor() {
+        throw new Error('proxy trap failed');
+      },
+    });
+    expect(isAgentCallSettingsError(throwingProxy)).toBe(false);
+  });
+
   it('accepts Captain implementations', () => {
     const captain: Captain = {
       async init(session: CaptainSession) {
@@ -45,6 +109,10 @@ describe('tmux-play public contract', () => {
           visibility: 'hidden',
           resume: false,
           allowedTools: [] as const,
+          settings: {
+            model: { kind: 'provider-default' },
+            effort: { kind: 'value', value: 'high' },
+          },
         };
         await context.callCaptain('summarize', captainControl);
         // TMUX-092: turn-scoped conversational reply — text only, no options.
@@ -64,11 +132,13 @@ describe('tmux-play public contract', () => {
   it('exports runtime API option types', () => {
     expectTypeOf<CallPlayerOptions>().toMatchTypeOf<{
       resume?: string | false;
+      settings?: AgentCallSettings;
     }>();
     expectTypeOf<CallCaptainOptions>().toMatchTypeOf<{
       visibility?: 'visible' | 'hidden';
       resume?: string | false;
       allowedTools?: readonly string[];
+      settings?: AgentCallSettings;
     }>();
     expectTypeOf<RunTmuxPlayOptions>().toMatchTypeOf<{
       captain: Captain;
@@ -79,6 +149,46 @@ describe('tmux-play public contract', () => {
       signal?: AbortSignal;
     }>();
     expectTypeOf(createTmuxPlayRuntime).toBeFunction();
+    expectTypeOf(launchManagedTmuxPlay).toBeFunction();
+    expectTypeOf(runManagedTmuxPlaySession).toBeFunction();
+    expectTypeOf<LaunchManagedTmuxPlayOptions>().toMatchTypeOf<{
+      sessionId: string;
+      createSessionCommand: (...args: never[]) => string | Promise<string>;
+      readinessTimeoutMs?: number;
+      shutdownTimeoutMs?: number;
+    }>();
+    expectTypeOf<ManagedTmuxPlayLaunchContext>().toMatchTypeOf<{
+      sessionId: string;
+      sessionName: string;
+      workDir: string;
+      snapshotPath: string;
+      readinessPath: string;
+      inputGatePath: string;
+      inputActivePath: string;
+      shutdownRequestPath: string;
+      shutdownCompletePath: string;
+    }>();
+    expectTypeOf<PreparedManagedTmuxPlayLaunch>().toMatchTypeOf<{
+      sessionId: string;
+      attach(): Promise<void>;
+      cancel(): Promise<void>;
+    }>();
+    expectTypeOf<ManagedTmuxPlaySessionOptions>().toMatchTypeOf<{
+      sessionId: string;
+      workDir: string;
+      readinessPath: string;
+      inputGatePath: string;
+      inputActivePath: string;
+      shutdownRequestPath: string;
+      shutdownCompletePath: string;
+      lifecycle: ManagedTmuxPlayLifecycle;
+    }>();
+    expectTypeOf<
+      ManagedTmuxPlayAfterTurnContext['terminal']
+    >().toEqualTypeOf<ManagedTmuxPlayTerminalRecord>();
+    expectTypeOf<ManagedTmuxPlayLifecycle['shutdown']>()
+      .parameter(0)
+      .toEqualTypeOf<ManagedTmuxPlayShutdownContext>();
   });
 
   it('uses stable run result status values', () => {

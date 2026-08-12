@@ -191,6 +191,75 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
+    'keeps an empty roster as one full-width Boss/Captain pane across resize (TTMUX-014, TTMUX-082)',
+    async () => {
+      if (!existsSync(BUILT_CLI_PATH)) {
+        throw new Error(
+          `Missing ${BUILT_CLI_PATH}; run \`npm run build\` before the acceptance suite.`,
+        );
+      }
+
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, bossOnlyYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `accept-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      let panes = listPanes(sessionName);
+      expect(panes).toHaveLength(1);
+      let captain = paneByTitle(panes, 'Captain · claude');
+      expect(captain).toMatchObject({
+        left: 0,
+        width: 174,
+        inputOff: '0',
+        active: '1',
+      });
+      expect(
+        displayMessage(
+          `${sessionName}:0.${captain.index}`,
+          '#{pane_current_command}',
+        ),
+      ).not.toBe('tail');
+      expectPaneTimer(sessionName, captain.index, {
+        text: '00:00:00',
+        running: '0',
+        accent: '#cba6f7',
+      });
+      expect(showSessionOption(sessionName, 'mouse')).toBe('on');
+
+      runOrThrow('tmux', [
+        'set-window-option',
+        '-t',
+        sessionName,
+        'window-size',
+        'manual',
+      ]);
+      runOrThrow('tmux', [
+        'resize-window',
+        '-t',
+        sessionName,
+        '-x',
+        '80',
+        '-y',
+        '24',
+      ]);
+      panes = await waitForRegions(sessionName, [80], 2_000);
+      captain = paneByTitle(panes, 'Captain · claude');
+      expect(captain).toMatchObject({ left: 0, width: 80, inputOff: '0' });
+    },
+    60_000,
+  );
+
+  acceptanceIt(
     'creates a 174x49 session with 58/58/58 panes, titled, player panes read-only, Captain active',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
@@ -2637,6 +2706,17 @@ function defaultYamlConfig(): string {
     '    adapter: codex',
     '  - id: reviewer',
     '    adapter: claude',
+    '',
+  ].join('\n');
+}
+
+function bossOnlyYamlConfig(): string {
+  return [
+    'captain:',
+    "  from: '@sublang/cligent/captains/fanout'",
+    '  adapter: claude',
+    '  options: {}',
+    'players: []',
     '',
   ].join('\n');
 }

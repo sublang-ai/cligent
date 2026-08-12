@@ -3,7 +3,7 @@
 
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import type { RecordObserver } from './records.js';
-import type { EffortForAgent } from '../../effort.js';
+import type { Effort, EffortForAgent } from '../../effort.js';
 import type { PermissionPolicy } from '../../types.js';
 
 export interface Captain {
@@ -32,9 +32,10 @@ export interface CaptainSession {
   /**
    * TMUX-081: change which configured players have panes in the main tmux
    * window, for phase setup in `init()` or between Boss turns. `playerIds`
-   * must be a non-empty, duplicate-free subset of the configured player ids;
-   * an invalid argument rejects before any record is emitted, leaving the
-   * visible set unchanged. An accepted call emits one `player_view_changed`.
+   * must be a duplicate-free subset of the configured player ids. The empty
+   * set is accepted only for an empty configured roster; an invalid argument
+   * rejects before any record is emitted, leaving the visible set unchanged.
+   * An accepted call emits one `player_view_changed`.
    */
   setVisiblePlayers(playerIds: readonly string[]): Promise<void>;
 }
@@ -46,6 +47,66 @@ export interface CaptainSession {
  * skips them, while non-presenter observers still receive the full trace.
  */
 export type RecordVisibility = 'visible' | 'hidden';
+
+/**
+ * Select a concrete per-call value or deliberately defer to the provider's
+ * current default. The explicit default arm is distinct from omitting the
+ * enclosing settings object, which preserves tmux-play's configured values.
+ */
+export type TuningSelection<T extends string = string> =
+  | { readonly kind: 'value'; readonly value: T }
+  | { readonly kind: 'provider-default' };
+
+/**
+ * Complete effective settings for one player or Captain invocation.
+ * `model` and `effort` are required so a caller cannot accidentally combine
+ * a current value with a configured value from another logical session.
+ * Omitting `instruction` or `permissions` means no per-call instruction or
+ * permission policy; configured values are not merged into this object.
+ */
+export interface AgentCallSettings {
+  readonly model: TuningSelection;
+  readonly effort: TuningSelection<Effort>;
+  readonly instruction?: string;
+  readonly permissions?: PermissionPolicy;
+}
+
+const AGENT_CALL_SETTINGS_ERROR = Symbol.for('cligent.agentCallSettingsError');
+
+/**
+ * A complete per-call settings replacement that tmux-play cannot accept or
+ * enforce before any call record or provider work begins.
+ */
+export class AgentCallSettingsError extends Error {
+  readonly cause: unknown;
+
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'AgentCallSettingsError';
+    this.cause = cause;
+    Object.defineProperty(this, AGENT_CALL_SETTINGS_ERROR, { value: true });
+  }
+}
+
+/** Whether an error is a tmux-play complete-settings preflight rejection. */
+export function isAgentCallSettingsError(
+  error: unknown,
+): error is AgentCallSettingsError {
+  if (typeof error !== 'object' || error === null) return false;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      error,
+      AGENT_CALL_SETTINGS_ERROR,
+    );
+    return (
+      descriptor !== undefined &&
+      'value' in descriptor &&
+      descriptor.value === true
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface CallCaptainOptions {
   /**
@@ -65,6 +126,11 @@ export interface CallCaptainOptions {
    * requires a tool-free run; omission preserves configured/provider tools.
    */
   readonly allowedTools?: readonly string[];
+  /**
+   * Replace every configured call setting atomically for this invocation.
+   * Omission preserves the runtime's configured settings.
+   */
+  readonly settings?: AgentCallSettings;
 }
 
 /**
@@ -74,6 +140,11 @@ export interface CallCaptainOptions {
  */
 export interface CallPlayerOptions {
   readonly resume?: string | false;
+  /**
+   * Replace every configured call setting atomically for this invocation.
+   * Omission preserves the runtime's configured settings.
+   */
+  readonly settings?: AgentCallSettings;
 }
 
 /**

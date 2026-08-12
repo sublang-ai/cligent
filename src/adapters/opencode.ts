@@ -28,6 +28,10 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import {
+  isPermissionPolicyReset,
+  PERMISSION_POLICY_RESET,
+} from '../internal/permission-reset.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 import {
   assertRuntimeSupported,
@@ -148,6 +152,7 @@ interface OpenCodeAdapterDeps {
 interface OpenCodePermissionOptions {
   permission?: Record<string, PermissionLevel>;
   writablePaths?: WritablePathsPermissionMapping;
+  [PERMISSION_POLICY_RESET]?: true;
 }
 
 interface WrapOpencodeClientOptions {
@@ -818,6 +823,9 @@ export function mapPermissionsToOpenCodeOptions(
   options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
 ): OpenCodePermissionOptions {
   assertOpenCodeToolRestrictionsUnsupported(options);
+  if (isPermissionPolicyReset(policy)) {
+    return { [PERMISSION_POLICY_RESET]: true };
+  }
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
 
   if (policy === undefined) {
@@ -1105,6 +1113,12 @@ export function wrapOpencodeClient(
       const cwdVal = asString(options.cwd);
       instanceDirectory = cwdVal;
       const permissionObj = options.permission;
+      const resetPermissionPolicy =
+        (options as Record<PropertyKey, unknown>)[PERMISSION_POLICY_RESET] ===
+        true;
+      const effectivePermissionObj = resetPermissionPolicy
+        ? {}
+        : permissionObj;
       const lineageDiscoveryTimeoutMs =
         asNumber(options.lineageDiscoveryTimeoutMs) ??
         MAX_STATUS_QUERY_TIMEOUT_MS;
@@ -1117,7 +1131,9 @@ export function wrapOpencodeClient(
       const signal = options.signal instanceof AbortSignal
         ? options.signal
         : undefined;
-      const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
+      const v2PermissionRuleset = resetPermissionPolicy
+        ? []
+        : toOpenCodeV2PermissionRuleset(effectivePermissionObj);
 
       let sessionId: string | undefined;
       let resolveRunAbort!: () => void;
@@ -1244,7 +1260,7 @@ export function wrapOpencodeClient(
           // Resume an existing session instead of creating a new one.
           sessionId = resumeId;
           if (signal?.aborted) return stopAbortedDispatch();
-          if (apiVersion === 'v2' && v2PermissionRuleset) {
+          if (apiVersion === 'v2' && v2PermissionRuleset !== undefined) {
             if (!sessionUpdate) {
               throw new Error(
                 'OpenCode SDK client.session.update() not available for v2 permission updates',
@@ -1268,7 +1284,7 @@ export function wrapOpencodeClient(
               ? sessionCreate(
                   {
                     ...(cwdVal ? { directory: cwdVal } : {}),
-                    ...(v2PermissionRuleset
+                    ...(v2PermissionRuleset !== undefined
                       ? { permission: v2PermissionRuleset }
                       : {}),
                   },
@@ -1313,7 +1329,9 @@ export function wrapOpencodeClient(
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
           ...(options.steps !== undefined ? { steps: options.steps } : {}),
-          ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
+          ...(effectivePermissionObj !== undefined
+            ? { permission: effectivePermissionObj }
+            : {}),
         };
 
         const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {

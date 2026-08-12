@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { closeSync, mkdtempSync, openSync, writeSync } from 'node:fs';
+import { link, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -11,11 +12,15 @@ import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
 import { assertConfiguredAdaptersReady } from './readiness.js';
-import type {
-  PlayerAdapterImports,
-  PlayerAdapterName,
-} from './players.js';
-import { attachTmuxSession, isTmuxAvailable, runTmux } from '../shared/tmux.js';
+import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
+import {
+  attachTmuxSession,
+  hasTmuxPane,
+  isTmuxAvailable,
+  killTmuxSession,
+  runTmux,
+  runTmuxOutput,
+} from '../shared/tmux.js';
 import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
 import {
   captainAccent,
@@ -121,9 +126,216 @@ export interface LaunchTmuxPlayResult {
   readonly snapshotPath: string;
 }
 
+export interface ManagedTmuxPlayLaunchContext {
+  readonly sessionId: string;
+  readonly sessionName: string;
+  readonly workDir: string;
+  readonly snapshotPath: string;
+  readonly readinessPath: string;
+  readonly inputGatePath: string;
+  readonly inputActivePath: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly cwd?: string;
+}
+
+export type LaunchManagedTmuxPlayOptions = Omit<
+  LaunchTmuxPlayOptions,
+  'sessionId' | 'selfBin'
+> & {
+  readonly sessionId: string;
+  readonly createSessionCommand: (
+    context: ManagedTmuxPlayLaunchContext,
+  ) => string | Promise<string>;
+  readonly readinessTimeoutMs?: number;
+  readonly shutdownTimeoutMs?: number;
+};
+
+export interface PreparedManagedTmuxPlayLaunch extends LaunchTmuxPlayResult {
+  /** Allow the pane child to accept input, then attach the outer client. */
+  attach(): Promise<void>;
+  /** Abandon a prepared launch before attachment and terminate its session. */
+  cancel(): Promise<void>;
+}
+
 export async function launchTmuxPlay(
   options: LaunchTmuxPlayOptions = {},
 ): Promise<LaunchTmuxPlayResult> {
+  return launchTmuxPlayInternal(options);
+}
+
+/**
+ * Launch a tmux presentation whose pane process is owned by an embedding
+ * host. The public session id is caller supplied, and attachment waits until
+ * that child publishes post-initialization readiness.
+ */
+export async function launchManagedTmuxPlay(
+  options: LaunchManagedTmuxPlayOptions,
+): Promise<PreparedManagedTmuxPlayLaunch> {
+  if (!options.sessionId) {
+    throw new Error('managed tmux-play sessionId must be non-empty');
+  }
+  const readinessTimeoutMs = options.readinessTimeoutMs ?? 30_000;
+  assertManagedTimeout(readinessTimeoutMs);
+  const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 30_000;
+  assertManagedTimeout(shutdownTimeoutMs, 'shutdownTimeoutMs');
+  const ownsWorkDir = options.workDir === undefined;
+  const workDir =
+    options.workDir ?? mkdtempSync(join(tmpdir(), 'tmux-play-managed-'));
+  let readinessDir: string;
+  try {
+    readinessDir = mkdtempSync(join(tmpdir(), 'tmux-play-ready-'));
+  } catch (error) {
+    if (ownsWorkDir) {
+      await rm(workDir, { recursive: true, force: true });
+    }
+    throw error;
+  }
+  const readinessPath = join(readinessDir, 'status.json');
+  const inputGatePath = join(readinessDir, 'input-ready');
+  const inputActivePath = join(readinessDir, 'input-active');
+  const shutdownRequestPath = join(readinessDir, 'shutdown-request');
+  const shutdownCompletePath = join(readinessDir, 'shutdown-complete');
+  const sessionName = `tmux-play-${options.sessionId}`;
+  let bossPaneId: string | undefined;
+  let sessionCreated = false;
+  try {
+    const prepared = await launchTmuxPlayInternal(
+      { ...options, workDir, attach: false },
+      {
+        readinessPath,
+        inputGatePath,
+        inputActivePath,
+        shutdownRequestPath,
+        shutdownCompletePath,
+        readinessTimeoutMs,
+        createSessionCommand: options.createSessionCommand,
+        onSessionCreated(paneId) {
+          sessionCreated = true;
+          bossPaneId = paneId || undefined;
+        },
+      },
+    );
+    const { result, window } = prepared;
+    bossPaneId = prepared.bossPaneId;
+    let action: 'open' | 'attaching' | 'attached' | 'cancelled' = 'open';
+    let attachPromise: Promise<void> | undefined;
+    return {
+      ...result,
+      attach(): Promise<void> {
+        if (action === 'cancelled') {
+          return Promise.reject(
+            new Error('managed tmux-play session was cancelled'),
+          );
+        }
+        if (attachPromise) return attachPromise;
+        action = 'attaching';
+        attachPromise = (async () => {
+          try {
+            await publishManagedControlMarker(inputGatePath, 'ready\n');
+            await waitForManagedTmuxPlayActivation(
+              inputActivePath,
+              prepared.bossPaneId,
+              readinessTimeoutMs,
+            );
+            if (options.attach !== false) {
+              requestTerminalResize(options.stdout ?? process.stdout, window);
+              attachTmuxSession(result.sessionName);
+            }
+            await rm(readinessDir, { recursive: true, force: true });
+            action = 'attached';
+          } catch (error) {
+            await stopManagedTmuxPlay({
+              sessionName: result.sessionName,
+              bossPaneId: prepared.bossPaneId,
+              shutdownRequestPath,
+              shutdownCompletePath,
+              timeoutMs: shutdownTimeoutMs,
+            });
+            if (ownsWorkDir) {
+              await rm(workDir, { recursive: true, force: true });
+            }
+            await rm(readinessDir, { recursive: true, force: true });
+            throw error;
+          }
+        })();
+        return attachPromise;
+      },
+      async cancel(): Promise<void> {
+        if (action !== 'open') {
+          throw new Error(
+            action === 'cancelled'
+              ? 'managed tmux-play session was already cancelled'
+              : 'managed tmux-play session attachment has already started',
+          );
+        }
+        action = 'cancelled';
+        await stopManagedTmuxPlay({
+          sessionName: result.sessionName,
+          bossPaneId: prepared.bossPaneId,
+          shutdownRequestPath,
+          shutdownCompletePath,
+          timeoutMs: shutdownTimeoutMs,
+        });
+        if (ownsWorkDir) {
+          await rm(workDir, { recursive: true, force: true });
+        }
+        await rm(readinessDir, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    if (sessionCreated) {
+      await stopManagedTmuxPlay({
+        sessionName,
+        bossPaneId,
+        shutdownRequestPath,
+        shutdownCompletePath,
+        timeoutMs: shutdownTimeoutMs,
+      });
+    }
+    if (ownsWorkDir) {
+      await rm(workDir, { recursive: true, force: true });
+    }
+    await rm(readinessDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+interface ManagedLaunchBoundary {
+  readonly readinessPath: string;
+  readonly inputGatePath: string;
+  readonly inputActivePath: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly readinessTimeoutMs?: number;
+  readonly createSessionCommand: (
+    context: ManagedTmuxPlayLaunchContext,
+  ) => string | Promise<string>;
+  readonly onSessionCreated: (bossPaneId: string) => void;
+}
+
+function launchTmuxPlayInternal(
+  options: LaunchTmuxPlayOptions,
+): Promise<LaunchTmuxPlayResult>;
+function launchTmuxPlayInternal(
+  options: LaunchTmuxPlayOptions,
+  managed: ManagedLaunchBoundary,
+): Promise<{
+  readonly result: LaunchTmuxPlayResult;
+  readonly bossPaneId: string;
+  readonly window: LayoutConfig['window'];
+}>;
+async function launchTmuxPlayInternal(
+  options: LaunchTmuxPlayOptions,
+  managed?: ManagedLaunchBoundary,
+): Promise<
+  | LaunchTmuxPlayResult
+  | {
+      readonly result: LaunchTmuxPlayResult;
+      readonly bossPaneId: string;
+      readonly window: LayoutConfig['window'];
+    }
+> {
   if (!isTmuxAvailable()) {
     throw new Error(
       'tmux is not installed — see https://github.com/tmux/tmux#installation',
@@ -182,7 +394,29 @@ export async function launchTmuxPlay(
     workDir,
     flavor,
   );
-  buildTmuxSession({
+  const sessionCommand = managed
+    ? await managed.createSessionCommand({
+        sessionId,
+        sessionName,
+        workDir,
+        snapshotPath,
+        readinessPath: managed.readinessPath,
+        inputGatePath: managed.inputGatePath,
+        inputActivePath: managed.inputActivePath,
+        shutdownRequestPath: managed.shutdownRequestPath,
+        shutdownCompletePath: managed.shutdownCompletePath,
+        cwd: options.cwd,
+      })
+    : buildSessionCommand({
+        cwd: options.cwd,
+        sessionId,
+        workDir,
+        selfBin: options.selfBin ?? process.argv[1],
+      });
+  if (!sessionCommand) {
+    throw new Error('tmux-play session command must be non-empty');
+  }
+  const bossPaneId = buildTmuxSession({
     loaded,
     cwd: options.cwd,
     sessionId,
@@ -191,9 +425,20 @@ export async function launchTmuxPlay(
     selfBin: options.selfBin ?? process.argv[1],
     palette: paletteFor(flavor),
     themeFlavor: flavor,
+    sessionCommand,
+    captureBossPaneId: managed !== undefined,
+    onSessionCreated: managed?.onSessionCreated,
   });
 
-  if (options.attach !== false) {
+  if (managed) {
+    await waitForManagedTmuxPlayReadiness(
+      managed.readinessPath,
+      requireBossPaneId(bossPaneId),
+      managed.readinessTimeoutMs,
+    );
+  }
+
+  if (!managed && options.attach !== false) {
     requestTerminalResize(
       options.stdout ?? process.stdout,
       loaded.config.layout.window,
@@ -201,15 +446,22 @@ export async function launchTmuxPlay(
     attachTmuxSession(sessionName);
   }
 
-  return { sessionId, sessionName, workDir, snapshotPath };
+  const result = { sessionId, sessionName, workDir, snapshotPath };
+  if (managed) {
+    return {
+      result,
+      bossPaneId: requireBossPaneId(bossPaneId),
+      window: loaded.config.layout.window,
+    };
+  }
+  return result;
 }
 
 function shouldAttemptOsc11(options: LaunchTmuxPlayOptions): boolean {
   if (options.attach === false) return false;
   if (options.themeProbe !== undefined) return true;
   const stdout = options.stdout as
-    | (Output & { readonly isTTY?: boolean })
-    | undefined;
+    (Output & { readonly isTTY?: boolean }) | undefined;
   const stdoutIsTty = stdout
     ? stdout.isTTY === true
     : process.stdout.isTTY === true;
@@ -304,16 +556,21 @@ interface BuildTmuxSessionOptions {
   readonly selfBin: string;
   readonly palette: CatppuccinPalette;
   readonly themeFlavor: CatppuccinFlavor;
+  readonly sessionCommand: string;
+  readonly captureBossPaneId?: boolean;
+  readonly onSessionCreated?: (bossPaneId: string) => void;
 }
 
-function buildTmuxSession(options: BuildTmuxSessionOptions): void {
+function buildTmuxSession(
+  options: BuildTmuxSessionOptions,
+): string | undefined {
   const players = options.loaded.config.players;
   const layout = options.loaded.config.layout;
   const visiblePlayers = resolveVisiblePlayers(players, layout.initialVisible);
-  const bossCommand = buildSessionCommand(options);
+  const bossCommand = options.sessionCommand;
   const c = options.palette;
 
-  runTmux(
+  const newSessionArguments = [
     'new-session',
     '-d',
     '-x',
@@ -323,7 +580,19 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
     '-s',
     options.sessionName,
     bossCommand,
-  );
+  ];
+  const bossPaneId = options.captureBossPaneId
+    ? runTmuxOutput(
+        ...newSessionArguments.slice(0, 1),
+        '-P',
+        '-F',
+        '#{pane_id}',
+        ...newSessionArguments.slice(1),
+      )
+    : (runTmux(...newSessionArguments), undefined);
+  if (options.captureBossPaneId) {
+    options.onSessionCreated?.(bossPaneId ?? '');
+  }
   // TMUX-080 / TMUX-083: the player area is built from the resolved initial
   // visible set (not the whole roster) by a routine the layout observer reuses
   // on a visibility change. Its splits run first so they stay the calls right
@@ -369,6 +638,7 @@ function buildTmuxSession(options: BuildTmuxSessionOptions): void {
   runTmux('set', '-t', options.sessionName, 'window-status-current-format', '');
   runTmux('set', '-t', options.sessionName, 'window-status-separator', '');
   selectBossPane(options.sessionName);
+  return bossPaneId;
 }
 
 export interface PlayerAreaOptions {
@@ -419,12 +689,13 @@ export function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
   return playerPanes;
 }
 
-// Active-shape column weights for the visible-column count: one visible player
-// -> single-player shape, two or more -> multi-player shape (TMUX-028).
+// Active-shape column weights for the visible-column count: zero visible
+// players -> Boss-only, one -> single-player, two or more -> multi (TMUX-028).
 function activeColumnWeightsFor(
   layout: LayoutConfig,
   visibleCount: number,
 ): readonly number[] {
+  if (visibleCount === 0) return [1];
   return visibleCount === 1
     ? layout.singlePlayerColumnWeights
     : layout.multiPlayerColumnWeights;
@@ -748,7 +1019,12 @@ function timerColorFormat(
   return `#{?#{==:#{${runningOption}},1},#[fg=${runningColor}],#[fg=${frozenColor}]}`;
 }
 
-function buildSessionCommand(options: BuildTmuxSessionOptions): string {
+function buildSessionCommand(options: {
+  readonly sessionId: string;
+  readonly workDir: string;
+  readonly selfBin: string;
+  readonly cwd?: string;
+}): string {
   const args = [
     process.execPath,
     options.selfBin,
@@ -765,6 +1041,222 @@ function buildSessionCommand(options: BuildTmuxSessionOptions): string {
   return args.map(shellQuote).join(' ');
 }
 
+type ManagedShutdownOutcome =
+  'acknowledged' | 'pane-exited' | 'unavailable' | 'timed-out';
+
+async function stopManagedTmuxPlay(options: {
+  readonly sessionName: string;
+  readonly bossPaneId?: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly timeoutMs: number;
+}): Promise<ManagedShutdownOutcome> {
+  const deadlineAt = Date.now() + options.timeoutMs;
+  const outcome = await requestManagedTmuxPlayShutdown({
+    ...options,
+    deadlineAt,
+  });
+  if (
+    outcome !== 'acknowledged' ||
+    !(await waitForManagedTmuxPlayExit(options.bossPaneId, deadlineAt))
+  ) {
+    killTmuxSession(options.sessionName);
+  }
+  return outcome;
+}
+
+async function waitForManagedTmuxPlayExit(
+  bossPaneId: string | undefined,
+  deadlineAt: number,
+): Promise<boolean> {
+  if (!bossPaneId) return false;
+  while (hasTmuxPane(bossPaneId)) {
+    if (Date.now() >= deadlineAt) return false;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  return true;
+}
+
+async function requestManagedTmuxPlayShutdown(options: {
+  readonly bossPaneId?: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly deadlineAt: number;
+}): Promise<ManagedShutdownOutcome> {
+  try {
+    await publishManagedControlMarker(
+      options.shutdownRequestPath,
+      'shutdown\n',
+    );
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) return 'unavailable';
+  }
+
+  while (true) {
+    try {
+      if (
+        (await readFile(options.shutdownCompletePath, 'utf8')).trim() ===
+        'complete'
+      ) {
+        return 'acknowledged';
+      }
+      return 'unavailable';
+    } catch (error) {
+      if (!isMissingFileError(error)) return 'unavailable';
+    }
+    if (options.bossPaneId && !hasTmuxPane(options.bossPaneId)) {
+      // The child publishes the durable completion marker immediately before
+      // terminating its pane. If those events race this poll, inspect the
+      // marker once more so a successful graceful handoff is not mislabeled
+      // as an unacknowledged crash.
+      try {
+        if (
+          (await readFile(options.shutdownCompletePath, 'utf8')).trim() ===
+          'complete'
+        ) {
+          return 'acknowledged';
+        }
+        return 'unavailable';
+      } catch (error) {
+        if (!isMissingFileError(error)) return 'unavailable';
+      }
+      return 'pane-exited';
+    }
+    if (!options.bossPaneId) return 'unavailable';
+    if (Date.now() >= options.deadlineAt) return 'timed-out';
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+/** @internal Exported only for mutation-sensitive filesystem tests. */
+export async function publishManagedControlMarker(
+  path: string,
+  contents: string,
+  beforePublish?: (temporaryPath: string) => void | Promise<void>,
+): Promise<void> {
+  const temporaryPath = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await writeFile(temporaryPath, contents, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await beforePublish?.(temporaryPath);
+    // Linking a complete same-directory inode is atomic and, unlike rename,
+    // retains the create-once EEXIST boundary when a marker already exists.
+    await link(temporaryPath, path);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+async function waitForManagedTmuxPlayReadiness(
+  readinessPath: string,
+  bossPaneId: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  assertManagedTimeout(timeoutMs);
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      const parsed = JSON.parse(
+        await readFile(readinessPath, 'utf8'),
+      ) as unknown;
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        (parsed as { status?: unknown }).status === 'ready'
+      ) {
+        return;
+      }
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        (parsed as { status?: unknown }).status === 'error' &&
+        typeof (parsed as { message?: unknown }).message === 'string'
+      ) {
+        throw new Error(
+          `managed tmux-play session failed to initialize: ${(parsed as { message: string }).message}`,
+        );
+      }
+      throw new Error(
+        'managed tmux-play child wrote an invalid readiness marker',
+      );
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+
+    if (!hasTmuxPane(bossPaneId)) {
+      throw new Error(
+        'managed tmux-play session process exited before initialization',
+      );
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error('managed tmux-play session initialization timed out');
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForManagedTmuxPlayActivation(
+  activePath: string,
+  bossPaneId: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  assertManagedTimeout(timeoutMs);
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      if ((await readFile(activePath, 'utf8')).trim() === 'active') return;
+      throw new Error('managed tmux-play child wrote an invalid input marker');
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+    if (!hasTmuxPane(bossPaneId)) {
+      throw new Error(
+        'managed tmux-play session process exited before accepting input',
+      );
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error('managed tmux-play input activation timed out');
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function requireBossPaneId(value: string | undefined): string {
+  if (!value) {
+    throw new Error('tmux new-session did not report the Boss pane id');
+  }
+  return value;
+}
+
+function assertManagedTimeout(
+  value: number,
+  field = 'readinessTimeoutMs',
+): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`managed tmux-play ${field} must be positive`);
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'EEXIST'
+  );
+}
+
 function createPlayerPanes(
   sessionName: string,
   workDir: string,
@@ -772,8 +1264,11 @@ function createPlayerPanes(
   sizes: LayoutSizes,
   replayLines?: number,
 ): PlayerPane[] {
-  const firstColumnCount = Math.ceil(players.length / 2);
   const playerPanes: PlayerPane[] = [];
+  if (players.length === 0) {
+    return playerPanes;
+  }
+  const firstColumnCount = Math.ceil(players.length / 2);
   let nextPaneIndex = 1;
 
   runTmux(

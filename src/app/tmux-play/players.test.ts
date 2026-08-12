@@ -59,6 +59,21 @@ describe('validatePlayerConfigs', () => {
     expect(() => validatePlayerConfigs(configs)).not.toThrow();
   });
 
+  it('accepts segmented player ids and rejects empty or invalid segments', () => {
+    expect(() =>
+      validatePlayerConfigs([
+        { id: 'dev.coder', adapter: 'codex' },
+        { id: 'quality.review_team-2', adapter: 'claude' },
+      ]),
+    ).not.toThrow();
+
+    for (const id of ['dev.', '.coder', 'dev..coder', 'dev.2coder']) {
+      expect(() => validatePlayerConfigs([{ id, adapter: 'codex' }])).toThrow(
+        `Invalid player id "${id}"`,
+      );
+    }
+  });
+
   it('rejects invalid player ids', () => {
     expect(() =>
       validatePlayerConfigs([{ id: 'Reviewer', adapter: 'claude' }]),

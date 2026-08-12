@@ -28,6 +28,7 @@ export type {
 
 export type {
   BossTurn,
+  AgentCallSettings,
   CallCaptainOptions,
   CallPlayerOptions,
   Captain,
@@ -42,6 +43,11 @@ export type {
   RunStatus,
   RunTmuxPlayOptions,
   RuntimePlayerConfig,
+  TuningSelection,
+} from './contract.js';
+export {
+  AgentCallSettingsError,
+  isAgentCallSettingsError,
 } from './contract.js';
 
 export {
@@ -61,6 +67,26 @@ export type {
 } from './records.js';
 
 export { TmuxPlayRuntime, createTmuxPlayRuntime } from './runtime.js';
+
+export { launchManagedTmuxPlay } from './launcher.js';
+export type {
+  LaunchManagedTmuxPlayOptions,
+  LaunchTmuxPlayResult,
+  ManagedTmuxPlayLaunchContext,
+  PreparedManagedTmuxPlayLaunch,
+} from './launcher.js';
+
+export { runManagedTmuxPlaySession } from './session.js';
+export type {
+  ManagedTmuxPlayAfterTurnContext,
+  ManagedTmuxPlayInitializeContext,
+  ManagedTmuxPlayLifecycle,
+  ManagedTmuxPlaySessionOptions,
+  ManagedTmuxPlayShutdownContext,
+  ManagedTmuxPlayTerminalRecord,
+  ManagedTmuxPlayTurnContext,
+  TmuxPlayRuntimeHandle,
+} from './session.js';
 
 export {
   NotificationObserver,

@@ -73,6 +73,28 @@ export function isTmuxAvailable(): boolean {
   return probe.error === undefined && probe.status === 0;
 }
 
+export function hasTmuxPane(target: string): boolean {
+  const result = spawnSync(
+    'tmux',
+    ['display-message', '-p', '-t', target, '#{pane_id}'],
+    tmuxSpawnOptions('ignore'),
+  );
+  return result.error === undefined && result.status === 0;
+}
+
+/** Run tmux and return its trimmed stdout. */
+export function runTmuxOutput(...args: string[]): string {
+  const result = spawnSync('tmux', args, tmuxSpawnOptions('pipe'));
+  if (result.error) {
+    throw new Error(`tmux ${args[0]} failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString().trim();
+    throw new Error(`tmux ${args[0]} failed: ${stderr || `exit ${result.status}`}`);
+  }
+  return result.stdout?.toString().trim() ?? '';
+}
+
 export function runTmux(...args: string[]): void {
   const result = spawnSync('tmux', args, tmuxSpawnOptions('pipe'));
   if (result.error) {

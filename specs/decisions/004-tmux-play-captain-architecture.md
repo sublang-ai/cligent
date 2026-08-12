@@ -52,9 +52,10 @@ Player panes are read-only on the right, in config order:
 
 One player uses one right column.
 Two or more players use two columns, with `ceil(playerCount / 2)` players in the first column from top to bottom.
+An empty roster uses only the full-width Boss/Captain pane.
 
 Pane titles are single tokens — `Captain` for the Boss/Captain pane and the title-cased player `id` for each player pane (no `Player:` prefix).
-Width split is even: each visible column gets 1/N of the window where N is the column count (2 for a single player, 3 for two or more); the spec items in [user/tmux-play.md](../user/tmux-play.md) carry the normative ratios.
+Width split is even: each visible column gets 1/N of the window where N is the column count (1 for an empty roster, 2 for a single player, 3 for two or more); the spec items in [user/tmux-play.md](../user/tmux-play.md) carry the normative ratios.
 
 The Boss/Captain pane runs `tmux-play --session <id> --work-dir <path>`.
 Player panes tail their log and accept no input.
@@ -264,7 +265,7 @@ Workloads that need a hard cap should write a thin Captain wrapper or use a diff
 
 `captain.from` accepts local paths (resolved against the config file's directory) or package specifiers; both resolve through `import()` at session startup.
 
-Player IDs match `^[a-z][a-z0-9_-]*$`, are unique within a config, and may not equal `captain`.
+Player IDs match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$`, are unique within a config, and may not equal `captain`.
 Multiple players may share an adapter and model — the player ID is the runtime identity.
 
 Adapter names use the canonical short scheme: `claude`, `codex`, `gemini`, `kimi`, `opencode`.

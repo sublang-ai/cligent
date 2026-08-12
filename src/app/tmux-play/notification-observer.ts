@@ -32,6 +32,7 @@ export type ChildProcessLike = Pick<ChildProcess, 'on' | 'unref'>;
 
 const USER_ABORT_REASONS = new Set([
   'ESC',
+  'SIGHUP',
   'SIGINT',
   'SIGTERM',
   'EOF',

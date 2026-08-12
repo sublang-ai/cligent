@@ -92,9 +92,53 @@ function assertCurrentBuild(label) {
     'dist/adapters/kimi.js',
     'dist/adapters/kimi.d.ts',
     'dist/app/tmux-play/cli.js',
+    'dist/app/tmux-play/index.js',
+    'dist/app/tmux-play/index.d.ts',
   ]) {
     if (!existsSync(resolve(repoRoot, relativePath))) {
       fail(`${label} did not emit ${relativePath}`);
+    }
+  }
+  const tmuxPlayDeclarations = readFileSync(
+    resolve(repoRoot, 'dist/app/tmux-play/index.d.ts'),
+    'utf8',
+  );
+  for (const exportedName of [
+    'TuningSelection',
+    'AgentCallSettings',
+    'AgentCallSettingsError',
+    'isAgentCallSettingsError',
+    'LaunchManagedTmuxPlayOptions',
+    'LaunchTmuxPlayResult',
+    'launchManagedTmuxPlay',
+    'ManagedTmuxPlayAfterTurnContext',
+    'ManagedTmuxPlayInitializeContext',
+    'ManagedTmuxPlayLaunchContext',
+    'ManagedTmuxPlayLifecycle',
+    'ManagedTmuxPlaySessionOptions',
+    'ManagedTmuxPlayShutdownContext',
+    'ManagedTmuxPlayTerminalRecord',
+    'ManagedTmuxPlayTurnContext',
+    'PreparedManagedTmuxPlayLaunch',
+    'runManagedTmuxPlaySession',
+    'TmuxPlayRuntimeHandle',
+  ]) {
+    if (!tmuxPlayDeclarations.includes(exportedName)) {
+      fail(`${label} omitted ${exportedName} from tmux-play declarations`);
+    }
+  }
+  const tmuxPlayRuntime = readFileSync(
+    resolve(repoRoot, 'dist/app/tmux-play/index.js'),
+    'utf8',
+  );
+  for (const exportedName of [
+    'AgentCallSettingsError',
+    'isAgentCallSettingsError',
+    'launchManagedTmuxPlay',
+    'runManagedTmuxPlaySession',
+  ]) {
+    if (!tmuxPlayRuntime.includes(exportedName)) {
+      fail(`${label} omitted ${exportedName} from tmux-play runtime exports`);
     }
   }
 }
@@ -186,6 +230,7 @@ try {
       'dist/index.d.ts',
       'dist/adapters/kimi.js',
       'dist/adapters/kimi.d.ts',
+      'dist/app/tmux-play/index.d.ts',
     ]) {
       if (!packedPaths.has(relativePath)) {
         fail(`tarball omitted current file ${relativePath}`);

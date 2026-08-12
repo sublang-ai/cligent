@@ -27,6 +27,7 @@ This decision serves workflow-driven visible subsets without introducing a mutab
 ### Static Roster
 
 The `players` config remains the full player roster for the session.
+The roster may be empty for a Boss/Captain-only session.
 The launcher and runtime construct every configured player at session startup.
 The runtime does not support creating, deleting, or reconfiguring player identities after startup.
 
@@ -37,14 +38,14 @@ It does not change `CaptainSession.players`, `CaptainContext.players`, the runti
 
 The `layout` config gains an optional `initialVisible` field containing player IDs from the configured roster.
 When `layout.initialVisible` is omitted, every configured player is visible, preserving today's behavior for existing configs.
-When present, it must name a non-empty, duplicate-free subset of configured player IDs.
+When present, it must name a duplicate-free subset of configured player IDs.
+It may be empty if and only if the configured roster is empty.
 The launcher creates startup panes for exactly the initial visible set, not the whole roster followed by a synthetic reconciliation.
 When `layout.initialVisible` is present, its array order is the startup player pane order.
 When `layout.initialVisible` is omitted, configured `players` order remains the startup player pane order.
 The startup layout weight shape derives from the same initial visible set.
-
-This decision does not support a zero-player visible layout.
-A Captain that wants a Captain-only planning phase should leave the previous visible set in place until at least one player should be shown.
+An empty roster therefore starts with only the full-width Boss/Captain pane;
+there are no player panes or log-tail processes.
 
 ### Captain Control API
 
@@ -62,7 +63,9 @@ interface CaptainContext {
 
 The session-scoped method is for phase setup in `init()` or between Boss turns.
 The turn-scoped method is for mid-turn workflow transitions.
-Both methods validate that `playerIds` is a non-empty, duplicate-free subset of the configured player IDs.
+Both methods validate that `playerIds` is a duplicate-free subset of the configured player IDs.
+The empty set is accepted if and only if the configured roster is empty, so a
+non-empty roster cannot transition to a zero-player visible layout.
 When validation fails, the returned Promise rejects before any record is emitted.
 The visible set remains unchanged.
 The Captain may catch that rejection and continue; an uncaught rejection follows the normal Captain failure path from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation).
@@ -104,6 +107,9 @@ It initializes that list from the launcher's startup visible set.
 It updates that list only after reconciliation completes successfully, where success means every requested player pane was recreated and configured for the requested visible set.
 An incomplete best-effort reconciliation does not advance the tracked list, even if the observer handler returns without throwing.
 When a `player_view_changed` record repeats that list in the same order, the observer treats it as a no-op and issues no tmux commands.
+For an empty roster, the tracked list starts empty and every accepted empty
+visibility record is therefore a no-op; the observer never tears down or
+rebuilds the sole Boss/Captain pane.
 
 The observer uses full player-area rebuild.
 On each accepted visibility change it:
@@ -129,6 +135,11 @@ Captains should prefer calling `setVisiblePlayers()` at deliberate workflow phas
 
 Dynamic visibility makes visible-column shape depend on the current visible set rather than the configured roster size.
 The layout schema validates weights by visible-column shape.
+
+The zero-player shape has one full-width Boss/Captain column and resolved
+active weights `[1]`.
+It has no authored weight field: the two- and three-element canonical fields
+and aliases below remain the only configurable shapes.
 
 The multi-player visible layout uses three column weights: Boss/Captain, first player column, second player column.
 The single-player visible layout uses two column weights: Boss/Captain and the single player column.
@@ -191,6 +202,10 @@ For the shipped default roster with two visible players, [TMUX-011](../user/tmux
 
 Existing configs retain the current static behavior because the default visible set is all configured players.
 Playbook Captains can declare the union roster up front and drive visible subsets at workflow phase boundaries.
+An embedding host may instead configure an empty roster when the Captain
+itself is the only agent session needed; launcher chrome, runtime turns,
+records, presentation, and managed settlement remain available without player
+panes or player calls.
 
 Hidden players remain live as runtime entities and continue to accumulate output in their per-player log files when called.
 Their hidden panes do not remain live.
