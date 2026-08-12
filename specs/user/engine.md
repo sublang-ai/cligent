@@ -107,6 +107,9 @@ Where a provider defines its base input counter as cache-inclusive, including Co
 Where token accounting is `'reported'`, `outputTokens` shall include every model-generated output token, including reasoning or thinking tokens.
 Where a provider reports reasoning or thinking separately from a visible or candidate output base, the adapter shall add that disjoint detail exactly once; where an aggregate exposes additional token use without partitioning it between normalized input and output, the adapter shall mark accounting unavailable rather than allocate the residual by estimation.
 Cache or reasoning details shall not make incomplete base input and output accounting `'reported'`; availability shall remain governed by [ENG-027](#eng-027).
+Where the producer publishes the optional `DoneUsage.breakdown` partition of [ENG-028](#eng-028), the input side `input` + `cacheRead` + `cacheWrite` shall equal `inputTokens` exactly in integers, and the output side `output` + `reasoning` shall equal `outputTokens` exactly, treating an omitted member of a published side as a zero contribution.
+Where a provider's base input counter is cache-inclusive, the producer shall obtain `input` by subtracting the mapped cache counters from that base, and where a provider's output counter includes reasoning, it shall obtain `output` by subtracting the mapped reasoning counter.
+Where such a subtraction is negative, the producer shall omit that side rather than clamp it, because a clamped component would make the side exceed the aggregate it partitions.
 
 ## Effort
 
@@ -181,3 +184,22 @@ Where upstream supplies complete finite non-negative integer input and output co
 Where an optional cache counter is absent, its contribution shall be zero without invalidating otherwise complete accounting; where a required counter is absent or any present mapped token or cache counter is non-finite, negative, fractional, or non-numeric, the producer shall set `'unavailable'` rather than silently substituting a reported zero.
 Where complete upstream token counters are absent, malformed, or unavailable on a synthesized, errored, interrupted, exhausted, or other terminal path, the producer shall set `'unavailable'`; numeric token fields shall remain present for object-shape compatibility but consumers shall not treat them as measurements.
 Where either availability state applies, the producer shall preserve an independently known `toolUses` count from observed tool lifecycles or a valid provider-reported count instead of deriving its availability from token accounting.
+This discriminator shall govern the `inputTokens` and `outputTokens` aggregates only; the presence of the optional `breakdown` partition shall be governed by [ENG-028](#eng-028).
+Where the discriminator is `'unavailable'`, the producer shall omit `breakdown` entirely, so that no consumer can sum components into a figure the run did not measure.
+
+## Token Usage Breakdown
+
+### ENG-028
+
+`DoneUsage.breakdown` shall be an optional `TokenBreakdown` whose optional members `input`, `cacheRead`, `cacheWrite`, `output`, and `reasoning` are a disjoint partition of the aggregates per [DR-014](../decisions/014-unified-token-usage-breakdown.md), counting every token at most once and satisfying the [ENG-019](#eng-019) identities.
+A present member shall be a finite non-negative integer the producer measured, and an absent member shall mean the runtime does not report that quantity; a present zero shall therefore never be interpreted as an unreported component, nor an absent member as a measured zero.
+The members shall form two sides, `input` / `cacheRead` / `cacheWrite` and `output` / `reasoning`, and the producer shall publish each side in full or omit it in full.
+Where a runtime's accounting model contains no counter for a member of a side it publishes, the producer shall omit that member alone.
+Where a runtime is known to bill a quantity that it does not expose separately, the producer shall omit that member's whole side, because publishing the remaining total under a narrower component name would assert a measurement the runtime did not make.
+Where neither side is publishable, the producer shall omit `breakdown` rather than emit an empty object.
+
+### ENG-029
+
+Where an adapter derives token accounting from a source other than the protocol stream it consumes for the run, including state the runtime writes outside that stream, it shall cross-validate the derived totals against the aggregates that stream itself reported.
+Where the cross-validation fails, or the source is absent, unreadable, or unparsable, the adapter shall fall back to the accounting the protocol stream supports, including `'unavailable'` where that accounting is incomplete, so that a supplementary source can only raise fidelity and never lower correctness.
+An adapter shall not read a source that lies outside a protocol boundary an applicable decision record establishes for it.

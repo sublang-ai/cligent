@@ -60,6 +60,8 @@ Where required usage structure or any consumed token or cache counter is negativ
 Unconsumed usage extension details such as `thoughtTokens` shall not affect availability, and a null optional cache counter shall be treated as absent.
 When ACP omits usage, the adapter shall mark token accounting as `'unavailable'` and retain zero-valued compatibility placeholders rather than reporting measured zero or estimating tokens.
 In either state, `toolUses` shall equal the emitted tool calls independently of token accounting.
+The adapter shall publish no `DoneUsage.breakdown` partition per [ENG-028](../engine.md#eng-028), because ACP's `Usage` structure is an unstable protocol extension that the conformance-target Kimi Code release does not populate, leaving nothing measured to decompose.
+The fold of `cachedReadTokens` and `cachedWriteTokens` into `inputTokens` reflects the agent's own cache-exclusive convention rather than a guarantee ACP makes about the field, so the adapter shall confine that fold to this ACP agent and shall not treat it as a portable ACP rule.
 
 ### KIMI-006
 

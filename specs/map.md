@@ -118,7 +118,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage and its optional disjoint five-component breakdown with side-atomic publication and supplementary-source cross-validation, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
 | test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability, and effort API verification |
 
 ### GEMINI
@@ -137,7 +137,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization including reported/unavailable token usage, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
+| user | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization including reported/unavailable token usage with no breakdown because ACP's unstable `Usage` extension is unpopulated, agent-scoped cache-exclusive folding, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
 
 ### LIC
 
