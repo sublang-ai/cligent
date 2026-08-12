@@ -14,6 +14,12 @@ unpublished SDK build artifact.
 
 Done
 
+The malformed-usage rejection below records the behavior when this iteration
+completed.
+[KIMI-005](../user/adapters/kimi.md#kimi-005) later supersedes it by
+failure-isolating optional prompt usage as unavailable accounting, while
+[KIMI-006](../user/adapters/kimi.md#kimi-006) keeps control traffic strict.
+
 ## Deliverables
 
 - [x] The adapter validates inbound ACP traffic against schemas this project

@@ -34,6 +34,7 @@ import {
   isCliRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
+import { isUsageRecord, readUsageCounter } from './usage.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
@@ -46,6 +47,7 @@ const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
 const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
+  tokenAvailability: 'unavailable',
   inputTokens: 0,
   outputTokens: 0,
   toolUses: 0,
@@ -72,9 +74,9 @@ interface ServerCloseInfo {
 
 type StreamWaitResult =
   | { kind: 'event'; result: IteratorResult<unknown> }
-  | { kind: 'stream_error'; error: unknown }
+  | { kind: 'iterator_error'; error: unknown }
+  | { kind: 'caller_abort' }
   | { kind: 'inactivity' }
-  | { kind: 'abort' }
   | { kind: 'server_exit'; exit: ServerCloseInfo };
 
 type PermissionReplyWaitResult =
@@ -250,36 +252,78 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
-function mapUsage(rawUsage: unknown): DonePayload['usage'] {
-  if (typeof rawUsage !== 'object' || rawUsage === null) {
-    return { ...DEFAULT_DONE_USAGE };
+function mapUsage(
+  rawUsage: unknown,
+  observedToolUses: number,
+): DonePayload['usage'] {
+  if (!isUsageRecord(rawUsage)) {
+    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
   }
 
-  const usage = rawUsage as Record<string, unknown>;
-
-  const baseInput =
-    asNumber(usage.inputTokens) ?? asNumber(usage.input_tokens) ?? 0;
-  const cacheRead =
-    asNumber(usage.cacheReadInputTokens) ?? asNumber(usage.cache_read_input_tokens) ?? 0;
-  const cacheCreation =
-    asNumber(usage.cacheCreationInputTokens) ?? asNumber(usage.cache_creation_input_tokens) ?? 0;
-  const inputTokens = baseInput + cacheRead + cacheCreation;
-
-  const outputTokens =
-    asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens) ?? 0;
-
-  const toolUses =
-    asNumber(usage.toolUses) ?? asNumber(usage.tool_uses) ?? 0;
+  const baseInput = readUsageCounter(
+    rawUsage,
+    ['inputTokens', 'input_tokens'],
+    true,
+  );
+  const cacheRead = readUsageCounter(
+    rawUsage,
+    ['cacheReadInputTokens', 'cache_read_input_tokens'],
+    false,
+  );
+  const cacheCreation = readUsageCounter(
+    rawUsage,
+    ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
+    false,
+  );
+  const outputTokens = readUsageCounter(
+    rawUsage,
+    ['outputTokens', 'output_tokens'],
+    true,
+  );
+  const reportedToolUses = readUsageCounter(
+    rawUsage,
+    ['toolUses', 'tool_uses'],
+    false,
+  );
+  const toolUses = Math.max(
+    reportedToolUses.valid ? reportedToolUses.value : 0,
+    observedToolUses,
+  );
 
   const totalCostUsd =
-    asNumber(usage.totalCostUsd) ?? asNumber(usage.total_cost_usd);
+    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
   return {
-    inputTokens,
-    outputTokens,
+    tokenAvailability:
+      baseInput.valid &&
+      cacheRead.valid &&
+      cacheCreation.valid &&
+      outputTokens.valid
+        ? 'reported'
+        : 'unavailable',
+    inputTokens: baseInput.value + cacheRead.value + cacheCreation.value,
+    outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
   };
+}
+
+const OPENCODE_EVENT_TOKEN_COUNTER_KEYS = [
+  'inputTokens',
+  'input_tokens',
+  'cacheReadInputTokens',
+  'cache_read_input_tokens',
+  'cacheCreationInputTokens',
+  'cache_creation_input_tokens',
+  'outputTokens',
+  'output_tokens',
+] as const;
+
+function hasOpenCodeEventTokenCounters(rawUsage: unknown): boolean {
+  if (!isUsageRecord(rawUsage)) return false;
+  return OPENCODE_EVENT_TOKEN_COUNTER_KEYS.some((key) =>
+    Object.prototype.hasOwnProperty.call(rawUsage, key),
+  );
 }
 
 /** Broad extractor — used for runResult where `id` plausibly is the session. */
@@ -1381,7 +1425,7 @@ export function wrapOpencodeClient(
 
       throwIfSdkResultError(result, operation);
       if (unwrapSdkData(result) === false) {
-        throw new Error(`${operation}: SDK declined the rejection response`);
+        throw new Error(`${operation}: SDK declined the permission response`);
       }
     },
 
@@ -1610,6 +1654,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let accumulatedOutputTokens = 0;
     let accumulatedToolUses = 0;
     let accumulatedCost = 0;
+    let accumulatedTokenUsageObserved = false;
+    let accumulatedTokenUsageComplete = true;
 
     const eventStreamController = new AbortController();
     let resolveCallerAbort!: () => void;
@@ -1818,7 +1864,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       abortRequested = true;
       eventStreamController.abort();
       resolveCallerAbort();
-      finishStreamWait?.({ kind: 'abort' });
+      finishStreamWait?.({ kind: 'caller_abort' });
       abortPermissionWait?.();
     };
 
@@ -1844,6 +1890,18 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         Math.min(MAX_STATUS_QUERY_TIMEOUT_MS, this.eventInactivityTimeoutMs),
       );
     };
+
+    const accumulatedUsage = (): DonePayload['usage'] => ({
+      // Error, interruption, inactivity, and exhaustion are synthesized
+      // terminal paths: partial step counters must not be presented as a
+      // complete provider measurement, but independently observed tool uses
+      // and compatibility-shaped numeric fields remain available.
+      tokenAvailability: 'unavailable',
+      inputTokens: accumulatedInputTokens,
+      outputTokens: accumulatedOutputTokens,
+      toolUses: accumulatedToolUses,
+      ...(accumulatedCost > 0 ? { totalCostUsd: accumulatedCost } : {}),
+    });
 
     try {
       if (this.mode === 'managed') {
@@ -2063,13 +2121,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         return 'superseded by caller abort';
       };
 
-      const accumulatedUsage = (): DonePayload['usage'] => ({
-        inputTokens: accumulatedInputTokens,
-        outputTokens: accumulatedOutputTokens,
-        toolUses: accumulatedToolUses,
-        ...(accumulatedCost > 0 ? { totalCostUsd: accumulatedCost } : {}),
-      });
-
       while (true) {
         const nextPromise = iterator.next();
         const inactivityTimer = createMonotonicInactivityTimer(
@@ -2079,7 +2130,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
         // Keep one replaceable control waiter rather than adding a fresh
         // reaction to run-lifetime abort/server promises for every SSE event.
-        // Once an event wins, the control callback is released immediately.
+        // Once an event or inactivity deadline wins, the control callback is
+        // released immediately.
         const raceResult = await new Promise<StreamWaitResult>((resolve) => {
           let settled = false;
           const finish = (result: StreamWaitResult) => {
@@ -2095,13 +2147,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           inactivityTimer.promise.then(finish);
           nextPromise.then(
             (result) => finish({ kind: 'event', result }),
-            (error: unknown) => finish({ kind: 'stream_error', error }),
+            (error: unknown) => finish({ kind: 'iterator_error', error }),
           );
 
           // Preserve abort precedence when multiple controls were already
           // settled before this wait was armed.
           if (abortRequested || options?.abortSignal?.aborted) {
-            finish({ kind: 'abort' });
+            finish({ kind: 'caller_abort' });
           } else if (serverExitInfo) {
             finish({ kind: 'server_exit', exit: serverExitInfo });
           }
@@ -2117,14 +2169,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (
-          raceResult.kind === 'abort' ||
+          raceResult.kind === 'caller_abort' ||
           raceResult.kind === 'inactivity' ||
           abortRequested
         ) {
           yield* drainPendingContent(true);
         }
 
-        if (raceResult.kind === 'abort' || abortRequested) {
+        if (raceResult.kind === 'caller_abort' || abortRequested) {
           nextPromise.catch(() => {});
           await abortActiveSession(false);
           yield createEvent(
@@ -2138,7 +2190,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -2147,7 +2199,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           break;
         }
 
-        if (raceResult.kind === 'stream_error') {
+        if (raceResult.kind === 'iterator_error') {
           throw raceResult.error;
         }
 
@@ -2197,7 +2249,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2220,7 +2272,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2254,7 +2306,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2304,7 +2356,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2345,7 +2397,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2379,7 +2431,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2421,7 +2473,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2445,7 +2497,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -2737,8 +2789,32 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           // Accumulate usage from step-finish parts.
           if (partType === 'step-finish') {
             const tokens = asRecord(part.tokens);
-            accumulatedInputTokens += asNumber(tokens.input) ?? 0;
-            accumulatedOutputTokens += asNumber(tokens.output) ?? 0;
+            const cache = asRecord(tokens.cache);
+            const inputTokens = readUsageCounter(tokens, ['input'], true);
+            const outputTokens = readUsageCounter(tokens, ['output'], true);
+            const reasoningTokens = readUsageCounter(
+              tokens,
+              ['reasoning'],
+              true,
+            );
+            const cacheReadTokens = readUsageCounter(cache, ['read'], true);
+            const cacheWriteTokens = readUsageCounter(cache, ['write'], true);
+            accumulatedTokenUsageObserved = true;
+            accumulatedInputTokens +=
+              inputTokens.value +
+              cacheReadTokens.value +
+              cacheWriteTokens.value;
+            accumulatedOutputTokens +=
+              outputTokens.value + reasoningTokens.value;
+            if (
+              !inputTokens.valid ||
+              !outputTokens.valid ||
+              !reasoningTokens.valid ||
+              !cacheReadTokens.valid ||
+              !cacheWriteTokens.valid
+            ) {
+              accumulatedTokenUsageComplete = false;
+            }
             accumulatedCost += asNumber(part.cost) ?? 0;
             continue;
           }
@@ -2831,7 +2907,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2858,7 +2934,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2893,7 +2969,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3000,7 +3076,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3029,7 +3105,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3069,7 +3145,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: { ...DEFAULT_DONE_USAGE },
+                  usage: accumulatedUsage(),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3216,7 +3292,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3229,19 +3305,42 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             : mapDoneStatus(asString(event.status));
           // Use event-provided usage if available, otherwise fall back to
           // values accumulated from step-finish parts.
-          const eventUsage = mapUsage(event.usage);
-          const hasEventUsage =
-            eventUsage.inputTokens > 0 || eventUsage.outputTokens > 0;
-          const usage = hasEventUsage
-            ? eventUsage
-            : {
-                inputTokens: accumulatedInputTokens,
-                outputTokens: accumulatedOutputTokens,
-                toolUses: accumulatedToolUses,
-                ...(accumulatedCost > 0
-                  ? { totalCostUsd: accumulatedCost }
-                  : {}),
-              };
+          const eventUsage = mapUsage(event.usage, accumulatedToolUses);
+          const eventTokenUsageObserved = hasOpenCodeEventTokenCounters(
+            event.usage,
+          );
+          const accumulatedEventUsage: DonePayload['usage'] = {
+            tokenAvailability:
+              accumulatedTokenUsageObserved &&
+              accumulatedTokenUsageComplete
+                ? 'reported'
+                : 'unavailable',
+            inputTokens: accumulatedInputTokens,
+            outputTokens: accumulatedOutputTokens,
+            toolUses: Math.max(eventUsage.toolUses, accumulatedToolUses),
+            ...(accumulatedCost > 0
+              ? { totalCostUsd: accumulatedCost }
+              : {}),
+          };
+          const usage: DonePayload['usage'] = eventTokenUsageObserved
+            ? {
+                ...eventUsage,
+                // A malformed mapped counter from either provider source
+                // poisons availability; a valid source must not hide it.
+                tokenAvailability:
+                  eventUsage.tokenAvailability === 'reported' &&
+                  (!accumulatedTokenUsageObserved ||
+                    accumulatedTokenUsageComplete)
+                    ? 'reported'
+                    : 'unavailable',
+                toolUses: Math.max(
+                  eventUsage.toolUses,
+                  accumulatedToolUses,
+                ),
+              }
+            : accumulatedTokenUsageObserved
+              ? accumulatedEventUsage
+              : eventUsage;
 
           yield createEvent(
             'done',
@@ -3285,7 +3384,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3307,7 +3406,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3352,7 +3451,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3377,7 +3476,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               status: 'error',
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3402,6 +3501,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         } catch {
           // ignore cleanup errors
         }
+
       }
 
       const sdkCleanup = Promise.all([

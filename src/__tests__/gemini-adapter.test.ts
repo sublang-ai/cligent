@@ -31,6 +31,7 @@ import {
 import type {
   AgentEvent,
   AgentOptions,
+  DonePayload,
   GeminiEffort,
   PermissionLevel,
   PermissionPolicy,
@@ -57,6 +58,28 @@ interface SpawnInvocation {
   args: readonly string[];
   options: SpawnOptionsWithoutStdio;
   process: MockGeminiProcess;
+}
+
+// Mirrors the Gemini CLI 0.53.1 stream-json result stats emitted by
+// StreamJsonFormatter.convertToStreamStats().
+interface GeminiStreamStats {
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached: number;
+  input: number;
+  duration_ms: number;
+  tool_calls: number;
+  models: Record<
+    string,
+    {
+      total_tokens: number;
+      input_tokens: number;
+      output_tokens: number;
+      cached: number;
+      input: number;
+    }
+  >;
 }
 
 function makeSpawn(script: (process: MockGeminiProcess) => void): {
@@ -276,6 +299,7 @@ describe('GeminiAdapter', () => {
     expect(done.payload.status).toBe('max_turns');
     expect(done.payload.result).toBe('summary');
     expect(done.payload.usage).toEqual({
+      tokenAvailability: 'reported',
       inputTokens: 12,
       outputTokens: 34,
       toolUses: 1,
@@ -323,6 +347,46 @@ describe('GeminiAdapter', () => {
     expect(init.payload.capabilities).toMatchObject({
       toolsKnown: true,
       toolsSource: 'configured',
+    });
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
+      'reported',
+    );
+  });
+
+  it('marks missing token accounting unavailable and keeps observed tool uses', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            sessionId: 'gemini-no-usage',
+            model: 'gemini-pro',
+            cwd: '/repo',
+            tools: ['run_shell_command'],
+          }),
+          JSON.stringify({
+            type: 'tool_use',
+            sessionId: 'gemini-no-usage',
+            toolUseId: 'gemini-tool-no-usage',
+            toolName: 'run_shell_command',
+            input: { command: 'true' },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 1,
     });
   });
 
@@ -1890,7 +1954,25 @@ describe('GeminiAdapter', () => {
     expect(payload.resumeToken).toBeUndefined();
   });
 
-  it('sums cache tokens into inputTokens', async () => {
+  it('preserves cache-inclusive StreamStats input and canonical tool calls', async () => {
+    const stats = {
+      total_tokens: 140,
+      input_tokens: 120,
+      output_tokens: 20,
+      cached: 80,
+      input: 40,
+      duration_ms: 50,
+      tool_calls: 5,
+      models: {
+        'gemini-2.5-pro': {
+          total_tokens: 140,
+          input_tokens: 120,
+          output_tokens: 20,
+          cached: 80,
+          input: 40,
+        },
+      },
+    } satisfies GeminiStreamStats;
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(
         process,
@@ -1905,13 +1987,7 @@ describe('GeminiAdapter', () => {
             type: 'result',
             status: 'success',
             result: 'ok',
-            stats: {
-              input_tokens: 7,
-              output_tokens: 15,
-              cache_read_input_tokens: 60,
-              cache_creation_input_tokens: 25,
-              tool_uses: 0,
-            },
+            stats,
             duration_ms: 50,
           }),
         ],
@@ -1931,8 +2007,152 @@ describe('GeminiAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
-    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
-    expect(usage.inputTokens).toBe(92);
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokenAvailability).toBe('reported');
+    expect(usage.inputTokens).toBe(120);
+    expect(usage.outputTokens).toBe(20);
+    expect(usage.toolUses).toBe(5);
+  });
+
+  it.each([
+    [
+      'negative input',
+      {
+        total_tokens: 3,
+        input_tokens: -1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'fractional output',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2.5,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'invalid cached detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: '3',
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'invalid uncached-input detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: -1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'unpartitioned aggregate residual',
+      {
+        total_tokens: 4,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'aggregate below mapped input and output',
+      {
+        total_tokens: 2,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical aggregate',
+      {
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical cached detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        input: 1,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+    [
+      'missing canonical uncached-input detail',
+      {
+        total_tokens: 3,
+        input_tokens: 1,
+        output_tokens: 2,
+        cached: 0,
+        duration_ms: 1,
+        tool_calls: 0,
+        models: {},
+      },
+    ],
+  ])('marks %s accounting unavailable', async (_case, stats) => {
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            model: 'gemini-pro',
+            cwd: '/repo',
+            tools: [],
+          }),
+          JSON.stringify({ type: 'result', status: 'success', stats }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
   });
 
   it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per ENG-021', () => {

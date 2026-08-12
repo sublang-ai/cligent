@@ -514,7 +514,12 @@ describe('KimiAdapter', () => {
       status: 'success',
       result: 'Hello world',
       resumeToken: 'fresh-kimi-session',
-      usage: { inputTokens: 13, outputTokens: 4, toolUses: 1 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 13,
+        outputTokens: 4,
+        toolUses: 1,
+      },
     });
     expect(fake.children[0]).toMatchObject({
       exitCode: 0,
@@ -522,7 +527,105 @@ describe('KimiAdapter', () => {
     });
   });
 
-  it('reports a failed tool once and normalizes absent usage to zero', async () => {
+  it('represents an explicitly reported zero token total', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => ({
+        stopReason: 'end_turn',
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        },
+      }),
+    });
+    const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+
+    const events = await collect(adapter.run('Do nothing'));
+    expect(eventOf(events, 'done').payload.usage).toEqual({
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
+  });
+
+  it('degrades malformed ACP accounting without failing the turn', async () => {
+    const fake = new FakeKimi({
+      prompt: async (connection, request) => {
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'kept' },
+          },
+        });
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'usage-tool',
+            title: 'Read',
+            kind: 'read',
+            rawInput: { path: 'README.md' },
+          },
+        });
+        return {
+          stopReason: 'end_turn',
+          usage: {
+            totalTokens: 1,
+            inputTokens: -1,
+            outputTokens: 2,
+          },
+        };
+      },
+    });
+    const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+
+    const events = await collect(adapter.run('Do nothing'));
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload).toMatchObject({
+      status: 'success',
+      result: 'kept',
+      usage: {
+        tokenAvailability: 'unavailable',
+        inputTokens: 0,
+        outputTokens: 0,
+        toolUses: 1,
+      },
+    });
+  });
+
+  it('ignores unused thought detail and nullable optional caches', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => ({
+        stopReason: 'end_turn',
+        usage: {
+          totalTokens: 8,
+          inputTokens: 5,
+          outputTokens: 3,
+          thoughtTokens: 2.5,
+          cachedReadTokens: null,
+          cachedWriteTokens: null,
+        },
+      }),
+    });
+
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Do nothing'),
+    );
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload).toMatchObject({
+      status: 'success',
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 5,
+        outputTokens: 3,
+        toolUses: 0,
+      },
+    });
+  });
+
+  it('reports a failed tool once and marks absent token usage unavailable', async () => {
     const fake = new FakeKimi({
       prompt: async (connection, request) => {
         await connection.sessionUpdate({
@@ -573,9 +676,10 @@ describe('KimiAdapter', () => {
       output: { stderr: 'boom' },
     });
     expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
-    // KIMI-005: Kimi's ACP surface exposes no per-turn totals, so an absent
-    // usage object normalizes to zeros with toolUses tracking emitted calls.
+    // KIMI-005: an absent usage object keeps compatibility zeroes but marks
+    // them unavailable, with toolUses tracking emitted calls independently.
     expect(eventOf(events, 'done').payload.usage).toEqual({
+      tokenAvailability: 'unavailable',
       inputTokens: 0,
       outputTokens: 0,
       toolUses: 1,

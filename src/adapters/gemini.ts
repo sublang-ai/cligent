@@ -32,10 +32,12 @@ import {
   assertRuntimeSupported,
   isCliRuntimeSupported,
 } from '../runtime-version.js';
+import { isUsageRecord, readUsageCounter } from './usage.js';
 
 const AGENT = 'gemini' as const;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
+  tokenAvailability: 'unavailable',
   inputTokens: 0,
   outputTokens: 0,
   toolUses: 0,
@@ -163,33 +165,85 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
-function mapUsage(rawUsage: unknown): DonePayload['usage'] {
-  if (typeof rawUsage !== 'object' || rawUsage === null) {
-    return { ...DEFAULT_DONE_USAGE };
+function mapUsage(
+  rawUsage: unknown,
+  observedToolUses: number,
+): DonePayload['usage'] {
+  if (!isUsageRecord(rawUsage)) {
+    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
   }
 
-  const usage = rawUsage as Record<string, unknown>;
-
-  const baseInput =
-    asNumber(usage.inputTokens) ?? asNumber(usage.input_tokens) ?? 0;
-  const cacheRead =
-    asNumber(usage.cacheReadInputTokens) ?? asNumber(usage.cache_read_input_tokens) ?? 0;
-  const cacheCreation =
-    asNumber(usage.cacheCreationInputTokens) ?? asNumber(usage.cache_creation_input_tokens) ?? 0;
-  const inputTokens = baseInput + cacheRead + cacheCreation;
-
-  const outputTokens =
-    asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens) ?? 0;
-
-  const toolUses =
-    asNumber(usage.toolUses) ?? asNumber(usage.tool_uses) ?? 0;
+  const baseInput = readUsageCounter(
+    rawUsage,
+    ['inputTokens', 'input_tokens'],
+    true,
+  );
+  const canonicalStreamStats = [
+    'total_tokens',
+    'cached',
+    'input',
+    'tool_calls',
+    'models',
+  ].some((key) => Object.prototype.hasOwnProperty.call(rawUsage, key));
+  const totalTokens = readUsageCounter(
+    rawUsage,
+    ['totalTokens', 'total_tokens'],
+    canonicalStreamStats,
+  );
+  // Gemini StreamStats.input_tokens already includes cached input. Validate
+  // the canonical cached/uncached detail counters without adding either one
+  // to the inclusive provider total.
+  const cachedInput = readUsageCounter(
+    rawUsage,
+    ['cached'],
+    canonicalStreamStats,
+  );
+  const uncachedInput = readUsageCounter(
+    rawUsage,
+    ['input'],
+    canonicalStreamStats,
+  );
+  const outputTokens = readUsageCounter(
+    rawUsage,
+    ['outputTokens', 'output_tokens'],
+    true,
+  );
+  const totalTokensObserved = ['totalTokens', 'total_tokens'].some((key) =>
+    Object.prototype.hasOwnProperty.call(rawUsage, key),
+  );
+  // Canonical StreamStats output covers candidates, while its aggregate may
+  // also contain thoughts and tool-use-prompt input it does not partition.
+  // Only an exact reconciliation proves the normalized input/output pair is
+  // complete; allocating an unexplained residual would be an estimate.
+  const totalTokensReconciled =
+    !totalTokensObserved ||
+    (totalTokens.valid &&
+      totalTokens.value === baseInput.value + outputTokens.value);
+  const reportedToolUses = readUsageCounter(
+    rawUsage,
+    ['toolCalls', 'tool_calls', 'toolUses', 'tool_uses'],
+    false,
+  );
+  const toolUses = Math.max(
+    reportedToolUses.valid ? reportedToolUses.value : 0,
+    observedToolUses,
+  );
 
   const totalCostUsd =
-    asNumber(usage.totalCostUsd) ?? asNumber(usage.total_cost_usd);
+    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
   return {
-    inputTokens,
-    outputTokens,
+    tokenAvailability:
+      baseInput.valid &&
+      totalTokens.valid &&
+      cachedInput.valid &&
+      uncachedInput.valid &&
+      outputTokens.valid &&
+      totalTokensReconciled
+        ? 'reported'
+        : 'unavailable',
+    inputTokens: baseInput.value,
+    outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
   };
@@ -1082,6 +1136,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
     let stderr = '';
+    const observedToolUseIds = new Set<string>();
 
     const onAbort = () => {
       abortRequested = true;
@@ -1265,6 +1320,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             asString(nested.tool_id) ??
             generateSessionId();
 
+          observedToolUseIds.add(toolUseId);
           yield createEvent(
             'tool_use',
             AGENT,
@@ -1400,7 +1456,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: mapUsage(message.stats),
+              usage: mapUsage(message.stats, observedToolUseIds.size),
               durationMs:
                 asNumber(message.durationMs) ??
                 asNumber(message.duration_ms) ??
@@ -1457,7 +1513,10 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
               options?.resume,
             ),
             ...(fallbackMsg ? { result: fallbackMsg } : {}),
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: {
+              ...DEFAULT_DONE_USAGE,
+              toolUses: observedToolUseIds.size,
+            },
             durationMs: Date.now() - startTime,
           },
           sessionId,
@@ -1487,7 +1546,10 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE },
+              usage: {
+                ...DEFAULT_DONE_USAGE,
+                toolUses: observedToolUseIds.size,
+              },
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1513,7 +1575,10 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           AGENT,
           {
             status: 'error',
-            usage: { ...DEFAULT_DONE_USAGE },
+            usage: {
+              ...DEFAULT_DONE_USAGE,
+              toolUses: observedToolUseIds.size,
+            },
             durationMs: Date.now() - startTime,
           },
           sessionId,

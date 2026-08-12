@@ -157,15 +157,15 @@ abort shall deterministically order the active-session abort, interrupted
 `done`, and owned-child `SIGTERM`. A deadline above the host timer maximum shall
 remain pending until real relevant activity, and an owned managed child that
 ignores `SIGTERM` shall receive `SIGKILL` after its grace.
-Prompt-dispatch abort and failure probes shall return an eagerly started SSE
-iterator and remove their dispatch-scoped abort listener, and a fresh backend
-session created before abort shall remain the interrupted resume token. A run
-result settling concurrently with caller abort shall transfer its session and
-iterator to outer cleanup, which shall abort and return them before interrupted
-`done`. Rejected close and shutdown operations shall remain independent and
-shall not prevent managed process termination. Legacy and v2 instance-disposal
-probes shall carry the run directory through `query.directory` and `directory`,
-respectively.
+Prompt-dispatch abort and failure probes shall stop any event stream opened
+before dispatch settles, and a fresh backend session created before abort
+shall remain the interrupted resume token. A run
+result settling concurrently with caller abort shall preserve its session
+identity, cancel its active work, and release its event stream before
+interrupted `done`. A rejected SDK cleanup operation shall not prevent the
+remaining cleanup operations or managed process termination. Legacy and v2
+instance-disposal requests shall carry the run directory through
+`query.directory` and `directory`, respectively.
 Where the OpenCode CLI and SDK are available, when a credential-free real
 managed server creates an idle session whose terminal SSE event is withheld,
 the short-deadline acceptance probe shall recover through the real
@@ -186,8 +186,9 @@ part shall discard content still pending on either kind or role. Reasoning
 shall appear only through settled `thinking` snapshots, nonconsecutive
 duplicate settled snapshots shall emit once, and an exact settled replay of a
 part's `textID`-correlated deltas shall not duplicate the combined `text` plus
-`text_delta` reconstruction. Incident-scale pending queues shall drain in
-order, and removing a message shall clear the state of every owned part.
+`text_delta` reconstruction. An incident-scale interleaved delta stream shall
+preserve order and terminate within the test bound; after removing a message,
+none of its parts shall emit later content and later messages shall continue.
 
 ### TADAPT-037
 Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
@@ -337,6 +338,17 @@ The adapter identity shall be `kimi`, and availability probing shall invoke `kim
 Where abort occurs before and after session setup, the adapter shall cancel or terminate as appropriate and emit exactly one interrupted `done` without state leakage.
 Where authentication, protocol, or child-process failure occurs, the stream shall emit an actionable error and error `done` without starting login.
 Where permissions, tool lists, turn or budget limits, or effort values are unsupported, validation shall fail before the spawn seam is invoked.
+
+### TADAPT-033
+Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [CODEX-003](../user/adapters/codex.md#codex-003), [GEMINI-004](../user/adapters/gemini.md#gemini-004), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+
+Given each built-in adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'`, its input count shall preserve a provider-inclusive base or fold cache-read and cache-write counters into a cache-exclusive base exactly once, and, where reasoning or thinking is supplied disjoint from the output base, its output count shall add that component exactly once.
+Given OpenCode supplies canonical step-finish accounting, its visible output and disjoint reasoning counters shall be summed exactly once.
+Given Gemini supplies canonical `StreamStats`, its cache-inclusive `input_tokens` shall remain unchanged, its `cached` and uncached `input` details shall be validated without being added again, and valid `tool_calls` shall contribute to the independently known tool-use count; where `total_tokens` differs from `input_tokens + output_tokens`, accounting shall be unavailable rather than assigning the unpartitioned residual to output.
+Given a required token or cache counter is absent or any present mapped counter is negative, fractional, non-finite, or non-numeric, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'`; an absent optional cache counter alone shall retain zero contribution without invalidating otherwise complete accounting.
+Given a Kimi prompt has a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status, token accounting shall be unavailable, and accumulated result text and tool use shall remain intact; an unconsumed malformed thought detail or null optional cache detail shall not poison otherwise complete accounting.
+Given upstream omits complete token accounting or an adapter synthesizes an errored, interrupted, exhausted, or other terminal path, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced.
+Where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
 
 ## Real-run Acceptance
 

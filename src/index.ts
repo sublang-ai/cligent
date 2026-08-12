@@ -13,6 +13,8 @@ export type {
   PermissionRequestPayload,
   ToolUsePayload,
   ToolResultPayload,
+  TokenUsageAvailability,
+  DoneUsage,
   DonePayload,
   AgentEvent,
   PermissionLevel,

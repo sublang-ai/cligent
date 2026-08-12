@@ -20,6 +20,7 @@ import type {
   EventSessionIdle,
   EventSessionNextReasoningDelta,
   EventSessionNextTextDelta,
+  StepFinishPart,
 } from '@opencode-ai/sdk/v2';
 import type { EventMessagePartUpdated as V1EventMessagePartUpdated } from '@opencode-ai/sdk';
 
@@ -32,6 +33,7 @@ import {
 import type {
   AgentEvent,
   AgentOptions,
+  DonePayload,
   OpenCodeEffort,
   PermissionLevel,
   PermissionPolicy,
@@ -77,16 +79,14 @@ class MockServerProcess extends EventEmitter {
   kill(signal?: NodeJS.Signals | number): boolean {
     this.killSignals.push(signal);
     this.onKill?.(signal);
-    if (signal === 'SIGTERM' && this.ignoreSigterm) {
-      return true;
-    }
+    if (signal === 'SIGTERM' && this.ignoreSigterm) return true;
     queueMicrotask(() => {
       this.stdout.end();
       this.stderr.end();
       this.emit(
         'close',
         null,
-        signal === 'SIGTERM' || signal === 'SIGKILL' ? signal : null,
+        typeof signal === 'string' ? signal : null,
       );
     });
     return true;
@@ -494,6 +494,7 @@ describe('OpenCodeAdapter', () => {
     };
     expect(done.payload.status).toBe('max_turns');
     expect(done.payload.usage).toEqual({
+      tokenAvailability: 'reported',
       inputTokens: 11,
       outputTokens: 22,
       toolUses: 2,
@@ -4158,7 +4159,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       permission: {
         async reply(parameters: unknown, requestOptions?: unknown) {
           replyCalls.push({ parameters, requestOptions });
-          if (replyCalls.length < 3) return {};
+          if (replyCalls.length <= 2) return {};
           if (replyCalls.length === 3) {
             return { error: { data: { message: 'request disappeared' } } };
           }
@@ -4216,6 +4217,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         sessionId: 'v2-reply-session',
         requestId: 'v2-declined-request',
         permission: 'future_permission',
+        decision: 'reject',
       }),
     ).rejects.toThrow(
       /sessionID="v2-reply-session".*requestID="v2-declined-request".*permission="future_permission".*declined/,
@@ -6356,7 +6358,35 @@ describe('OpenCode SSE event structure', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('accumulates step-finish token usage for done event', async () => {
+  it('accumulates cache and reasoning step usage exactly once', async () => {
+    const firstStep = {
+      id: 'step-1',
+      sessionID: 'usage-session',
+      messageID: 'message-1',
+      type: 'step-finish',
+      reason: 'stop',
+      cost: 0.003,
+      tokens: {
+        input: 100,
+        output: 50,
+        reasoning: 20,
+        cache: { read: 10, write: 5 },
+      },
+    } satisfies StepFinishPart;
+    const secondStep = {
+      id: 'step-2',
+      sessionID: 'usage-session',
+      messageID: 'message-2',
+      type: 'step-finish',
+      reason: 'stop',
+      cost: 0.002,
+      tokens: {
+        input: 80,
+        output: 30,
+        reasoning: 10,
+        cache: { read: 4, write: 1 },
+      },
+    } satisfies StepFinishPart;
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -6366,23 +6396,13 @@ describe('OpenCode SSE event structure', () => {
             {
               type: 'message.part.updated',
               properties: {
-                part: {
-                  sessionID: 'usage-session',
-                  type: 'step-finish',
-                  tokens: { input: 100, output: 50, reasoning: 20 },
-                  cost: 0.003,
-                },
+                part: firstStep,
               },
             },
             {
               type: 'message.part.updated',
               properties: {
-                part: {
-                  sessionID: 'usage-session',
-                  type: 'step-finish',
-                  tokens: { input: 80, output: 30, reasoning: 10 },
-                  cost: 0.002,
-                },
+                part: secondStep,
               },
             },
             {
@@ -6396,12 +6416,237 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('test'));
     const done = events.find((e) => e.type === 'done')!;
-    const payload = done.payload as {
-      usage: { inputTokens: number; outputTokens: number; totalCostUsd?: number };
-    };
-    expect(payload.usage.inputTokens).toBe(180);
-    expect(payload.usage.outputTokens).toBe(80);
+    const payload = done.payload as DonePayload;
+    expect(payload.usage.tokenAvailability).toBe('reported');
+    expect(payload.usage.inputTokens).toBe(200);
+    expect(payload.usage.outputTokens).toBe(110);
     expect(payload.usage.totalCostUsd).toBe(0.005);
+  });
+
+  it('treats an explicitly reported zero-valued step as available usage', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'zero-usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'zero-usage-session',
+                  type: 'step-finish',
+                  tokens: {
+                    input: 0,
+                    output: 0,
+                    reasoning: 0,
+                    cache: { read: 0, write: 0 },
+                  },
+                  cost: 0,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'zero-usage-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      tokenAvailability: 'reported',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 0,
+    });
+  });
+
+  it.each([
+    [
+      'negative input',
+      {
+        input: -1,
+        output: 2,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    ],
+    [
+      'fractional output',
+      {
+        input: 1,
+        output: 2.5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    ],
+    [
+      'invalid cache read',
+      {
+        input: 1,
+        output: 2,
+        reasoning: 0,
+        cache: { read: '3', write: 0 },
+      },
+    ],
+    [
+      'invalid reasoning',
+      {
+        input: 1,
+        output: 2,
+        reasoning: -1,
+        cache: { read: 0, write: 0 },
+      },
+    ],
+    [
+      'missing required cache counters',
+      { input: 1, output: 2, reasoning: 0 },
+    ],
+  ])('marks step-finish %s accounting unavailable', async (_case, tokens) => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'malformed-usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'malformed-usage-session',
+                  type: 'step-finish',
+                  tokens,
+                  cost: 0,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'malformed-usage-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
+  });
+
+  it.each([
+    {
+      label: 'malformed terminal counters over valid step accounting',
+      stepTokens: {
+        input: 3,
+        output: 2,
+        reasoning: 0,
+        cache: { read: 1, write: 0 },
+      },
+      terminalUsage: {
+        inputTokens: 4,
+        outputTokens: 2,
+        cacheReadInputTokens: 'invalid',
+        toolUses: 4,
+      },
+    },
+    {
+      label: 'valid terminal counters over malformed step accounting',
+      stepTokens: {
+        input: 3,
+        output: 2,
+        reasoning: 0,
+        cache: { read: -1, write: 0 },
+      },
+      terminalUsage: {
+        inputTokens: 4,
+        outputTokens: 2,
+        toolUses: 4,
+      },
+    },
+  ])('does not hide $label', async ({ stepTokens, terminalUsage }) => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'combined-usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'combined-usage-session',
+                  type: 'step-finish',
+                  tokens: stepTokens,
+                  cost: 0,
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: {
+                sessionID: 'combined-usage-session',
+                usage: terminalUsage,
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toMatchObject({
+      tokenAvailability: 'unavailable',
+      toolUses: 4,
+    });
+  });
+
+  it('preserves observed tools on a synthesized OpenCode terminal', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'synthetic-usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'synthetic-usage-session',
+                part: {
+                  id: 'tool-part-1',
+                  messageID: 'assistant-message',
+                  type: 'tool',
+                  callID: 'tool-call-1',
+                  tool: 'bash',
+                  state: { status: 'running', input: { command: 'pwd' } },
+                },
+              },
+            },
+            {
+              type: 'permission.asked',
+              properties: {
+                sessionID: 'synthetic-usage-session',
+                permission: 'future_permission',
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toMatchObject({
+      tokenAvailability: 'unavailable',
+      toolUses: 1,
+    });
   });
 
   it('extracts sessionID from part inside properties envelope', async () => {
@@ -6477,8 +6722,60 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
-    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokenAvailability).toBe('reported');
     expect(usage.inputTokens).toBe(136);
+  });
+
+  it('marks a present-invalid optional event cache counter unavailable', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          events: [
+            {
+              type: 'session.idle',
+              usage: {
+                inputTokens: 6,
+                outputTokens: 18,
+                cacheReadInputTokens: '90',
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
+  });
+
+  it('preserves provider tool uses when event token accounting is unavailable', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          events: [
+            {
+              type: 'session.idle',
+              usage: { toolUses: 5 },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toMatchObject({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 5,
+    });
   });
 });
 
@@ -6503,7 +6800,12 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
   }
 
   interface DoneLike {
-    payload: { usage: { toolUses: number } };
+    payload: {
+      usage: {
+        tokenAvailability: 'reported' | 'unavailable';
+        toolUses: number;
+      };
+    };
   }
 
   function toolPartEvent(
@@ -6597,6 +6899,7 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
     expect(toolResult.payload.durationMs).toBe(150);
 
     const done = events[3] as AgentEvent & DoneLike;
+    expect(done.payload.usage.tokenAvailability).toBe('unavailable');
     expect(done.payload.usage.toolUses).toBe(1);
   });
 

@@ -98,7 +98,12 @@ function doneEvent(
       status,
       result,
       resumeToken,
-      usage: { inputTokens: 1, outputTokens: 1, toolUses: 0 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 1,
+        outputTokens: 1,
+        toolUses: 0,
+      },
       durationMs: 1,
     },
     'sid',

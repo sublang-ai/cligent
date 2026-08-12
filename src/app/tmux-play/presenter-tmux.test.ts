@@ -103,7 +103,12 @@ function doneEvent(): CligentEvent {
     'codex',
     {
       status: 'interrupted',
-      usage: { inputTokens: 1, outputTokens: 0, toolUses: 0 },
+      usage: {
+        tokenAvailability: 'reported',
+        inputTokens: 1,
+        outputTokens: 0,
+        toolUses: 0,
+      },
       durationMs: 100,
     },
     'sid',

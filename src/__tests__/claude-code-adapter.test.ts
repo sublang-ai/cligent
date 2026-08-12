@@ -13,6 +13,7 @@ import type {
   AgentEvent,
   AgentOptions,
   ClaudeEffort,
+  DonePayload,
   PermissionLevel,
   PermissionPolicy,
 } from '../types.js';
@@ -220,6 +221,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(done.payload.status).toBe('max_turns');
     expect(done.payload.result).toBe('done text');
     expect(done.payload.usage).toEqual({
+      tokenAvailability: 'reported',
       inputTokens: 10,
       outputTokens: 20,
       toolUses: 1,
@@ -1011,12 +1013,49 @@ describe('ClaudeCodeAdapter', () => {
     };
     expect(done.payload.status).toBe('success');
     expect(done.payload.result).toBeUndefined();
+    expect(
+      (done.payload.usage as { tokenAvailability: string }).tokenAvailability,
+    ).toBe('reported');
     expect(done.payload.usage.inputTokens).toBe(0);
     expect(done.payload.usage.outputTokens).toBe(0);
     expect(done.payload.durationMs).toBe(5);
     // Terminal means terminal: the adapter stopped at the first result and
     // never pulled the poison tail.
     expect(pulled).toEqual(['system', 'result']);
+  });
+
+  it('marks absent token accounting unavailable while preserving observed tools', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: ['Bash'] },
+        {
+          type: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-without-usage',
+              name: 'Bash',
+              input: { command: 'true' },
+            },
+          ],
+        },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'done',
+          duration_ms: 5,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      tokenAvailability: 'unavailable',
+      inputTokens: 0,
+      outputTokens: 0,
+      toolUses: 1,
+    });
   });
 
   it('treats a zero-usage empty result after real turn activity as terminal on a resumed run', async () => {
@@ -1357,8 +1396,56 @@ describe('ClaudeCodeAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
-    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokenAvailability).toBe('reported');
     expect(usage.inputTokens).toBe(155);
+  });
+
+  it.each([
+    ['negative input', { input_tokens: -1, output_tokens: 2 }],
+    ['fractional output', { input_tokens: 1, output_tokens: 2.5 }],
+    [
+      'invalid cache read',
+      {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_read_input_tokens: '3',
+      },
+    ],
+    [
+      'invalid cache creation',
+      {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_creation_input_tokens: -1,
+      },
+    ],
+    [
+      'non-finite cache creation',
+      {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_creation_input_tokens: Number.POSITIVE_INFINITY,
+      },
+    ],
+  ])('marks %s accounting unavailable', async (_case, rawUsage) => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          usage: rawUsage,
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
+      'unavailable',
+    );
   });
 
   it('maps every Claude effort to SDK effort and ultracode settings', () => {
@@ -1534,7 +1621,8 @@ describe('ClaudeCodeAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
-    const usage = (done.payload as { usage: { inputTokens: number } }).usage;
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokenAvailability).toBe('reported');
     expect(usage.inputTokens).toBe(208);
   });
 

@@ -14,20 +14,45 @@ import {
   zAcpSetSessionConfigOptionResponse,
 } from '../adapters/acp-schema.js';
 
-// KIMI-006 / DR-011: the adapter owns these schemas because the protocol
-// SDK publishes its generated ones only inside `dist/`, and because that
-// generation salvages malformed payloads where this adapter must reject.
-describe('owned ACP wire schemas (KIMI-006)', () => {
-  it('rejects a prompt result whose usage is malformed rather than dropping it', () => {
-    // The regression these schemas exist to prevent: the SDK's own newer
-    // generation parses this successfully and silently discards `usage`,
-    // which would report a turn as complete while losing its accounting.
-    expect(() =>
-      zAcpPromptResponse.parse({
-        stopReason: 'end_turn',
-        usage: { inputTokens: 'nope', outputTokens: 2 },
-      }),
-    ).toThrow();
+// KIMI-005 / KIMI-006 / DR-011: the adapter owns these schemas because the
+// protocol SDK publishes its generated ones only inside `dist/`. Control
+// fields stay strict, while malformed optional usage is failure-isolated.
+describe('owned ACP wire schemas (KIMI-005 / KIMI-006)', () => {
+  it.each([
+    [
+      'non-numeric input',
+      { totalTokens: 3, inputTokens: 'nope', outputTokens: 2 },
+    ],
+    [
+      'negative input',
+      { totalTokens: 2, inputTokens: -1, outputTokens: 2 },
+    ],
+    [
+      'fractional output',
+      { totalTokens: 3, inputTokens: 1, outputTokens: 2.5 },
+    ],
+    [
+      'invalid cache read',
+      {
+        totalTokens: 3,
+        inputTokens: 1,
+        outputTokens: 2,
+        cachedReadTokens: -1,
+      },
+    ],
+    [
+      'invalid cache write',
+      {
+        totalTokens: 3,
+        inputTokens: 1,
+        outputTokens: 2,
+        cachedWriteTokens: 0.5,
+      },
+    ],
+  ])('isolates %s token accounting', (_case, usage) => {
+    expect(
+      zAcpPromptResponse.parse({ stopReason: 'end_turn', usage }),
+    ).toEqual({ stopReason: 'end_turn', usage: null });
   });
 
   it('rejects an unrecognized stop reason', () => {
@@ -51,7 +76,12 @@ describe('owned ACP wire schemas (KIMI-006)', () => {
     expect(
       zAcpPromptResponse.parse({
         stopReason: 'end_turn',
-        usage: { inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 },
+        usage: {
+          totalTokens: 12,
+          inputTokens: 3,
+          outputTokens: 4,
+          cachedReadTokens: 5,
+        },
       }).usage,
     ).toMatchObject({ inputTokens: 3, outputTokens: 4, cachedReadTokens: 5 });
     expect(

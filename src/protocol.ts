@@ -16,6 +16,23 @@ export interface AbortDrainNextResult {
   aborted: boolean;
 }
 
+type SynthDoneExtra = Partial<
+  Pick<DonePayload, 'resumeToken' | 'result'>
+> & {
+  toolUses?: number;
+};
+
+export function recordObservedToolUse(
+  toolUseIds: Set<string>,
+  event: AgentEvent,
+): void {
+  if (event.type !== 'tool_use') return;
+  const toolUseId = (event.payload as { toolUseId?: unknown }).toolUseId;
+  if (typeof toolUseId === 'string') {
+    toolUseIds.add(toolUseId);
+  }
+}
+
 export function safeReturn(gen: AsyncGenerator<AgentEvent, void, void>): void {
   try {
     gen.return(undefined as never).catch(() => {});
@@ -139,15 +156,21 @@ export function makeSynthDone(
   status: 'error' | 'interrupted',
   sessionId: string,
   startTime: number,
-  extra?: Partial<Pick<DonePayload, 'resumeToken' | 'result'>>,
+  extra?: SynthDoneExtra,
 ): AgentEvent {
+  const { toolUses = 0, ...doneExtra } = extra ?? {};
   return createEvent(
     'done',
     agent,
     {
       status,
-      ...extra,
-      usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },
+      ...doneExtra,
+      usage: {
+        tokenAvailability: 'unavailable',
+        inputTokens: 0,
+        outputTokens: 0,
+        toolUses,
+      },
       durationMs: Date.now() - startTime,
     },
     sessionId,

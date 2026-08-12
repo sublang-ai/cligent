@@ -50,6 +50,8 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | `session.idle` | `done` (usage) |
 | Errors | `error` |
 
+Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
+
 ### OPENCODE-016
 
 The adapter shall correlate tool-part snapshots by OpenCode's `part.callID`, using legacy identifier aliases (including `part.id`) only when `callID` is absent.
@@ -345,14 +347,14 @@ direct prompt `tools` value before session creation, update, subscription, or
 prompt invocation.
 OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
 control: the provider converts its booleans into persistent session permission
-rules, replacing prior session rules [[3]].
+rules, replacing prior session rules [[5]].
 Because permission evaluation is last-match-wins and session rules follow agent
 rules, an enabled tool can override a native or explicitly supplied deny, and a
 prompt-scoped request can change a resumed session after that cligent call ends
-[[4]][[5]].
+[[6]][[7]].
 The provider also canonicalizes some tool identifiers to shared permission
 names, so this surface cannot guarantee
-[ENG-017](../engine.md#eng-017)'s exact identifier semantics [[4]].
+[ENG-017](../engine.md#eng-017)'s exact identifier semantics [[6]].
 When both options are omitted, the adapter shall send no prompt `tools` data
 and preserve OpenCode's native available-tool surface.
 
@@ -360,6 +362,8 @@ and preserve OpenCode's native available-tool surface.
 
 [1]: https://opencode.ai/docs/models/ "OpenCode model configuration"
 [2]: https://opencode.ai/docs/server/ "OpenCode server"
-[3]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
-[4]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluation"
-[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
+[3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 "OpenCode 1.18.13 step-finish token split"
+[4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 "OpenCode 1.18.13 token roll-up"
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluation"
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"

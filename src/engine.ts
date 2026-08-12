@@ -13,6 +13,7 @@ import {
   nextWithAbortDrain,
   makeSynthDone,
   makeSynthError,
+  recordObservedToolUse,
 } from './protocol.js';
 import type { AdapterRegistry } from './registry.js';
 
@@ -67,6 +68,7 @@ export async function* runAgent(
   let lastSessionId = sessionId;
   const gen = adapter.run(prompt, options);
   let doneYielded = false;
+  const observedToolUseIds = new Set<string>();
 
   try {
     while (true) {
@@ -83,7 +85,9 @@ export async function* runAgent(
         if (!doneYielded) {
           const msg = err instanceof Error ? err.message : String(err);
           yield makeSynthError(agent, 'ADAPTER_ERROR', msg, lastSessionId);
-          yield makeSynthDone(agent, 'error', lastSessionId, startTime);
+          yield makeSynthDone(agent, 'error', lastSessionId, startTime, {
+            toolUses: observedToolUseIds.size,
+          });
         }
         safeReturn(gen);
         return;
@@ -101,7 +105,10 @@ export async function* runAgent(
               'interrupted',
               lastSessionId,
               startTime,
-              options?.resume ? { resumeToken: options.resume } : undefined,
+              {
+                ...(options?.resume ? { resumeToken: options.resume } : {}),
+                toolUses: observedToolUseIds.size,
+              },
             );
           }
         }
@@ -118,7 +125,9 @@ export async function* runAgent(
             'Protocol violation: adapter completed without terminal event',
             lastSessionId,
           );
-          yield makeSynthDone(agent, 'error', lastSessionId, startTime);
+          yield makeSynthDone(agent, 'error', lastSessionId, startTime, {
+            toolUses: observedToolUseIds.size,
+          });
         }
         return;
       }
@@ -131,6 +140,7 @@ export async function* runAgent(
       }
 
       lastSessionId = event.sessionId;
+      recordObservedToolUse(observedToolUseIds, event);
       yield event;
 
       if (event.type === 'done') {
@@ -153,6 +163,7 @@ interface AdapterState {
   startTime: number;
   sessionId: string;
   doneYielded: boolean;
+  observedToolUseIds: Set<string>;
 }
 
 interface RaceResult {
@@ -186,6 +197,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
     startTime: Date.now(),
     sessionId: generateSessionId(),
     doneYielded: false,
+    observedToolUseIds: new Set<string>(),
   }));
 
   const pending = new Map<number, Promise<RaceResult>>();
@@ -231,6 +243,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
             'interrupted',
             state.sessionId,
             state.startTime,
+            { toolUses: state.observedToolUseIds.size },
           ),
         );
         state.doneYielded = true;
@@ -276,6 +289,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
             'error',
             state.sessionId,
             state.startTime,
+            { toolUses: state.observedToolUseIds.size },
           );
           state.doneYielded = true;
         }
@@ -299,6 +313,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
             'error',
             state.sessionId,
             state.startTime,
+            { toolUses: state.observedToolUseIds.size },
           );
           state.doneYielded = true;
         }
@@ -315,6 +330,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
       }
 
       state.sessionId = event.sessionId;
+      recordObservedToolUse(state.observedToolUseIds, event);
       yield event;
 
       if (event.type === 'done') {

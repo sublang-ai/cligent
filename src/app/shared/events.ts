@@ -24,8 +24,17 @@ export function formatCligentEvent(event: CligentEvent): string | null {
     case 'done': {
       const p = event.payload as {
         status: string;
-        usage: { inputTokens: number; outputTokens: number };
+        usage: {
+          tokenAvailability?: 'reported' | 'unavailable';
+          inputTokens: number;
+          outputTokens: number;
+        };
       };
+      // Persisted events created before ENG-027 have no discriminator. Treat
+      // that legacy ambiguity as unavailable rather than reviving false zero.
+      if (p.usage.tokenAvailability !== 'reported') {
+        return `\n[${p.status} | tokens: unavailable]\n`;
+      }
       return `\n[${p.status} | in: ${p.usage.inputTokens} out: ${p.usage.outputTokens}]\n`;
     }
     default:
