@@ -304,6 +304,79 @@ agent.run('Start fresh', { resume: false }); // force a new session
 agent.run('Use this', { resume: 'other-token' }); // explicit token
 ```
 
+## Token usage
+
+Every `done` event carries a `usage` object. Because agents can legitimately
+report *no* accounting, always check `tokenAvailability` before doing token
+arithmetic — a zero is a measurement, not a stand-in for "unknown".
+
+```ts
+for await (const event of agent.run('Summarize the README')) {
+  if (event.type !== 'done') continue;
+
+  const { usage } = event.payload as DonePayload;
+  if (usage.tokenAvailability !== 'reported') {
+    console.log('token usage unavailable for this turn');
+    continue;
+  }
+
+  console.log(usage.inputTokens, usage.outputTokens, usage.toolUses);
+}
+```
+
+`inputTokens` counts every input token regardless of caching tier, and
+`outputTokens` counts every generated token including reasoning. These two
+totals are the portable numbers: they mean the same thing on every agent.
+
+### Component breakdown
+
+Cache reads, cache writes, and reasoning are billed at different rates, so a
+total alone cannot be turned into a cost. When the agent measures them,
+`usage.breakdown` splits the totals into components that never overlap:
+
+| Component    | Meaning                                              |
+| ------------ | ---------------------------------------------------- |
+| `input`      | input tokens neither read from nor written to cache  |
+| `cacheRead`  | input tokens served from the prompt cache            |
+| `cacheWrite` | input tokens written into the prompt cache           |
+| `output`     | generated tokens excluding reasoning                 |
+| `reasoning`  | reasoning or thinking tokens                         |
+
+```ts
+const { breakdown } = usage;
+if (breakdown?.cacheRead !== undefined) {
+  console.log(`${breakdown.cacheRead} tokens were cache hits`);
+}
+```
+
+Two rules make the object safe to consume:
+
+- **A present number is measured; an absent one is not reported.** A
+  `cacheWrite` of `0` means the agent wrote nothing to cache. A missing
+  `cacheWrite` means the agent does not report that quantity at all. Never
+  read an absent component as zero.
+- **Components come in two sides, and a side is all-or-nothing.** When
+  `input` / `cacheRead` / `cacheWrite` are present they add up to exactly
+  `inputTokens`; when `output` / `reasoning` are present they add up to
+  exactly `outputTokens`. If an agent cannot produce an exact split, the
+  whole side is omitted rather than approximated — so the aggregates stay
+  trustworthy either way.
+
+`breakdown` is absent entirely whenever `tokenAvailability` is
+`'unavailable'`.
+
+### What each agent reports
+
+| Agent         | Input side                     | Output side | Notes |
+| ------------- | ------------------------------ | ----------- | ----- |
+| `opencode`    | ✅ all three                   | ✅          | Reports every component directly. |
+| `codex`       | ✅ all three                   | ✅          | Usage is per turn, differenced from the thread total. |
+| `claude-code` | ✅ all three                   | ❌          | Thinking is billed inside `outputTokens` and not exposed separately, so no visible-output split is published. |
+| `gemini`      | ❌                             | ❌          | The streamed statistics omit thinking and tool-prompt tokens, so accounting stays unavailable on thinking models. |
+| `kimi`        | ❌                             | ❌          | The protocol's usage structure is unstable and the CLI does not populate it. |
+
+Coverage tracks what each runtime measures, so it changes as the agents do.
+
 ## Permissions
 
 > Assumes imports from [Quick start](#quick-start).
@@ -503,4 +576,4 @@ for await (const event of agent.run('Fix the login bug', {
 | `permission_request` | `toolName`, `toolUseId`, `input`                | Agent asks for permission              |
 | `opencode:permission_decision` | `requestId`, `permission`, `patterns`, `toolUseId`, `decision`, `automated`, `input` | Successful OpenCode auto approval audit |
 | `error`              | `code`, `message`, `recoverable`                | Error                                  |
-| `done`               | `status`, `resumeToken?`, `usage`, `durationMs` | Terminal event — always the last event |
+| `done`               | `status`, `resumeToken?`, `usage`, `durationMs` | Terminal event — always the last event (see [Token usage](#token-usage)) |

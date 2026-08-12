@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `DonePayload.usage.breakdown` optionally splits the token aggregates into the disjoint components `input`, `cacheRead`, `cacheWrite`, `output`, and `reasoning`, so callers can price a run instead of only totalling it. The change is additive: `inputTokens` and `outputTokens` keep their meaning and values, and consumers that ignore the new field are unaffected. A present component is a measurement and an absent one means the agent does not report that quantity, so an absent component must never be read as zero. Components are published as two all-or-nothing sides whose members sum exactly to their aggregate; an agent that cannot produce an exact split omits the side rather than approximating it, and no breakdown is published when `tokenAvailability` is `'unavailable'`. OpenCode and Codex publish both sides, Claude Code publishes the input side (its thinking tokens are billed inside `outputTokens` and not exposed separately), and Gemini and Kimi publish none — DR-014, ENG-028, ENG-029
+
+### Fixed
+
+- Codex turns no longer report the whole thread's accumulated tokens as the turn's own. `turn.completed` carries the thread-cumulative total and a resumed thread seeds it from its rollout, so every turn after the first overstated usage — by roughly the whole conversation by the tenth turn — while marking it measured. The adapter now reports the difference against the previous snapshot, treats a thread it started as beginning from zero, and reports `'unavailable'` rather than a cumulative figure when it resumes a thread it holds no baseline for or when a snapshot decreases because the thread's accounting restarted — CODEX-012, ENG-018
+
 ## [0.20.0] - 2026-08-12
 
 ### Changed

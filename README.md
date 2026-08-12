@@ -171,7 +171,7 @@ notifications, and writing a Captain.
 
 ## Documentation
 
-- [docs/guide.md](docs/guide.md) — `Cligent` class, adapters, permissions, session continuity, parallel execution, event types.
+- [docs/guide.md](docs/guide.md) — `Cligent` class, adapters, permissions, session continuity, [token usage](docs/guide.md#token-usage), parallel execution, event types.
 - [docs/tmux-play.md](docs/tmux-play.md) — `tmux-play` config, layout, notifications, snapshot, and writing custom Captains.
 
 ## Contributing

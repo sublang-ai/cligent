@@ -111,8 +111,9 @@ forcing re-verification whenever a runtime moves.
 ## Consequences
 
 - Callers can compute cost, because the components a provider prices differently are now separable.
-- Gemini token accounting becomes reportable instead of structurally unavailable, at the price of reading one
-  runtime-owned transcript file under cross-validation.
+- Gemini token accounting can become reportable instead of structurally unavailable, by reading one
+  runtime-owned transcript file under cross-validation. Its streamed statistics provably cannot partition the
+  residual, so no cheaper source exists.
 - Codex per-turn accounting requires retaining a per-thread baseline across calls, which
   [ENG-018](../user/engine.md#eng-018) otherwise forbids; the carve-out is narrow and fails closed when no
   baseline is held.
