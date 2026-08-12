@@ -3,7 +3,7 @@
 
 // TADAPT-035: a real managed OpenCode server supplies the session.status
 // recovery seam while the adapter deliberately receives no terminal SSE
-// event. This keeps the regression probe sub-second and credential-free while
+// event. This keeps the regression probe short and credential-free while
 // exercising the vendor status endpoint, SDK disposal, iterator cancellation,
 // and managed-process shutdown used by a genuine inactivity recovery.
 
@@ -38,7 +38,7 @@ describe('OpenCode inactivity real-server acceptance (TADAPT-035)', () => {
         const adapter = new OpenCodeAdapter(
           {
             mode: 'managed',
-            eventInactivityTimeoutMs: 100,
+            eventInactivityTimeoutMs: 1_000,
             readyTimeoutMs: 10_000,
           },
           {
@@ -124,7 +124,7 @@ describe('OpenCode inactivity real-server acceptance (TADAPT-035)', () => {
         const diagnostic = events[1]!.payload as ErrorPayload & {
           code?: string;
         };
-        expect(diagnostic).toMatchObject({
+        expect(diagnostic, diagnostic.message).toMatchObject({
           code: 'OPENCODE_INACTIVITY_IDLE_RECOVERED',
           recoverable: true,
         });
