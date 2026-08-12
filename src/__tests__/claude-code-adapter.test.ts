@@ -226,6 +226,9 @@ describe('ClaudeCodeAdapter', () => {
       outputTokens: 20,
       toolUses: 1,
       totalCostUsd: 0.25,
+      // No cache counters in this fixture, so the input side is the base
+      // counter alone and the output side stays withheld.
+      breakdown: { input: 10 },
     });
     expect(done.payload.durationMs).toBe(321);
   });
@@ -1399,6 +1402,57 @@ describe('ClaudeCodeAdapter', () => {
     const usage = (done.payload as DonePayload).usage;
     expect(usage.tokenAvailability).toBe('reported');
     expect(usage.inputTokens).toBe(155);
+    // The three Anthropic input counters are disjoint, so they partition the
+    // aggregate exactly. No output side: thinking is billed inside
+    // output_tokens and the runtime does not expose it.
+    expect(usage.breakdown).toEqual({ input: 5, cacheRead: 100, cacheWrite: 50 });
+    expect(usage.breakdown).not.toHaveProperty('output');
+    expect(usage.breakdown).not.toHaveProperty('reasoning');
+  });
+
+  it('omits a cache component the result message did not carry', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 7, output_tokens: 3 },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const usage = (
+      events.find((e) => e.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.inputTokens).toBe(7);
+    // Absent counters are omitted rather than published as measured zeroes.
+    expect(usage.breakdown).toEqual({ input: 7 });
+  });
+
+  it('publishes no breakdown when usage is unavailable', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 5 },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const usage = (
+      events.find((e) => e.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.tokenAvailability).toBe('unavailable');
+    expect(usage).not.toHaveProperty('breakdown');
   });
 
   it.each([

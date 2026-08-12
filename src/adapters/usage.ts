@@ -6,6 +6,12 @@ import type { TokenBreakdown } from '../types.js';
 export interface UsageCounterReading {
   value: number;
   valid: boolean;
+  /**
+   * Whether upstream actually carried the counter. ENG-028 needs this to tell
+   * a measured zero from a component the runtime does not report; `value`
+   * alone cannot, because an absent optional counter also reads as zero.
+   */
+  present: boolean;
 }
 
 /** Aggregates a breakdown must partition exactly (ENG-019). */
@@ -102,7 +108,7 @@ export function readUsageCounter(
     Object.prototype.hasOwnProperty.call(source, alias),
   );
   if (presentAliases.length === 0) {
-    return { value: 0, valid: !required };
+    return { value: 0, valid: !required, present: false };
   }
 
   let value: number | undefined;
@@ -114,10 +120,10 @@ export function readUsageCounter(
       !Number.isInteger(candidate) ||
       candidate < 0
     ) {
-      return { value: 0, valid: false };
+      return { value: 0, valid: false, present: true };
     }
     value ??= candidate;
   }
 
-  return { value: value ?? 0, valid: true };
+  return { value: value ?? 0, valid: true, present: true };
 }

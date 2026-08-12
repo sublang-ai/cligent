@@ -34,6 +34,9 @@ The adapter shall normalize SDK messages to `AgentEvent` types:
 | `result` | `done` (usage, status), except an internal no-op `result` per [CLAUDE-010](#claude-010) |
 | Errors | `error` (recoverable flag) |
 
+Where the `result` message supplies complete usage, the adapter shall publish the [ENG-028](../engine.md#eng-028) input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
+The adapter shall publish no output side, because Claude Code bills thinking tokens inside `output_tokens` and does not expose them separately, so no measured visible-output component exists to state.
+
 ### CLAUDE-010
 
 Where the run was invoked with a non-empty `AgentOptions.resume`, while the adapter has yielded no `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` event in the current run, when the SDK stream yields a `result` message that classifies as `success` while carrying no non-empty `result` string and zero input-token, output-token, and tool-use counts — the shape of the CLI-internal continuation-repair no-op turn that Claude Code runs before the submitted turn when resuming a session whose previous turn ended with a dangling tool call — the adapter shall not emit terminal `done` for that message and shall continue consuming the stream so the submitted turn's messages, including its own `result`, normalize per [CLAUDE-003](#claude-003); the skip shall apply to every `result` message of that shape for as long as both conditions above hold, there being nothing that distinguishes a second one from the first; where the stream then ends without a further `result` message that terminated the run — including a stream whose every `result` carried that shape — and the run was not aborted, the adapter shall yield its no-result outcome (`error` then terminal `done` with `status: 'error'`); an aborted run keeps its interrupted outcome per [CLAUDE-007](#claude-007); in neither case shall the adapter yield a `success` `done` without a result.
@@ -97,6 +100,11 @@ Mapping `ultracode` shall leave independently mapped permission controls unchang
 When a Claude Code run starts without `AgentOptions.resume`, the adapter shall pass a generated UUID as SDK `sessionId` so the run has a stable session identifier once Claude persists the conversation.
 When the Claude Code SDK provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
 When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: a session identifier observed on SDK activity beyond the initial `system` message, or the adapter-assigned session identifier after such activity; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+
+### CLAUDE-011
+
+Where a run spawns subagents or internal advisor inference, `DonePayload.usage.totalCostUsd` and the token counters shall be understood to cover different scopes: Claude Code accumulates cost across every model request the process makes, while the token counters it reports cover the main conversation loop only.
+The adapter shall pass both through as the runtime reports them and shall not reconcile one against the other, because no runtime surface partitions the additional spend into normalized input and output counters.
 
 ## References
 

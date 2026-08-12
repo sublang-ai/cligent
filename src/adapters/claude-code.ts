@@ -21,7 +21,11 @@ import {
   assertRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
-import { isUsageRecord, readUsageCounter } from './usage.js';
+import {
+  buildTokenBreakdown,
+  isUsageRecord,
+  readUsageCounter,
+} from './usage.js';
 
 type ClaudePermissionMode =
   | 'auto'
@@ -462,18 +466,38 @@ function mapUsage(
   const totalCostUsd =
     asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
 
+  const reported =
+    baseInput.valid &&
+    cacheRead.valid &&
+    cacheCreation.valid &&
+    outputTokens.valid;
+  const inputTokens =
+    baseInput.value + cacheRead.value + cacheCreation.value;
+
+  // CLAUDE-003: Anthropic's base input counter is already cache-exclusive, so
+  // the three input counters are the partition. The output side is withheld:
+  // thinking tokens are billed inside output_tokens and the runtime does not
+  // expose them, so no visible-output component can be stated (ENG-028).
+  const breakdown = reported
+    ? buildTokenBreakdown(
+        { inputTokens, outputTokens: outputTokens.value },
+        {
+          input: baseInput.value,
+          ...(cacheRead.present ? { cacheRead: cacheRead.value } : {}),
+          ...(cacheCreation.present
+            ? { cacheWrite: cacheCreation.value }
+            : {}),
+        },
+      )
+    : undefined;
+
   return {
-    tokenAvailability:
-      baseInput.valid &&
-      cacheRead.valid &&
-      cacheCreation.valid &&
-      outputTokens.valid
-        ? 'reported'
-        : 'unavailable',
-    inputTokens: baseInput.value + cacheRead.value + cacheCreation.value,
+    tokenAvailability: reported ? 'reported' : 'unavailable',
+    inputTokens,
     outputTokens: outputTokens.value,
     toolUses,
     ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+    ...(breakdown ? { breakdown } : {}),
   };
 }
 
