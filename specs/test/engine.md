@@ -115,3 +115,10 @@ Verifies: [ENG-013](../user/engine.md#eng-013), [ENG-027](../user/engine.md#eng-
 
 Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `tokenAvailability` and shall reject values outside `'reported' | 'unavailable'`.
 When the engine synthesizes any terminal `done`, its zero-valued token fields shall carry `'unavailable'` and its `toolUses` shall preserve the unique tool calls already observed on that stream.
+
+### TENG-020
+Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [ENG-028](../user/engine.md#eng-028)
+
+Where an adapter publishes `DoneUsage.breakdown` on a terminal `done` observed through `Cligent.run()`, every present member shall be a finite non-negative integer, a published input side shall sum exactly to `inputTokens`, and a published output side shall sum exactly to `outputTokens`.
+Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `breakdown`.
+Where a runtime reports a component as zero and omits another, the emitted breakdown shall carry the zero and omit the other, so a consumer can distinguish a measured zero from an unreported component.

@@ -373,6 +373,15 @@ Given a Kimi prompt has a valid stop reason but malformed optional usage, when t
 Given upstream omits complete token accounting or an adapter synthesizes an errored, interrupted, exhausted, or other terminal path, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced.
 Where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
 
+### TADAPT-038
+Verifies: [ENG-028](../user/engine.md#eng-028), [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-012](../user/adapters/codex.md#codex-012), [CODEX-013](../user/adapters/codex.md#codex-013), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+
+Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters, Claude Code shall publish the input side alone, Codex shall publish both sides derived by subtraction from its inclusive counters, and Kimi shall publish none.
+Given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent.
+Given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
+Given Codex reports its thread-cumulative snapshot on successive turns of one thread, the second turn's `done` shall report that turn's difference rather than the thread total; given a resumed thread for which the adapter holds no baseline, the `done` shall report `'unavailable'`; and given a snapshot smaller than the retained baseline, the `done` shall report `'unavailable'` while the following turn recovers.
+
+
 ## Real-run Acceptance
 
 Items in this section verify behavior end-to-end against the real coding-agent SDKs and CLIs (not mocks or canned events). They live under `src/adapters/*.acceptance.test.ts` and run via `npm run test:acceptance`. The SDK packages the adapters load (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`) are cligent `devDependencies`, while the ACP SDK used by Kimi is a runtime dependency, so any checkout able to run this suite has installed them via `npm install`; their absence is therefore not a skip condition. An item shall self-skip per adapter when an *external* CLI the adapter spawns is absent from `PATH` — the `gemini` CLI for Gemini, the `opencode` CLI for OpenCode's managed server, or the `kimi` CLI for Kimi — or when that adapter's credential is absent from the environment; a missing dependency for one adapter shall not skip the others. Under `CI` the items shall instead hard-fail on a missing dependency so a misconfigured runner is not silently green. Exact credential-free Kimi ACP initialization remains an additional mandatory CI conformance check.

@@ -119,7 +119,7 @@ meta.md     The spec of specs
 | Group | File | Summary |
 | --- | --- | --- |
 | user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage and its optional disjoint five-component breakdown with side-atomic publication and supplementary-source cross-validation, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
-| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability, and effort API verification |
+| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability and breakdown partition invariants, and effort API verification |
 
 ### GEMINI
 
@@ -175,7 +175,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including reported/unavailable token usage, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including reported/unavailable token usage and per-adapter token breakdown shapes with Codex per-turn differencing, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
 
 ### TMUX
 
