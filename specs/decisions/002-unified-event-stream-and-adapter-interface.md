@@ -124,12 +124,21 @@ interface ToolResultPayload {
 
 type TokenUsageAvailability = 'reported' | 'unavailable';
 
+interface TokenBreakdown {   // disjoint partition of the aggregates (DR-014)
+  input?: number;            // input excluding cache read and cache write
+  cacheRead?: number;
+  cacheWrite?: number;
+  output?: number;           // output excluding reasoning
+  reasoning?: number;
+}
+
 interface DoneUsage {
   tokenAvailability: TokenUsageAvailability;
   inputTokens: number;
   outputTokens: number;
   toolUses: number;
   totalCostUsd?: number;
+  breakdown?: TokenBreakdown;
 }
 
 interface DonePayload {
@@ -177,6 +186,10 @@ the count of tool calls the adapter observed.
 Consumers shall branch on `tokenAvailability` before token arithmetic or
 rendering; persisted payloads from before this discriminator existed shall be
 treated as unavailable.
+`DoneUsage.breakdown` is the optional disjoint partition of those aggregates
+defined by [DR-014](014-unified-token-usage-breakdown.md), which governs which
+components an adapter may publish; it is absent whenever `tokenAvailability` is
+`'unavailable'`.
 
 ### Unified Permission Model (UPM)
 

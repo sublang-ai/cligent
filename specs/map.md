@@ -44,6 +44,7 @@ meta.md     The spec of specs
 | DR-011 | [011-kimi-code-acp-integration.md](decisions/011-kimi-code-acp-integration.md) | Kimi Code through one per-run `kimi acp` process; reject legacy/private Kimi SDKs and lossy print mode |
 | DR-012 | [012-runtime-derived-tmux-play-defaults.md](decisions/012-runtime-derived-tmux-play-defaults.md) | tmux-play first-run defaults follow the installed agent runtimes; optional peers stay optional and are checked, never installed |
 | DR-013 | [013-cligent-owned-runtime-compatibility.md](decisions/013-cligent-owned-runtime-compatibility.md) | Cligent owns agent-runtime compatibility: one shipped descriptor per runtime, load-time version gate, structured readiness verdict, no published upper bound on an optional peer |
+| DR-014 | [014-unified-token-usage-breakdown.md](decisions/014-unified-token-usage-breakdown.md) | Optional disjoint `input` / `cacheRead` / `cacheWrite` / `output` / `reasoning` partition of the frozen `DonePayload.usage` aggregates; omission means unreported and present zero means measured; side-atomic publication; supplementary fidelity sources allowed only under cross-validation against the protocol aggregates and never across an established protocol boundary |
 
 ## Iterations
 
@@ -96,6 +97,7 @@ meta.md     The spec of specs
 | IR-044 | [044-opencode-message-roles.md](iterations/044-opencode-message-roles.md) | Correlate OpenCode message roles and suppress replayed user content |
 | IR-045 | [045-opencode-delta-classification.md](iterations/045-opencode-delta-classification.md) | Classify OpenCode deltas by part type and suppress duplicate reasoning streams |
 | IR-046 | [046-token-usage-availability.md](iterations/046-token-usage-availability.md) | Distinguish reported token totals, including zero, from unavailable accounting across every terminal path |
+| IR-047 | [047-unified-token-usage-breakdown.md](iterations/047-unified-token-usage-breakdown.md) | Implement DR-014: optional five-component token breakdown per adapter, per-turn Codex accounting, transcript-supplemented Gemini accounting, and user documentation |
 
 ## Packages
 
