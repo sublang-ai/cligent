@@ -6,6 +6,7 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
@@ -36,10 +37,13 @@ import {
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
-const PERMISSION_REPLY_TIMEOUT_MS = 5000;
-const SDK_CLEANUP_TIMEOUT_MS = 1000;
-const MANAGED_SERVER_SHUTDOWN_TIMEOUT_MS = 1500;
-const MANAGED_SERVER_KILL_TIMEOUT_MS = 500;
+const DEFAULT_EVENT_INACTIVITY_TIMEOUT_MS = 300_000;
+const MAX_STATUS_QUERY_TIMEOUT_MS = 10_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+const ITERATOR_CLEANUP_TIMEOUT_MS = 250;
+const DEFAULT_MANAGED_SERVER_TERM_GRACE_MS = 1_500;
+const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
+const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   inputTokens: 0,
@@ -66,6 +70,7 @@ interface ServerCloseInfo {
 type StreamWaitResult =
   | { kind: 'event'; result: IteratorResult<unknown> }
   | { kind: 'stream_error'; error: unknown }
+  | { kind: 'inactivity' }
   | { kind: 'abort' }
   | { kind: 'server_exit'; exit: ServerCloseInfo };
 
@@ -80,6 +85,14 @@ interface OpenCodeClient {
   query?: (options: Record<string, unknown>) => Promise<unknown>;
   events?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
   subscribe?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
+  getSessionStatus?: (options: {
+    sessionId: string;
+    cwd?: string;
+  }) => Promise<unknown>;
+  abortSession?: (options: {
+    sessionId: string;
+    cwd?: string;
+  }) => Promise<void>;
   replyPermission?: (options: {
     sessionId: string;
     requestId: string;
@@ -96,10 +109,19 @@ interface OpenCodeSdk {
   createClient: (options?: { baseUrl?: string }) => OpenCodeClient;
 }
 
-interface OpenCodeAdapterConfig {
+class OpenCodePromptDispatchAbortError extends Error {
+  constructor(readonly sessionId?: string) {
+    super('OpenCode run aborted during prompt dispatch');
+    this.name = 'OpenCodePromptDispatchAbortError';
+  }
+}
+
+export interface OpenCodeAdapterConfig {
   mode?: OpenCodeMode;
   serverUrl?: string;
   readyTimeoutMs?: number;
+  /** Maximum silence between relevant events for the active session. */
+  eventInactivityTimeoutMs?: number;
 }
 
 interface OpenCodeAdapterDeps {
@@ -110,6 +132,8 @@ interface OpenCodeAdapterDeps {
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
   ) => Promise<string>;
+  managedServerTermGraceMs?: number;
+  managedServerKillGraceMs?: number;
 }
 
 interface OpenCodePermissionOptions {
@@ -334,36 +358,126 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   );
 }
 
-function maybeCallAsync(
-  fn: (() => Promise<unknown> | unknown) | undefined,
-): Promise<void> {
+function maybeCallAsync(fn: (() => Promise<void> | void) | undefined): Promise<void> {
   if (!fn) return Promise.resolve();
 
   try {
     const result = fn();
-    return Promise.resolve(result).then(() => {});
+    return Promise.resolve(result).then(
+      () => {},
+      () => {},
+    );
   } catch {
     return Promise.resolve();
   }
 }
 
-async function settleAllWithin(
-  promises: readonly Promise<unknown>[],
+async function maybeCallAsyncWithin(
+  fn: (() => Promise<void> | void) | undefined,
   timeoutMs: number,
 ): Promise<void> {
-  if (promises.length === 0) return;
+  if (!fn) return;
 
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      Promise.allSettled(promises).then(() => {}),
+      maybeCallAsync(fn),
       new Promise<void>((resolve) => {
-        timeout = setTimeout(resolve, timeoutMs);
+        timer = setTimeout(resolve, timeoutMs);
       }),
     ]);
   } finally {
-    if (timeout) clearTimeout(timeout);
+    if (timer) clearTimeout(timer);
   }
+}
+
+async function promiseSettlesWithin(
+  promise: Promise<unknown>,
+  timeoutMs: number,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function createMonotonicInactivityTimer(
+  lastActivityAt: number,
+  timeoutMs: number,
+): {
+  promise: Promise<{ kind: 'inactivity' }>;
+  cancel: () => void;
+} {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+  let resolveDeadline!: (value: { kind: 'inactivity' }) => void;
+  const promise = new Promise<{ kind: 'inactivity' }>((resolve) => {
+    resolveDeadline = resolve;
+  });
+
+  const scheduleNextChunk = () => {
+    if (cancelled) return;
+    const elapsedMs = performance.now() - lastActivityAt;
+    const remainingMs = timeoutMs - elapsedMs;
+    if (remainingMs <= 0) {
+      resolveDeadline({ kind: 'inactivity' });
+      return;
+    }
+
+    timer = setTimeout(
+      scheduleNextChunk,
+      Math.min(MAX_TIMER_DELAY_MS, Math.max(1, Math.ceil(remainingMs))),
+    );
+  };
+
+  scheduleNextChunk();
+  return {
+    promise,
+    cancel() {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+function assertFinitePositiveTimeout(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${name} must be a finite number greater than 0`);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function diagnosticJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function unwrapSdkData(value: unknown): unknown {
+  const record = asRecord(value);
+  return Object.prototype.hasOwnProperty.call(record, 'data')
+    ? record.data
+    : value;
+}
+
+function sessionStatusType(value: unknown): string | undefined {
+  return asString(asRecord(value).type)?.toLowerCase() ??
+    asString(value)?.toLowerCase();
 }
 
 function defaultSpawnProcess(
@@ -704,35 +818,53 @@ export function wrapOpencodeClient(
   }
 
   // Bind methods to their owning service objects to preserve `this`.
-  const sessionCreate = session.create.bind(session) as (body?: unknown) => Promise<unknown>;
+  const sessionCreate = session.create.bind(session) as (
+    body?: unknown,
+    requestOptions?: unknown,
+  ) => Promise<unknown>;
   const sessionUpdate = typeof session.update === 'function'
-    ? (session.update.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.update.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
     : undefined;
   const sessionPromptAsync = typeof session.promptAsync === 'function'
-    ? (session.promptAsync.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.promptAsync.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
     : undefined;
   const sessionPromptSync = typeof session.prompt === 'function'
-    ? (session.prompt.bind(session) as (args: unknown) => Promise<unknown>)
+    ? (session.prompt.bind(session) as (
+        args: unknown,
+        requestOptions?: unknown,
+      ) => Promise<unknown>)
+    : undefined;
+  const sessionStatus = typeof session.status === 'function'
+    ? (session.status.bind(session) as (args?: unknown) => Promise<unknown>)
+    : undefined;
+  const sessionAbort = typeof session.abort === 'function'
+    ? (session.abort.bind(session) as (args: unknown) => Promise<unknown>)
     : undefined;
   const eventSubscribe = event.subscribe.bind(event) as (
-    parameters?: unknown,
+    args?: unknown,
     requestOptions?: unknown,
   ) => Promise<unknown>;
   const instanceDispose = instance && typeof instance.dispose === 'function'
-    ? (instance.dispose.bind(instance) as () => Promise<void>)
+    ? (instance.dispose.bind(instance) as (args?: unknown) => Promise<unknown>)
     : undefined;
   const permissionReply =
     permission && typeof permission.reply === 'function'
       ? (permission.reply.bind(permission) as (
           args: unknown,
-          options?: unknown,
+          requestOptions?: unknown,
         ) => Promise<unknown>)
       : undefined;
   const permissionRespond =
     permission && typeof permission.respond === 'function'
       ? (permission.respond.bind(permission) as (
           args: unknown,
-          options?: unknown,
+          requestOptions?: unknown,
         ) => Promise<unknown>)
       : undefined;
   const legacyPermissionReply =
@@ -741,6 +873,32 @@ export function wrapOpencodeClient(
           args: unknown,
         ) => Promise<unknown>)
       : undefined;
+  let instanceDirectory: string | undefined;
+
+  const abortSessionViaSdk = async (
+    sessionId: string,
+    cwd: string | undefined,
+  ): Promise<void> => {
+    if (!sessionAbort) {
+      throw new Error('OpenCode SDK client.session.abort() not available');
+    }
+
+    const result = await sessionAbort(
+      apiVersion === 'v2'
+        ? {
+            sessionID: sessionId,
+            ...(cwd ? { directory: cwd } : {}),
+          }
+        : {
+            path: { id: sessionId },
+            ...(cwd ? { query: { directory: cwd } } : {}),
+          },
+    );
+    throwIfSdkResultError(result, 'OpenCode session.abort failed');
+    if (unwrapSdkData(result) === false) {
+      throw new Error(`OpenCode session.abort declined session ${sessionId}`);
+    }
+  };
 
   return {
     async run(options: Record<string, unknown>): Promise<unknown> {
@@ -755,166 +913,277 @@ export function wrapOpencodeClient(
       }
       const resumeId = asString(options.sessionId);
       const cwdVal = asString(options.cwd);
+      instanceDirectory = cwdVal;
       const permissionObj = options.permission;
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
-      const runSignal = options.signal as AbortSignal | undefined;
+      const signal = options.signal instanceof AbortSignal
+        ? options.signal
+        : undefined;
       const v2PermissionRuleset = toOpenCodeV2PermissionRuleset(permissionObj);
 
       let sessionId: string | undefined;
-
-      if (resumeId) {
-        // Resume an existing session instead of creating a new one.
-        sessionId = resumeId;
-        if (apiVersion === 'v2' && v2PermissionRuleset) {
-          if (!sessionUpdate) {
-            throw new Error(
-              'OpenCode SDK client.session.update() not available for v2 permission updates',
-            );
-          }
-          const updated = await sessionUpdate({
-            sessionID: resumeId,
-            ...(cwdVal ? { directory: cwdVal } : {}),
-            permission: v2PermissionRuleset,
-          });
-          throwIfSdkResultError(updated, 'OpenCode session.update failed');
-        }
-      } else {
-        const created = asRecord(
-          await sessionCreate(
-            apiVersion === 'v2'
-              ? {
-                  ...(cwdVal ? { directory: cwdVal } : {}),
-                  ...(v2PermissionRuleset
-                    ? { permission: v2PermissionRuleset }
-                    : {}),
-                }
-              : undefined,
-          ),
-        );
-        throwIfSdkResultError(created, 'OpenCode session.create failed');
-        sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
-      }
-
-      if (!sessionId) {
-        sessionId = generateSessionId();
-      }
-      const promptSessionId = sessionId;
-
-      const promptBody = {
-        parts: [{ type: 'text', text: options.prompt }],
-        ...(modelVal ? { model: modelVal } : {}),
-        ...(variantVal ? { variant: variantVal } : {}),
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        ...(options.steps !== undefined ? { steps: options.steps } : {}),
-        ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
-      };
-
-      const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
-        directory?: string;
-      } = {
-        sessionID: promptSessionId,
-        parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
-        ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
-        ...(variantVal ? { variant: variantVal } : {}),
-        ...(cwdVal ? { directory: cwdVal } : {}),
-      };
-
-      // The SDK's event stream is a lazy async generator — the HTTP
-      // fetch inside it only fires on the first .next() call (see
-      // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
-      // the SSE connection BEFORE sending the prompt so fast early
-      // events are not lost on the live-only (no replay) endpoint.
-      const subResult = asRecord(
-        await (apiVersion === 'v2'
-          ? eventSubscribe(
-              cwdVal ? { directory: cwdVal } : undefined,
-              runSignal ? { signal: runSignal } : undefined,
-            )
-          : eventSubscribe(runSignal ? { signal: runSignal } : undefined)),
-      );
-      const rawStream = subResult.stream ?? subResult.events ?? subResult;
-      let events: AsyncIterable<unknown> | undefined;
+      let resolveRunAbort!: () => void;
+      const runAbortPromise = new Promise<void>((resolve) => {
+        resolveRunAbort = resolve;
+      });
+      let dispatchAbortPromise: Promise<void> | undefined;
       let eagerFirst: Promise<IteratorResult<unknown>> | undefined;
       let rawIterator: AsyncIterator<unknown> | undefined;
-
-      if (isAsyncIterable(rawStream)) {
-        rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-        eagerFirst = rawIterator.next(); // triggers fetch()
-        // If prompting fails before the wrapper returns the stream, the
-        // run-owned signal still cancels this eager request. Keep its
-        // rejection observed until a consumer receives the same promise.
-        eagerFirst.catch(() => {});
-      }
-
-      if (sessionPromptAsync) {
-        // Fire-and-forget: promptAsync returns 204 immediately.
-        const promptResult = await sessionPromptAsync(
-          apiVersion === 'v2'
-            ? v2PromptParameters
-            : {
-                path: { id: promptSessionId },
-                body: promptBody,
-              },
-        );
-        throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
-      } else if (sessionPromptSync) {
-        const promptResult = await sessionPromptSync(
-          apiVersion === 'v2'
-            ? v2PromptParameters
-            : {
-                path: { id: promptSessionId },
-                body: promptBody,
-              },
-        );
-        throwIfSdkResultError(promptResult, 'OpenCode session.prompt failed');
-      }
-
-      // Wrap the iterator so the eagerly-fetched first result is not lost.
-      if (eagerFirst && rawIterator) {
-        const first = eagerFirst;
-        const rest = rawIterator;
-        events = {
-          [Symbol.asyncIterator](): AsyncIterator<unknown> {
-            let consumedFirst = false;
-            let closed = false;
-            return {
-              async next() {
-                if (closed) {
-                  return { done: true, value: undefined };
-                }
-                if (!consumedFirst) {
-                  consumedFirst = true;
-                  return first;
-                }
-                return rest.next();
-              },
-              async return(value?: unknown) {
-                if (closed) {
-                  return { done: true, value };
-                }
-                closed = true;
-                return typeof rest.return === 'function'
-                  ? rest.return(value)
-                  : { done: true, value };
-              },
-              async throw(error?: unknown) {
-                closed = true;
-                if (typeof rest.throw === 'function') {
-                  return rest.throw(error);
-                }
-                throw error;
-              },
-            };
-          },
-        };
-      }
-
-      return {
-        id: sessionId,
-        sessionId,
-        ...(events ? { events } : {}),
+      let rawIteratorTransferred = false;
+      let events: AsyncIterable<unknown> | undefined;
+      const abortKnownSession = (): Promise<void> => {
+        if (!sessionId) return Promise.resolve();
+        dispatchAbortPromise ??= abortSessionViaSdk(sessionId, cwdVal);
+        return dispatchAbortPromise;
       };
+      const onRunAbort = () => {
+        resolveRunAbort();
+        void abortKnownSession().catch(() => {});
+      };
+      if (signal) {
+        if (signal.aborted) onRunAbort();
+        else signal.addEventListener('abort', onRunAbort, { once: true });
+      }
+
+      const stopAbortedDispatch = async (): Promise<never> => {
+        await promiseSettlesWithin(
+          abortKnownSession(),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        );
+        throw new OpenCodePromptDispatchAbortError(sessionId);
+      };
+
+      const raceRunOperation = async <T>(operation: Promise<T>): Promise<T> => {
+        const outcome = await Promise.race([
+          operation.then(
+            (value) => ({ kind: 'success' as const, value }),
+            (error: unknown) => ({ kind: 'failure' as const, error }),
+          ),
+          runAbortPromise.then(() => ({ kind: 'abort' as const })),
+        ]);
+        if (outcome.kind === 'abort') return stopAbortedDispatch();
+        if (outcome.kind === 'failure') throw outcome.error;
+        return outcome.value;
+      };
+
+      try {
+        if (resumeId) {
+          // Resume an existing session instead of creating a new one.
+          sessionId = resumeId;
+          if (signal?.aborted) return stopAbortedDispatch();
+          if (apiVersion === 'v2' && v2PermissionRuleset) {
+            if (!sessionUpdate) {
+              throw new Error(
+                'OpenCode SDK client.session.update() not available for v2 permission updates',
+              );
+            }
+            const updated = await raceRunOperation(
+              sessionUpdate(
+                {
+                  sessionID: resumeId,
+                  ...(cwdVal ? { directory: cwdVal } : {}),
+                  permission: v2PermissionRuleset,
+                },
+                signal ? { signal } : undefined,
+              ),
+            );
+            throwIfSdkResultError(updated, 'OpenCode session.update failed');
+          }
+        } else {
+          const created = asRecord(
+            await (apiVersion === 'v2'
+              ? sessionCreate(
+                  {
+                    ...(cwdVal ? { directory: cwdVal } : {}),
+                    ...(v2PermissionRuleset
+                      ? { permission: v2PermissionRuleset }
+                      : {}),
+                  },
+                  signal ? { signal } : undefined,
+                )
+              : sessionCreate(
+                  cwdVal || signal
+                    ? {
+                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                        ...(signal ? { signal } : {}),
+                      }
+                    : undefined,
+                )),
+          );
+          throwIfSdkResultError(created, 'OpenCode session.create failed');
+          sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
+        }
+
+        if (!sessionId) {
+          sessionId = generateSessionId();
+        }
+        if (signal?.aborted) return stopAbortedDispatch();
+        const promptSessionId = sessionId;
+
+        const promptBody = {
+          parts: [{ type: 'text', text: options.prompt }],
+          ...(modelVal ? { model: modelVal } : {}),
+          ...(variantVal ? { variant: variantVal } : {}),
+          ...(options.steps !== undefined ? { steps: options.steps } : {}),
+          ...(permissionObj !== undefined ? { permission: permissionObj } : {}),
+        };
+
+        const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
+          directory?: string;
+        } = {
+          sessionID: promptSessionId,
+          parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
+          ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
+          ...(variantVal ? { variant: variantVal } : {}),
+          ...(cwdVal ? { directory: cwdVal } : {}),
+        };
+
+        // The SDK's event stream is a lazy async generator — the HTTP
+        // fetch inside it only fires on the first .next() call (see
+        // serverSentEvents.gen.js:20).  Eagerly call .next() to establish
+        // the SSE connection BEFORE sending the prompt so fast early
+        // events are not lost on the live-only (no replay) endpoint.
+        const subResult = asRecord(
+          await raceRunOperation(
+            apiVersion === 'v2'
+              ? eventSubscribe(
+                  cwdVal ? { directory: cwdVal } : undefined,
+                  signal ? { signal } : undefined,
+                )
+              : eventSubscribe(
+                  cwdVal || signal
+                    ? {
+                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                        ...(signal ? { signal } : {}),
+                      }
+                    : undefined,
+                ),
+          ),
+        );
+        const rawStream = subResult.stream ?? subResult.events ?? subResult;
+
+        if (isAsyncIterable(rawStream)) {
+          rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+          eagerFirst = rawIterator.next(); // triggers fetch()
+          // A prompt-dispatch abort can reject this eager read before the run
+          // returns its wrapper. Keep the original rejection for consumers,
+          // while also marking it handled if dispatch abort discards the stream.
+          void eagerFirst.catch(() => {});
+        }
+
+        if (sessionPromptAsync) {
+          // Fire-and-forget: promptAsync returns 204 immediately.
+          const promptResult = await raceRunOperation(
+            sessionPromptAsync(
+              apiVersion === 'v2'
+                ? v2PromptParameters
+                : {
+                    path: { id: promptSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    body: promptBody,
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
+        } else if (sessionPromptSync) {
+          const promptResult = await raceRunOperation(
+            sessionPromptSync(
+              apiVersion === 'v2'
+                ? v2PromptParameters
+                : {
+                    path: { id: promptSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    body: promptBody,
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(promptResult, 'OpenCode session.prompt failed');
+        }
+
+        if (signal?.aborted) return stopAbortedDispatch();
+
+        // Wrap the iterator so the eagerly-fetched first result is not lost.
+        if (eagerFirst && rawIterator) {
+          const first = eagerFirst;
+          const rest = rawIterator;
+          events = {
+            [Symbol.asyncIterator](): AsyncIterator<unknown> {
+              let consumedFirst = false;
+              return {
+                async next() {
+                  if (!consumedFirst) {
+                    consumedFirst = true;
+                    return first;
+                  }
+                  return rest.next();
+                },
+                async return(value?: unknown) {
+                  consumedFirst = true;
+                  return rest.return
+                    ? rest.return(value)
+                    : { done: true, value };
+                },
+                async throw(error?: unknown) {
+                  consumedFirst = true;
+                  if (rest.throw) return rest.throw(error);
+                  throw error;
+                },
+              };
+            },
+          };
+        }
+
+        rawIteratorTransferred = true;
+        return {
+          id: sessionId,
+          sessionId,
+          ...(events ? { events } : {}),
+        };
+      } finally {
+        signal?.removeEventListener('abort', onRunAbort);
+        if (!rawIteratorTransferred && rawIterator?.return) {
+          try {
+            await promiseSettlesWithin(
+              Promise.resolve(rawIterator.return()),
+              ITERATOR_CLEANUP_TIMEOUT_MS,
+            );
+          } catch {
+            // The request signal and outer adapter cleanup remain the final
+            // cancellation boundaries when explicit iterator return rejects.
+          }
+        }
+      }
+    },
+
+    async getSessionStatus({ sessionId, cwd }): Promise<unknown> {
+      if (!sessionStatus) {
+        throw new Error('OpenCode SDK client.session.status() not available');
+      }
+
+      const result = await sessionStatus(
+        apiVersion === 'v2'
+          ? (cwd ? { directory: cwd } : undefined)
+          : (cwd ? { query: { directory: cwd } } : undefined),
+      );
+      throwIfSdkResultError(result, 'OpenCode session.status failed');
+      const statuses = asRecord(unwrapSdkData(result));
+      const statusMap = Object.prototype.hasOwnProperty.call(statuses, 'sessions')
+        ? asRecord(statuses.sessions)
+        : statuses;
+
+      // OpenCode's status service keeps only non-idle sessions in its
+      // in-memory map. Transitioning to idle deletes the entry, so absence is
+      // the canonical idle representation returned by /session/status.
+      return statusMap[sessionId] ?? { type: 'idle' };
+    },
+
+    async abortSession({ sessionId, cwd }): Promise<void> {
+      await abortSessionViaSdk(sessionId, cwd);
     },
 
     async replyPermission(options): Promise<void> {
@@ -972,6 +1241,9 @@ export function wrapOpencodeClient(
       }
 
       throwIfSdkResultError(result, operation);
+      if (unwrapSdkData(result) === false) {
+        throw new Error(`${operation}: SDK declined the rejection response`);
+      }
     },
 
     events(options?: Record<string, unknown>): AsyncIterable<unknown> {
@@ -985,16 +1257,7 @@ export function wrapOpencodeClient(
             async next(): Promise<IteratorResult<unknown>> {
               if (!started) {
                 started = true;
-                const eventSignal = options?.signal as AbortSignal | undefined;
-                const directory = asString(options?.directory);
-                const subResult = asRecord(
-                  await (apiVersion === 'v2'
-                    ? eventSubscribe(
-                        directory ? { directory } : undefined,
-                        eventSignal ? { signal: eventSignal } : undefined,
-                      )
-                    : eventSubscribe(options)),
-                );
+                const subResult = asRecord(await eventSubscribe(options));
                 const stream = subResult.stream ?? subResult.events ?? subResult;
                 if (isAsyncIterable(stream)) {
                   innerIterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
@@ -1010,14 +1273,11 @@ export function wrapOpencodeClient(
               return innerIterator.next();
             },
             async return(value?: unknown): Promise<IteratorResult<unknown>> {
-              return typeof innerIterator?.return === 'function'
-                ? innerIterator.return(value)
-                : { done: true, value };
+              if (innerIterator?.return) return innerIterator.return(value);
+              return { done: true, value };
             },
             async throw(error?: unknown): Promise<IteratorResult<unknown>> {
-              if (typeof innerIterator?.throw === 'function') {
-                return innerIterator.throw(error);
-              }
+              if (innerIterator?.throw) return innerIterator.throw(error);
               throw error;
             },
           };
@@ -1027,7 +1287,14 @@ export function wrapOpencodeClient(
 
     async close(): Promise<void> {
       if (instanceDispose) {
-        await instanceDispose();
+        const result = await instanceDispose(
+          apiVersion === 'v2'
+            ? (instanceDirectory ? { directory: instanceDirectory } : undefined)
+            : (instanceDirectory
+                ? { query: { directory: instanceDirectory } }
+                : undefined),
+        );
+        throwIfSdkResultError(result, 'OpenCode instance.dispose failed');
       }
     },
   };
@@ -1095,6 +1362,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
   private readonly readyTimeoutMs: number;
 
+  private readonly eventInactivityTimeoutMs: number;
+
   private readonly loadSdkFn: () => Promise<OpenCodeSdk>;
 
   private readonly spawnProcess: SpawnProcessFn;
@@ -1106,6 +1375,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     timeoutMs: number,
   ) => Promise<string>;
 
+  private readonly managedServerTermGraceMs: number;
+
+  private readonly managedServerKillGraceMs: number;
+
   constructor(
     config: OpenCodeAdapterConfig = {},
     deps: OpenCodeAdapterDeps = {},
@@ -1113,10 +1386,20 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     this.mode = config.mode ?? 'managed';
     this.serverUrl = config.serverUrl ?? DEFAULT_MANAGED_URL;
     this.readyTimeoutMs = config.readyTimeoutMs ?? 5000;
+    this.eventInactivityTimeoutMs =
+      config.eventInactivityTimeoutMs ?? DEFAULT_EVENT_INACTIVITY_TIMEOUT_MS;
+    assertFinitePositiveTimeout(
+      'OpenCodeAdapter eventInactivityTimeoutMs',
+      this.eventInactivityTimeoutMs,
+    );
     this.loadSdkFn = deps.loadSdk ?? loadOpenCodeSdk;
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
     this.probeCliAvailability = deps.probeCliAvailability ?? defaultProbeCliAvailability;
     this.waitForServerReady = deps.waitForServerReady ?? defaultWaitForServerReady;
+    this.managedServerTermGraceMs =
+      deps.managedServerTermGraceMs ?? DEFAULT_MANAGED_SERVER_TERM_GRACE_MS;
+    this.managedServerKillGraceMs =
+      deps.managedServerKillGraceMs ?? DEFAULT_MANAGED_SERVER_KILL_GRACE_MS;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -1173,23 +1456,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
     let serverClosed = false;
-    let serverTerminationRequested = false;
     let serverExitPromise: Promise<ServerCloseInfo> | undefined;
     let serverExitInfo: ServerCloseInfo | undefined;
     let finishStreamWait: ((result: StreamWaitResult) => void) | undefined;
     let abortPermissionWait: (() => void) | undefined;
-
-    const terminateManagedServer = () => {
-      if (!serverProcess || serverClosed || serverTerminationRequested) {
-        return;
-      }
-      serverTerminationRequested = true;
-      try {
-        serverProcess.kill('SIGTERM');
-      } catch {
-        // ignore kill errors during shutdown
-      }
-    };
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
@@ -1200,6 +1470,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let accumulatedOutputTokens = 0;
     let accumulatedToolUses = 0;
     let accumulatedCost = 0;
+
+    const eventStreamController = new AbortController();
+    let resolveCallerAbort!: () => void;
+    const callerAbortPromise = new Promise<void>((resolve) => {
+      resolveCallerAbort = resolve;
+    });
+    let iterator: AsyncIterator<unknown> | undefined;
+    const returnActiveIterator = async (): Promise<void> => {
+      const activeIterator = iterator;
+      iterator = undefined;
+      if (!activeIterator?.return) return;
+
+      await maybeCallAsyncWithin(
+        () => Promise.resolve(activeIterator.return!()).then(() => {}),
+        ITERATOR_CLEANUP_TIMEOUT_MS,
+      );
+    };
 
     // OpenCode re-sends the whole ToolPart on every lifecycle transition
     // (pending → running → completed/error), so tool events must be
@@ -1218,33 +1505,21 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     const permissionRequestKey = (requestId: string) =>
       `${sessionId}\u0000${requestId}`;
 
-    // Own every cancellable SDK operation for this run. The caller's signal
-    // drives this controller, while adapter timeouts can also cancel the
-    // underlying HTTP/SSE work without mutating the caller's controller.
-    const runAbortController = new AbortController();
-    const abortRunIo = () => {
-      if (!runAbortController.signal.aborted) {
-        runAbortController.abort();
-      }
-    };
-    let abortListenerAttached = false;
-
     const onAbort = () => {
       abortRequested = true;
+      eventStreamController.abort();
+      resolveCallerAbort();
       finishStreamWait?.({ kind: 'abort' });
       abortPermissionWait?.();
-      abortRunIo();
     };
 
-    if (options?.abortSignal?.aborted) {
+    if (abortRequested) {
       onAbort();
     } else if (options?.abortSignal) {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
-      abortListenerAttached = true;
     }
 
     let client: OpenCodeClient | undefined;
-    let streamIterator: AsyncIterator<unknown> | undefined;
 
     try {
       if (this.mode === 'managed') {
@@ -1286,21 +1561,91 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode SDK client does not provide run()/query()');
       }
 
-      const runResult = await runFn({
+      if (abortRequested) {
+        throw new Error('OpenCode run aborted before prompt dispatch');
+      }
+
+      const runPromise = runFn({
         prompt,
         cwd: options?.cwd,
         model: options?.model,
-        signal: runAbortController.signal,
+        signal: eventStreamController.signal,
         ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(options?.resume ? { sessionId: options.resume } : {}),
         ...mappedPermissions,
       });
+      const runOutcomePromise = runPromise.then(
+        (value) => ({ kind: 'success' as const, value }),
+        (error: unknown) => ({ kind: 'failure' as const, error }),
+      );
+      let runOutcome = await Promise.race([
+        runOutcomePromise,
+        callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+      ]);
+      if (runOutcome.kind === 'caller_abort') {
+        let captureTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const captured = await Promise.race([
+            runOutcomePromise.then((outcome) => ({
+              kind: 'settled' as const,
+              outcome,
+            })),
+            new Promise<{ kind: 'timeout' }>((resolve) => {
+              captureTimer = setTimeout(
+                () => resolve({ kind: 'timeout' }),
+                ITERATOR_CLEANUP_TIMEOUT_MS,
+              );
+            }),
+          ]);
+          if (captured.kind === 'timeout') {
+            throw new Error('OpenCode run aborted during prompt dispatch');
+          }
+          runOutcome = captured.outcome;
+        } finally {
+          if (captureTimer) clearTimeout(captureTimer);
+        }
+      }
+      if (runOutcome.kind === 'failure') {
+        if (
+          runOutcome.error instanceof OpenCodePromptDispatchAbortError &&
+          runOutcome.error.sessionId
+        ) {
+          sessionId = runOutcome.error.sessionId;
+          backendProvidedSessionId = true;
+        }
+        throw runOutcome.error;
+      }
+      const runResult = runOutcome.value;
 
       const loadedId = loadSessionId(runResult);
       if (loadedId) {
         sessionId = loadedId;
         backendProvidedSessionId = true;
+      }
+      const stream = resolveEventStream(
+        client,
+        runResult,
+        eventStreamController.signal,
+      );
+      if (stream) {
+        iterator = stream[Symbol.asyncIterator]();
+      }
+      if (abortRequested) {
+        if (client.abortSession) {
+          await promiseSettlesWithin(
+            client.abortSession({
+              sessionId,
+              ...(options?.cwd ? { cwd: options.cwd } : {}),
+            }),
+            ITERATOR_CLEANUP_TIMEOUT_MS,
+          );
+        }
+        await returnActiveIterator();
+        throw new Error('OpenCode run aborted during prompt dispatch');
+      }
+      if (!stream || !iterator) {
+        throw new Error('OpenCode SDK client does not provide an SSE event stream');
       }
 
       if (!initYielded) {
@@ -1325,19 +1670,85 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         initYielded = true;
       }
 
-      const stream = resolveEventStream(
-        client,
-        runResult,
-        runAbortController.signal,
+      let lastRelevantActivityAt = performance.now();
+      let lastRelevantEvent = 'prompt.dispatched';
+      const controlTimeoutMs = Math.min(
+        MAX_STATUS_QUERY_TIMEOUT_MS,
+        this.eventInactivityTimeoutMs,
       );
-      if (!stream) {
-        throw new Error('OpenCode SDK client does not provide an SSE event stream');
-      }
+      type ControlOutcome<T> =
+        | { kind: 'success'; value: T }
+        | { kind: 'failure'; error: unknown }
+        | { kind: 'timeout' }
+        | { kind: 'caller_abort' };
 
-      streamIterator = stream[Symbol.asyncIterator]();
+      const runControlOperation = async <T>(
+        operation: () => Promise<T>,
+        raceCallerAbort: boolean,
+      ): Promise<ControlOutcome<T>> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<ControlOutcome<T>>((resolve) => {
+          timer = setTimeout(() => resolve({ kind: 'timeout' }), controlTimeoutMs);
+        });
+        const operationPromise = operation()
+          .then<ControlOutcome<T>>((value) => ({ kind: 'success', value }))
+          .catch<ControlOutcome<T>>((error: unknown) => ({
+            kind: 'failure',
+            error,
+          }));
+
+        try {
+          return await Promise.race([
+            operationPromise,
+            timeoutPromise,
+            ...(raceCallerAbort
+              ? [
+                  callerAbortPromise.then<ControlOutcome<T>>(() => ({
+                    kind: 'caller_abort',
+                  })),
+                ]
+              : []),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+
+      const abortActiveSession = (raceCallerAbort: boolean) =>
+        runControlOperation<void>(async () => {
+          if (!client?.abortSession) {
+            throw new Error('OpenCode SDK client does not provide session.abort()');
+          }
+          await client.abortSession({
+            sessionId,
+            ...(options?.cwd ? { cwd: options.cwd } : {}),
+          });
+        }, raceCallerAbort);
+
+      const describeControlOutcome = (outcome: ControlOutcome<unknown>): string => {
+        if (outcome.kind === 'success') return 'succeeded';
+        if (outcome.kind === 'failure') {
+          return `failed: ${errorMessage(outcome.error)}`;
+        }
+        if (outcome.kind === 'timeout') {
+          return `timed out after ${controlTimeoutMs}ms`;
+        }
+        return 'superseded by caller abort';
+      };
+
+      const accumulatedUsage = (): DonePayload['usage'] => ({
+        inputTokens: accumulatedInputTokens,
+        outputTokens: accumulatedOutputTokens,
+        toolUses: accumulatedToolUses,
+        ...(accumulatedCost > 0 ? { totalCostUsd: accumulatedCost } : {}),
+      });
 
       while (true) {
-        const nextPromise = streamIterator.next();
+        const nextPromise = iterator.next();
+        const inactivityTimer = createMonotonicInactivityTimer(
+          lastRelevantActivityAt,
+          this.eventInactivityTimeoutMs,
+        );
 
         // Keep one replaceable control waiter rather than adding a fresh
         // reaction to run-lifetime abort/server promises for every SSE event.
@@ -1354,6 +1765,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           };
 
           finishStreamWait = finish;
+          inactivityTimer.promise.then(finish);
           nextPromise.then(
             (result) => finish({ kind: 'event', result }),
             (error: unknown) => finish({ kind: 'stream_error', error }),
@@ -1367,13 +1779,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             finish({ kind: 'server_exit', exit: serverExitInfo });
           }
         });
+        inactivityTimer.cancel();
 
-        if (raceResult.kind === 'stream_error') {
-          throw raceResult.error;
-        }
-
-        if (raceResult.kind === 'abort') {
+        if (raceResult.kind === 'abort' || abortRequested) {
           nextPromise.catch(() => {});
+          await abortActiveSession(false);
           yield createEvent(
             'done',
             AGENT,
@@ -1386,6 +1796,262 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 options?.resume,
               ),
               usage: { ...DEFAULT_DONE_USAGE },
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          break;
+        }
+
+        if (raceResult.kind === 'stream_error') {
+          throw raceResult.error;
+        }
+
+        if (raceResult.kind === 'inactivity') {
+          nextPromise.catch(() => {});
+          eventStreamController.abort();
+          const elapsedInactivityMs = Math.max(
+            0,
+            Math.round(performance.now() - lastRelevantActivityAt),
+          );
+          const serverState =
+            this.mode === 'external'
+              ? 'external'
+              : serverClosed
+                ? 'closed'
+                : 'running';
+          const diagnosticBase =
+            `OpenCode event inactivity deadline expired: session=${sessionId}; ` +
+            `lastRelevantEvent=${lastRelevantEvent}; ` +
+            `inactiveMs=${elapsedInactivityMs}; ` +
+            `deadlineMs=${this.eventInactivityTimeoutMs}; ` +
+            `serverMode=${this.mode}; serverState=${serverState}`;
+
+          const statusOutcome = await runControlOperation(
+            async () => {
+              if (!client?.getSessionStatus) {
+                throw new Error(
+                  'OpenCode SDK client does not provide session.status()',
+                );
+              }
+              return client.getSessionStatus({
+                sessionId,
+                ...(options?.cwd ? { cwd: options.cwd } : {}),
+              });
+            },
+            true,
+          );
+
+          if (statusOutcome.kind === 'caller_abort' || abortRequested) {
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          if (statusOutcome.kind !== 'success') {
+            const abortOutcome = await abortActiveSession(true);
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_INACTIVITY_STATUS_QUERY_FAILED',
+                message:
+                  `${diagnosticBase}; statusQuery=` +
+                  `${describeControlOutcome(statusOutcome)}; ` +
+                  `sessionAbort=${describeControlOutcome(abortOutcome)}`,
+                recoverable: false,
+              },
+              sessionId,
+            );
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'error',
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const queriedStatus = statusOutcome.value;
+          const queriedStatusType = sessionStatusType(queriedStatus);
+          if (queriedStatusType === 'idle') {
+            const recoveredStatus = sessionErrorObserved ? 'error' : 'success';
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'OPENCODE_INACTIVITY_IDLE_RECOVERED',
+                message:
+                  `${diagnosticBase}; queriedSessionState=` +
+                  diagnosticJson(queriedStatus),
+                recoverable: true,
+              },
+              sessionId,
+            );
+            if (abortRequested) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: recoveredStatus,
+                ...doneResumeTokenPayload(
+                  recoveredStatus,
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: accumulatedUsage(),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          const abortOutcome = await abortActiveSession(true);
+          if (abortRequested) {
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
+          yield createEvent(
+            'error',
+            AGENT,
+            {
+              code: 'OPENCODE_INACTIVITY_TIMEOUT',
+              message:
+                `${diagnosticBase}; queriedSessionState=` +
+                `${diagnosticJson(queriedStatus)}; ` +
+                `sessionAbort=${describeControlOutcome(abortOutcome)}`,
+              recoverable: false,
+            },
+            sessionId,
+          );
+          if (abortRequested) {
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'error',
+              usage: accumulatedUsage(),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1461,11 +2127,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
         // Use strict extractor — only explicit session fields, no generic `id`
         // that could match message/event IDs and cause false filtering.
+        const canonicalSessionInfoId =
+          eventType === 'session.created' ||
+          eventType === 'session.updated' ||
+          eventType === 'session.deleted'
+            ? asString(asRecord(event.info).id)
+            : undefined;
         const eventSessionId =
           loadStreamSessionId(event) ??
           loadStreamSessionId(event.data) ??
+          loadStreamSessionId(event.info) ??
           loadStreamSessionId(event.message) ??
-          loadStreamSessionId(asRecord(event.part));
+          loadStreamSessionId(asRecord(event.part)) ??
+          canonicalSessionInfoId;
 
         if (eventSessionId) {
           if (eventSessionId !== sessionId) {
@@ -1475,6 +2149,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           // to this session — foreign events must not flip the flag.
           backendProvidedSessionId = true;
         }
+
+        // OPENCODE-018: only activity that survives current-session
+        // filtering resets the liveness deadline. Explicitly foreign traffic
+        // on the global multiplexed stream must not keep this run alive.
+        lastRelevantActivityAt = performance.now();
+        lastRelevantEvent = eventType;
 
         if (eventType === 'message.part.delta') {
           const delta = asString(event.delta);
@@ -1660,7 +2340,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             asString(event.toolName) ??
             'unknown_tool';
           const requestId =
-            asString(permission.requestID) ?? asString(permission.id);
+            asString(permission.requestID) ??
+            asString(permission.id) ??
+            asString(event.requestID);
           const toolUseId =
             asString(asRecord(permission.tool).callID) ??
             asString(permission.callID) ??
@@ -1708,7 +2390,50 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             );
           }
 
+          if (abortRequested || options?.abortSignal?.aborted) {
+            await abortActiveSession(false);
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: { ...DEFAULT_DONE_USAGE },
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
+
           if (!requestId) {
+            await abortActiveSession(true);
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
             yield createEvent(
               'error',
               AGENT,
@@ -1724,12 +2449,32 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               },
               sessionId,
             );
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
             yield createEvent(
               'done',
               AGENT,
               {
                 status: 'error',
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -1750,7 +2495,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 permission: toolName,
                 decision,
                 ...(options?.cwd ? { cwd: options.cwd } : {}),
-                signal: runAbortController.signal,
+                signal: eventStreamController.signal,
               })
             : Promise.reject(
                 new Error('SDK client permission reply API not available'),
@@ -1810,6 +2555,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             options?.abortSignal?.aborted
           ) {
             replyPromise.catch(() => {});
+            await abortActiveSession(false);
             yield createEvent(
               'done',
               AGENT,
@@ -1832,12 +2578,32 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
           if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
             if (replyRace.kind === 'timeout') {
-              // Stop the actual reply request and the paired SSE transport;
-              // returning an error without cancelling them would preserve the
-              // external-mode leak this timeout is meant to bound.
-              abortRunIo();
+              // Cancel the actual response request and paired SSE transport;
+              // the caller's abort state remains distinct from this failure.
+              eventStreamController.abort();
             }
             replyPromise.catch(() => {});
+            await abortActiveSession(true);
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
             const detail =
               replyRace.kind === 'timeout'
                 ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
@@ -1858,12 +2624,32 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               },
               sessionId,
             );
+            if (abortRequested || options?.abortSignal?.aborted) {
+              yield createEvent(
+                'done',
+                AGENT,
+                {
+                  status: 'interrupted',
+                  ...doneResumeTokenPayload(
+                    'interrupted',
+                    backendProvidedSessionId,
+                    sessionId,
+                    options?.resume,
+                  ),
+                  usage: { ...DEFAULT_DONE_USAGE },
+                  durationMs: Date.now() - startTime,
+                },
+                sessionId,
+              );
+              doneYielded = true;
+              break;
+            }
             yield createEvent(
               'done',
               AGENT,
               {
                 status: 'error',
-                usage: { ...DEFAULT_DONE_USAGE },
+                usage: accumulatedUsage(),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2135,53 +2921,62 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } finally {
-      if (options?.abortSignal && abortListenerAttached) {
+      if (options?.abortSignal && !options.abortSignal.aborted) {
         options.abortSignal.removeEventListener('abort', onAbort);
       }
 
-      abortRunIo();
-      const pendingServerExit =
-        serverProcess && !serverClosed ? serverExitPromise : undefined;
+      eventStreamController.abort();
 
-      // A managed server must not remain alive behind a stuck SDK dispose.
-      // Request its termination before invoking any client cleanup hooks.
-      terminateManagedServer();
+      // The managed control plane must begin shutting down before any SDK
+      // cleanup wait. Each SDK cleanup attempt is independently bounded, so
+      // a rejected or non-settling hook cannot suppress the others or child
+      // termination.
+      if (serverProcess && !serverClosed) {
+        try {
+          serverProcess.kill('SIGTERM');
+        } catch {
+          // ignore cleanup errors
+        }
+      }
 
-      const activeIterator = streamIterator;
-      const iteratorReturn =
-        typeof activeIterator?.return === 'function'
-          ? activeIterator.return.bind(activeIterator)
-          : undefined;
-      const sdkCleanup = settleAllWithin(
-        [
-          maybeCallAsync(iteratorReturn),
-          maybeCallAsync(client?.close?.bind(client)),
-          maybeCallAsync(client?.shutdown?.bind(client)),
-        ],
-        SDK_CLEANUP_TIMEOUT_MS,
-      );
-      const serverCleanup = pendingServerExit
-        ? (async () => {
-            await settleAllWithin(
-              [pendingServerExit],
-              MANAGED_SERVER_SHUTDOWN_TIMEOUT_MS,
+      const sdkCleanup = Promise.all([
+        returnActiveIterator(),
+        maybeCallAsyncWithin(
+          client?.close?.bind(client),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        ),
+        maybeCallAsyncWithin(
+          client?.shutdown?.bind(client),
+          ITERATOR_CLEANUP_TIMEOUT_MS,
+        ),
+      ]).then(() => {});
+      const termCleanup =
+        serverProcess && !serverClosed && serverExitPromise
+          ? promiseSettlesWithin(
+              serverExitPromise,
+              this.managedServerTermGraceMs,
+            ).then(() => {})
+          : Promise.resolve();
+
+      await Promise.all([sdkCleanup, termCleanup]);
+
+      if (serverProcess && !serverClosed) {
+        if (!serverClosed) {
+          try {
+            serverProcess.kill('SIGKILL');
+          } catch {
+            // The adapter owns this child, but there is no stronger process
+            // primitive after a failed SIGKILL attempt.
+          }
+
+          if (serverExitPromise) {
+            await promiseSettlesWithin(
+              serverExitPromise,
+              this.managedServerKillGraceMs,
             );
-            if (serverClosed || !serverProcess) return;
-
-            try {
-              serverProcess.kill('SIGKILL');
-            } catch {
-              // The bounded close wait below still prevents teardown from
-              // hanging if the process rejects the escalation request.
-            }
-            await settleAllWithin(
-              [pendingServerExit],
-              MANAGED_SERVER_KILL_TIMEOUT_MS,
-            );
-          })()
-        : Promise.resolve();
-
-      await Promise.all([sdkCleanup, serverCleanup]);
+          }
+        }
+      }
     }
   }
 }
