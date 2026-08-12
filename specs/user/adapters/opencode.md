@@ -51,6 +51,9 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | Errors | `error` |
 
 Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
+Those five counters are already the disjoint partition of [ENG-028](../engine.md#eng-028), so where step accounting is complete the adapter shall publish both breakdown sides from their step-wise sums, mapping `tokens.input` to `input`, `tokens.cache.read` to `cacheRead`, `tokens.cache.write` to `cacheWrite`, `tokens.output` to `output`, and `tokens.reasoning` to `reasoning`.
+The adapter shall not consume `tokens.total`, which OpenCode passes through from the provider and which is therefore not guaranteed to equal the sum of the five counters.
+A component OpenCode reports as a constant zero for a given provider, such as reasoning on providers that do not separate it, is indistinguishable from a measured zero because the step part does not identify the provider; the adapter shall publish it as measured rather than infer absence.
 
 ### OPENCODE-016
 

@@ -7250,6 +7250,57 @@ describe('OpenCode SSE event structure', () => {
     expect(payload.usage.inputTokens).toBe(200);
     expect(payload.usage.outputTokens).toBe(110);
     expect(payload.usage.totalCostUsd).toBe(0.005);
+    // OpenCode's counters are already the disjoint partition, so both sides
+    // are published and each sums exactly to its aggregate.
+    expect(payload.usage.breakdown).toEqual({
+      input: 180,
+      cacheRead: 14,
+      cacheWrite: 6,
+      output: 80,
+      reasoning: 30,
+    });
+    const { input, cacheRead, cacheWrite, output, reasoning } =
+      payload.usage.breakdown!;
+    expect(input! + cacheRead! + cacheWrite!).toBe(payload.usage.inputTokens);
+    expect(output! + reasoning!).toBe(payload.usage.outputTokens);
+  });
+
+  it('publishes no breakdown when a step counter is malformed', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'partial-usage-session' },
+          events: [
+            {
+              type: 'message.part.updated',
+              properties: {
+                part: {
+                  sessionID: 'partial-usage-session',
+                  type: 'step-finish',
+                  tokens: {
+                    input: 10,
+                    output: 5,
+                    reasoning: 1.5,
+                    cache: { read: 0, write: 0 },
+                  },
+                },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'partial-usage-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const payload = events.find((event) => event.type === 'done')!
+      .payload as DonePayload;
+    expect(payload.usage.tokenAvailability).toBe('unavailable');
+    expect(payload.usage).not.toHaveProperty('breakdown');
   });
 
   it('treats an explicitly reported zero-valued step as available usage', async () => {
@@ -7291,6 +7342,15 @@ describe('OpenCode SSE event structure', () => {
       inputTokens: 0,
       outputTokens: 0,
       toolUses: 0,
+      // Every component was measured as zero, so the partition is published:
+      // a present zero is a measurement, not a stand-in for absence.
+      breakdown: {
+        input: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        reasoning: 0,
+      },
     });
   });
 

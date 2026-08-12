@@ -34,7 +34,11 @@ import {
   isCliRuntimeSupported,
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
-import { isUsageRecord, readUsageCounter } from './usage.js';
+import {
+  buildTokenBreakdown,
+  isUsageRecord,
+  readUsageCounter,
+} from './usage.js';
 
 const AGENT = 'opencode' as const;
 const DEFAULT_MANAGED_URL = 'http://127.0.0.1:0';
@@ -1759,6 +1763,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let accumulatedCost = 0;
     let accumulatedTokenUsageObserved = false;
     let accumulatedTokenUsageComplete = true;
+    const accumulatedComponents = {
+      input: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      output: 0,
+      reasoning: 0,
+    };
 
     const eventStreamController = new AbortController();
     let resolveCallerAbort!: () => void;
@@ -3028,6 +3039,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             const cacheReadTokens = readUsageCounter(cache, ['read'], true);
             const cacheWriteTokens = readUsageCounter(cache, ['write'], true);
             accumulatedTokenUsageObserved = true;
+            // OpenCode already normalizes to the DR-014 frame: `input` is
+            // cache-exclusive and `output` excludes `reasoning`, so the five
+            // counters are the partition and the aggregates are their sums.
+            accumulatedComponents.input += inputTokens.value;
+            accumulatedComponents.cacheRead += cacheReadTokens.value;
+            accumulatedComponents.cacheWrite += cacheWriteTokens.value;
+            accumulatedComponents.output += outputTokens.value;
+            accumulatedComponents.reasoning += reasoningTokens.value;
             accumulatedInputTokens +=
               inputTokens.value +
               cacheReadTokens.value +
@@ -3568,17 +3587,29 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const eventTokenUsageObserved = hasOpenCodeEventTokenCounters(
             event.usage,
           );
+          const accumulatedReported =
+            accumulatedTokenUsageObserved && accumulatedTokenUsageComplete;
+          // OPENCODE-005: only complete step accounting yields a partition;
+          // ENG-027 suppresses the breakdown on unavailable accounting.
+          const accumulatedBreakdown = accumulatedReported
+            ? buildTokenBreakdown(
+                {
+                  inputTokens: accumulatedInputTokens,
+                  outputTokens: accumulatedOutputTokens,
+                },
+                accumulatedComponents,
+              )
+            : undefined;
           const accumulatedEventUsage: DonePayload['usage'] = {
-            tokenAvailability:
-              accumulatedTokenUsageObserved &&
-              accumulatedTokenUsageComplete
-                ? 'reported'
-                : 'unavailable',
+            tokenAvailability: accumulatedReported ? 'reported' : 'unavailable',
             inputTokens: accumulatedInputTokens,
             outputTokens: accumulatedOutputTokens,
             toolUses: Math.max(eventUsage.toolUses, accumulatedToolUses),
             ...(accumulatedCost > 0
               ? { totalCostUsd: accumulatedCost }
+              : {}),
+            ...(accumulatedBreakdown
+              ? { breakdown: accumulatedBreakdown }
               : {}),
           };
           const usage: DonePayload['usage'] = eventTokenUsageObserved
