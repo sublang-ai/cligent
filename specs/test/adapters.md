@@ -142,9 +142,12 @@ error `done`; an omitted status-map entry shall exercise OpenCode's idle
 representation; and a rejected or non-settling status query
 shall make a bounded abort attempt and produce one status-query diagnostic plus
 one error `done`.
-Given current-session progress events whose spacing stays below the deadline,
-the adapter shall not query status, while repeated events explicitly tagged
-for another session and repeated untagged workspace-global events shall not
+Given root-session or run-owned descendant progress events whose spacing stays
+below the deadline, the adapter shall not query status. Descendant lifecycle,
+conversation, and permission events shall each restart the deadline while
+ordinary descendant output remains filtered and permission control retains its
+native descendant-session routing. Repeated events explicitly tagged for
+another session and repeated untagged workspace-global events shall not
 postpone the current session's deadline. When a consumer pauses after a
 normalized event for longer than the configured deadline, that downstream
 backpressure shall not consume the provider-silence budget, and a buffered
@@ -310,6 +313,10 @@ The Codex adapter shall set `DonePayload.resumeToken` to the thread identifier p
 Verifies: [OPENCODE-011](../user/adapters/opencode.md#opencode-011)
 
 The OpenCode adapter shall set `DonePayload.resumeToken` to the session identifier per [OPENCODE-011](../user/adapters/opencode.md#opencode-011).
+Given a caller-supplied resume identifier that OpenCode rejects during
+pre-prompt lineage discovery, the error `done` shall omit `resumeToken`, and a
+subsequent `Cligent.run()` shall create a fresh session rather than retrying the
+stale identifier.
 
 ### TADAPT-013
 Verifies: [GEMINI-009](../user/adapters/gemini.md#gemini-009)

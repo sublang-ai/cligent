@@ -46,11 +46,14 @@ Complete
 - [x] Review follow-up separates root-only output from run-owned descendant
       permission control, including resumed child discovery and child-scoped
       replies.
+- [x] Review follow-up keeps a caller-supplied resume identifier unconfirmed
+      when OpenCode rejects its lineage before prompt dispatch, allowing
+      `Cligent` to clear stale continuity.
 
 ## Tasks
 
 Each task below is one-commit size.
-Tasks 1–3 describe the original cohesive implementation; Tasks 4–5 are
+Tasks 1–3 describe the original cohesive implementation; Tasks 4–6 are
 separate review follow-ups.
 Build, typecheck, lint, and unit verification apply at each completed change
 boundary.
@@ -76,6 +79,10 @@ boundary.
    Preserve root-only output filtering while tracking the root's owned session
    lineage, discover descendants before resumed prompts, and correlate replies
    with the native descendant session identifier.
+6. [x] **Reject stale resumed continuity.**
+   Treat only a freshly created or otherwise observed backend session as
+   provider-confirmed, so a failed pre-dispatch resume omits its stale token
+   and the next `Cligent` run can create a new session.
 
 ## Acceptance criteria
 
@@ -93,6 +100,9 @@ boundary.
 - Root and run-owned descendant requests are handled while unrelated session
   trees are ignored; concurrent requests remain correlated by native session
   and request identifier, and descendant content remains filtered.
+- A caller-supplied resume identifier rejected during pre-prompt lineage
+  discovery is not returned by the non-interrupted error terminal unless
+  OpenCode independently confirmed it during that run.
 - Streaming any number of SSE events leaves only a constant number of
   reactions on run-lifetime controls; completed events do not accumulate
   abort or server-exit reactions.

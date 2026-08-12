@@ -154,7 +154,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned session-tree liveness and descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 

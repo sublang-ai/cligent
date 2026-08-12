@@ -27,9 +27,11 @@ Complete
       oversized host timers, and forced managed-child termination.
 - [x] A credential-free real managed-server acceptance probe exercises the
       vendor status endpoint and resource-cleanup seam without a long wait.
-- [x] Review follow-up measures only active SSE wait time, excludes untagged
-      global traffic from progress, and delivers interrupted continuity within
-      the engine abort drain while retaining bounded cleanup ownership.
+- [x] Review follow-up measures only active SSE wait time, counts every
+      explicitly tagged event from the run-owned session tree, excludes
+      untagged global traffic from progress, preserves root-only output, and
+      delivers interrupted continuity within the engine abort drain while
+      retaining bounded cleanup ownership.
 
 ## Tasks
 
@@ -47,14 +49,19 @@ Complete
        Carry a provider-wait silence budget across non-relevant traffic, pause it
        during downstream backpressure, and initiate session cancellation before
        promptly emitting a resumable interrupted terminal.
+5. [x] **Separate liveness ownership from output scope.**
+       Restart the silence budget for explicitly tagged progress anywhere in
+       the run-owned session tree without emitting descendant conversation, and
+       pin retained bounded cancellation after interrupted terminal delivery.
 
 ## Acceptance criteria
 
 - A permanently pending stream terminates within its configured inactivity
   deadline plus the bounded status/abort cleanup interval.
-- Current-session and run-owned descendant control progress restarts the
-  deadline; explicitly foreign and untagged global traffic does not, and
-  downstream backpressure consumes none of the provider-wait budget.
+- Explicitly tagged root-session and run-owned descendant progress restarts the
+  deadline without widening root-only output; explicitly foreign and untagged
+  global traffic does not, and downstream backpressure consumes none of the
+  provider-wait budget.
 - Idle recovery, busy/retry abort, and status-query failure each emit the
   diagnostics and single terminal outcome required by
   [OPENCODE-018](../user/adapters/opencode.md#opencode-018).

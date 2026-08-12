@@ -2879,6 +2879,106 @@ describe('OpenCodeAdapter', () => {
       expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
     });
 
+    it('counts owned descendant progress without emitting child output', async () => {
+      vi.useFakeTimers();
+      try {
+        let statusCalls = 0;
+        let abortCalls = 0;
+        const replies: Array<{ sessionId: string; requestId: string }> = [];
+        const delay = () =>
+          new Promise<void>((resolve) => setTimeout(resolve, 20));
+        const adapter = new OpenCodeAdapter(
+          {
+            mode: 'external',
+            serverUrl: 'http://opencode.local:7777',
+            eventInactivityTimeoutMs: 30,
+          },
+          {
+            loadSdk: makeLoader({
+              runResult: { sessionId: 'owned-root' },
+              statusResult: { type: 'busy' },
+              eventStreamFactory: async function* () {
+                await delay();
+                yield {
+                  type: 'session.created',
+                  properties: {
+                    sessionID: 'owned-child',
+                    info: { id: 'owned-child', parentID: 'owned-root' },
+                  },
+                };
+                await delay();
+                yield {
+                  type: 'message.part.updated',
+                  properties: {
+                    sessionID: 'owned-child',
+                    part: { type: 'text', text: 'hidden child progress' },
+                  },
+                };
+                await delay();
+                yield {
+                  type: 'permission.asked',
+                  properties: {
+                    id: 'owned-child-request',
+                    sessionID: 'owned-child',
+                    permission: 'doom_loop',
+                    patterns: ['*'],
+                    metadata: {},
+                    always: [],
+                  },
+                };
+                await delay();
+                yield {
+                  type: 'session.idle',
+                  properties: { sessionID: 'owned-root' },
+                };
+              },
+              onGetSessionStatus() {
+                statusCalls++;
+              },
+              onAbortSession() {
+                abortCalls++;
+              },
+              onReplyPermission(options) {
+                replies.push({
+                  sessionId: options.sessionId,
+                  requestId: options.requestId,
+                });
+              },
+            }),
+          },
+        );
+
+        const eventsPromise = collect(
+          adapter.run('owned descendant activity', {
+            permissions: { mode: 'auto' },
+          }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(80);
+        const events = await eventsPromise;
+
+        expect(statusCalls).toBe(0);
+        expect(abortCalls).toBe(0);
+        expect(replies).toEqual([
+          {
+            sessionId: 'owned-child',
+            requestId: 'owned-child-request',
+          },
+        ]);
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'opencode:permission_decision',
+          'done',
+        ]);
+        expect(events[1]).toMatchObject({
+          payload: { nativeSessionId: 'owned-child' },
+        });
+        expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('chunks deadlines beyond the Node timer limit without expiring early', async () => {
       let statusCalls = 0;
       const adapter = new OpenCodeAdapter(
@@ -3587,16 +3687,9 @@ describe('OpenCodeAdapter', () => {
     it('gives caller abort precedence over a co-ready stream rejection', async () => {
       const controller = new AbortController();
       const order: string[] = [];
-      let resolveSessionAbort!: () => void;
       let markSessionAbortStarted!: () => void;
       const sessionAbortStarted = new Promise<void>((resolve) => {
         markSessionAbortStarted = resolve;
-      });
-      const sessionAbortSettled = new Promise<void>((resolve) => {
-        resolveSessionAbort = () => {
-          order.push('session-abort-settled');
-          resolve();
-        };
       });
       const adapter = new OpenCodeAdapter(
         {
@@ -3624,7 +3717,7 @@ describe('OpenCodeAdapter', () => {
             async onAbortSession() {
               order.push('session-abort-started');
               markSessionAbortStarted();
-              await sessionAbortSettled;
+              await new Promise<void>(() => {});
             },
           }),
         },
@@ -3649,14 +3742,25 @@ describe('OpenCodeAdapter', () => {
       });
       expect(order).toEqual(['session-abort-started', 'interrupted-done']);
 
-      resolveSessionAbort();
-      const complete = await stream.next();
-      expect(complete.done).toBe(true);
-      expect(order).toEqual([
-        'session-abort-started',
-        'interrupted-done',
-        'session-abort-settled',
-      ]);
+      vi.useFakeTimers();
+      try {
+        let cleanupSettled = false;
+        const completionPromise = stream.next().then((result) => {
+          cleanupSettled = true;
+          return result;
+        });
+        await vi.advanceTimersByTimeAsync(249);
+        expect(cleanupSettled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(cleanupSettled).toBe(true);
+        expect((await completionPromise).done).toBe(true);
+        expect(order).toEqual([
+          'session-abort-started',
+          'interrupted-done',
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('flushes queued assistant output when abort follows a stream rejection', async () => {
@@ -4311,6 +4415,70 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(
       (capturedChildrenArgs as { signal?: AbortSignal }).signal,
     ).toBeInstanceOf(AbortSignal);
+  });
+
+  it('clears an unconfirmed stale resume before the next run', async () => {
+    let createCalls = 0;
+    const childLookups: string[] = [];
+    const promptTargets: string[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://v1.local:7000' },
+      {
+        loadSdk: makeV1Loader({
+          createResult: { id: 'fresh-session' },
+          childrenResult: {
+            error: { data: { message: 'session not found' } },
+          },
+          subscribeResult: {
+            stream: (async function* () {
+              yield {
+                type: 'session.idle',
+                sessionId: 'fresh-session',
+              };
+            })(),
+          },
+          onCreateSession() {
+            createCalls++;
+          },
+          onChildren(args) {
+            childLookups.push(
+              (args as { path: { id: string } }).path.id,
+            );
+          },
+          onPrompt(args) {
+            promptTargets.push(
+              (args as { path: { id: string } }).path.id,
+            );
+          },
+        }),
+      },
+    );
+    const agent = new Cligent(adapter);
+
+    const rejectedResume = await collect(
+      agent.run('resume stale session', { resume: 'stale-session' }),
+    );
+    expect(rejectedResume.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(rejectedResume[1]?.payload).toMatchObject({
+      code: 'OPENCODE_STREAM_ERROR',
+      message: expect.stringContaining('session not found'),
+    });
+    expect(rejectedResume.at(-1)?.payload).not.toHaveProperty('resumeToken');
+    expect(agent.resumeToken).toBeUndefined();
+
+    const freshRun = await collect(agent.run('start fresh session'));
+    expect(childLookups).toEqual(['stale-session']);
+    expect(createCalls).toBe(1);
+    expect(promptTargets).toEqual(['fresh-session']);
+    expect(freshRun.at(-1)?.payload).toMatchObject({
+      status: 'success',
+      resumeToken: 'fresh-session',
+    });
+    expect(agent.resumeToken).toBe('fresh-session');
   });
 
   it('snapshots a resumed v2 session lineage before prompting', async () => {

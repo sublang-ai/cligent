@@ -1126,7 +1126,7 @@ export function wrapOpencodeClient(
       let rawIteratorTransferred = false;
       let events: AsyncIterable<unknown> | undefined;
       const ownedSessionIds = new Set<string>();
-      const observeSessionId = options.onSessionId;
+      const observeCreatedSessionId = options.onCreatedSessionId;
       const observeSessionAbort = options.onSessionAbortStarted;
       const abortKnownSession = (): Promise<void> => {
         if (!sessionId) return Promise.resolve();
@@ -1281,12 +1281,13 @@ export function wrapOpencodeClient(
           );
           throwIfSdkResultError(created, 'OpenCode session.create failed');
           sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
+          if (sessionId && typeof observeCreatedSessionId === 'function') {
+            observeCreatedSessionId(sessionId);
+          }
         }
 
         if (!sessionId) {
           sessionId = generateSessionId();
-        } else if (typeof observeSessionId === 'function') {
-          observeSessionId(sessionId);
         }
         ownedSessionIds.add(sessionId);
 
@@ -1748,7 +1749,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let backendProvidedSessionId = false;
     let sessionAbortAttempted = false;
     let sessionAbortPromise: Promise<void> | undefined;
-    const permissionSessionIds = new Set<string>();
+    const ownedSessionIds = new Set<string>();
 
     // Accumulate usage from step-finish parts (OpenCode's session.idle
     // event doesn't carry usage data).
@@ -1803,7 +1804,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       requestId: string | undefined,
     ): string => {
       if (eventSessionId || !requestId) return eventSessionId ?? sessionId;
-      for (const ownedSessionId of permissionSessionIds) {
+      for (const ownedSessionId of ownedSessionIds) {
         const requestKey = permissionRequestKey(ownedSessionId, requestId);
         if (
           permissionRequests.has(requestKey) ||
@@ -2084,12 +2085,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode run aborted before prompt dispatch');
       }
 
-      const observeRunSessionId = (observedSessionId: unknown) => {
+      const observeCreatedSessionId = (observedSessionId: unknown) => {
         const observed = asString(observedSessionId);
         if (!observed) return;
         sessionId = observed;
         backendProvidedSessionId = true;
-        permissionSessionIds.add(observed);
+        ownedSessionIds.add(observed);
       };
       const observeRunSessionAbort = (abortPromise: unknown) => {
         sessionAbortAttempted = true;
@@ -2102,7 +2103,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         cwd: options?.cwd,
         model: options?.model,
         signal: eventStreamController.signal,
-        onSessionId: observeRunSessionId,
+        onCreatedSessionId: observeCreatedSessionId,
         onSessionAbortStarted: observeRunSessionAbort,
         lineageDiscoveryTimeoutMs: Math.min(
           MAX_STATUS_QUERY_TIMEOUT_MS,
@@ -2163,11 +2164,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         sessionId = loadedId;
         backendProvidedSessionId = true;
       }
-      permissionSessionIds.add(sessionId);
+      ownedSessionIds.add(sessionId);
       for (const ownedSessionId of asStringArray(
         asRecord(runResult).ownedSessionIds,
       )) {
-        permissionSessionIds.add(ownedSessionId);
+        ownedSessionIds.add(ownedSessionId);
       }
       const stream = resolveEventStream(
         client,
@@ -2728,9 +2729,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           eventType !== 'session.deleted' &&
           lifecycleSessionId &&
           lifecycleParentId &&
-          permissionSessionIds.has(lifecycleParentId)
+          ownedSessionIds.has(lifecycleParentId)
         ) {
-          permissionSessionIds.add(lifecycleSessionId);
+          ownedSessionIds.add(lifecycleSessionId);
         }
 
         const permissionControlEvent =
@@ -2740,12 +2741,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const ownedPermissionControl =
           permissionControlEvent &&
           eventSessionId !== undefined &&
-          permissionSessionIds.has(eventSessionId);
+          ownedSessionIds.has(eventSessionId);
         const ownedSessionLifecycle =
           sessionLifecycle &&
           lifecycleSessionId !== undefined &&
-          permissionSessionIds.has(lifecycleSessionId);
+          ownedSessionIds.has(lifecycleSessionId);
         const rootSessionEvent = eventSessionId === sessionId;
+        const ownedSessionEvent =
+          eventSessionId !== undefined && ownedSessionIds.has(eventSessionId);
+
+        // Session ownership and output visibility are distinct scopes. Every
+        // explicitly tagged event from the root or one of its descendants
+        // proves that this run is progressing, while ordinary descendant
+        // output remains filtered below.
+        if (ownedSessionEvent) {
+          remainingInactivityMs = this.eventInactivityTimeoutMs;
+          lastRelevantEvent = eventType;
+        }
 
         if (
           eventSessionId &&
@@ -2761,22 +2773,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           backendProvidedSessionId = true;
         }
 
-        // Output remains root-scoped, but permission control and lifecycle
-        // for descendants owned by this run are liveness-relevant. Untagged
-        // global events may still normalize per OPENCODE-006, but cannot
-        // prove that the active run progressed.
-        if (
-          rootSessionEvent ||
-          ownedPermissionControl ||
-          ownedSessionLifecycle
-        ) {
-          remainingInactivityMs = this.eventInactivityTimeoutMs;
-          lastRelevantEvent = eventType;
-        }
-
         if (ownedSessionLifecycle && !rootSessionEvent) {
           if (eventType === 'session.deleted' && lifecycleSessionId) {
-            permissionSessionIds.delete(lifecycleSessionId);
+            ownedSessionIds.delete(lifecycleSessionId);
           }
           continue;
         }

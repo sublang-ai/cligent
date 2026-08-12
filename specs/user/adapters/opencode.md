@@ -263,12 +263,13 @@ the host timer's maximum delay into safe chunks rather than expiring early.
 The deadline shall measure only time actively awaiting OpenCode's global SSE
 stream. Time spent normalizing an event or suspended while a downstream
 consumer processes a yielded event shall not consume the silence budget.
-An event explicitly tagged for the current root session, or a permission or
-session-lifecycle control event for a run-owned descendant per
-[OPENCODE-020](#opencode-020), shall restart the deadline. Tagged events from
-an unrelated session and untagged global pass-through events shall not restart
-it; pass-through eligibility under [OPENCODE-006](#opencode-006) is not proof
-of active-session progress. A buffered relevant event already available when
+An event explicitly tagged for the current root session or any run-owned
+descendant established per [OPENCODE-020](#opencode-020) shall restart the
+deadline. Descendant activity is liveness evidence only: ordinary child
+conversation remains filtered under [OPENCODE-006](#opencode-006). Tagged
+events from an unrelated session and untagged global pass-through events shall
+not restart it; pass-through eligibility is not proof of active-session
+progress. A buffered relevant event already available when
 the consumer resumes shall be processed before timeout recovery, while an
 always-ready stream of non-relevant events shall still exhaust the carried
 active-wait budget.
@@ -332,6 +333,11 @@ active session work on interruption or non-idle inactivity.
 
 When OpenCode provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md#session-continuity-via-resume-token).
 When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: the OpenCode-provided session identifier observed before the abort; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+A caller-supplied `AgentOptions.resume` value alone shall not count as an
+OpenCode-provided identifier on a non-interrupted failure. When OpenCode
+rejects that resumed session before prompt dispatch, the adapter shall omit
+`resumeToken` so `Cligent` clears the stale value per
+[ENG-006](../engine.md#eng-006).
 
 ## Options Mapping
 
