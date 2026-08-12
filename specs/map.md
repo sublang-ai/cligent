@@ -94,6 +94,7 @@ meta.md     The spec of specs
 | IR-042 | [042-opencode-permission-liveness.md](iterations/042-opencode-permission-liveness.md) | End OpenCode headless permission hangs with native auto replies and audit events, deterministic fail-closed handling, abort-safe cleanup, and rejection of unsafe prompt tool filters |
 | IR-043 | [043-opencode-event-inactivity.md](iterations/043-opencode-event-inactivity.md) | Give OpenCode runs a finite relevant-event deadline with status-based idle recovery and deterministic silent-session cleanup |
 | IR-044 | [044-opencode-message-roles.md](iterations/044-opencode-message-roles.md) | Correlate OpenCode message roles and suppress replayed user content |
+| IR-045 | [045-opencode-delta-classification.md](iterations/045-opencode-delta-classification.md) | Classify OpenCode deltas by part type and suppress duplicate reasoning streams |
 
 ## Packages
 
@@ -152,7 +153,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role-aware SSE normalization, `callID`-correlated tool lifecycle, native auto permission replies with fail-closed handling and audit events, explicit tool-list rejection, two modes, current-session filtering, finite relevant-event inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, native auto permission replies with fail-closed handling and audit events, explicit tool-list rejection, two modes, current-session filtering, finite relevant-event inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
@@ -171,7 +172,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode message-role, tool-list rejection, native-auto permission audit, `callID`-correlated tool lifecycle, permission-liveness, and finite-inactivity handling |
+| test | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode message-role, delta-type, tool-list rejection, native-auto permission audit, `callID`-correlated tool lifecycle, permission-liveness, and finite-inactivity handling |
 
 ### TMUX
 

@@ -55,6 +55,8 @@ type OpenCodeMode = 'managed' | 'external';
 type OpenCodeSdkApiVersion = 'v1' | 'v2';
 type OpenCodeVariant = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 type OpenCodeMessageRole = 'user' | 'assistant';
+type OpenCodeContentKind = 'text' | 'reasoning';
+type OpenCodePartKind = OpenCodeContentKind | 'other';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
 
 type SpawnProcessFn = (
@@ -337,10 +339,29 @@ function loadOpenCodePartMessageId(event: Record<string, unknown>): string | und
     asString(event.messageID) ??
     asString(event.messageId) ??
     asString(event.message_id) ??
+    asString(event.assistantMessageID) ??
+    asString(event.assistantMessageId) ??
     asString(part.messageID) ??
     asString(part.messageId) ??
     asString(part.message_id) ??
     asString(message.id)
+  );
+}
+
+function loadOpenCodePartId(event: Record<string, unknown>): string | undefined {
+  const part = asRecord(
+    event.part ?? asRecord(event.message).part ?? event.data,
+  );
+
+  return (
+    asString(event.partID) ??
+    asString(event.partId) ??
+    asString(event.part_id) ??
+    asString(event.textID) ??
+    asString(event.textId) ??
+    asString(event.reasoningID) ??
+    asString(event.reasoningId) ??
+    asString(part.id)
   );
 }
 
@@ -360,16 +381,14 @@ function loadOpenCodeUpdatedMessageId(
   );
 }
 
-function loadOpenCodeContentKind(
-  eventType: string,
+function loadOpenCodePartKind(
   event: Record<string, unknown>,
-): 'text' | 'reasoning' | undefined {
-  if (eventType === 'message.part.delta') return 'text';
-  if (eventType !== 'message.part.updated') return undefined;
-
+): OpenCodePartKind | undefined {
   const message = asRecord(event.message);
   const part = asRecord(event.part ?? message.part ?? event.data);
   const partType = asString(part.type)?.toLowerCase();
+
+  if (!partType) return undefined;
 
   if (
     partType === 'text' ||
@@ -382,35 +401,39 @@ function loadOpenCodeContentKind(
     return 'reasoning';
   }
 
-  return undefined;
+  return 'other';
+}
+
+function isOpenCodeDeltaEvent(eventType: string): boolean {
+  return (
+    eventType === 'message.part.delta' ||
+    eventType === 'session.next.text.delta' ||
+    eventType === 'session.next.reasoning.delta'
+  );
 }
 
 function normalizeOpenCodeContentEvent(
   eventType: string,
   event: Record<string, unknown>,
+  contentKind: OpenCodeContentKind,
   sessionId: string,
 ): AgentEvent | undefined {
-  if (eventType === 'message.part.delta') {
-    const delta = asString(event.delta);
+  const message = asRecord(event.message);
+  const part = asRecord(event.part ?? message.part ?? event.data);
+  const delta = asString(event.delta) ?? asString(part.delta);
+
+  // Canonical v1 message.part.updated places delta beside part. Canonical v2
+  // uses generic or explicitly typed delta events. Reasoning deltas are
+  // intentionally suppressed in favor of the settled thinking snapshots.
+  if (isOpenCodeDeltaEvent(eventType) || delta) {
+    if (contentKind === 'reasoning') return undefined;
+
     return delta
       ? createEvent('text_delta', AGENT, { delta }, sessionId)
       : undefined;
   }
 
-  const message = asRecord(event.message);
-  const part = asRecord(event.part ?? message.part ?? event.data);
-  const partType = asString(part.type)?.toLowerCase();
-
-  if (
-    partType === 'text' ||
-    partType === 'output_text' ||
-    partType === 'message_text'
-  ) {
-    const delta = asString(part.delta);
-    if (delta) {
-      return createEvent('text_delta', AGENT, { delta }, sessionId);
-    }
-
+  if (contentKind === 'text') {
     const content =
       asString(part.text) ??
       asString(part.content) ??
@@ -420,17 +443,13 @@ function normalizeOpenCodeContentEvent(
       : undefined;
   }
 
-  if (partType === 'thinking' || partType === 'reasoning') {
-    const summary =
-      asString(part.summary) ??
-      asString(part.text) ??
-      asString(part.content);
-    return summary
-      ? createEvent('thinking', AGENT, { summary }, sessionId)
-      : undefined;
-  }
-
-  return undefined;
+  const summary =
+    asString(part.summary) ??
+    asString(part.text) ??
+    asString(part.content);
+  return summary
+    ? createEvent('thinking', AGENT, { summary }, sessionId)
+    : undefined;
 }
 
 function toErrorPayload(message: unknown): {
@@ -1630,6 +1649,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // Part events can precede the message.updated envelope that supplies the
     // role, so content stays pending until its message role is known.
     const messageRoles = new Map<string, OpenCodeMessageRole>();
+    const partKinds = new Map<string, OpenCodePartKind>();
+    const partOwners = new Map<string, string>();
+    const settledPartSnapshots = new Map<string, Set<string>>();
+    const emittedTextDeltas = new Map<
+      string,
+      { chunks: string[]; length: number }
+    >();
     const pendingContentEvents: Array<
       | { removed: true }
       | {
@@ -1637,9 +1663,74 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           eventType: string;
           event: Record<string, unknown>;
           messageId?: string;
+          partId?: string;
+          contentKind?: OpenCodeContentKind;
         }
     > = [];
     let pendingContentHead = 0;
+
+    const normalizeContentOnce = (
+      eventType: string,
+      event: Record<string, unknown>,
+      contentKind: OpenCodeContentKind,
+    ): AgentEvent | undefined => {
+      const message = asRecord(event.message);
+      const part = asRecord(event.part ?? message.part ?? event.data);
+      const delta = asString(event.delta) ?? asString(part.delta);
+      const partId = loadOpenCodePartId(event);
+
+      if (eventType === 'message.part.updated') {
+        const hasDelta = delta !== undefined;
+
+        if (!hasDelta && partId) {
+          const content = contentKind === 'text'
+            ? asString(part.text) ??
+              asString(part.content) ??
+              asString(asRecord(part.content).text)
+            : asString(part.summary) ??
+              asString(part.text) ??
+              asString(part.content);
+
+          if (content) {
+            const signature = `${contentKind}\0${content}`;
+            const signatures = settledPartSnapshots.get(partId) ?? new Set();
+            if (signatures.has(signature)) {
+              return undefined;
+            }
+            signatures.add(signature);
+            settledPartSnapshots.set(partId, signatures);
+
+            // OpenCode commonly streams every text delta and then sends the
+            // same settled text snapshot. Cligent consumers concatenate text
+            // and text_delta, so forwarding both would duplicate the answer.
+            if (
+              contentKind === 'text' &&
+              emittedTextDeltas.get(partId)?.length === content.length &&
+              emittedTextDeltas.get(partId)?.chunks.join('') === content
+            ) {
+              return undefined;
+            }
+          }
+        }
+      }
+
+      const normalized = normalizeOpenCodeContentEvent(
+        eventType,
+        event,
+        contentKind,
+        sessionId,
+      );
+      if (normalized && contentKind === 'text' && partId && delta) {
+        const emitted = emittedTextDeltas.get(partId) ?? {
+          chunks: [],
+          length: 0,
+        };
+        emitted.chunks.push(delta);
+        emitted.length += delta.length;
+        emittedTextDeltas.set(partId, emitted);
+      }
+      return normalized;
+    };
 
     const drainPendingContent = (dropUnresolved = false): AgentEvent[] => {
       const normalizedEvents: AgentEvent[] = [];
@@ -1650,26 +1741,33 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           pendingContentHead++;
           continue;
         }
+        // Legacy event shapes without a message identifier have no role to
+        // correlate and retain their historical assistant behavior.
         const role = item.messageId
           ? messageRoles.get(item.messageId)
           : 'assistant';
+        const contentKind =
+          item.contentKind ??
+          (item.partId ? partKinds.get(item.partId) : undefined);
+        const knownDiscard = role === 'user' || contentKind === 'other';
 
-        if (!role && !dropUnresolved) break;
+        if (!knownDiscard && (!role || !contentKind) && !dropUnresolved) {
+          break;
+        }
+
         pendingContentHead++;
-
-        if (role === 'assistant') {
-          const normalized = normalizeOpenCodeContentEvent(
+        if (role === 'assistant' && contentKind && contentKind !== 'other') {
+          const normalized = normalizeContentOnce(
             item.eventType,
             item.event,
-            sessionId,
+            contentKind,
           );
           if (normalized) normalizedEvents.push(normalized);
         }
       }
 
-      // Incident captures contain tens of thousands of content events.
-      // Advance a cursor instead of shifting the array for each item, then
-      // compact occasionally to keep draining linear and memory bounded.
+      // Avoid O(n²) Array.shift() behavior on the 30k–44k-delta streams
+      // observed in the dogfooding evidence while bounding retained slots.
       if (
         pendingContentHead > 1024 &&
         pendingContentHead * 2 >= pendingContentEvents.length
@@ -1681,20 +1779,37 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       return normalizedEvents;
     };
 
-    const queueRoleAwareContent = (
+    const queueContent = (
       eventType: string,
       event: Record<string, unknown>,
+      contentKind?: OpenCodeContentKind,
     ): AgentEvent[] => {
       const messageId = loadOpenCodePartMessageId(event);
-      const inlineRole = loadOpenCodeMessageRole(event);
+      const partId = loadOpenCodePartId(event);
+      const explicitAssistantDelta =
+        eventType === 'session.next.text.delta' ||
+        eventType === 'session.next.reasoning.delta';
+      const inlineRole = explicitAssistantDelta
+        ? 'assistant'
+        : loadOpenCodeMessageRole(event);
+      const inlinePartKind = loadOpenCodePartKind(event);
+
       if (messageId && inlineRole) {
         messageRoles.set(messageId, inlineRole);
+      }
+      if (partId && inlinePartKind) {
+        partKinds.set(partId, inlinePartKind);
+      }
+      if (partId && messageId) {
+        partOwners.set(partId, messageId);
       }
 
       pendingContentEvents.push({
         eventType,
         event,
         ...(messageId ? { messageId } : {}),
+        ...(partId ? { partId } : {}),
+        ...(contentKind ? { contentKind } : {}),
       });
       return drainPendingContent();
     };
@@ -2401,6 +2516,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               }
             }
             messageRoles.delete(messageId);
+            for (const [partId, ownerId] of partOwners) {
+              if (ownerId !== messageId) continue;
+              partOwners.delete(partId);
+              partKinds.delete(partId);
+              settledPartSnapshots.delete(partId);
+              emittedTextDeltas.delete(partId);
+            }
           }
           for (const normalized of drainPendingContent()) {
             yield normalized;
@@ -2420,9 +2542,61 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           continue;
         }
 
-        const contentKind = loadOpenCodeContentKind(eventType, event);
-        if (contentKind) {
-          for (const normalized of queueRoleAwareContent(eventType, event)) {
+        if (eventType === 'message.part.removed') {
+          const partId = loadOpenCodePartId(event);
+          if (partId) {
+            for (
+              let index = pendingContentHead;
+              index < pendingContentEvents.length;
+              index++
+            ) {
+              const item = pendingContentEvents[index];
+              if (!item?.removed && item.partId === partId) {
+                pendingContentEvents[index] = { removed: true };
+              }
+            }
+            partKinds.delete(partId);
+            partOwners.delete(partId);
+            settledPartSnapshots.delete(partId);
+            emittedTextDeltas.delete(partId);
+          }
+          for (const normalized of drainPendingContent()) {
+            yield normalized;
+          }
+          continue;
+        }
+
+        if (
+          eventType === 'session.next.text.delta' ||
+          eventType === 'session.next.reasoning.delta'
+        ) {
+          const contentKind = eventType === 'session.next.text.delta'
+            ? 'text'
+            : 'reasoning';
+          for (const normalized of queueContent(
+            eventType,
+            event,
+            contentKind,
+          )) {
+            yield normalized;
+          }
+          continue;
+        }
+
+        if (eventType === 'message.part.delta') {
+          const partId = loadOpenCodePartId(event);
+          const inlinePartKind = loadOpenCodePartKind(event);
+          // A generic delta without either a correlatable part identifier or
+          // inline part metadata can never become classifiable. Fail closed
+          // immediately so malformed traffic cannot hold the ordered queue.
+          if (!partId && !inlinePartKind) continue;
+          if (inlinePartKind === 'other') continue;
+
+          for (const normalized of queueContent(
+            eventType,
+            event,
+            inlinePartKind,
+          )) {
             yield normalized;
           }
           continue;
@@ -2432,6 +2606,28 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const message = asRecord(event.message);
           const part = asRecord(event.part ?? message.part ?? event.data);
           const partType = asString(part.type)?.toLowerCase();
+          const partId = loadOpenCodePartId(event);
+          const messageId = loadOpenCodePartMessageId(event);
+          const partKind = loadOpenCodePartKind(event);
+
+          if (partId && partKind) {
+            partKinds.set(partId, partKind);
+            if (messageId) partOwners.set(partId, messageId);
+            for (const normalized of drainPendingContent()) {
+              yield normalized;
+            }
+          }
+
+          if (partKind === 'text' || partKind === 'reasoning') {
+            for (const normalized of queueContent(
+              eventType,
+              event,
+              partKind,
+            )) {
+              yield normalized;
+            }
+            continue;
+          }
 
           if (
             partType === 'tool' ||
@@ -2649,7 +2845,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // yielding queued output on this terminal path.
             eventStreamController.abort();
             yield* drainPendingContent(true);
-            await abortActiveSession(true);
+            await abortActiveSession(false);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
                 'done',
@@ -2820,7 +3016,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             eventStreamController.abort();
             replyPromise.catch(() => {});
             yield* drainPendingContent(true);
-            await abortActiveSession(true);
+            await abortActiveSession(false);
             if (abortRequested || options?.abortSignal?.aborted) {
               yield createEvent(
                 'done',

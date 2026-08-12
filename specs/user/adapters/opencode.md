@@ -38,7 +38,9 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | SSE Event | AgentEvent |
 | --- | --- |
 | assistant `message.part.updated` (text, no delta) | `text` |
-| assistant `message.part.updated` (text, with delta) | `text_delta` |
+| assistant `message.part.updated` (text, canonical sibling or legacy part delta) | `text_delta` |
+| assistant text `message.part.delta` / `session.next.text.delta` | `text_delta` |
+| reasoning `message.part.delta` / `session.next.reasoning.delta` | suppressed in favor of `thinking` snapshots |
 | `message.part.updated` (tool part, per [OPENCODE-016](#opencode-016)) | `tool_use` / `tool_result` |
 | assistant `message.part.updated` (thinking) | `thinking` |
 | `message.part.updated` (file part) | `opencode:file_part` (extension) |
@@ -85,6 +87,41 @@ content shall neither remain resident nor hold the global ordering gate open.
 Session filtering per [OPENCODE-006](#opencode-006) shall precede role
 correlation, so metadata from another session cannot release or discard the
 current session's pending content.
+
+### OPENCODE-019
+
+The adapter shall classify every OpenCode content delta before normalization.
+For canonical v1 `message.part.updated`, it shall read the optional `delta`
+beside `part` and classify it from `part.type`, while retaining the legacy
+`part.delta` alias. For v2 `session.next.text.delta` and
+`session.next.reasoning.delta`, the event type shall be authoritative. For the
+generic v2 `message.part.delta`, the adapter shall correlate `partID` with the
+type observed on `message.part.updated`; `field` alone shall not classify a
+delta because both text and reasoning use text fields. Explicit v2 deltas
+shall correlate their `textID` or `reasoningID` with the same part identifier
+carried by the settled snapshot.
+
+Assistant text deltas shall normalize to `text_delta`. Reasoning deltas shall
+not normalize to `text_delta` or a second `thinking` event; settled reasoning
+snapshots shall remain the single `thinking` representation. Deltas belonging
+to user messages shall remain suppressed per
+[OPENCODE-017](#opencode-017). Generic deltas received before their part
+metadata shall remain pending by `partID` and be released or suppressed once
+the type resolves. A generic delta whose type never resolves, or that carries
+no correlatable `partID` or inline part type, shall not default to output.
+An uncorrelatable generic delta shall be discarded immediately rather than
+holding later classifiable content behind the ordering gate.
+
+Repeated settled snapshots with the same part identifier, content kind, and
+content shall emit at most once. When emitted text deltas for a part exactly
+reconstruct its later settled text snapshot, that snapshot shall be suppressed
+so concatenating normalized `text` and `text_delta` yields the semantic output
+once. Interleaved parts shall keep independent type state and original stream
+order even when later metadata resolves first. Removing a part shall release
+its queued payloads and discard its pending deltas, emitted-delta history,
+settled-snapshot history, and classification state. Removing its owning
+message shall clear the same per-part state even when no individual
+`message.part.removed` event follows.
 
 ## Session Filtering
 

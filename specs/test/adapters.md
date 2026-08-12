@@ -131,7 +131,7 @@ later events without waiting for terminal completion. Role metadata from a
 foreign session shall not resolve current-session content.
 
 ### TADAPT-035
-Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
+Verifies: [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [OPENCODE-018](../user/adapters/opencode.md#opencode-018)
 
 Given short injected inactivity deadlines and canned OpenCode streams, when a
 current session becomes permanently silent, the adapter shall query its status
@@ -172,8 +172,25 @@ the short-deadline acceptance probe shall recover through the real
 `session.status` endpoint, dispose the SDK client, and observe the managed
 server process exit without a multi-minute wait.
 
+### TADAPT-036
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-017](../user/adapters/opencode.md#opencode-017), [OPENCODE-019](../user/adapters/opencode.md#opencode-019)
+
+Given canonical v1 sibling-delta, v2 explicitly typed delta, and v2 generic
+delta events interleaving assistant text, assistant reasoning, and user text,
+the adapter shall reconstruct assistant output through `text_delta` without
+reasoning or user contamination. Generic deltas shall classify correctly when
+part metadata arrives before or after them, while unresolved types shall not
+default to output or block later known content. Interleaved part identifiers
+shall preserve stream order when later metadata resolves first, and removing a
+part shall discard content still pending on either kind or role. Reasoning
+shall appear only through settled `thinking` snapshots, nonconsecutive
+duplicate settled snapshots shall emit once, and an exact settled replay of a
+part's `textID`-correlated deltas shall not duplicate the combined `text` plus
+`text_delta` reconstruction. Incident-scale pending queues shall drain in
+order, and removing a message shall clear the state of every owned part.
+
 ### TADAPT-037
-Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [OPENCODE-006](../user/adapters/opencode.md#opencode-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [OPENCODE-009](../user/adapters/opencode.md#opencode-009), [OPENCODE-020](../user/adapters/opencode.md#opencode-020)
 
 Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
 use each supported SDK path, neither the observable v1 prompt nor the v2

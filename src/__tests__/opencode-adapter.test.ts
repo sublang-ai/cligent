@@ -11,9 +11,17 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  EventMessagePartDelta,
+  EventMessagePartRemoved,
+  EventMessagePartUpdated,
+  EventMessageRemoved,
+  EventMessageUpdated,
   EventSessionError,
   EventSessionIdle,
+  EventSessionNextReasoningDelta,
+  EventSessionNextTextDelta,
 } from '@opencode-ai/sdk/v2';
+import type { EventMessagePartUpdated as V1EventMessagePartUpdated } from '@opencode-ai/sdk';
 
 import {
   OpenCodeAdapter,
@@ -208,6 +216,81 @@ function makeLoader(config: {
       };
     },
   });
+}
+
+function makeV2MessageUpdated(
+  sessionID: string,
+  messageID: string,
+  role: 'user' | 'assistant',
+): EventMessageUpdated {
+  const info: EventMessageUpdated['properties']['info'] = role === 'assistant'
+    ? {
+        id: messageID,
+        sessionID,
+        role,
+        time: { created: 1 },
+        parentID: 'parent-message',
+        modelID: 'test-model',
+        providerID: 'test-provider',
+        mode: 'test',
+        agent: 'test-agent',
+        path: { cwd: '/tmp', root: '/tmp' },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      }
+    : {
+        id: messageID,
+        sessionID,
+        role,
+        time: { created: 1 },
+        agent: 'test-agent',
+        model: { providerID: 'test-provider', modelID: 'test-model' },
+      };
+
+  return {
+    id: `message-updated-${messageID}`,
+    type: 'message.updated',
+    properties: { sessionID, info },
+  };
+}
+
+function makeV2PartUpdated(
+  part: EventMessagePartUpdated['properties']['part'],
+  time = 1,
+): EventMessagePartUpdated {
+  return {
+    id: `part-updated-${part.id}-${time}`,
+    type: 'message.part.updated',
+    properties: { sessionID: part.sessionID, part, time },
+  };
+}
+
+function makeV2PartRemoved(
+  sessionID: string,
+  messageID: string,
+  partID: string,
+): EventMessagePartRemoved {
+  return {
+    id: `part-removed-${partID}`,
+    type: 'message.part.removed',
+    properties: { sessionID, messageID, partID },
+  };
+}
+
+function makeV2MessageRemoved(
+  sessionID: string,
+  messageID: string,
+): EventMessageRemoved {
+  return {
+    id: `message-removed-${messageID}`,
+    type: 'message.removed',
+    properties: { sessionID, messageID },
+  };
 }
 
 async function collect(
@@ -4908,6 +4991,7 @@ describe('OpenCode SSE event structure', () => {
               type: 'message.part.updated',
               properties: {
                 part: {
+                  id: 'assistant-after-part',
                   sessionID: 'role-session',
                   messageID: 'assistant-after',
                   type: 'text',
@@ -4920,6 +5004,7 @@ describe('OpenCode SSE event structure', () => {
               properties: {
                 sessionID: 'role-session',
                 messageID: 'assistant-after',
+                partID: 'assistant-after-part',
                 delta: ' buffered delta',
               },
             },
@@ -5318,6 +5403,113 @@ describe('OpenCode SSE event structure', () => {
     expect(events[4]?.payload).toMatchObject({ status: 'error' });
   });
 
+  it.each([
+    {
+      label: 'a missing permission request id',
+      permission: {
+        sessionID: 'role-session',
+        permission: 'future_permission',
+      },
+      replyPermissionError: undefined,
+    },
+    {
+      label: 'a failed permission reply',
+      permission: {
+        sessionID: 'role-session',
+        requestID: 'permission-request-1',
+        permission: 'future_permission',
+      },
+      replyPermissionError: new Error('reply route unavailable'),
+    },
+  ])(
+    'awaits session cancellation before interrupted done after $label queue flush',
+    async ({ permission, replyPermissionError }) => {
+      const controller = new AbortController();
+      let abortCalls = 0;
+      let releaseAbort: (() => void) | undefined;
+      const abortGate = new Promise<void>((resolve) => {
+        releaseAbort = resolve;
+      });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'role-session' },
+            events: [
+              {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'never-resolved',
+                    type: 'text',
+                    text: 'drop me',
+                  },
+                },
+              },
+              {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  info: { id: 'assistant-known', role: 'assistant' },
+                },
+              },
+              {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'role-session',
+                  part: {
+                    messageID: 'assistant-known',
+                    type: 'text',
+                    text: 'keep me',
+                  },
+                },
+              },
+              {
+                type: 'permission.asked',
+                properties: permission,
+              },
+            ],
+            ...(replyPermissionError !== undefined
+              ? { replyPermissionError }
+              : {}),
+            async onAbortSession() {
+              abortCalls++;
+              await abortGate;
+            },
+          }),
+        },
+      );
+
+      const run = adapter.run('prompt', { abortSignal: controller.signal });
+      expect((await run.next()).value).toMatchObject({ type: 'init' });
+      expect((await run.next()).value).toMatchObject({
+        type: 'permission_request',
+      });
+      expect((await run.next()).value).toMatchObject({
+        type: 'text',
+        payload: { content: 'keep me' },
+      });
+
+      controller.abort();
+      let terminalSettled = false;
+      const terminalPromise = run.next().then((terminal) => {
+        terminalSettled = true;
+        return terminal;
+      });
+      await vi.waitFor(() => expect(abortCalls).toBe(1));
+      expect(terminalSettled).toBe(false);
+
+      releaseAbort?.();
+      const terminal = await terminalPromise;
+      expect(terminal.value).toMatchObject({
+        type: 'done',
+        payload: { status: 'interrupted' },
+      });
+      expect((await run.next()).done).toBe(true);
+    },
+  );
+
   it('gives caller abort precedence after terminal role-queue flushing', async () => {
     const controller = new AbortController();
     let abortCalls = 0;
@@ -5426,7 +5618,7 @@ describe('OpenCode SSE event structure', () => {
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
   });
 
-  it('unwraps properties envelope and handles message.part.delta', async () => {
+  it('unwraps properties and classifies generic deltas by part id', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -5434,9 +5626,36 @@ describe('OpenCode SSE event structure', () => {
           runResult: { sessionId: 'sse-session' },
           events: [
             {
+              type: 'message.updated',
+              properties: {
+                sessionID: 'sse-session',
+                info: {
+                  id: 'assistant-message',
+                  sessionID: 'sse-session',
+                  role: 'assistant',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID: 'sse-session',
+                part: {
+                  id: 'text-part',
+                  sessionID: 'sse-session',
+                  messageID: 'assistant-message',
+                  type: 'text',
+                  text: '',
+                },
+              },
+            },
+            {
               type: 'message.part.delta',
               properties: {
                 sessionID: 'sse-session',
+                messageID: 'assistant-message',
+                partID: 'text-part',
+                field: 'text',
                 delta: 'hello',
               },
             },
@@ -5444,6 +5663,9 @@ describe('OpenCode SSE event structure', () => {
               type: 'message.part.delta',
               properties: {
                 sessionID: 'sse-session',
+                messageID: 'assistant-message',
+                partID: 'text-part',
+                field: 'text',
                 delta: ' world',
               },
             },
@@ -5467,6 +5689,596 @@ describe('OpenCode SSE event structure', () => {
 
     const d2 = events[2] as AgentEvent & { payload: { delta: string } };
     expect(d2.payload.delta).toBe(' world');
+  });
+
+  it('keeps interleaved reasoning out of typed and generic output deltas', async () => {
+    const assistantMessageUpdated = makeV2MessageUpdated(
+      'typed-session',
+      'assistant-message',
+      'assistant',
+    );
+    const genericTextBeforeMetadata = {
+      id: 'generic-text-late',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'text-late',
+        field: 'text',
+        delta: 'late',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericReasoningBeforeMetadata = {
+      id: 'generic-reasoning-late',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'reasoning-late',
+        field: 'text',
+        delta: 'secret late',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericTextAfterMetadata = {
+      id: 'generic-text-early',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'text-early',
+        field: 'text',
+        delta: ' output',
+      },
+    } satisfies EventMessagePartDelta;
+    const genericReasoningAfterMetadata = {
+      id: 'generic-reasoning-early',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'reasoning-early',
+        field: 'text',
+        delta: 'secret early',
+      },
+    } satisfies EventMessagePartDelta;
+    const lateTextMetadata = makeV2PartUpdated({
+      id: 'text-late',
+      sessionID: 'typed-session',
+      messageID: 'assistant-message',
+      type: 'text',
+      text: '',
+    });
+    const lateReasoningMetadata = makeV2PartUpdated({
+      id: 'reasoning-late',
+      sessionID: 'typed-session',
+      messageID: 'assistant-message',
+      type: 'reasoning',
+      text: 'settled late thought',
+      time: { start: 1, end: 2 },
+    });
+    const earlyTextMetadata = makeV2PartUpdated({
+      id: 'text-early',
+      sessionID: 'typed-session',
+      messageID: 'assistant-message',
+      type: 'text',
+      text: '',
+    });
+    const earlyReasoningMetadata = makeV2PartUpdated({
+      id: 'reasoning-early',
+      sessionID: 'typed-session',
+      messageID: 'assistant-message',
+      type: 'reasoning',
+      text: 'settled early thought',
+      time: { start: 2, end: 3 },
+    });
+    const explicitTextDelta = {
+      id: 'explicit-text',
+      type: 'session.next.text.delta',
+      properties: {
+        timestamp: 1,
+        sessionID: 'typed-session',
+        assistantMessageID: 'assistant-message',
+        textID: 'explicit-text-part',
+        delta: ' explicit',
+      },
+    } satisfies EventSessionNextTextDelta;
+    const explicitReasoningDelta = {
+      id: 'explicit-reasoning',
+      type: 'session.next.reasoning.delta',
+      properties: {
+        timestamp: 2,
+        sessionID: 'typed-session',
+        assistantMessageID: 'assistant-message',
+        reasoningID: 'explicit-reasoning-part',
+        delta: 'secret explicit',
+      },
+    } satisfies EventSessionNextReasoningDelta;
+    const v1TextDelta = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-text',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'text',
+          text: 'late output explicit v1',
+        },
+        delta: ' v1',
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const v1ReasoningDelta = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-reasoning',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'reasoning',
+          text: 'partial thought',
+          time: { start: 1 },
+        },
+        delta: 'secret v1',
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const v1ReasoningFinal = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-reasoning',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'reasoning',
+          text: 'settled v1 thought',
+          time: { start: 1, end: 4 },
+        },
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const v1TextFinal = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'v1-text',
+          sessionID: 'typed-session',
+          messageID: 'assistant-message',
+          type: 'text',
+          text: ' v1',
+        },
+      },
+    } satisfies V1EventMessagePartUpdated;
+    const explicitTextFinal = makeV2PartUpdated({
+      id: 'explicit-text-part',
+      sessionID: 'typed-session',
+      messageID: 'assistant-message',
+      type: 'text',
+      text: ' explicit',
+    });
+    const unresolvedDelta = {
+      id: 'generic-unresolved',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'typed-session',
+        messageID: 'assistant-message',
+        partID: 'never-described',
+        field: 'text',
+        delta: 'must not default to output',
+      },
+    } satisfies EventMessagePartDelta;
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'typed-session' },
+          events: [
+            assistantMessageUpdated,
+            genericTextBeforeMetadata,
+            genericReasoningBeforeMetadata,
+            lateTextMetadata,
+            lateReasoningMetadata,
+            earlyTextMetadata,
+            earlyReasoningMetadata,
+            genericTextAfterMetadata,
+            genericReasoningAfterMetadata,
+            explicitTextDelta,
+            explicitReasoningDelta,
+            v1TextDelta,
+            v1ReasoningDelta,
+            v1ReasoningFinal,
+            v1ReasoningFinal,
+            v1TextFinal,
+            v1TextFinal,
+            unresolvedDelta,
+            makeV2MessageUpdated('typed-session', 'user-message', 'user'),
+            makeV2PartUpdated({
+              id: 'user-text',
+              sessionID: 'typed-session',
+              messageID: 'user-message',
+              type: 'text',
+              text: '',
+            }),
+            {
+              id: 'generic-user',
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'typed-session',
+                messageID: 'user-message',
+                partID: 'user-text',
+                field: 'text',
+                delta: 'user prompt delta',
+              },
+            } satisfies EventMessagePartDelta,
+            explicitTextFinal,
+            explicitTextFinal,
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'typed-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('user prompt delta'));
+    const deltas = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => (event.payload as { delta: string }).delta);
+    const thoughts = events
+      .filter((event) => event.type === 'thinking')
+      .map((event) => (event.payload as { summary: string }).summary);
+    const semanticOutput = events
+      .filter((event) => event.type === 'text' || event.type === 'text_delta')
+      .map((event) =>
+        event.type === 'text'
+          ? (event.payload as { content: string }).content
+          : (event.payload as { delta: string }).delta,
+      )
+      .join('');
+
+    expect(deltas.join('')).toBe('late output explicit v1');
+    expect(deltas).toEqual(['late', ' output', ' explicit', ' v1']);
+    expect(thoughts).toEqual([
+      'settled late thought',
+      'settled early thought',
+      'settled v1 thought',
+    ]);
+    expect(semanticOutput).toBe('late output explicit v1');
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text_delta',
+      'thinking',
+      'thinking',
+      'text_delta',
+      'text_delta',
+      'text_delta',
+      'thinking',
+      'done',
+    ]);
+  });
+
+  it('preserves generic delta order when later part metadata resolves first', async () => {
+    const firstDelta = {
+      id: 'delta-first',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'ordered-session',
+        messageID: 'assistant-message',
+        partID: 'part-first',
+        field: 'text',
+        delta: 'first',
+      },
+    } satisfies EventMessagePartDelta;
+    const secondDelta = {
+      id: 'delta-second',
+      type: 'message.part.delta',
+      properties: {
+        sessionID: 'ordered-session',
+        messageID: 'assistant-message',
+        partID: 'part-second',
+        field: 'text',
+        delta: ' second',
+      },
+    } satisfies EventMessagePartDelta;
+    const secondMetadata = makeV2PartUpdated({
+      id: 'part-second',
+      sessionID: 'ordered-session',
+      messageID: 'assistant-message',
+      type: 'text',
+      text: '',
+    });
+    const firstMetadata = makeV2PartUpdated({
+      id: 'part-first',
+      sessionID: 'ordered-session',
+      messageID: 'assistant-message',
+      type: 'text',
+      text: '',
+    });
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'ordered-session' },
+          events: [
+            makeV2MessageUpdated(
+              'ordered-session',
+              'assistant-message',
+              'assistant',
+            ),
+            firstDelta,
+            secondDelta,
+            secondMetadata,
+            firstMetadata,
+            {
+              id: 'ordered-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'ordered-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(
+      events
+        .filter((event) => event.type === 'text_delta')
+        .map((event) => (event.payload as { delta: string }).delta),
+    ).toEqual(['first', ' second']);
+  });
+
+  it('discards role-pending content when its part is removed', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'removed-part-session' },
+          events: [
+            makeV2PartUpdated({
+              id: 'removed-part',
+              sessionID: 'removed-part-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: 'removed snapshot',
+            }),
+            {
+              id: 'removed-part-delta',
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'removed-part-session',
+                messageID: 'assistant-message',
+                partID: 'removed-part',
+                field: 'text',
+                delta: ' removed delta',
+              },
+            } satisfies EventMessagePartDelta,
+            makeV2PartRemoved(
+              'removed-part-session',
+              'assistant-message',
+              'removed-part',
+            ),
+            makeV2MessageUpdated(
+              'removed-part-session',
+              'assistant-message',
+              'assistant',
+            ),
+            {
+              id: 'removed-part-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'removed-part-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+  });
+
+  it('clears correlated part history when a message is removed', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'removed-message-session' },
+          events: [
+            makeV2MessageUpdated(
+              'removed-message-session',
+              'old-message',
+              'assistant',
+            ),
+            {
+              id: 'old-text-delta',
+              type: 'session.next.text.delta',
+              properties: {
+                timestamp: 1,
+                sessionID: 'removed-message-session',
+                assistantMessageID: 'old-message',
+                textID: 'reused-part',
+                delta: 'same output',
+              },
+            } satisfies EventSessionNextTextDelta,
+            makeV2MessageRemoved('removed-message-session', 'old-message'),
+            makeV2MessageUpdated(
+              'removed-message-session',
+              'new-message',
+              'assistant',
+            ),
+            makeV2PartUpdated({
+              id: 'reused-part',
+              sessionID: 'removed-message-session',
+              messageID: 'new-message',
+              type: 'text',
+              text: 'same output',
+            }),
+            {
+              id: 'removed-message-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'removed-message-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(
+      events
+        .filter((event) => event.type === 'text_delta' || event.type === 'text')
+        .map((event) =>
+          event.type === 'text_delta'
+            ? (event.payload as { delta: string }).delta
+            : (event.payload as { content: string }).content,
+        ),
+    ).toEqual(['same output', 'same output']);
+  });
+
+  it('emits nonconsecutive settled snapshots only once per content', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'snapshot-session' },
+          events: [
+            makeV2MessageUpdated(
+              'snapshot-session',
+              'assistant-message',
+              'assistant',
+            ),
+            makeV2PartUpdated({
+              id: 'text-part',
+              sessionID: 'snapshot-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: 'A',
+            }, 1),
+            makeV2PartUpdated({
+              id: 'text-part',
+              sessionID: 'snapshot-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: 'B',
+            }, 2),
+            makeV2PartUpdated({
+              id: 'text-part',
+              sessionID: 'snapshot-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: 'A',
+            }, 3),
+            {
+              id: 'snapshot-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'snapshot-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(
+      events
+        .filter((event) => event.type === 'text')
+        .map((event) => (event.payload as { content: string }).content),
+    ).toEqual(['A', 'B']);
+  });
+
+  it('fails closed on an uncorrelatable generic delta without blocking output', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'malformed-session' },
+          events: [
+            makeV2MessageUpdated(
+              'malformed-session',
+              'assistant-message',
+              'assistant',
+            ),
+            {
+              type: 'message.part.delta',
+              properties: {
+                sessionID: 'malformed-session',
+                messageID: 'assistant-message',
+                delta: 'must be dropped',
+              },
+            },
+            makeV2PartUpdated({
+              id: 'valid-part',
+              sessionID: 'malformed-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: 'valid output',
+            }),
+            {
+              id: 'malformed-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'malformed-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({ content: 'valid output' });
+  });
+
+  it('drains incident-scale pending deltas without losing order', async () => {
+    const deltaCount = 2_050;
+    const pendingDeltas = Array.from({ length: deltaCount }, (_, index) => ({
+      id: `bulk-delta-${index}`,
+      type: 'message.part.delta' as const,
+      properties: {
+        sessionID: 'bulk-session',
+        messageID: 'assistant-message',
+        partID: 'bulk-part',
+        field: 'text',
+        delta: `${index},`,
+      },
+    } satisfies EventMessagePartDelta));
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'bulk-session' },
+          events: [
+            makeV2MessageUpdated(
+              'bulk-session',
+              'assistant-message',
+              'assistant',
+            ),
+            ...pendingDeltas,
+            makeV2PartUpdated({
+              id: 'bulk-part',
+              sessionID: 'bulk-session',
+              messageID: 'assistant-message',
+              type: 'text',
+              text: '',
+            }),
+            {
+              id: 'bulk-session-idle',
+              type: 'session.idle',
+              properties: { sessionID: 'bulk-session' },
+            } satisfies EventSessionIdle,
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('prompt'));
+    const deltas = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => (event.payload as { delta: string }).delta);
+    expect(deltas).toHaveLength(deltaCount);
+    expect(deltas.join('')).toBe(pendingDeltas
+      .map((event) => event.properties.delta)
+      .join(''));
   });
 
   it('handles session.error events', async () => {
