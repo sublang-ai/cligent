@@ -107,21 +107,21 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run, whole-run accounting summed from the per-model map, the cache-exclusive input-side token breakdown and withheld output side, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token |
+| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run, whole-run accounting summed from the per-model map with its per-model billable records, the cache-exclusive input-side token breakdown and withheld output side, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token |
 
 ### CODEX
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization including inclusive-input/cache-detail accounting, per-turn usage differenced from the thread-cumulative snapshot and its subtraction-derived token breakdown, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
+| user | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization including inclusive-input/cache-detail accounting, per-turn usage differenced from the thread-cumulative snapshot with its subtraction-derived token breakdown and single per-turn billable record, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
 | dev | [adapters/codex.md](dev/adapters/codex.md) | Codex adapter implementation: generated writablePaths profile delivery, permission-managed project trust without repository/user config mutation, and SDK-anchored Codex executable resolution across install layouts with diagnostic failure |
 
 ### ENG
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage and its optional disjoint five-component breakdown with side-atomic publication and supplementary-source cross-validation, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
-| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability and breakdown partition invariants, and effort API verification |
+| user | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, reported/unavailable token usage and its optional disjoint five-component breakdown with side-atomic publication, supplementary-source cross-validation, and the billable record decomposition summing to it, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
+| test | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, token-usage availability, breakdown partition invariants, and billable record decomposition invariants, and effort API verification |
 
 ### GEMINI
 
@@ -158,7 +158,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting and its five-component token breakdown, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned session-tree liveness and descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
+| user | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with canonical step/cache accounting with its five-component token breakdown and per-request billable records, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned session-tree liveness and descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
 ### PKG
 
