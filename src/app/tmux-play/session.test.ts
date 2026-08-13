@@ -1159,6 +1159,276 @@ describe('TmuxPlaySession', () => {
     },
   );
 
+  it('aggregates a turn failure with lifecycle shutdown failure in order', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const primaryFailure = new Error('write-ahead failed');
+    const cleanupFailure = new Error('lease retirement failed');
+    const paths = managedPaths(tempDir);
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      lifecycle: {
+        async initializeRuntime() {
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            runBossTurn: vi.fn(),
+          };
+        },
+        async beforeNonEmptyTurn() {
+          throw primaryFailure;
+        },
+        async afterTurn() {},
+        async shutdown(context) {
+          expect(context.error).toBe(primaryFailure);
+          throw cleanupFailure;
+        },
+      },
+    });
+
+    await activateManagedSession(paths);
+    readline.emitLine('work');
+    const failure = await running.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      primaryFailure,
+      cleanupFailure,
+    ]);
+    expect((failure as Error).message).toContain(
+      'write-ahead failed; lease retirement failed',
+    );
+  });
+
+  it('preserves the exact identity of one managed shutdown failure', async () => {
+    tempDir = makeWorkDir();
+    const readline = new FakeReadline();
+    const primaryFailure = new AggregateError([], 'write-ahead failed');
+    const paths = managedPaths(tempDir);
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      lifecycle: {
+        async initializeRuntime() {
+          return {
+            abortActiveTurn: vi.fn(),
+            dispose: vi.fn(),
+            runBossTurn: vi.fn(),
+          };
+        },
+        async beforeNonEmptyTurn() {
+          throw primaryFailure;
+        },
+        async afterTurn() {},
+        async shutdown() {},
+      },
+    });
+
+    await activateManagedSession(paths);
+    readline.emitLine('work');
+    const failure = await running.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBe(primaryFailure);
+  });
+
+  it('continues cleanup after synchronous abort failure and flattens aggregates', async () => {
+    tempDir = makeWorkDir();
+    const paths = managedPaths(tempDir);
+    const readline = new FakeReadline();
+    const abortFailure = new Error('active turn abort failed');
+    const disposeFailureA = new Error('runtime cleanup one failed');
+    const disposeFailureB = new Error('runtime cleanup two failed');
+    const leaseFailure = new Error('lease retirement failed');
+    const order: string[] = [];
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      removeWorkDir() {
+        order.push('workdir cleanup');
+      },
+      killSession() {
+        order.push('pane cleanup');
+      },
+      lifecycle: {
+        async initializeRuntime() {
+          return {
+            abortActiveTurn() {
+              order.push('abort');
+              throw abortFailure;
+            },
+            async dispose() {
+              order.push('runtime dispose');
+              throw new AggregateError([
+                disposeFailureA,
+                disposeFailureB,
+              ]);
+            },
+            runBossTurn: vi.fn(),
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {},
+        async shutdown(context) {
+          order.push('lifecycle shutdown');
+          expect(context.error).toBe(abortFailure);
+          throw leaseFailure;
+        },
+      },
+    });
+
+    await waitUntil(() => existsSync(paths.readinessPath));
+    writeFileSync(paths.shutdownRequestPath, 'shutdown\n', { mode: 0o600 });
+    const failure = await running.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      abortFailure,
+      disposeFailureA,
+      disposeFailureB,
+      leaseFailure,
+    ]);
+    expect(order).toEqual([
+      'abort',
+      'runtime dispose',
+      'lifecycle shutdown',
+      'workdir cleanup',
+      'pane cleanup',
+    ]);
+    expect(existsSync(paths.shutdownCompletePath)).toBe(true);
+  });
+
+  it('joins an active managed turn before runtime and lifecycle cleanup', async () => {
+    tempDir = makeWorkDir();
+    const paths = managedPaths(tempDir);
+    const readline = new FakeReadline();
+    const turnStarted = deferred<void>();
+    const turnBarrier = deferred<void>();
+    const order: string[] = [];
+    let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      createReadline: () => readline,
+      lifecycle: {
+        async initializeRuntime(context) {
+          runtimeObserver = context.observers[0]!;
+          return {
+            abortActiveTurn() {
+              order.push('abort');
+            },
+            async dispose() {
+              order.push('runtime dispose');
+            },
+            async runBossTurn() {
+              order.push('turn start');
+              turnStarted.resolve();
+              await turnBarrier.promise;
+              await runtimeObserver.onRecord({
+                type: 'turn_finished',
+                turnId: 1,
+                timestamp: 1,
+              });
+              order.push('turn complete');
+            },
+          };
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {
+          order.push('settlement');
+        },
+        async shutdown() {
+          order.push('lifecycle shutdown');
+        },
+      },
+    });
+
+    await activateManagedSession(paths);
+    readline.emitLine('work');
+    await turnStarted.promise;
+    writeFileSync(paths.shutdownRequestPath, 'shutdown\n', { mode: 0o600 });
+    await waitUntil(() => order.includes('abort'));
+
+    expect(order).toEqual(['turn start', 'abort']);
+    turnBarrier.resolve();
+    await running;
+
+    expect(order).toEqual([
+      'turn start',
+      'abort',
+      'turn complete',
+      'settlement',
+      'runtime dispose',
+      'lifecycle shutdown',
+    ]);
+  });
+
+  it('joins managed startup before lifecycle and work cleanup', async () => {
+    tempDir = makeWorkDir();
+    const paths = managedPaths(tempDir);
+    const signalTarget = new SignalHub();
+    const startupEntered = deferred<void>();
+    const startupBarrier = deferred<void>();
+    const startupFailure = new Error('managed startup failed');
+    const order: string[] = [];
+    const running = runManagedTmuxPlaySession({
+      ...baseOptions(tempDir),
+      ...paths,
+      signalTarget,
+      removeWorkDir() {
+        order.push('workdir cleanup');
+      },
+      killSession() {
+        order.push('pane cleanup');
+      },
+      lifecycle: {
+        async initializeRuntime() {
+          order.push('startup');
+          startupEntered.resolve();
+          await startupBarrier.promise;
+          throw startupFailure;
+        },
+        async beforeNonEmptyTurn() {},
+        async afterTurn() {},
+        async shutdown(context) {
+          order.push('lifecycle shutdown');
+          expect(context.error).toBe(startupFailure);
+        },
+      },
+    });
+
+    await startupEntered.promise;
+    signalTarget.emit('SIGTERM');
+    await delay(0);
+    expect(order).toEqual(['startup']);
+
+    startupBarrier.resolve();
+    const failure = await running.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBe(startupFailure);
+    expect(order).toEqual([
+      'startup',
+      'lifecycle shutdown',
+      'workdir cleanup',
+      'pane cleanup',
+    ]);
+  });
+
   it('passes an aborted terminal outcome to settlement and never releases its buffered reply', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();

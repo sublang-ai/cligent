@@ -18,7 +18,7 @@ import { createEvent } from '../../events.js';
 import { isGlowAvailable } from '../shared/glow.js';
 import { shellQuote } from '../shared/shell.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
-import { launchTmuxPlay } from './launcher.js';
+import { launchManagedTmuxPlay, launchTmuxPlay } from './launcher.js';
 import { createLayoutObserver } from './layout-observer.js';
 import { readConfigSnapshot } from './session.js';
 import {
@@ -119,6 +119,81 @@ describe('tmux-play real-tmux acceptance', () => {
     workDir = undefined;
     cwd = undefined;
   });
+
+  acceptanceIt(
+    'retires a real stalled pane child before rejecting an outer SIGTERM abort',
+    async () => {
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-managed-accept-cwd-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      const childPath = join(cwd, 'managed-stalled-child.mjs');
+      writeFileSync(configPath, bossOnlyYamlConfig());
+      writeFileSync(
+        childPath,
+        [
+          "import { existsSync, writeFileSync } from 'node:fs';",
+          'const [readinessPath, shutdownRequestPath, shutdownCompletePath] = process.argv.slice(2);',
+          "writeFileSync(readinessPath, '{\"status\":\"ready\"}\\n', { mode: 0o600 });",
+          'const poll = setInterval(() => {',
+          '  if (!existsSync(shutdownRequestPath)) return;',
+          '  clearInterval(poll);',
+          "  writeFileSync(shutdownCompletePath, 'complete\\n', { mode: 0o600 });",
+          '}, 5);',
+          '',
+        ].join('\n'),
+      );
+      const controller = new AbortController();
+      const abortReason = new Error('outer received SIGTERM');
+      let inputGatePath = '';
+      let beforeNativeAttachCalls = 0;
+      const prepared = await launchManagedTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `managed-abort-${randomBytes(4).toString('hex')}`,
+        attach: false,
+        readinessTimeoutMs: 5_000,
+        shutdownTimeoutMs: 5_000,
+        createSessionCommand(context) {
+          inputGatePath = context.inputGatePath;
+          return [
+            process.execPath,
+            childPath,
+            context.readinessPath,
+            context.shutdownRequestPath,
+            context.shutdownCompletePath,
+          ]
+            .map(shellQuote)
+            .join(' ');
+        },
+      });
+      sessionName = prepared.sessionName;
+      workDir = prepared.workDir;
+
+      const attaching = prepared.attach({
+        signal: controller.signal,
+        beforeNativeAttach() {
+          beforeNativeAttachCalls += 1;
+        },
+      });
+      await waitForFileContains(inputGatePath, 'ready', 2_000);
+      controller.abort(abortReason);
+      const failure = await attaching.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(failure).toBe(abortReason);
+      expect(beforeNativeAttachCalls).toBe(0);
+      expect(existsSync(prepared.workDir)).toBe(false);
+      expect(
+        spawnSync('tmux', ['has-session', '-t', prepared.sessionName], {
+          stdio: 'ignore',
+        }).status,
+      ).not.toBe(0);
+      sessionName = undefined;
+      workDir = undefined;
+    },
+    30_000,
+  );
 
   acceptanceIt(
     'preserves the weighted region split across forced window resizes',

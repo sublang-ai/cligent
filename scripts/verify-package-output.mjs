@@ -112,6 +112,7 @@ function assertCurrentBuild(label) {
     'LaunchTmuxPlayResult',
     'launchManagedTmuxPlay',
     'ManagedTmuxPlayAfterTurnContext',
+    'ManagedTmuxPlayAttachOptions',
     'ManagedTmuxPlayInitializeContext',
     'ManagedTmuxPlayLaunchContext',
     'ManagedTmuxPlayLifecycle',

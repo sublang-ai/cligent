@@ -72,6 +72,7 @@ export { launchManagedTmuxPlay } from './launcher.js';
 export type {
   LaunchManagedTmuxPlayOptions,
   LaunchTmuxPlayResult,
+  ManagedTmuxPlayAttachOptions,
   ManagedTmuxPlayLaunchContext,
   PreparedManagedTmuxPlayLaunch,
 } from './launcher.js';

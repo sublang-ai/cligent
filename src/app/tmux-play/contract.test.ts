@@ -21,6 +21,7 @@ import {
   type CaptainTelemetry,
   type LaunchManagedTmuxPlayOptions,
   type ManagedTmuxPlayAfterTurnContext,
+  type ManagedTmuxPlayAttachOptions,
   type ManagedTmuxPlayLaunchContext,
   type ManagedTmuxPlayLifecycle,
   type ManagedTmuxPlaySessionOptions,
@@ -168,9 +169,13 @@ describe('tmux-play public contract', () => {
       shutdownRequestPath: string;
       shutdownCompletePath: string;
     }>();
+    expectTypeOf<ManagedTmuxPlayAttachOptions>().toMatchTypeOf<{
+      signal?: AbortSignal;
+      beforeNativeAttach?: () => void;
+    }>();
     expectTypeOf<PreparedManagedTmuxPlayLaunch>().toMatchTypeOf<{
       sessionId: string;
-      attach(): Promise<void>;
+      attach(options?: ManagedTmuxPlayAttachOptions): Promise<void>;
       cancel(): Promise<void>;
     }>();
     expectTypeOf<ManagedTmuxPlaySessionOptions>().toMatchTypeOf<{

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prepared managed tmux attachment now accepts an abort signal and a synchronous native-client handoff callback. Abort remains owned through activation or detached coordination cleanup, retires the child before rejecting, keeps the signal reason primary, and reports every cleanup defect. Managed session shutdown likewise aggregates secondary lifecycle and cleanup failures instead of hiding them behind the initiating turn failure — IR-048, TMUX-094, TTMUX-097
 - Codex turns no longer report the whole thread's accumulated tokens as the turn's own. `turn.completed` carries the thread-cumulative total and a resumed thread seeds it from its rollout, so every turn after the first overstated usage — by roughly the whole conversation by the tenth turn — while marking it measured. The adapter now reports the difference against the previous snapshot, treats a thread it started as beginning from zero, and reports `'unavailable'` rather than a cumulative figure when it resumes a thread it holds no baseline for or when a snapshot decreases because the thread's accounting restarted — CODEX-012, ENG-018
 
 ## [0.20.0] - 2026-08-12

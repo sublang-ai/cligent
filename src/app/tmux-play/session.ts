@@ -627,31 +627,39 @@ export class TmuxPlaySession {
   }
 
   private async shutdown(reason: string, failure?: unknown): Promise<void> {
-    if (
-      failure !== undefined &&
-      !this.shutdownErrors.some((recorded) => recorded === failure)
-    ) {
-      this.shutdownErrors.push(failure);
+    if (failure !== undefined) {
+      recordManagedShutdownPrimaryFailure(this.shutdownErrors, failure);
     }
     if (this.shutdownPromise) return this.shutdownPromise;
     this.shuttingDown = true;
     this.acceptingInput = false;
     this.preActivationPrompts.splice(0);
-    this.stopManagedShutdownRequestWatcher();
-    this.unregisterSignals();
-    this.unsubscribeFromResize();
-    this.removeKeypressListener();
-    this.disableBracketedPaste();
-    this.runtime?.abortActiveTurn(reason);
 
-    const activeTransactions = Promise.all([this.startup, this.pending]);
+    const activeTransactions = [this.startup, this.pending] as const;
     this.shutdownPromise = (async () => {
       const errors = this.shutdownErrors;
+      // Install the shared shutdown promise before invoking any external or
+      // teardown surface: each synchronous throw is recorded and later steps
+      // still run, so one defective abort/cleanup hook cannot strand `done`.
+      await runShutdownStep(errors, () =>
+        this.stopManagedShutdownRequestWatcher(),
+      );
+      await runShutdownStep(errors, () => this.unregisterSignals());
+      await runShutdownStep(errors, () => this.unsubscribeFromResize());
+      await runShutdownStep(errors, () => this.removeKeypressListener());
+      await runShutdownStep(errors, () => this.disableBracketedPaste());
+      await runShutdownStep(errors, () =>
+        this.runtime?.abortActiveTurn(reason),
+      );
+      await runShutdownStep(errors, () => this.readline?.close());
       // Managed hooks can own durable write-ahead and settlement. Never
       // release their lease or dispose the runtime concurrently with a turn.
-      await runShutdownStep(errors, async () => {
-        await activeTransactions;
-      });
+      const transactionResults = await Promise.allSettled(activeTransactions);
+      for (const result of transactionResults) {
+        if (result.status === 'rejected') {
+          recordManagedShutdownPrimaryFailure(errors, result.reason);
+        }
+      }
       await runShutdownStep(errors, () => this.runtime?.dispose());
       await runShutdownStep(errors, () =>
         this.options.managedLifecycle?.shutdown({
@@ -677,12 +685,11 @@ export class TmuxPlaySession {
       );
 
       if (errors.length > 0) {
-        this.doneDeferred.reject(errors[0]);
+        this.doneDeferred.reject(managedShutdownFailure(errors));
       } else {
         this.doneDeferred.resolve();
       }
     })();
-    this.readline?.close();
     return this.shutdownPromise;
   }
 
@@ -1130,8 +1137,38 @@ async function runShutdownStep(
   try {
     await step();
   } catch (error) {
+    recordManagedShutdownCleanupFailure(errors, error);
+  }
+}
+
+function recordManagedShutdownPrimaryFailure(
+  errors: unknown[],
+  error: unknown,
+): void {
+  if (!errors.some((recorded) => Object.is(recorded, error))) {
     errors.push(error);
   }
+}
+
+function recordManagedShutdownCleanupFailure(
+  errors: unknown[],
+  error: unknown,
+): void {
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    for (const nested of error.errors) {
+      recordManagedShutdownCleanupFailure(errors, nested);
+    }
+    return;
+  }
+  recordManagedShutdownPrimaryFailure(errors, error);
+}
+
+function managedShutdownFailure(errors: readonly unknown[]): unknown {
+  if (errors.length === 1) return errors[0];
+  return new AggregateError(
+    errors,
+    `managed tmux-play shutdown failed: ${errors.map(errorMessage).join('; ')}`,
+  );
 }
 
 function runtimeCaptain(

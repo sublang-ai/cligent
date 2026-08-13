@@ -77,9 +77,15 @@ export function hasTmuxPane(target: string): boolean {
   const result = spawnSync(
     'tmux',
     ['display-message', '-p', '-t', target, '#{pane_id}'],
-    tmuxSpawnOptions('ignore'),
+    tmuxSpawnOptions('pipe'),
   );
-  return result.error === undefined && result.status === 0;
+  // tmux 3.6 can exit 0 and print only a newline for a pane id that was just
+  // retired. Require an actual resolved pane id, not status alone.
+  return (
+    result.error === undefined &&
+    result.status === 0 &&
+    (result.stdout?.toString().trim().length ?? 0) > 0
+  );
 }
 
 /** Run tmux and return its trimmed stdout. */

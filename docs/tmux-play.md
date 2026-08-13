@@ -453,10 +453,23 @@ child has initialized or restored its runtime. Input is still gated then, so
 the front end can report that ID before it calls `await prepared.attach()`.
 Use `await prepared.cancel()` if reporting or handoff fails.
 
+An embedding front end can retain signal ownership until native attach with
+`await prepared.attach({ signal, beforeNativeAttach })`. An abort before native
+handoff gracefully retires the managed child and rejects only after bounded
+shutdown and cleanup, with the abort reason first if cleanup also fails.
+Immediately before the native tmux client starts, Cligent disarms managed
+abort handling and synchronously invokes `beforeNativeAttach`; use that hook to
+transfer or remove the embedding's temporary signal handlers. Signals after
+the hook belong to the embedding and native client. With `attach: false`, the
+hook never runs and abort remains managed through coordination cleanup.
+
 The session-command context also supplies shutdown-request and shutdown-complete
 paths. Cancellation and post-start launch failures request graceful child
 shutdown, await cleanup acknowledgement and pane exit under the independent
 `shutdownTimeoutMs`, and only then use a forced tmux kill as a bounded fallback.
+After that kill, Cligent allows a fixed 500 ms for tmux to stop reporting the
+pane; if it cannot prove retirement, it preserves the work and coordination
+state and reports the cleanup defect.
 Input-gate and shutdown-request markers are atomically published, so a polling
 child cannot mistake an in-progress write for an invalid control message.
 Launcher-created work directories are
@@ -482,6 +495,9 @@ aborts active work, then awaits the full hook/turn transaction
 and runtime disposal before the lifecycle shutdown hook, so an embedding host
 can release its lease without racing write-ahead, settlement, or semantic
 runtime disposal. The child publishes shutdown completion only after cleanup.
+If the initiating failure and later shutdown steps both fail, the returned
+`AggregateError` keeps the initiating failure first and includes every cleanup
+defect; a lone failure retains its original object identity.
 
 ```js
 export default function createCaptain(options = {}) {

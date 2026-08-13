@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { closeSync, mkdtempSync, openSync, writeSync } from 'node:fs';
-import { link, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -68,6 +68,10 @@ const INITIAL_TIMER_TEXT = formatTimerDuration(0);
 const INITIAL_TIMER_RUNNING = '0';
 const OSC11_QUERY = '\x1b]11;?\x07';
 const OSC11_TIMEOUT_MS = 100;
+// `tmux kill-session` is synchronous as a process call but pane visibility can
+// lag briefly behind its successful return. Keep forced retirement bounded by
+// a small, fixed proof window without extending the caller's graceful bound.
+const MANAGED_FORCED_RETIREMENT_VERIFICATION_MS = 500;
 
 type Output = Pick<Writable, 'write'>;
 
@@ -151,9 +155,23 @@ export type LaunchManagedTmuxPlayOptions = Omit<
   readonly shutdownTimeoutMs?: number;
 };
 
+export interface ManagedTmuxPlayAttachOptions {
+  /**
+   * Cancels publication or activation before ownership transfers to the
+   * native tmux client. Once `beforeNativeAttach` runs, later aborts are
+   * intentionally left to the native client and embedding signal handlers.
+   */
+  readonly signal?: AbortSignal;
+  /**
+   * Synchronous ownership-transfer hook invoked immediately before the
+   * native tmux client starts. It is never invoked when `attach: false`.
+   */
+  readonly beforeNativeAttach?: () => void;
+}
+
 export interface PreparedManagedTmuxPlayLaunch extends LaunchTmuxPlayResult {
   /** Allow the pane child to accept input, then attach the outer client. */
-  attach(): Promise<void>;
+  attach(options?: ManagedTmuxPlayAttachOptions): Promise<void>;
   /** Abandon a prepared launch before attachment and terminate its session. */
   cancel(): Promise<void>;
 }
@@ -222,7 +240,9 @@ export async function launchManagedTmuxPlay(
     let attachPromise: Promise<void> | undefined;
     return {
       ...result,
-      attach(): Promise<void> {
+      attach(
+        attachOptions: ManagedTmuxPlayAttachOptions = {},
+      ): Promise<void> {
         if (action === 'cancelled') {
           return Promise.reject(
             new Error('managed tmux-play session was cancelled'),
@@ -231,32 +251,62 @@ export async function launchManagedTmuxPlay(
         if (attachPromise) return attachPromise;
         action = 'attaching';
         attachPromise = (async () => {
+          const abortBoundary = createManagedAttachAbortBoundary(
+            attachOptions.signal,
+          );
           try {
+            abortBoundary.throwIfAborted();
             await publishManagedControlMarker(inputGatePath, 'ready\n');
+            abortBoundary.throwIfAborted();
             await waitForManagedTmuxPlayActivation(
               inputActivePath,
               prepared.bossPaneId,
               readinessTimeoutMs,
+              abortBoundary,
             );
             if (options.attach !== false) {
               requestTerminalResize(options.stdout ?? process.stdout, window);
+              // The final check and disarm are synchronous with the callback:
+              // an abort cannot interleave this ownership transfer. From the
+              // callback onward, embedding/native signal handling owns the
+              // attached client and this launcher will not cancel for signal.
+              abortBoundary.throwIfAborted();
+              abortBoundary.disarm();
+              attachOptions.beforeNativeAttach?.();
               attachTmuxSession(result.sessionName);
+              await rm(readinessDir, { recursive: true, force: true });
+            } else {
+              // Detached activation has no native handoff, so retain abort
+              // ownership until the coordination directory is fully closed.
+              await rm(readinessDir, { recursive: true, force: true });
+              abortBoundary.throwIfAborted();
+              abortBoundary.disarm();
             }
-            await rm(readinessDir, { recursive: true, force: true });
             action = 'attached';
           } catch (error) {
-            await stopManagedTmuxPlay({
+            const failures: unknown[] = [];
+            try {
+              abortBoundary.throwIfAborted();
+              recordManagedLaunchPrimaryFailure(failures, error);
+            } catch (abortReason) {
+              recordManagedLaunchPrimaryFailure(failures, abortReason);
+              recordManagedLaunchPrimaryFailure(failures, error);
+            }
+            abortBoundary.disarm();
+            await retireManagedTmuxPlayLaunch({
+              failures,
+              sessionCreated: true,
               sessionName: result.sessionName,
               bossPaneId: prepared.bossPaneId,
               shutdownRequestPath,
               shutdownCompletePath,
-              timeoutMs: shutdownTimeoutMs,
+              shutdownTimeoutMs,
+              ownsWorkDir,
+              workDir,
+              readinessDir,
             });
-            if (ownsWorkDir) {
-              await rm(workDir, { recursive: true, force: true });
-            }
-            await rm(readinessDir, { recursive: true, force: true });
-            throw error;
+          } finally {
+            abortBoundary.disarm();
           }
         })();
         return attachPromise;
@@ -270,34 +320,89 @@ export async function launchManagedTmuxPlay(
           );
         }
         action = 'cancelled';
-        await stopManagedTmuxPlay({
+        await retireManagedTmuxPlayLaunch({
+          failures: [],
+          sessionCreated: true,
           sessionName: result.sessionName,
           bossPaneId: prepared.bossPaneId,
           shutdownRequestPath,
           shutdownCompletePath,
-          timeoutMs: shutdownTimeoutMs,
+          shutdownTimeoutMs,
+          ownsWorkDir,
+          workDir,
+          readinessDir,
         });
-        if (ownsWorkDir) {
-          await rm(workDir, { recursive: true, force: true });
-        }
-        await rm(readinessDir, { recursive: true, force: true });
       },
     };
   } catch (error) {
-    if (sessionCreated) {
-      await stopManagedTmuxPlay({
-        sessionName,
-        bossPaneId,
-        shutdownRequestPath,
-        shutdownCompletePath,
-        timeoutMs: shutdownTimeoutMs,
-      });
-    }
-    if (ownsWorkDir) {
-      await rm(workDir, { recursive: true, force: true });
-    }
-    await rm(readinessDir, { recursive: true, force: true });
+    await retireManagedTmuxPlayLaunch({
+      failures: [error],
+      sessionCreated,
+      sessionName,
+      bossPaneId,
+      shutdownRequestPath,
+      shutdownCompletePath,
+      shutdownTimeoutMs,
+      ownsWorkDir,
+      workDir,
+      readinessDir,
+    });
     throw error;
+  }
+}
+
+async function retireManagedTmuxPlayLaunch(options: {
+  readonly failures: unknown[];
+  readonly sessionCreated: boolean;
+  readonly sessionName: string;
+  readonly bossPaneId?: string;
+  readonly shutdownRequestPath: string;
+  readonly shutdownCompletePath: string;
+  readonly shutdownTimeoutMs: number;
+  readonly ownsWorkDir: boolean;
+  readonly workDir: string;
+  readonly readinessDir: string;
+}): Promise<void> {
+  let childRetired = !options.sessionCreated;
+  if (options.sessionCreated) {
+    // Detached activation may observe abort while recursively closing this
+    // launcher-owned directory. Recreate the private rendezvous when needed
+    // so the child still gets a graceful request and can acknowledge cleanup.
+    await runManagedLaunchCleanupStep(options.failures, () =>
+      mkdir(options.readinessDir, { recursive: true, mode: 0o700 }),
+    );
+    try {
+      await stopManagedTmuxPlay({
+        sessionName: options.sessionName,
+        bossPaneId: options.bossPaneId,
+        shutdownRequestPath: options.shutdownRequestPath,
+        shutdownCompletePath: options.shutdownCompletePath,
+        timeoutMs: options.shutdownTimeoutMs,
+      });
+      childRetired = true;
+    } catch (error) {
+      recordManagedLaunchCleanupFailure(options.failures, error);
+    }
+  }
+
+  // Never erase state a still-live pane child may need. If retirement is
+  // proven, attempt each cleanup independently so one filesystem defect does
+  // not hide another or leave an otherwise removable coordination boundary.
+  if (childRetired) {
+    if (options.ownsWorkDir) {
+      await runManagedLaunchCleanupStep(options.failures, () =>
+        rm(options.workDir, { recursive: true, force: true }),
+      );
+    }
+    await runManagedLaunchCleanupStep(options.failures, () =>
+      rm(options.readinessDir, { recursive: true, force: true }),
+    );
+  }
+  if (options.failures.length > 0) {
+    throwManagedLaunchFailures(
+      options.failures,
+      'managed tmux-play launch retirement failed',
+    );
   }
 }
 
@@ -1044,6 +1149,116 @@ function buildSessionCommand(options: {
 type ManagedShutdownOutcome =
   'acknowledged' | 'pane-exited' | 'unavailable' | 'timed-out';
 
+interface ManagedAttachAbortBoundary {
+  throwIfAborted(): void;
+  wait(delayMs: number): Promise<void>;
+  disarm(): void;
+}
+
+function createManagedAttachAbortBoundary(
+  signal: AbortSignal | undefined,
+): ManagedAttachAbortBoundary {
+  let armed = true;
+  let aborted = signal?.aborted === true;
+  let reason = aborted ? managedAttachAbortReason(signal) : undefined;
+  const waiters = new Set<() => void>();
+  const onAbort = (): void => {
+    if (!armed || aborted) return;
+    aborted = true;
+    reason = managedAttachAbortReason(signal);
+    for (const reject of [...waiters]) reject();
+  };
+  if (signal && !aborted) {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  const throwIfAborted = (): void => {
+    if (aborted) throw reason;
+  };
+
+  return {
+    throwIfAborted,
+    wait(delayMs): Promise<void> {
+      throwIfAborted();
+      return new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: unknown): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          waiters.delete(rejectForAbort);
+          if (error !== undefined) reject(error);
+          else resolve();
+        };
+        const rejectForAbort = (): void => finish(reason);
+        const timer = setTimeout(() => finish(), delayMs);
+        waiters.add(rejectForAbort);
+        // Abort dispatch cannot interleave the synchronous setup above, but a
+        // non-native AbortSignal implementation may already report aborted.
+        if (aborted) rejectForAbort();
+      });
+    },
+    disarm(): void {
+      if (!armed) return;
+      armed = false;
+      signal?.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
+function managedAttachAbortReason(signal: AbortSignal | undefined): unknown {
+  if (signal && signal.reason !== undefined) return signal.reason;
+  return new Error('managed tmux-play attachment was aborted');
+}
+
+async function runManagedLaunchCleanupStep(
+  failures: unknown[],
+  step: () => void | Promise<unknown>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    recordManagedLaunchCleanupFailure(failures, error);
+  }
+}
+
+function recordManagedLaunchPrimaryFailure(
+  failures: unknown[],
+  error: unknown,
+): void {
+  if (!failures.some((failure) => Object.is(failure, error))) {
+    failures.push(error);
+  }
+}
+
+function recordManagedLaunchCleanupFailure(
+  failures: unknown[],
+  error: unknown,
+): void {
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    for (const nested of error.errors) {
+      recordManagedLaunchCleanupFailure(failures, nested);
+    }
+    return;
+  }
+  recordManagedLaunchPrimaryFailure(failures, error);
+}
+
+function throwManagedLaunchFailures(
+  failures: readonly unknown[],
+  context: string,
+): never {
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(
+    failures,
+    `${context}: ${failures.map(managedLaunchErrorMessage).join('; ')}`,
+  );
+}
+
+function managedLaunchErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function stopManagedTmuxPlay(options: {
   readonly sessionName: string;
   readonly bossPaneId?: string;
@@ -1061,6 +1276,17 @@ async function stopManagedTmuxPlay(options: {
     !(await waitForManagedTmuxPlayExit(options.bossPaneId, deadlineAt))
   ) {
     killTmuxSession(options.sessionName);
+    const forcedRetired = await waitForManagedTmuxPlayExit(
+      options.bossPaneId,
+      Date.now() + MANAGED_FORCED_RETIREMENT_VERIFICATION_MS,
+    );
+    if (!forcedRetired) {
+      throw new Error(
+        options.bossPaneId
+          ? 'managed tmux-play pane remained active after forced teardown'
+          : 'managed tmux-play pane retirement could not be verified after forced teardown',
+      );
+    }
   }
   return outcome;
 }
@@ -1202,10 +1428,12 @@ async function waitForManagedTmuxPlayActivation(
   activePath: string,
   bossPaneId: string,
   timeoutMs = 30_000,
+  abortBoundary: ManagedAttachAbortBoundary,
 ): Promise<void> {
   assertManagedTimeout(timeoutMs);
   const startedAt = Date.now();
   while (true) {
+    abortBoundary.throwIfAborted();
     try {
       if ((await readFile(activePath, 'utf8')).trim() === 'active') return;
       throw new Error('managed tmux-play child wrote an invalid input marker');
@@ -1220,7 +1448,7 @@ async function waitForManagedTmuxPlayActivation(
     if (Date.now() - startedAt >= timeoutMs) {
       throw new Error('managed tmux-play input activation timed out');
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    await abortBoundary.wait(10);
   }
 }
 

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,7 @@ const {
   runTmuxMock,
   runTmuxOutputMock,
   isGlowAvailableMock,
+  managedCoordinationRmHook,
 } = vi.hoisted(() => ({
   attachTmuxSessionMock: vi.fn(),
   hasTmuxPaneMock: vi.fn(),
@@ -31,7 +32,24 @@ const {
   runTmuxMock: vi.fn(),
   runTmuxOutputMock: vi.fn(),
   isGlowAvailableMock: vi.fn(),
+  managedCoordinationRmHook: {
+    run: undefined as undefined | ((path: string) => void | Promise<void>),
+  },
 }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    async rm(
+      path: Parameters<typeof actual.rm>[0],
+      options?: Parameters<typeof actual.rm>[1],
+    ): Promise<void> {
+      await actual.rm(path, options);
+      await managedCoordinationRmHook.run?.(String(path));
+    },
+  };
+});
 
 vi.mock('../shared/tmux.js', () => ({
   attachTmuxSession: attachTmuxSessionMock,
@@ -126,6 +144,7 @@ describe('launchTmuxPlay', () => {
     hasTmuxPaneMock.mockReturnValue(true);
     killTmuxSessionMock.mockReset();
     attachTmuxSessionMock.mockReset();
+    managedCoordinationRmHook.run = undefined;
     delete process.env.TERM_PROGRAM;
   });
 
@@ -390,6 +409,265 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxOutputMock).toHaveReturnedWith('%42');
   });
 
+  it('transfers signal ownership once before the native tmux client', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const controller = new AbortController();
+    const nativeSignalReason = new Error('native client signal');
+    const order: string[] = [];
+    const stdout = {
+      write() {
+        order.push('resize');
+        return true;
+      },
+    };
+    attachTmuxSessionMock.mockImplementation(() => order.push('attach'));
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-native-handoff',
+      workDir: join(tempDir, 'work'),
+      stdout,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedActivation(context, order);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    const attached = prepared.attach({
+      signal: controller.signal,
+      beforeNativeAttach() {
+        order.push('before native attach');
+        controller.abort(nativeSignalReason);
+      },
+    });
+    expect(prepared.attach()).toBe(attached);
+    await attached;
+
+    expect(order).toEqual([
+      'input active',
+      'resize',
+      'before native attach',
+      'attach',
+    ]);
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['attached', true],
+    ['detached', false],
+  ] as const)(
+    'aborts a pending %s activation and retires the child before rejecting',
+    async (_label, attach) => {
+      tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+      const configPath = writeConfig(tempDir, ['dev.coder']);
+      const controller = new AbortController();
+      const abortReason = new Error('embedding received SIGTERM');
+      const beforeNativeAttach = vi.fn();
+      const order: string[] = [];
+      let inputGatePath = '';
+      const prepared = await launchManagedTmuxPlay({
+        cwd: tempDir,
+        configPath,
+        sessionId: `managed-abort-${_label}`,
+        workDir: join(tempDir, 'work'),
+        ...(attach ? {} : { attach: false }),
+        shutdownTimeoutMs: 500,
+        createSessionCommand(context) {
+          inputGatePath = context.inputGatePath;
+          writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+          acknowledgeManagedShutdown(context, order);
+          return 'node /embedding/session-process.mjs';
+        },
+      });
+
+      const attachment = prepared.attach({
+        signal: controller.signal,
+        beforeNativeAttach,
+      });
+      await vi.waitFor(() => {
+        expect(existsSync(inputGatePath)).toBe(true);
+      });
+      controller.abort(abortReason);
+      const failure = await attachment.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(failure).toBe(abortReason);
+      expect(order).toEqual(['shutdown request', 'shutdown complete']);
+      expect(beforeNativeAttach).not.toHaveBeenCalled();
+      expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+      expect(killTmuxSessionMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps an abort primary while reporting attachment cleanup defects', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const controller = new AbortController();
+    const abortReason = new Error('embedding received SIGHUP');
+    const cleanupFailure = new Error('forced tmux teardown failed');
+    let coordinationDir = '';
+    killTmuxSessionMock.mockImplementation(() => {
+      throw cleanupFailure;
+    });
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-abort-cleanup-failure',
+      shutdownTimeoutMs: 20,
+      createSessionCommand(context) {
+        coordinationDir = dirname(context.readinessPath);
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+    controller.abort(abortReason);
+
+    const failure = await prepared
+      .attach({ signal: controller.signal })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      abortReason,
+      cleanupFailure,
+    ]);
+    expect((failure as Error).message).toContain(
+      'embedding received SIGHUP; forced tmux teardown failed',
+    );
+    expect(existsSync(prepared.workDir)).toBe(true);
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+    rmSync(prepared.workDir, { recursive: true, force: true });
+    rmSync(coordinationDir, { recursive: true, force: true });
+  });
+
+  it('preserves an AggregateError abort reason as one exact primary failure', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const controller = new AbortController();
+    const abortReason = new AggregateError([], 'embedding aborted');
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-aggregate-abort',
+      workDir: join(tempDir, 'work'),
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedShutdown(context, []);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+    controller.abort(abortReason);
+
+    const failure = await prepared
+      .attach({ signal: controller.signal })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toBe(abortReason);
+  });
+
+  it('retires the child when the native handoff callback rejects ownership', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const controller = new AbortController();
+    const abortReason = new Error('handoff received SIGTERM');
+    const handoffFailure = new Error('signal handoff failed');
+    const order: string[] = [];
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-handoff-failure',
+      workDir: join(tempDir, 'work'),
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedActivation(context, order);
+        acknowledgeManagedShutdown(context, order);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+
+    const failure = await prepared
+      .attach({
+        signal: controller.signal,
+        beforeNativeAttach() {
+          order.push('before native attach');
+          controller.abort(abortReason);
+          throw handoffFailure;
+        },
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toBe(handoffFailure);
+    expect(order).toEqual([
+      'input active',
+      'before native attach',
+      'shutdown request',
+      'shutdown complete',
+    ]);
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps detached abort ownership through coordination cleanup', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const controller = new AbortController();
+    const abortReason = new Error('detached cleanup received SIGTERM');
+    const beforeNativeAttach = vi.fn();
+    const order: string[] = [];
+    let coordinationDir = '';
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-detached-cleanup-abort',
+      workDir: join(tempDir, 'work'),
+      attach: false,
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        coordinationDir = dirname(context.readinessPath);
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedActivation(context, order);
+        acknowledgeManagedShutdown(context, order);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+    managedCoordinationRmHook.run = (path) => {
+      if (path !== coordinationDir || controller.signal.aborted) return;
+      controller.abort(abortReason);
+    };
+
+    const failure = await prepared
+      .attach({ signal: controller.signal, beforeNativeAttach })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toBe(abortReason);
+    expect(order).toEqual([
+      'input active',
+      'shutdown request',
+      'shutdown complete',
+    ]);
+    expect(beforeNativeAttach).not.toHaveBeenCalled();
+    expect(attachTmuxSessionMock).not.toHaveBeenCalled();
+    expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['input gate', 'ready\n'],
     ['shutdown request', 'shutdown\n'],
@@ -576,10 +854,49 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  it('attempts every owned cleanup after cancellation retires the child', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const cleanupFailure = new Error('owned work cleanup failed');
+    const removedPaths: string[] = [];
+    let coordinationDir = '';
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-cancel-cleanup-failure',
+      shutdownTimeoutMs: 500,
+      createSessionCommand(context) {
+        coordinationDir = dirname(context.readinessPath);
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        acknowledgeManagedShutdown(context, []);
+        return 'node /embedding/session-process.mjs';
+      },
+    });
+    managedCoordinationRmHook.run = (path) => {
+      if (path === prepared.workDir || path === coordinationDir) {
+        removedPaths.push(path);
+      }
+      if (path === prepared.workDir) throw cleanupFailure;
+    };
+
+    const failure = await prepared.cancel().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBe(cleanupFailure);
+    expect(removedPaths).toEqual([prepared.workDir, coordinationDir]);
+    expect(existsSync(prepared.workDir)).toBe(false);
+    expect(existsSync(coordinationDir)).toBe(false);
+  });
+
   it('force-terminates when an acknowledged managed child does not exit', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
     const configPath = writeConfig(tempDir, ['dev.coder']);
     const order: string[] = [];
+    killTmuxSessionMock.mockImplementation(() => {
+      hasTmuxPaneMock.mockReturnValue(false);
+    });
     const prepared = await launchManagedTmuxPlay({
       cwd: tempDir,
       configPath,
@@ -607,6 +924,72 @@ describe('launchTmuxPlay', () => {
     expect(killTmuxSessionMock).toHaveBeenCalledWith(
       'tmux-play-managed-resistant-cancel',
     );
+  });
+
+  it('waits for forced pane disappearance before retiring owned state', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    let postKillChecks = 0;
+    killTmuxSessionMock.mockImplementation(() => {
+      hasTmuxPaneMock.mockImplementation(() => {
+        postKillChecks += 1;
+        return postKillChecks < 3;
+      });
+    });
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-delayed-forced-exit',
+      shutdownTimeoutMs: 20,
+      createSessionCommand(context) {
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        return 'node /embedding/resistant-session-process.mjs';
+      },
+    });
+
+    await prepared.cancel();
+
+    expect(postKillChecks).toBe(3);
+    expect(killTmuxSessionMock).toHaveBeenCalledWith(
+      'tmux-play-managed-delayed-forced-exit',
+    );
+    expect(existsSync(prepared.workDir)).toBe(false);
+  });
+
+  it('retains owned state when forced pane retirement cannot be proved', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    let coordinationDir = '';
+    const prepared = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-unproved-forced-exit',
+      shutdownTimeoutMs: 20,
+      createSessionCommand(context) {
+        coordinationDir = dirname(context.readinessPath);
+        writeFileSync(context.readinessPath, '{"status":"ready"}\n');
+        return 'node /embedding/resistant-session-process.mjs';
+      },
+    });
+
+    try {
+      const failure = await prepared.cancel().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(failure).toEqual(
+        new Error('managed tmux-play pane remained active after forced teardown'),
+      );
+      expect(killTmuxSessionMock).toHaveBeenCalledWith(
+        'tmux-play-managed-unproved-forced-exit',
+      );
+      expect(existsSync(prepared.workDir)).toBe(true);
+      expect(existsSync(coordinationDir)).toBe(true);
+    } finally {
+      rmSync(prepared.workDir, { recursive: true, force: true });
+      rmSync(coordinationDir, { recursive: true, force: true });
+    }
   });
 
   it('carries cancellation across the launcher/session shutdown boundary', async () => {
@@ -832,6 +1215,45 @@ describe('launchTmuxPlay', () => {
       'shutdown complete',
     ]);
     expect(killTmuxSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('aggregates setup and independent owned-cleanup failures', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+    const configPath = writeConfig(tempDir, ['dev.coder']);
+    const setupFailure = new Error('session command setup failed');
+    const cleanupFailure = new Error('owned work cleanup failed');
+    const removedPaths: string[] = [];
+    let workDir = '';
+    let coordinationDir = '';
+    managedCoordinationRmHook.run = (path) => {
+      if (path === workDir || path === coordinationDir) {
+        removedPaths.push(path);
+      }
+      if (path === workDir) throw cleanupFailure;
+    };
+
+    const failure = await launchManagedTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'managed-setup-cleanup-failure',
+      createSessionCommand(context) {
+        workDir = context.workDir;
+        coordinationDir = dirname(context.readinessPath);
+        throw setupFailure;
+      },
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      setupFailure,
+      cleanupFailure,
+    ]);
+    expect(removedPaths).toEqual([workDir, coordinationDir]);
+    expect(existsSync(workDir)).toBe(false);
+    expect(existsSync(coordinationDir)).toBe(false);
   });
 
   it('builds startup panes only for the initial visible subset, in order (TTMUX-082)', async () => {

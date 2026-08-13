@@ -19,6 +19,8 @@ Let an embedding playbook bind namespaced players to independent sessions, repla
 
 1. [x] **Add namespaced calls and transactional managed sessions.**
        Amend [TMUX-007](../user/tmux-play.md#tmux-007) and [TMUX-041](../user/tmux-play.md#tmux-041), add [TMUX-093](../user/tmux-play.md#tmux-093), [TMUX-094](../user/tmux-play.md#tmux-094), [TTMUX-096](../test/tmux-play.md#ttmux-096), and [TTMUX-097](../test/tmux-play.md#ttmux-097); implement detached complete call settings, adapter-owned mapping preflight, segmented player IDs, prepared activation/attach, terminal-aware reply settlement, serialized managed shutdown, and the strict empty-roster Boss/Captain-only shape; export and document the APIs and record the change in the changelog.
+2. [x] **Make managed attachment abort-safe.**
+       Amend [TMUX-094](../user/tmux-play.md#tmux-094) and [TTMUX-097](../test/tmux-play.md#ttmux-097); add an abort signal and synchronous native-handoff callback to prepared attachment, keep abort ownership through activation or detached coordination cleanup, retire the child before rejection with primary-first cleanup aggregation, and preserve every managed shutdown failure.
 
 ## Acceptance criteria
 
@@ -31,3 +33,4 @@ Let an embedding playbook bind namespaced players to independent sessions, repla
 - Shutdown aborts active work and awaits the full transaction and runtime disposal before lifecycle release and returned-promise settlement.
 - Empty `players` plus omitted or empty `layout.initialVisible` launches one full-width Boss/Captain pane, exposes empty runtime manifests, accepts empty visibility records, and preserves managed reply settlement; a nonempty roster still rejects an empty visible set.
 - Existing nonempty-roster tmux-play launch/session/runtime behavior and generic `Cligent` option merging remain unchanged.
+- Attachment abort before native handoff retires the managed child and preserves all failures, while a signal after the synchronous handoff belongs to the native client and detached activation never invokes the handoff callback.

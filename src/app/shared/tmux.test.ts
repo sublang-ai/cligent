@@ -13,6 +13,7 @@ vi.mock('node:child_process', () => ({
 
 import {
   attachTmuxSession,
+  hasTmuxPane,
   isOrchestratorInTmux,
   isolateOrchestratorFromAgents,
   isTmuxAvailable,
@@ -47,6 +48,20 @@ describe('tmux helpers', () => {
     spawnSyncMock.mockReturnValue({ status: 1 });
 
     expect(isTmuxAvailable()).toBe(false);
+  });
+
+  it('requires pane output even when tmux exits successfully', () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: Buffer.from('%42\n') })
+      .mockReturnValueOnce({ status: 0, stdout: Buffer.from('\n') });
+
+    expect(hasTmuxPane('%42')).toBe(true);
+    expect(hasTmuxPane('%42')).toBe(false);
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'tmux',
+      ['display-message', '-p', '-t', '%42', '#{pane_id}'],
+      { stdio: 'pipe' },
+    );
   });
 
   it('runs tmux commands with piped stdio', () => {
