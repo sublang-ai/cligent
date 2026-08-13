@@ -374,7 +374,7 @@ Given upstream omits complete token accounting or an adapter synthesizes an erro
 Where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
 
 ### TADAPT-038
-Verifies: [ENG-028](../user/engine.md#eng-028), [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-012](../user/adapters/codex.md#codex-012), [CODEX-013](../user/adapters/codex.md#codex-013), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+Verifies: [ENG-028](../user/engine.md#eng-028), [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-015](../user/adapters/codex.md#codex-015), [CODEX-016](../user/adapters/codex.md#codex-016), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
 
 Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters, Claude Code shall publish the input side alone, Codex shall publish both sides derived by subtraction from its inclusive counters, and Kimi shall publish none.
 Given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent.

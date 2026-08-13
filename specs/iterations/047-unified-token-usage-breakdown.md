@@ -55,11 +55,11 @@ precede every code change.
    [CLAUDE-011](../user/adapters/claude-code.md#claude-011) for the cost-versus-token scope mismatch.
 6. [x] **Correct Codex per-turn accounting.**
    Subtract a per-thread baseline from the cumulative snapshot, guard non-monotonic snapshots, and fail
-   closed with no baseline; add [CODEX-012](../user/adapters/codex.md#codex-012) and amend ENG-018 with the
+   closed with no baseline; add [CODEX-015](../user/adapters/codex.md#codex-015) and amend ENG-018 with the
    baseline carve-out.
 7. [x] **Publish the Codex breakdown.**
    Derive both sides by guarded subtraction from the per-turn delta; add
-   [CODEX-013](../user/adapters/codex.md#codex-013).
+   [CODEX-016](../user/adapters/codex.md#codex-016).
    The optional cost passthrough is retained rather than removed: it cannot produce a wrong number, since an
    absent field stays absent, and dropping it would forfeit forward compatibility for no gain.
 8. [ ] **Supplement Gemini accounting from its transcript.** *Deferred.*

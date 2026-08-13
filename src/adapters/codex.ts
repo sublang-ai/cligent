@@ -479,7 +479,7 @@ function readCodexUsageSnapshot(
 }
 
 /**
- * CODEX-012: subtract the previous cumulative snapshot to obtain this turn's
+ * CODEX-015: subtract the previous cumulative snapshot to obtain this turn's
  * usage. A snapshot that decreased means the thread's accounting restarted
  * (compaction or a context-window refill), which cannot be attributed to one
  * turn, so the caller fails closed rather than reporting a guess.
@@ -546,7 +546,7 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
     outputTokens.valid &&
     reasoningOutput.valid;
 
-  // CODEX-013: both Codex counters are inclusive — cached and cache-write are
+  // CODEX-016: both Codex counters are inclusive — cached and cache-write are
   // subsets of input_tokens, reasoning is a subset of output_tokens — so each
   // exclusive component comes from a guarded subtraction. A side whose
   // subtraction would go negative is dropped rather than clamped.
@@ -1281,7 +1281,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   private readonly loadSdk: () => Promise<CodexSdk>;
 
   /**
-   * CODEX-012: `turn.completed.usage` reports the thread's cumulative total,
+   * CODEX-015: `turn.completed.usage` reports the thread's cumulative total,
    * so the turn's own usage is the delta against the previous snapshot. The
    * baseline is keyed by backend thread identity, not by run, because a
    * later run resumes the same thread. ENG-018 permits exactly this state.
@@ -1293,7 +1293,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   }
 
   /**
-   * CODEX-012: turn the cumulative `turn.completed` snapshot into this turn's
+   * CODEX-015: turn the cumulative `turn.completed` snapshot into this turn's
    * usage. A fresh thread starts from zero, so its first snapshot is already
    * the turn. A resumed thread this adapter never observed has no baseline to
    * subtract, and reporting the thread total as the turn's would overstate it

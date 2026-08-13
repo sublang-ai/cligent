@@ -119,7 +119,7 @@ Mapping `ultra` shall leave independently mapped permission-profile, approval, s
 Where `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is provided, including an empty array, the adapter shall reject before loading or invoking the Codex SDK with an error that states the installed Codex integration cannot enforce explicit tool restrictions.
 Where both fields are omitted, the adapter shall preserve Codex's native available-tool set.
 
-### CODEX-012
+### CODEX-015
 
 The usage attached to `turn.completed` is the thread's cumulative total rather than the completed turn's, so the adapter shall report the difference between that snapshot and the snapshot it last observed for the same thread.
 Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall report token accounting as `'unavailable'` per [ENG-027](../engine.md#eng-027), because the thread's accumulated total includes turns this run did not perform.
@@ -128,13 +128,13 @@ Where any counter in the new snapshot is smaller than the corresponding baseline
 In every case the adapter shall retain the newest snapshot as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
 The baseline shall be retained per backend thread identifier under [ENG-018](../engine.md#eng-018).
 
-### CODEX-013
+### CODEX-016
 
 Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive component of [ENG-028](../engine.md#eng-028) by subtracting the reported subsets from their inclusive base rather than by adding them.
 Where a cache counter is absent, the adapter shall omit its component and leave the remaining input components partitioning the aggregate.
 Where the reasoning counter is absent, the adapter shall omit the whole output side, because no measured visible-output component can be stated without it.
 Where a subtraction would be negative, the adapter shall omit the affected side per [ENG-019](../engine.md#eng-019) rather than clamp it.
-Both sides shall be derived from the per-turn delta of [CODEX-012](#codex-012), never from the thread's cumulative snapshot.
+Both sides shall be derived from the per-turn delta of [CODEX-015](#codex-015), never from the thread's cumulative snapshot.
 
 ### CODEX-014
 
