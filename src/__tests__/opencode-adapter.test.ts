@@ -7328,6 +7328,99 @@ describe('OpenCode SSE event structure', () => {
     expect(output! + reasoning!).toBe(payload.usage.outputTokens);
   });
 
+  it('records each step as its own billable request', async () => {
+    const firstStep = {
+      id: 'step-1',
+      sessionID: 'usage-session',
+      messageID: 'message-1',
+      type: 'step-finish',
+      reason: 'stop',
+      cost: 0.003,
+      tokens: {
+        input: 100,
+        output: 50,
+        reasoning: 20,
+        cache: { read: 10, write: 5 },
+      },
+    } satisfies StepFinishPart;
+    const secondStep = {
+      ...firstStep,
+      id: 'step-2',
+      messageID: 'message-2',
+      cost: 0.002,
+      tokens: {
+        input: 80,
+        output: 30,
+        reasoning: 10,
+        cache: { read: 4, write: 1 },
+      },
+    } satisfies StepFinishPart;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'usage-session' },
+          events: [
+            {
+              type: 'message.updated',
+              properties: {
+                info: {
+                  id: 'message-1',
+                  role: 'assistant',
+                  modelID: 'claude-sonnet-5',
+                  providerID: 'anthropic',
+                },
+              },
+            },
+            {
+              type: 'message.part.updated',
+              properties: { part: firstStep },
+            },
+            {
+              type: 'message.part.updated',
+              properties: { part: secondStep },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'usage-session' },
+            },
+          ],
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const payload = events.find((e) => e.type === 'done')!.payload as DonePayload;
+    // Each step is one model request, so each record prices on its own
+    // context length; the second step's message never announced a model, so
+    // its record omits the rate-card key rather than guessing.
+    expect(payload.usage.records).toEqual([
+      {
+        model: 'claude-sonnet-5',
+        provider: 'anthropic',
+        requests: 1,
+        tokens: { input: 100, cacheRead: 10, cacheWrite: 5, output: 50, reasoning: 20 },
+        costUsd: 0.003,
+      },
+      {
+        requests: 1,
+        tokens: { input: 80, cacheRead: 4, cacheWrite: 1, output: 30, reasoning: 10 },
+        costUsd: 0.002,
+      },
+    ]);
+    const summed = payload.usage.records!.reduce(
+      (acc, record) => ({
+        input: acc.input + record.tokens.input!,
+        cacheRead: acc.cacheRead + record.tokens.cacheRead!,
+        cacheWrite: acc.cacheWrite + record.tokens.cacheWrite!,
+        output: acc.output + record.tokens.output!,
+        reasoning: acc.reasoning + record.tokens.reasoning!,
+      }),
+      { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 },
+    );
+    expect(summed).toEqual(payload.usage.breakdown);
+  });
+
   it('publishes no breakdown when a step counter is malformed', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
@@ -7414,6 +7507,21 @@ describe('OpenCode SSE event structure', () => {
         output: 0,
         reasoning: 0,
       },
+      // The request happened and was measured at zero, so it is recorded as
+      // one; the step named no model, so the record omits the rate-card key.
+      records: [
+        {
+          requests: 1,
+          tokens: {
+            input: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            output: 0,
+            reasoning: 0,
+          },
+          costUsd: 0,
+        },
+      ],
     });
   });
 

@@ -25,6 +25,7 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
+  TokenBreakdown,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -40,6 +41,7 @@ import {
 } from '../runtime-version.js';
 import {
   buildTokenBreakdown,
+  buildUsageRecords,
   isUsageRecord,
   readUsageCounter,
 } from './usage.js';
@@ -380,6 +382,23 @@ function loadOpenCodeMessageRole(message: unknown): OpenCodeMessageRole | undefi
   )?.toLowerCase();
 
   return role === 'user' || role === 'assistant' ? role : undefined;
+}
+
+function loadOpenCodeMessageModel(
+  event: Record<string, unknown>,
+): { model?: string; provider?: string } | undefined {
+  const info = asRecord(event.info);
+  const nested = asRecord(event.message);
+  const model =
+    asString(event.modelID) ?? asString(info.modelID) ?? asString(nested.modelID);
+  const provider =
+    asString(event.providerID) ??
+    asString(info.providerID) ??
+    asString(nested.providerID);
+
+  return model || provider
+    ? { ...(model ? { model } : {}), ...(provider ? { provider } : {}) }
+    : undefined;
 }
 
 function loadOpenCodePartMessageId(event: Record<string, unknown>): string | undefined {
@@ -1788,6 +1807,18 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       output: 0,
       reasoning: 0,
     };
+    // One step-finish part is one model request, so each becomes one ENG-030
+    // record. The rate-card identity lives on the owning assistant message,
+    // which may arrive after its parts, so it is resolved at terminal `done`.
+    const stepRecords: Array<{
+      messageId?: string;
+      tokens: TokenBreakdown;
+      costUsd?: number;
+    }> = [];
+    const messageModels = new Map<
+      string,
+      { model?: string; provider?: string }
+    >();
 
     const eventStreamController = new AbortController();
     let resolveCallerAbort!: () => void;
@@ -2842,6 +2873,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         if (eventType === 'message.updated') {
           const messageId = loadOpenCodeUpdatedMessageId(event);
           const role = loadOpenCodeMessageRole(event);
+          if (messageId) {
+            const identity = loadOpenCodeMessageModel(event);
+            if (identity) messageModels.set(messageId, identity);
+          }
           if (messageId && role) {
             messageRoles.set(messageId, role);
             for (const normalized of drainPendingContent()) {
@@ -3080,7 +3115,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             ) {
               accumulatedTokenUsageComplete = false;
             }
-            accumulatedCost += asNumber(part.cost) ?? 0;
+            const stepCost = asNumber(part.cost);
+            accumulatedCost += stepCost ?? 0;
+            stepRecords.push({
+              messageId: asString(part.messageID) ?? asString(part.messageId),
+              tokens: {
+                input: inputTokens.value,
+                cacheRead: cacheReadTokens.value,
+                cacheWrite: cacheWriteTokens.value,
+                output: outputTokens.value,
+                reasoning: reasoningTokens.value,
+              },
+              ...(stepCost !== undefined ? { costUsd: stepCost } : {}),
+            });
             continue;
           }
 
@@ -3618,6 +3665,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 accumulatedComponents,
               )
             : undefined;
+          const accumulatedRecords = buildUsageRecords(
+            accumulatedBreakdown,
+            stepRecords.map((step) => ({
+              ...(step.messageId
+                ? messageModels.get(step.messageId) ?? {}
+                : {}),
+              // One step is one model request, so a context-length tier
+              // follows from this record's own counts (ENG-030).
+              requests: 1,
+              tokens: step.tokens,
+              ...(step.costUsd !== undefined ? { costUsd: step.costUsd } : {}),
+            })),
+          );
           const accumulatedEventUsage: DonePayload['usage'] = {
             tokenAvailability: accumulatedReported ? 'reported' : 'unavailable',
             inputTokens: accumulatedInputTokens,
@@ -3629,6 +3689,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             ...(accumulatedBreakdown
               ? { breakdown: accumulatedBreakdown }
               : {}),
+            ...(accumulatedRecords ? { records: accumulatedRecords } : {}),
           };
           const usage: DonePayload['usage'] = eventTokenUsageObserved
             ? {
