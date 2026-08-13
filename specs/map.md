@@ -106,7 +106,7 @@ meta.md     The spec of specs
 
 | Group | File | Summary |
 | --- | --- | --- |
-| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization including the cache-exclusive input-side token breakdown and withheld output side, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token |
+| user | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run, whole-run accounting summed from the per-model map, the cache-exclusive input-side token breakdown and withheld output side, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token |
 
 ### CODEX
 

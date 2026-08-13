@@ -106,8 +106,10 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 
 ### CLAUDE-011
 
-Where a run spawns subagents or internal advisor inference, `DonePayload.usage.totalCostUsd` and the token counters shall be understood to cover different scopes: Claude Code accumulates cost across every model request the process makes, while the token counters it reports cover the main conversation loop only.
-The adapter shall pass both through as the runtime reports them and shall not reconcile one against the other, because no runtime surface partitions the additional spend into normalized input and output counters.
+Claude Code reports two accountings on its terminal `result` message: `usage`, which counts the main conversation loop only, and `modelUsage`, which counts every model request the run made — including subagents and internal inference — partitioned per model into input, cache-read, cache-creation, and output counters.
+The adapter shall derive `DonePayload.usage` from the per-model accounting by summing those counters across models, so the reported totals cover the whole run and share the scope of the runtime's own cost figure.
+Where the per-model accounting is absent, or any counter it supplies is not a finite non-negative integer, the adapter shall fall back to the main-loop counters; in that case the reported totals cover the main conversation loop only and may understate a run that spawned subagents.
+The adapter shall determine the [CLAUDE-010](#claude-010) no-op repair signature from the main-loop counters rather than the whole-run totals, because the repair turn reports zero main-loop tokens while the run as a whole may already have spent some.
 
 ## References
 

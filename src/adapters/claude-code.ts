@@ -156,6 +156,8 @@ interface ClaudeResultMessage {
   durationMs?: unknown;
   duration_ms?: unknown;
   sessionId?: unknown;
+  /** Per-model accounting covering every request the run made (CLAUDE-011). */
+  modelUsage?: unknown;
 }
 
 interface ClaudeErrorMessage {
@@ -423,6 +425,43 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   }
 
   return 'success';
+}
+
+const MODEL_USAGE_ALIASES = [
+  ['input_tokens', ['inputTokens', 'input_tokens']],
+  ['cache_read_input_tokens', ['cacheReadInputTokens', 'cache_read_input_tokens']],
+  [
+    'cache_creation_input_tokens',
+    ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
+  ],
+  ['output_tokens', ['outputTokens', 'output_tokens']],
+] as const;
+
+/**
+ * CLAUDE-011: `result.usage` counts the main conversation loop only, while
+ * `result.modelUsage` counts every request the run made, including subagents.
+ * Fold the per-model entries into one usage-shaped record so the aggregates
+ * describe the whole run. Returns undefined when the map is absent or any
+ * entry is malformed, leaving the caller on the narrower `usage` surface
+ * rather than differencing against a partial total.
+ */
+function foldModelUsage(rawModelUsage: unknown): Record<string, number> | undefined {
+  if (!isUsageRecord(rawModelUsage)) return undefined;
+
+  const entries = Object.values(rawModelUsage);
+  if (entries.length === 0) return undefined;
+
+  const folded: Record<string, number> = {};
+  for (const entry of entries) {
+    if (!isUsageRecord(entry)) return undefined;
+    for (const [field, aliases] of MODEL_USAGE_ALIASES) {
+      const reading = readUsageCounter(entry, aliases, true);
+      if (!reading.valid) return undefined;
+      folded[field] = (folded[field] ?? 0) + reading.value;
+    }
+  }
+
+  return folded;
 }
 
 function mapUsage(
@@ -955,7 +994,18 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const result = message as ClaudeResultMessage;
           const { status, errorText } = classifyResultMessage(result);
           const resultText = asString(result.result);
-          const usage = mapUsage(result.usage, observedToolUseIds.size);
+          // Prefer the whole-run accounting; fall back to the main-loop
+          // counters only where the runtime does not supply it.
+          const usage = mapUsage(
+            foldModelUsage(result.modelUsage) ?? result.usage,
+            observedToolUseIds.size,
+          );
+          // CLAUDE-010's no-op signature is a property of the main-loop
+          // result message, not of the run's total accounting: the repair
+          // turn reports zero main-loop tokens while the run as a whole may
+          // already have spent some. Detect it on the narrow counters so the
+          // whole-run aggregates above cannot suppress the skip.
+          const mainLoopUsage = mapUsage(result.usage, observedToolUseIds.size);
 
           // Resuming a session whose previous turn ended with a dangling tool
           // call makes Claude Code first run an internal continuation-repair
@@ -978,10 +1028,10 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             status === 'success' &&
             errorText === undefined &&
             resultText === undefined &&
-            usage.tokenAvailability === 'reported' &&
-            usage.inputTokens === 0 &&
-            usage.outputTokens === 0 &&
-            usage.toolUses === 0;
+            mainLoopUsage.tokenAvailability === 'reported' &&
+            mainLoopUsage.inputTokens === 0 &&
+            mainLoopUsage.outputTokens === 0 &&
+            mainLoopUsage.toolUses === 0;
           if (isInternalNoOpResult) {
             continue;
           }

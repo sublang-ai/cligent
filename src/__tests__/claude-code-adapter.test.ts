@@ -1434,6 +1434,118 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.breakdown).toEqual({ input: 7 });
   });
 
+  it('reports whole-run accounting rather than main-loop counters', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          // The main-loop counters exclude subagent work; modelUsage covers
+          // every request the run made, across models.
+          usage: {
+            input_tokens: 10,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 50,
+            output_tokens: 20,
+          },
+          modelUsage: {
+            'claude-haiku-4-5': {
+              inputTokens: 10,
+              cacheReadInputTokens: 100,
+              cacheCreationInputTokens: 50,
+              outputTokens: 20,
+            },
+            'claude-sonnet-5': {
+              inputTokens: 5,
+              cacheReadInputTokens: 900,
+              cacheCreationInputTokens: 200,
+              outputTokens: 400,
+            },
+          },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const usage = (
+      (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
+        .payload as DonePayload
+    ).usage;
+    expect(usage.tokenAvailability).toBe('reported');
+    expect(usage.inputTokens).toBe(1265); // (10+100+50) + (5+900+200)
+    expect(usage.outputTokens).toBe(420); // 20 + 400
+    expect(usage.breakdown).toEqual({ input: 15, cacheRead: 1000, cacheWrite: 250 });
+  });
+
+  it('falls back to main-loop counters when no per-model map is supplied', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 7, output_tokens: 3 },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const usage = (
+      (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
+        .payload as DonePayload
+    ).usage;
+    expect(usage.inputTokens).toBe(7);
+    expect(usage.outputTokens).toBe(3);
+  });
+
+  it('keeps the no-op repair skip keyed on the main-loop counters', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          // The continuation-repair no-op: zero main-loop tokens, while the
+          // run's per-model total is already non-zero. The skip must still
+          // fire, or the submitted turn below is never reached.
+          type: 'result',
+          status: 'success',
+          usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          modelUsage: {
+            'claude-haiku-4-5': {
+              inputTokens: 900,
+              cacheReadInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              outputTokens: 40,
+            },
+          },
+          duration_ms: 5,
+        },
+        { type: 'assistant', text: 'the real answer' },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'the real answer',
+          usage: { input_tokens: 12, output_tokens: 8 },
+          duration_ms: 20,
+        },
+      ]),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { resume: 'session-abc' }),
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+    expect(
+      (events.find((e) => e.type === 'done')!.payload as DonePayload).result,
+    ).toBe('the real answer');
+  });
+
   it('establishes capabilities once across repeated system notices', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
