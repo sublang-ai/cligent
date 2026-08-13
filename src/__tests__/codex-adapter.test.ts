@@ -337,7 +337,34 @@ describe('CodexAdapter', () => {
         output: 38,
         reasoning: 6,
       },
+      // Codex meters per turn, not per request, so the turn is one billable
+      // group; the record exists to name the rate card it priced against.
+      records: [
+        {
+          model: 'gpt-5-codex',
+          tokens: {
+            input: 16,
+            cacheRead: 12,
+            cacheWrite: 5,
+            output: 38,
+            reasoning: 6,
+          },
+        },
+      ],
     });
+  });
+
+  it('publishes no records when the run pinned no model', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
+    });
+
+    const events = await collect(adapter.run('do it', { cwd: '/repo' }));
+    const done = donePayload(events.at(-1)!);
+    // Nothing named the model, so the only group has no rate-card key and
+    // would restate the breakdown; ENG-030 omits it rather than guess.
+    expect(done.usage.breakdown).toBeDefined();
+    expect(done.usage.records).toBeUndefined();
   });
 
   it('emits one tool_use and one terminal tool_result across repeated updates', async () => {
@@ -864,6 +891,7 @@ describe('CodexAdapter', () => {
       toolUses: 1,
       totalCostUsd: 0.17,
       breakdown: { input: 33 },
+      records: [{ model: 'gpt-5-codex', tokens: { input: 33 } }],
     });
     expect(done.durationMs).toBe(222);
   });

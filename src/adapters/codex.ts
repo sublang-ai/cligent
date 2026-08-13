@@ -32,6 +32,7 @@ import {
 } from '../runtime-version.js';
 import {
   buildTokenBreakdown,
+  buildUsageRecords,
   exclusiveBase,
   isUsageRecord,
   readUsageCounter,
@@ -1340,6 +1341,25 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     return mapUsage(differenced, toolUses);
   }
 
+  /**
+   * CODEX-014: the turn is one billable group. Codex reports usage per turn,
+   * not per request, so the record carries no request count and no cost, and
+   * exists only to name the rate card the turn priced against. Without a model
+   * it would restate the breakdown and name nothing, so it is not published.
+   */
+  private withTurnRecord(
+    usage: DonePayload['usage'],
+    model: string | undefined,
+  ): DonePayload['usage'] {
+    if (!model) return usage;
+
+    const records = buildUsageRecords(usage.breakdown, [
+      { model, tokens: usage.breakdown ?? {} },
+    ]);
+
+    return records ? { ...usage, records } : usage;
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
@@ -1459,6 +1479,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const completedToolUseIds = new Set<string>();
     const observedToolUseIds = new Set<string>();
 
+    // CODEX-014: the rate-card key for the turn. Codex reports no model on its
+    // typed event surface, so this is normally the pinned request model; an
+    // event that does carry one is preferred only where nothing was pinned,
+    // keeping the record and `init` in agreement.
+    let rateCardModel: string | undefined = options?.model;
+
     const buildInitPayload = (
       sourceEvent?: Record<string, unknown>,
     ): {
@@ -1492,6 +1518,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         : inferredTools.length > 0
           ? inferredTools
           : [];
+
+      rateCardModel ??= asString(sourceEvent?.model);
 
       return {
         model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
@@ -1670,13 +1698,16 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: this.resolveTurnUsage(
-                turn.usage ?? event.usage,
-                observedToolUseIds.size,
-                // A resumed turn need not repeat thread.started, so the
-                // inbound token identifies the same thread.
-                backendProvidedSessionId ? sessionId : options?.resume,
-                options?.resume !== undefined,
+              usage: this.withTurnRecord(
+                this.resolveTurnUsage(
+                  turn.usage ?? event.usage,
+                  observedToolUseIds.size,
+                  // A resumed turn need not repeat thread.started, so the
+                  // inbound token identifies the same thread.
+                  backendProvidedSessionId ? sessionId : options?.resume,
+                  options?.resume !== undefined,
+                ),
+                rateCardModel,
               ),
               durationMs,
             },

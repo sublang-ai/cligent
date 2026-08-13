@@ -136,6 +136,11 @@ Where the reasoning counter is absent, the adapter shall omit the whole output s
 Where a subtraction would be negative, the adapter shall omit the affected side per [ENG-019](../engine.md#eng-019) rather than clamp it.
 Both sides shall be derived from the per-turn delta of [CODEX-012](#codex-012), never from the thread's cumulative snapshot.
 
+### CODEX-014
+
+Codex reports usage once per turn rather than once per request, so the turn is a single billable group: the adapter shall publish one [ENG-030](../engine.md#eng-030) record covering the turn's whole breakdown, omitting the request count because the turn covers an unreported number of requests, and omitting cost because Codex reports none.
+The record's rate-card key shall be `AgentOptions.model` where the run pinned one, and otherwise a model reported by the run's own events; where neither names a model, the adapter shall publish no records, a single unidentified group being the breakdown restated.
+
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"
