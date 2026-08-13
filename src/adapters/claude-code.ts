@@ -805,6 +805,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
 
     const startTime = Date.now();
     let doneYielded = false;
+    let initYielded = false;
     // True once this call's stream has produced any model-turn output event
     // (text, text_delta, thinking, tool_use, tool_result). Those are exactly
     // the events the adapter derives from assistant messages and stream
@@ -837,6 +838,14 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
         }
 
         if (messageType === 'system') {
+          // Claude Code emits a `system` message for many run-time notices
+          // (compaction boundaries, retries, background tasks, …), not just
+          // the opening handshake, and only the handshake carries the tool
+          // surface. `init` establishes capabilities once, so later notices
+          // must not restate it with an empty tool list.
+          if (initYielded) {
+            continue;
+          }
           const system = message as ClaudeSystemMessage;
           yield createEvent(
             'init',
@@ -848,6 +857,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             },
             sessionId,
           );
+          initYielded = true;
           continue;
         }
 

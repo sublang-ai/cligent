@@ -14,6 +14,7 @@ import type {
   AgentOptions,
   ClaudeEffort,
   DonePayload,
+  InitPayload,
   PermissionLevel,
   PermissionPolicy,
 } from '../types.js';
@@ -1431,6 +1432,40 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.inputTokens).toBe(7);
     // Absent counters are omitted rather than published as measured zeroes.
     expect(usage.breakdown).toEqual({ input: 7 });
+  });
+
+  it('establishes capabilities once across repeated system notices', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        // Only the opening handshake carries the tool surface; Claude Code
+        // emits further system notices (compaction, retries, background
+        // tasks) throughout a run.
+        { type: 'system', model: 'claude', cwd: '/repo', tools: ['Bash', 'Read'] },
+        { type: 'system', subtype: 'compact_boundary' },
+        { type: 'assistant', text: 'working' },
+        { type: 'system', subtype: 'api_retry' },
+        { type: 'system', subtype: 'background_tasks' },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          duration_ms: 5,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const inits = events.filter((event) => event.type === 'init');
+    expect(inits).toHaveLength(1);
+    // The one init retains the handshake's tool surface rather than being
+    // overwritten by a later notice that carries none.
+    expect((inits[0]!.payload as InitPayload).tools).toEqual(['Bash', 'Read']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
   });
 
   it('publishes no breakdown when usage is unavailable', async () => {
