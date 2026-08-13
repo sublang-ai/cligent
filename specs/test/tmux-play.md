@@ -286,7 +286,7 @@ The acceptance probe shall run under `*.acceptance.test.ts`, shall not require a
 ### TTMUX-023
 Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
 
-Given players with ids `coder` and `reviewer`, when the launcher sets pane titles, the Boss/Captain pane title shall be `Captain` and the player pane titles shall be `Coder` and `Reviewer` respectively. No pane title shall contain the substring `Player:`.
+Given players with ids `coder` and `reviewer`, when the launcher sets pane titles, the display name carried by the Boss/Captain pane title shall be `Captain` and those carried by the player pane titles shall be `Coder` and `Reviewer` respectively, each within the full title composed per [TMUX-048](../user/tmux-play.md#tmux-048). No pane title shall contain the substring `Player:`.
 
 ## Theme
 
@@ -421,7 +421,7 @@ Given a real tmux server with two configured players and a YAML config that omit
 ### TTMUX-032
 Verifies: [TMUX-036](../user/tmux-play.md#tmux-036)
 
-Given a real tmux server with player ids `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -p '#{pane_title}'` against each pane shall return `Captain` for the Boss/Captain pane, `Coder` for the first player pane, and `Reviewer` for the second player pane.
+Given a real tmux server with player ids `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -p '#{pane_title}'` against each pane shall return the title composed per [TMUX-048](../user/tmux-play.md#tmux-048) from the pane's display name and its configured adapter: `Captain · <captain adapter>` for the Boss/Captain pane, `Coder · <coder adapter>` for the first player pane, and `Reviewer · <reviewer adapter>` for the second player pane.
 
 ### TTMUX-033
 Verifies: [TMUX-027](../user/tmux-play.md#tmux-027)

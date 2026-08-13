@@ -521,7 +521,9 @@ A future cleanup hook may reduce the binding lifetime, but safe cleanup must pre
 
 ### TMUX-036
 
-The Boss/Captain pane title shall be `Captain`. Each player pane title shall be the player `id` rendered with the first character upper-cased and the remaining characters preserved (e.g., `coder` → `Coder`, `reviewer` → `Reviewer`). The literal `Player:` prefix shall not appear in pane titles.
+This item defines the display name a pane is known by, which is the stem of its title rather than the whole of it: [TMUX-048](#tmux-048) composes that stem with the pane's adapter to form the title tmux carries.
+
+The Boss/Captain pane's display name shall be `Captain`. Each player pane's display name shall be the player `id` rendered with the first character upper-cased and the remaining characters preserved (e.g., `coder` → `Coder`, `reviewer` → `Reviewer`). The literal `Player:` prefix shall not appear in pane titles.
 
 ## Presenter Output
 
