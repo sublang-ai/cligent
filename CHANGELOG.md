@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-12
+
 ### Added
 
 - tmux-play now accepts dot-delimited player IDs and complete per-call `settings` replacements for model, effort, instruction, and permissions. Model and effort can explicitly select a concrete value or the provider default; Codex and Gemini can reset defaults on fresh or resumed calls, Claude and OpenCode can use default effort beside a concrete resumed model but reject their unrestorable resumed default model, OpenCode clears omitted resumed permissions, and resumed Kimi fails closed because ACP cannot restore model, effort, or permission defaults. Settings are detached and validated through adapter-owned mappings before prompt records or provider work, and failed preflight preserves the stored resume token. The `@sublang/cligent/tmux-play` entry point exports `AgentCallSettingsError` and `isAgentCallSettingsError()` so an embedding caller can distinguish those failures while retaining the original diagnostic and cause. It also exports a managed interactive lifecycle: a caller-supplied public session ID, prepared activation/attach or cancellation, stable-pane and bounded readiness checks, graceful shutdown request/acknowledgement with forced fallback, initialized-or-restored runtime injection, pre-turn write-ahead, terminal-aware post-turn settlement, buffered Captain replies, session-runner tmux isolation before embedding-owned initialization, and shutdown serialized behind the complete transaction. An empty player roster now uses the same runtime and managed lifecycle as a Boss/Captain-only session: the launcher creates one full-width Captain pane and no player log tails, while empty manifests, visibility records, presentation, and reply settlement remain valid; nonempty rosters still cannot hide every player. Stock nonempty tmux-play and generic `Cligent` behavior are unchanged — IR-048, TMUX-005, TMUX-028, TMUX-029, TMUX-074, TMUX-080, TMUX-081, TMUX-093, TMUX-094, TTMUX-014, TTMUX-073, TTMUX-080, TTMUX-083, TTMUX-096, TTMUX-097
@@ -386,7 +388,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/sublang-ai/cligent/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/sublang-ai/cligent/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/sublang-ai/cligent/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/sublang-ai/cligent/compare/v0.17.0...v0.18.0
