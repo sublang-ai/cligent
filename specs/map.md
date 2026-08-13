@@ -99,6 +99,7 @@ meta.md     The spec of specs
 | IR-046 | [046-token-usage-availability.md](iterations/046-token-usage-availability.md) | Distinguish reported token totals, including zero, from unavailable accounting across every terminal path |
 | IR-047 | [047-unified-token-usage-breakdown.md](iterations/047-unified-token-usage-breakdown.md) | Implement DR-014: optional five-component token breakdown per adapter, per-turn Codex accounting, transcript-supplemented Gemini accounting, and user documentation |
 | IR-048 | [048-namespaced-settings-and-managed-tmux.md](iterations/048-namespaced-settings-and-managed-tmux.md) | Add namespaced tmux-play players, complete per-call settings, an abort-safe transactional managed interactive lifecycle, and Boss/Captain-only empty-roster sessions |
+| IR-049 | [049-billable-usage-records.md](iterations/049-billable-usage-records.md) | Implement DR-014's billable decomposition: whole-run Claude accounting with one `init`, per-model, per-request, and per-turn usage records, and their documentation |
 
 ## Packages
 

@@ -365,17 +365,43 @@ Two rules make the object safe to consume:
 `breakdown` is absent entirely whenever `tokenAvailability` is
 `'unavailable'`.
 
+### Which rate card applies
+
+A component split still cannot be priced without knowing *what* was billed at
+*which* rate. `usage.records` answers that: each entry is one billable group of
+the run.
+
+```ts
+for (const record of usage.records ?? []) {
+  console.log(record.model, record.tokens, record.requests, record.costUsd);
+}
+```
+
+| Field      | Meaning |
+| ---------- | ------- |
+| `model`    | the identifier the agent prices against — **absent when the agent never names it** |
+| `provider` | who served the request, where the agent reports it |
+| `tokens`   | this group's components, in the same frame as `breakdown` |
+| `requests` | how many API requests the group covers; `1` means a context-length tier follows from this record's own token counts, more than `1` means it does not, and absent means the count is unreported |
+| `costUsd`  | the cost the agent itself computed for the group, where it computes one |
+
+The records of a run add up to `breakdown`, component by component. If that
+identity cannot hold, `records` is omitted entirely rather than published
+partial — so summing records is always safe.
+
 ### What each agent reports
 
-| Agent         | Input side                     | Output side | Notes |
-| ------------- | ------------------------------ | ----------- | ----- |
-| `opencode`    | ✅ all three                   | ✅          | Reports every component directly. |
-| `codex`       | ✅ all three                   | ✅          | Usage is per turn, differenced from the thread total. |
-| `claude-code` | ✅ all three                   | ❌          | Thinking is billed inside `outputTokens` and not exposed separately, so no visible-output split is published. |
-| `gemini`      | ❌                             | ❌          | The streamed statistics omit thinking and tool-prompt tokens, so accounting stays unavailable on thinking models. |
-| `kimi`        | ❌                             | ❌          | The protocol's usage structure is unstable and the CLI does not populate it. |
+| Agent         | Input side                     | Output side | Records | Notes |
+| ------------- | ------------------------------ | ----------- | ------- | ----- |
+| `opencode`    | ✅ all three                   | ✅          | per request | Reports every component directly, and one step per model request with its own model, provider, and cost. |
+| `codex`       | ✅ all three                   | ✅          | per turn | Usage is per turn, differenced from the thread total, so one record covers the turn and carries no request count. Its model is the one you passed in. |
+| `claude-code` | ✅ all three                   | ❌          | per model | Totals cover the whole run including subagents. Thinking is billed inside `outputTokens` and not exposed separately, so no visible-output split is published. |
+| `gemini`      | ❌                             | ❌          | ❌ | The streamed statistics omit thinking and tool-prompt tokens, so accounting stays unavailable on thinking models. |
+| `kimi`        | ❌                             | ❌          | ❌ | The protocol's usage structure is unstable and the CLI does not populate it. |
 
 Coverage tracks what each runtime measures, so it changes as the agents do.
+Cligent reports usage, never cost derived from a rate card of its own: prices
+change, and a stale table is worse than no table.
 
 ## Permissions
 
