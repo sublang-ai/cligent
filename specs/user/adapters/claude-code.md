@@ -27,15 +27,17 @@ The adapter shall normalize SDK messages to `AgentEvent` types:
 
 | SDK Message | AgentEvent |
 | --- | --- |
-| first `system` | `init` (model, cwd, tools); later `system` notices emit nothing |
+| `system` with `subtype: 'init'` | `init` (model, cwd, tools); every other `system` notice emits nothing |
 | `assistant` with text content | `text` |
 | `assistant` with tool_use content | `tool_use` |
 | Stream events (text deltas) | `text_delta` |
 | `result` | `done` (usage, status), except an internal no-op `result` per [CLAUDE-010](#claude-010) |
 | Errors | `error` (recoverable flag) |
 
-The adapter shall emit `init` exactly once per run, from the first `system` message.
-Claude Code emits further `system` messages throughout a run for compaction boundaries, retries, background-task changes, and similar notices, and only the opening handshake carries the tool surface, so restating `init` from a later notice would replace the established capabilities with an empty tool list.
+The adapter shall emit `init` exactly once per run, from the `system` message whose `subtype` is `init` — the only variant carrying the tool surface — identifying it by that subtype rather than by its position in the stream.
+Claude Code emits `system` messages throughout a run for hook lifecycle, compaction boundaries, retries, thinking-token and status notices, and similar events, and those notices arrive both before and after the handshake: a run with a `SessionStart` hook configured emits the hook's own notices first.
+Emitting `init` from a notice would announce an empty tool list, and doing so before the handshake would leave that empty list as the run's established capabilities.
+A `system` message that carries no subtype shall be treated as the handshake, no runtime notice being unlabelled.
 
 Where the `result` message supplies complete usage, the adapter shall publish the [ENG-028](../engine.md#eng-028) input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
 The adapter shall publish no output side, because Claude Code bills thinking tokens inside `output_tokens` and does not expose them separately, so no measured visible-output component exists to state.

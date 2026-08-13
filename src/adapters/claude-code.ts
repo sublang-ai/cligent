@@ -129,6 +129,7 @@ interface ClaudeThinkingBlock {
 
 interface ClaudeSystemMessage {
   type?: unknown;
+  subtype?: unknown;
   model?: unknown;
   cwd?: unknown;
   tools?: unknown;
@@ -905,15 +906,17 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
         }
 
         if (messageType === 'system') {
-          // Claude Code emits a `system` message for many run-time notices
-          // (compaction boundaries, retries, background tasks, …), not just
-          // the opening handshake, and only the handshake carries the tool
-          // surface. `init` establishes capabilities once, so later notices
-          // must not restate it with an empty tool list.
-          if (initYielded) {
+          // Claude Code emits `system` for many run-time notices — hook
+          // lifecycle, compaction boundaries, retries, thinking-token and
+          // status updates — and only the handshake, `subtype: 'init'`,
+          // carries the tool surface. Notices arrive both before and after
+          // it (SessionStart hook events precede it), so the handshake is
+          // identified by its subtype, never by its position.
+          const system = message as ClaudeSystemMessage;
+          const subtype = asString(system.subtype);
+          if ((subtype !== undefined && subtype !== 'init') || initYielded) {
             continue;
           }
-          const system = message as ClaudeSystemMessage;
           yield createEvent(
             'init',
             AGENT,

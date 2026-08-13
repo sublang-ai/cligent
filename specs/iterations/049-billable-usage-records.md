@@ -26,11 +26,15 @@ did not even cover the whole run.
 
 Each task is one commit and keeps build, typecheck, lint, and unit checks green at its boundary.
 
-1. [x] **Emit `init` once per run.**
-   Guard the Claude `system` handler on a first-message flag; amend
+1. [x] **Emit `init` once per run, from the handshake.**
+   Identify the handshake by `subtype: 'init'` and emit nothing for any other `system` notice; amend
    [CLAUDE-003](../user/adapters/claude-code.md#claude-003).
    Measured 36 `init` events on one live run before the fix, each after the first carrying an empty tool
    list that replaced the real capabilities.
+   The first attempt guarded on a first-message flag instead, which a review then showed to be wrong in the
+   opposite direction: a run with a `SessionStart` hook puts four `system` notices ahead of the handshake,
+   observed live, so the flag latched onto an empty-tool notice and suppressed the real capabilities
+   permanently. Position cannot identify the handshake; the subtype can.
 2. [x] **Account for the whole run.**
    Derive Claude aggregates from `result.modelUsage` rather than `result.usage`, falling back to the
    main-loop counters when the per-model map is absent or malformed; rewrite

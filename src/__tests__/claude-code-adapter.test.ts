@@ -105,6 +105,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude-3-7-sonnet',
           cwd: '/repo',
           tools: ['Write', 'Bash'],
@@ -240,6 +241,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: ['Write', 'Bash'],
@@ -514,6 +516,7 @@ describe('ClaudeCodeAdapter', () => {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
                 type: 'system',
+                subtype: 'init',
                 model: 'claude',
                 cwd: '/cwd',
                 tools: [],
@@ -572,6 +575,7 @@ describe('ClaudeCodeAdapter', () => {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
                 type: 'system',
+                subtype: 'init',
                 model: 'claude',
                 cwd: '/repo',
                 tools: [],
@@ -616,6 +620,7 @@ describe('ClaudeCodeAdapter', () => {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
                 type: 'system',
+                subtype: 'init',
                 model: 'claude',
                 cwd: '/repo',
                 tools: [],
@@ -671,6 +676,7 @@ describe('ClaudeCodeAdapter', () => {
               async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
                 yield {
                   type: 'system',
+                  subtype: 'init',
                   model: 'claude',
                   cwd: '/repo',
                   tools: [],
@@ -813,6 +819,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -849,6 +856,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -912,6 +920,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -958,6 +967,7 @@ describe('ClaudeCodeAdapter', () => {
     const messages: unknown[] = [
       {
         type: 'system',
+        subtype: 'init',
         model: 'claude',
         cwd: '/repo',
         tools: [],
@@ -1032,7 +1042,7 @@ describe('ClaudeCodeAdapter', () => {
   it('marks absent token accounting unavailable while preserving observed tools', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: ['Bash'] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: ['Bash'] },
         {
           type: 'assistant',
           content: [
@@ -1073,6 +1083,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -1136,6 +1147,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -1186,6 +1198,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -1232,6 +1245,7 @@ describe('ClaudeCodeAdapter', () => {
             async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
               yield {
                 type: 'system',
+                subtype: 'init',
                 model: 'claude',
                 cwd: '/repo',
                 tools: [],
@@ -1263,6 +1277,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude',
           cwd: '/repo',
           tools: [],
@@ -1290,6 +1305,7 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: makeLoader([
         {
           type: 'system',
+          subtype: 'init',
           model: 'claude-3-7-sonnet',
           cwd: '/repo',
           tools: ['Write'],
@@ -1354,6 +1370,7 @@ describe('ClaudeCodeAdapter', () => {
         [
           {
             type: 'system',
+            subtype: 'init',
             model: 'claude',
             cwd: '/repo',
             tools: [],
@@ -1382,7 +1399,7 @@ describe('ClaudeCodeAdapter', () => {
   it('sums cache tokens into inputTokens (snake_case)', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1415,7 +1432,7 @@ describe('ClaudeCodeAdapter', () => {
   it('omits a cache component the result message did not carry', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1438,7 +1455,7 @@ describe('ClaudeCodeAdapter', () => {
   it('reports whole-run accounting rather than main-loop counters', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1484,7 +1501,7 @@ describe('ClaudeCodeAdapter', () => {
   it('decomposes the run into one billable record per model', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1551,7 +1568,7 @@ describe('ClaudeCodeAdapter', () => {
   it('publishes no records when the run reports no per-model map', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1572,7 +1589,7 @@ describe('ClaudeCodeAdapter', () => {
   it('falls back to main-loop counters when no per-model map is supplied', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1594,7 +1611,7 @@ describe('ClaudeCodeAdapter', () => {
   it('keeps the no-op repair skip keyed on the main-loop counters', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           // The continuation-repair no-op: zero main-loop tokens, while the
           // run's per-model total is already non-zero. The skip must still
@@ -1642,7 +1659,7 @@ describe('ClaudeCodeAdapter', () => {
         // Only the opening handshake carries the tool surface; Claude Code
         // emits further system notices (compaction, retries, background
         // tasks) throughout a run.
-        { type: 'system', model: 'claude', cwd: '/repo', tools: ['Bash', 'Read'] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: ['Bash', 'Read'] },
         { type: 'system', subtype: 'compact_boundary' },
         { type: 'assistant', text: 'working' },
         { type: 'system', subtype: 'api_retry' },
@@ -1670,10 +1687,48 @@ describe('ClaudeCodeAdapter', () => {
     ]);
   });
 
+  it('ignores system notices that precede the handshake', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        // A configured SessionStart hook puts its own notices on the stream
+        // before the handshake, so position cannot identify the handshake.
+        { type: 'system', subtype: 'hook_started' },
+        { type: 'system', subtype: 'hook_response' },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: ['Bash', 'Read'],
+        },
+        { type: 'system', subtype: 'thinking_tokens' },
+        { type: 'assistant', text: 'working' },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          duration_ms: 5,
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const inits = events.filter((event) => event.type === 'init');
+    expect(inits).toHaveLength(1);
+    // The surviving init is the handshake's, not the hook notice's empty one.
+    expect((inits[0]!.payload as InitPayload).tools).toEqual(['Bash', 'Read']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text',
+      'done',
+    ]);
+  });
+
   it('publishes no breakdown when usage is unavailable', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1722,7 +1777,7 @@ describe('ClaudeCodeAdapter', () => {
   ])('marks %s accounting unavailable', async (_case, rawUsage) => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
@@ -1786,6 +1841,7 @@ describe('ClaudeCodeAdapter', () => {
         [
           {
             type: 'system',
+            subtype: 'init',
             model: 'claude-opus-4-7',
             cwd: '/repo',
             tools: [],
@@ -1893,7 +1949,7 @@ describe('ClaudeCodeAdapter', () => {
   it('sums cache tokens into inputTokens (camelCase)', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
         {
           type: 'result',
           status: 'success',
