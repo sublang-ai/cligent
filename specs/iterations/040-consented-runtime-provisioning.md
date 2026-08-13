@@ -8,7 +8,7 @@
 Make cligent the single authority for which agent-runtime versions work,
 per [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), and
 then let the readiness layer run the repair it renders on an explicit consent
-from a user at a terminal, per DR-014.
+from a user at a terminal, per DR-017.
 Phase one ships the runtime descriptor, the load-time version gate, and the
 structured readiness verdict, so a consumer inherits the compatibility policy
 by upgrading cligent alone.
@@ -127,7 +127,7 @@ checks green at its boundary.
        bare install commands that currently write a freezing caret into a
        consumer manifest, and record the change in the unreleased changelog.
 6. [ ] **Record the consent decision and the tmux-play items.**
-       Record DR-014 and amend DR-012's Context premise, Decision opener,
+       Record DR-017 and amend DR-012's Context premise, Decision opener,
        no-runtime bullet, and fatal-gate consequences, adding a
        superseded-in-part note; amend TMUX-010 and TMUX-089 so today's text
        becomes the no-consent branch, splitting the print-nothing-on-stdout
@@ -136,7 +136,7 @@ checks green at its boundary.
        through its TMUX-089 citation; add TMUX-090 for the offer and TMUX-091
        for the npm-exec cache tree; amend TTMUX-092 and TTMUX-093 with the
        same preconditions and add TTMUX-094 and TTMUX-095 as their
-       integration counterparts; add the DR-014 row to the spec map and
+       integration counterparts; add the DR-017 row to the spec map and
        refresh the DR-012 and TMUX summaries there.
 7. [ ] **Specify the install-placement contract.**
        Amend PKG-015 to scope its prohibition to the distributable's own
