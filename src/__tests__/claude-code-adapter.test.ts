@@ -141,8 +141,9 @@ describe('ClaudeCodeAdapter', () => {
             input_tokens: 10,
             output_tokens: 20,
             tool_uses: 1,
-            total_cost_usd: 0.25,
           },
+          // Cost is a sibling of `usage` on the result message, not a member.
+          total_cost_usd: 0.25,
           duration_ms: 321,
         },
       ]),

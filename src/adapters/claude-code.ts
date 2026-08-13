@@ -158,6 +158,9 @@ interface ClaudeResultMessage {
   sessionId?: unknown;
   /** Per-model accounting covering every request the run made (CLAUDE-011). */
   modelUsage?: unknown;
+  /** Runtime-computed cost, a sibling of `usage` rather than a member. */
+  total_cost_usd?: unknown;
+  totalCostUsd?: unknown;
 }
 
 interface ClaudeErrorMessage {
@@ -467,6 +470,7 @@ function foldModelUsage(rawModelUsage: unknown): Record<string, number> | undefi
 function mapUsage(
   rawUsage: unknown,
   observedToolUses: number,
+  reportedCostUsd?: number,
 ): DonePayload['usage'] {
   if (!isUsageRecord(rawUsage)) {
     return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
@@ -502,8 +506,12 @@ function mapUsage(
     observedToolUses,
   );
 
+  // Claude Code carries cost on the result message, beside `usage`, so the
+  // caller supplies it; the in-usage aliases remain a tolerated fallback.
   const totalCostUsd =
-    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
+    reportedCostUsd ??
+    asNumber(rawUsage.totalCostUsd) ??
+    asNumber(rawUsage.total_cost_usd);
 
   const reported =
     baseInput.valid &&
@@ -996,9 +1004,12 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const resultText = asString(result.result);
           // Prefer the whole-run accounting; fall back to the main-loop
           // counters only where the runtime does not supply it.
+          const reportedCostUsd =
+            asNumber(result.total_cost_usd) ?? asNumber(result.totalCostUsd);
           const usage = mapUsage(
             foldModelUsage(result.modelUsage) ?? result.usage,
             observedToolUseIds.size,
+            reportedCostUsd,
           );
           // CLAUDE-010's no-op signature is a property of the main-loop
           // result message, not of the run's total accounting: the repair
