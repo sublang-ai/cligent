@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { closeSync, mkdtempSync, openSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,6 +54,8 @@ import {
 import type { PlayerConfig } from './players.js';
 
 export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
+export const TMUX_PLAY_WORK_DIR_OWNER_MARKER = '.tmux-play-work-dir-owner';
+const MANAGED_TMUX_PLAY_SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const NAVIGATION_HINTS =
   'switch pane: ctrl+←/→ or shift+←/→ | stop: esc | exit: ctrl+c | drag=select | right-click=copy';
 const SYSTEM_CLIPBOARD_COPY_COMMAND =
@@ -134,6 +142,7 @@ export interface ManagedTmuxPlayLaunchContext {
   readonly sessionId: string;
   readonly sessionName: string;
   readonly workDir: string;
+  readonly workDirOwnedByLauncher: boolean;
   readonly snapshotPath: string;
   readonly readinessPath: string;
   readonly inputGatePath: string;
@@ -190,9 +199,7 @@ export async function launchTmuxPlay(
 export async function launchManagedTmuxPlay(
   options: LaunchManagedTmuxPlayOptions,
 ): Promise<PreparedManagedTmuxPlayLaunch> {
-  if (!options.sessionId) {
-    throw new Error('managed tmux-play sessionId must be non-empty');
-  }
+  assertManagedTmuxPlaySessionId(options.sessionId);
   const readinessTimeoutMs = options.readinessTimeoutMs ?? 30_000;
   assertManagedTimeout(readinessTimeoutMs);
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 30_000;
@@ -227,6 +234,8 @@ export async function launchManagedTmuxPlay(
         shutdownRequestPath,
         shutdownCompletePath,
         readinessTimeoutMs,
+        allowOsc11: shouldAttemptOsc11(options),
+        workDirOwnedByLauncher: ownsWorkDir,
         createSessionCommand: options.createSessionCommand,
         onSessionCreated(paneId) {
           sessionCreated = true;
@@ -413,6 +422,8 @@ interface ManagedLaunchBoundary {
   readonly shutdownRequestPath: string;
   readonly shutdownCompletePath: string;
   readonly readinessTimeoutMs?: number;
+  readonly allowOsc11: boolean;
+  readonly workDirOwnedByLauncher: boolean;
   readonly createSessionCommand: (
     context: ManagedTmuxPlayLaunchContext,
   ) => string | Promise<string>;
@@ -483,14 +494,23 @@ async function launchTmuxPlayInternal(
   });
   const sessionId = options.sessionId ?? randomBytes(4).toString('hex');
   const sessionName = `tmux-play-${sessionId}`;
+  const workDirOwnedByLauncher =
+    managed?.workDirOwnedByLauncher ?? options.workDir === undefined;
   const workDir = options.workDir ?? mkdtempSync(join(tmpdir(), 'tmux-play-'));
   const playerIds = loaded.config.players.map((player) => player.id);
 
   prepareLogDirectory(workDir, playerIds, TMUX_PLAY_SESSION_MARKER, sessionId);
+  if (workDirOwnedByLauncher) {
+    writeFileSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER), sessionId, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+  }
   const theme = await resolveThemeDiagnostics({
     launchOption: options.themeFlavor,
     yamlOption: loaded.config.theme,
-    allowOsc11: shouldAttemptOsc11(options),
+    allowOsc11: managed?.allowOsc11 ?? shouldAttemptOsc11(options),
     osc11Probe: options.themeProbe,
   });
   const flavor = theme.selected;
@@ -504,6 +524,7 @@ async function launchTmuxPlayInternal(
         sessionId,
         sessionName,
         workDir,
+        workDirOwnedByLauncher,
         snapshotPath,
         readinessPath: managed.readinessPath,
         inputGatePath: managed.inputGatePath,
@@ -516,6 +537,7 @@ async function launchTmuxPlayInternal(
         cwd: options.cwd,
         sessionId,
         workDir,
+        workDirOwnedByLauncher,
         selfBin: options.selfBin ?? process.argv[1],
       });
   if (!sessionCommand) {
@@ -560,6 +582,17 @@ async function launchTmuxPlayInternal(
     };
   }
   return result;
+}
+
+export function assertManagedTmuxPlaySessionId(sessionId: string): void {
+  if (
+    typeof sessionId !== 'string' ||
+    !MANAGED_TMUX_PLAY_SESSION_ID_RE.test(sessionId)
+  ) {
+    throw new Error(
+      `managed tmux-play sessionId must match ${MANAGED_TMUX_PLAY_SESSION_ID_RE.source}`,
+    );
+  }
 }
 
 function shouldAttemptOsc11(options: LaunchTmuxPlayOptions): boolean {
@@ -1127,6 +1160,7 @@ function timerColorFormat(
 function buildSessionCommand(options: {
   readonly sessionId: string;
   readonly workDir: string;
+  readonly workDirOwnedByLauncher: boolean;
   readonly selfBin: string;
   readonly cwd?: string;
 }): string {
@@ -1138,6 +1172,10 @@ function buildSessionCommand(options: {
     '--work-dir',
     options.workDir,
   ];
+
+  if (options.workDirOwnedByLauncher) {
+    args.push('--owned-work-dir');
+  }
 
   if (options.cwd) {
     args.push('--cwd', options.cwd);

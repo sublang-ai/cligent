@@ -101,7 +101,9 @@ values are `mocha` (dark terminals), `latte` (light terminals), and
 `auto` (default; the launcher probes the terminal's background color
 via an OSC 11 query and falls back to Mocha when the terminal does not
 answer — run `tmux-play --theme-diagnostics` to see how the flavor was
-resolved). The presenter
+resolved). A managed launch prepared for later native attachment performs the
+same probe before writing its snapshot; a public `attach: false` launch does
+not probe and uses the fallback unless a concrete flavor is set. The presenter
 inside each pane uses the same resolved flavor for speaker prefixes,
 status lines, and tool lifecycle, so the `boss>` prompt and per-player
 text stay readable on the host terminal's background.
@@ -233,9 +235,12 @@ concurrent-writer race. Rename the keys manually when those properties matter.
 
 ### Permissions
 
-Captain and each player accept an optional `permissions` block that maps to
-`CligentOptions.permissions` and reaches the adapter's SDK knobs at run
-time. The field is typed; arbitrary adapter-specific knobs are not
+Captain and each player accept an optional `permissions` block that tmux-play
+retains as a runtime-held call default and supplies at the `Cligent.run()`
+boundary, where it reaches the adapter's SDK knobs. The runtime-owned
+`Cligent` itself carries no permission default, so a complete per-call
+`settings` replacement can omit the YAML policy rather than inherit it.
+The field is typed; arbitrary adapter-specific knobs are not
 settable from YAML.
 
 ```yaml
@@ -424,7 +429,9 @@ await context.callPlayer('dev.coder', prompt, {
 ```
 
 Player IDs may use dot-delimited namespaces such as `dev.coder` and
-`dev.reviewer`. A supplied `settings` object is the entire effective call
+`dev.reviewer`. When `settings` is omitted, tmux-play supplies the YAML model,
+effort, instruction, and permissions as runtime-held call defaults. A supplied
+`settings` object is the entire effective call
 configuration: omitted `instruction` and `permissions` mean none, and neither
 is merged with YAML defaults. Each `model` and `effort` selector is either a
 concrete value or `provider-default`; the latter omits that option so Codex or
@@ -437,6 +444,9 @@ a resumed OpenCode complete-settings call clear the prior Cligent-owned session
 ruleset. Kimi supports default reset only for a fresh call because ACP cannot
 restore a resumed session's provider default. Invalid or unenforceable settings
 fail before an agent call begins and do not discard the stored resume token.
+tmux-play resolves the effective explicit, forced-fresh, or automatic resume
+selection once at admission and uses that same selection for reset preflight
+and the provider run.
 Those failures reject with the public `AgentCallSettingsError`, preserving the
 original diagnostic and `cause`. Use `isAgentCallSettingsError(error)` from
 `@sublang/cligent/tmux-play` when deciding whether to retain the selected
@@ -448,10 +458,15 @@ provider-execution, or observer-dispatch failures.
 
 `launchManagedTmuxPlay` and `runManagedTmuxPlaySession` are the public boundary
 for a front end that owns durable session state. The launcher requires the
-front end's public session ID and returns a prepared handle only after the pane
-child has initialized or restored its runtime. Input is still gated then, so
+front end's public session ID to match
+`^[A-Za-z0-9][A-Za-z0-9_-]*$`; the corresponding tmux session is named exactly
+`tmux-play-<sessionId>`. Invalid IDs reject before work-directory or tmux
+mutation. The launcher returns a prepared handle only after the pane child has
+initialized or restored its runtime. Input is still gated then, so
 the front end can report that ID before it calls `await prepared.attach()`.
 Use `await prepared.cancel()` if reporting or handoff fails.
+`runManagedTmuxPlaySession` independently validates the same grammar before it
+starts lifecycle or presentation work.
 
 An embedding front end can retain signal ownership until native attach with
 `await prepared.attach({ signal, beforeNativeAttach })`. An abort before native
@@ -464,7 +479,11 @@ the hook belong to the embedding and native client. With `attach: false`, the
 hook never runs and abort remains managed through coordination cleanup.
 
 The session-command context also supplies shutdown-request and shutdown-complete
-paths. Cancellation and post-start launch failures request graceful child
+paths plus `workDirOwnedByLauncher`. Pass that ownership boolean unchanged to
+`runManagedTmuxPlaySession`; the child requires both a true value and a
+launcher-ownership marker matching its own session ID before it can remove the
+work directory. Marker presence by itself never grants cleanup ownership.
+Cancellation and post-start launch failures request graceful child
 shutdown, await cleanup acknowledgement and pane exit under the independent
 `shutdownTimeoutMs`, and only then use a forced tmux kill as a bounded fallback.
 After that kill, Cligent allows a fixed 500 ms for tmux to stop reporting the
@@ -472,9 +491,12 @@ pane; if it cannot prove retirement, it preserves the work and coordination
 state and reports the cleanup defect.
 Input-gate and shutdown-request markers are atomically published, so a polling
 child cannot mistake an in-progress write for an invalid control message.
-Launcher-created work directories are
-removed when no child can own cleanup; caller-supplied directories are left
-alone. With `attach: false`, activation completes without an outer client,
+Launcher-created work directories carry the matching ownership marker and are
+removed when no child can own cleanup. Caller-supplied directories carry no
+such marker and are never recursively removed by the launcher or child, so the
+directory and unrelated pre-existing entries survive shutdown; tmux-play still
+writes its named logs, snapshot, and session artifacts there during a
+successful launch. With `attach: false`, activation completes without an outer client,
 closes the launcher coordination boundary, and leaves signals or EOF as the
 child-owned cleanup path.
 
@@ -485,7 +507,9 @@ the orchestrator retains a private snapshot for its own tmux operations. A nonem
 turn awaits `beforeNonEmptyTurn`, crosses the runtime's complete turn fence,
 then invokes `afterTurn` with detached Captain replies and the exact
 `turn_finished` or `turn_aborted` record. Replies remain invisible until a
-finished turn's `afterTurn` succeeds; aborted and failed turns release none.
+finished turn's `afterTurn` succeeds, and that successful settlement still
+releases its replies if shutdown has started and is awaiting the transaction;
+aborted and failed turns release none.
 Pre-activation input remains queued as semantic prompts, including one
 newline-preserving prompt for a bracketed multiline paste. If the fenced
 runtime rejects after emitting its terminal record, `afterTurn` still receives
@@ -494,7 +518,9 @@ Shutdown from EOF, SIGHUP, SIGINT, SIGTERM, or the embedding request first
 aborts active work, then awaits the full hook/turn transaction
 and runtime disposal before the lifecycle shutdown hook, so an embedding host
 can release its lease without racing write-ahead, settlement, or semantic
-runtime disposal. The child publishes shutdown completion only after cleanup.
+runtime disposal. The lifecycle hook and an active turn see the exact reason
+`embedding shutdown request` for that marker, distinct from `SIGHUP` for the
+signal. The child publishes shutdown completion only after cleanup.
 If the initiating failure and later shutdown steps both fail, the returned
 `AggregateError` keeps the initiating failure first and includes every cleanup
 defect; a lone failure retains its original object identity.

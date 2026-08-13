@@ -56,6 +56,7 @@ export async function runTmuxPlayCli(
         session: { type: 'string' },
         'theme-diagnostics': { type: 'boolean' },
         'work-dir': { type: 'string' },
+        'owned-work-dir': { type: 'boolean' },
       },
       strict: true,
     });
@@ -71,6 +72,9 @@ export async function runTmuxPlayCli(
       }
       if (values['work-dir']) {
         throw new Error('--work-dir is only valid with --session');
+      }
+      if (values['owned-work-dir']) {
+        throw new Error('--owned-work-dir is only valid with --session');
       }
       const diagnostics = await (
         options.themeDiagnostics ?? tmuxPlayThemeDiagnostics
@@ -95,12 +99,18 @@ export async function runTmuxPlayCli(
         sessionId: values.session,
         workDir,
         cwd: values.cwd,
+        ...(values['owned-work-dir']
+          ? { workDirOwnedByLauncher: true }
+          : {}),
       });
       return 0;
     }
 
     if (values['work-dir']) {
       throw new Error('--work-dir is only valid with --session');
+    }
+    if (values['owned-work-dir']) {
+      throw new Error('--owned-work-dir is only valid with --session');
     }
 
     const launchOptions: LaunchTmuxPlayOptions = {

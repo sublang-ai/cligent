@@ -445,6 +445,7 @@ export class TmuxPlayRuntime {
     if (!player) {
       throw new Error(`Unknown player: ${playerId}`);
     }
+    const resume = selectAgentCallResume(player.cligent, options?.resume);
     const settings = resolveAgentCallSettings(
       player.adapter,
       {
@@ -454,8 +455,7 @@ export class TmuxPlayRuntime {
         permissions: player.permissions,
       },
       options?.settings,
-      player.cligent,
-      options?.resume,
+      resume,
     );
 
     const release = this.admitCall();
@@ -475,7 +475,7 @@ export class TmuxPlayRuntime {
         permissions: settings.permissions,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
-        ...(options?.resume !== undefined ? { resume: options.resume } : {}),
+        resume,
         emitEvent: (event) =>
           this.emit({
             ...makeRecordBase('player_event', turn.id, event.timestamp),
@@ -518,12 +518,15 @@ export class TmuxPlayRuntime {
     // lets the tmux presenter skip Boss-pane output while non-presenter
     // observers keep the full trace; the returned result is unaffected.
     const visibility: RecordVisibility = options?.visibility ?? 'visible';
+    const resume = selectAgentCallResume(
+      this.captainCligent,
+      options?.resume,
+    );
     const settings = resolveAgentCallSettings(
       this.captainCligent.agentType,
       this.captainSettings,
       options?.settings,
-      this.captainCligent,
-      options?.resume,
+      resume,
     );
 
     const release = this.admitCall();
@@ -543,7 +546,7 @@ export class TmuxPlayRuntime {
         permissions: settings.permissions,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
-        ...(options?.resume !== undefined ? { resume: options.resume } : {}),
+        resume,
         ...(options?.allowedTools !== undefined
           ? { allowedTools: options.allowedTools }
           : {}),
@@ -931,8 +934,7 @@ function resolveAgentCallSettings(
   adapter: string,
   configured: ConfiguredAgentCallSettings,
   supplied: AgentCallSettings | undefined,
-  cligent: Cligent,
-  resume: string | false | undefined,
+  resume: string | false,
 ): EffectiveAgentCallSettings {
   if (supplied === undefined) {
     return {
@@ -961,8 +963,8 @@ function resolveAgentCallSettings(
       resetPermissionPolicy: false,
     };
 
-    assertCompleteSettingsEnforceable(adapter, settings, cligent, resume);
-    return withProviderPermissionReset(adapter, settings, cligent, resume);
+    assertCompleteSettingsEnforceable(adapter, settings, resume);
+    return withProviderPermissionReset(adapter, settings, resume);
   } catch (cause) {
     throw new AgentCallSettingsError(errorMessage(cause), cause);
   }
@@ -971,13 +973,12 @@ function resolveAgentCallSettings(
 function withProviderPermissionReset(
   adapter: string,
   settings: EffectiveAgentCallSettings,
-  cligent: Cligent,
-  resume: string | false | undefined,
+  resume: string | false,
 ): EffectiveAgentCallSettings {
   if (
     adapter !== 'opencode' ||
     settings.permissions !== undefined ||
-    !isResumedCall(cligent, resume)
+    !isResumedCall(resume)
   ) {
     return settings;
   }
@@ -1055,12 +1056,11 @@ function snapshotTuningSelection(
 function assertCompleteSettingsEnforceable(
   adapter: string,
   settings: EffectiveAgentCallSettings,
-  cligent: Cligent,
-  resume: string | false | undefined,
+  resume: string | false,
 ): void {
   if (
     (adapter === 'claude' || adapter === 'claude-code') &&
-    isResumedCall(cligent, resume) &&
+    isResumedCall(resume) &&
     settings.modelUsesProviderDefault
   ) {
     throw new Error(
@@ -1069,7 +1069,7 @@ function assertCompleteSettingsEnforceable(
   }
   if (
     adapter === 'kimi' &&
-    isResumedCall(cligent, resume) &&
+    isResumedCall(resume) &&
     (settings.modelUsesProviderDefault ||
       settings.effortUsesProviderDefault ||
       settings.permissions === undefined)
@@ -1080,7 +1080,7 @@ function assertCompleteSettingsEnforceable(
   }
   if (
     adapter === 'opencode' &&
-    isResumedCall(cligent, resume) &&
+    isResumedCall(resume) &&
     settings.modelUsesProviderDefault
   ) {
     throw new Error(
@@ -1150,15 +1150,18 @@ function assertPermissionsEnforceable(
   }
 }
 
-function isResumedCall(
+function selectAgentCallResume(
   cligent: Cligent,
   resume: string | false | undefined,
-): boolean {
-  if (resume === false) return false;
-  if (typeof resume === 'string') return resume.length > 0;
-  return (
-    typeof cligent.resumeToken === 'string' && cligent.resumeToken.length > 0
-  );
+): string | false {
+  // Prompt-record dispatch is asynchronous and observers may reenter a call
+  // before the preceding terminal event updates this Cligent's stored token.
+  // Pin one selection now so preflight and provider execution cannot disagree.
+  return resume === undefined ? (cligent.resumeToken ?? false) : resume;
+}
+
+function isResumedCall(resume: string | false): boolean {
+  return typeof resume === 'string' && resume.length > 0;
 }
 
 function ownDataFields(

@@ -32,22 +32,24 @@ Each adapter has a `mapPermissionsToXxxOptions` that translates `PermissionPolic
 
 Today's gap is two-layered:
 
-- **YAML reachability**: tmux-play's `PlayerConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches `CligentOptions.permissions`.
+- **YAML reachability**: tmux-play's `PlayerConfig` is `{ id, adapter, model?, instruction? }` — no `permissions` field. `captain.options` exists but forwards to the Captain factory per DR-004. Nothing in the YAML reaches the typed `AgentOptions.permissions` boundary.
 - **Auto-mode vocabulary**: `PermissionPolicy` cannot express provider-native automation posture (`auto`, protected where the provider supplies protection) versus unchecked `bypass`. The existing mapping in `mapPermissionsToClaudeOptions` collapses any all-`allow` policy to `bypassPermissions`; there is no path to claude's safer `'auto'`. The same gap applies to codex's reviewer-protected `on-request + auto_review` mode versus its `--dangerously-bypass-approvals-and-sandbox`, and to gemini's `yolo`.
 
 ## Decision
 
-### Channel — through CligentOptions, not adapter constructors
+### Channel — through Cligent call options, not adapter constructors
 
-YAML carries permissions through fields that forward to `CligentOptions`, never to adapter constructors.
-This preserves DR-003's "constructor = DI deps only" and DR-002's `run(prompt, options)` boundary; the runtime path is unchanged.
+YAML carries permissions through typed runtime configuration fields that reach `Cligent.run()` as `AgentOptions`, never through adapter constructors.
+This preserves DR-003's "constructor = DI deps only" and DR-002's `run(prompt, options)` boundary.
+Generic `Cligent` callers may retain instance defaults through `CligentOptions`; tmux-play instead keeps its YAML values as runtime-held call defaults so [TMUX-093](../user/tmux-play.md#tmux-093)'s complete settings can replace or omit every configured field on one call.
 
 Specifically:
 
-- `PlayerConfig` gains `permissions?: PermissionPolicy`, forwarded to the player's `Cligent` constructor as `CligentOptions.permissions`.
-- The captain config gains `permissions?: PermissionPolicy`, forwarded to the captain's `Cligent` constructor as `CligentOptions.permissions`.
+- `PlayerConfig` gains `permissions?: PermissionPolicy`, retained as the player's runtime-held call default and supplied to `Cligent.run()` when complete settings are omitted.
+- The captain config gains `permissions?: PermissionPolicy`, retained as the Captain's runtime-held call default and supplied on the same boundary.
 - The existing `captain.options` field continues to forward to the Captain factory per [DR-004](004-tmux-play-captain-architecture.md); it is *not* repurposed.
-- `Cligent.run()` merges instance defaults with per-call `RunOptions` per DR-003's option-merge contract; adapters receive the merged `AgentOptions` at `run()` and map via their existing `mapPermissionsToXxxOptions`.
+- Runtime-owned tmux-play `Cligent` instances carry no model, effort, instruction, or permission defaults; omitted complete settings cause tmux-play to supply its runtime-held values, while supplied complete settings replace that layer without a merge.
+- Outside that tmux-play boundary, `Cligent.run()` continues to merge instance defaults with per-call `RunOptions` per DR-003's option-merge contract; adapters receive the effective `AgentOptions` at `run()` and map via their existing `mapPermissionsToXxxOptions`.
 
 ### Schema — typed, not opaque
 
@@ -151,12 +153,12 @@ The DR does not introduce new error machinery; it constrains where errors should
 - Per-adapter knob escape hatches in YAML (e.g., setting `default_permissions` directly bypassing `PermissionPolicy`).
 - Inheriting the user's machine-level Codex permission config; a `mode: 'auto'` Codex posture is always a cligent-selected profile, never a deferral to `~/.codex/config.toml`.
 - Per-tool ACL rules in YAML distinct from `PermissionPolicy`.
-- Runtime per-call permission overrides above the YAML default; per-call overrides remain a programmatic-API capability via `RunOptions.permissions`.
+- Partial runtime permission merges above a tmux-play YAML default; [TMUX-093](../user/tmux-play.md#tmux-093)'s public complete-settings surface replaces that default with a typed complete `PermissionPolicy`, while generic `RunOptions.permissions` keeps DR-003's merge behavior.
 - Automatic permission-mode escalation or down-shift based on context.
 
 ## Consequences
 
-- DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" is preserved; DR-004's `captain.options` semantics are preserved.
+- DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" and generic `Cligent` merge are preserved; DR-004's `captain.options` semantics are preserved. tmux-play keeps YAML values as runtime-held call defaults so a complete per-call replacement can omit them without reconstructing the role's `Cligent`.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
 - Claude, Codex, and Gemini retain their established mappings; OpenCode's corrected native-auto mapping preserves configured rules, answers surviving asks `once`, and rejects explicit tool lists before SDK loading; Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.

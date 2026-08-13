@@ -21,7 +21,10 @@ import {
   TMUX_PLAY_CONFIG_SNAPSHOT,
   TMUX_PLAY_HOME_CONFIG,
 } from './config.js';
-import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
+import {
+  TMUX_PLAY_SESSION_MARKER,
+  TMUX_PLAY_WORK_DIR_OWNER_MARKER,
+} from './launcher.js';
 
 interface SmokeHarness {
   readonly root: string;
@@ -321,6 +324,7 @@ describe('tmux-play built CLI smoke', () => {
     mkdirSync(cwd, { recursive: true });
     mkdirSync(workDir, { recursive: true });
     writeFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'abc123');
+    writeFileSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER), 'abc123');
     writeFileSync(
       join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
       JSON.stringify(
@@ -345,7 +349,15 @@ describe('tmux-play built CLI smoke', () => {
     );
 
     const result = runCli(
-      ['--session', 'abc123', '--work-dir', workDir, '--cwd', cwd],
+      [
+        '--session',
+        'abc123',
+        '--work-dir',
+        workDir,
+        '--owned-work-dir',
+        '--cwd',
+        cwd,
+      ],
       harness,
       {},
       '',

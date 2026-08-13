@@ -60,7 +60,10 @@ import {
   type PlayerAdapterImports,
   type PlayerConfig,
 } from './players.js';
-import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
+import {
+  assertManagedTmuxPlaySessionId,
+  TMUX_PLAY_WORK_DIR_OWNER_MARKER,
+} from './launcher.js';
 
 export type TmuxPlayRuntimeHandle = Pick<
   TmuxPlayRuntime,
@@ -139,6 +142,8 @@ interface LogCloser {
 export interface TmuxPlaySessionOptions {
   readonly sessionId: string;
   readonly workDir: string;
+  /** @internal Recursive cleanup capability issued only by the launcher. */
+  readonly workDirOwnedByLauncher?: boolean;
   readonly cwd?: string;
   readonly input?: Readable;
   readonly output?: Writable;
@@ -187,12 +192,14 @@ export type ManagedTmuxPlaySessionOptions = Omit<
   | 'managedInputActivePath'
   | 'managedShutdownRequestPath'
   | 'managedShutdownCompletePath'
+  | 'workDirOwnedByLauncher'
 > & {
   readonly readinessPath: string;
   readonly inputGatePath: string;
   readonly inputActivePath: string;
   readonly shutdownRequestPath: string;
   readonly shutdownCompletePath: string;
+  readonly workDirOwnedByLauncher: boolean;
   readonly lifecycle: ManagedTmuxPlayLifecycle;
 };
 
@@ -536,7 +543,6 @@ export class TmuxPlaySession {
               }
               if (
                 runtimeFailure === undefined &&
-                !this.shuttingDown &&
                 terminal.type === 'turn_finished'
               ) {
                 await this.presentationGate.releaseReplies();
@@ -733,7 +739,7 @@ export class TmuxPlaySession {
               ),
             );
           } else {
-            void this.shutdown('SIGHUP');
+            void this.shutdown('embedding shutdown request');
           }
           return;
         }
@@ -754,8 +760,15 @@ export class TmuxPlaySession {
   }
 
   private cleanupWorkDir(): void {
-    const markerPath = join(this.options.workDir, TMUX_PLAY_SESSION_MARKER);
-    if (existsSync(markerPath)) {
+    const markerPath = join(
+      this.options.workDir,
+      TMUX_PLAY_WORK_DIR_OWNER_MARKER,
+    );
+    if (
+      this.options.workDirOwnedByLauncher === true &&
+      existsSync(markerPath) &&
+      readFileSync(markerPath, 'utf8') === this.options.sessionId
+    ) {
       (this.options.removeWorkDir ?? defaultRemoveWorkDir)(
         this.options.workDir,
       );
@@ -1021,6 +1034,7 @@ export async function runTmuxPlaySession(
 export async function runManagedTmuxPlaySession(
   options: ManagedTmuxPlaySessionOptions,
 ): Promise<void> {
+  assertManagedTmuxPlaySessionId(options.sessionId);
   isolateOrchestratorFromAgents();
   const {
     lifecycle,
@@ -1029,6 +1043,7 @@ export async function runManagedTmuxPlaySession(
     inputActivePath,
     shutdownRequestPath,
     shutdownCompletePath,
+    workDirOwnedByLauncher,
     ...sessionOptions
   } = options;
   await new TmuxPlaySession({
@@ -1039,6 +1054,7 @@ export async function runManagedTmuxPlaySession(
     managedInputActivePath: inputActivePath,
     managedShutdownRequestPath: shutdownRequestPath,
     managedShutdownCompletePath: shutdownCompletePath,
+    workDirOwnedByLauncher,
   }).run();
 }
 

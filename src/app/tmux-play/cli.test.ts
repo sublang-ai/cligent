@@ -83,6 +83,30 @@ describe('runTmuxPlayCli', () => {
     });
   });
 
+  it('forwards the internal launcher-owned work-dir capability', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-cli-'));
+    const runSession = vi.fn(async () => undefined);
+
+    const code = await runTmuxPlayCli({
+      argv: [
+        '--session',
+        'abc123',
+        '--work-dir',
+        tempDir,
+        '--owned-work-dir',
+      ],
+      runSession,
+    });
+
+    expect(code).toBe(0);
+    expect(runSession).toHaveBeenCalledWith({
+      sessionId: 'abc123',
+      workDir: tempDir,
+      cwd: undefined,
+      workDirOwnedByLauncher: true,
+    });
+  });
+
   // TTMUX-073 / TMUX-074: pin the isolation at the session-dispatch boundary,
   // not just at the helper. A unit test of isolateOrchestratorFromAgents would
   // still pass if cli.ts dropped the call before constructing the session —

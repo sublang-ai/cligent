@@ -77,6 +77,7 @@ import {
   parseOsc11BackgroundFlavor,
   publishManagedControlMarker,
   TMUX_PLAY_SESSION_MARKER,
+  TMUX_PLAY_WORK_DIR_OWNER_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
@@ -183,6 +184,9 @@ describe('launchTmuxPlay', () => {
     expect(readFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'utf8')).toBe(
       'abc123',
     );
+    expect(existsSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER))).toBe(
+      false,
+    );
     expect(existsSync(join(workDir, 'coder.log'))).toBe(true);
     expect(existsSync(join(workDir, 'reviewer.log'))).toBe(true);
     expect(existsSync(join(workDir, 'analyst.log'))).toBe(true);
@@ -207,6 +211,7 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "--work-dir '" + workDir + "'",
     );
+    expect(runTmuxMock.mock.calls[0]?.at(-1)).not.toContain('--owned-work-dir');
     expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "'/tmp/tmux play/cli.js'",
     );
@@ -347,6 +352,30 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  it('authorizes cleanup only for a launcher-created stock work directory', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configPath = writeConfig(tempDir, []);
+    const result = await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'owned-stock-work',
+      selfBin: '/tmp/cli.js',
+      attach: false,
+    });
+
+    try {
+      expect(
+        readFileSync(
+          join(result.workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER),
+          'utf8',
+        ),
+      ).toBe('owned-stock-work');
+      expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain('--owned-work-dir');
+    } finally {
+      rmSync(result.workDir, { recursive: true, force: true });
+    }
+  });
+
   it('uses a caller-owned pane command and waits for child readiness before attaching', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
     const configPath = writeConfig(tempDir, ['dev.coder']);
@@ -361,12 +390,16 @@ describe('launchTmuxPlay', () => {
       configPath,
       sessionId: '8f45153e-2c91-4561-a99f-77d0f0a45881',
       workDir,
+      themeProbe: async () => ({
+        rawReply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+      }),
       createSessionCommand: (context) => {
         order.push('command');
         expect(context).toMatchObject({
           sessionId: '8f45153e-2c91-4561-a99f-77d0f0a45881',
           sessionName: 'tmux-play-8f45153e-2c91-4561-a99f-77d0f0a45881',
           workDir,
+          workDirOwnedByLauncher: false,
           snapshotPath: join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
         });
         setTimeout(() => {
@@ -391,6 +424,12 @@ describe('launchTmuxPlay', () => {
     });
 
     expect(result.sessionId).toBe('8f45153e-2c91-4561-a99f-77d0f0a45881');
+    expect(
+      JSON.parse(readFileSync(result.snapshotPath, 'utf8')).theme,
+    ).toBe('latte');
+    expect(existsSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER))).toBe(
+      false,
+    );
     expect(runTmuxOutputMock.mock.calls[0]?.at(-1)).toBe(
       'node /embedding/session-process.mjs',
     );
@@ -408,6 +447,30 @@ describe('launchTmuxPlay', () => {
     ]);
     expect(runTmuxOutputMock).toHaveReturnedWith('%42');
   });
+
+  it.each(['', 'a.b', 'a:b', 'a/b', 'a b', 'é'])(
+    'rejects unsafe managed session id %j before launch mutation',
+    async (sessionId) => {
+      tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
+      const workDir = join(tempDir, 'caller-work');
+      const createSessionCommand = vi.fn(() => 'node child.mjs');
+
+      await expect(
+        launchManagedTmuxPlay({
+          sessionId,
+          workDir,
+          configPath: join(tempDir, 'missing-config.yaml'),
+          createSessionCommand,
+        }),
+      ).rejects.toThrow(
+        'managed tmux-play sessionId must match ^[A-Za-z0-9][A-Za-z0-9_-]*$',
+      );
+
+      expect(createSessionCommand).not.toHaveBeenCalled();
+      expect(runTmuxMock).not.toHaveBeenCalled();
+      expect(existsSync(workDir)).toBe(false);
+    },
+  );
 
   it('transfers signal ownership once before the native tmux client', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-managed-launcher-'));
@@ -628,6 +691,9 @@ describe('launchTmuxPlay', () => {
     const controller = new AbortController();
     const abortReason = new Error('detached cleanup received SIGTERM');
     const beforeNativeAttach = vi.fn();
+    const themeProbe = vi.fn(async () => ({
+      rawReply: '\x1b]11;rgb:eeee/eeee/eeee\x07',
+    }));
     const order: string[] = [];
     let coordinationDir = '';
     const prepared = await launchManagedTmuxPlay({
@@ -636,6 +702,7 @@ describe('launchTmuxPlay', () => {
       sessionId: 'managed-detached-cleanup-abort',
       workDir: join(tempDir, 'work'),
       attach: false,
+      themeProbe,
       shutdownTimeoutMs: 500,
       createSessionCommand(context) {
         coordinationDir = dirname(context.readinessPath);
@@ -645,6 +712,10 @@ describe('launchTmuxPlay', () => {
         return 'node /embedding/session-process.mjs';
       },
     });
+    expect(
+      JSON.parse(readFileSync(prepared.snapshotPath, 'utf8')).theme,
+    ).toBe('mocha');
+    expect(themeProbe).not.toHaveBeenCalled();
     managedCoordinationRmHook.run = (path) => {
       if (path !== coordinationDir || controller.signal.aborted) return;
       controller.abort(abortReason);
@@ -845,7 +916,6 @@ describe('launchTmuxPlay', () => {
         return 'node /embedding/session-process.mjs';
       },
     });
-
     await prepared.cancel();
 
     expect(existsSync(inputGatePath)).toBe(false);
@@ -872,6 +942,12 @@ describe('launchTmuxPlay', () => {
         return 'node /embedding/session-process.mjs';
       },
     });
+    expect(
+      readFileSync(
+        join(prepared.workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER),
+        'utf8',
+      ),
+    ).toBe('managed-cancel-cleanup-failure');
     managedCoordinationRmHook.run = (path) => {
       if (path === prepared.workDir || path === coordinationDir) {
         removedPaths.push(path);
@@ -1002,12 +1078,13 @@ describe('launchTmuxPlay', () => {
       cwd: tempDir,
       configPath,
       sessionId: 'managed-cross-process-cancel',
-      workDir: join(tempDir, 'work'),
       shutdownTimeoutMs: 500,
       createSessionCommand(context) {
+        expect(context.workDirOwnedByLauncher).toBe(true);
         child = runManagedTmuxPlaySession({
           sessionId: context.sessionId,
           workDir: context.workDir,
+          workDirOwnedByLauncher: context.workDirOwnedByLauncher,
           readinessPath: context.readinessPath,
           inputGatePath: context.inputGatePath,
           inputActivePath: context.inputActivePath,
@@ -1059,9 +1136,9 @@ describe('launchTmuxPlay', () => {
 
     expect(order).toEqual([
       'initialize',
-      'abort:SIGHUP',
+      'abort:embedding shutdown request',
       'runtime dispose',
-      'lifecycle:SIGHUP',
+      'lifecycle:embedding shutdown request',
       'workdir cleanup',
       'pane exit',
     ]);
@@ -1086,6 +1163,7 @@ describe('launchTmuxPlay', () => {
         child = runManagedTmuxPlaySession({
           sessionId: context.sessionId,
           workDir: context.workDir,
+          workDirOwnedByLauncher: context.workDirOwnedByLauncher,
           readinessPath: context.readinessPath,
           inputGatePath: context.inputGatePath,
           inputActivePath: context.inputActivePath,
@@ -1142,7 +1220,6 @@ describe('launchTmuxPlay', () => {
       'abort:EOF',
       'runtime dispose',
       'lifecycle:EOF',
-      'workdir cleanup',
       'pane exit',
     ]);
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();

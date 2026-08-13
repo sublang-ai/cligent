@@ -227,6 +227,7 @@ describe('TmuxPlayRuntime', () => {
     ['claude', 'claude-code', 'high', false],
     ['codex', 'codex', 'high', 'existing-session'],
     ['gemini', 'gemini', 'high', 'existing-session'],
+    ['kimi', 'kimi', 'on', false],
   ] as const)(
     'forwards explicit provider defaults to %s by omitting configured tuning',
     async (adapter, agent, configuredEffort, resume) => {
@@ -278,6 +279,88 @@ describe('TmuxPlayRuntime', () => {
       expect(observed[0]?.permissions).toBeUndefined();
     },
   );
+
+  it('keeps one resume selection when a terminal observer reenters the same player', async () => {
+    const observed: Array<{
+      prompt: string;
+      options: AgentOptions | undefined;
+    }> = [];
+    let context!: CaptainContext;
+    let reentrantCall: Promise<PlayerRunResult> | undefined;
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, currentContext) {
+          context = currentContext;
+          await context.callPlayer('dev.kimi', 'seed');
+          if (!reentrantCall) throw new Error('observer did not reenter');
+          await reentrantCall;
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [
+        {
+          id: 'dev.kimi',
+          adapter: 'kimi',
+          model: 'kimi-configured',
+          effort: 'on',
+          permissions: { mode: 'auto' },
+        },
+      ],
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              reentrantCall === undefined &&
+              record.type === 'player_event' &&
+              record.event.type === 'done'
+            ) {
+              reentrantCall = context.callPlayer(
+                'dev.kimi',
+                'provider defaults',
+                {
+                  settings: {
+                    model: { kind: 'provider-default' },
+                    effort: { kind: 'provider-default' },
+                  },
+                },
+              );
+            }
+          },
+        },
+      ],
+      adapterImports: adapterImports({
+        kimi: {
+          agent: 'kimi',
+          async *run(prompt, options) {
+            observed.push({ prompt, options });
+            yield doneEvent('kimi', 'done', 'success', 'kimi-session');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toHaveLength(2);
+    expect(observed[0]).toMatchObject({
+      prompt: 'seed',
+      options: {
+        resume: undefined,
+        model: 'kimi-configured',
+        effort: 'on',
+        permissions: { mode: 'auto' },
+      },
+    });
+    expect(observed[1]).toMatchObject({
+      prompt: 'provider defaults',
+      options: {
+        resume: undefined,
+        model: undefined,
+        effort: undefined,
+        permissions: undefined,
+      },
+    });
+  });
 
   it('fails closed for a resumed Claude default-model reset before records and preserves continuity', async () => {
     const records: TmuxPlayRecord[] = [];
@@ -488,6 +571,84 @@ describe('TmuxPlayRuntime', () => {
           model: 'claude-current',
           effort: 'high',
           permissions: undefined,
+        }),
+      },
+    ]);
+  });
+
+  it('returns to configured settings after a complete provider-default player call', async () => {
+    const observed: Array<{
+      prompt: string;
+      options: AgentOptions | undefined;
+    }> = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('dev.coder', 'configured first');
+          await context.callPlayer('dev.coder', 'provider defaults', {
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'provider-default' },
+            },
+          });
+          await context.callPlayer('dev.coder', 'configured again');
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [
+        {
+          id: 'dev.coder',
+          adapter: 'codex',
+          model: 'gpt-5.6-codex',
+          effort: 'high',
+          instruction: 'Configured instruction.',
+          permissions: { mode: 'auto' },
+        },
+      ],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run(prompt, options) {
+            observed.push({ prompt, options });
+            yield doneEvent(
+              'codex',
+              'done',
+              'success',
+              `codex-session-${observed.length}`,
+            );
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toEqual([
+      {
+        prompt: 'Configured instruction.\n\nconfigured first',
+        options: expect.objectContaining({
+          resume: undefined,
+          model: 'gpt-5.6-codex',
+          effort: 'high',
+          permissions: { mode: 'auto' },
+        }),
+      },
+      {
+        prompt: 'provider defaults',
+        options: expect.objectContaining({
+          resume: 'codex-session-1',
+          model: undefined,
+          effort: undefined,
+          permissions: undefined,
+        }),
+      },
+      {
+        prompt: 'Configured instruction.\n\nconfigured again',
+        options: expect.objectContaining({
+          resume: 'codex-session-2',
+          model: 'gpt-5.6-codex',
+          effort: 'high',
+          permissions: { mode: 'auto' },
         }),
       },
     ]);
@@ -2942,7 +3103,7 @@ describe('TmuxPlayRuntime', () => {
     expect(views[1]?.visiblePlayerIds).toEqual(['coder', 'reviewer']);
   });
 
-  it('runs a Captain-only session with empty manifests and accepted empty visibility records (TTMUX-029, TTMUX-083)', async () => {
+  it('runs a Captain-only session with empty manifests and accepted empty visibility records (TMUX-029, TTMUX-083)', async () => {
     const records: TmuxPlayRecord[] = [];
     let sessionPlayers: readonly { id: string }[] | undefined;
     let contextPlayers: readonly { id: string }[] | undefined;

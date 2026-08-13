@@ -10,7 +10,10 @@ import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
-import { TMUX_PLAY_SESSION_MARKER } from './launcher.js';
+import {
+  TMUX_PLAY_SESSION_MARKER,
+  TMUX_PLAY_WORK_DIR_OWNER_MARKER,
+} from './launcher.js';
 import { ObserverDispatchError, type TmuxPlayRecord } from './records.js';
 import {
   readConfigSnapshot,
@@ -460,6 +463,46 @@ describe('TmuxPlaySession', () => {
     },
   );
 
+  it.each([
+    ['not authorized', false, 'abc123'],
+    ['missing marker', true, undefined],
+    ['mismatched marker', true, 'another-session'],
+  ] as const)(
+    'preserves a caller-owned work directory when ownership is %s',
+    async (_label, authorized, owner) => {
+      tempDir = makeWorkDir();
+      const ownerPath = join(tempDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER);
+      if (owner === undefined) {
+        rmSync(ownerPath);
+      } else {
+        writeFileSync(ownerPath, owner);
+      }
+      const sentinelPath = join(tempDir, 'caller-sentinel');
+      writeFileSync(sentinelPath, 'keep');
+      const readline = new FakeReadline();
+      const removeWorkDir = vi.fn();
+      const session = new TmuxPlaySession({
+        ...baseOptions(tempDir),
+        workDirOwnedByLauncher: authorized,
+        createReadline: () => readline,
+        createRuntime: async () => ({
+          abortActiveTurn: vi.fn(),
+          dispose: vi.fn(),
+          runBossTurn: vi.fn(),
+        }),
+        importCaptain: async () => ({ default: () => captain() }),
+        removeWorkDir,
+      });
+
+      await session.start();
+      readline.close();
+      await session.done;
+
+      expect(removeWorkDir).not.toHaveBeenCalled();
+      expect(existsSync(sentinelPath)).toBe(true);
+    },
+  );
+
   it('aborts an active turn on bare ESC without treating arrow keys as aborts', async () => {
     tempDir = makeWorkDir();
     const input = new TtyInput();
@@ -831,6 +874,36 @@ describe('TmuxPlaySession', () => {
       'first',
       'second',
     ]);
+  });
+
+  it('rejects an unsafe managed session id before child mutation', async () => {
+    tempDir = makeWorkDir();
+    const paths = managedPaths(tempDir);
+    const initializeRuntime = vi.fn(async () => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(),
+      runBossTurn: vi.fn(),
+    }));
+
+    await expect(
+      runManagedTmuxPlaySession({
+        ...baseOptions(tempDir),
+        ...paths,
+        sessionId: 'unsafe.id',
+        lifecycle: {
+          initializeRuntime,
+          async beforeNonEmptyTurn() {},
+          async afterTurn() {},
+          async shutdown() {},
+        },
+      }),
+    ).rejects.toThrow(
+      'managed tmux-play sessionId must match ^[A-Za-z0-9][A-Za-z0-9_-]*$',
+    );
+
+    expect(initializeRuntime).not.toHaveBeenCalled();
+    expect(existsSync(paths.readinessPath)).toBe(false);
+    expect(existsSync(tempDir)).toBe(true);
   });
 
   it('gates managed input and releases buffered replies only after the settled-turn hook', async () => {
@@ -1310,13 +1383,14 @@ describe('TmuxPlaySession', () => {
     expect(existsSync(paths.shutdownCompletePath)).toBe(true);
   });
 
-  it('joins an active managed turn before runtime and lifecycle cleanup', async () => {
+  it('joins an active managed turn and preserves the embedding shutdown reason', async () => {
     tempDir = makeWorkDir();
     const paths = managedPaths(tempDir);
     const readline = new FakeReadline();
     const turnStarted = deferred<void>();
     const turnBarrier = deferred<void>();
     const order: string[] = [];
+    let shutdownReason = '';
     let runtimeObserver!: { onRecord(record: TmuxPlayRecord): unknown };
     const running = runManagedTmuxPlaySession({
       ...baseOptions(tempDir),
@@ -1326,8 +1400,9 @@ describe('TmuxPlaySession', () => {
         async initializeRuntime(context) {
           runtimeObserver = context.observers[0]!;
           return {
-            abortActiveTurn() {
-              order.push('abort');
+            abortActiveTurn(reason) {
+              shutdownReason = reason ?? '';
+              order.push(`abort:${shutdownReason}`);
             },
             async dispose() {
               order.push('runtime dispose');
@@ -1337,20 +1412,27 @@ describe('TmuxPlaySession', () => {
               turnStarted.resolve();
               await turnBarrier.promise;
               await runtimeObserver.onRecord({
-                type: 'turn_finished',
+                type: 'turn_aborted',
                 turnId: 1,
                 timestamp: 1,
+                reason: shutdownReason,
               });
               order.push('turn complete');
             },
           };
         },
         async beforeNonEmptyTurn() {},
-        async afterTurn() {
-          order.push('settlement');
+        async afterTurn(context) {
+          order.push(
+            `settlement:${
+              context.terminal.type === 'turn_aborted'
+                ? context.terminal.reason
+                : context.terminal.type
+            }`,
+          );
         },
-        async shutdown() {
-          order.push('lifecycle shutdown');
+        async shutdown(context) {
+          order.push(`lifecycle shutdown:${context.reason}`);
         },
       },
     });
@@ -1359,19 +1441,24 @@ describe('TmuxPlaySession', () => {
     readline.emitLine('work');
     await turnStarted.promise;
     writeFileSync(paths.shutdownRequestPath, 'shutdown\n', { mode: 0o600 });
-    await waitUntil(() => order.includes('abort'));
+    await waitUntil(() =>
+      order.includes('abort:embedding shutdown request'),
+    );
 
-    expect(order).toEqual(['turn start', 'abort']);
+    expect(order).toEqual([
+      'turn start',
+      'abort:embedding shutdown request',
+    ]);
     turnBarrier.resolve();
     await running;
 
     expect(order).toEqual([
       'turn start',
-      'abort',
+      'abort:embedding shutdown request',
       'turn complete',
-      'settlement',
+      'settlement:embedding shutdown request',
       'runtime dispose',
-      'lifecycle shutdown',
+      'lifecycle shutdown:embedding shutdown request',
     ]);
   });
 
@@ -1619,7 +1706,7 @@ describe('TmuxPlaySession', () => {
   });
 
   it.each(['before', 'after'] as const)(
-    'awaits the active managed %s hook before lifecycle shutdown and withholds replies',
+    'awaits the active managed %s hook before lifecycle shutdown and settles replies transactionally',
     async (blockedHook) => {
       tempDir = makeWorkDir();
       const readline = new FakeReadline();
@@ -1635,7 +1722,14 @@ describe('TmuxPlaySession', () => {
         ...paths,
         signalTarget,
         createReadline: () => readline,
-        observers: [{ onRecord: (record) => visibleRecords.push(record) }],
+        observers: [
+          {
+            onRecord(record) {
+              visibleRecords.push(record);
+              if (record.type === 'captain_reply') order.push('reply visible');
+            },
+          },
+        ],
         lifecycle: {
           async initializeRuntime(context) {
             runtimeObserver = context.observers[0]!;
@@ -1704,9 +1798,16 @@ describe('TmuxPlaySession', () => {
       expect(order.at(-1)).toBe('shutdown');
       expect(
         visibleRecords.some((record) => record.type === 'captain_reply'),
-      ).toBe(false);
+      ).toBe(blockedHook === 'after');
       if (blockedHook === 'before') {
         expect(order).not.toContain('run');
+      } else {
+        expect(order.indexOf('reply visible')).toBeGreaterThan(
+          order.indexOf('after:end'),
+        );
+        expect(order.indexOf('reply visible')).toBeLessThan(
+          order.indexOf('dispose'),
+        );
       }
     },
   );
@@ -1793,9 +1894,9 @@ describe('TmuxPlaySession', () => {
     await running;
 
     expect(order).toEqual([
-      'abort:SIGHUP',
+      'abort:embedding shutdown request',
       'runtime.dispose',
-      'lifecycle:SIGHUP',
+      'lifecycle:embedding shutdown request',
       'workdir',
     ]);
     expect(lifecycleShutdown).toHaveBeenCalledTimes(1);
@@ -1807,10 +1908,13 @@ const READLINE_ESCAPE_CODE_TIMEOUT_MS = 100;
 const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
 const BRACKETED_PASTE_DISABLE = '\x1b[?2004l';
 
-function baseOptions(workDir: string): TmuxPlaySessionOptions {
+function baseOptions(
+  workDir: string,
+): TmuxPlaySessionOptions & { readonly workDirOwnedByLauncher: true } {
   return {
     sessionId: 'abc123',
     workDir,
+    workDirOwnedByLauncher: true,
     cwd: '/repo',
     input: process.stdin,
     output: new MemoryOutput(),
@@ -1872,6 +1976,7 @@ function makeWorkDir(
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
   writeFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'abc123');
+  writeFileSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER), 'abc123');
   const emptyPlayers = overrides.emptyPlayers === true;
   const snapshot: Record<string, unknown> = {
     captain: {

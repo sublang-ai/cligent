@@ -32,5 +32,5 @@ Let an embedding playbook bind namespaced players to independent sessions, repla
 - A managed turn presents replies only after a finished terminal has crossed the runtime fence and settlement hook; aborted and failed transactions present none, and a fenced terminal still reaches settlement when the runtime then rejects.
 - Shutdown aborts active work and awaits the full transaction and runtime disposal before lifecycle release and returned-promise settlement.
 - Empty `players` plus omitted or empty `layout.initialVisible` launches one full-width Boss/Captain pane, exposes empty runtime manifests, accepts empty visibility records, and preserves managed reply settlement; a nonempty roster still rejects an empty visible set.
-- Existing nonempty-roster tmux-play launch/session/runtime behavior and generic `Cligent` option merging remain unchanged.
+- Existing nonempty-roster tmux-play launch/session/runtime behavior and generic `Cligent` option merging remain unchanged, except that stock session mode now routes SIGHUP through the ordinary [TMUX-026](../user/tmux-play.md#tmux-026) shutdown lifecycle.
 - Attachment abort before native handoff retires the managed child and preserves all failures, while a signal after the synchronous handoff belongs to the native client and detached activation never invokes the handoff callback.

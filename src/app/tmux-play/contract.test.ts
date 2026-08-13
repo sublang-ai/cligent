@@ -162,6 +162,7 @@ describe('tmux-play public contract', () => {
       sessionId: string;
       sessionName: string;
       workDir: string;
+      workDirOwnedByLauncher: boolean;
       snapshotPath: string;
       readinessPath: string;
       inputGatePath: string;
@@ -181,6 +182,7 @@ describe('tmux-play public contract', () => {
     expectTypeOf<ManagedTmuxPlaySessionOptions>().toMatchTypeOf<{
       sessionId: string;
       workDir: string;
+      workDirOwnedByLauncher: boolean;
       readinessPath: string;
       inputGatePath: string;
       inputActivePath: string;
