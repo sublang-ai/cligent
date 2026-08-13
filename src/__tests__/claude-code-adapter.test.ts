@@ -1480,6 +1480,94 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.breakdown).toEqual({ input: 15, cacheRead: 1000, cacheWrite: 250 });
   });
 
+  it('decomposes the run into one billable record per model', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 10, output_tokens: 20 },
+          modelUsage: {
+            'claude-haiku-4-5-20251001': {
+              inputTokens: 10,
+              cacheReadInputTokens: 100,
+              cacheCreationInputTokens: 50,
+              outputTokens: 20,
+              costUSD: 0.01,
+              canonicalModel: 'claude-haiku-4-5',
+              provider: 'firstParty',
+            },
+            'claude-sonnet-5': {
+              inputTokens: 5,
+              cacheReadInputTokens: 900,
+              cacheCreationInputTokens: 200,
+              outputTokens: 400,
+              costUSD: 0.22,
+              canonicalModel: 'claude-sonnet-5',
+              provider: 'firstParty',
+            },
+          },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const usage = (
+      (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
+        .payload as DonePayload
+    ).usage;
+
+    // The rate-card key is the canonical id, not the map key that may carry
+    // an alias or a context-window suffix.
+    expect(usage.records).toEqual([
+      {
+        model: 'claude-haiku-4-5',
+        provider: 'firstParty',
+        tokens: { input: 10, cacheRead: 100, cacheWrite: 50 },
+        costUsd: 0.01,
+      },
+      {
+        model: 'claude-sonnet-5',
+        provider: 'firstParty',
+        tokens: { input: 5, cacheRead: 900, cacheWrite: 200 },
+        costUsd: 0.22,
+      },
+    ]);
+    // ENG-030: records sum to the breakdown, member by member.
+    const summed = usage.records!.reduce(
+      (acc, r) => ({
+        input: acc.input + (r.tokens.input ?? 0),
+        cacheRead: acc.cacheRead + (r.tokens.cacheRead ?? 0),
+        cacheWrite: acc.cacheWrite + (r.tokens.cacheWrite ?? 0),
+      }),
+      { input: 0, cacheRead: 0, cacheWrite: 0 },
+    );
+    expect(summed).toEqual(usage.breakdown);
+  });
+
+  it('publishes no records when the run reports no per-model map', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        { type: 'system', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 7, output_tokens: 3 },
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const usage = (
+      (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
+        .payload as DonePayload
+    ).usage;
+    expect(usage).not.toHaveProperty('records');
+  });
+
   it('falls back to main-loop counters when no per-model map is supplied', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([

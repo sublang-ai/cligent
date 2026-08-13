@@ -13,6 +13,7 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
+  UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -23,6 +24,7 @@ import {
 } from '../runtime-version.js';
 import {
   buildTokenBreakdown,
+  buildUsageRecords,
   isUsageRecord,
   readUsageCounter,
 } from './usage.js';
@@ -448,23 +450,41 @@ const MODEL_USAGE_ALIASES = [
  * entry is malformed, leaving the caller on the narrower `usage` surface
  * rather than differencing against a partial total.
  */
-function foldModelUsage(rawModelUsage: unknown): Record<string, number> | undefined {
+function foldModelUsage(
+  rawModelUsage: unknown,
+): { totals: Record<string, number>; records: UsageRecord[] } | undefined {
   if (!isUsageRecord(rawModelUsage)) return undefined;
 
-  const entries = Object.values(rawModelUsage);
+  const entries = Object.entries(rawModelUsage);
   if (entries.length === 0) return undefined;
 
-  const folded: Record<string, number> = {};
-  for (const entry of entries) {
+  const totals: Record<string, number> = {};
+  const records: UsageRecord[] = [];
+  for (const [model, entry] of entries) {
     if (!isUsageRecord(entry)) return undefined;
+    const perModel: Record<string, number> = {};
     for (const [field, aliases] of MODEL_USAGE_ALIASES) {
       const reading = readUsageCounter(entry, aliases, true);
       if (!reading.valid) return undefined;
-      folded[field] = (folded[field] ?? 0) + reading.value;
+      perModel[field] = reading.value;
+      totals[field] = (totals[field] ?? 0) + reading.value;
     }
+    const costUsd = asNumber(entry.costUSD) ?? asNumber(entry.costUsd);
+    records.push({
+      // `canonicalModel` is the id Claude Code prices against; the map key can
+      // be an alias or carry a context-window suffix.
+      model: asString(entry.canonicalModel) ?? model,
+      ...(asString(entry.provider) ? { provider: asString(entry.provider)! } : {}),
+      tokens: {
+        input: perModel.input_tokens ?? 0,
+        cacheRead: perModel.cache_read_input_tokens ?? 0,
+        cacheWrite: perModel.cache_creation_input_tokens ?? 0,
+      },
+      ...(costUsd !== undefined ? { costUsd } : {}),
+    });
   }
 
-  return folded;
+  return { totals, records };
 }
 
 function mapUsage(
@@ -1006,11 +1026,21 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           // counters only where the runtime does not supply it.
           const reportedCostUsd =
             asNumber(result.total_cost_usd) ?? asNumber(result.totalCostUsd);
+          const folded = foldModelUsage(result.modelUsage);
           const usage = mapUsage(
-            foldModelUsage(result.modelUsage) ?? result.usage,
+            folded?.totals ?? result.usage,
             observedToolUseIds.size,
             reportedCostUsd,
           );
+          // ENG-030: the per-model entries are this run's billable groups.
+          // Claude Code reports no per-model output split, so each record
+          // carries the input side only, matching the withheld output side.
+          const records = folded
+            ? buildUsageRecords(usage.breakdown, folded.records)
+            : undefined;
+          if (records) {
+            usage.records = records;
+          }
           // CLAUDE-010's no-op signature is a property of the main-loop
           // result message, not of the run's total accounting: the repair
           // turn reports zero main-loop tokens while the run as a whole may

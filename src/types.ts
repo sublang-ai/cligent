@@ -109,6 +109,35 @@ export interface TokenBreakdown {
   reasoning?: number;
 }
 
+/**
+ * One billable group of a run's work per DR-014: the tokens attributable to a
+ * single rate-card entry. Cost is `Σ records of rate(model, …) × tokens`, so a
+ * caller prices a run by walking these rather than the turn totals.
+ */
+export interface UsageRecord {
+  /**
+   * Rate-card key as the runtime named it. Absent when the runtime does not
+   * report which model ran — never a placeholder such as `'unknown'`.
+   */
+  model?: string;
+  /** Rate-card family, where the runtime distinguishes one. */
+  provider?: string;
+  /**
+   * API requests this record covers. `1` means a context-length pricing tier
+   * is determinable from `tokens`; a greater value means it is not, because
+   * tiers are selected per request and these counts are a sum.
+   */
+  requests?: number;
+  /** This group's share of the run, in the DR-014 disjoint frame. */
+  tokens: TokenBreakdown;
+  /**
+   * Cost the runtime itself computed for this group, where it computes one.
+   * Preferred over any caller-side calculation, since the runtime applied the
+   * rates and tiers in force at the time.
+   */
+  costUsd?: number;
+}
+
 export interface DoneUsage {
   /**
    * Whether inputTokens and outputTokens came from upstream accounting.
@@ -127,6 +156,13 @@ export interface DoneUsage {
    * 'unavailable'.
    */
   breakdown?: TokenBreakdown;
+  /**
+   * Billable decomposition of the run: which model did how much work. Present
+   * only where the runtime attributes usage to a rate-card key. Where present,
+   * the records' tokens sum to `breakdown`. Always absent when
+   * tokenAvailability is 'unavailable'.
+   */
+  records?: UsageRecord[];
 }
 
 export interface DonePayload {

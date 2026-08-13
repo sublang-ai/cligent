@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { TokenBreakdown } from '../types.js';
+import type { TokenBreakdown, UsageRecord } from '../types.js';
 
 export interface UsageCounterReading {
   value: number;
@@ -126,4 +126,50 @@ export function readUsageCounter(
   }
 
   return { value: value ?? 0, valid: true, present: true };
+}
+
+/**
+ * Build the optional `DoneUsage.records` billable decomposition per ENG-030.
+ * A record survives only if its own components satisfy the ENG-019 partition
+ * identities against its own totals, and the surviving set survives only if it
+ * sums to the run's published `breakdown` — otherwise the decomposition would
+ * describe work the aggregates do not, and is dropped whole rather than
+ * published partial.
+ */
+export function buildUsageRecords(
+  breakdown: TokenBreakdown | undefined,
+  candidates: readonly UsageRecord[],
+): UsageRecord[] | undefined {
+  if (!breakdown || candidates.length === 0) return undefined;
+
+  const members: (keyof TokenBreakdown)[] = [
+    'input',
+    'cacheRead',
+    'cacheWrite',
+    'output',
+    'reasoning',
+  ];
+
+  const totals: Partial<Record<keyof TokenBreakdown, number>> = {};
+  for (const record of candidates) {
+    for (const member of members) {
+      const value = record.tokens[member];
+      if (value === undefined) continue;
+      if (!isCounter(value)) return undefined;
+      totals[member] = (totals[member] ?? 0) + value;
+    }
+    if (record.requests !== undefined && !isCounter(record.requests)) {
+      return undefined;
+    }
+  }
+
+  // Every component the run published must be accounted for by the records,
+  // and the records must not claim a component the run did not publish.
+  for (const member of members) {
+    if ((breakdown[member] ?? undefined) !== (totals[member] ?? undefined)) {
+      return undefined;
+    }
+  }
+
+  return [...candidates];
 }

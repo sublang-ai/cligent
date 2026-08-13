@@ -90,6 +90,27 @@ indirection at every call site.
   breakdown beside an unavailable aggregate would create a third state DR-002 does not define, in which a
   consumer could sum components into a number that is not the run's usage.
 
+### Billable decomposition
+
+A partition of the whole run is not enough to price it, because a rate is selected per model and per request,
+not per turn.
+The run therefore also carries an optional list of **usage records**, each one billable group's share of the
+run: its rate-card key, its components in the frame above, how many requests it covers, and the cost the
+runtime computed for it where it computes one.
+
+- A record's `requests` count is what tells a caller whether a context-length pricing tier is determinable.
+  One request means the tier follows from the record's own tokens; more means it does not, because tiers are
+  selected per request and the counts are a sum.
+- Where a runtime does not name the model that ran, the record omits the field rather than naming a
+  placeholder, because a placeholder selects a wrong rate as readily as a right one.
+- The records sum to the breakdown, or they are omitted. A decomposition that describes work the aggregates
+  do not is worse than none.
+
+This supersedes the deferral of per-model attribution recorded when this decision was first accepted.
+That deferral rested on partial runtime coverage, but partial coverage is what the absence model already
+expresses, and without a rate-card key the component partition cannot serve the purpose this record exists
+for.
+
 ### Fidelity sources
 
 An adapter may derive token accounting from a source other than the protocol stream it already consumes —
@@ -125,4 +146,8 @@ forcing re-verification whenever a runtime moves.
   where the reporting surface does not identify the provider. Adapter items record the affected cases.
 
 Recognized and deferred, each being a separate unified-shape question with its own coverage gaps: server-side
-tool request counts, cache time-to-live tiers, and per-model attribution.
+tool request counts and cache time-to-live tiers.
+Both are measured against one vendor only, and neither changes which rate applies, unlike the model identity
+promoted above.
+Cache storage billed per unit time is structurally absent for every runtime as cligent drives them, and is
+recorded here as a finding rather than an omission.

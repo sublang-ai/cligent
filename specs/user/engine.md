@@ -205,3 +205,11 @@ Where neither side is publishable, the producer shall omit `breakdown` rather th
 Where an adapter derives token accounting from a source other than the protocol stream it consumes for the run, including state the runtime writes outside that stream, it shall cross-validate the derived totals against the aggregates that stream itself reported.
 Where the cross-validation fails, or the source is absent, unreadable, or unparsable, the adapter shall fall back to the accounting the protocol stream supports, including `'unavailable'` where that accounting is incomplete, so that a supplementary source can only raise fidelity and never lower correctness.
 An adapter shall not read a source that lies outside a protocol boundary an applicable decision record establishes for it.
+
+### ENG-030
+
+`DoneUsage.records` shall be an optional list of `UsageRecord` values decomposing the run into billable groups per [DR-014](../decisions/014-unified-token-usage-breakdown.md), each carrying that group's `tokens` in the [ENG-028](#eng-028) frame and, where the runtime supplies them, the rate-card `model` and `provider`, the number of API `requests` the group covers, and the `costUsd` the runtime computed for it.
+Where the producer publishes records, their components shall sum exactly to `breakdown`, member by member, so that a component present in one is present in the other; where that identity cannot hold, the producer shall omit `records` entirely rather than publish a decomposition the aggregates do not support.
+Where a runtime does not report which model performed a group's work, the producer shall omit `model` rather than substitute a placeholder, because a placeholder selects a rate as confidently as a real identifier would.
+Where `requests` is `1`, a context-length pricing tier shall be determinable from that record's own tokens; where it is greater, it shall not be, because such tiers are selected per request and the record's counts are a sum; where it is absent, the request count is unreported.
+Where token accounting is `'unavailable'`, the producer shall omit `records`, on the same grounds as [ENG-027](#eng-027)'s suppression of `breakdown`.
