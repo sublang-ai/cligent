@@ -47,6 +47,42 @@ function assertBreakdownInvariants(usage: DonePayload['usage']): void {
   if (outputSum !== undefined) expect(outputSum).toBe(usage.outputTokens);
 }
 
+/**
+ * TENG-021: the decomposition identities, likewise asserted on what a caller
+ * observes. The per-adapter record shapes are covered by TADAPT-039 in each
+ * adapter suite; here the concern is the contract every terminal must satisfy.
+ */
+function assertRecordInvariants(usage: DonePayload['usage']): void {
+  const records = usage.records;
+  if (!records) return;
+
+  expect(usage.tokenAvailability).toBe('reported');
+  const members: (keyof TokenBreakdown)[] = [
+    'input',
+    'cacheRead',
+    'cacheWrite',
+    'output',
+    'reasoning',
+  ];
+  const totals: Partial<Record<keyof TokenBreakdown, number>> = {};
+  for (const record of records) {
+    expect(record.model).not.toBe('unknown');
+    if (record.requests !== undefined) {
+      expect(Number.isSafeInteger(record.requests)).toBe(true);
+      expect(record.requests).toBeGreaterThanOrEqual(0);
+    }
+    for (const member of members) {
+      const value = record.tokens[member];
+      if (value === undefined) continue;
+      totals[member] = (totals[member] ?? 0) + value;
+    }
+  }
+
+  for (const member of members) {
+    expect(totals[member]).toBe(usage.breakdown?.[member]);
+  }
+}
+
 /** Minimal adapter that emits one terminal `done` with the given usage. */
 function stubAdapter(usage: DonePayload['usage']): AgentAdapter {
   return {
@@ -167,5 +203,83 @@ describe('token breakdown invariants through Cligent (TENG-020)', () => {
     }
     expect(usage?.tokenAvailability).toBe('unavailable');
     expect(usage).not.toHaveProperty('breakdown');
+  });
+});
+
+describe('billable record invariants through Cligent (TENG-021)', () => {
+  it('decomposes a published breakdown exactly', async () => {
+    const usage = await terminalUsage(
+      stubAdapter({
+        tokenAvailability: 'reported',
+        inputTokens: 100,
+        outputTokens: 50,
+        toolUses: 0,
+        breakdown: {
+          input: 30,
+          cacheRead: 60,
+          cacheWrite: 10,
+          output: 45,
+          reasoning: 5,
+        },
+        records: [
+          {
+            model: 'model-a',
+            requests: 1,
+            tokens: {
+              input: 20,
+              cacheRead: 60,
+              cacheWrite: 4,
+              output: 40,
+              reasoning: 5,
+            },
+          },
+          {
+            model: 'model-b',
+            requests: 1,
+            tokens: {
+              input: 10,
+              cacheRead: 0,
+              cacheWrite: 6,
+              output: 5,
+              reasoning: 0,
+            },
+          },
+        ],
+      }),
+    );
+    assertBreakdownInvariants(usage);
+    assertRecordInvariants(usage);
+  });
+
+  it('omits the model rather than naming an unknown one', async () => {
+    const usage = await terminalUsage(
+      stubAdapter({
+        tokenAvailability: 'reported',
+        inputTokens: 12,
+        outputTokens: 0,
+        toolUses: 0,
+        breakdown: { input: 12 },
+        records: [{ requests: 1, tokens: { input: 12 } }],
+      }),
+    );
+    assertRecordInvariants(usage);
+    expect(usage.records![0]).not.toHaveProperty('model');
+  });
+
+  it('carries no records on an engine-synthesized terminal', async () => {
+    const adapter: AgentAdapter = {
+      agent: 'stub',
+      async isAvailable() {
+        return true;
+      },
+      async *run(): AsyncGenerator<AgentEvent, void, void> {
+        yield createEvent('text', 'stub', { content: 'hi' }, 'stub-session');
+      },
+    };
+
+    const usage = await terminalUsage(adapter);
+    expect(usage.tokenAvailability).toBe('unavailable');
+    expect(usage).not.toHaveProperty('records');
+    assertRecordInvariants(usage);
   });
 });

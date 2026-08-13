@@ -7328,6 +7328,7 @@ describe('OpenCode SSE event structure', () => {
     expect(output! + reasoning!).toBe(payload.usage.outputTokens);
   });
 
+  // TADAPT-039
   it('records each step as its own billable request', async () => {
     const firstStep = {
       id: 'step-1',
@@ -7408,6 +7409,11 @@ describe('OpenCode SSE event structure', () => {
         costUsd: 0.002,
       },
     ]);
+    // The per-record costs are the runtime's own, so they reconcile with the
+    // run total rather than exceeding it.
+    expect(
+      payload.usage.records!.reduce((total, r) => total + (r.costUsd ?? 0), 0),
+    ).toBeCloseTo(payload.usage.totalCostUsd!, 10);
     const summed = payload.usage.records!.reduce(
       (acc, record) => ({
         input: acc.input + record.tokens.input!,

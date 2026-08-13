@@ -122,3 +122,10 @@ Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-
 Where an adapter publishes `DoneUsage.breakdown` on a terminal `done` observed through `Cligent.run()`, every present member shall be a finite non-negative integer, a published input side shall sum exactly to `inputTokens`, and a published output side shall sum exactly to `outputTokens`.
 Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `breakdown`.
 Where a runtime reports a component as zero and omits another, the emitted breakdown shall carry the zero and omit the other, so a consumer can distinguish a measured zero from an unreported component.
+
+### TENG-021
+Verifies: [ENG-027](../user/engine.md#eng-027), [ENG-030](../user/engine.md#eng-030)
+
+Where a terminal `done` observed through `Cligent.run()` carries `DoneUsage.records`, the records' components shall sum member by member to `breakdown`, no record shall carry a component `breakdown` omits, and every present `requests` count shall be a finite non-negative integer.
+Where a record's model is unknown to the producer, the record shall omit `model` rather than carry a placeholder value.
+Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `records`.

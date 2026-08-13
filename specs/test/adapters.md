@@ -381,6 +381,14 @@ Given a runtime omits a cache or reasoning counter, the corresponding component 
 Given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
 Given Codex reports its thread-cumulative snapshot on successive turns of one thread, the second turn's `done` shall report that turn's difference rather than the thread total; given a resumed thread for which the adapter holds no baseline, the `done` shall report `'unavailable'`; and given a snapshot smaller than the retained baseline, the `done` shall report `'unavailable'` while the following turn recovers.
 
+### TADAPT-039
+Verifies: [ENG-030](../user/engine.md#eng-030), [CLAUDE-011](../user/adapters/claude-code.md#claude-011), [CODEX-014](../user/adapters/codex.md#codex-014), [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
+
+Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, Claude Code shall publish one record per model in its per-model accounting keyed by the canonical model identifier, OpenCode shall publish one record per step part carrying `requests: 1`, and Codex shall publish one record covering the turn with no request count.
+Given a run pinned no model and its runtime named none, Codex shall publish no records, and an OpenCode step whose message named no model shall yield a record without one; in neither case shall a placeholder identifier appear.
+Given a runtime reports a group's own cost, its record shall carry that cost, and the costs of a run's records shall not exceed the run's reported total.
+Given upstream accounting is incomplete, absent, or fails the partition identities, the adapter shall publish no records on that terminal.
+
 
 ## Real-run Acceptance
 

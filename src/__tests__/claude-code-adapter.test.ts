@@ -1480,6 +1480,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(usage.breakdown).toEqual({ input: 15, cacheRead: 1000, cacheWrite: 250 });
   });
 
+  // TADAPT-039
   it('decomposes the run into one billable record per model', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([

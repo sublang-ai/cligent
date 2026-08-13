@@ -354,6 +354,7 @@ describe('CodexAdapter', () => {
     });
   });
 
+  // TADAPT-039
   it('publishes no records when the run pinned no model', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
