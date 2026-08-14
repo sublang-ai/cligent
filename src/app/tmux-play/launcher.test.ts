@@ -76,7 +76,6 @@ import {
   legacyEffortReporter,
   parseOsc11BackgroundFlavor,
   publishManagedControlMarker,
-  TMUX_PLAY_SESSION_MARKER,
   TMUX_PLAY_WORK_DIR_OWNER_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
@@ -181,9 +180,6 @@ describe('launchTmuxPlay', () => {
       workDir,
       snapshotPath: join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),
     });
-    expect(readFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'utf8')).toBe(
-      'abc123',
-    );
     expect(existsSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER))).toBe(
       false,
     );

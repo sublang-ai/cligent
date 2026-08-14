@@ -26,11 +26,18 @@ export function prepareLogDirectory(
   markerFile: string,
   markerContent: string,
 ): void {
+  prepareLogFiles(workDir, names);
+  writeFileSync(join(workDir, markerFile), markerContent);
+}
+
+export function prepareLogFiles(
+  workDir: string,
+  names: readonly string[],
+): void {
   mkdirSync(workDir, { recursive: true });
   for (const name of names) {
     writeFileSync(logFilePath(workDir, name), '');
   }
-  writeFileSync(join(workDir, markerFile), markerContent);
 }
 
 export function openAppendLogStreams(

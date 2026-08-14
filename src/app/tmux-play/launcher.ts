@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Writable } from 'node:stream';
 import { ReadStream } from 'node:tty';
-import { prepareLogDirectory, logFilePath } from '../shared/logs.js';
+import { prepareLogFiles, logFilePath } from '../shared/logs.js';
 import { shellQuote } from '../shared/shell.js';
 import { GLOW_INSTALL_URL, isGlowAvailable } from '../shared/glow.js';
 import { assertConfiguredAdaptersReady } from './readiness.js';
@@ -53,7 +53,6 @@ import {
 } from './config.js';
 import type { PlayerConfig } from './players.js';
 
-export const TMUX_PLAY_SESSION_MARKER = '.tmux-play-session';
 export const TMUX_PLAY_WORK_DIR_OWNER_MARKER = '.tmux-play-work-dir-owner';
 const MANAGED_TMUX_PLAY_SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const NAVIGATION_HINTS =
@@ -499,7 +498,7 @@ async function launchTmuxPlayInternal(
   const workDir = options.workDir ?? mkdtempSync(join(tmpdir(), 'tmux-play-'));
   const playerIds = loaded.config.players.map((player) => player.id);
 
-  prepareLogDirectory(workDir, playerIds, TMUX_PLAY_SESSION_MARKER, sessionId);
+  prepareLogFiles(workDir, playerIds);
   if (workDirOwnedByLauncher) {
     writeFileSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER), sessionId, {
       encoding: 'utf8',

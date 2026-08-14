@@ -43,8 +43,8 @@ Constraints carried forward from the one-phase review, still unimplemented on th
 - Teardown shall be ownership-scoped: the launcher captures the created session's identity and removes
   only that instance, so a launch that fails because a session by the derived name already exists rejects
   without killing or touching the pre-existing session.
-- Ownership shall precede mutation: per-player logs, the session marker, and the config snapshot are
-  truncated or overwritten only after the session name is acquired.
+- Ownership shall precede mutation: per-player logs, the launcher-ownership marker, and the config snapshot are
+  created, truncated, or overwritten only after the session name is acquired.
 - The readiness and coordination markers' JSON shapes are a public wire contract with whatever child the
   caller's command runs, and shall be stated as such where a third-party child must interoperate.
 

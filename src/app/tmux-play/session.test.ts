@@ -10,10 +10,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
-import {
-  TMUX_PLAY_SESSION_MARKER,
-  TMUX_PLAY_WORK_DIR_OWNER_MARKER,
-} from './launcher.js';
+import { TMUX_PLAY_WORK_DIR_OWNER_MARKER } from './launcher.js';
 import { ObserverDispatchError, type TmuxPlayRecord } from './records.js';
 import {
   readConfigSnapshot,
@@ -1975,7 +1972,6 @@ function makeWorkDir(
   } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
-  writeFileSync(join(workDir, TMUX_PLAY_SESSION_MARKER), 'abc123');
   writeFileSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER), 'abc123');
   const emptyPlayers = overrides.emptyPlayers === true;
   const snapshot: Record<string, unknown> = {
