@@ -2020,10 +2020,33 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // The run's causal boundary is the user message its prompt creates, which
     // OpenCode assistant messages name as `parentID`. The id is observed, never
     // dictated: OpenCode mints ids in its own format, and a foreign id leaves
-    // the session busy forever. The `/event` endpoint is live-only, so the
-    // first root-session user message on the stream is this run's prompt on
-    // fresh and resumed runs alike.
-    let rootPromptMessageId: string | undefined;
+    // the session busy forever.
+    //
+    // A resumed root session is not exclusively this run's: a background task
+    // started by an earlier invocation injects its result as a fresh prompt
+    // into the parent session, and two runs sharing a resume id interleave
+    // there too. Ordering therefore cannot identify this run's prompt, so the
+    // boundary is proven by uniqueness instead — one candidate resolves it,
+    // and none or several leave it unproven rather than guessing.
+    // Sightings stay ordered so resolution keeps the stream's own order; only
+    // ineligible ones are skipped.
+    const rootPromptSightings: string[] = [];
+    const isBackgroundResultPrompt = (messageId: string): boolean => {
+      const key = openCodeUsageKey(sessionId, messageId);
+      for (const observation of internalPromptObservations.values()) {
+        if (
+          observation.kind === 'background-result' &&
+          openCodeUsageKey(observation.sessionId, observation.messageId) === key
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+    const resolveRootPromptMessageId = (): string | undefined =>
+      rootPromptSightings.find(
+        (messageId) => !isBackgroundResultPrompt(messageId),
+      );
     let accumulatedToolUses = 0;
     let accountingSequence = 0;
     const causalSessionActivation = new Map<string, number>();
@@ -2129,6 +2152,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       causalSessionLatestAssociation.clear();
       unmatchedCausalTaskKeys.clear();
 
+      const rootPromptMessageId = resolveRootPromptMessageId();
       const rootPromptKey = rootPromptMessageId
         ? openCodeUsageKey(sessionId, rootPromptMessageId)
         : undefined;
@@ -2378,13 +2402,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       const observedRole = loadOpenCodeMessageRole(event) ?? previous?.role;
       const observedParentId =
         loadOpenCodeMessageParentId(event) ?? previous?.parentId;
-      if (rootPromptMessageId === undefined && eventSessionId === sessionId) {
-        // The prompt's own user message is the anchor. Where the stream shows
-        // an assistant message first, it names that same message as its
-        // parent, so either sighting resolves the boundary.
-        if (observedRole === 'user') rootPromptMessageId = messageId;
-        else if (observedRole === 'assistant' && observedParentId) {
-          rootPromptMessageId = observedParentId;
+      if (eventSessionId === sessionId) {
+        const sighting =
+          observedRole === 'user'
+            ? messageId
+            : observedRole === 'assistant'
+              ? observedParentId
+              : undefined;
+        if (sighting && !rootPromptSightings.includes(sighting)) {
+          rootPromptSightings.push(sighting);
         }
       }
       messageFacts.set(key, {
@@ -2679,6 +2705,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ? 'complete'
         : 'partial';
       if (wrapperUsageCoverageIncomplete) coverage = 'partial';
+      // An unproven causal boundary cannot scope this run's work: either no
+      // candidate prompt was observed, or foreign root-session activity left
+      // several. Report the shortfall rather than attribute across it.
+      if (resolveRootPromptMessageId() === undefined) coverage = 'partial';
       let malformedCausalStep = false;
       const observedCausalStepMessages = new Set<string>();
       const hasPriorCausalMessage = (

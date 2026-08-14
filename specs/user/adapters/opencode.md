@@ -398,7 +398,9 @@ and preserve OpenCode's native available-tool surface.
 ### OPENCODE-021
 
 The adapter shall submit the prompt without a message identifier, because OpenCode mints message identifiers in its own format and a supplied foreign identifier leaves the session busy with no terminal event.
-It shall instead resolve the invocation's canonical prompt identifier from its own event stream — the root session's user message, or the identifier the first root-session assistant message names as its `parentID` — and shall construct the current invocation's causal task tree from assistant `parentID` links and task-part child-session metadata.
+It shall instead resolve the invocation's canonical prompt identifier from its own event stream — the root session's user message, or the identifier the first root-session assistant message names as its `parentID` [[10]] — and shall construct the current invocation's causal task tree from assistant `parentID` links and task-part child-session metadata.
+A resumed root session is not exclusively the invocation's: a background task started earlier injects its result as a fresh prompt into that same session [[11]], so a message the adapter recognizes as a background result shall never resolve the boundary.
+Where no eligible prompt identifier is observed, the report shall state `partial` coverage rather than attribute across an unproven boundary.
 It shall collect canonical step-finish accounting for the root and those causal descendants before applying [OPENCODE-006](#opencode-006)'s root-only conversation filter; foreign, merely pre-existing, and unscoped session activity shall not enter the ledger.
 Each step shall be keyed by native session and part identifier, an identical repeat shall count once, and a changed snapshot shall replace the earlier value rather than add to it.
 Removing a completed part shall not erase its billed request from the invocation ledger.
@@ -432,6 +434,8 @@ The whole-run cost shall be present only when coverage is complete and every cau
 [7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'
 [8]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/session.ts#L338-L406 'OpenCode 1.18.13 usage cost calculation'
 [9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L276 'OpenCode 1.18.13 title inference'
+[10]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L635-L670 'OpenCode 1.18.13 prompt message creation and assistant parent linkage'
+[11]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/tool/task.ts#L216-L252 'OpenCode 1.18.13 background task result injected into the parent session'
 [10]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/compaction.ts#L356-L535 'OpenCode 1.18.13 compaction and continuation flow'
 [11]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/tool/task.ts#L64-L243 'OpenCode 1.18.13 foreground and background task continuations'
 [12]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/processor.ts#L630-L680 'OpenCode 1.18.13 retry accounting boundary'

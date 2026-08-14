@@ -5529,6 +5529,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         { permission: 'webfetch', pattern: '*', action: 'deny' },
       ],
     });
+    // objectContaining alone would let a dictated `messageID` return unnoticed.
+    expect(
+      (capturedPromptArgs as Record<string, unknown>).messageID,
+    ).toBeUndefined();
     expect(capturedPromptArgs).toEqual(
       expect.objectContaining({
         sessionID: 'v2-session-permissions',
@@ -8278,6 +8282,41 @@ describe('OpenCode SSE event structure', () => {
     expect(usage.cost).toBeUndefined();
   });
 
+  it('does not anchor the run on a background result injected before its prompt', async () => {
+    // A task started by an earlier invocation completes during this resumed
+    // run and injects its result as a fresh prompt into the root session,
+    // ahead of this run's own prompt. Stream position would latch onto it.
+    const usage = await collectAccountingUsage(
+      'injected-root',
+      (promptMessageId) => [
+        accountingMessage('injected-root', 'injected-prompt', 'user'),
+        accountingPart(
+          'injected-root',
+          'injected-prompt',
+          'injected-part',
+          'text',
+          {
+            synthetic: true,
+            text: '<task id="stale-child" state="completed">\n<task_result>\nfinished\n</task_result>\n</task>',
+          },
+        ),
+        accountingMessage(
+          'injected-root',
+          'run-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('injected-root', 'run-assistant', 'run-step'),
+        accountingIdle('injected-root'),
+      ],
+    );
+
+    // The injected prompt neither anchors the run nor contributes work: the
+    // boundary resolves to this run's own prompt, so coverage stays provable.
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(1);
+  });
+
   it('does not attribute an explicit foreign-session retry to the run', async () => {
     const usage = await collectAccountingUsage(
       'foreign-retry-session',
@@ -9179,7 +9218,7 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('keeps only task-linked reused-child turns and marks later ambiguity partial', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const message = (
       sessionID: string,
       id: string,
@@ -9251,7 +9290,6 @@ describe('OpenCode SSE event structure', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'reuse-root' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9416,14 +9454,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('marks accounting partial until every causal child completes', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'partial-root' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9533,14 +9570,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('treats an explicitly reported zero-valued step as available usage', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'zero-usage-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9624,14 +9660,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('omits a non-finite aggregate cost while retaining finite step costs', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'cost-overflow-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9768,14 +9803,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('retains valid causal records when another causal step is malformed', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'mixed-usage-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9869,14 +9903,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('excludes an uncorrelated owned-session step from a partial report', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'mixed-causality-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -9962,14 +9995,13 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('reports exact completed steps as partial when the stream ends without idle', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'incomplete-usage-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
@@ -10018,7 +10050,7 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('reports exact completed steps as partial when the caller aborts', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const controller = new AbortController();
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
@@ -10026,7 +10058,6 @@ describe('OpenCode SSE event structure', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'aborted-usage-session' },
           onRun(options) {
-            promptMessageId = String(options.promptMessageId);
           },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {

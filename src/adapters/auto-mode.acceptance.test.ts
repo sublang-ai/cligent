@@ -350,10 +350,41 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
         OPENCODE_MODEL,
       );
       expectAutoMode('opencode', outcome);
+      // TADAPT-040: the resumed update run must still prove its own causal
+      // boundary against the live server, which is what the dictated message
+      // id destroyed. Termination and file state alone would not show it.
+      expectOpenCodeUsage('opencode create', outcome.create.events);
+      expectOpenCodeUsage('opencode update', outcome.update.events);
     },
     PROBE_TIMEOUT_MS,
   );
 });
+
+function expectOpenCodeUsage(
+  label: string,
+  events: readonly CligentEvent[],
+): void {
+  const done = events
+    .filter((event) => event.type === 'done')
+    .map((event) => event.payload as DonePayload);
+  expect(done, `${label}: terminal done events`).toHaveLength(1);
+
+  const report = done[0]?.usage.tokens;
+  expect(report, `${label}: authentic token report`).toBeDefined();
+  expect(report!.coverage, `${label}: causal coverage`).toBe('complete');
+  expect(report!.totals.input.total, `${label}: input`).toBeGreaterThan(0);
+  expect(report!.totals.output.total, `${label}: output`).toBeGreaterThan(0);
+  expect(
+    report!.records?.length ?? 0,
+    `${label}: per-request records`,
+  ).toBeGreaterThan(0);
+  for (const record of report!.records ?? []) {
+    expect(record.model?.length ?? 0, `${label}: record model`).toBeGreaterThan(
+      0,
+    );
+    expect(record.requests, `${label}: record request count`).toBe(1);
+  }
+}
 
 describe('auto-mode transient retry policy (TADAPT-019)', () => {
   it.each([

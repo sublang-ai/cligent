@@ -530,6 +530,7 @@ canned-event lifecycle check: the canned fixtures encode the wire schema this
 release was written against, so only a live run can catch a later OpenCode
 release changing the `ToolPart` lifecycle shape the way the pre-1.18
 normalization drifted.
+Given an OpenCode run, the prompt it submits shall carry no message identifier, and its usage report shall resolve the causal boundary from the run's own stream: a root-session user message, or the `parentID` a root-session assistant names. Given the root session also carries a background task's injected result, that injected prompt shall not resolve the boundary and the run's records shall exclude its work; given no eligible prompt identifier is observed at all, coverage shall be `partial` rather than attributed.
 
 ### TADAPT-041
 
