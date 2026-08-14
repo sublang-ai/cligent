@@ -1226,7 +1226,6 @@ export function wrapOpencodeClient(
       );
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
-      const promptMessageId = asString(options.promptMessageId);
       const signal =
         options.signal instanceof AbortSignal ? options.signal : undefined;
       const v2PermissionRuleset = resetPermissionPolicy
@@ -1541,7 +1540,6 @@ export function wrapOpencodeClient(
         const promptSessionId = sessionId;
 
         const promptBody = {
-          ...(promptMessageId ? { messageID: promptMessageId } : {}),
           parts: [{ type: 'text', text: options.prompt }],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
@@ -1557,7 +1555,6 @@ export function wrapOpencodeClient(
             directory?: string;
           } = {
           sessionID: promptSessionId,
-          ...(promptMessageId ? { messageID: promptMessageId } : {}),
           parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
           ...(modelVal
             ? { model: modelVal as OpenCodeV2PromptBody['model'] }
@@ -2020,9 +2017,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     const ownedSessionIds = new Set<string>();
     let wrapperUsageCoverageIncomplete = false;
 
-    // Supplying the user-message id gives the run an exact causal boundary:
-    // OpenCode assistant messages name it as `parentID`, including on resume.
-    const promptMessageId = `msg_${generateSessionId()}`;
+    // The run's causal boundary is the user message its prompt creates, which
+    // OpenCode assistant messages name as `parentID`. The id is observed, never
+    // dictated: OpenCode mints ids in its own format, and a foreign id leaves
+    // the session busy forever. The `/event` endpoint is live-only, so the
+    // first root-session user message on the stream is this run's prompt on
+    // fresh and resumed runs alike.
+    let rootPromptMessageId: string | undefined;
     let accumulatedToolUses = 0;
     let accountingSequence = 0;
     const causalSessionActivation = new Map<string, number>();
@@ -2128,9 +2129,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       causalSessionLatestAssociation.clear();
       unmatchedCausalTaskKeys.clear();
 
-      const rootPromptKey = openCodeUsageKey(sessionId, promptMessageId);
-      const rootActivation = messageFacts.get(rootPromptKey)?.sequence ?? 0;
-      causalPromptKeys.add(rootPromptKey);
+      const rootPromptKey = rootPromptMessageId
+        ? openCodeUsageKey(sessionId, rootPromptMessageId)
+        : undefined;
+      const rootActivation = rootPromptKey
+        ? (messageFacts.get(rootPromptKey)?.sequence ?? 0)
+        : 0;
+      if (rootPromptKey) causalPromptKeys.add(rootPromptKey);
       causalSessionActivation.set(sessionId, rootActivation);
       causalSessionLatestAssociation.set(sessionId, rootActivation);
 
@@ -2370,11 +2375,23 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       const nestedMessage = asRecord(event.message);
       const key = openCodeUsageKey(eventSessionId, messageId);
       const previous = messageFacts.get(key);
+      const observedRole = loadOpenCodeMessageRole(event) ?? previous?.role;
+      const observedParentId =
+        loadOpenCodeMessageParentId(event) ?? previous?.parentId;
+      if (rootPromptMessageId === undefined && eventSessionId === sessionId) {
+        // The prompt's own user message is the anchor. Where the stream shows
+        // an assistant message first, it names that same message as its
+        // parent, so either sighting resolves the boundary.
+        if (observedRole === 'user') rootPromptMessageId = messageId;
+        else if (observedRole === 'assistant' && observedParentId) {
+          rootPromptMessageId = observedParentId;
+        }
+      }
       messageFacts.set(key, {
         sessionId: eventSessionId,
         messageId,
-        role: loadOpenCodeMessageRole(event) ?? previous?.role,
-        parentId: loadOpenCodeMessageParentId(event) ?? previous?.parentId,
+        role: observedRole,
+        parentId: observedParentId,
         model: identity?.model ?? previous?.model,
         provider: identity?.provider ?? previous?.provider,
         mode:
@@ -3366,7 +3383,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       };
       const runPromise = runFn({
         prompt,
-        promptMessageId,
         cwd: options?.cwd,
         model: options?.model,
         signal: eventStreamController.signal,

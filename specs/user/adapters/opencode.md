@@ -397,7 +397,8 @@ and preserve OpenCode's native available-tool surface.
 
 ### OPENCODE-021
 
-The adapter shall assign the submitted prompt a canonical message identifier and shall construct the current invocation's causal task tree from assistant `parentID` links and task-part child-session metadata.
+The adapter shall submit the prompt without a message identifier, because OpenCode mints message identifiers in its own format and a supplied foreign identifier leaves the session busy with no terminal event.
+It shall instead resolve the invocation's canonical prompt identifier from its own event stream — the root session's user message, or the identifier the first root-session assistant message names as its `parentID` — and shall construct the current invocation's causal task tree from assistant `parentID` links and task-part child-session metadata.
 It shall collect canonical step-finish accounting for the root and those causal descendants before applying [OPENCODE-006](#opencode-006)'s root-only conversation filter; foreign, merely pre-existing, and unscoped session activity shall not enter the ledger.
 Each step shall be keyed by native session and part identifier, an identical repeat shall count once, and a changed snapshot shall replace the earlier value rather than add to it.
 Removing a completed part shall not erase its billed request from the invocation ledger.

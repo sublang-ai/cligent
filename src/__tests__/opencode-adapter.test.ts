@@ -4455,7 +4455,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       };
     };
     expect(promptArgs.path.id).toBe('new-session-42');
-    expect(promptArgs.body.messageID).toMatch(/^msg_/);
+    // The run never dictates a message id: OpenCode mints ids in its own
+    // format and a foreign one leaves the session busy forever.
+    expect(promptArgs.body.messageID).toBeUndefined();
     expect(promptArgs.body.parts).toEqual([{ type: 'text', text: 'hello v1' }]);
   });
 
@@ -5510,7 +5512,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 
     await client.run?.({
       prompt: 'test options',
-      promptMessageId: 'msg_test-options',
       cwd: '/workspace',
       permission: {
         edit: 'allow',
@@ -5531,7 +5532,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(capturedPromptArgs).toEqual(
       expect.objectContaining({
         sessionID: 'v2-session-permissions',
-        messageID: 'msg_test-options',
         directory: '/workspace',
         parts: [{ type: 'text', text: 'test options' }],
       }),
@@ -6181,15 +6181,14 @@ describe('OpenCode SSE event structure', () => {
     eventFactory: (promptMessageId: string) => unknown[],
     runResult: Record<string, unknown> = {},
   ): Promise<DonePayload['usage']> => {
-    let promptMessageId = '';
+    // OpenCode mints the user-message id; the run observes it rather than
+    // dictating one, so the fixture owns the value the same way a server does.
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId, ...runResult },
-          onRun(options) {
-            promptMessageId = String(options.promptMessageId);
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               for (const event of eventFactory(promptMessageId)) yield event;
@@ -7750,15 +7749,12 @@ describe('OpenCode SSE event structure', () => {
         cache: { read: 4, write: 1 },
       },
     } satisfies StepFinishPart;
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'usage-session' },
-          onRun(options) {
-            promptMessageId = String(options.promptMessageId);
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield {
@@ -8794,7 +8790,7 @@ describe('OpenCode SSE event structure', () => {
   });
 
   it('accounts the completed task-linked causal tree without exposing child output', async () => {
-    let promptMessageId = '';
+    const promptMessageId = 'msg_root-prompt';
     const assistantMessage = (
       sessionID: string,
       id: string,
@@ -8890,10 +8886,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'usage-root' },
-          onRun(options) {
-            promptMessageId = String(options.promptMessageId);
-            expect(promptMessageId).toMatch(/^msg_/);
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield assistantMessage(
