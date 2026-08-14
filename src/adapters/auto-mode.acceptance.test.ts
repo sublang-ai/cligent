@@ -302,7 +302,7 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
 
   const geminiMissing = missingDeps(['GEMINI_API_KEY'], ['gemini']);
   gatedIt(geminiMissing)(
-    'gemini auto mode auto-approves a temp-file create + update',
+    'gemini auto mode auto-approves writes and reports usage',
     async () => {
       assertReady('gemini', geminiMissing);
       const outcome = await probeWithRetry(
@@ -312,6 +312,11 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
         withIsolatedGeminiCliHome,
       );
       expectAutoMode('gemini', outcome);
+      // TADAPT-041: the same real headless requests must cross Gemini's
+      // run-owned telemetry boundary and survive strict StreamStats
+      // reconciliation. Presence here proves the non-injected path works.
+      expectGeminiUsage('gemini create', outcome.create.events);
+      expectGeminiUsage('gemini update', outcome.update.events);
     },
     PROBE_TIMEOUT_MS,
   );
@@ -1350,6 +1355,44 @@ function expectAutoMode(label: string, outcome: ProbeOutcome): void {
     outcome.updateContentMatches,
     `${label}: file did not have the expected phase-two contents after update\n${formatEvents(outcome.update.events)}`,
   ).toBe(true);
+}
+
+function expectGeminiUsage(
+  label: string,
+  events: readonly CligentEvent[],
+): void {
+  const donePayloads = events
+    .filter((event) => event.type === 'done')
+    .map((event) => event.payload as DonePayload);
+  expect(donePayloads, `${label}: terminal done events`).toHaveLength(1);
+
+  const report = donePayloads[0]?.usage.tokens;
+  expect(
+    report,
+    `${label}: real Gemini telemetry did not reconcile to StreamStats\n${formatEvents(events)}`,
+  ).toBeDefined();
+  expect(report!.totals.input.total, `${label}: input tokens`).toBeGreaterThan(
+    0,
+  );
+  expect(
+    report!.totals.output.total,
+    `${label}: output tokens`,
+  ).toBeGreaterThan(0);
+  expect(
+    report!.records?.length ?? 0,
+    `${label}: per-response records`,
+  ).toBeGreaterThan(0);
+
+  for (const record of report!.records ?? []) {
+    expect(record.model?.length ?? 0, `${label}: record model`).toBeGreaterThan(
+      0,
+    );
+    expect(
+      record.provider?.length ?? 0,
+      `${label}: record rate-card family`,
+    ).toBeGreaterThan(0);
+    expect(record.requests, `${label}: record request count`).toBe(1);
+  }
 }
 
 function formatEvents(events: readonly CligentEvent[]): string {

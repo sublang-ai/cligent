@@ -46,6 +46,9 @@ Done
 7. [x] **Verify the release surface.**
    Run focused adapter suites, type tests, typecheck, lint, build, full unit tests, package checks, and the
    feasible real-agent acceptance legs.
+8. [x] **Prove Gemini telemetry against the real CLI.**
+   Add [TADAPT-041](../test/adapters.md#tadapt-041) and require the existing credentialed Gemini acceptance
+   leg to emit non-empty per-response usage after strict stream reconciliation.
 
 ## Acceptance criteria
 

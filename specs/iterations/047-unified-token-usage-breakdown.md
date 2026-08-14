@@ -11,7 +11,7 @@ runtimes whose aggregates are currently wrong or unreachable.
 
 ## Status
 
-Complete except task 8, which is deferred pending live verification
+Superseded; complete except task 8, which was deferred and never shipped
 
 This record preserves the first additive breakdown implementation.
 The current [DR-014](../decisions/014-unified-token-usage-breakdown.md) replaces that unreleased shape with

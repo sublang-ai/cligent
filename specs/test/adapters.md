@@ -530,3 +530,15 @@ canned-event lifecycle check: the canned fixtures encode the wire schema this
 release was written against, so only a live run can catch a later OpenCode
 release changing the `ToolPart` lifecycle shape the way the pre-1.18
 normalization drifted.
+
+### TADAPT-041
+
+Verifies: [GEMINI-017](../user/adapters/gemini.md#gemini-017)
+
+Where the exact Gemini CLI conformance target and API-key credentials are
+available, when the real auto-mode adapter leg completes its headless create
+and update requests, each terminal shall carry a non-empty token report whose
+inclusive totals are positive and whose per-response records name a non-empty
+model, a non-empty authentication rate-card family, and exactly one request.
+An absent or unreconciled run-owned telemetry file shall fail this acceptance
+leg rather than pass on the successful coding-agent result alone.
