@@ -48,10 +48,7 @@ interface MockOpenCodeClient {
     sessionId: string;
     cwd?: string;
   }): Promise<unknown>;
-  abortSession?(options: {
-    sessionId: string;
-    cwd?: string;
-  }): Promise<void>;
+  abortSession?(options: { sessionId: string; cwd?: string }): Promise<void>;
   replyPermission(options: {
     sessionId: string;
     requestId: string;
@@ -85,11 +82,7 @@ class MockServerProcess extends EventEmitter {
     queueMicrotask(() => {
       this.stdout.end();
       this.stderr.end();
-      this.emit(
-        'close',
-        null,
-        typeof signal === 'string' ? signal : null,
-      );
+      this.emit('close', null, typeof signal === 'string' ? signal : null);
     });
     return true;
   }
@@ -102,10 +95,12 @@ interface SpawnInvocation {
   process: MockServerProcess;
 }
 
-function makeSpawn(processBehavior: {
-  ignoreSigterm?: boolean;
-  onKill?: (signal?: NodeJS.Signals | number) => void;
-} = {}): {
+function makeSpawn(
+  processBehavior: {
+    ignoreSigterm?: boolean;
+    onKill?: (signal?: NodeJS.Signals | number) => void;
+  } = {},
+): {
   spawnProcess: (
     command: string,
     args: readonly string[],
@@ -134,16 +129,19 @@ function makeSpawn(processBehavior: {
 function makeLoader(config: {
   runResult?: unknown;
   events?: unknown[];
-  eventStreamFactory?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
+  eventStreamFactory?: (
+    options?: Record<string, unknown>,
+  ) => AsyncIterable<unknown>;
   onCreateClient?: (options: { baseUrl?: string }) => void;
   onRun?: (options: Record<string, unknown>) => void;
   onEvents?: (options?: Record<string, unknown>) => void;
   statusResult?: unknown;
   statusError?: unknown;
   onGetSessionStatus?: (options: { sessionId: string; cwd?: string }) => void;
-  onAbortSession?: (
-    options: { sessionId: string; cwd?: string },
-  ) => Promise<void> | void;
+  onAbortSession?: (options: {
+    sessionId: string;
+    cwd?: string;
+  }) => Promise<void> | void;
   onReplyPermission?: (options: {
     sessionId: string;
     requestId: string;
@@ -163,7 +161,9 @@ function makeLoader(config: {
   replyPermissionError?: unknown;
   onClose?: () => Promise<void> | void;
   onShutdown?: () => Promise<void> | void;
-}): () => Promise<{ createClient(options?: { baseUrl?: string }): MockOpenCodeClient }> {
+}): () => Promise<{
+  createClient(options?: { baseUrl?: string }): MockOpenCodeClient;
+}> {
   return async () => ({
     createClient(options?: { baseUrl?: string }): MockOpenCodeClient {
       config.onCreateClient?.(options ?? {});
@@ -182,7 +182,11 @@ function makeLoader(config: {
 
           const events = config.events ?? [];
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               for (const event of events) {
                 yield event;
               }
@@ -224,35 +228,37 @@ function makeV2MessageUpdated(
   sessionID: string,
   messageID: string,
   role: 'user' | 'assistant',
+  parentID = 'parent-message',
 ): EventMessageUpdated {
-  const info: EventMessageUpdated['properties']['info'] = role === 'assistant'
-    ? {
-        id: messageID,
-        sessionID,
-        role,
-        time: { created: 1 },
-        parentID: 'parent-message',
-        modelID: 'test-model',
-        providerID: 'test-provider',
-        mode: 'test',
-        agent: 'test-agent',
-        path: { cwd: '/tmp', root: '/tmp' },
-        cost: 0,
-        tokens: {
-          input: 0,
-          output: 0,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }
-    : {
-        id: messageID,
-        sessionID,
-        role,
-        time: { created: 1 },
-        agent: 'test-agent',
-        model: { providerID: 'test-provider', modelID: 'test-model' },
-      };
+  const info: EventMessageUpdated['properties']['info'] =
+    role === 'assistant'
+      ? {
+          id: messageID,
+          sessionID,
+          role,
+          time: { created: 1 },
+          parentID,
+          modelID: 'test-model',
+          providerID: 'test-provider',
+          mode: 'test',
+          agent: 'test-agent',
+          path: { cwd: '/tmp', root: '/tmp' },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+        }
+      : {
+          id: messageID,
+          sessionID,
+          role,
+          time: { created: 1 },
+          agent: 'test-agent',
+          model: { providerID: 'test-provider', modelID: 'test-model' },
+        };
 
   return {
     id: `message-updated-${messageID}`,
@@ -354,12 +360,20 @@ describe('OpenCodeAdapter', () => {
             {
               type: 'message.part.updated',
               sessionId: 'session-1',
-              part: { type: 'file_part', path: '/repo/a.ts', action: 'modified' },
+              part: {
+                type: 'file_part',
+                path: '/repo/a.ts',
+                action: 'modified',
+              },
             },
             {
               type: 'message.part.updated',
               sessionId: 'session-1',
-              part: { type: 'image_part', mimeType: 'image/png', uri: 'file:///tmp/a.png' },
+              part: {
+                type: 'image_part',
+                mimeType: 'image/png',
+                uri: 'file:///tmp/a.png',
+              },
             },
             {
               type: 'permission.updated',
@@ -407,7 +421,9 @@ describe('OpenCodeAdapter', () => {
       },
     );
 
-    const events = await collect(adapter.run('prompt', { model: 'override-model' }));
+    const events = await collect(
+      adapter.run('prompt', { model: 'override-model' }),
+    );
 
     expect(events.map((event) => event.type)).toEqual([
       'init',
@@ -437,7 +453,11 @@ describe('OpenCodeAdapter', () => {
     expect(textDelta.payload.delta).toBe(' world');
 
     const toolUse = events[3] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse.payload.toolName).toBe('bash');
     expect(toolUse.payload.toolUseId).toBe('tool-1');
@@ -446,11 +466,15 @@ describe('OpenCodeAdapter', () => {
     const thinking = events[4] as AgentEvent & { payload: { summary: string } };
     expect(thinking.payload.summary).toBe('Plan next step');
 
-    const filePart = events[5] as AgentEvent & { payload: Record<string, unknown> };
+    const filePart = events[5] as AgentEvent & {
+      payload: Record<string, unknown>;
+    };
     expect(filePart.type).toBe('opencode:file_part');
     expect(filePart.payload.path).toBe('/repo/a.ts');
 
-    const imagePart = events[6] as AgentEvent & { payload: Record<string, unknown> };
+    const imagePart = events[6] as AgentEvent & {
+      payload: Record<string, unknown>;
+    };
     expect(imagePart.type).toBe('opencode:image_part');
     expect(imagePart.payload.mimeType).toBe('image/png');
 
@@ -468,7 +492,12 @@ describe('OpenCodeAdapter', () => {
     expect(permission.payload.reason).toBe('needs approval');
 
     const denied = events[8] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; status: string; output: unknown };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        status: string;
+        output: unknown;
+      };
     };
     expect(denied.payload.toolName).toBe('bash');
     expect(denied.payload.toolUseId).toBe('tool-2');
@@ -485,23 +514,14 @@ describe('OpenCodeAdapter', () => {
     const done = events[10] as AgentEvent & {
       payload: {
         status: string;
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          toolUses: number;
-          totalCostUsd?: number;
-        };
+        usage: { toolUses: number };
         durationMs: number;
       };
     };
     expect(done.payload.status).toBe('max_turns');
-    expect(done.payload.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 11,
-      outputTokens: 22,
-      toolUses: 2,
-      totalCostUsd: 0.14,
-    });
+    // Generic idle aliases are not an authenticated OpenCode accounting
+    // source. The independently observed root tool call remains reportable.
+    expect(done.payload.usage).toEqual({ toolUses: 1 });
     expect(done.payload.durationMs).toBe(210);
   });
 
@@ -619,7 +639,13 @@ describe('OpenCodeAdapter', () => {
 
     expect(invocations).toHaveLength(1);
     expect(invocations[0]?.command).toBe('opencode');
-    expect(invocations[0]?.args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '4788']);
+    expect(invocations[0]?.args).toEqual([
+      'serve',
+      '--hostname',
+      '127.0.0.1',
+      '--port',
+      '4788',
+    ]);
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
@@ -645,9 +671,7 @@ describe('OpenCodeAdapter', () => {
   ] satisfies Array<[string, OpenCodeEffort, string]>)(
     'maps OpenCode %s effort %s to variant %s per OPENCODE-012',
     (model, effort, variant) => {
-      expect(mapEffortToOpenCodeVariant(model, effort)).toBe(
-        variant,
-      );
+      expect(mapEffortToOpenCodeVariant(model, effort)).toBe(variant);
     },
   );
 
@@ -655,12 +679,8 @@ describe('OpenCodeAdapter', () => {
     expect(
       mapEffortToOpenCodeVariant('openai/gpt-5', undefined),
     ).toBeUndefined();
-    expect(
-      mapEffortToOpenCodeVariant(undefined, 'high'),
-    ).toBeUndefined();
-    expect(
-      mapEffortToOpenCodeVariant('gpt-5', 'high'),
-    ).toBeUndefined();
+    expect(mapEffortToOpenCodeVariant(undefined, 'high')).toBeUndefined();
+    expect(mapEffortToOpenCodeVariant('gpt-5', 'high')).toBeUndefined();
     expect(
       mapEffortToOpenCodeVariant('someprovider/somemodel', 'max'),
     ).toBeUndefined();
@@ -696,7 +716,7 @@ describe('OpenCodeAdapter', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'effort-error-session' },
           events: [
-            ({
+            {
               id: 'event-effort-error',
               type: 'session.error',
               properties: {
@@ -710,12 +730,12 @@ describe('OpenCodeAdapter', () => {
                   },
                 },
               },
-            } satisfies EventSessionError),
-            ({
+            } satisfies EventSessionError,
+            {
               id: 'event-effort-idle',
               type: 'session.idle',
               properties: { sessionID: 'effort-error-session' },
-            } satisfies EventSessionIdle),
+            } satisfies EventSessionIdle,
           ],
           onRun: (options) => {
             capturedRunOptions = options;
@@ -857,7 +877,9 @@ describe('OpenCodeAdapter', () => {
     );
 
     const events = await collect(adapter.run('prompt'));
-    const permission = events.find((event) => event.type === 'permission_request') as
+    const permission = events.find(
+      (event) => event.type === 'permission_request',
+    ) as
       | (AgentEvent & {
           payload: {
             toolName: string;
@@ -948,9 +970,7 @@ describe('OpenCodeAdapter', () => {
       ]);
     }
 
-    expect(
-      replies.map(({ signal: _signal, ...reply }) => reply),
-    ).toEqual([
+    expect(replies.map(({ signal: _signal, ...reply }) => reply)).toEqual([
       {
         sessionId: 'permission-v1-session',
         requestId: 'permission-v1-request',
@@ -1205,10 +1225,7 @@ describe('OpenCodeAdapter', () => {
     );
     const auditRequestIds = events
       .filter((event) => event.type === 'opencode:permission_decision')
-      .map(
-        (event) =>
-          (event.payload as { requestId: string }).requestId,
-      );
+      .map((event) => (event.payload as { requestId: string }).requestId);
     expect(auditRequestIds).toEqual(['request-local-a', 'request-local-b']);
     expect(replies).toEqual([
       {
@@ -1525,7 +1542,9 @@ describe('OpenCodeAdapter', () => {
                 if (replySignal?.aborted) {
                   cancel();
                 } else {
-                  replySignal?.addEventListener('abort', cancel, { once: true });
+                  replySignal?.addEventListener('abort', cancel, {
+                    once: true,
+                  });
                 }
               }),
           }),
@@ -1940,8 +1959,7 @@ describe('OpenCodeAdapter', () => {
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: async () => ({
-          createClient: () =>
-            wrapOpencodeClient(real, { apiVersion: 'v2' }),
+          createClient: () => wrapOpencodeClient(real, { apiVersion: 'v2' }),
         }),
       },
     );
@@ -2086,8 +2104,7 @@ describe('OpenCodeAdapter', () => {
         { mode: 'external', serverUrl: 'http://opencode.local:7777' },
         {
           loadSdk: async () => ({
-            createClient: () =>
-              wrapOpencodeClient(real, { apiVersion }),
+            createClient: () => wrapOpencodeClient(real, { apiVersion }),
           }),
         },
       );
@@ -2230,7 +2247,11 @@ describe('OpenCodeAdapter', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'crash-1' },
-          eventStreamFactory: async function* (): AsyncGenerator<unknown, void, void> {
+          eventStreamFactory: async function* (): AsyncGenerator<
+            unknown,
+            void,
+            void
+          > {
             await new Promise<void>(() => {});
           },
         }),
@@ -2294,15 +2315,23 @@ describe('OpenCodeAdapter', () => {
           eventStreamFactory: (options) => {
             capturedEventSignal = options?.signal as AbortSignal | undefined;
             return {
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+              async *[Symbol.asyncIterator](): AsyncGenerator<
+                unknown,
+                void,
+                void
+              > {
                 await new Promise<void>((resolve) => {
                   if (capturedEventSignal?.aborted) {
                     resolve();
                     return;
                   }
-                  capturedEventSignal?.addEventListener('abort', () => resolve(), {
-                    once: true,
-                  });
+                  capturedEventSignal?.addEventListener(
+                    'abort',
+                    () => resolve(),
+                    {
+                      once: true,
+                    },
+                  );
                 });
               },
             };
@@ -2363,14 +2392,20 @@ describe('OpenCodeAdapter', () => {
               ? { sessionId: options.backendSessionId }
               : {},
             eventStreamFactory: (streamOptions) => ({
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+              async *[Symbol.asyncIterator](): AsyncGenerator<
+                unknown,
+                void,
+                void
+              > {
                 const signal = streamOptions?.signal as AbortSignal | undefined;
                 await new Promise<void>((resolve) => {
                   if (signal?.aborted) {
                     resolve();
                     return;
                   }
-                  signal?.addEventListener('abort', () => resolve(), { once: true });
+                  signal?.addEventListener('abort', () => resolve(), {
+                    once: true,
+                  });
                 });
               },
             }),
@@ -2389,7 +2424,9 @@ describe('OpenCodeAdapter', () => {
         }
       }
 
-      const done = events.find((event) => event.type === 'done') as AgentEvent & {
+      const done = events.find(
+        (event) => event.type === 'done',
+      ) as AgentEvent & {
         payload: { status: string; resumeToken?: string };
       };
       expect(done.payload.status).toBe('interrupted');
@@ -2474,9 +2511,9 @@ describe('OpenCodeAdapter', () => {
     it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
       'rejects non-finite or non-positive inactivity deadline %s',
       (eventInactivityTimeoutMs) => {
-        expect(
-          () => new OpenCodeAdapter({ eventInactivityTimeoutMs }),
-        ).toThrow(/eventInactivityTimeoutMs must be a finite number greater than 0/);
+        expect(() => new OpenCodeAdapter({ eventInactivityTimeoutMs })).toThrow(
+          /eventInactivityTimeoutMs must be a finite number greater than 0/,
+        );
       },
     );
 
@@ -2500,7 +2537,8 @@ describe('OpenCodeAdapter', () => {
             eventStreamFactory: (streamOptions) => ({
               [Symbol.asyncIterator](): AsyncIterator<unknown> {
                 const signal = streamOptions?.signal as AbortSignal;
-                let resolveNext: ((result: IteratorResult<unknown>) => void) | undefined;
+                let resolveNext:
+                  ((result: IteratorResult<unknown>) => void) | undefined;
                 signal.addEventListener(
                   'abort',
                   () => resolveNext?.({ done: true, value: undefined }),
@@ -2574,58 +2612,63 @@ describe('OpenCodeAdapter', () => {
     it.each([
       { type: 'busy' },
       { type: 'retry', attempt: 2, message: 'capacity', next: 123 },
-    ])('aborts a silent non-idle session in state $type', async (statusResult) => {
-      const aborts: Array<{ sessionId: string; cwd?: string }> = [];
-      const adapter = new OpenCodeAdapter(
-        {
-          mode: 'external',
-          serverUrl: 'http://opencode.local:7777',
-          eventInactivityTimeoutMs: 15,
-        },
-        {
-          loadSdk: makeLoader({
-            runResult: { sessionId: `silent-${statusResult.type}` },
-            statusResult,
-            eventStreamFactory: () => ({
-              [Symbol.asyncIterator](): AsyncIterator<unknown> {
-                return {
-                  next: () => new Promise<IteratorResult<unknown>>(() => {}),
-                  async return(value?: unknown) {
-                    return { done: true, value };
-                  },
-                };
+    ])(
+      'aborts a silent non-idle session in state $type',
+      async (statusResult) => {
+        const aborts: Array<{ sessionId: string; cwd?: string }> = [];
+        const adapter = new OpenCodeAdapter(
+          {
+            mode: 'external',
+            serverUrl: 'http://opencode.local:7777',
+            eventInactivityTimeoutMs: 15,
+          },
+          {
+            loadSdk: makeLoader({
+              runResult: { sessionId: `silent-${statusResult.type}` },
+              statusResult,
+              eventStreamFactory: () => ({
+                [Symbol.asyncIterator](): AsyncIterator<unknown> {
+                  return {
+                    next: () => new Promise<IteratorResult<unknown>>(() => {}),
+                    async return(value?: unknown) {
+                      return { done: true, value };
+                    },
+                  };
+                },
+              }),
+              onAbortSession(options) {
+                aborts.push(options);
               },
             }),
-            onAbortSession(options) {
-              aborts.push(options);
-            },
-          }),
-        },
-      );
+          },
+        );
 
-      const events = await collect(adapter.run('prompt', { cwd: '/repo' }));
-      expect(events.map((event) => event.type)).toEqual([
-        'init',
-        'error',
-        'done',
-      ]);
-      expect(aborts).toEqual([
-        { sessionId: `silent-${statusResult.type}`, cwd: '/repo' },
-      ]);
-      expect(events[1]?.payload).toMatchObject({
-        code: 'OPENCODE_INACTIVITY_TIMEOUT',
-        recoverable: false,
-      });
-      expect((events[1]?.payload as { message: string }).message).toContain(
-        `queriedSessionState=${JSON.stringify(statusResult)}`,
-      );
-      expect(events[2]?.payload).toMatchObject({
-        status: 'error',
-        resumeToken: `silent-${statusResult.type}`,
-      });
-      expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
-      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
-    });
+        const events = await collect(adapter.run('prompt', { cwd: '/repo' }));
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'error',
+          'done',
+        ]);
+        expect(aborts).toEqual([
+          { sessionId: `silent-${statusResult.type}`, cwd: '/repo' },
+        ]);
+        expect(events[1]?.payload).toMatchObject({
+          code: 'OPENCODE_INACTIVITY_TIMEOUT',
+          recoverable: false,
+        });
+        expect((events[1]?.payload as { message: string }).message).toContain(
+          `queriedSessionState=${JSON.stringify(statusResult)}`,
+        );
+        expect(events[2]?.payload).toMatchObject({
+          status: 'error',
+          resumeToken: `silent-${statusResult.type}`,
+        });
+        expect(events.filter((event) => event.type === 'error')).toHaveLength(
+          1,
+        );
+        expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+      },
+    );
 
     it('aborts the session and terminates its managed server after silence', async () => {
       const { spawnProcess, invocations } = makeSpawn();
@@ -3329,11 +3372,11 @@ describe('OpenCodeAdapter', () => {
           async create(_args: unknown, requestOptions?: unknown) {
             const sdkSignal = (
               requestOptions as { signal?: AbortSignal } | undefined
-            )
-              ?.signal;
+            )?.signal;
             createSignal = sdkSignal;
             if (sdkSignal) {
-              const originalRemove = sdkSignal.removeEventListener.bind(sdkSignal);
+              const originalRemove =
+                sdkSignal.removeEventListener.bind(sdkSignal);
               sdkSignal.removeEventListener = ((
                 ...args: Parameters<AbortSignal['removeEventListener']>
               ) => {
@@ -3344,8 +3387,9 @@ describe('OpenCodeAdapter', () => {
             return { data: { id: 'dispatch-abort-session' } };
           },
           async promptAsync(_args: unknown, requestOptions?: unknown) {
-            promptSignal = (requestOptions as { signal?: AbortSignal } | undefined)
-              ?.signal;
+            promptSignal = (
+              requestOptions as { signal?: AbortSignal } | undefined
+            )?.signal;
             resolvePromptStarted();
             return new Promise<never>(() => {});
           },
@@ -3364,17 +3408,19 @@ describe('OpenCodeAdapter', () => {
                 [Symbol.asyncIterator](): AsyncIterator<unknown> {
                   return {
                     next: () =>
-                      new Promise<IteratorResult<unknown>>((_resolve, reject) => {
-                        if (signal?.aborted) {
-                          reject(new Error('event stream aborted'));
-                          return;
-                        }
-                        signal?.addEventListener(
-                          'abort',
-                          () => reject(new Error('event stream aborted')),
-                          { once: true },
-                        );
-                      }),
+                      new Promise<IteratorResult<unknown>>(
+                        (_resolve, reject) => {
+                          if (signal?.aborted) {
+                            reject(new Error('event stream aborted'));
+                            return;
+                          }
+                          signal?.addEventListener(
+                            'abort',
+                            () => reject(new Error('event stream aborted')),
+                            { once: true },
+                          );
+                        },
+                      ),
                     return() {
                       rawIteratorReturns++;
                       return new Promise<IteratorResult<unknown>>(() => {});
@@ -3755,10 +3801,7 @@ describe('OpenCodeAdapter', () => {
         await vi.advanceTimersByTimeAsync(1);
         expect(cleanupSettled).toBe(true);
         expect((await completionPromise).done).toBe(true);
-        expect(order).toEqual([
-          'session-abort-started',
-          'interrupted-done',
-        ]);
+        expect(order).toEqual(['session-abort-started', 'interrupted-done']);
       } finally {
         vi.useRealTimers();
       }
@@ -4059,7 +4102,10 @@ describe('OpenCodeAdapter', () => {
     expect(types).toEqual(['init', 'done']);
 
     // Terminal done must have expected status and no fabricated resumeToken
-    const payload = events[1].payload as { status: string; resumeToken?: string };
+    const payload = events[1].payload as {
+      status: string;
+      resumeToken?: string;
+    };
     expect(payload.status).toBe('success');
     expect(payload.resumeToken).toBeUndefined();
   });
@@ -4240,19 +4286,58 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
   function makeV1Sdk(config: {
     createResult?: Record<string, unknown>;
     promptResult?: unknown;
-    subscribeResult?: { stream?: AsyncIterable<unknown>; events?: AsyncIterable<unknown> };
+    subscribeResult?: {
+      stream?: AsyncIterable<unknown>;
+      events?: AsyncIterable<unknown>;
+    };
     onCreateSession?: (args: unknown) => void;
     onPrompt?: (args: unknown) => void;
     onSubscribe?: (args: unknown) => void;
     onDispose?: (args: unknown) => void;
     onChildren?: (args: unknown) => void;
     childrenResult?: unknown;
+    onGetSession?: (args: unknown) => void;
+    getResult?: unknown;
+    onUpdateSession?: (args: unknown) => void;
+    updateResult?: unknown;
+    onHealth?: (args: unknown) => void;
+    healthResult?: unknown;
   }): Record<string, unknown> {
     return {
+      global: {
+        async health(args: unknown): Promise<unknown> {
+          config.onHealth?.(args);
+          return (
+            config.healthResult ?? {
+              data: { healthy: true, version: '1.18.13' },
+            }
+          );
+        },
+      },
       session: {
         async create(args?: unknown): Promise<Record<string, unknown>> {
           config.onCreateSession?.(args);
-          return config.createResult ?? { id: 'v1-session-1' };
+          return (
+            config.createResult ?? { id: 'v1-session-1', title: 'Cligent run' }
+          );
+        },
+        async get(args: unknown): Promise<unknown> {
+          config.onGetSession?.(args);
+          return (
+            config.getResult ?? {
+              id: 'v1-existing',
+              title: 'Existing session',
+            }
+          );
+        },
+        async update(args: unknown): Promise<unknown> {
+          config.onUpdateSession?.(args);
+          return (
+            config.updateResult ?? {
+              id: 'v1-existing',
+              title: 'Cligent run',
+            }
+          );
         },
         async prompt(args: unknown): Promise<unknown> {
           config.onPrompt?.(args);
@@ -4266,7 +4351,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       event: {
         async subscribe(args: unknown): Promise<unknown> {
           config.onSubscribe?.(args);
-          return config.subscribeResult ?? { stream: (async function* () {})() };
+          return (
+            config.subscribeResult ?? { stream: (async function* () {})() }
+          );
         },
       },
       instance: {
@@ -4277,7 +4364,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     };
   }
 
-  function makeV1Loader(config: Parameters<typeof makeV1Sdk>[0]): () => Promise<{
+  function makeV1Loader(
+    config: Parameters<typeof makeV1Sdk>[0],
+  ): () => Promise<{
     createClient(options?: { baseUrl?: string }): MockOpenCodeClient;
   }> {
     return async () => ({
@@ -4360,10 +4449,241 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     // Verify the prompt call received the correct structure
     const promptArgs = capturedPromptArgs as {
       path: { id: string };
-      body: { parts: Array<{ type: string; text: string }> };
+      body: {
+        messageID: string;
+        parts: Array<{ type: string; text: string }>;
+      };
     };
     expect(promptArgs.path.id).toBe('new-session-42');
+    expect(promptArgs.body.messageID).toMatch(/^msg_/);
     expect(promptArgs.body.parts).toEqual([{ type: 'text', text: 'hello v1' }]);
+  });
+
+  it('suppresses hidden title inference on fresh and default-title roots', async () => {
+    const v1GetCalls: unknown[] = [];
+    const v1UpdateCalls: unknown[] = [];
+    const v1 = wrapOpencodeClient(
+      makeV1Sdk({
+        getResult: {
+          id: 'v1-resume',
+          title: 'New session - 2026-08-13T12:00:00.000Z',
+        },
+        updateResult: { id: 'v1-resume', title: 'Cligent run' },
+        onGetSession: (args) => v1GetCalls.push(args),
+        onUpdateSession: (args) => v1UpdateCalls.push(args),
+      }),
+    );
+
+    const fresh = (await v1.run?.({ prompt: 'fresh title' })) as Record<
+      string,
+      unknown
+    >;
+    const resumed = (await v1.run?.({
+      prompt: 'resumed title',
+      sessionId: 'v1-resume',
+      cwd: '/workspace',
+    })) as Record<string, unknown>;
+    expect(fresh.usageCoverageIncomplete).toBeUndefined();
+    expect(resumed.usageCoverageIncomplete).toBeUndefined();
+    expect(v1GetCalls).toEqual([
+      {
+        path: { id: 'v1-resume' },
+        query: { directory: '/workspace' },
+      },
+    ]);
+    expect(v1UpdateCalls).toEqual([
+      {
+        path: { id: 'v1-resume' },
+        query: { directory: '/workspace' },
+        body: { title: 'Cligent run' },
+      },
+    ]);
+
+    const v2GetCalls: unknown[] = [];
+    const v2UpdateCalls: unknown[] = [];
+    const v2 = wrapOpencodeClient(
+      {
+        global: {
+          async health() {
+            return { data: { healthy: true, version: '1.18.13' } };
+          },
+        },
+        session: {
+          async create() {
+            return { data: { id: 'v2-fresh', title: 'Cligent run' } };
+          },
+          async get(args: unknown) {
+            v2GetCalls.push(args);
+            return {
+              data: {
+                id: 'v2-resume',
+                title: 'New session - 2026-08-13T12:00:00.000Z',
+              },
+            };
+          },
+          async update(args: unknown) {
+            v2UpdateCalls.push(args);
+            return { data: { id: 'v2-resume', title: 'Cligent run' } };
+          },
+          async promptAsync() {
+            return {};
+          },
+          async children() {
+            return { data: [] };
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+    const v2Resumed = (await v2.run?.({
+      prompt: 'v2 resumed title',
+      sessionId: 'v2-resume',
+      cwd: '/workspace',
+    })) as Record<string, unknown>;
+    expect(v2Resumed.usageCoverageIncomplete).toBeUndefined();
+    expect(v2GetCalls).toEqual([
+      { sessionID: 'v2-resume', directory: '/workspace' },
+    ]);
+    expect(v2UpdateCalls).toEqual([
+      {
+        sessionID: 'v2-resume',
+        directory: '/workspace',
+        title: 'Cligent run',
+      },
+    ]);
+  });
+
+  it('keeps meaningful resumed titles without requiring an update route', async () => {
+    const client = wrapOpencodeClient(
+      {
+        global: {
+          async health() {
+            return { data: { healthy: true, version: '1.18.13' } };
+          },
+        },
+        session: {
+          async create() {
+            return { data: { id: 'unused', title: 'Cligent run' } };
+          },
+          async get() {
+            return { data: { id: 'named-session', title: 'User title' } };
+          },
+          async promptAsync() {
+            return {};
+          },
+          async children() {
+            return { data: [] };
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    const result = (await client.run?.({
+      prompt: 'preserve title',
+      sessionId: 'named-session',
+    })) as Record<string, unknown>;
+    expect(result.usageCoverageIncomplete).toBeUndefined();
+  });
+
+  it('accepts an empty resumed title as non-default', async () => {
+    const client = wrapOpencodeClient(
+      {
+        global: {
+          async health() {
+            return { data: { healthy: true, version: '1.18.13' } };
+          },
+        },
+        session: {
+          async create() {
+            return { data: { id: 'unused', title: 'Cligent run' } };
+          },
+          async get() {
+            return { data: { id: 'empty-title-session', title: '' } };
+          },
+          async promptAsync() {
+            return {};
+          },
+          async children() {
+            return { data: [] };
+          },
+        },
+        event: {
+          async subscribe() {
+            return { stream: (async function* () {})() };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    const result = (await client.run?.({
+      prompt: 'preserve empty title',
+      sessionId: 'empty-title-session',
+    })) as Record<string, unknown>;
+    expect(result.usageCoverageIncomplete).toBeUndefined();
+  });
+
+  it('requires pinned server health for complete accounting', async () => {
+    const healthCalls: unknown[] = [];
+    const pinned = wrapOpencodeClient(
+      makeV1Sdk({ onHealth: (args) => healthCalls.push(args) }),
+    );
+    const pinnedResult = (await pinned.run?.({
+      prompt: 'pinned server',
+    })) as Record<string, unknown>;
+    expect(pinnedResult.usageCoverageIncomplete).toBeUndefined();
+    expect(healthCalls).toHaveLength(1);
+    expect(healthCalls[0]).toMatchObject({ signal: expect.any(AbortSignal) });
+
+    const mismatched = wrapOpencodeClient(
+      makeV1Sdk({
+        healthResult: { data: { healthy: true, version: '1.18.14' } },
+      }),
+    );
+    const mismatchedResult = (await mismatched.run?.({
+      prompt: 'newer unverified server',
+    })) as Record<string, unknown>;
+    expect(mismatchedResult.usageCoverageIncomplete).toBe(true);
+
+    const malformed = wrapOpencodeClient(
+      makeV1Sdk({ healthResult: { data: { healthy: true } } }),
+    );
+    const malformedResult = (await malformed.run?.({
+      prompt: 'unknown server',
+    })) as Record<string, unknown>;
+    expect(malformedResult.usageCoverageIncomplete).toBe(true);
+  });
+
+  it('marks usage incomplete when title suppression cannot be proven', async () => {
+    const missingEcho = wrapOpencodeClient(
+      makeV1Sdk({ createResult: { id: 'missing-title' } }),
+    );
+    const fresh = (await missingEcho.run?.({ prompt: 'fresh' })) as Record<
+      string,
+      unknown
+    >;
+    expect(fresh.usageCoverageIncomplete).toBe(true);
+
+    const failedLookup = makeV1Sdk({});
+    (failedLookup.session as { get: () => Promise<never> }).get = async () => {
+      throw new Error('lookup failed');
+    };
+    const resumed = (await wrapOpencodeClient(failedLookup).run?.({
+      prompt: 'resume',
+      sessionId: 'unknown-title',
+    })) as Record<string, unknown>;
+    expect(resumed.usageCoverageIncomplete).toBe(true);
   });
 
   it('resumes existing session instead of creating a new one', async () => {
@@ -4442,14 +4762,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
             createCalls++;
           },
           onChildren(args) {
-            childLookups.push(
-              (args as { path: { id: string } }).path.id,
-            );
+            childLookups.push((args as { path: { id: string } }).path.id);
           },
           onPrompt(args) {
-            promptTargets.push(
-              (args as { path: { id: string } }).path.id,
-            );
+            promptTargets.push((args as { path: { id: string } }).path.id);
           },
         }),
       },
@@ -4674,7 +4990,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       ...unmanaged,
     });
 
-    expect(createCalls).toEqual([undefined]);
+    expect(createCalls).toEqual([{ body: { title: 'Cligent run' } }]);
     expect(promptCalls).toHaveLength(2);
     for (const call of promptCalls) {
       const body = (call as { body: Record<string, unknown> }).body;
@@ -4690,9 +5006,14 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       ...explicitlyManaged,
     });
 
-    expect(createCalls).toEqual([undefined, undefined]);
+    expect(createCalls).toEqual([
+      { body: { title: 'Cligent run' } },
+      { body: { title: 'Cligent run' } },
+    ]);
     for (const call of promptCalls.slice(2)) {
-      expect((call as { body: Record<string, unknown> }).body.permission).toEqual({
+      expect(
+        (call as { body: Record<string, unknown> }).body.permission,
+      ).toEqual({
         edit: 'ask',
         bash: 'ask',
         webfetch: 'ask',
@@ -4803,7 +5124,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       ...unmanaged,
     });
 
-    expect(createCalls).toEqual([{}]);
+    expect(createCalls).toEqual([{ title: 'Cligent run' }]);
     expect(updateCalls).toEqual([]);
     expect(promptCalls).toHaveLength(2);
     for (const call of promptCalls) {
@@ -4825,8 +5146,8 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { permission: 'webfetch', pattern: '*', action: 'ask' },
     ];
     expect(createCalls).toEqual([
-      {},
-      { permission: askRules },
+      { title: 'Cligent run' },
+      { title: 'Cligent run', permission: askRules },
     ]);
     expect(updateCalls).toEqual([
       {
@@ -4897,7 +5218,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { apiVersion: 'v2' },
     );
     await v2.run?.({ prompt: 'v2 auto', ...mapped });
-    expect(v2Create[0]).toEqual({});
+    expect(v2Create[0]).toEqual({ title: 'Cligent run' });
 
     await v2.run?.({
       prompt: 'v2 resumed auto',
@@ -4909,6 +5230,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 
     await v2.run?.({ prompt: 'v2 explicit deny', ...mappedWithDeny });
     expect(v2Create[1]).toEqual({
+      title: 'Cligent run',
       permission: [{ permission: 'edit', pattern: '*', action: 'deny' }],
     });
     await v2.run?.({
@@ -5188,6 +5510,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 
     await client.run?.({
       prompt: 'test options',
+      promptMessageId: 'msg_test-options',
       cwd: '/workspace',
       permission: {
         edit: 'allow',
@@ -5198,6 +5521,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 
     expect(capturedCreateArgs).toEqual({
       directory: '/workspace',
+      title: 'Cligent run',
       permission: [
         { permission: 'edit', pattern: '*', action: 'allow' },
         { permission: 'bash', pattern: '*', action: 'ask' },
@@ -5207,6 +5531,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(capturedPromptArgs).toEqual(
       expect.objectContaining({
         sessionID: 'v2-session-permissions',
+        messageID: 'msg_test-options',
         directory: '/workspace',
         parts: [{ type: 'text', text: 'test options' }],
       }),
@@ -5325,19 +5650,11 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(updateCalls).toEqual([
       {
         sessionID: 'existing-session',
-        permission: [
-          { permission: 'edit', pattern: '*', action: 'allow' },
-        ],
+        permission: [{ permission: 'edit', pattern: '*', action: 'allow' }],
       },
       { sessionID: 'existing-session', permission: [] },
     ]);
-    expect(events).toEqual([
-      'update',
-      'prompt',
-      'prompt',
-      'update',
-      'prompt',
-    ]);
+    expect(events).toEqual(['update', 'prompt', 'prompt', 'update', 'prompt']);
   });
 
   it('surfaces v2 SDK result errors instead of waiting on an unreachable stream', async () => {
@@ -5554,7 +5871,11 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(text.payload.content).toBe('hello from v1');
 
     const toolUse = events[2] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse.payload.toolName).toBe('bash');
     expect(toolUse.payload.toolUseId).toBe('tc-1');
@@ -5601,9 +5922,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     await v2.run?.({ prompt: 'v2 dispose', cwd: '/v2-workspace' });
     await v2.close?.();
 
-    expect(v1DisposeCalls).toEqual([
-      { query: { directory: '/v1-workspace' } },
-    ]);
+    expect(v1DisposeCalls).toEqual([{ query: { directory: '/v1-workspace' } }]);
     expect(v2DisposeCalls).toEqual([{ directory: '/v2-workspace' }]);
   });
 
@@ -5725,7 +6044,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 
     const real = {
       session: {
-        async create() { return { id: 'pa-session' }; },
+        async create() {
+          return { id: 'pa-session' };
+        },
         async promptAsync(args: unknown) {
           void args;
           promptAsyncCalled = true;
@@ -5739,9 +6060,11 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       },
       event: {
         async subscribe() {
-          return { stream: (async function* () {
-            yield { type: 'session.idle', sessionId: 'pa-session' };
-          })() };
+          return {
+            stream: (async function* () {
+              yield { type: 'session.idle', sessionId: 'pa-session' };
+            })(),
+          };
         },
       },
     };
@@ -5751,7 +6074,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       {
         loadSdk: async () => ({
           createClient() {
-            return wrapOpencodeClient(real as Record<string, unknown>) as unknown as MockOpenCodeClient;
+            return wrapOpencodeClient(
+              real as Record<string, unknown>,
+            ) as unknown as MockOpenCodeClient;
           },
         }),
       },
@@ -5775,7 +6100,9 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
               yield { type: 'session.idle', sessionId: 'model-session' };
             })(),
           },
-          onPrompt(args) { capturedPromptArgs = args; },
+          onPrompt(args) {
+            capturedPromptArgs = args;
+          },
         }),
       },
     );
@@ -5793,6 +6120,90 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
 });
 
 describe('OpenCode SSE event structure', () => {
+  const accountingMessage = (
+    sessionID: string,
+    id: string,
+    role: 'user' | 'assistant',
+    parentID?: string,
+    details: Record<string, unknown> = {},
+  ) => ({
+    type: 'message.updated',
+    properties: {
+      sessionID,
+      info: {
+        id,
+        sessionID,
+        role,
+        ...(parentID ? { parentID } : {}),
+        ...details,
+      },
+    },
+  });
+
+  const accountingPart = (
+    sessionID: string,
+    messageID: string,
+    id: string,
+    type: string,
+    details: Record<string, unknown> = {},
+  ) => ({
+    type: 'message.part.updated',
+    properties: {
+      sessionID,
+      part: { id, sessionID, messageID, type, ...details },
+    },
+  });
+
+  const accountingStep = (
+    sessionID: string,
+    messageID: string,
+    id: string,
+    cost = 0.01,
+  ) =>
+    accountingPart(sessionID, messageID, id, 'step-finish', {
+      reason: 'stop',
+      cost,
+      tokens: {
+        input: 1,
+        output: 2,
+        reasoning: 1,
+        cache: { read: 0, write: 0 },
+      },
+    });
+
+  const accountingIdle = (sessionID: string) => ({
+    type: 'session.idle',
+    properties: { sessionID },
+  });
+
+  const collectAccountingUsage = async (
+    sessionId: string,
+    eventFactory: (promptMessageId: string) => unknown[],
+    runResult: Record<string, unknown> = {},
+  ): Promise<DonePayload['usage']> => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId, ...runResult },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              for (const event of eventFactory(promptMessageId)) yield event;
+            },
+          }),
+        }),
+      },
+    );
+    const events = await collect(adapter.run('account this run'));
+    return (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+  };
+
   it('suppresses user content whether role metadata arrives before or after parts', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
@@ -6098,11 +6509,7 @@ describe('OpenCode SSE event structure', () => {
     );
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     expect(events[1]?.payload).toEqual({ content: 'keep me' });
   });
 
@@ -6155,11 +6562,7 @@ describe('OpenCode SSE event structure', () => {
     );
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     expect(events[1]?.payload).toEqual({ content: 'keep me' });
   });
 
@@ -6209,7 +6612,9 @@ describe('OpenCode SSE event structure', () => {
               const signal = streamOptions?.signal as AbortSignal;
               streamSignal = signal;
               await new Promise<void>((resolve) => {
-                signal.addEventListener('abort', () => resolve(), { once: true });
+                signal.addEventListener('abort', () => resolve(), {
+                  once: true,
+                });
               });
             },
           }),
@@ -6462,11 +6867,7 @@ describe('OpenCode SSE event structure', () => {
       if (event.type === 'text') controller.abort();
     }
 
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     expect(events[2]?.payload).toMatchObject({ status: 'interrupted' });
     expect(abortCalls).toBe(1);
   });
@@ -7038,27 +7439,36 @@ describe('OpenCode SSE event structure', () => {
               'assistant-message',
               'assistant',
             ),
-            makeV2PartUpdated({
-              id: 'text-part',
-              sessionID: 'snapshot-session',
-              messageID: 'assistant-message',
-              type: 'text',
-              text: 'A',
-            }, 1),
-            makeV2PartUpdated({
-              id: 'text-part',
-              sessionID: 'snapshot-session',
-              messageID: 'assistant-message',
-              type: 'text',
-              text: 'B',
-            }, 2),
-            makeV2PartUpdated({
-              id: 'text-part',
-              sessionID: 'snapshot-session',
-              messageID: 'assistant-message',
-              type: 'text',
-              text: 'A',
-            }, 3),
+            makeV2PartUpdated(
+              {
+                id: 'text-part',
+                sessionID: 'snapshot-session',
+                messageID: 'assistant-message',
+                type: 'text',
+                text: 'A',
+              },
+              1,
+            ),
+            makeV2PartUpdated(
+              {
+                id: 'text-part',
+                sessionID: 'snapshot-session',
+                messageID: 'assistant-message',
+                type: 'text',
+                text: 'B',
+              },
+              2,
+            ),
+            makeV2PartUpdated(
+              {
+                id: 'text-part',
+                sessionID: 'snapshot-session',
+                messageID: 'assistant-message',
+                type: 'text',
+                text: 'A',
+              },
+              3,
+            ),
             {
               id: 'snapshot-session-idle',
               type: 'session.idle',
@@ -7115,27 +7525,27 @@ describe('OpenCode SSE event structure', () => {
     );
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     expect(events[1]?.payload).toEqual({ content: 'valid output' });
   });
 
   it('drains incident-scale pending deltas without losing order', async () => {
     const deltaCount = 2_050;
-    const pendingDeltas = Array.from({ length: deltaCount }, (_, index) => ({
-      id: `bulk-delta-${index}`,
-      type: 'message.part.delta' as const,
-      properties: {
-        sessionID: 'bulk-session',
-        messageID: 'assistant-message',
-        partID: 'bulk-part',
-        field: 'text',
-        delta: `${index},`,
-      },
-    } satisfies EventMessagePartDelta));
+    const pendingDeltas = Array.from(
+      { length: deltaCount },
+      (_, index) =>
+        ({
+          id: `bulk-delta-${index}`,
+          type: 'message.part.delta' as const,
+          properties: {
+            sessionID: 'bulk-session',
+            messageID: 'assistant-message',
+            partID: 'bulk-part',
+            field: 'text',
+            delta: `${index},`,
+          },
+        }) satisfies EventMessagePartDelta,
+    );
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -7170,9 +7580,9 @@ describe('OpenCode SSE event structure', () => {
       .filter((event) => event.type === 'text_delta')
       .map((event) => (event.payload as { delta: string }).delta);
     expect(deltas).toHaveLength(deltaCount);
-    expect(deltas.join('')).toBe(pendingDeltas
-      .map((event) => event.properties.delta)
-      .join(''));
+    expect(deltas.join('')).toBe(
+      pendingDeltas.map((event) => event.properties.delta).join(''),
+    );
   });
 
   it('handles session.error events', async () => {
@@ -7182,7 +7592,7 @@ describe('OpenCode SSE event structure', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'err-session' },
           events: [
-            ({
+            {
               id: 'event-auth-error',
               type: 'session.error',
               properties: {
@@ -7196,12 +7606,12 @@ describe('OpenCode SSE event structure', () => {
                   },
                 },
               },
-            } satisfies EventSessionError),
-            ({
+            } satisfies EventSessionError,
+            {
               id: 'event-auth-idle',
               type: 'session.idle',
               properties: { sessionID: 'err-session' },
-            } satisfies EventSessionIdle),
+            } satisfies EventSessionIdle,
           ],
         }),
       },
@@ -7250,7 +7660,7 @@ describe('OpenCode SSE event structure', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('accumulates cache and reasoning step usage exactly once', async () => {
+  it('does not attribute uncorrelated same-session steps to the invocation', async () => {
     const firstStep = {
       id: 'step-1',
       sessionID: 'usage-session',
@@ -7309,23 +7719,7 @@ describe('OpenCode SSE event structure', () => {
     const events = await collect(adapter.run('test'));
     const done = events.find((e) => e.type === 'done')!;
     const payload = done.payload as DonePayload;
-    expect(payload.usage.tokenAvailability).toBe('reported');
-    expect(payload.usage.inputTokens).toBe(200);
-    expect(payload.usage.outputTokens).toBe(110);
-    expect(payload.usage.totalCostUsd).toBe(0.005);
-    // OpenCode's counters are already the disjoint partition, so both sides
-    // are published and each sums exactly to its aggregate.
-    expect(payload.usage.breakdown).toEqual({
-      input: 180,
-      cacheRead: 14,
-      cacheWrite: 6,
-      output: 80,
-      reasoning: 30,
-    });
-    const { input, cacheRead, cacheWrite, output, reasoning } =
-      payload.usage.breakdown!;
-    expect(input! + cacheRead! + cacheWrite!).toBe(payload.usage.inputTokens);
-    expect(output! + reasoning!).toBe(payload.usage.outputTokens);
+    expect(payload.usage).toEqual({ toolUses: 0 });
   });
 
   // TADAPT-039
@@ -7356,78 +7750,1759 @@ describe('OpenCode SSE event structure', () => {
         cache: { read: 4, write: 1 },
       },
     } satisfies StepFinishPart;
+    let promptMessageId = '';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'usage-session' },
-          events: [
-            {
-              type: 'message.updated',
-              properties: {
-                info: {
-                  id: 'message-1',
-                  role: 'assistant',
-                  modelID: 'claude-sonnet-5',
-                  providerID: 'anthropic',
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'usage-session',
+                  info: {
+                    id: 'message-1',
+                    sessionID: 'usage-session',
+                    role: 'assistant',
+                    parentID: promptMessageId,
+                    modelID: 'claude-sonnet-5',
+                    providerID: 'anthropic',
+                  },
                 },
-              },
+              };
+              yield {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'usage-session',
+                  info: {
+                    id: 'message-2',
+                    sessionID: 'usage-session',
+                    role: 'assistant',
+                    parentID: promptMessageId,
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: { part: firstStep },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: { part: secondStep },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'usage-session' },
+              };
             },
-            {
-              type: 'message.part.updated',
-              properties: { part: firstStep },
-            },
-            {
-              type: 'message.part.updated',
-              properties: { part: secondStep },
-            },
-            {
-              type: 'session.idle',
-              properties: { sessionID: 'usage-session' },
-            },
-          ],
+          }),
         }),
       },
     );
 
     const events = await collect(adapter.run('test'));
-    const payload = events.find((e) => e.type === 'done')!.payload as DonePayload;
-    // Each step is one model request, so each record prices on its own
-    // context length; the second step's message never announced a model, so
-    // its record omits the rate-card key rather than guessing.
-    expect(payload.usage.records).toEqual([
+    const payload = events.find((e) => e.type === 'done')!
+      .payload as DonePayload;
+    expect(payload.usage.tokens?.coverage).toBe('complete');
+    expect(payload.usage.tokens?.records).toEqual([
       {
         model: 'claude-sonnet-5',
         provider: 'anthropic',
         requests: 1,
-        tokens: { input: 100, cacheRead: 10, cacheWrite: 5, output: 50, reasoning: 20 },
-        costUsd: 0.003,
+        tokens: {
+          input: {
+            total: 115,
+            uncached: 100,
+            cacheRead: 10,
+            cacheWrite: 5,
+          },
+          output: { total: 70, visible: 50, reasoning: 20 },
+        },
+        cost: {
+          amount: 0.003,
+          currency: 'USD',
+          source: 'agent-estimate',
+        },
       },
       {
         requests: 1,
-        tokens: { input: 80, cacheRead: 4, cacheWrite: 1, output: 30, reasoning: 10 },
-        costUsd: 0.002,
+        tokens: {
+          input: {
+            total: 85,
+            uncached: 80,
+            cacheRead: 4,
+            cacheWrite: 1,
+          },
+          output: { total: 40, visible: 30, reasoning: 10 },
+        },
+        cost: {
+          amount: 0.002,
+          currency: 'USD',
+          source: 'agent-estimate',
+        },
       },
     ]);
-    // The per-record costs are the runtime's own, so they reconcile with the
-    // run total rather than exceeding it.
-    expect(
-      payload.usage.records!.reduce((total, r) => total + (r.costUsd ?? 0), 0),
-    ).toBeCloseTo(payload.usage.totalCostUsd!, 10);
-    const summed = payload.usage.records!.reduce(
-      (acc, record) => ({
-        input: acc.input + record.tokens.input!,
-        cacheRead: acc.cacheRead + record.tokens.cacheRead!,
-        cacheWrite: acc.cacheWrite + record.tokens.cacheWrite!,
-        output: acc.output + record.tokens.output!,
-        reasoning: acc.reasoning + record.tokens.reasoning!,
-      }),
-      { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 },
-    );
-    expect(summed).toEqual(payload.usage.breakdown);
+    expect(payload.usage.cost).toEqual({
+      amount: 0.005,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
   });
 
-  it('publishes no breakdown when a step counter is malformed', async () => {
+  it('keeps exact steps partial when title suppression is unproven', async () => {
+    const usage = await collectAccountingUsage(
+      'title-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'title-session',
+          'title-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('title-session', 'title-assistant', 'title-step'),
+        accountingIdle('title-session'),
+      ],
+      { usageCoverageIncomplete: true },
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('accounts canonical compaction and its marked continuation', async () => {
+    const usage = await collectAccountingUsage(
+      'compaction-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'compaction-session',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('compaction-session', 'root-assistant', 'root-step'),
+        accountingMessage('compaction-session', 'compaction-prompt', 'user'),
+        accountingPart(
+          'compaction-session',
+          'compaction-prompt',
+          'compaction-part',
+          'compaction',
+          { auto: true },
+        ),
+        accountingMessage(
+          'compaction-session',
+          'summary-assistant',
+          'assistant',
+          'compaction-prompt',
+          { mode: 'compaction', summary: true },
+        ),
+        accountingStep(
+          'compaction-session',
+          'summary-assistant',
+          'summary-step',
+        ),
+        accountingMessage('compaction-session', 'continuation-prompt', 'user'),
+        accountingPart(
+          'compaction-session',
+          'continuation-prompt',
+          'continuation-part',
+          'text',
+          {
+            synthetic: true,
+            metadata: { compaction_continue: true },
+            text: 'Continue if you have next steps.',
+          },
+        ),
+        {
+          type: 'session.compacted',
+          properties: { sessionID: 'compaction-session' },
+        },
+        accountingMessage(
+          'compaction-session',
+          'continuation-assistant',
+          'assistant',
+          'continuation-prompt',
+        ),
+        accountingStep(
+          'compaction-session',
+          'continuation-assistant',
+          'continuation-step',
+        ),
+        accountingIdle('compaction-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(3);
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 3, uncached: 3, cacheRead: 0, cacheWrite: 0 },
+      output: { total: 9, visible: 6, reasoning: 3 },
+    });
+    expect(usage.cost).toEqual({
+      amount: 0.03,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
+  });
+
+  it('excludes unmarked compaction replay and reports the exact subset', async () => {
+    const usage = await collectAccountingUsage(
+      'overflow-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'overflow-session',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('overflow-session', 'root-assistant', 'root-step'),
+        accountingMessage('overflow-session', 'compaction-prompt', 'user'),
+        accountingPart(
+          'overflow-session',
+          'compaction-prompt',
+          'compaction-part',
+          'compaction',
+          { auto: true, overflow: true },
+        ),
+        accountingMessage(
+          'overflow-session',
+          'summary-assistant',
+          'assistant',
+          'compaction-prompt',
+          { mode: 'compaction', summary: true },
+        ),
+        accountingStep('overflow-session', 'summary-assistant', 'summary-step'),
+        accountingMessage('overflow-session', 'replay-prompt', 'user'),
+        {
+          type: 'session.compacted',
+          properties: { sessionID: 'overflow-session' },
+        },
+        accountingMessage(
+          'overflow-session',
+          'replay-assistant',
+          'assistant',
+          'replay-prompt',
+        ),
+        accountingStep('overflow-session', 'replay-assistant', 'replay-step'),
+        accountingIdle('overflow-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('retains overflow evidence across repeated compaction snapshots', async () => {
+    const usage = await collectAccountingUsage(
+      'sticky-overflow-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'sticky-overflow-session',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep(
+          'sticky-overflow-session',
+          'root-assistant',
+          'root-step',
+        ),
+        accountingMessage(
+          'sticky-overflow-session',
+          'compaction-prompt',
+          'user',
+        ),
+        accountingPart(
+          'sticky-overflow-session',
+          'compaction-prompt',
+          'compaction-part',
+          'compaction',
+          { auto: true, overflow: true },
+        ),
+        accountingPart(
+          'sticky-overflow-session',
+          'compaction-prompt',
+          'compaction-part',
+          'compaction',
+          { auto: true },
+        ),
+        accountingMessage(
+          'sticky-overflow-session',
+          'summary-assistant',
+          'assistant',
+          'compaction-prompt',
+          { mode: 'compaction', summary: true },
+        ),
+        accountingStep(
+          'sticky-overflow-session',
+          'summary-assistant',
+          'summary-step',
+        ),
+        accountingMessage(
+          'sticky-overflow-session',
+          'continuation-prompt',
+          'user',
+        ),
+        accountingPart(
+          'sticky-overflow-session',
+          'continuation-prompt',
+          'continuation-part',
+          'text',
+          {
+            synthetic: true,
+            text: 'continue',
+            metadata: { compaction_continue: true },
+          },
+        ),
+        accountingMessage(
+          'sticky-overflow-session',
+          'continuation-assistant',
+          'assistant',
+          'continuation-prompt',
+        ),
+        accountingStep(
+          'sticky-overflow-session',
+          'continuation-assistant',
+          'continuation-step',
+        ),
+        {
+          type: 'session.compacted',
+          properties: { sessionID: 'sticky-overflow-session' },
+        },
+        accountingIdle('sticky-overflow-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(3);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('keeps a marked continuation partial until its assistant settles', async () => {
+    const usage = await collectAccountingUsage(
+      'pending-continuation',
+      (promptMessageId) => [
+        accountingMessage(
+          'pending-continuation',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('pending-continuation', 'root-assistant', 'root-step'),
+        accountingMessage('pending-continuation', 'compaction-prompt', 'user'),
+        accountingPart(
+          'pending-continuation',
+          'compaction-prompt',
+          'compaction-part',
+          'compaction',
+          { auto: true },
+        ),
+        accountingMessage(
+          'pending-continuation',
+          'summary-assistant',
+          'assistant',
+          'compaction-prompt',
+          { mode: 'compaction', summary: true },
+        ),
+        accountingStep(
+          'pending-continuation',
+          'summary-assistant',
+          'summary-step',
+        ),
+        accountingMessage(
+          'pending-continuation',
+          'continuation-prompt',
+          'user',
+        ),
+        accountingPart(
+          'pending-continuation',
+          'continuation-prompt',
+          'continuation-part',
+          'text',
+          {
+            synthetic: true,
+            metadata: { compaction_continue: true },
+            text: 'Continue if you have next steps.',
+          },
+        ),
+        {
+          type: 'session.compacted',
+          properties: { sessionID: 'pending-continuation' },
+        },
+        accountingIdle('pending-continuation'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('keeps an unrecognized synthetic continuation partial', async () => {
+    const usage = await collectAccountingUsage(
+      'unknown-internal-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'unknown-internal-session',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep(
+          'unknown-internal-session',
+          'root-assistant',
+          'root-step',
+        ),
+        accountingMessage(
+          'unknown-internal-session',
+          'unknown-internal-prompt',
+          'user',
+        ),
+        accountingPart(
+          'unknown-internal-session',
+          'unknown-internal-prompt',
+          'unknown-internal-part',
+          'text',
+          { synthetic: true, text: 'A future internal continuation marker' },
+        ),
+        accountingIdle('unknown-internal-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('does not consume an unrecognized child internal prompt as task work', async () => {
+    const usage = await collectAccountingUsage(
+      'internal-child-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'internal-child-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep(
+          'internal-child-root',
+          'root-assistant',
+          'root-step',
+          0.01,
+        ),
+        accountingPart(
+          'internal-child-root',
+          'root-assistant',
+          'task-part',
+          'tool',
+          {
+            callID: 'task-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: 'internal-child' },
+            },
+          },
+        ),
+        accountingMessage('internal-child', 'old-internal-prompt', 'user'),
+        accountingPart(
+          'internal-child',
+          'old-internal-prompt',
+          'old-internal-part',
+          'text',
+          { synthetic: true, text: 'A future internal marker' },
+        ),
+        accountingMessage(
+          'internal-child',
+          'old-internal-assistant',
+          'assistant',
+          'old-internal-prompt',
+        ),
+        accountingStep(
+          'internal-child',
+          'old-internal-assistant',
+          'old-internal-step',
+          0.04,
+        ),
+        accountingMessage('internal-child', 'actual-task-prompt', 'user'),
+        accountingMessage(
+          'internal-child',
+          'actual-task-assistant',
+          'assistant',
+          'actual-task-prompt',
+        ),
+        accountingStep(
+          'internal-child',
+          'actual-task-assistant',
+          'actual-task-step',
+          0.02,
+        ),
+        accountingIdle('internal-child'),
+        accountingIdle('internal-child-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records?.map((record) => record.cost?.amount)).toEqual(
+      [0.01, 0.02],
+    );
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('marks successful retry accounting partial', async () => {
+    const usage = await collectAccountingUsage(
+      'retry-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'retry-session',
+          'retry-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        {
+          type: 'session.status',
+          properties: {
+            sessionID: 'retry-session',
+            status: { type: 'retry', attempt: 1 },
+          },
+        },
+        accountingStep('retry-session', 'retry-assistant', 'retry-step'),
+        accountingIdle('retry-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('does not attribute an explicit foreign-session retry to the run', async () => {
+    const usage = await collectAccountingUsage(
+      'foreign-retry-session',
+      (promptMessageId) => [
+        accountingMessage(
+          'foreign-retry-session',
+          'causal-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep(
+          'foreign-retry-session',
+          'causal-assistant',
+          'causal-step',
+        ),
+        accountingMessage(
+          'foreign-retry-session',
+          'foreign-assistant',
+          'assistant',
+          'foreign-prompt',
+        ),
+        {
+          type: 'session.status',
+          properties: {
+            sessionID: 'foreign-retry-session',
+            status: { type: 'retry', attempt: 1 },
+          },
+        },
+        accountingIdle('foreign-retry-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toEqual({
+      amount: 0.01,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
+  });
+
+  it('accounts command task continuations without inventing a model step', async () => {
+    const usage = await collectAccountingUsage(
+      'command-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'command-root',
+          'task-orchestrator',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingPart(
+          'command-root',
+          'task-orchestrator',
+          'task-part',
+          'tool',
+          {
+            callID: 'task-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              input: { command: 'inspect the child' },
+              metadata: { sessionId: 'command-child' },
+            },
+          },
+        ),
+        accountingMessage('command-child', 'child-prompt', 'user'),
+        accountingMessage(
+          'command-child',
+          'child-assistant',
+          'assistant',
+          'child-prompt',
+        ),
+        accountingStep('command-child', 'child-assistant', 'child-step'),
+        accountingIdle('command-child'),
+        accountingMessage('command-root', 'continuation-prompt', 'user'),
+        accountingPart(
+          'command-root',
+          'continuation-prompt',
+          'continuation-part',
+          'text',
+          {
+            synthetic: true,
+            text: 'Summarize the task tool output above and continue with your task.',
+          },
+        ),
+        accountingMessage(
+          'command-root',
+          'continuation-assistant',
+          'assistant',
+          'continuation-prompt',
+        ),
+        accountingStep(
+          'command-root',
+          'continuation-assistant',
+          'continuation-step',
+        ),
+        accountingIdle('command-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toEqual({
+      amount: 0.02,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
+  });
+
+  it('binds background results one-to-one and keeps pending work partial', async () => {
+    const events = (promptMessageId: string, resultCount: number) => [
+      accountingMessage(
+        'background-root',
+        'root-assistant',
+        'assistant',
+        promptMessageId,
+      ),
+      accountingStep('background-root', 'root-assistant', 'root-step'),
+      accountingPart(
+        'background-root',
+        'root-assistant',
+        'background-task',
+        'tool',
+        {
+          callID: 'background-call',
+          tool: 'task',
+          state: {
+            status: 'running',
+            input: { description: 'background work' },
+            metadata: {
+              sessionId: 'background-child',
+              parentSessionId: 'background-root',
+              background: true,
+            },
+          },
+        },
+      ),
+      accountingMessage('background-child', 'child-prompt', 'user'),
+      accountingMessage(
+        'background-child',
+        'child-assistant',
+        'assistant',
+        'child-prompt',
+      ),
+      accountingStep('background-child', 'child-assistant', 'child-step'),
+      accountingIdle('background-child'),
+      ...Array.from({ length: resultCount }, (_, index) => [
+        accountingMessage('background-root', `result-prompt-${index}`, 'user'),
+        accountingPart(
+          'background-root',
+          `result-prompt-${index}`,
+          `result-part-${index}`,
+          'text',
+          {
+            synthetic: true,
+            text: '<task id="background-child" state="completed">\n<task_result>\nfinished\n</task_result>\n</task>',
+          },
+        ),
+        accountingMessage(
+          'background-root',
+          `result-assistant-${index}`,
+          'assistant',
+          `result-prompt-${index}`,
+        ),
+        accountingStep(
+          'background-root',
+          `result-assistant-${index}`,
+          `result-step-${index}`,
+        ),
+      ]).flat(),
+      accountingIdle('background-root'),
+    ];
+
+    const complete = await collectAccountingUsage(
+      'background-root',
+      (promptMessageId) => events(promptMessageId, 1),
+    );
+    expect(complete.tokens?.coverage).toBe('complete');
+    expect(complete.tokens?.records).toHaveLength(3);
+
+    const pending = await collectAccountingUsage(
+      'background-root',
+      (promptMessageId) => events(promptMessageId, 0),
+    );
+    expect(pending.tokens?.coverage).toBe('partial');
+    expect(pending.tokens?.records).toHaveLength(2);
+    expect(pending.cost).toBeUndefined();
+
+    const duplicate = await collectAccountingUsage(
+      'background-root',
+      (promptMessageId) => events(promptMessageId, 2),
+    );
+    expect(duplicate.tokens?.coverage).toBe('partial');
+    expect(duplicate.tokens?.records).toHaveLength(3);
+    expect(duplicate.cost).toBeUndefined();
+  });
+
+  it('rejects mismatched background parent metadata as complete evidence', async () => {
+    const usage = await collectAccountingUsage(
+      'mismatched-background-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'mismatched-background-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep(
+          'mismatched-background-root',
+          'root-assistant',
+          'root-step',
+        ),
+        accountingPart(
+          'mismatched-background-root',
+          'root-assistant',
+          'background-task',
+          'tool',
+          {
+            callID: 'background-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: {
+                sessionId: 'mismatched-background-child',
+                parentSessionId: 'wrong-parent',
+                background: true,
+              },
+            },
+          },
+        ),
+        accountingMessage(
+          'mismatched-background-child',
+          'child-prompt',
+          'user',
+        ),
+        accountingMessage(
+          'mismatched-background-child',
+          'child-assistant',
+          'assistant',
+          'child-prompt',
+        ),
+        accountingStep(
+          'mismatched-background-child',
+          'child-assistant',
+          'child-step',
+        ),
+        accountingIdle('mismatched-background-child'),
+        accountingIdle('mismatched-background-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('marks a causal task without a proven child session partial', async () => {
+    const usage = await collectAccountingUsage(
+      'unscoped-task-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'unscoped-task-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('unscoped-task-root', 'root-assistant', 'root-step'),
+        accountingPart(
+          'unscoped-task-root',
+          'root-assistant',
+          'unscoped-task',
+          'tool',
+          {
+            callID: 'unscoped-call',
+            tool: 'task',
+            state: { status: 'running', input: { description: 'delegate' } },
+          },
+        ),
+        accountingIdle('unscoped-task-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('retains the first task identity and rejects conflicting snapshots', async () => {
+    const usage = await collectAccountingUsage(
+      'task-drift-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'task-drift-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('task-drift-root', 'root-assistant', 'root-step'),
+        accountingPart(
+          'task-drift-root',
+          'root-assistant',
+          'drifting-task',
+          'tool',
+          {
+            callID: 'drifting-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: 'task-child-a' },
+            },
+          },
+        ),
+        accountingMessage('task-child-a', 'child-a-prompt', 'user'),
+        accountingMessage(
+          'task-child-a',
+          'child-a-assistant',
+          'assistant',
+          'child-a-prompt',
+        ),
+        accountingStep('task-child-a', 'child-a-assistant', 'child-a-step'),
+        accountingIdle('task-child-a'),
+        accountingPart(
+          'task-drift-root',
+          'root-assistant',
+          'drifting-task',
+          'tool',
+          {
+            callID: 'drifting-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: 'task-child-b' },
+            },
+          },
+        ),
+        accountingMessage('task-child-b', 'child-b-prompt', 'user'),
+        accountingMessage(
+          'task-child-b',
+          'child-b-assistant',
+          'assistant',
+          'child-b-prompt',
+        ),
+        accountingStep('task-child-b', 'child-b-assistant', 'child-b-step'),
+        accountingIdle('task-child-b'),
+        accountingIdle('task-drift-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('marks malformed causal task identity partial', async () => {
+    const usage = await collectAccountingUsage(
+      'malformed-task-root',
+      (promptMessageId) => [
+        {
+          type: 'message.part.updated',
+          properties: {
+            sessionID: 'malformed-task-root',
+            part: {
+              sessionID: 'malformed-task-root',
+              type: 'tool',
+              tool: 'task',
+              state: {
+                status: 'running',
+                metadata: { sessionId: 'unscoped-child' },
+              },
+            },
+          },
+        },
+        accountingMessage(
+          'malformed-task-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('malformed-task-root', 'root-assistant', 'root-step'),
+        accountingIdle('malformed-task-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('requires descendant idle after its latest causal accounting', async () => {
+    const usage = await collectAccountingUsage(
+      'settlement-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'settlement-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('settlement-root', 'root-assistant', 'root-step'),
+        accountingPart(
+          'settlement-root',
+          'root-assistant',
+          'task-part',
+          'tool',
+          {
+            callID: 'task-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              input: { description: 'delegate' },
+              metadata: { sessionId: 'settlement-child' },
+            },
+          },
+        ),
+        accountingIdle('settlement-child'),
+        accountingMessage('settlement-child', 'child-prompt', 'user'),
+        accountingMessage(
+          'settlement-child',
+          'child-assistant',
+          'assistant',
+          'child-prompt',
+        ),
+        accountingStep('settlement-child', 'child-assistant', 'child-step'),
+        accountingIdle('settlement-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('requires child idle after a causal nested task launch', async () => {
+    const usage = await collectAccountingUsage(
+      'nested-settlement-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'nested-settlement-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+        ),
+        accountingStep('nested-settlement-root', 'root-assistant', 'root-step'),
+        accountingPart(
+          'nested-settlement-root',
+          'root-assistant',
+          'child-task',
+          'tool',
+          {
+            callID: 'child-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: 'nested-settlement-child' },
+            },
+          },
+        ),
+        accountingMessage('nested-settlement-child', 'child-prompt', 'user'),
+        accountingMessage(
+          'nested-settlement-child',
+          'child-assistant',
+          'assistant',
+          'child-prompt',
+        ),
+        accountingStep(
+          'nested-settlement-child',
+          'child-assistant',
+          'child-step',
+        ),
+        accountingIdle('nested-settlement-child'),
+        accountingPart(
+          'nested-settlement-child',
+          'child-assistant',
+          'grandchild-task',
+          'tool',
+          {
+            callID: 'grandchild-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: 'nested-settlement-grandchild' },
+            },
+          },
+        ),
+        accountingMessage(
+          'nested-settlement-grandchild',
+          'grandchild-prompt',
+          'user',
+        ),
+        accountingMessage(
+          'nested-settlement-grandchild',
+          'grandchild-assistant',
+          'assistant',
+          'grandchild-prompt',
+        ),
+        accountingStep(
+          'nested-settlement-grandchild',
+          'grandchild-assistant',
+          'grandchild-step',
+        ),
+        accountingIdle('nested-settlement-grandchild'),
+        accountingIdle('nested-settlement-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(3);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('accounts the completed task-linked causal tree without exposing child output', async () => {
+    let promptMessageId = '';
+    const assistantMessage = (
+      sessionID: string,
+      id: string,
+      parentID: string,
+      modelID: string,
+      providerID: string,
+    ) => ({
+      type: 'message.updated',
+      properties: {
+        sessionID,
+        info: {
+          id,
+          sessionID,
+          role: 'assistant',
+          parentID,
+          modelID,
+          providerID,
+        },
+      },
+    });
+    const userMessage = (sessionID: string, id: string) => ({
+      type: 'message.updated',
+      properties: {
+        sessionID,
+        info: { id, sessionID, role: 'user' },
+      },
+    });
+    const step = (
+      sessionID: string,
+      messageID: string,
+      id: string,
+      tokens: {
+        input: number;
+        output: number;
+        reasoning: number;
+        cache: { read: number; write: number };
+      },
+      cost: number,
+    ) => ({
+      type: 'message.part.updated',
+      properties: {
+        sessionID,
+        part: {
+          id,
+          sessionID,
+          messageID,
+          type: 'step-finish',
+          reason: 'stop',
+          tokens,
+          cost,
+        },
+      },
+    });
+    const rootInitial = step(
+      'usage-root',
+      'root-assistant',
+      'shared-step',
+      {
+        input: 10,
+        output: 4,
+        reasoning: 1,
+        cache: { read: 1, write: 1 },
+      },
+      0.01,
+    );
+    const rootLatest = step(
+      'usage-root',
+      'root-assistant',
+      'shared-step',
+      {
+        input: 20,
+        output: 8,
+        reasoning: 2,
+        cache: { read: 3, write: 1 },
+      },
+      0.02,
+    );
+    const childLatest = step(
+      'usage-child',
+      'child-assistant',
+      'shared-step',
+      {
+        input: 7,
+        output: 4,
+        reasoning: 1,
+        cache: { read: 2, write: 0 },
+      },
+      0.03,
+    );
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'usage-root' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+            expect(promptMessageId).toMatch(/^msg_/);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield assistantMessage(
+                'usage-root',
+                'root-assistant',
+                promptMessageId,
+                'root-model',
+                'root-provider',
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'usage-root',
+                  part: {
+                    id: 'root-text',
+                    sessionID: 'usage-root',
+                    messageID: 'root-assistant',
+                    type: 'text',
+                    text: 'root output',
+                  },
+                },
+              };
+              yield rootInitial;
+              yield rootInitial;
+              yield rootLatest;
+              yield {
+                type: 'message.part.removed',
+                properties: {
+                  sessionID: 'usage-root',
+                  messageID: 'root-assistant',
+                  partID: 'shared-step',
+                },
+              };
+              yield {
+                type: 'session.created',
+                properties: {
+                  info: { id: 'usage-child', parentID: 'usage-root' },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'usage-root',
+                  part: {
+                    id: 'root-task',
+                    sessionID: 'usage-root',
+                    messageID: 'root-assistant',
+                    type: 'tool',
+                    callID: 'root-task-call',
+                    tool: 'task',
+                    state: {
+                      status: 'running',
+                      input: { description: 'delegate' },
+                      metadata: { sessionId: 'usage-child' },
+                    },
+                  },
+                },
+              };
+              yield userMessage('usage-child', 'child-prompt');
+              yield assistantMessage(
+                'usage-child',
+                'child-assistant',
+                'child-prompt',
+                'child-model',
+                'child-provider',
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'usage-child',
+                  part: {
+                    id: 'child-text',
+                    sessionID: 'usage-child',
+                    messageID: 'child-assistant',
+                    type: 'text',
+                    text: 'hidden child output',
+                  },
+                },
+              };
+              yield childLatest;
+              yield childLatest;
+              yield {
+                ...childLatest,
+                properties: {
+                  ...childLatest.properties,
+                  part: {
+                    ...childLatest.properties.part,
+                    tokens: {
+                      input: 7,
+                      output: 4,
+                      reasoning: 1,
+                      cache: { read: 2, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.removed',
+                properties: {
+                  sessionID: 'usage-child',
+                  messageID: 'child-assistant',
+                  partID: 'shared-step',
+                },
+              };
+              yield {
+                type: 'session.created',
+                properties: {
+                  info: { id: 'usage-grandchild', parentID: 'usage-child' },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'usage-child',
+                  part: {
+                    id: 'child-task',
+                    sessionID: 'usage-child',
+                    messageID: 'child-assistant',
+                    type: 'tool',
+                    callID: 'child-task-call',
+                    tool: 'task',
+                    state: {
+                      status: 'running',
+                      input: { description: 'delegate again' },
+                      metadata: { sessionId: 'usage-grandchild' },
+                    },
+                  },
+                },
+              };
+              yield userMessage('usage-grandchild', 'grandchild-prompt');
+              yield assistantMessage(
+                'usage-grandchild',
+                'grandchild-assistant',
+                'grandchild-prompt',
+                'grandchild-model',
+                'grandchild-provider',
+              );
+              yield step(
+                'usage-grandchild',
+                'grandchild-assistant',
+                'grandchild-step',
+                {
+                  input: 5,
+                  output: 2,
+                  reasoning: 0,
+                  cache: { read: 0, write: 1 },
+                },
+                0,
+              );
+              yield {
+                type: 'message.removed',
+                properties: {
+                  sessionID: 'usage-grandchild',
+                  messageID: 'grandchild-assistant',
+                },
+              };
+              yield {
+                type: 'session.created',
+                properties: {
+                  info: { id: 'usage-foreign', parentID: 'usage-root' },
+                },
+              };
+              yield assistantMessage(
+                'usage-foreign',
+                'foreign-assistant',
+                'foreign-prompt',
+                'foreign-model',
+                'foreign-provider',
+              );
+              yield step(
+                'usage-foreign',
+                'foreign-assistant',
+                'foreign-step',
+                {
+                  input: 1_000,
+                  output: 1_000,
+                  reasoning: 0,
+                  cache: { read: 0, write: 0 },
+                },
+                99,
+              );
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'usage-grandchild' },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'usage-child' },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'usage-foreign' },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'usage-root' },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    expect(
+      events
+        .filter((event) => event.type === 'text')
+        .map((event) => (event.payload as { content: string }).content),
+    ).toEqual(['root output']);
+
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.toolUses).toBe(1);
+    expect(usage.tokens).toEqual({
+      coverage: 'complete',
+      totals: {
+        input: {
+          total: 39,
+          uncached: 32,
+          cacheRead: 5,
+          cacheWrite: 2,
+        },
+        output: { total: 17, visible: 14, reasoning: 3 },
+      },
+      records: [
+        {
+          model: 'root-model',
+          provider: 'root-provider',
+          requests: 1,
+          tokens: {
+            input: {
+              total: 24,
+              uncached: 20,
+              cacheRead: 3,
+              cacheWrite: 1,
+            },
+            output: { total: 10, visible: 8, reasoning: 2 },
+          },
+          cost: {
+            amount: 0.02,
+            currency: 'USD',
+            source: 'agent-estimate',
+          },
+        },
+        {
+          model: 'child-model',
+          provider: 'child-provider',
+          requests: 1,
+          tokens: {
+            input: {
+              total: 9,
+              uncached: 7,
+              cacheRead: 2,
+              cacheWrite: 0,
+            },
+            output: { total: 5, visible: 4, reasoning: 1 },
+          },
+          cost: {
+            amount: 0.03,
+            currency: 'USD',
+            source: 'agent-estimate',
+          },
+        },
+        {
+          model: 'grandchild-model',
+          provider: 'grandchild-provider',
+          requests: 1,
+          tokens: {
+            input: {
+              total: 6,
+              uncached: 5,
+              cacheRead: 0,
+              cacheWrite: 1,
+            },
+            output: { total: 2, visible: 2, reasoning: 0 },
+          },
+          cost: {
+            amount: 0,
+            currency: 'USD',
+            source: 'agent-estimate',
+          },
+        },
+      ],
+    });
+    expect(usage.cost).toEqual({
+      amount: 0.05,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
+  });
+
+  it('keeps only task-linked reused-child turns and marks later ambiguity partial', async () => {
+    let promptMessageId = '';
+    const message = (
+      sessionID: string,
+      id: string,
+      role: 'user' | 'assistant',
+      parentID?: string,
+    ) => ({
+      type: 'message.updated',
+      properties: {
+        sessionID,
+        info: {
+          id,
+          sessionID,
+          role,
+          ...(parentID ? { parentID } : {}),
+          ...(role === 'assistant'
+            ? { modelID: `${id}-model`, providerID: 'test-provider' }
+            : {}),
+        },
+      },
+    });
+    const step = (
+      sessionID: string,
+      messageID: string,
+      id: string,
+      input: number,
+      cost: number,
+    ) => ({
+      type: 'message.part.updated',
+      properties: {
+        sessionID,
+        part: {
+          id,
+          sessionID,
+          messageID,
+          type: 'step-finish',
+          cost,
+          tokens: {
+            input,
+            output: 1,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+        },
+      },
+    });
+    const task = (id: string) => ({
+      type: 'message.part.updated',
+      properties: {
+        sessionID: 'reuse-root',
+        part: {
+          id,
+          sessionID: 'reuse-root',
+          messageID: 'reuse-root-assistant',
+          type: 'tool',
+          callID: `${id}-call`,
+          tool: 'task',
+          state: {
+            status: 'running',
+            input: {},
+            metadata: { sessionId: 'reused-child' },
+          },
+        },
+      },
+    });
+
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'reuse-root' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield message(
+                'reuse-root',
+                'reuse-root-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield step(
+                'reuse-root',
+                'reuse-root-assistant',
+                'reuse-root-step',
+                1,
+                0.01,
+              );
+              yield task('first-task');
+              yield message('reused-child', 'first-child-prompt', 'user');
+              yield message(
+                'reused-child',
+                'first-child-assistant',
+                'assistant',
+                'first-child-prompt',
+              );
+              yield step(
+                'reused-child',
+                'first-child-assistant',
+                'first-child-step',
+                2,
+                0.02,
+              );
+
+              // This later child turn has no causal task association and
+              // must remain outside the invocation report.
+              yield message('reused-child', 'background-prompt', 'user');
+              yield message(
+                'reused-child',
+                'background-assistant',
+                'assistant',
+                'background-prompt',
+              );
+              yield step(
+                'reused-child',
+                'background-assistant',
+                'background-step',
+                1_000,
+                99,
+              );
+
+              yield task('second-task');
+              yield message('reused-child', 'second-child-prompt', 'user');
+              yield message(
+                'reused-child',
+                'second-child-assistant',
+                'assistant',
+                'second-child-prompt',
+              );
+              yield step(
+                'reused-child',
+                'second-child-assistant',
+                'second-child-step',
+                3,
+                0.03,
+              );
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'reused-child' },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'reuse-root' },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.toolUses).toBe(2);
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 6, uncached: 6, cacheRead: 0, cacheWrite: 0 },
+      output: { total: 3, visible: 3, reasoning: 0 },
+    });
+    expect(usage.tokens?.records?.map((record) => record.model)).toEqual([
+      'reuse-root-assistant-model',
+      'first-child-assistant-model',
+      'second-child-assistant-model',
+    ]);
+    expect(usage).not.toHaveProperty('cost');
+  });
+
+  it('excludes ambiguous prompts from a reused task session', async () => {
+    const usage = await collectAccountingUsage(
+      'reused-task-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'reused-task-root',
+          'root-assistant',
+          'assistant',
+          promptMessageId,
+          { modelID: 'root-model' },
+        ),
+        accountingStep('reused-task-root', 'root-assistant', 'root-step', 0.01),
+        accountingPart(
+          'reused-task-root',
+          'root-assistant',
+          'reused-task',
+          'tool',
+          {
+            callID: 'reused-call',
+            tool: 'task',
+            state: {
+              status: 'running',
+              input: { task_id: 'reused-task-child' },
+              metadata: { sessionId: 'reused-task-child' },
+            },
+          },
+        ),
+        accountingMessage('reused-task-child', 'foreign-prompt', 'user'),
+        accountingMessage(
+          'reused-task-child',
+          'foreign-assistant',
+          'assistant',
+          'foreign-prompt',
+          { modelID: 'foreign-model' },
+        ),
+        accountingStep(
+          'reused-task-child',
+          'foreign-assistant',
+          'foreign-step',
+          99,
+        ),
+        accountingMessage('reused-task-child', 'actual-prompt', 'user'),
+        accountingMessage(
+          'reused-task-child',
+          'actual-assistant',
+          'assistant',
+          'actual-prompt',
+          { modelID: 'actual-model' },
+        ),
+        accountingStep(
+          'reused-task-child',
+          'actual-assistant',
+          'actual-step',
+          0.02,
+        ),
+        accountingIdle('reused-task-child'),
+        accountingIdle('reused-task-root'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('root-model');
+    expect(usage.tokens?.records?.[0]?.cost?.amount).toBe(0.01);
+    expect(usage.cost).toBeUndefined();
+  });
+
+  it('marks accounting partial until every causal child completes', async () => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'partial-root' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'partial-root',
+                'partial-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'partial-root',
+                  part: {
+                    id: 'partial-step',
+                    sessionID: 'partial-root',
+                    messageID: 'partial-assistant',
+                    type: 'step-finish',
+                    reason: 'stop',
+                    cost: 0.01,
+                    tokens: {
+                      input: 3,
+                      output: 2,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'partial-root',
+                  part: {
+                    id: 'partial-task',
+                    sessionID: 'partial-root',
+                    messageID: 'partial-assistant',
+                    type: 'tool',
+                    callID: 'partial-task-call',
+                    tool: 'task',
+                    state: {
+                      status: 'running',
+                      input: {},
+                      metadata: { sessionId: 'unfinished-child' },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'partial-root' },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 3, uncached: 3, cacheRead: 0, cacheWrite: 0 },
+      output: { total: 2, visible: 2, reasoning: 0 },
+    });
+    expect(usage).not.toHaveProperty('cost');
+  });
+
+  it('publishes no token report when canonical step identifiers are missing', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -7443,9 +9518,10 @@ describe('OpenCode SSE event structure', () => {
                   tokens: {
                     input: 10,
                     output: 5,
-                    reasoning: 1.5,
+                    reasoning: 1,
                     cache: { read: 0, write: 0 },
                   },
+                  cost: 0,
                 },
               },
             },
@@ -7461,38 +9537,51 @@ describe('OpenCode SSE event structure', () => {
     const events = await collect(adapter.run('test'));
     const payload = events.find((event) => event.type === 'done')!
       .payload as DonePayload;
-    expect(payload.usage.tokenAvailability).toBe('unavailable');
-    expect(payload.usage).not.toHaveProperty('breakdown');
+    expect(payload.usage).toEqual({ toolUses: 0 });
   });
 
   it('treats an explicitly reported zero-valued step as available usage', async () => {
+    let promptMessageId = '';
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'zero-usage-session' },
-          events: [
-            {
-              type: 'message.part.updated',
-              properties: {
-                part: {
-                  sessionID: 'zero-usage-session',
-                  type: 'step-finish',
-                  tokens: {
-                    input: 0,
-                    output: 0,
-                    reasoning: 0,
-                    cache: { read: 0, write: 0 },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'zero-usage-session',
+                'zero-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  part: {
+                    id: 'zero-step',
+                    sessionID: 'zero-usage-session',
+                    messageID: 'zero-assistant',
+                    type: 'step-finish',
+                    tokens: {
+                      input: 0,
+                      output: 0,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                    cost: 0,
                   },
-                  cost: 0,
                 },
-              },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'zero-usage-session' },
+              };
             },
-            {
-              type: 'session.idle',
-              properties: { sessionID: 'zero-usage-session' },
-            },
-          ],
+          }),
         }),
       },
     );
@@ -7500,35 +9589,109 @@ describe('OpenCode SSE event structure', () => {
     const events = await collect(adapter.run('test'));
     const done = events.find((event) => event.type === 'done')!;
     expect((done.payload as DonePayload).usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 0,
-      // Every component was measured as zero, so the partition is published:
-      // a present zero is a measurement, not a stand-in for absence.
-      breakdown: {
-        input: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      // The request happened and was measured at zero, so it is recorded as
-      // one; the step named no model, so the record omits the rate-card key.
-      records: [
-        {
-          requests: 1,
-          tokens: {
-            input: 0,
+      tokens: {
+        coverage: 'complete',
+        totals: {
+          input: {
+            total: 0,
+            uncached: 0,
             cacheRead: 0,
             cacheWrite: 0,
-            output: 0,
-            reasoning: 0,
           },
-          costUsd: 0,
+          output: { total: 0, visible: 0, reasoning: 0 },
         },
-      ],
+        records: [
+          {
+            model: 'test-model',
+            provider: 'test-provider',
+            requests: 1,
+            tokens: {
+              input: {
+                total: 0,
+                uncached: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              output: { total: 0, visible: 0, reasoning: 0 },
+            },
+            cost: {
+              amount: 0,
+              currency: 'USD',
+              source: 'agent-estimate',
+            },
+          },
+        ],
+      },
+      cost: {
+        amount: 0,
+        currency: 'USD',
+        source: 'agent-estimate',
+      },
     });
+  });
+
+  it('omits a non-finite aggregate cost while retaining finite step costs', async () => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'cost-overflow-session' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'cost-overflow-session',
+                'cost-overflow-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              for (const id of [
+                'cost-overflow-step-1',
+                'cost-overflow-step-2',
+              ]) {
+                yield {
+                  type: 'message.part.updated',
+                  properties: {
+                    sessionID: 'cost-overflow-session',
+                    part: {
+                      id,
+                      sessionID: 'cost-overflow-session',
+                      messageID: 'cost-overflow-assistant',
+                      type: 'step-finish',
+                      cost: Number.MAX_VALUE,
+                      tokens: {
+                        input: 1,
+                        output: 1,
+                        reasoning: 0,
+                        cache: { read: 0, write: 0 },
+                      },
+                    },
+                  },
+                };
+              }
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'cost-overflow-session' },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records?.map((record) => record.cost?.amount)).toEqual(
+      [Number.MAX_VALUE, Number.MAX_VALUE],
+    );
+    expect(usage).not.toHaveProperty('cost');
   });
 
   it.each([
@@ -7568,11 +9731,17 @@ describe('OpenCode SSE event structure', () => {
         cache: { read: 0, write: 0 },
       },
     ],
+    ['missing required cache counters', { input: 1, output: 2, reasoning: 0 }],
     [
-      'missing required cache counters',
-      { input: 1, output: 2, reasoning: 0 },
+      'overflowing inclusive input total',
+      {
+        input: Number.MAX_SAFE_INTEGER,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 1, write: 0 },
+      },
     ],
-  ])('marks step-finish %s accounting unavailable', async (_case, tokens) => {
+  ])('omits malformed step-finish %s accounting', async (_case, tokens) => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -7583,7 +9752,9 @@ describe('OpenCode SSE event structure', () => {
               type: 'message.part.updated',
               properties: {
                 part: {
+                  id: 'malformed-step',
                   sessionID: 'malformed-usage-session',
+                  messageID: 'malformed-assistant',
                   type: 'step-finish',
                   tokens,
                   cost: 0,
@@ -7601,9 +9772,317 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('test'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
-      'unavailable',
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
+  });
+
+  it('retains valid causal records when another causal step is malformed', async () => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'mixed-usage-session' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'mixed-usage-session',
+                'mixed-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'mixed-usage-session',
+                  part: {
+                    id: 'valid-step',
+                    sessionID: 'mixed-usage-session',
+                    messageID: 'mixed-assistant',
+                    type: 'step-finish',
+                    cost: 0.01,
+                    tokens: {
+                      input: 4,
+                      output: 2,
+                      reasoning: 1,
+                      cache: { read: 1, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'mixed-usage-session',
+                  part: {
+                    id: 'malformed-step',
+                    sessionID: 'mixed-usage-session',
+                    messageID: 'mixed-assistant',
+                    type: 'step-finish',
+                    cost: 0.02,
+                    tokens: {
+                      input: 3,
+                      output: 1.5,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'mixed-usage-session' },
+              };
+            },
+          }),
+        }),
+      },
     );
+
+    const events = await collect(adapter.run('test'));
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.tokens).toEqual({
+      coverage: 'partial',
+      totals: {
+        input: { total: 5, uncached: 4, cacheRead: 1, cacheWrite: 0 },
+        output: { total: 3, visible: 2, reasoning: 1 },
+      },
+      records: [
+        {
+          model: 'test-model',
+          provider: 'test-provider',
+          requests: 1,
+          tokens: {
+            input: {
+              total: 5,
+              uncached: 4,
+              cacheRead: 1,
+              cacheWrite: 0,
+            },
+            output: { total: 3, visible: 2, reasoning: 1 },
+          },
+          cost: {
+            amount: 0.01,
+            currency: 'USD',
+            source: 'agent-estimate',
+          },
+        },
+      ],
+    });
+    expect(usage).not.toHaveProperty('cost');
+  });
+
+  it('excludes an uncorrelated owned-session step from a partial report', async () => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'mixed-causality-session' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'mixed-causality-session',
+                'causal-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.updated',
+                properties: {
+                  sessionID: 'mixed-causality-session',
+                  info: {
+                    id: 'uncorrelated-assistant',
+                    sessionID: 'mixed-causality-session',
+                    role: 'assistant',
+                    modelID: 'background-model',
+                    providerID: 'background-provider',
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'mixed-causality-session',
+                  part: {
+                    id: 'causal-step',
+                    sessionID: 'mixed-causality-session',
+                    messageID: 'causal-assistant',
+                    type: 'step-finish',
+                    cost: 0.01,
+                    tokens: {
+                      input: 4,
+                      output: 2,
+                      reasoning: 0,
+                      cache: { read: 1, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'mixed-causality-session',
+                  part: {
+                    id: 'uncorrelated-step',
+                    sessionID: 'mixed-causality-session',
+                    messageID: 'uncorrelated-assistant',
+                    type: 'step-finish',
+                    cost: 99,
+                    tokens: {
+                      input: 1_000,
+                      output: 1_000,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                  },
+                },
+              };
+              yield {
+                type: 'session.idle',
+                properties: { sessionID: 'mixed-causality-session' },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const usage = (
+      events.find((event) => event.type === 'done')!.payload as DonePayload
+    ).usage;
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 5, uncached: 4, cacheRead: 1, cacheWrite: 0 },
+      output: { total: 2, visible: 2, reasoning: 0 },
+    });
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('test-model');
+    expect(usage).not.toHaveProperty('cost');
+  });
+
+  it('reports exact completed steps as partial when the stream ends without idle', async () => {
+    let promptMessageId = '';
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'incomplete-usage-session' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'incomplete-usage-session',
+                'incomplete-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'incomplete-usage-session',
+                  part: {
+                    id: 'completed-before-error',
+                    sessionID: 'incomplete-usage-session',
+                    messageID: 'incomplete-assistant',
+                    type: 'step-finish',
+                    cost: 0.01,
+                    tokens: {
+                      input: 2,
+                      output: 1,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                  },
+                },
+              };
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('test'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).status).toBe('error');
+    expect((done.payload as DonePayload).usage.tokens).toMatchObject({
+      coverage: 'partial',
+      totals: {
+        input: { total: 2 },
+        output: { total: 1 },
+      },
+    });
+    expect((done.payload as DonePayload).usage).not.toHaveProperty('cost');
+  });
+
+  it('reports exact completed steps as partial when the caller aborts', async () => {
+    let promptMessageId = '';
+    const controller = new AbortController();
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'aborted-usage-session' },
+          onRun(options) {
+            promptMessageId = String(options.promptMessageId);
+          },
+          eventStreamFactory: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield makeV2MessageUpdated(
+                'aborted-usage-session',
+                'aborted-assistant',
+                'assistant',
+                promptMessageId,
+              );
+              yield {
+                type: 'message.part.updated',
+                properties: {
+                  sessionID: 'aborted-usage-session',
+                  part: {
+                    id: 'completed-before-abort',
+                    sessionID: 'aborted-usage-session',
+                    messageID: 'aborted-assistant',
+                    type: 'step-finish',
+                    cost: 0.01,
+                    tokens: {
+                      input: 2,
+                      output: 1,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                  },
+                },
+              };
+              controller.abort();
+            },
+          }),
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('test', { abortSignal: controller.signal }),
+    );
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).status).toBe('interrupted');
+    expect((done.payload as DonePayload).usage.tokens).toMatchObject({
+      coverage: 'partial',
+      totals: {
+        input: { total: 2 },
+        output: { total: 1 },
+      },
+    });
+    expect((done.payload as DonePayload).usage).not.toHaveProperty('cost');
   });
 
   it.each([
@@ -7636,43 +10115,43 @@ describe('OpenCode SSE event structure', () => {
         toolUses: 4,
       },
     },
-  ])('does not hide $label', async ({ stepTokens, terminalUsage }) => {
-    const adapter = new OpenCodeAdapter(
-      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
-      {
-        loadSdk: makeLoader({
-          runResult: { sessionId: 'combined-usage-session' },
-          events: [
-            {
-              type: 'message.part.updated',
-              properties: {
-                part: {
-                  sessionID: 'combined-usage-session',
-                  type: 'step-finish',
-                  tokens: stepTokens,
-                  cost: 0,
+  ])(
+    'ignores generic idle aliases for $label',
+    async ({ stepTokens, terminalUsage }) => {
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'combined-usage-session' },
+            events: [
+              {
+                type: 'message.part.updated',
+                properties: {
+                  part: {
+                    sessionID: 'combined-usage-session',
+                    type: 'step-finish',
+                    tokens: stepTokens,
+                    cost: 0,
+                  },
                 },
               },
-            },
-            {
-              type: 'session.idle',
-              properties: {
-                sessionID: 'combined-usage-session',
-                usage: terminalUsage,
+              {
+                type: 'session.idle',
+                properties: {
+                  sessionID: 'combined-usage-session',
+                  usage: terminalUsage,
+                },
               },
-            },
-          ],
-        }),
-      },
-    );
+            ],
+          }),
+        },
+      );
 
-    const events = await collect(adapter.run('test'));
-    const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage).toMatchObject({
-      tokenAvailability: 'unavailable',
-      toolUses: 4,
-    });
-  });
+      const events = await collect(adapter.run('test'));
+      const done = events.find((event) => event.type === 'done')!;
+      expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
+    },
+  );
 
   it('preserves observed tools on a synthesized OpenCode terminal', async () => {
     const adapter = new OpenCodeAdapter(
@@ -7709,10 +10188,7 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('test'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage).toMatchObject({
-      tokenAvailability: 'unavailable',
-      toolUses: 1,
-    });
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 1 });
   });
 
   it('extracts sessionID from part inside properties envelope', async () => {
@@ -7760,7 +10236,7 @@ describe('OpenCode SSE event structure', () => {
     expect(texts).toEqual(['matched']);
   });
 
-  it('sums cache tokens into inputTokens', async () => {
+  it('ignores generic idle token aliases', async () => {
     const adapter = new OpenCodeAdapter(
       {
         mode: 'external',
@@ -7789,11 +10265,10 @@ describe('OpenCode SSE event structure', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const usage = (done.payload as DonePayload).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(136);
+    expect(usage).toEqual({ toolUses: 0 });
   });
 
-  it('marks a present-invalid optional event cache counter unavailable', async () => {
+  it('does not infer validity from generic idle token aliases', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -7814,12 +10289,10 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
-      'unavailable',
-    );
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
   });
 
-  it('preserves provider tool uses when event token accounting is unavailable', async () => {
+  it('ignores generic idle tool-use aliases', async () => {
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -7836,12 +10309,7 @@ describe('OpenCode SSE event structure', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage).toMatchObject({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
-      toolUses: 5,
-    });
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
   });
 });
 
@@ -7867,10 +10335,7 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
 
   interface DoneLike {
     payload: {
-      usage: {
-        tokenAvailability: 'reported' | 'unavailable';
-        toolUses: number;
-      };
+      usage: { toolUses: number };
     };
   }
 
@@ -7965,7 +10430,6 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
     expect(toolResult.payload.durationMs).toBe(150);
 
     const done = events[3] as AgentEvent & DoneLike;
-    expect(done.payload.usage.tokenAvailability).toBe('unavailable');
     expect(done.payload.usage.toolUses).toBe(1);
   });
 
@@ -8104,18 +10568,18 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
       ),
     ]);
 
-    const toolUses = events.filter(
-      (e) => e.type === 'tool_use',
-    ) as Array<AgentEvent & ToolUseLike>;
+    const toolUses = events.filter((e) => e.type === 'tool_use') as Array<
+      AgentEvent & ToolUseLike
+    >;
     expect(toolUses.map((e) => e.payload.toolUseId)).toEqual([
       'call-x',
       'call-y',
     ]);
     expect(toolUses[1]!.payload.toolName).toBe('webfetch');
 
-    const toolResults = events.filter(
-      (e) => e.type === 'tool_result',
-    ) as Array<AgentEvent & ToolResultLike>;
+    const toolResults = events.filter((e) => e.type === 'tool_result') as Array<
+      AgentEvent & ToolResultLike
+    >;
     expect(
       toolResults.map((e) => [e.payload.toolUseId, e.payload.status]),
     ).toEqual([
@@ -8317,9 +10781,9 @@ describe('OpenCode tool lifecycle (TADAPT-031)', () => {
     };
     const events = await runLifecycle([legacyPart, legacyPart]);
 
-    const toolUses = events.filter(
-      (e) => e.type === 'tool_use',
-    ) as Array<AgentEvent & ToolUseLike>;
+    const toolUses = events.filter((e) => e.type === 'tool_use') as Array<
+      AgentEvent & ToolUseLike
+    >;
     expect(toolUses).toHaveLength(1);
     expect(toolUses[0]!.payload.toolUseId).toBe('legacy-1');
     expect(toolUses[0]!.payload.input).toEqual({ command: 'ls' });

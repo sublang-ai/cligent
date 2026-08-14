@@ -35,20 +35,22 @@ The adapter shall support two modes, selectable via constructor options: managed
 
 The adapter shall normalize SSE events to `AgentEvent` types:
 
-| SSE Event | AgentEvent |
-| --- | --- |
-| assistant `message.part.updated` (text, no delta) | `text` |
-| assistant `message.part.updated` (text, canonical sibling or legacy part delta) | `text_delta` |
-| assistant text `message.part.delta` / `session.next.text.delta` | `text_delta` |
-| reasoning `message.part.delta` / `session.next.reasoning.delta` | suppressed in favor of `thinking` snapshots |
-| `message.part.updated` (tool part, per [OPENCODE-016](#opencode-016)) | `tool_use` / `tool_result` |
-| assistant `message.part.updated` (thinking) | `thinking` |
-| `message.part.updated` (file part) | `opencode:file_part` (extension) |
-| `message.part.updated` (image part) | `opencode:image_part` (extension) |
-| `permission.updated` / `permission.asked` | Headless reply behavior in [OPENCODE-020](#opencode-020), including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
-| `permission.replied` (rejected) | `tool_result` (`status: 'denied'`) |
-| `session.idle` | `done` (usage) |
-| Errors | `error` |
+| SSE Event                                                                       | AgentEvent                                                                                                                                                                  |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| assistant `message.part.updated` (text, no delta)                               | `text`                                                                                                                                                                      |
+| assistant `message.part.updated` (text, canonical sibling or legacy part delta) | `text_delta`                                                                                                                                                                |
+| assistant text `message.part.delta` / `session.next.text.delta`                 | `text_delta`                                                                                                                                                                |
+| reasoning `message.part.delta` / `session.next.reasoning.delta`                 | suppressed in favor of `thinking` snapshots                                                                                                                                 |
+| `message.part.updated` (tool part, per [OPENCODE-016](#opencode-016))           | `tool_use` / `tool_result`                                                                                                                                                  |
+| assistant `message.part.updated` (thinking)                                     | `thinking`                                                                                                                                                                  |
+| `message.part.updated` (file part)                                              | `opencode:file_part` (extension)                                                                                                                                            |
+| `message.part.updated` (image part)                                             | `opencode:image_part` (extension)                                                                                                                                           |
+| `permission.updated` / `permission.asked`                                       | Headless reply behavior in [OPENCODE-020](#opencode-020), including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
+| `permission.replied` (rejected)                                                 | `tool_result` (`status: 'denied'`)                                                                                                                                          |
+| `session.idle`                                                                  | `done` (usage)                                                                                                                                                              |
+| Errors                                                                          | `error`                                                                                                                                                                     |
+
+_The following root-stream accounting behavior is superseded by [OPENCODE-021](#opencode-021)._
 
 Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
 Those five counters are already the disjoint partition of [ENG-028](../engine.md#eng-028), so where step accounting is complete the adapter shall publish both breakdown sides from their step-wise sums, mapping `tokens.input` to `input`, `tokens.cache.read` to `cacheRead`, `tokens.cache.write` to `cacheWrite`, `tokens.output` to `output`, and `tokens.reasoning` to `reasoning`.
@@ -353,14 +355,14 @@ The prompt-body surface, rather than session creation, shall be used so the valu
 Provider dispatch shall use the `provider/model` prefix in `AgentOptions.model`.
 When the provider has no documented built-in variant set, the adapter shall leave `variant` unset and defer to the user's `opencode.jsonc`.
 
-| `AgentOptions.effort` | Anthropic | OpenAI | Google | Other |
-| --- | --- | --- | --- | --- |
-| `minimal` | `high` | `minimal` | `low` | unset |
-| `low` | `high` | `low` | `low` | unset |
-| `medium` | `high` | `medium` | `low` | unset |
-| `high` | `high` | `high` | `high` | unset |
-| `xhigh` | `max` | `xhigh` | `high` | unset |
-| `max` | `max` | `xhigh` | `high` | unset |
+| `AgentOptions.effort` | Anthropic | OpenAI    | Google | Other |
+| --------------------- | --------- | --------- | ------ | ----- |
+| `minimal`             | `high`    | `minimal` | `low`  | unset |
+| `low`                 | `high`    | `low`     | `low`  | unset |
+| `medium`              | `high`    | `medium`  | `low`  | unset |
+| `high`                | `high`    | `high`    | `high` | unset |
+| `xhigh`               | `max`     | `xhigh`   | `high` | unset |
+| `max`                 | `max`     | `xhigh`   | `high` | unset |
 
 Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [ENG-020](../engine.md#eng-020).
 
@@ -391,12 +393,45 @@ names, so this surface cannot guarantee
 When both options are omitted, the adapter shall send no prompt `tools` data
 and preserve OpenCode's native available-tool surface.
 
+## Token Accounting
+
+### OPENCODE-021
+
+The adapter shall assign the submitted prompt a canonical message identifier and shall construct the current invocation's causal task tree from assistant `parentID` links and task-part child-session metadata.
+It shall collect canonical step-finish accounting for the root and those causal descendants before applying [OPENCODE-006](#opencode-006)'s root-only conversation filter; foreign, merely pre-existing, and unscoped session activity shall not enter the ledger.
+Each step shall be keyed by native session and part identifier, an identical repeat shall count once, and a changed snapshot shall replace the earlier value rather than add to it.
+Removing a completed part shall not erase its billed request from the invocation ledger.
+
+For a fresh root session, the adapter shall set and verify a static, non-sensitive, non-default title so OpenCode skips its otherwise unobservable title-model request.
+For a resumed root, it shall preserve a meaningful title and shall retitle and verify only a default title; inability to prove that title inference is suppressed shall make exact observed accounting partial [[9]].
+Before prompt dispatch, the compatibility wrapper shall query the live server's canonical global-health endpoint and shall permit complete accounting only when it reports healthy at the exact `1.18.13` conformance version.
+A missing route, failed or timed-out query, malformed response, unhealthy server, or different version shall not block the run, but shall make exact observed accounting partial because the hidden-request boundaries were verified only for that server version [[13]].
+Canonical automatic compaction, its summary, and a synthetic continuation carrying `metadata.compaction_continue: true` may extend the causal ledger only from their immediate causal message boundary.
+Repeated internal-prompt snapshots shall preserve their first canonical kind, message, and child identity and every observed overflow or error signal; conflicting identity evidence shall retain only the original exact subset and shall make coverage partial.
+An overflow replay, an unmarked or unlinked internal prompt, a post-activation assistant step with an unproved parent, and a causal prompt without a linked assistant shall remain excluded and shall make exact observed accounting partial [[10]].
+The exact command-task continuation may extend causality from its immediately preceding causal task part even though that programmatic assistant has no model step.
+A task that names an existing `task_id` shall make coverage partial and its child records shall remain excluded because the reused session's subsequent user messages carry no native link back to that task invocation.
+A repeated task-part snapshot shall preserve its first canonical parent identity and may enrich a missing child identity once; a conflicting non-empty parent or child identity shall retain only the original exact subset and shall make coverage partial.
+A synthetic background-result prompt may extend causality only once for the matching causal background child; a missing child identity, unmatched or error result, or child idle preceding its latest causal observation shall make coverage partial [[11]].
+A retry status whose immediately preceding assistant is causal, or whose request cannot be correlated, shall make coverage partial because OpenCode exposes no accounting for the failed model attempt; a retry tied to an explicit foreign assistant shall remain excluded [[12]].
+
+Each valid step shall yield one `requests: 1` record carrying inclusive input and output totals, uncached, cache-read, cache-write, visible-output, and reasoning details, the owning message's provider and model where known, and the step's non-negative cost as `agent-estimate` where present.
+The report shall have complete coverage only when every causal step is canonical and valid and no causal descendant remains active at root completion; otherwise exact observed steps may be reported with partial coverage, while malformed or ambiguous accounting shall never be promoted to complete.
+OpenCode's generic idle event supplies no authoritative usage object, so the adapter shall not substitute alias-shaped idle counters for the step ledger.
+The whole-run cost shall be present only when coverage is complete and every causal step reports a valid cost, including measured zero, and shall be labeled `agent-estimate` rather than billed cost [[8]].
+
 ## References
 
-[1]: https://opencode.ai/docs/models/ "OpenCode model configuration"
-[2]: https://opencode.ai/docs/server/ "OpenCode server"
-[3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 "OpenCode 1.18.13 step-finish token split"
-[4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 "OpenCode 1.18.13 token roll-up"
-[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
-[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluation"
-[7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
+[1]: https://opencode.ai/docs/models/ 'OpenCode model configuration'
+[2]: https://opencode.ai/docs/server/ 'OpenCode server'
+[3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 'OpenCode 1.18.13 step-finish token split'
+[4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 'OpenCode 1.18.13 token roll-up'
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt-tool permission replacement'
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission evaluation'
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'
+[8]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/session.ts#L338-L406 'OpenCode 1.18.13 usage cost calculation'
+[9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L276 'OpenCode 1.18.13 title inference'
+[10]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/compaction.ts#L356-L535 'OpenCode 1.18.13 compaction and continuation flow'
+[11]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/tool/task.ts#L64-L243 'OpenCode 1.18.13 foreground and background task continuations'
+[12]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/processor.ts#L630-L680 'OpenCode 1.18.13 retry accounting boundary'
+[13]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/sdk/js/src/v2/gen/types.gen.ts#L7226-L7252 'OpenCode 1.18.13 global-health version response'

@@ -23,17 +23,16 @@ import {
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
 import {
-  buildTokenBreakdown,
-  buildUsageRecords,
+  buildTokenUsage,
+  buildTokenUsageReport,
+  buildUsageCost,
   isUsageRecord,
   readUsageCounter,
+  sumTokenUsage,
 } from './usage.js';
 
 type ClaudePermissionMode =
-  | 'auto'
-  | 'bypassPermissions'
-  | 'acceptEdits'
-  | 'default';
+  'auto' | 'bypassPermissions' | 'acceptEdits' | 'default';
 
 type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -183,9 +182,6 @@ interface ClaudeAdapterDeps {
 const AGENT = 'claude-code' as const;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
-  tokenAvailability: 'unavailable',
-  inputTokens: 0,
-  outputTokens: 0,
   toolUses: 0,
 };
 
@@ -194,7 +190,9 @@ function asString(value: unknown): string | undefined {
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -219,7 +217,9 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function normalizePermissionLevel(value: PermissionLevel | undefined): PermissionLevel {
+function normalizePermissionLevel(
+  value: PermissionLevel | undefined,
+): PermissionLevel {
   return value ?? 'ask';
 }
 
@@ -233,7 +233,9 @@ function normalizePermissionPolicy(
   };
 }
 
-function identifyCapability(toolName: string | undefined): PermissionCapability | undefined {
+function identifyCapability(
+  toolName: string | undefined,
+): PermissionCapability | undefined {
   if (!toolName) return undefined;
   const identifier = toolName.trim().match(/^[A-Za-z][A-Za-z0-9_]*/)?.[0];
   if (!identifier) return undefined;
@@ -283,7 +285,9 @@ export function mapPermissionsToClaudeOptions(
   }
 
   const normalized = normalizePermissionPolicy(policy);
-  const allAllow = Object.values(normalized).every((level) => level === 'allow');
+  const allAllow = Object.values(normalized).every(
+    (level) => level === 'allow',
+  );
 
   if (allAllow) {
     return {
@@ -413,7 +417,11 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   if (status === 'success' || status === 'completed' || status === 'ok') {
     return 'success';
   }
-  if (status === 'interrupted' || status === 'cancelled' || status === 'aborted') {
+  if (
+    status === 'interrupted' ||
+    status === 'cancelled' ||
+    status === 'aborted'
+  ) {
     return 'interrupted';
   }
   if (status === 'max_turns' || status === 'maxturns') {
@@ -435,7 +443,10 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
 
 const MODEL_USAGE_ALIASES = [
   ['input_tokens', ['inputTokens', 'input_tokens']],
-  ['cache_read_input_tokens', ['cacheReadInputTokens', 'cache_read_input_tokens']],
+  [
+    'cache_read_input_tokens',
+    ['cacheReadInputTokens', 'cache_read_input_tokens'],
+  ],
   [
     'cache_creation_input_tokens',
     ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
@@ -448,18 +459,22 @@ const MODEL_USAGE_ALIASES = [
  * `result.modelUsage` counts every request the run made, including subagents.
  * Fold the per-model entries into one usage-shaped record so the aggregates
  * describe the whole run. Returns undefined when the map is absent or any
- * entry is malformed, leaving the caller on the narrower `usage` surface
- * rather than differencing against a partial total.
+ * entry is malformed, omitting token reporting rather than publishing a
+ * misleading partial model table.
  */
 function foldModelUsage(
   rawModelUsage: unknown,
-): { totals: Record<string, number>; records: UsageRecord[] } | undefined {
+):
+  | {
+      totals: NonNullable<DonePayload['usage']['tokens']>['totals'];
+      records: UsageRecord[];
+    }
+  | undefined {
   if (!isUsageRecord(rawModelUsage)) return undefined;
 
   const entries = Object.entries(rawModelUsage);
   if (entries.length === 0) return undefined;
 
-  const totals: Record<string, number> = {};
   const records: UsageRecord[] = [];
   for (const [model, entry] of entries) {
     if (!isUsageRecord(entry)) return undefined;
@@ -468,34 +483,71 @@ function foldModelUsage(
       const reading = readUsageCounter(entry, aliases, true);
       if (!reading.valid) return undefined;
       perModel[field] = reading.value;
-      totals[field] = (totals[field] ?? 0) + reading.value;
     }
-    const costUsd = asNumber(entry.costUSD) ?? asNumber(entry.costUsd);
+
+    const inputTotal =
+      (perModel.input_tokens ?? 0) +
+      (perModel.cache_read_input_tokens ?? 0) +
+      (perModel.cache_creation_input_tokens ?? 0);
+    const tokens = buildTokenUsage(
+      {
+        total: inputTotal,
+        uncached: perModel.input_tokens ?? 0,
+        cacheRead: perModel.cache_read_input_tokens ?? 0,
+        cacheWrite: perModel.cache_creation_input_tokens ?? 0,
+      },
+      { total: perModel.output_tokens ?? 0 },
+    );
+    if (!tokens) return undefined;
+
+    const cost = buildUsageCost(
+      asNumber(entry.costUSD) ?? asNumber(entry.costUsd),
+      'agent-estimate',
+    );
+    const webSearchRequests = readUsageCounter(
+      entry,
+      ['webSearchRequests', 'web_search_requests'],
+      false,
+    );
     records.push({
       // `canonicalModel` is the id Claude Code prices against; the map key can
       // be an alias or carry a context-window suffix.
       model: asString(entry.canonicalModel) ?? model,
-      ...(asString(entry.provider) ? { provider: asString(entry.provider)! } : {}),
-      tokens: {
-        input: perModel.input_tokens ?? 0,
-        cacheRead: perModel.cache_read_input_tokens ?? 0,
-        cacheWrite: perModel.cache_creation_input_tokens ?? 0,
-      },
-      ...(costUsd !== undefined ? { costUsd } : {}),
+      ...(asString(entry.provider)
+        ? { provider: asString(entry.provider)! }
+        : {}),
+      tokens,
+      ...(cost ? { cost } : {}),
+      ...(webSearchRequests.valid && webSearchRequests.present
+        ? {
+            pricedUnits: [
+              {
+                name: 'web_search_request',
+                quantity: webSearchRequests.value,
+              },
+            ],
+          }
+        : {}),
     });
   }
 
-  return { totals, records };
+  const totals = sumTokenUsage(records);
+  return totals ? { totals, records } : undefined;
 }
 
-function mapUsage(
+function readToolUses(rawUsage: unknown, observedToolUses: number): number {
+  if (!isUsageRecord(rawUsage)) return observedToolUses;
+
+  const reported = readUsageCounter(rawUsage, ['toolUses', 'tool_uses'], false);
+  return Math.max(reported.valid ? reported.value : 0, observedToolUses);
+}
+
+/** CLAUDE-010 uses only the main-loop counters to identify a repair no-op. */
+function isZeroMainLoopUsage(
   rawUsage: unknown,
   observedToolUses: number,
-  reportedCostUsd?: number,
-): DonePayload['usage'] {
-  if (!isUsageRecord(rawUsage)) {
-    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
-  }
+): boolean {
+  if (!isUsageRecord(rawUsage)) return false;
 
   const baseInput = readUsageCounter(
     rawUsage,
@@ -517,56 +569,19 @@ function mapUsage(
     ['outputTokens', 'output_tokens'],
     true,
   );
-  const reportedToolUses = readUsageCounter(
-    rawUsage,
-    ['toolUses', 'tool_uses'],
-    false,
-  );
-  const toolUses = Math.max(
-    reportedToolUses.valid ? reportedToolUses.value : 0,
-    observedToolUses,
-  );
-
-  // Claude Code carries cost on the result message, beside `usage`, so the
-  // caller supplies it; the in-usage aliases remain a tolerated fallback.
-  const totalCostUsd =
-    reportedCostUsd ??
-    asNumber(rawUsage.totalCostUsd) ??
-    asNumber(rawUsage.total_cost_usd);
-
-  const reported =
+  const valid =
     baseInput.valid &&
     cacheRead.valid &&
     cacheCreation.valid &&
     outputTokens.valid;
-  const inputTokens =
-    baseInput.value + cacheRead.value + cacheCreation.value;
-
-  // CLAUDE-003: Anthropic's base input counter is already cache-exclusive, so
-  // the three input counters are the partition. The output side is withheld:
-  // thinking tokens are billed inside output_tokens and the runtime does not
-  // expose them, so no visible-output component can be stated (ENG-028).
-  const breakdown = reported
-    ? buildTokenBreakdown(
-        { inputTokens, outputTokens: outputTokens.value },
-        {
-          input: baseInput.value,
-          ...(cacheRead.present ? { cacheRead: cacheRead.value } : {}),
-          ...(cacheCreation.present
-            ? { cacheWrite: cacheCreation.value }
-            : {}),
-        },
-      )
-    : undefined;
-
-  return {
-    tokenAvailability: reported ? 'reported' : 'unavailable',
-    inputTokens,
-    outputTokens: outputTokens.value,
-    toolUses,
-    ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
-    ...(breakdown ? { breakdown } : {}),
-  };
+  const inputTokens = baseInput.value + cacheRead.value + cacheCreation.value;
+  return (
+    valid &&
+    Number.isSafeInteger(inputTokens) &&
+    inputTokens === 0 &&
+    outputTokens.value === 0 &&
+    readToolUses(rawUsage, observedToolUses) === 0
+  );
 }
 
 function toErrorPayload(message: ClaudeErrorMessage): {
@@ -654,8 +669,12 @@ function parseAssistantContent(content: unknown): AssistantContentEvent[] {
 
     const toolUse = block as ClaudeToolUseBlock;
     if (toolUse.type === 'tool_use') {
-      const toolName = asString(toolUse.name) ?? asString(toolUse.toolName) ?? 'unknown_tool';
-      const toolUseId = asString(toolUse.id) ?? asString(toolUse.toolUseId) ?? generateSessionId();
+      const toolName =
+        asString(toolUse.name) ?? asString(toolUse.toolName) ?? 'unknown_tool';
+      const toolUseId =
+        asString(toolUse.id) ??
+        asString(toolUse.toolUseId) ??
+        generateSessionId();
       events.push({
         type: 'tool_use',
         toolUseId,
@@ -685,12 +704,9 @@ function parseAssistantContent(content: unknown): AssistantContentEvent[] {
           asString(toolResult.toolName) ??
           'unknown_tool',
         status:
-          statusText === 'denied'
-            ? 'denied'
-            : isError
-              ? 'error'
-              : 'success',
-        output: toolResult.output ?? toolResult.result ?? toolResult.content ?? null,
+          statusText === 'denied' ? 'denied' : isError ? 'error' : 'success',
+        output:
+          toolResult.output ?? toolResult.result ?? toolResult.content ?? null,
         durationMs:
           typeof toolResult.durationMs === 'number'
             ? toolResult.durationMs
@@ -788,7 +804,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
       onAbort();
     } else {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
-      cleanupAbort = () => options.abortSignal?.removeEventListener('abort', onAbort);
+      cleanupAbort = () =>
+        options.abortSignal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -815,7 +832,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
       settingSources: toolFreeIsolation ? [] : undefined,
       strictMcpConfig: explicitAllowlist ? true : undefined,
       permissionMode: permissionOptions.permissionMode,
-      allowDangerouslySkipPermissions: permissionOptions.allowDangerouslySkipPermissions,
+      allowDangerouslySkipPermissions:
+        permissionOptions.allowDangerouslySkipPermissions,
       canUseTool: permissionOptions.canUseTool,
       abortController,
       env,
@@ -863,7 +881,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
     const inboundResume = options?.resume || undefined;
     let sessionId = inboundResume ?? generateSessionId();
     let resumableSessionIdKnown = false;
-    const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions(options);
+    const { queryOptions, cleanupAbort } =
+      mapAgentOptionsToClaudeQueryOptions(options);
     if (!inboundResume) {
       // The SDK forwards this typed option to `claude --session-id`. It gives
       // fresh runs a stable id once Claude persists the conversation, but an
@@ -892,7 +911,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
         prompt,
         options: queryOptions,
       })) {
-        const messageType = isObjectWithType(message) ? message.type : undefined;
+        const messageType = isObjectWithType(message)
+          ? message.type
+          : undefined;
         const loadedId = loadSessionId(message);
         if (loadedId) {
           sessionId = loadedId;
@@ -936,7 +957,12 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const textFromField = asString(assistant.text);
           if (textFromField) {
             submittedTurnActivity = true;
-            yield createEvent('text', AGENT, { content: textFromField }, sessionId);
+            yield createEvent(
+              'text',
+              AGENT,
+              { content: textFromField },
+              sessionId,
+            );
           }
 
           const delta = asString(assistant.delta);
@@ -1010,8 +1036,13 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           continue;
         }
 
-        if (messageType === 'stream' || messageType === 'stream_event' || messageType === 'delta') {
-          const delta = asString((message as { delta?: unknown; text?: unknown }).delta) ??
+        if (
+          messageType === 'stream' ||
+          messageType === 'stream_event' ||
+          messageType === 'delta'
+        ) {
+          const delta =
+            asString((message as { delta?: unknown; text?: unknown }).delta) ??
             asString((message as { delta?: unknown; text?: unknown }).text);
 
           if (delta) {
@@ -1025,32 +1056,28 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const result = message as ClaudeResultMessage;
           const { status, errorText } = classifyResultMessage(result);
           const resultText = asString(result.result);
-          // Prefer the whole-run accounting; fall back to the main-loop
-          // counters only where the runtime does not supply it.
-          const reportedCostUsd =
-            asNumber(result.total_cost_usd) ?? asNumber(result.totalCostUsd);
-          const folded = foldModelUsage(result.modelUsage);
-          const usage = mapUsage(
-            folded?.totals ?? result.usage,
-            observedToolUseIds.size,
-            reportedCostUsd,
+          // Only modelUsage covers every request caused by the invocation,
+          // including subagents and internal inference. Main-loop `usage`
+          // remains useful for the CLAUDE-010 no-op signature below, but must
+          // never be presented as whole-run accounting.
+          const cost = buildUsageCost(
+            asNumber(result.total_cost_usd) ?? asNumber(result.totalCostUsd),
+            'agent-estimate',
           );
-          // ENG-030: the per-model entries are this run's billable groups.
-          // Claude Code reports no per-model output split, so each record
-          // carries the input side only, matching the withheld output side.
-          const records = folded
-            ? buildUsageRecords(usage.breakdown, folded.records)
+          const folded = foldModelUsage(result.modelUsage);
+          const tokens = folded
+            ? buildTokenUsageReport('complete', folded.totals, folded.records)
             : undefined;
-          if (records) {
-            usage.records = records;
-          }
+          const usage: DonePayload['usage'] = {
+            toolUses: observedToolUseIds.size,
+            ...(tokens ? { tokens } : {}),
+            ...(cost ? { cost } : {}),
+          };
           // CLAUDE-010's no-op signature is a property of the main-loop
           // result message, not of the run's total accounting: the repair
           // turn reports zero main-loop tokens while the run as a whole may
           // already have spent some. Detect it on the narrow counters so the
           // whole-run aggregates above cannot suppress the skip.
-          const mainLoopUsage = mapUsage(result.usage, observedToolUseIds.size);
-
           // Resuming a session whose previous turn ended with a dangling tool
           // call makes Claude Code first run an internal continuation-repair
           // no-op turn and emit a result message for it — success-classified,
@@ -1072,10 +1099,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             status === 'success' &&
             errorText === undefined &&
             resultText === undefined &&
-            mainLoopUsage.tokenAvailability === 'reported' &&
-            mainLoopUsage.inputTokens === 0 &&
-            mainLoopUsage.outputTokens === 0 &&
-            mainLoopUsage.toolUses === 0;
+            isZeroMainLoopUsage(result.usage, observedToolUseIds.size);
           if (isInternalNoOpResult) {
             continue;
           }
@@ -1123,7 +1147,12 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
 
         if (messageType === 'error') {
           const errorMessage = message as ClaudeErrorMessage;
-          yield createEvent('error', AGENT, toErrorPayload(errorMessage), sessionId);
+          yield createEvent(
+            'error',
+            AGENT,
+            toErrorPayload(errorMessage),
+            sessionId,
+          );
         }
       }
 
@@ -1201,7 +1230,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
       }
 
       const errorText =
-        error instanceof Error ? error.message : 'Claude Code adapter failed during stream';
+        error instanceof Error
+          ? error.message
+          : 'Claude Code adapter failed during stream';
       yield createEvent(
         'error',
         AGENT,

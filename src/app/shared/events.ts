@@ -1,26 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { CligentEvent } from '../../types.js';
+import type { CligentEvent, TokenUsage } from '../../types.js';
 
-const BREAKDOWN_LABELS: ReadonlyArray<readonly [string, string]> = [
-  ['input', 'fresh'],
-  ['cacheRead', 'cache-read'],
-  ['cacheWrite', 'cache-write'],
-  ['output', 'visible'],
-  ['reasoning', 'reasoning'],
-];
-
-/** Render only the components the producer actually measured (ENG-028). */
-function formatBreakdown(
-  breakdown: Record<string, number | undefined> | undefined,
-): string {
-  if (!breakdown) return '';
-
-  const parts = BREAKDOWN_LABELS.flatMap(([key, label]) => {
-    const value = breakdown[key];
-    return typeof value === 'number' ? [`${label} ${value}`] : [];
-  });
+/** Render only the exact subsets the producer reported (ENG-031). */
+function formatTokenDetails(tokens: TokenUsage): string {
+  const parts = [
+    ['fresh', tokens.input.uncached],
+    ['cache-read', tokens.input.cacheRead],
+    ['cache-write', tokens.input.cacheWrite],
+    ['visible', tokens.output.visible],
+    ['reasoning', tokens.output.reasoning],
+  ].flatMap(([label, value]) =>
+    typeof value === 'number' ? [`${label} ${value}`] : [],
+  );
 
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
@@ -47,19 +40,19 @@ export function formatCligentEvent(event: CligentEvent): string | null {
       const p = event.payload as {
         status: string;
         usage: {
-          tokenAvailability?: 'reported' | 'unavailable';
-          inputTokens: number;
-          outputTokens: number;
-          breakdown?: Record<string, number | undefined>;
+          tokens?: {
+            coverage: 'complete' | 'partial';
+            totals: TokenUsage;
+          };
         };
       };
-      // Persisted events created before ENG-027 have no discriminator. Treat
-      // that legacy ambiguity as unavailable rather than reviving false zero.
-      if (p.usage.tokenAvailability !== 'reported') {
+      if (!p.usage.tokens) {
         return `\n[${p.status} | tokens: unavailable]\n`;
       }
-      const detail = formatBreakdown(p.usage.breakdown);
-      return `\n[${p.status} | in: ${p.usage.inputTokens} out: ${p.usage.outputTokens}${detail}]\n`;
+      const { coverage, totals } = p.usage.tokens;
+      const detail = formatTokenDetails(totals);
+      const scope = coverage === 'partial' ? ' | coverage: partial' : '';
+      return `\n[${p.status} | in: ${totals.input.total} out: ${totals.output.total}${detail}${scope}]\n`;
     }
     default:
       return null;

@@ -11,6 +11,15 @@ decomposition added to [DR-014](../decisions/014-unified-token-usage-breakdown.m
 model and per request, so a component partition alone still cannot be priced, and on Claude Code the totals
 did not even cover the whole run.
 
+## Status
+
+Complete
+
+This record preserves the first billable-record implementation.
+The current [DR-014](../decisions/014-unified-token-usage-breakdown.md) nests those records under authentic
+inclusive totals, adds coverage and cost provenance, and removes the unreleased aggregate/decomposition
+identity it originally targeted.
+
 ## Deliverables
 
 - [x] Claude Code reports one `init` per run instead of one per `system` notice.

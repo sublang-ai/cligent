@@ -116,7 +116,12 @@ describe('ClaudeCodeAdapter', () => {
           content: [
             { type: 'text', text: 'hello' },
             { type: 'thinking', summary: 'Planning file edits' },
-            { type: 'tool_use', id: 'tool-1', name: 'Bash', input: { command: 'ls' } },
+            {
+              type: 'tool_use',
+              id: 'tool-1',
+              name: 'Bash',
+              input: { command: 'ls' },
+            },
             {
               type: 'tool_result',
               tool_use_id: 'tool-1',
@@ -177,7 +182,11 @@ describe('ClaudeCodeAdapter', () => {
     expect(thinking.payload.summary).toBe('Planning file edits');
 
     const toolUse = events[3] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse.payload.toolName).toBe('Bash');
     expect(toolUse.payload.toolUseId).toBe('tool-1');
@@ -212,26 +221,19 @@ describe('ClaudeCodeAdapter', () => {
       payload: {
         status: string;
         result: string;
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          toolUses: number;
-          totalCostUsd: number;
-        };
+        usage: DonePayload['usage'];
         durationMs: number;
       };
     };
     expect(done.payload.status).toBe('max_turns');
     expect(done.payload.result).toBe('done text');
     expect(done.payload.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 10,
-      outputTokens: 20,
       toolUses: 1,
-      totalCostUsd: 0.25,
-      // No cache counters in this fixture, so the input side is the base
-      // counter alone and the output side stays withheld.
-      breakdown: { input: 10 },
+      cost: {
+        amount: 0.25,
+        currency: 'USD',
+        source: 'agent-estimate',
+      },
     });
     expect(done.payload.durationMs).toBe(321);
   });
@@ -250,7 +252,12 @@ describe('ClaudeCodeAdapter', () => {
         {
           type: 'assistant',
           content: [
-            { type: 'tool_use', id: 'tool-9', name: 'Bash', input: { command: 'pwd' } },
+            {
+              type: 'tool_use',
+              id: 'tool-9',
+              name: 'Bash',
+              input: { command: 'pwd' },
+            },
             { type: 'thinking', summary: 'Checking working directory' },
             {
               type: 'tool_result',
@@ -407,7 +414,11 @@ describe('ClaudeCodeAdapter', () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader(
         [
-          { type: 'result', status: 'success', usage: { input_tokens: 0, output_tokens: 0 } },
+          {
+            type: 'result',
+            status: 'success',
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
         ],
         (options) => {
           captured = options;
@@ -513,7 +524,11 @@ describe('ClaudeCodeAdapter', () => {
         query(opts: MockSdkOptions): AsyncIterable<unknown> {
           innerAbortController = opts.options?.abortController;
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               yield {
                 type: 'system',
                 subtype: 'init',
@@ -572,7 +587,11 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: async () => ({
         query(opts: MockSdkOptions): AsyncIterable<unknown> {
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               yield {
                 type: 'system',
                 subtype: 'init',
@@ -587,9 +606,13 @@ describe('ClaudeCodeAdapter', () => {
                   resolve();
                   return;
                 }
-                opts.options?.abortController?.signal.addEventListener('abort', () => resolve(), {
-                  once: true,
-                });
+                opts.options?.abortController?.signal.addEventListener(
+                  'abort',
+                  () => resolve(),
+                  {
+                    once: true,
+                  },
+                );
               });
             },
           };
@@ -617,7 +640,11 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: async () => ({
         query(opts: MockSdkOptions): AsyncIterable<unknown> {
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               yield {
                 type: 'system',
                 subtype: 'init',
@@ -632,9 +659,13 @@ describe('ClaudeCodeAdapter', () => {
                   resolve();
                   return;
                 }
-                opts.options?.abortController?.signal.addEventListener('abort', () => resolve(), {
-                  once: true,
-                });
+                opts.options?.abortController?.signal.addEventListener(
+                  'abort',
+                  () => resolve(),
+                  {
+                    once: true,
+                  },
+                );
               });
 
               throw new Error('AbortError');
@@ -673,7 +704,11 @@ describe('ClaudeCodeAdapter', () => {
           query(opts: MockSdkOptions): AsyncIterable<unknown> {
             sdkSessionId = opts.options?.sessionId;
             return {
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+              async *[Symbol.asyncIterator](): AsyncGenerator<
+                unknown,
+                void,
+                void
+              > {
                 yield {
                   type: 'system',
                   subtype: 'init',
@@ -743,7 +778,9 @@ describe('ClaudeCodeAdapter', () => {
       resumeToken: 'session-abort-resume',
       sdkSessionId: undefined,
     });
-    const activeFresh = await interruptedResumeToken({ assistantActivity: true });
+    const activeFresh = await interruptedResumeToken({
+      assistantActivity: true,
+    });
     expect(activeFresh.sdkSessionId).toBeDefined();
     expect(activeFresh.resumeToken).toBe(activeFresh.sdkSessionId);
     const initOnlyFresh = await interruptedResumeToken({});
@@ -764,7 +801,11 @@ describe('ClaudeCodeAdapter', () => {
           sdkSessionId = opts.options?.sessionId;
           resolveQueryStarted?.();
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               await new Promise<void>((resolve) => {
                 if (opts.options?.abortController?.signal.aborted) {
                   resolve();
@@ -893,25 +934,22 @@ describe('ClaudeCodeAdapter', () => {
       ]),
     });
 
-    const events = await collect(adapter.run('prompt', { resume: 'session-resume' }));
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    const events = await collect(
+      adapter.run('prompt', { resume: 'session-resume' }),
+    );
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
 
     const done = events[2] as AgentEvent & {
       payload: {
         status: string;
         result?: string;
-        usage: { inputTokens: number; outputTokens: number };
+        usage: DonePayload['usage'];
         durationMs: number;
       };
     };
     expect(done.payload.status).toBe('success');
     expect(done.payload.result).toBe('real answer');
-    expect(done.payload.usage.inputTokens).toBe(12);
-    expect(done.payload.usage.outputTokens).toBe(7);
+    expect(done.payload.usage.tokens).toBeUndefined();
     expect(done.payload.durationMs).toBe(456);
   });
 
@@ -939,7 +977,9 @@ describe('ClaudeCodeAdapter', () => {
       ]),
     });
 
-    const events = await collect(adapter.run('prompt', { resume: 'session-resume' }));
+    const events = await collect(
+      adapter.run('prompt', { resume: 'session-resume' }),
+    );
     expect(events.map((event) => event.type)).toEqual([
       'init',
       'error',
@@ -1022,17 +1062,13 @@ describe('ClaudeCodeAdapter', () => {
       payload: {
         status: string;
         result?: string;
-        usage: { inputTokens: number; outputTokens: number };
+        usage: DonePayload['usage'];
         durationMs: number;
       };
     };
     expect(done.payload.status).toBe('success');
     expect(done.payload.result).toBeUndefined();
-    expect(
-      (done.payload.usage as { tokenAvailability: string }).tokenAvailability,
-    ).toBe('reported');
-    expect(done.payload.usage.inputTokens).toBe(0);
-    expect(done.payload.usage.outputTokens).toBe(0);
+    expect(done.payload.usage).toEqual({ toolUses: 0 });
     expect(done.payload.durationMs).toBe(5);
     // Terminal means terminal: the adapter stopped at the first result and
     // never pulled the poison tail.
@@ -1042,7 +1078,13 @@ describe('ClaudeCodeAdapter', () => {
   it('marks absent token accounting unavailable while preserving observed tools', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: ['Bash'] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: ['Bash'],
+        },
         {
           type: 'assistant',
           content: [
@@ -1066,11 +1108,32 @@ describe('ClaudeCodeAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
     expect((done.payload as DonePayload).usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 1,
     });
+  });
+
+  it('keeps the narrow main-loop tool counter internal', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'done',
+          usage: { input_tokens: 1, output_tokens: 1, tool_uses: 4 },
+        },
+      ]),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
   });
 
   it('treats a zero-usage empty result after real turn activity as terminal on a resumed run', async () => {
@@ -1131,13 +1194,12 @@ describe('ClaudeCodeAdapter', () => {
       payload: {
         status: string;
         result?: string;
-        usage: { inputTokens: number; outputTokens: number };
+        usage: DonePayload['usage'];
       };
     };
     expect(done.payload.status).toBe('success');
     expect(done.payload.result).toBeUndefined();
-    expect(done.payload.usage.inputTokens).toBe(0);
-    expect(done.payload.usage.outputTokens).toBe(0);
+    expect(done.payload.usage.tokens).toBeUndefined();
   });
 
   it('maps SDK error_during_execution result to error done with API error text', async () => {
@@ -1224,11 +1286,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     // No 'error' event — max_turns is a protocol terminal state, not a failure.
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
 
     const done = events[2] as AgentEvent & {
       payload: { status: string; result?: string };
@@ -1242,7 +1300,11 @@ describe('ClaudeCodeAdapter', () => {
       loadSdk: async () => ({
         query(): AsyncIterable<unknown> {
           return {
-            async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+            async *[Symbol.asyncIterator](): AsyncGenerator<
+              unknown,
+              void,
+              void
+            > {
               yield {
                 type: 'system',
                 subtype: 'init',
@@ -1259,7 +1321,11 @@ describe('ClaudeCodeAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual(['init', 'error', 'done']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
 
     const error = events[1] as AgentEvent & {
       payload: { code: string; message: string; recoverable: boolean };
@@ -1316,7 +1382,12 @@ describe('ClaudeCodeAdapter', () => {
           message: {
             content: [
               { type: 'text', text: 'nested hello' },
-              { type: 'tool_use', id: 'tool-n1', name: 'Write', input: { path: '/tmp/f' } },
+              {
+                type: 'tool_use',
+                id: 'tool-n1',
+                name: 'Write',
+                input: { path: '/tmp/f' },
+              },
             ],
           },
           sessionId: 'session-nested',
@@ -1332,7 +1403,12 @@ describe('ClaudeCodeAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((e) => e.type)).toEqual(['init', 'text', 'tool_use', 'done']);
+    expect(events.map((e) => e.type)).toEqual([
+      'init',
+      'text',
+      'tool_use',
+      'done',
+    ]);
 
     const text = events[1] as AgentEvent & { payload: { content: string } };
     expect(text.payload.content).toBe('nested hello');
@@ -1396,20 +1472,32 @@ describe('ClaudeCodeAdapter', () => {
     expect(payload.resumeToken).toBe(sdkSessionId);
   });
 
-  it('sums cache tokens into inputTokens (snake_case)', async () => {
+  it('reports whole-run tokens from snake_case model usage', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
           result: 'ok',
           usage: {
-            input_tokens: 5,
-            output_tokens: 20,
-            cache_read_input_tokens: 100,
-            cache_creation_input_tokens: 50,
+            input_tokens: 1,
+            output_tokens: 1,
             tool_uses: 0,
+          },
+          modelUsage: {
+            claude: {
+              input_tokens: 5,
+              output_tokens: 20,
+              cache_read_input_tokens: 100,
+              cache_creation_input_tokens: 50,
+            },
           },
           duration_ms: 50,
         },
@@ -1419,25 +1507,38 @@ describe('ClaudeCodeAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const usage = (done.payload as DonePayload).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(155);
-    // The three Anthropic input counters are disjoint, so they partition the
-    // aggregate exactly. No output side: thinking is billed inside
-    // output_tokens and the runtime does not expose it.
-    expect(usage.breakdown).toEqual({ input: 5, cacheRead: 100, cacheWrite: 50 });
-    expect(usage.breakdown).not.toHaveProperty('output');
-    expect(usage.breakdown).not.toHaveProperty('reasoning');
+    expect(usage.tokens).toMatchObject({
+      coverage: 'complete',
+      totals: {
+        input: {
+          total: 155,
+          uncached: 5,
+          cacheRead: 100,
+          cacheWrite: 50,
+        },
+        output: { total: 20 },
+      },
+    });
   });
 
-  it('omits a cache component the result message did not carry', async () => {
+  it('omits tokens when a model-usage entry is incomplete', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
           result: 'ok',
           usage: { input_tokens: 7, output_tokens: 3 },
+          modelUsage: {
+            claude: { inputTokens: 7, outputTokens: 3 },
+          },
           duration_ms: 50,
         },
       ]),
@@ -1447,15 +1548,19 @@ describe('ClaudeCodeAdapter', () => {
     const usage = (
       events.find((e) => e.type === 'done')!.payload as DonePayload
     ).usage;
-    expect(usage.inputTokens).toBe(7);
-    // Absent counters are omitted rather than published as measured zeroes.
-    expect(usage.breakdown).toEqual({ input: 7 });
+    expect(usage.tokens).toBeUndefined();
   });
 
   it('reports whole-run accounting rather than main-loop counters', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
@@ -1491,17 +1596,31 @@ describe('ClaudeCodeAdapter', () => {
       (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
         .payload as DonePayload
     ).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(1265); // (10+100+50) + (5+900+200)
-    expect(usage.outputTokens).toBe(420); // 20 + 400
-    expect(usage.breakdown).toEqual({ input: 15, cacheRead: 1000, cacheWrite: 250 });
+    expect(usage.tokens).toMatchObject({
+      coverage: 'complete',
+      totals: {
+        input: {
+          total: 1265,
+          uncached: 15,
+          cacheRead: 1000,
+          cacheWrite: 250,
+        },
+        output: { total: 420 },
+      },
+    });
   });
 
   // TADAPT-039
   it('decomposes the run into one billable record per model', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
@@ -1516,6 +1635,7 @@ describe('ClaudeCodeAdapter', () => {
               costUSD: 0.01,
               canonicalModel: 'claude-haiku-4-5',
               provider: 'firstParty',
+              webSearchRequests: 0,
             },
             'claude-sonnet-5': {
               inputTokens: 5,
@@ -1525,6 +1645,7 @@ describe('ClaudeCodeAdapter', () => {
               costUSD: 0.22,
               canonicalModel: 'claude-sonnet-5',
               provider: 'firstParty',
+              webSearchRequests: 3,
             },
           },
           duration_ms: 50,
@@ -1539,36 +1660,67 @@ describe('ClaudeCodeAdapter', () => {
 
     // The rate-card key is the canonical id, not the map key that may carry
     // an alias or a context-window suffix.
-    expect(usage.records).toEqual([
+    expect(usage.tokens?.records).toEqual([
       {
         model: 'claude-haiku-4-5',
         provider: 'firstParty',
-        tokens: { input: 10, cacheRead: 100, cacheWrite: 50 },
-        costUsd: 0.01,
+        tokens: {
+          input: {
+            total: 160,
+            uncached: 10,
+            cacheRead: 100,
+            cacheWrite: 50,
+          },
+          output: { total: 20 },
+        },
+        cost: {
+          amount: 0.01,
+          currency: 'USD',
+          source: 'agent-estimate',
+        },
+        pricedUnits: [{ name: 'web_search_request', quantity: 0 }],
       },
       {
         model: 'claude-sonnet-5',
         provider: 'firstParty',
-        tokens: { input: 5, cacheRead: 900, cacheWrite: 200 },
-        costUsd: 0.22,
+        tokens: {
+          input: {
+            total: 1105,
+            uncached: 5,
+            cacheRead: 900,
+            cacheWrite: 200,
+          },
+          output: { total: 400 },
+        },
+        cost: {
+          amount: 0.22,
+          currency: 'USD',
+          source: 'agent-estimate',
+        },
+        pricedUnits: [{ name: 'web_search_request', quantity: 3 }],
       },
     ]);
-    // ENG-030: records sum to the breakdown, member by member.
-    const summed = usage.records!.reduce(
-      (acc, r) => ({
-        input: acc.input + (r.tokens.input ?? 0),
-        cacheRead: acc.cacheRead + (r.tokens.cacheRead ?? 0),
-        cacheWrite: acc.cacheWrite + (r.tokens.cacheWrite ?? 0),
-      }),
-      { input: 0, cacheRead: 0, cacheWrite: 0 },
-    );
-    expect(summed).toEqual(usage.breakdown);
+    expect(usage.tokens?.totals).toEqual({
+      input: {
+        total: 1265,
+        uncached: 15,
+        cacheRead: 1000,
+        cacheWrite: 250,
+      },
+      output: { total: 420 },
+    });
   });
 
   it('publishes no records when the run reports no per-model map', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
@@ -1583,18 +1735,35 @@ describe('ClaudeCodeAdapter', () => {
       (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
         .payload as DonePayload
     ).usage;
-    expect(usage).not.toHaveProperty('records');
+    expect(usage.tokens).toBeUndefined();
   });
 
-  it('falls back to main-loop counters when no per-model map is supplied', async () => {
+  it('omits malformed optional cost and priced units without losing tokens', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
           result: 'ok',
-          usage: { input_tokens: 7, output_tokens: 3 },
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: -1,
+          modelUsage: {
+            claude: {
+              inputTokens: 4,
+              cacheReadInputTokens: 3,
+              cacheCreationInputTokens: 2,
+              outputTokens: 5,
+              costUSD: -0.5,
+              webSearchRequests: 1.5,
+            },
+          },
           duration_ms: 50,
         },
       ]),
@@ -1604,14 +1773,60 @@ describe('ClaudeCodeAdapter', () => {
       (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
         .payload as DonePayload
     ).usage;
-    expect(usage.inputTokens).toBe(7);
-    expect(usage.outputTokens).toBe(3);
+    expect(usage.cost).toBeUndefined();
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 9, uncached: 4, cacheRead: 3, cacheWrite: 2 },
+      output: { total: 5 },
+    });
+    expect(usage.tokens?.records?.[0]).not.toHaveProperty('cost');
+    expect(usage.tokens?.records?.[0]).not.toHaveProperty('pricedUnits');
+  });
+
+  it('retains whole-run cost but not main-loop tokens without a model map', async () => {
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
+        {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage: { input_tokens: 7, output_tokens: 3 },
+          total_cost_usd: 0.04,
+          duration_ms: 50,
+        },
+      ]),
+    });
+
+    const usage = (
+      (await collect(adapter.run('prompt'))).find((e) => e.type === 'done')!
+        .payload as DonePayload
+    ).usage;
+    expect(usage).toEqual({
+      toolUses: 0,
+      cost: {
+        amount: 0.04,
+        currency: 'USD',
+        source: 'agent-estimate',
+      },
+    });
   });
 
   it('keeps the no-op repair skip keyed on the main-loop counters', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           // The continuation-repair no-op: zero main-loop tokens, while the
           // run's per-model total is already non-zero. The skip must still
@@ -1643,11 +1858,7 @@ describe('ClaudeCodeAdapter', () => {
     const events = await collect(
       adapter.run('prompt', { resume: 'session-abc' }),
     );
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     expect(
       (events.find((e) => e.type === 'done')!.payload as DonePayload).result,
     ).toBe('the real answer');
@@ -1659,7 +1870,13 @@ describe('ClaudeCodeAdapter', () => {
         // Only the opening handshake carries the tool surface; Claude Code
         // emits further system notices (compaction, retries, background
         // tasks) throughout a run.
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: ['Bash', 'Read'] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: ['Bash', 'Read'],
+        },
         { type: 'system', subtype: 'compact_boundary' },
         { type: 'assistant', text: 'working' },
         { type: 'system', subtype: 'api_retry' },
@@ -1680,11 +1897,7 @@ describe('ClaudeCodeAdapter', () => {
     // The one init retains the handshake's tool surface rather than being
     // overwritten by a later notice that carries none.
     expect((inits[0]!.payload as InitPayload).tools).toEqual(['Bash', 'Read']);
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
   });
 
   it('ignores system notices that precede the handshake', async () => {
@@ -1718,17 +1931,19 @@ describe('ClaudeCodeAdapter', () => {
     expect(inits).toHaveLength(1);
     // The surviving init is the handshake's, not the hook notice's empty one.
     expect((inits[0]!.payload as InitPayload).tools).toEqual(['Bash', 'Read']);
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'text',
-      'done',
-    ]);
+    expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
   });
 
-  it('publishes no breakdown when usage is unavailable', async () => {
+  it('publishes no tokens when whole-run usage is unavailable', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
@@ -1743,8 +1958,7 @@ describe('ClaudeCodeAdapter', () => {
     const usage = (
       events.find((e) => e.type === 'done')!.payload as DonePayload
     ).usage;
-    expect(usage.tokenAvailability).toBe('unavailable');
-    expect(usage).not.toHaveProperty('breakdown');
+    expect(usage.tokens).toBeUndefined();
   });
 
   it.each([
@@ -1774,14 +1988,29 @@ describe('ClaudeCodeAdapter', () => {
         cache_creation_input_tokens: Number.POSITIVE_INFINITY,
       },
     ],
-  ])('marks %s accounting unavailable', async (_case, rawUsage) => {
+  ])('omits tokens for %s model usage', async (_case, rawUsage) => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
-          usage: rawUsage,
+          usage: { input_tokens: 1, output_tokens: 1 },
+          modelUsage: {
+            claude: {
+              input_tokens: 1,
+              output_tokens: 2,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              ...rawUsage,
+            },
+          },
           duration_ms: 50,
         },
       ]),
@@ -1789,9 +2018,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
-      'unavailable',
-    );
+    expect((done.payload as DonePayload).usage.tokens).toBeUndefined();
   });
 
   it('maps every Claude effort to SDK effort and ultracode settings', () => {
@@ -1826,9 +2053,7 @@ describe('ClaudeCodeAdapter', () => {
         expect(mapped.queryOptions).not.toHaveProperty('settings');
       } else {
         expect(mapped.queryOptions.effort).toBe(expectedEffort);
-        expect(mapped.queryOptions.settings?.ultracode).toBe(
-          expectedUltracode,
-        );
+        expect(mapped.queryOptions.settings?.ultracode).toBe(expectedUltracode);
       }
     }
   });
@@ -1946,20 +2171,32 @@ describe('ClaudeCodeAdapter', () => {
     expect(events[1]?.payload).toMatchObject({ status: 'error' });
   });
 
-  it('sums cache tokens into inputTokens (camelCase)', async () => {
+  it('maps camelCase model usage into nested inclusive totals', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([
-        { type: 'system', subtype: 'init', model: 'claude', cwd: '/repo', tools: [] },
+        {
+          type: 'system',
+          subtype: 'init',
+          model: 'claude',
+          cwd: '/repo',
+          tools: [],
+        },
         {
           type: 'result',
           status: 'success',
           result: 'ok',
           usage: {
-            inputTokens: 8,
-            outputTokens: 15,
-            cacheReadInputTokens: 200,
-            cacheCreationInputTokens: 0,
+            inputTokens: 1,
+            outputTokens: 1,
             toolUses: 0,
+          },
+          modelUsage: {
+            claude: {
+              inputTokens: 8,
+              outputTokens: 15,
+              cacheReadInputTokens: 200,
+              cacheCreationInputTokens: 0,
+            },
           },
           duration_ms: 50,
         },
@@ -1969,8 +2206,15 @@ describe('ClaudeCodeAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const usage = (done.payload as DonePayload).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(208);
+    expect(usage.tokens?.totals).toEqual({
+      input: {
+        total: 208,
+        uncached: 8,
+        cacheRead: 200,
+        cacheWrite: 0,
+      },
+      output: { total: 15 },
+    });
   });
 
   it('maps PermissionPolicy.mode to claude permissionMode per ENG-021', () => {

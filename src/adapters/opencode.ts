@@ -25,7 +25,8 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
-  TokenBreakdown,
+  TokenUsage,
+  UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -40,10 +41,11 @@ import {
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
 import {
-  buildTokenBreakdown,
-  buildUsageRecords,
-  isUsageRecord,
+  buildTokenUsage,
+  buildTokenUsageReport,
+  buildUsageCost,
   readUsageCounter,
+  sumTokenUsage,
 } from './usage.js';
 
 const AGENT = 'opencode' as const;
@@ -55,11 +57,15 @@ const ITERATOR_CLEANUP_TIMEOUT_MS = 250;
 const DEFAULT_MANAGED_SERVER_TERM_GRACE_MS = 1_500;
 const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
 const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
+const CLIGENT_SESSION_TITLE = 'Cligent run';
+const OPENCODE_ACCOUNTING_SERVER_VERSION =
+  AGENT_RUNTIME_TARGETS.opencode[0]!.tested;
+const OPENCODE_DEFAULT_SESSION_TITLE =
+  /^(?:New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const OPENCODE_COMMAND_CONTINUATION =
+  'Summarize the task tool output above and continue with your task.';
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
-  tokenAvailability: 'unavailable',
-  inputTokens: 0,
-  outputTokens: 0,
   toolUses: 0,
 };
 
@@ -161,6 +167,58 @@ interface WrapOpencodeClientOptions {
   apiVersion?: OpenCodeSdkApiVersion;
 }
 
+interface OpenCodeMessageFact {
+  sessionId: string;
+  messageId: string;
+  role?: OpenCodeMessageRole;
+  parentId?: string;
+  model?: string;
+  provider?: string;
+  mode?: string;
+  summary?: boolean;
+  sequence: number;
+}
+
+interface OpenCodeStepObservation {
+  sessionId: string;
+  partId: string;
+  messageId: string;
+  sequence: number;
+  tokens?: TokenUsage;
+  cost?: UsageRecord['cost'];
+}
+
+interface OpenCodeTaskAssociation {
+  parentSessionId: string;
+  parentMessageKey: string;
+  childSessionId?: string;
+  partId: string;
+  sequence: number;
+  identityConflict: boolean;
+  identityConflictSequence?: number;
+  command: boolean;
+  reused: boolean;
+  background: boolean;
+  backgroundMetadataInvalid: boolean;
+}
+
+interface OpenCodeInternalPromptObservation {
+  sessionId: string;
+  messageId: string;
+  partId: string;
+  sequence: number;
+  identityConflict: boolean;
+  identityConflictSequence?: number;
+  kind:
+    | 'compaction'
+    | 'compaction-continuation'
+    | 'command-continuation'
+    | 'background-result';
+  overflow?: boolean;
+  childSessionId?: string;
+  backgroundState?: 'completed' | 'error';
+}
+
 const execFileAsync = promisify(execFile);
 
 function asString(value: unknown): string | undefined {
@@ -195,10 +253,30 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
-function normalizePermissionLevel(value: PermissionLevel | undefined): PermissionLevel {
+function loadOpenCodeBackgroundResultSessionId(
+  text: string | undefined,
+): { sessionId: string; state: 'completed' | 'error' } | undefined {
+  if (!text) return undefined;
+  const completed =
+    /^<task id="([^"\s]+)" state="completed">\n(?:<summary>[\s\S]*?<\/summary>\n)?<task_result>\n[\s\S]*\n<\/task_result>\n<\/task>$/.exec(
+      text,
+    );
+  if (completed?.[1]) return { sessionId: completed[1], state: 'completed' };
+  const failed =
+    /^<task id="([^"\s]+)" state="error">\n(?:<summary>[\s\S]*?<\/summary>\n)?<task_error>\n[\s\S]*\n<\/task_error>\n<\/task>$/.exec(
+      text,
+    );
+  return failed?.[1] ? { sessionId: failed[1], state: 'error' } : undefined;
+}
+
+function normalizePermissionLevel(
+  value: PermissionLevel | undefined,
+): PermissionLevel {
   return value ?? 'ask';
 }
 
@@ -243,7 +321,11 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   if (status === 'success' || status === 'completed' || status === 'ok') {
     return 'success';
   }
-  if (status === 'interrupted' || status === 'cancelled' || status === 'aborted') {
+  if (
+    status === 'interrupted' ||
+    status === 'cancelled' ||
+    status === 'aborted'
+  ) {
     return 'interrupted';
   }
   if (status === 'max_turns' || status === 'maxturns') {
@@ -261,80 +343,6 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   }
 
   return 'success';
-}
-
-function mapUsage(
-  rawUsage: unknown,
-  observedToolUses: number,
-): DonePayload['usage'] {
-  if (!isUsageRecord(rawUsage)) {
-    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
-  }
-
-  const baseInput = readUsageCounter(
-    rawUsage,
-    ['inputTokens', 'input_tokens'],
-    true,
-  );
-  const cacheRead = readUsageCounter(
-    rawUsage,
-    ['cacheReadInputTokens', 'cache_read_input_tokens'],
-    false,
-  );
-  const cacheCreation = readUsageCounter(
-    rawUsage,
-    ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
-    false,
-  );
-  const outputTokens = readUsageCounter(
-    rawUsage,
-    ['outputTokens', 'output_tokens'],
-    true,
-  );
-  const reportedToolUses = readUsageCounter(
-    rawUsage,
-    ['toolUses', 'tool_uses'],
-    false,
-  );
-  const toolUses = Math.max(
-    reportedToolUses.valid ? reportedToolUses.value : 0,
-    observedToolUses,
-  );
-
-  const totalCostUsd =
-    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
-
-  return {
-    tokenAvailability:
-      baseInput.valid &&
-      cacheRead.valid &&
-      cacheCreation.valid &&
-      outputTokens.valid
-        ? 'reported'
-        : 'unavailable',
-    inputTokens: baseInput.value + cacheRead.value + cacheCreation.value,
-    outputTokens: outputTokens.value,
-    toolUses,
-    ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
-  };
-}
-
-const OPENCODE_EVENT_TOKEN_COUNTER_KEYS = [
-  'inputTokens',
-  'input_tokens',
-  'cacheReadInputTokens',
-  'cache_read_input_tokens',
-  'cacheCreationInputTokens',
-  'cache_creation_input_tokens',
-  'outputTokens',
-  'output_tokens',
-] as const;
-
-function hasOpenCodeEventTokenCounters(rawUsage: unknown): boolean {
-  if (!isUsageRecord(rawUsage)) return false;
-  return OPENCODE_EVENT_TOKEN_COUNTER_KEYS.some((key) =>
-    Object.prototype.hasOwnProperty.call(rawUsage, key),
-  );
 }
 
 /** Broad extractor — used for runResult where `id` plausibly is the session. */
@@ -371,7 +379,9 @@ function loadStreamSessionId(message: unknown): string | undefined {
   );
 }
 
-function loadOpenCodeMessageRole(message: unknown): OpenCodeMessageRole | undefined {
+function loadOpenCodeMessageRole(
+  message: unknown,
+): OpenCodeMessageRole | undefined {
   const record = asRecord(message);
   const info = asRecord(record.info);
   const nestedMessage = asRecord(record.message);
@@ -390,7 +400,9 @@ function loadOpenCodeMessageModel(
   const info = asRecord(event.info);
   const nested = asRecord(event.message);
   const model =
-    asString(event.modelID) ?? asString(info.modelID) ?? asString(nested.modelID);
+    asString(event.modelID) ??
+    asString(info.modelID) ??
+    asString(nested.modelID);
   const provider =
     asString(event.providerID) ??
     asString(info.providerID) ??
@@ -401,7 +413,40 @@ function loadOpenCodeMessageModel(
     : undefined;
 }
 
-function loadOpenCodePartMessageId(event: Record<string, unknown>): string | undefined {
+function loadOpenCodeMessageParentId(
+  event: Record<string, unknown>,
+): string | undefined {
+  const info = asRecord(event.info);
+  const nested = asRecord(event.message);
+  return (
+    asString(event.parentID) ??
+    asString(event.parentId) ??
+    asString(info.parentID) ??
+    asString(info.parentId) ??
+    asString(nested.parentID) ??
+    asString(nested.parentId)
+  );
+}
+
+function loadOpenCodeTaskSessionId(
+  part: Record<string, unknown>,
+): string | undefined {
+  const tool =
+    asString(part.tool) ?? asString(part.toolName) ?? asString(part.name);
+  if (tool !== 'task') return undefined;
+
+  const state = asRecord(part.state);
+  const metadata = asRecord(state.metadata ?? part.metadata);
+  return asString(metadata.sessionId);
+}
+
+function openCodeUsageKey(sessionId: string, id: string): string {
+  return `${sessionId}\u0000${id}`;
+}
+
+function loadOpenCodePartMessageId(
+  event: Record<string, unknown>,
+): string | undefined {
   const part = asRecord(
     event.part ?? asRecord(event.message).part ?? event.data,
   );
@@ -420,7 +465,9 @@ function loadOpenCodePartMessageId(event: Record<string, unknown>): string | und
   );
 }
 
-function loadOpenCodePartId(event: Record<string, unknown>): string | undefined {
+function loadOpenCodePartId(
+  event: Record<string, unknown>,
+): string | undefined {
   const part = asRecord(
     event.part ?? asRecord(event.message).part ?? event.data,
   );
@@ -516,9 +563,7 @@ function normalizeOpenCodeContentEvent(
   }
 
   const summary =
-    asString(part.summary) ??
-    asString(part.text) ??
-    asString(part.content);
+    asString(part.summary) ?? asString(part.text) ?? asString(part.content);
   return summary
     ? createEvent('thinking', AGENT, { summary }, sessionId)
     : undefined;
@@ -535,9 +580,7 @@ function toErrorPayload(message: unknown): {
   const nestedData = asRecord(nested.data);
 
   const code =
-    asString(top.code) ??
-    asString(nested.code) ??
-    asString(nested.type);
+    asString(top.code) ?? asString(nested.code) ?? asString(nested.type);
 
   const text =
     asString(top.message) ??
@@ -564,12 +607,15 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     typeof value === 'object' &&
     value !== null &&
     Symbol.asyncIterator in value &&
-    typeof (value as { [Symbol.asyncIterator]: unknown })[Symbol.asyncIterator] ===
-      'function'
+    typeof (value as { [Symbol.asyncIterator]: unknown })[
+      Symbol.asyncIterator
+    ] === 'function'
   );
 }
 
-function maybeCallAsync(fn: (() => Promise<void> | void) | undefined): Promise<void> {
+function maybeCallAsync(
+  fn: (() => Promise<void> | void) | undefined,
+): Promise<void> {
   if (!fn) return Promise.resolve();
 
   try {
@@ -684,8 +730,10 @@ function unwrapSdkData(value: unknown): unknown {
 }
 
 function sessionStatusType(value: unknown): string | undefined {
-  return asString(asRecord(value).type)?.toLowerCase() ??
-    asString(value)?.toLowerCase();
+  return (
+    asString(asRecord(value).type)?.toLowerCase() ??
+    asString(value)?.toLowerCase()
+  );
 }
 
 function defaultSpawnProcess(
@@ -754,7 +802,11 @@ function defaultWaitForServerReady(
     };
 
     const timer = setTimeout(() => {
-      finish(new Error(`Timed out waiting for OpenCode server readiness (${timeoutMs}ms)`));
+      finish(
+        new Error(
+          `Timed out waiting for OpenCode server readiness (${timeoutMs}ms)`,
+        ),
+      );
     }, timeoutMs);
 
     processRef.stdout?.on('data', onData);
@@ -800,13 +852,16 @@ function createManagedServerArgs(serverUrl: string): string[] {
   return ['serve', '--hostname', host, '--port', port];
 }
 
-function createClientFromSdk(sdk: OpenCodeSdk, baseUrl: string): OpenCodeClient {
+function createClientFromSdk(
+  sdk: OpenCodeSdk,
+  baseUrl: string,
+): OpenCodeClient {
   return sdk.createClient({ baseUrl });
 }
 
-function resolveRunFunction(client: OpenCodeClient):
-  | ((options: Record<string, unknown>) => Promise<unknown>)
-  | undefined {
+function resolveRunFunction(
+  client: OpenCodeClient,
+): ((options: Record<string, unknown>) => Promise<unknown>) | undefined {
   if (typeof client.run === 'function') return client.run.bind(client);
   if (typeof client.query === 'function') return client.query.bind(client);
   return undefined;
@@ -941,9 +996,7 @@ export function mapEffortToOpenCodeVariant(
   const provider = model.slice(0, slashIdx);
 
   if (provider === 'anthropic') {
-    return effort === 'xhigh' || effort === 'max'
-      ? 'max'
-      : 'high';
+    return effort === 'xhigh' || effort === 'max' ? 'max' : 'high';
   }
 
   if (provider === 'openai') {
@@ -1016,13 +1069,19 @@ export function wrapOpencodeClient(
   const session = real.session as Record<string, unknown> | undefined;
   const event = real.event as Record<string, unknown> | undefined;
   const instance = real.instance as Record<string, unknown> | undefined;
+  const globalService = real.global as Record<string, unknown> | undefined;
   const permission = real.permission as Record<string, unknown> | undefined;
 
   if (!session || typeof session.create !== 'function') {
     throw new Error('OpenCode SDK client.session.create() not available');
   }
-  if (typeof session.promptAsync !== 'function' && typeof session.prompt !== 'function') {
-    throw new Error('OpenCode SDK client.session.{promptAsync,prompt}() not available');
+  if (
+    typeof session.promptAsync !== 'function' &&
+    typeof session.prompt !== 'function'
+  ) {
+    throw new Error(
+      'OpenCode SDK client.session.{promptAsync,prompt}() not available',
+    );
   }
   if (!event || typeof event.subscribe !== 'function') {
     throw new Error('OpenCode SDK client.event.subscribe() not available');
@@ -1033,43 +1092,65 @@ export function wrapOpencodeClient(
     body?: unknown,
     requestOptions?: unknown,
   ) => Promise<unknown>;
-  const sessionUpdate = typeof session.update === 'function'
-    ? (session.update.bind(session) as (
-        args: unknown,
-        requestOptions?: unknown,
-      ) => Promise<unknown>)
-    : undefined;
-  const sessionPromptAsync = typeof session.promptAsync === 'function'
-    ? (session.promptAsync.bind(session) as (
-        args: unknown,
-        requestOptions?: unknown,
-      ) => Promise<unknown>)
-    : undefined;
-  const sessionPromptSync = typeof session.prompt === 'function'
-    ? (session.prompt.bind(session) as (
-        args: unknown,
-        requestOptions?: unknown,
-      ) => Promise<unknown>)
-    : undefined;
-  const sessionStatus = typeof session.status === 'function'
-    ? (session.status.bind(session) as (args?: unknown) => Promise<unknown>)
-    : undefined;
-  const sessionAbort = typeof session.abort === 'function'
-    ? (session.abort.bind(session) as (args: unknown) => Promise<unknown>)
-    : undefined;
-  const sessionChildren = typeof session.children === 'function'
-    ? (session.children.bind(session) as (
-        args: unknown,
-        requestOptions?: unknown,
-      ) => Promise<unknown>)
-    : undefined;
+  const sessionUpdate =
+    typeof session.update === 'function'
+      ? (session.update.bind(session) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const globalHealth =
+    globalService && typeof globalService.health === 'function'
+      ? (globalService.health.bind(globalService) as (
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const sessionGet =
+    typeof session.get === 'function'
+      ? (session.get.bind(session) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const sessionPromptAsync =
+    typeof session.promptAsync === 'function'
+      ? (session.promptAsync.bind(session) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const sessionPromptSync =
+    typeof session.prompt === 'function'
+      ? (session.prompt.bind(session) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const sessionStatus =
+    typeof session.status === 'function'
+      ? (session.status.bind(session) as (args?: unknown) => Promise<unknown>)
+      : undefined;
+  const sessionAbort =
+    typeof session.abort === 'function'
+      ? (session.abort.bind(session) as (args: unknown) => Promise<unknown>)
+      : undefined;
+  const sessionChildren =
+    typeof session.children === 'function'
+      ? (session.children.bind(session) as (
+          args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
   const eventSubscribe = event.subscribe.bind(event) as (
     args?: unknown,
     requestOptions?: unknown,
   ) => Promise<unknown>;
-  const instanceDispose = instance && typeof instance.dispose === 'function'
-    ? (instance.dispose.bind(instance) as (args?: unknown) => Promise<unknown>)
-    : undefined;
+  const instanceDispose =
+    instance && typeof instance.dispose === 'function'
+      ? (instance.dispose.bind(instance) as (
+          args?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
   const permissionReply =
     permission && typeof permission.reply === 'function'
       ? (permission.reply.bind(permission) as (
@@ -1135,9 +1216,7 @@ export function wrapOpencodeClient(
       const resetPermissionPolicy =
         (options as Record<PropertyKey, unknown>)[PERMISSION_POLICY_RESET] ===
         true;
-      const effectivePermissionObj = resetPermissionPolicy
-        ? {}
-        : permissionObj;
+      const effectivePermissionObj = resetPermissionPolicy ? {} : permissionObj;
       const lineageDiscoveryTimeoutMs =
         asNumber(options.lineageDiscoveryTimeoutMs) ??
         MAX_STATUS_QUERY_TIMEOUT_MS;
@@ -1147,14 +1226,15 @@ export function wrapOpencodeClient(
       );
       const variantVal = asString(options.variant);
       const modelVal = toOpenCodePromptModel(options.model);
-      const signal = options.signal instanceof AbortSignal
-        ? options.signal
-        : undefined;
+      const promptMessageId = asString(options.promptMessageId);
+      const signal =
+        options.signal instanceof AbortSignal ? options.signal : undefined;
       const v2PermissionRuleset = resetPermissionPolicy
         ? []
         : toOpenCodeV2PermissionRuleset(effectivePermissionObj);
 
       let sessionId: string | undefined;
+      let usageCoverageIncomplete = false;
       let resolveRunAbort!: () => void;
       const runAbortPromise = new Promise<void>((resolve) => {
         resolveRunAbort = resolve;
@@ -1203,6 +1283,47 @@ export function wrapOpencodeClient(
         if (outcome.kind === 'failure') throw outcome.error;
         return outcome.value;
       };
+      const proveAccountingServerVersion = async (): Promise<void> => {
+        if (!globalHealth) {
+          usageCoverageIncomplete = true;
+          return;
+        }
+
+        const healthController = new AbortController();
+        const abortHealth = () => healthController.abort();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        if (signal?.aborted) abortHealth();
+        else signal?.addEventListener('abort', abortHealth, { once: true });
+        const timeout = new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            healthController.abort();
+            reject(new Error('OpenCode global.health timed out'));
+          }, lineageDiscoveryTimeoutMs);
+        });
+        try {
+          const result = await raceRunOperation(
+            Promise.race([
+              globalHealth({ signal: healthController.signal }),
+              timeout,
+            ]),
+          );
+          throwIfSdkResultError(result, 'OpenCode global.health failed');
+          const health = asRecord(unwrapSdkData(result));
+          if (
+            health.healthy !== true ||
+            health.version !== OPENCODE_ACCOUNTING_SERVER_VERSION
+          ) {
+            usageCoverageIncomplete = true;
+          }
+        } catch (error) {
+          if (error instanceof OpenCodePromptDispatchAbortError) throw error;
+          usageCoverageIncomplete = true;
+        } finally {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener('abort', abortHealth);
+        }
+      };
+      await proveAccountingServerVersion();
       const discoverOwnedSessionLineage = async (
         rootSessionId: string,
       ): Promise<void> => {
@@ -1273,6 +1394,76 @@ export function wrapOpencodeClient(
           signal?.removeEventListener('abort', abortLineage);
         }
       };
+      const suppressResumedTitleInference = async (
+        rootSessionId: string,
+      ): Promise<void> => {
+        if (!sessionGet) {
+          usageCoverageIncomplete = true;
+          return;
+        }
+
+        try {
+          const sessionResult = await raceRunOperation(
+            sessionGet(
+              apiVersion === 'v2'
+                ? {
+                    sessionID: rootSessionId,
+                    ...(cwdVal ? { directory: cwdVal } : {}),
+                  }
+                : {
+                    path: { id: rootSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(sessionResult, 'OpenCode session.get failed');
+          const sessionInfo = asRecord(unwrapSdkData(sessionResult));
+          if (asString(sessionInfo.parentID)) return;
+          const title = sessionInfo.title;
+          if (typeof title !== 'string') {
+            usageCoverageIncomplete = true;
+            return;
+          }
+          if (!OPENCODE_DEFAULT_SESSION_TITLE.test(title)) return;
+          if (!sessionUpdate) {
+            usageCoverageIncomplete = true;
+            return;
+          }
+
+          const updateResult = await raceRunOperation(
+            sessionUpdate(
+              apiVersion === 'v2'
+                ? {
+                    sessionID: rootSessionId,
+                    ...(cwdVal ? { directory: cwdVal } : {}),
+                    title: CLIGENT_SESSION_TITLE,
+                  }
+                : {
+                    path: { id: rootSessionId },
+                    ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                    body: { title: CLIGENT_SESSION_TITLE },
+                    ...(signal ? { signal } : {}),
+                  },
+              apiVersion === 'v2' && signal ? { signal } : undefined,
+            ),
+          );
+          throwIfSdkResultError(
+            updateResult,
+            'OpenCode session title update failed',
+          );
+          if (
+            asString(asRecord(unwrapSdkData(updateResult)).title) !==
+            CLIGENT_SESSION_TITLE
+          ) {
+            usageCoverageIncomplete = true;
+          }
+        } catch (error) {
+          if (error instanceof OpenCodePromptDispatchAbortError) throw error;
+          usageCoverageIncomplete = true;
+        }
+      };
 
       try {
         if (resumeId) {
@@ -1297,29 +1488,35 @@ export function wrapOpencodeClient(
             );
             throwIfSdkResultError(updated, 'OpenCode session.update failed');
           }
+          await suppressResumedTitleInference(resumeId);
         } else {
           const created = asRecord(
             await (apiVersion === 'v2'
               ? sessionCreate(
                   {
                     ...(cwdVal ? { directory: cwdVal } : {}),
+                    title: CLIGENT_SESSION_TITLE,
                     ...(v2PermissionRuleset !== undefined
                       ? { permission: v2PermissionRuleset }
                       : {}),
                   },
                   signal ? { signal } : undefined,
                 )
-              : sessionCreate(
-                  cwdVal || signal
-                    ? {
-                        ...(cwdVal ? { query: { directory: cwdVal } } : {}),
-                        ...(signal ? { signal } : {}),
-                      }
-                    : undefined,
-                )),
+              : sessionCreate({
+                  ...(cwdVal ? { query: { directory: cwdVal } } : {}),
+                  body: { title: CLIGENT_SESSION_TITLE },
+                  ...(signal ? { signal } : {}),
+                })),
           );
           throwIfSdkResultError(created, 'OpenCode session.create failed');
-          sessionId = asString(created.id) ?? asString(asRecord(created.data).id);
+          const createdSession = asRecord(unwrapSdkData(created));
+          sessionId =
+            asString(createdSession.id) ??
+            asString(created.id) ??
+            asString(asRecord(created.data).id);
+          if (asString(createdSession.title) !== CLIGENT_SESSION_TITLE) {
+            usageCoverageIncomplete = true;
+          }
           if (sessionId && typeof observeCreatedSessionId === 'function') {
             observeCreatedSessionId(sessionId);
           }
@@ -1344,6 +1541,7 @@ export function wrapOpencodeClient(
         const promptSessionId = sessionId;
 
         const promptBody = {
+          ...(promptMessageId ? { messageID: promptMessageId } : {}),
           parts: [{ type: 'text', text: options.prompt }],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
@@ -1353,12 +1551,17 @@ export function wrapOpencodeClient(
             : {}),
         };
 
-        const v2PromptParameters: { sessionID: string } & OpenCodeV2PromptBody & {
-          directory?: string;
-        } = {
+        const v2PromptParameters: {
+          sessionID: string;
+        } & OpenCodeV2PromptBody & {
+            directory?: string;
+          } = {
           sessionID: promptSessionId,
+          ...(promptMessageId ? { messageID: promptMessageId } : {}),
           parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
-          ...(modelVal ? { model: modelVal as OpenCodeV2PromptBody['model'] } : {}),
+          ...(modelVal
+            ? { model: modelVal as OpenCodeV2PromptBody['model'] }
+            : {}),
           ...(variantVal ? { variant: variantVal } : {}),
           ...(cwdVal ? { directory: cwdVal } : {}),
         };
@@ -1388,7 +1591,9 @@ export function wrapOpencodeClient(
         const rawStream = subResult.stream ?? subResult.events ?? subResult;
 
         if (isAsyncIterable(rawStream)) {
-          rawIterator = (rawStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+          rawIterator = (rawStream as AsyncIterable<unknown>)[
+            Symbol.asyncIterator
+          ]();
           eagerFirst = rawIterator.next(); // triggers fetch()
           // A prompt-dispatch abort can reject this eager read before the run
           // returns its wrapper. Keep the original rejection for consumers,
@@ -1411,7 +1616,10 @@ export function wrapOpencodeClient(
               apiVersion === 'v2' && signal ? { signal } : undefined,
             ),
           );
-          throwIfSdkResultError(promptResult, 'OpenCode session.promptAsync failed');
+          throwIfSdkResultError(
+            promptResult,
+            'OpenCode session.promptAsync failed',
+          );
         } else if (sessionPromptSync) {
           const promptResult = await raceRunOperation(
             sessionPromptSync(
@@ -1467,6 +1675,7 @@ export function wrapOpencodeClient(
           id: sessionId,
           sessionId,
           ownedSessionIds: [...ownedSessionIds],
+          ...(usageCoverageIncomplete ? { usageCoverageIncomplete: true } : {}),
           ...(events ? { events } : {}),
         };
       } finally {
@@ -1492,12 +1701,19 @@ export function wrapOpencodeClient(
 
       const result = await sessionStatus(
         apiVersion === 'v2'
-          ? (cwd ? { directory: cwd } : undefined)
-          : (cwd ? { query: { directory: cwd } } : undefined),
+          ? cwd
+            ? { directory: cwd }
+            : undefined
+          : cwd
+            ? { query: { directory: cwd } }
+            : undefined,
       );
       throwIfSdkResultError(result, 'OpenCode session.status failed');
       const statuses = asRecord(unwrapSdkData(result));
-      const statusMap = Object.prototype.hasOwnProperty.call(statuses, 'sessions')
+      const statusMap = Object.prototype.hasOwnProperty.call(
+        statuses,
+        'sessions',
+      )
         ? asRecord(statuses.sessions)
         : statuses;
 
@@ -1583,9 +1799,12 @@ export function wrapOpencodeClient(
               if (!started) {
                 started = true;
                 const subResult = asRecord(await eventSubscribe(options));
-                const stream = subResult.stream ?? subResult.events ?? subResult;
+                const stream =
+                  subResult.stream ?? subResult.events ?? subResult;
                 if (isAsyncIterable(stream)) {
-                  innerIterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                  innerIterator = (stream as AsyncIterable<unknown>)[
+                    Symbol.asyncIterator
+                  ]();
                 } else {
                   return { done: true, value: undefined };
                 }
@@ -1614,10 +1833,12 @@ export function wrapOpencodeClient(
       if (instanceDispose) {
         const result = await instanceDispose(
           apiVersion === 'v2'
-            ? (instanceDirectory ? { directory: instanceDirectory } : undefined)
-            : (instanceDirectory
-                ? { query: { directory: instanceDirectory } }
-                : undefined),
+            ? instanceDirectory
+              ? { directory: instanceDirectory }
+              : undefined
+            : instanceDirectory
+              ? { query: { directory: instanceDirectory } }
+              : undefined,
         );
         throwIfSdkResultError(result, 'OpenCode instance.dispose failed');
       }
@@ -1640,9 +1861,10 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
 
   // v2 SDK: createOpencodeClient with nested API and a typed prompt variant field.
   if (typeof mod.createOpencodeClient === 'function') {
-    const factory = mod.createOpencodeClient as (
-      config?: { baseUrl?: string; directory?: string },
-    ) => Record<string, unknown>;
+    const factory = mod.createOpencodeClient as (config?: {
+      baseUrl?: string;
+      directory?: string;
+    }) => Record<string, unknown>;
 
     return {
       createClient: (options?: { baseUrl?: string }) => {
@@ -1662,20 +1884,26 @@ export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
   if (typeof mod.OpenCodeClient === 'function') {
     return {
       createClient: (options?: { baseUrl?: string }) =>
-        new (mod.OpenCodeClient as new (options?: { baseUrl?: string }) => OpenCodeClient)(
-          options,
-        ),
+        new (
+          mod.OpenCodeClient as new (options?: {
+            baseUrl?: string;
+          }) => OpenCodeClient
+        )(options),
     };
   }
 
   if (typeof mod.OpenCode === 'function') {
     return {
       createClient: (options?: { baseUrl?: string }) =>
-        new (mod.OpenCode as new (options?: { baseUrl?: string }) => OpenCodeClient)(options),
+        new (
+          mod.OpenCode as new (options?: { baseUrl?: string }) => OpenCodeClient
+        )(options),
     };
   }
 
-  throw new Error('@opencode-ai/sdk/v2 does not export a recognized client factory');
+  throw new Error(
+    '@opencode-ai/sdk/v2 does not export a recognized client factory',
+  );
 }
 
 export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
@@ -1719,8 +1947,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     );
     this.loadSdkFn = deps.loadSdk ?? loadOpenCodeSdk;
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
-    this.probeCliAvailability = deps.probeCliAvailability ?? defaultProbeCliAvailability;
-    this.waitForServerReady = deps.waitForServerReady ?? defaultWaitForServerReady;
+    this.probeCliAvailability =
+      deps.probeCliAvailability ?? defaultProbeCliAvailability;
+    this.waitForServerReady =
+      deps.waitForServerReady ?? defaultWaitForServerReady;
     this.managedServerTermGraceMs =
       deps.managedServerTermGraceMs ?? DEFAULT_MANAGED_SERVER_TERM_GRACE_MS;
     this.managedServerKillGraceMs =
@@ -1767,10 +1997,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         disallowedTools: options?.disallowedTools,
       },
     );
-    const variant = mapEffortToOpenCodeVariant(
-      options?.model,
-      options?.effort,
-    );
+    const variant = mapEffortToOpenCodeVariant(options?.model, options?.effort);
 
     const startTime = Date.now();
     let doneYielded = false;
@@ -1791,34 +2018,51 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let sessionAbortAttempted = false;
     let sessionAbortPromise: Promise<void> | undefined;
     const ownedSessionIds = new Set<string>();
+    let wrapperUsageCoverageIncomplete = false;
 
-    // Accumulate usage from step-finish parts (OpenCode's session.idle
-    // event doesn't carry usage data).
-    let accumulatedInputTokens = 0;
-    let accumulatedOutputTokens = 0;
+    // Supplying the user-message id gives the run an exact causal boundary:
+    // OpenCode assistant messages name it as `parentID`, including on resume.
+    const promptMessageId = `msg_${generateSessionId()}`;
     let accumulatedToolUses = 0;
-    let accumulatedCost = 0;
-    let accumulatedTokenUsageObserved = false;
-    let accumulatedTokenUsageComplete = true;
-    const accumulatedComponents = {
-      input: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      output: 0,
-      reasoning: 0,
-    };
-    // One step-finish part is one model request, so each becomes one ENG-030
-    // record. The rate-card identity lives on the owning assistant message,
-    // which may arrive after its parts, so it is resolved at terminal `done`.
-    const stepRecords: Array<{
+    let accountingSequence = 0;
+    const causalSessionActivation = new Map<string, number>();
+    const causalSessionLatestAssociation = new Map<string, number>();
+    const completedOwnedSessions = new Map<string, number>();
+    const causalPromptKeys = new Set<string>();
+    const causalMessageKeys = new Set<string>();
+    const causalNonModelMessageKeys = new Set<string>();
+    const unmatchedCausalTaskKeys = new Set<string>();
+    const messageFacts = new Map<string, OpenCodeMessageFact>();
+    const taskAssociations = new Map<string, OpenCodeTaskAssociation>();
+    const malformedTaskObservations: Array<{
+      sessionId: string;
       messageId?: string;
-      tokens: TokenBreakdown;
-      costUsd?: number;
+      sequence: number;
     }> = [];
-    const messageModels = new Map<
+    const internalPromptObservations = new Map<
       string,
-      { model?: string; provider?: string }
+      OpenCodeInternalPromptObservation
     >();
+    const malformedInternalPromptObservations: Array<{
+      sessionId: string;
+      messageId?: string;
+      sequence: number;
+    }> = [];
+    const compactedObservations: Array<{
+      sessionId: string;
+      sequence: number;
+    }> = [];
+    const retryObservations: Array<{ sessionId: string; sequence: number }> =
+      [];
+    // Step-finish is one billable model request. Parts are replaceable
+    // snapshots, so retain the latest value by canonical session/part id.
+    // A later history removal does not refund the request and never erases it.
+    const stepLedger = new Map<string, OpenCodeStepObservation>();
+    const unkeyedMalformedSteps: Array<{
+      sessionId?: string;
+      messageId?: string;
+      sequence: number;
+    }> = [];
 
     const eventStreamController = new AbortController();
     let resolveCallerAbort!: () => void;
@@ -1876,6 +2120,980 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       return sessionId;
     };
 
+    const propagateCausality = (): void => {
+      causalPromptKeys.clear();
+      causalMessageKeys.clear();
+      causalNonModelMessageKeys.clear();
+      causalSessionActivation.clear();
+      causalSessionLatestAssociation.clear();
+      unmatchedCausalTaskKeys.clear();
+
+      const rootPromptKey = openCodeUsageKey(sessionId, promptMessageId);
+      const rootActivation = messageFacts.get(rootPromptKey)?.sequence ?? 0;
+      causalPromptKeys.add(rootPromptKey);
+      causalSessionActivation.set(sessionId, rootActivation);
+      causalSessionLatestAssociation.set(sessionId, rootActivation);
+
+      const matchCausalTaskPrompts = (recordUnmatched: boolean): boolean => {
+        if (recordUnmatched) unmatchedCausalTaskKeys.clear();
+        const internalPromptKeys = new Set([
+          ...[...internalPromptObservations.values()].map((observation) =>
+            openCodeUsageKey(observation.sessionId, observation.messageId),
+          ),
+          ...malformedInternalPromptObservations.flatMap((observation) =>
+            observation.messageId
+              ? [openCodeUsageKey(observation.sessionId, observation.messageId)]
+              : [],
+          ),
+        ]);
+        const byChild = new Map<
+          string,
+          Array<[string, OpenCodeTaskAssociation]>
+        >();
+        for (const entry of taskAssociations) {
+          const [taskKey, association] = entry;
+          if (
+            !association.childSessionId ||
+            !causalMessageKeys.has(association.parentMessageKey)
+          ) {
+            continue;
+          }
+          if (association.reused) {
+            if (recordUnmatched) unmatchedCausalTaskKeys.add(taskKey);
+            continue;
+          }
+          const entries = byChild.get(association.childSessionId) ?? [];
+          entries.push([taskKey, association]);
+          byChild.set(association.childSessionId, entries);
+        }
+
+        let matchedNewPrompt = false;
+        for (const [childSessionId, entries] of byChild) {
+          entries.sort(
+            ([leftKey, left], [rightKey, right]) =>
+              left.sequence - right.sequence || leftKey.localeCompare(rightKey),
+          );
+          const firstSequence = entries[0]![1].sequence;
+          const lastSequence = entries.at(-1)![1].sequence;
+          causalSessionActivation.set(childSessionId, firstSequence);
+          causalSessionLatestAssociation.set(childSessionId, lastSequence);
+
+          const childPrompts = [...messageFacts.entries()]
+            .filter(
+              ([, fact]) =>
+                fact.sessionId === childSessionId &&
+                fact.role === 'user' &&
+                !internalPromptKeys.has(
+                  openCodeUsageKey(fact.sessionId, fact.messageId),
+                ),
+            )
+            .sort(
+              ([leftKey, left], [rightKey, right]) =>
+                left.sequence - right.sequence ||
+                leftKey.localeCompare(rightKey),
+            );
+          let promptIndex = 0;
+          for (const [taskKey, association] of entries) {
+            while (
+              promptIndex < childPrompts.length &&
+              childPrompts[promptIndex]![1].sequence < association.sequence
+            ) {
+              promptIndex++;
+            }
+            const prompt = childPrompts[promptIndex];
+            if (!prompt) {
+              if (recordUnmatched) unmatchedCausalTaskKeys.add(taskKey);
+              continue;
+            }
+            promptIndex++;
+            if (!causalPromptKeys.has(prompt[0])) {
+              causalPromptKeys.add(prompt[0]);
+              matchedNewPrompt = true;
+            }
+          }
+        }
+        return matchedNewPrompt;
+      };
+
+      const precedingMessage = (
+        observation: OpenCodeInternalPromptObservation,
+      ): [string, OpenCodeMessageFact] | undefined => {
+        const promptKey = openCodeUsageKey(
+          observation.sessionId,
+          observation.messageId,
+        );
+        const promptFact = messageFacts.get(promptKey);
+        if (!promptFact) return undefined;
+        const boundarySequence = Math.min(
+          observation.sequence,
+          promptFact.sequence,
+        );
+        let preceding: [string, OpenCodeMessageFact] | undefined;
+        for (const entry of messageFacts) {
+          const [messageKey, fact] = entry;
+          if (
+            messageKey === promptKey ||
+            fact.sessionId !== observation.sessionId ||
+            fact.sequence >= boundarySequence
+          ) {
+            continue;
+          }
+          if (!preceding || fact.sequence > preceding[1].sequence) {
+            preceding = entry;
+          }
+        }
+        return preceding;
+      };
+
+      const messageHasCausalStep = (
+        messageKey: string,
+        beforeSequence: number,
+      ): boolean =>
+        [...stepLedger.values()].some(
+          (step) =>
+            step.sequence < beforeSequence &&
+            openCodeUsageKey(step.sessionId, step.messageId) === messageKey &&
+            causalMessageKeys.has(messageKey),
+        );
+
+      const matchInternalPrompts = (): boolean => {
+        let matchedNewPrompt = false;
+        const matchedBackgroundTaskKeys = new Set<string>();
+        const backgroundTasks = [...taskAssociations.entries()].sort(
+          ([leftKey, left], [rightKey, right]) =>
+            left.sequence - right.sequence || leftKey.localeCompare(rightKey),
+        );
+        const observations = [...internalPromptObservations.values()].sort(
+          (left, right) =>
+            left.sequence - right.sequence ||
+            left.partId.localeCompare(right.partId),
+        );
+        for (const observation of observations) {
+          const activation = causalSessionActivation.get(observation.sessionId);
+          if (activation === undefined || observation.sequence < activation) {
+            continue;
+          }
+          const promptKey = openCodeUsageKey(
+            observation.sessionId,
+            observation.messageId,
+          );
+          const promptFact = messageFacts.get(promptKey);
+          if (promptFact?.role !== 'user') continue;
+          let backgroundAnchored = false;
+          if (
+            observation.kind === 'background-result' &&
+            observation.childSessionId
+          ) {
+            const matchingTask = backgroundTasks.find(
+              ([taskKey, association]) =>
+                !matchedBackgroundTaskKeys.has(taskKey) &&
+                association.parentSessionId === observation.sessionId &&
+                association.childSessionId === observation.childSessionId &&
+                association.background &&
+                !association.backgroundMetadataInvalid &&
+                association.sequence < observation.sequence &&
+                causalMessageKeys.has(association.parentMessageKey),
+            );
+            if (matchingTask) {
+              matchedBackgroundTaskKeys.add(matchingTask[0]);
+              backgroundAnchored = true;
+            }
+          }
+          if (causalPromptKeys.has(promptKey)) continue;
+
+          let anchored = false;
+          if (observation.kind === 'background-result') {
+            anchored = backgroundAnchored;
+          } else {
+            const preceding = precedingMessage(observation);
+            if (!preceding || !causalMessageKeys.has(preceding[0])) continue;
+            const [precedingKey, precedingFact] = preceding;
+            if (observation.kind === 'compaction') {
+              anchored = precedingFact.role === 'assistant';
+            } else if (observation.kind === 'compaction-continuation') {
+              anchored =
+                precedingFact.role === 'assistant' &&
+                (precedingFact.mode === 'compaction' ||
+                  precedingFact.summary === true) &&
+                messageHasCausalStep(precedingKey, observation.sequence);
+            } else if (observation.kind === 'command-continuation') {
+              anchored = [...taskAssociations.values()].some(
+                (association) =>
+                  association.parentSessionId === observation.sessionId &&
+                  association.parentMessageKey === precedingKey &&
+                  association.command &&
+                  association.sequence < observation.sequence,
+              );
+              if (anchored) causalNonModelMessageKeys.add(precedingKey);
+            }
+          }
+          if (!anchored) continue;
+          causalPromptKeys.add(promptKey);
+          matchedNewPrompt = true;
+        }
+        return matchedNewPrompt;
+      };
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+
+        for (const [messageKey, fact] of messageFacts) {
+          if (
+            fact.role === 'assistant' &&
+            fact.parentId &&
+            causalPromptKeys.has(
+              openCodeUsageKey(fact.sessionId, fact.parentId),
+            ) &&
+            !causalMessageKeys.has(messageKey)
+          ) {
+            causalMessageKeys.add(messageKey);
+            changed = true;
+          }
+        }
+        if (matchInternalPrompts()) changed = true;
+        if (matchCausalTaskPrompts(false)) changed = true;
+      }
+
+      matchCausalTaskPrompts(true);
+    };
+
+    const observeMessageAccounting = (
+      event: Record<string, unknown>,
+      eventSessionId: string,
+      sequence: number,
+    ): void => {
+      const messageId = loadOpenCodeUpdatedMessageId(event);
+      if (!messageId) return;
+      const identity = loadOpenCodeMessageModel(event);
+      const info = asRecord(event.info);
+      const nestedMessage = asRecord(event.message);
+      const key = openCodeUsageKey(eventSessionId, messageId);
+      const previous = messageFacts.get(key);
+      messageFacts.set(key, {
+        sessionId: eventSessionId,
+        messageId,
+        role: loadOpenCodeMessageRole(event) ?? previous?.role,
+        parentId: loadOpenCodeMessageParentId(event) ?? previous?.parentId,
+        model: identity?.model ?? previous?.model,
+        provider: identity?.provider ?? previous?.provider,
+        mode:
+          asString(event.mode) ??
+          asString(info.mode) ??
+          asString(nestedMessage.mode) ??
+          previous?.mode,
+        summary:
+          event.summary === true ||
+          info.summary === true ||
+          nestedMessage.summary === true ||
+          previous?.summary,
+        sequence: previous?.sequence ?? sequence,
+      });
+      propagateCausality();
+    };
+
+    const observeTaskAssociation = (
+      part: Record<string, unknown>,
+      eventSessionId: string,
+      sequence: number,
+    ): void => {
+      const messageId = loadOpenCodePartMessageId({ part });
+      const partId = asString(part.id);
+      const canonicalSessionId = asString(part.sessionID);
+      const childSessionId = loadOpenCodeTaskSessionId(part);
+      const state = asRecord(part.state);
+      const input = asRecord(state.input ?? part.input);
+      const metadata = asRecord(state.metadata ?? part.metadata);
+      const explicitlyBackground = metadata.background === true;
+      const backgroundMetadataInvalid =
+        explicitlyBackground &&
+        asString(metadata.parentSessionId) !== eventSessionId;
+      if (asString(part.tool ?? part.name ?? part.toolName) !== 'task') return;
+      if (
+        !messageId ||
+        !partId ||
+        !canonicalSessionId ||
+        canonicalSessionId !== eventSessionId
+      ) {
+        malformedTaskObservations.push({
+          sessionId: eventSessionId,
+          ...(messageId ? { messageId } : {}),
+          sequence,
+        });
+        return;
+      }
+      const taskKey = openCodeUsageKey(eventSessionId, partId);
+      const previous = taskAssociations.get(taskKey);
+      const parentMessageKey = openCodeUsageKey(eventSessionId, messageId);
+      const candidateChildSessionId =
+        childSessionId && childSessionId !== eventSessionId
+          ? childSessionId
+          : undefined;
+      const identityConflict =
+        (previous !== undefined &&
+          previous.parentMessageKey !== parentMessageKey) ||
+        (previous?.childSessionId !== undefined &&
+          candidateChildSessionId !== undefined &&
+          previous.childSessionId !== candidateChildSessionId);
+      taskAssociations.set(taskKey, {
+        parentSessionId: previous?.parentSessionId ?? eventSessionId,
+        parentMessageKey: previous?.parentMessageKey ?? parentMessageKey,
+        partId,
+        sequence: previous?.sequence ?? sequence,
+        identityConflict:
+          previous?.identityConflict === true || identityConflict,
+        ...(previous?.identityConflictSequence !== undefined
+          ? { identityConflictSequence: previous.identityConflictSequence }
+          : identityConflict
+            ? { identityConflictSequence: sequence }
+            : {}),
+        command:
+          previous?.command === true || asString(input.command) !== undefined,
+        reused:
+          previous?.reused === true ||
+          asString(input.task_id ?? input.taskId) !== undefined,
+        background: previous?.background === true || explicitlyBackground,
+        backgroundMetadataInvalid:
+          previous?.backgroundMetadataInvalid === true ||
+          backgroundMetadataInvalid,
+        ...(previous?.childSessionId
+          ? { childSessionId: previous.childSessionId }
+          : candidateChildSessionId
+            ? { childSessionId: candidateChildSessionId }
+            : {}),
+      });
+      // A task may resume an older session that is not a descendant of the
+      // root. The causal tool part, not ancestry alone, makes it this run's.
+      const acceptedChildSessionId =
+        taskAssociations.get(taskKey)?.childSessionId;
+      if (acceptedChildSessionId) {
+        ownedSessionIds.add(acceptedChildSessionId);
+      }
+      propagateCausality();
+    };
+
+    const observeInternalPrompt = (
+      part: Record<string, unknown>,
+      eventSessionId: string,
+      sequence: number,
+    ): void => {
+      const partType = asString(part.type)?.toLowerCase();
+      const metadata = asRecord(part.metadata);
+      const text = asString(part.text);
+      let kind: OpenCodeInternalPromptObservation['kind'] | undefined;
+      let childSessionId: string | undefined;
+      let backgroundState: 'completed' | 'error' | undefined;
+      if (partType === 'compaction' && part.auto === true) {
+        kind = 'compaction';
+      } else if (partType === 'text' && part.synthetic === true) {
+        if (metadata.compaction_continue === true) {
+          kind = 'compaction-continuation';
+        } else if (text === OPENCODE_COMMAND_CONTINUATION) {
+          kind = 'command-continuation';
+        } else {
+          const backgroundResult = loadOpenCodeBackgroundResultSessionId(text);
+          if (backgroundResult) {
+            childSessionId = backgroundResult.sessionId;
+            backgroundState = backgroundResult.state;
+            kind = 'background-result';
+          }
+        }
+      }
+      if (!kind) {
+        if (
+          partType === 'compaction' ||
+          (partType === 'text' && part.synthetic === true)
+        ) {
+          const messageId = asString(part.messageID);
+          malformedInternalPromptObservations.push({
+            sessionId: eventSessionId,
+            ...(messageId ? { messageId } : {}),
+            sequence,
+          });
+        }
+        return;
+      }
+
+      const canonicalSessionId = asString(part.sessionID);
+      const messageId = asString(part.messageID);
+      const partId = asString(part.id);
+      if (
+        !canonicalSessionId ||
+        canonicalSessionId !== eventSessionId ||
+        !messageId ||
+        !partId
+      ) {
+        malformedInternalPromptObservations.push({
+          sessionId: eventSessionId,
+          ...(messageId ? { messageId } : {}),
+          sequence,
+        });
+        return;
+      }
+
+      const observationKey = openCodeUsageKey(canonicalSessionId, partId);
+      const previous = internalPromptObservations.get(observationKey);
+      const identityConflict =
+        (previous !== undefined &&
+          (previous.messageId !== messageId || previous.kind !== kind)) ||
+        (previous?.childSessionId !== undefined &&
+          childSessionId !== undefined &&
+          previous.childSessionId !== childSessionId);
+      const retainedBackgroundState =
+        previous?.backgroundState === 'error' || backgroundState === 'error'
+          ? 'error'
+          : (previous?.backgroundState ?? backgroundState);
+      internalPromptObservations.set(observationKey, {
+        sessionId: previous?.sessionId ?? canonicalSessionId,
+        messageId: previous?.messageId ?? messageId,
+        partId,
+        sequence: previous?.sequence ?? sequence,
+        kind: previous?.kind ?? kind,
+        identityConflict:
+          previous?.identityConflict === true || identityConflict,
+        ...(previous?.identityConflictSequence !== undefined
+          ? { identityConflictSequence: previous.identityConflictSequence }
+          : identityConflict
+            ? { identityConflictSequence: sequence }
+            : {}),
+        ...(previous?.overflow === true || part.overflow === true
+          ? { overflow: true }
+          : {}),
+        ...(previous?.childSessionId
+          ? { childSessionId: previous.childSessionId }
+          : childSessionId
+            ? { childSessionId }
+            : {}),
+        ...(retainedBackgroundState
+          ? { backgroundState: retainedBackgroundState }
+          : {}),
+      });
+      propagateCausality();
+    };
+
+    const observeStepAccounting = (
+      part: Record<string, unknown>,
+      eventSessionId: string,
+      sequence: number,
+    ): void => {
+      const canonicalSessionId = asString(part.sessionID);
+      const partId = asString(part.id);
+      const messageId = asString(part.messageID);
+      if (!ownedSessionIds.has(eventSessionId)) return;
+
+      if (
+        !canonicalSessionId ||
+        !partId ||
+        !messageId ||
+        eventSessionId !== canonicalSessionId
+      ) {
+        unkeyedMalformedSteps.push({
+          sessionId: eventSessionId,
+          ...(messageId ? { messageId } : {}),
+          sequence,
+        });
+        return;
+      }
+
+      const tokens = asRecord(part.tokens);
+      const cache = asRecord(tokens.cache);
+      const input = readUsageCounter(tokens, ['input'], true);
+      const output = readUsageCounter(tokens, ['output'], true);
+      const reasoning = readUsageCounter(tokens, ['reasoning'], true);
+      const cacheRead = readUsageCounter(cache, ['read'], true);
+      const cacheWrite = readUsageCounter(cache, ['write'], true);
+      const tokenUsage =
+        input.valid &&
+        output.valid &&
+        reasoning.valid &&
+        cacheRead.valid &&
+        cacheWrite.valid
+          ? buildTokenUsage(
+              {
+                total: input.value + cacheRead.value + cacheWrite.value,
+                uncached: input.value,
+                cacheRead: cacheRead.value,
+                cacheWrite: cacheWrite.value,
+              },
+              {
+                total: output.value + reasoning.value,
+                visible: output.value,
+                reasoning: reasoning.value,
+              },
+            )
+          : undefined;
+
+      const cost = buildUsageCost(asNumber(part.cost), 'agent-estimate');
+      const stepKey = openCodeUsageKey(canonicalSessionId, partId);
+      const previous = stepLedger.get(stepKey);
+      stepLedger.set(stepKey, {
+        sessionId: canonicalSessionId,
+        partId,
+        messageId,
+        sequence: previous?.sequence ?? sequence,
+        ...(tokenUsage ? { tokens: tokenUsage } : {}),
+        ...(cost ? { cost } : {}),
+      });
+    };
+
+    const stepCausality = (
+      step: Pick<
+        OpenCodeStepObservation,
+        'sessionId' | 'messageId' | 'sequence'
+      >,
+    ): 'causal' | 'uncertain' | 'foreign' => {
+      const messageKey = openCodeUsageKey(step.sessionId, step.messageId);
+      if (causalMessageKeys.has(messageKey)) return 'causal';
+
+      const fact = messageFacts.get(messageKey);
+      if (fact?.role && fact.role !== 'assistant') return 'foreign';
+      const activation = causalSessionActivation.get(step.sessionId);
+      return activation !== undefined && step.sequence >= activation
+        ? 'uncertain'
+        : 'foreign';
+    };
+
+    const buildAccumulatedUsage = (
+      rootCompleted: boolean,
+    ): DonePayload['usage'] => {
+      propagateCausality();
+      const candidates: UsageRecord[] = [];
+      let coverage: 'complete' | 'partial' = rootCompleted
+        ? 'complete'
+        : 'partial';
+      if (wrapperUsageCoverageIncomplete) coverage = 'partial';
+      let malformedCausalStep = false;
+      const observedCausalStepMessages = new Set<string>();
+      const hasPriorCausalMessage = (
+        sessionId: string,
+        sequence: number,
+        predicate?: (fact: OpenCodeMessageFact) => boolean,
+      ) =>
+        [...messageFacts.entries()].some(
+          ([messageKey, fact]) =>
+            fact.sessionId === sessionId &&
+            fact.sequence < sequence &&
+            causalMessageKeys.has(messageKey) &&
+            (predicate?.(fact) ?? true),
+        );
+      const hasRelevantInternalAnchor = (
+        observation: OpenCodeInternalPromptObservation,
+      ): boolean => {
+        if (
+          observation.kind === 'background-result' &&
+          observation.childSessionId
+        ) {
+          return [...taskAssociations.values()].some(
+            (association) =>
+              association.parentSessionId === observation.sessionId &&
+              association.childSessionId === observation.childSessionId &&
+              association.background &&
+              association.sequence < observation.sequence &&
+              causalMessageKeys.has(association.parentMessageKey),
+          );
+        }
+        if (observation.kind === 'command-continuation') {
+          return [...taskAssociations.values()].some(
+            (association) =>
+              association.parentSessionId === observation.sessionId &&
+              association.command &&
+              association.sequence < observation.sequence &&
+              causalMessageKeys.has(association.parentMessageKey),
+          );
+        }
+        if (observation.kind === 'compaction-continuation') {
+          return hasPriorCausalMessage(
+            observation.sessionId,
+            observation.sequence,
+            (fact) => fact.mode === 'compaction' || fact.summary === true,
+          );
+        }
+        return hasPriorCausalMessage(
+          observation.sessionId,
+          observation.sequence,
+        );
+      };
+
+      for (const observation of internalPromptObservations.values()) {
+        const activation = causalSessionActivation.get(observation.sessionId);
+        const identityConflictSequence =
+          observation.identityConflictSequence ?? observation.sequence;
+        if (
+          activation !== undefined &&
+          observation.identityConflict &&
+          identityConflictSequence >= activation &&
+          hasPriorCausalMessage(observation.sessionId, identityConflictSequence)
+        ) {
+          coverage = 'partial';
+        }
+        if (
+          activation === undefined ||
+          observation.sequence < activation ||
+          !hasRelevantInternalAnchor(observation)
+        ) {
+          continue;
+        }
+        const promptKey = openCodeUsageKey(
+          observation.sessionId,
+          observation.messageId,
+        );
+        if (
+          observation.overflow ||
+          observation.backgroundState === 'error' ||
+          !causalPromptKeys.has(promptKey)
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const malformed of malformedInternalPromptObservations) {
+        const activation = causalSessionActivation.get(malformed.sessionId);
+        const malformedMessage = malformed.messageId
+          ? messageFacts.get(
+              openCodeUsageKey(malformed.sessionId, malformed.messageId),
+            )
+          : undefined;
+        if (
+          activation !== undefined &&
+          malformed.sequence >= activation &&
+          malformedMessage?.role !== 'assistant' &&
+          hasPriorCausalMessage(malformed.sessionId, malformed.sequence)
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const malformed of malformedTaskObservations) {
+        const activation = causalSessionActivation.get(malformed.sessionId);
+        if (activation === undefined || malformed.sequence < activation) {
+          continue;
+        }
+        const messageKey = malformed.messageId
+          ? openCodeUsageKey(malformed.sessionId, malformed.messageId)
+          : undefined;
+        const messageFact = messageKey
+          ? messageFacts.get(messageKey)
+          : undefined;
+        if (
+          !messageKey ||
+          causalMessageKeys.has(messageKey) ||
+          messageFact?.role !== 'assistant'
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const retry of retryObservations) {
+        const activation = causalSessionActivation.get(retry.sessionId);
+        if (activation === undefined || retry.sequence < activation) continue;
+        let preceding: [string, OpenCodeMessageFact] | undefined;
+        for (const entry of messageFacts) {
+          const [, fact] = entry;
+          if (
+            fact.sessionId !== retry.sessionId ||
+            fact.sequence >= retry.sequence
+          ) {
+            continue;
+          }
+          if (!preceding || fact.sequence > preceding[1].sequence) {
+            preceding = entry;
+          }
+        }
+        if (
+          !preceding ||
+          preceding[1].role !== 'assistant' ||
+          causalMessageKeys.has(preceding[0])
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const [messageKey, fact] of messageFacts) {
+        if (
+          fact.role === 'assistant' &&
+          (fact.mode === 'compaction' || fact.summary === true) &&
+          !causalMessageKeys.has(messageKey)
+        ) {
+          const activation = causalSessionActivation.get(fact.sessionId);
+          if (
+            activation !== undefined &&
+            fact.sequence >= activation &&
+            hasPriorCausalMessage(fact.sessionId, fact.sequence)
+          ) {
+            coverage = 'partial';
+          }
+        }
+      }
+
+      const causalCompactions = [...internalPromptObservations.values()]
+        .filter(
+          (observation) =>
+            observation.kind === 'compaction' &&
+            causalPromptKeys.has(
+              openCodeUsageKey(observation.sessionId, observation.messageId),
+            ),
+        )
+        .sort((left, right) => left.sequence - right.sequence);
+      const matchedCompactions = new Set<OpenCodeInternalPromptObservation>();
+      for (const compacted of [...compactedObservations].sort(
+        (left, right) => left.sequence - right.sequence,
+      )) {
+        const compaction = causalCompactions.find(
+          (candidate) =>
+            !matchedCompactions.has(candidate) &&
+            candidate.sessionId === compacted.sessionId &&
+            candidate.sequence < compacted.sequence,
+        );
+        if (!compaction) {
+          if (hasPriorCausalMessage(compacted.sessionId, compacted.sequence)) {
+            coverage = 'partial';
+          }
+          continue;
+        }
+        matchedCompactions.add(compaction);
+        const compactionPromptKey = openCodeUsageKey(
+          compaction.sessionId,
+          compaction.messageId,
+        );
+        const allowedContinuationKeys = new Set(
+          [...internalPromptObservations.values()]
+            .filter(
+              (observation) =>
+                observation.sessionId === compaction.sessionId &&
+                observation.kind === 'compaction-continuation' &&
+                observation.sequence > compaction.sequence &&
+                observation.sequence < compacted.sequence &&
+                causalPromptKeys.has(
+                  openCodeUsageKey(
+                    observation.sessionId,
+                    observation.messageId,
+                  ),
+                ),
+            )
+            .map((observation) =>
+              openCodeUsageKey(observation.sessionId, observation.messageId),
+            ),
+        );
+        const hasUnmarkedInterveningUser = [...messageFacts.entries()].some(
+          ([messageKey, fact]) =>
+            fact.sessionId === compacted.sessionId &&
+            fact.role === 'user' &&
+            fact.sequence > compaction.sequence &&
+            fact.sequence < compacted.sequence &&
+            messageKey !== compactionPromptKey &&
+            !allowedContinuationKeys.has(messageKey),
+        );
+        if (hasUnmarkedInterveningUser) coverage = 'partial';
+      }
+
+      const causalBackgroundAssociations = [...taskAssociations.values()]
+        .filter(
+          (association) =>
+            association.background &&
+            association.childSessionId &&
+            causalMessageKeys.has(association.parentMessageKey),
+        )
+        .sort((left, right) => left.sequence - right.sequence);
+      const backgroundResults = [...internalPromptObservations.values()]
+        .filter(
+          (observation) =>
+            observation.kind === 'background-result' &&
+            observation.childSessionId &&
+            causalPromptKeys.has(
+              openCodeUsageKey(observation.sessionId, observation.messageId),
+            ),
+        )
+        .sort((left, right) => left.sequence - right.sequence);
+      const matchedBackgroundResults =
+        new Set<OpenCodeInternalPromptObservation>();
+      for (const association of causalBackgroundAssociations) {
+        const result = backgroundResults.find(
+          (candidate) =>
+            !matchedBackgroundResults.has(candidate) &&
+            candidate.sessionId === association.parentSessionId &&
+            candidate.childSessionId === association.childSessionId &&
+            candidate.sequence > association.sequence,
+        );
+        if (!result) {
+          coverage = 'partial';
+          continue;
+        }
+        matchedBackgroundResults.add(result);
+        if (result.backgroundState === 'error') coverage = 'partial';
+      }
+
+      // A causal TaskPart without its native child session id cannot prove
+      // which descendant requests belong to this run. Keep any exact parent
+      // records, but never describe that subset as complete.
+      for (const association of taskAssociations.values()) {
+        const activation = causalSessionActivation.get(
+          association.parentSessionId,
+        );
+        if (
+          association.identityConflict &&
+          (causalMessageKeys.has(association.parentMessageKey) ||
+            (activation !== undefined &&
+              (association.identityConflictSequence ?? association.sequence) >=
+                activation))
+        ) {
+          coverage = 'partial';
+        }
+        if (
+          causalMessageKeys.has(association.parentMessageKey) &&
+          (!association.childSessionId || association.backgroundMetadataInvalid)
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const step of stepLedger.values()) {
+        const causality = stepCausality(step);
+        if (causality === 'foreign') continue;
+        if (causality === 'uncertain') {
+          coverage = 'partial';
+          continue;
+        }
+        const messageKey = openCodeUsageKey(step.sessionId, step.messageId);
+        observedCausalStepMessages.add(messageKey);
+        if (!step.tokens) {
+          malformedCausalStep = true;
+          continue;
+        }
+        const fact = messageFacts.get(messageKey);
+        candidates.push({
+          ...(fact?.model ? { model: fact.model } : {}),
+          ...(fact?.provider ? { provider: fact.provider } : {}),
+          requests: 1,
+          tokens: step.tokens,
+          ...(step.cost ? { cost: step.cost } : {}),
+        });
+      }
+
+      for (const malformed of unkeyedMalformedSteps) {
+        if (!malformed.sessionId) continue;
+        const activation = causalSessionActivation.get(malformed.sessionId);
+        if (activation === undefined || malformed.sequence < activation) {
+          continue;
+        }
+        if (malformed.messageId) {
+          const messageKey = openCodeUsageKey(
+            malformed.sessionId,
+            malformed.messageId,
+          );
+          const fact = messageFacts.get(messageKey);
+          if (fact?.role && fact.role !== 'assistant') continue;
+          if (causalMessageKeys.has(messageKey)) {
+            observedCausalStepMessages.add(messageKey);
+          }
+        }
+        malformedCausalStep = true;
+      }
+
+      for (const causalMessageKey of causalMessageKeys) {
+        if (
+          !causalNonModelMessageKeys.has(causalMessageKey) &&
+          !observedCausalStepMessages.has(causalMessageKey)
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      const promptsWithCausalAssistants = new Set<string>();
+      for (const causalMessageKey of causalMessageKeys) {
+        const fact = messageFacts.get(causalMessageKey);
+        if (fact?.parentId) {
+          promptsWithCausalAssistants.add(
+            openCodeUsageKey(fact.sessionId, fact.parentId),
+          );
+        }
+      }
+      for (const causalPromptKey of causalPromptKeys) {
+        if (!promptsWithCausalAssistants.has(causalPromptKey)) {
+          coverage = 'partial';
+        }
+      }
+
+      for (const causalSessionId of causalSessionActivation.keys()) {
+        const latestAssociation =
+          causalSessionLatestAssociation.get(causalSessionId);
+        const completedSequence = completedOwnedSessions.get(causalSessionId);
+        let latestCausalSequence = latestAssociation ?? 0;
+        for (const [messageKey, fact] of messageFacts) {
+          if (
+            fact.sessionId === causalSessionId &&
+            (causalPromptKeys.has(messageKey) ||
+              causalMessageKeys.has(messageKey))
+          ) {
+            latestCausalSequence = Math.max(
+              latestCausalSequence,
+              fact.sequence,
+            );
+          }
+        }
+        for (const step of stepLedger.values()) {
+          if (
+            step.sessionId === causalSessionId &&
+            stepCausality(step) === 'causal'
+          ) {
+            latestCausalSequence = Math.max(
+              latestCausalSequence,
+              step.sequence,
+            );
+          }
+        }
+        for (const association of taskAssociations.values()) {
+          if (
+            association.parentSessionId === causalSessionId &&
+            causalMessageKeys.has(association.parentMessageKey)
+          ) {
+            latestCausalSequence = Math.max(
+              latestCausalSequence,
+              association.sequence,
+            );
+          }
+        }
+        if (
+          causalSessionId !== sessionId &&
+          (latestAssociation === undefined ||
+            completedSequence === undefined ||
+            completedSequence < latestCausalSequence)
+        ) {
+          coverage = 'partial';
+        }
+      }
+
+      const observedToolUses = accumulatedToolUses;
+      if (unmatchedCausalTaskKeys.size > 0) coverage = 'partial';
+      if (malformedCausalStep) coverage = 'partial';
+      if (candidates.length === 0) {
+        return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
+      }
+
+      const totals = sumTokenUsage(candidates);
+      const report = totals
+        ? buildTokenUsageReport(coverage, totals, candidates)
+        : undefined;
+      if (!report) {
+        return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
+      }
+
+      const allCostsReported = candidates.every(
+        (record) => record.cost !== undefined,
+      );
+      const costAmount = allCostsReported
+        ? candidates.reduce((sum, record) => sum + record.cost!.amount, 0)
+        : undefined;
+      const cost =
+        coverage === 'complete'
+          ? buildUsageCost(costAmount, 'agent-estimate')
+          : undefined;
+      return {
+        toolUses: observedToolUses,
+        tokens: report,
+        ...(cost ? { cost } : {}),
+      };
+    };
+
     // OpenCode's shared SSE stream publishes user and assistant messages.
     // Part events can precede the message.updated envelope that supplies the
     // role, so content stays pending until its message role is known.
@@ -1914,13 +3132,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const hasDelta = delta !== undefined;
 
         if (!hasDelta && partId) {
-          const content = contentKind === 'text'
-            ? asString(part.text) ??
-              asString(part.content) ??
-              asString(asRecord(part.content).text)
-            : asString(part.summary) ??
-              asString(part.text) ??
-              asString(part.content);
+          const content =
+            contentKind === 'text'
+              ? (asString(part.text) ??
+                asString(part.content) ??
+                asString(asRecord(part.content).text))
+              : (asString(part.summary) ??
+                asString(part.text) ??
+                asString(part.content));
 
           if (content) {
             const signature = `${contentKind}\0${content}`;
@@ -2089,18 +3308,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       return sessionAbortPromise;
     };
 
-    const accumulatedUsage = (): DonePayload['usage'] => ({
-      // Error, interruption, inactivity, and exhaustion are synthesized
-      // terminal paths: partial step counters must not be presented as a
-      // complete provider measurement, but independently observed tool uses
-      // and compatibility-shaped numeric fields remain available.
-      tokenAvailability: 'unavailable',
-      inputTokens: accumulatedInputTokens,
-      outputTokens: accumulatedOutputTokens,
-      toolUses: accumulatedToolUses,
-      ...(accumulatedCost > 0 ? { totalCostUsd: accumulatedCost } : {}),
-    });
-
     try {
       if (this.mode === 'managed') {
         // ENG-025: the peer gate sits in the SDK loader, but managed mode
@@ -2111,14 +3318,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           `npm install -g ${AGENT_RUNTIME_TARGETS.opencode[1]!.repairSpec}`,
         );
         const managedArgs = createManagedServerArgs(this.serverUrl);
-        serverProcess = this.spawnProcess(
-          'opencode',
-          managedArgs,
-          {
-            cwd: options?.cwd,
-            stdio: 'pipe',
-          },
-        );
+        serverProcess = this.spawnProcess('opencode', managedArgs, {
+          cwd: options?.cwd,
+          stdio: 'pipe',
+        });
 
         serverExitPromise = waitForProcessClose(serverProcess).then((info) => {
           serverClosed = true;
@@ -2127,7 +3330,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           return info;
         });
 
-        actualServerUrl = await this.waitForServerReady(serverProcess, this.readyTimeoutMs);
+        actualServerUrl = await this.waitForServerReady(
+          serverProcess,
+          this.readyTimeoutMs,
+        );
 
         if (abortRequested) {
           onAbort();
@@ -2160,6 +3366,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       };
       const runPromise = runFn({
         prompt,
+        promptMessageId,
         cwd: options?.cwd,
         model: options?.model,
         signal: eventStreamController.signal,
@@ -2230,6 +3437,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       )) {
         ownedSessionIds.add(ownedSessionId);
       }
+      wrapperUsageCoverageIncomplete =
+        asRecord(runResult).usageCoverageIncomplete === true;
+      propagateCausality();
       const stream = resolveEventStream(
         client,
         runResult,
@@ -2244,7 +3454,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode run aborted during prompt dispatch');
       }
       if (!stream || !iterator) {
-        throw new Error('OpenCode SDK client does not provide an SSE event stream');
+        throw new Error(
+          'OpenCode SDK client does not provide an SSE event stream',
+        );
       }
 
       if (!initYielded) {
@@ -2287,7 +3499,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       ): Promise<ControlOutcome<T>> => {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<ControlOutcome<T>>((resolve) => {
-          timer = setTimeout(() => resolve({ kind: 'timeout' }), controlTimeoutMs);
+          timer = setTimeout(
+            () => resolve({ kind: 'timeout' }),
+            controlTimeoutMs,
+          );
         });
         const operationPromise = operation()
           .then<ControlOutcome<T>>((value) => ({ kind: 'success', value }))
@@ -2316,7 +3531,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       const abortActiveSession = (raceCallerAbort: boolean) =>
         runControlOperation<void>(startKnownSessionAbort, raceCallerAbort);
 
-      const describeControlOutcome = (outcome: ControlOutcome<unknown>): string => {
+      const describeControlOutcome = (
+        outcome: ControlOutcome<unknown>,
+      ): string => {
         if (outcome.kind === 'success') return 'succeeded';
         if (outcome.kind === 'failure') {
           return `failed: ${errorMessage(outcome.error)}`;
@@ -2410,7 +3627,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -2441,20 +3658,17 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             `deadlineMs=${this.eventInactivityTimeoutMs}; ` +
             `serverMode=${this.mode}; serverState=${serverState}`;
 
-          const statusOutcome = await runControlOperation(
-            async () => {
-              if (!client?.getSessionStatus) {
-                throw new Error(
-                  'OpenCode SDK client does not provide session.status()',
-                );
-              }
-              return client.getSessionStatus({
-                sessionId,
-                ...(options?.cwd ? { cwd: options.cwd } : {}),
-              });
-            },
-            true,
-          );
+          const statusOutcome = await runControlOperation(async () => {
+            if (!client?.getSessionStatus) {
+              throw new Error(
+                'OpenCode SDK client does not provide session.status()',
+              );
+            }
+            return client.getSessionStatus({
+              sessionId,
+              ...(options?.cwd ? { cwd: options.cwd } : {}),
+            });
+          }, true);
 
           if (statusOutcome.kind === 'caller_abort' || abortRequested) {
             startKnownSessionAbort();
@@ -2469,7 +3683,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2492,7 +3706,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2526,7 +3740,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2545,7 +3759,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2582,7 +3796,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -2601,7 +3815,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2623,7 +3837,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2657,7 +3871,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2676,7 +3890,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -2705,7 +3919,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -2735,7 +3949,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -2809,6 +4023,75 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const rootSessionEvent = eventSessionId === sessionId;
         const ownedSessionEvent =
           eventSessionId !== undefined && ownedSessionIds.has(eventSessionId);
+        const accountingEventSequence = ++accountingSequence;
+
+        // Accounting and conversational visibility have different scopes.
+        // Observe canonical messages and parts for every run-owned session
+        // before the root-only output filter below. Causality is resolved from
+        // the explicit root prompt id and task metadata at terminal time.
+        if (ownedSessionEvent && eventSessionId) {
+          if (eventType === 'message.updated') {
+            observeMessageAccounting(
+              event,
+              eventSessionId,
+              accountingEventSequence,
+            );
+          } else if (eventType === 'message.part.updated') {
+            const accountingPart = asRecord(
+              event.part ?? asRecord(event.message).part ?? event.data,
+            );
+            observeInternalPrompt(
+              accountingPart,
+              eventSessionId,
+              accountingEventSequence,
+            );
+            const accountingPartType = asString(
+              accountingPart.type,
+            )?.toLowerCase();
+            if (accountingPartType === 'step-finish') {
+              observeStepAccounting(
+                accountingPart,
+                eventSessionId,
+                accountingEventSequence,
+              );
+            } else if (
+              accountingPartType === 'tool' ||
+              accountingPartType === 'tool_call' ||
+              accountingPartType === 'tool_use'
+            ) {
+              observeTaskAssociation(
+                accountingPart,
+                eventSessionId,
+                accountingEventSequence,
+              );
+            }
+          }
+
+          if (
+            eventType === 'session.status' &&
+            sessionStatusType(event.status) === 'retry'
+          ) {
+            retryObservations.push({
+              sessionId: eventSessionId,
+              sequence: accountingEventSequence,
+            });
+          }
+
+          if (eventType === 'session.compacted') {
+            compactedObservations.push({
+              sessionId: eventSessionId,
+              sequence: accountingEventSequence,
+            });
+          }
+
+          if (
+            eventType === 'session.idle' ||
+            (eventType === 'session.status' &&
+              asString(asRecord(event.status).type) === 'idle')
+          ) {
+            completedOwnedSessions.set(eventSessionId, accountingEventSequence);
+          }
+        }
 
         // Session ownership and output visibility are distinct scopes. Every
         // explicitly tagged event from the root or one of its descendants
@@ -2873,10 +4156,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         if (eventType === 'message.updated') {
           const messageId = loadOpenCodeUpdatedMessageId(event);
           const role = loadOpenCodeMessageRole(event);
-          if (messageId) {
-            const identity = loadOpenCodeMessageModel(event);
-            if (identity) messageModels.set(messageId, identity);
-          }
           if (messageId && role) {
             messageRoles.set(messageId, role);
             for (const normalized of drainPendingContent()) {
@@ -2914,9 +4193,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           eventType === 'session.next.text.delta' ||
           eventType === 'session.next.reasoning.delta'
         ) {
-          const contentKind = eventType === 'session.next.text.delta'
-            ? 'text'
-            : 'reasoning';
+          const contentKind =
+            eventType === 'session.next.text.delta' ? 'text' : 'reasoning';
           for (const normalized of queueContent(
             eventType,
             event,
@@ -2963,11 +4241,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (partKind === 'text' || partKind === 'reasoning') {
-            for (const normalized of queueContent(
-              eventType,
-              event,
-              partKind,
-            )) {
+            for (const normalized of queueContent(eventType, event, partKind)) {
               yield normalized;
             }
             continue;
@@ -3080,54 +4354,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
           // Accumulate usage from step-finish parts.
           if (partType === 'step-finish') {
-            const tokens = asRecord(part.tokens);
-            const cache = asRecord(tokens.cache);
-            const inputTokens = readUsageCounter(tokens, ['input'], true);
-            const outputTokens = readUsageCounter(tokens, ['output'], true);
-            const reasoningTokens = readUsageCounter(
-              tokens,
-              ['reasoning'],
-              true,
-            );
-            const cacheReadTokens = readUsageCounter(cache, ['read'], true);
-            const cacheWriteTokens = readUsageCounter(cache, ['write'], true);
-            accumulatedTokenUsageObserved = true;
-            // OpenCode already normalizes to the DR-014 frame: `input` is
-            // cache-exclusive and `output` excludes `reasoning`, so the five
-            // counters are the partition and the aggregates are their sums.
-            accumulatedComponents.input += inputTokens.value;
-            accumulatedComponents.cacheRead += cacheReadTokens.value;
-            accumulatedComponents.cacheWrite += cacheWriteTokens.value;
-            accumulatedComponents.output += outputTokens.value;
-            accumulatedComponents.reasoning += reasoningTokens.value;
-            accumulatedInputTokens +=
-              inputTokens.value +
-              cacheReadTokens.value +
-              cacheWriteTokens.value;
-            accumulatedOutputTokens +=
-              outputTokens.value + reasoningTokens.value;
-            if (
-              !inputTokens.valid ||
-              !outputTokens.valid ||
-              !reasoningTokens.valid ||
-              !cacheReadTokens.valid ||
-              !cacheWriteTokens.valid
-            ) {
-              accumulatedTokenUsageComplete = false;
-            }
-            const stepCost = asNumber(part.cost);
-            accumulatedCost += stepCost ?? 0;
-            stepRecords.push({
-              messageId: asString(part.messageID) ?? asString(part.messageId),
-              tokens: {
-                input: inputTokens.value,
-                cacheRead: cacheReadTokens.value,
-                cacheWrite: cacheWriteTokens.value,
-                output: outputTokens.value,
-                reasoning: reasoningTokens.value,
-              },
-              ...(stepCost !== undefined ? { costUsd: stepCost } : {}),
-            });
             continue;
           }
 
@@ -3223,7 +4449,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3250,7 +4476,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3285,7 +4511,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3304,7 +4530,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3402,7 +4628,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3431,7 +4657,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3471,7 +4697,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     sessionId,
                     options?.resume,
                   ),
-                  usage: accumulatedUsage(),
+                  usage: buildAccumulatedUsage(false),
                   durationMs: Date.now() - startTime,
                 },
                 sessionId,
@@ -3490,7 +4716,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3605,9 +4831,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           if (eventType === 'session.error') {
             sessionErrorObserved = true;
           }
-          const errorData = eventType === 'session.error'
-            ? toErrorPayload(event.error ?? event)
-            : toErrorPayload(event);
+          const errorData =
+            eventType === 'session.error'
+              ? toErrorPayload(event.error ?? event)
+              : toErrorPayload(event);
           yield createEvent('error', AGENT, errorData, sessionId);
           continue;
         }
@@ -3635,7 +4862,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   sessionId,
                   options?.resume,
                 ),
-                usage: accumulatedUsage(),
+                usage: buildAccumulatedUsage(false),
                 durationMs: Date.now() - startTime,
               },
               sessionId,
@@ -3646,70 +4873,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const status = sessionErrorObserved
             ? 'error'
             : mapDoneStatus(asString(event.status));
-          // Use event-provided usage if available, otherwise fall back to
-          // values accumulated from step-finish parts.
-          const eventUsage = mapUsage(event.usage, accumulatedToolUses);
-          const eventTokenUsageObserved = hasOpenCodeEventTokenCounters(
-            event.usage,
-          );
-          const accumulatedReported =
-            accumulatedTokenUsageObserved && accumulatedTokenUsageComplete;
-          // OPENCODE-005: only complete step accounting yields a partition;
-          // ENG-027 suppresses the breakdown on unavailable accounting.
-          const accumulatedBreakdown = accumulatedReported
-            ? buildTokenBreakdown(
-                {
-                  inputTokens: accumulatedInputTokens,
-                  outputTokens: accumulatedOutputTokens,
-                },
-                accumulatedComponents,
-              )
-            : undefined;
-          const accumulatedRecords = buildUsageRecords(
-            accumulatedBreakdown,
-            stepRecords.map((step) => ({
-              ...(step.messageId
-                ? messageModels.get(step.messageId) ?? {}
-                : {}),
-              // One step is one model request, so a context-length tier
-              // follows from this record's own counts (ENG-030).
-              requests: 1,
-              tokens: step.tokens,
-              ...(step.costUsd !== undefined ? { costUsd: step.costUsd } : {}),
-            })),
-          );
-          const accumulatedEventUsage: DonePayload['usage'] = {
-            tokenAvailability: accumulatedReported ? 'reported' : 'unavailable',
-            inputTokens: accumulatedInputTokens,
-            outputTokens: accumulatedOutputTokens,
-            toolUses: Math.max(eventUsage.toolUses, accumulatedToolUses),
-            ...(accumulatedCost > 0
-              ? { totalCostUsd: accumulatedCost }
-              : {}),
-            ...(accumulatedBreakdown
-              ? { breakdown: accumulatedBreakdown }
-              : {}),
-            ...(accumulatedRecords ? { records: accumulatedRecords } : {}),
-          };
-          const usage: DonePayload['usage'] = eventTokenUsageObserved
-            ? {
-                ...eventUsage,
-                // A malformed mapped counter from either provider source
-                // poisons availability; a valid source must not hide it.
-                tokenAvailability:
-                  eventUsage.tokenAvailability === 'reported' &&
-                  (!accumulatedTokenUsageObserved ||
-                    accumulatedTokenUsageComplete)
-                    ? 'reported'
-                    : 'unavailable',
-                toolUses: Math.max(
-                  eventUsage.toolUses,
-                  accumulatedToolUses,
-                ),
-              }
-            : accumulatedTokenUsageObserved
-              ? accumulatedEventUsage
-              : eventUsage;
+          // Canonical OpenCode idle events carry no accounting. Step-finish
+          // parts are the sole authenticated source; generic idle aliases are
+          // intentionally ignored because their frame and scope are unknown.
+          const usage = buildAccumulatedUsage(true);
 
           yield createEvent(
             'done',
@@ -3753,7 +4920,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3765,7 +4932,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               code: 'MISSING_SESSION_IDLE',
-              message: 'Protocol violation: OpenCode stream ended without session.idle',
+              message:
+                'Protocol violation: OpenCode stream ended without session.idle',
               recoverable: false,
             },
             sessionId,
@@ -3781,7 +4949,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3826,7 +4994,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3857,7 +5025,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: accumulatedUsage(),
+              usage: buildAccumulatedUsage(false),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -3882,7 +5050,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         } catch {
           // ignore cleanup errors
         }
-
       }
 
       const sdkCleanup = Promise.all([

@@ -67,7 +67,7 @@ When the adapter's generator exhausts without yielding a `done` event, `run()` s
 
 ### ENG-013
 
-Synthesized `done` payloads shall use unavailable zeroed token usage (`tokenAvailability: 'unavailable'`, `inputTokens: 0`, `outputTokens: 0`), shall preserve any independently known `toolUses`, and shall use `durationMs` measured from when the adapter's `.run()` was called.
+Synthesized `done` payloads shall require only `usage.toolUses`, shall preserve any independently known tool-use count, shall omit `usage.tokens` and `usage.cost` rather than fabricate accounting, and shall use `durationMs` measured from when the adapter's `.run()` was called.
 An adapter-emitted `done` shall take precedence over synthesis.
 This precedence includes an adapter-emitted interrupted `done` observed during the abort-drain path of [ENG-009](#eng-009).
 
@@ -96,12 +96,15 @@ When `allowedTools` is set, adapters shall restrict available tools to that list
 ### ENG-018
 
 `AgentAdapter.run()` shall be safe for concurrent calls on the same adapter instance unless the adapter explicitly documents an environmental constraint. Each call shall create fresh local state and `run()` shall not mutate adapter instance state per [DR-003](../decisions/003-role-scoped-session-management.md#adapter-thread-safety).
-Where a backend reports token accounting cumulatively per session rather than per turn, the adapter shall be permitted to retain one usage baseline per backend session identifier across calls, as the sole exception, because the turn's own usage is otherwise unrecoverable.
-That baseline shall be keyed by backend session identity so concurrent runs on different sessions cannot observe each other's counters, and an adapter holding no baseline for a session it did not observe shall report token accounting as `'unavailable'` per [ENG-027](#eng-027) rather than attribute the session's accumulated total to one turn.
+Where a backend reports token accounting cumulatively per session rather than per turn, the adapter shall be permitted to retain one usage baseline per backend session identifier and a per-resume-session serialization queue across calls, as the sole exception, because the turn's own usage is otherwise unrecoverable.
+That baseline shall be keyed by backend session identity so concurrent runs on different sessions cannot observe each other's counters, and an adapter holding no baseline for a session it did not observe shall omit token accounting per [ENG-031](#eng-031) rather than attribute the session's accumulated total to one turn.
+Runs carrying the same non-empty resume identifier shall enter the backend serially through terminal cleanup so their cumulative snapshots have one causal order; fresh runs and runs carrying different resume identifiers shall remain concurrent, and normal completion, error, interruption, or setup failure after acquisition shall release the queue for its successor.
 
 ## Usage Reporting
 
 ### ENG-019
+
+_Superseded by [ENG-031](#eng-031); retained for the released flat-field contract._
 
 Where token accounting is `'reported'`, `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation).
 Where a provider defines its base input counter as cache-exclusive, the adapter shall sum provider-specific cache-read and cache-write fields into `inputTokens` exactly once.
@@ -181,6 +184,8 @@ Where an adapter's runtime is an executable found through `PATH`, the adapter sh
 
 ### ENG-027
 
+_Superseded by [ENG-031](#eng-031); retained for the released availability-discriminator contract._
+
 Every `DonePayload.usage` shall carry the required `tokenAvailability` discriminator with the closed values `'reported' | 'unavailable'` per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md#key-payloads).
 Where upstream supplies complete finite non-negative integer input and output counters, including explicit zeroes, and every present mapped cache or reasoning counter has the same form, the adapter shall set `'reported'`, shall preserve the mapped counters and [ENG-019](#eng-019) composition rules, and shall not estimate any missing component.
 Where an optional cache counter is absent, its contribution shall be zero without invalidating otherwise complete accounting; where a required counter is absent or any present mapped token or cache counter is non-finite, negative, fractional, or non-numeric, the producer shall set `'unavailable'` rather than silently substituting a reported zero.
@@ -193,6 +198,8 @@ Where the discriminator is `'unavailable'`, the producer shall omit `breakdown` 
 
 ### ENG-028
 
+_Superseded by [ENG-031](#eng-031); retained for the unreleased disjoint-breakdown design._
+
 `DoneUsage.breakdown` shall be an optional `TokenBreakdown` whose optional members `input`, `cacheRead`, `cacheWrite`, `output`, and `reasoning` are a disjoint partition of the aggregates per [DR-014](../decisions/014-unified-token-usage-breakdown.md), counting every token at most once and satisfying the [ENG-019](#eng-019) identities.
 A present member shall be a finite non-negative integer the producer measured, and an absent member shall mean the runtime does not report that quantity; a present zero shall therefore never be interpreted as an unreported component, nor an absent member as a measured zero.
 The members shall form two sides, `input` / `cacheRead` / `cacheWrite` and `output` / `reasoning`, and the producer shall publish each side in full or omit it in full.
@@ -202,14 +209,44 @@ Where neither side is publishable, the producer shall omit `breakdown` rather th
 
 ### ENG-029
 
+_Superseded by [ENG-031](#eng-031); retained for the original supplementary-source rule._
+
 Where an adapter derives token accounting from a source other than the protocol stream it consumes for the run, including state the runtime writes outside that stream, it shall cross-validate the derived totals against the aggregates that stream itself reported.
 Where the cross-validation fails, or the source is absent, unreadable, or unparsable, the adapter shall fall back to the accounting the protocol stream supports, including `'unavailable'` where that accounting is incomplete, so that a supplementary source can only raise fidelity and never lower correctness.
 An adapter shall not read a source that lies outside a protocol boundary an applicable decision record establishes for it.
 
 ### ENG-030
 
+_Superseded by [ENG-031](#eng-031); retained for the original billable-record design._
+
 `DoneUsage.records` shall be an optional list of `UsageRecord` values decomposing the run into billable groups per [DR-014](../decisions/014-unified-token-usage-breakdown.md), each carrying that group's `tokens` in the [ENG-028](#eng-028) frame and, where the runtime supplies them, the rate-card `model` and `provider`, the number of API `requests` the group covers, and the `costUsd` the runtime computed for it.
 Where the producer publishes records, their components shall sum exactly to `breakdown`, member by member, so that a component present in one is present in the other; where that identity cannot hold, the producer shall omit `records` entirely rather than publish a decomposition the aggregates do not support.
 Where a runtime does not report which model performed a group's work, the producer shall omit `model` rather than substitute a placeholder, because a placeholder selects a rate as confidently as a real identifier would.
 Where `requests` is `1`, a context-length pricing tier shall be determinable from that record's own tokens; where it is greater, it shall not be, because such tiers are selected per request and the record's counts are a sum; where it is absent, the request count is unreported.
 Where token accounting is `'unavailable'`, the producer shall omit `records`, on the same grounds as [ENG-027](#eng-027)'s suppression of `breakdown`.
+
+## Authentic Usage Accounting
+
+### ENG-031
+
+`DonePayload.usage` shall require only the independently observed finite non-negative integer `toolUses` count and shall optionally carry `tokens` and `cost` per [DR-014](../decisions/014-unified-token-usage-breakdown.md).
+The public `DoneUsage` declaration shall not expose `tokenAvailability`, `inputTokens`, `outputTokens`, `totalCostUsd`, or `breakdown`; a synthesized terminal or a runtime with no authentic token source shall omit `tokens` rather than publish numeric placeholders.
+
+Where `tokens` is present, `totals.input.total` shall include cache reads and cache writes, and `totals.output.total` shall include reasoning or thinking.
+Every present total, detail, request count, priced-unit quantity, and cost amount shall be finite and non-negative; token and count fields shall additionally be safe integers.
+An absent detail shall mean unreported and a present zero shall mean measured.
+Input `uncached`, `cacheRead`, and `cacheWrite` details and output `visible` and `reasoning` details shall be exact subsets of their inclusive total; where a producer publishes every detail on a side, those details shall sum exactly to the total, and no producer shall clamp, estimate, or allocate an unexplained residual.
+
+`tokens.coverage` shall be `'complete'` only where every model request causally owned by the current `run()` invocation, including descendant-agent work and excluding resumed history, is represented.
+Where every published number is authentic but the runtime surface may omit invocation work, the producer shall use `'partial'`; where even that exact scope cannot be established, it shall omit `tokens`.
+
+Where `tokens.records` is present, each record shall carry authentic inclusive input and output totals for one rate-card group, the records shall sum exactly to `tokens.totals` and every aggregate detail it publishes, and a missing model or provider shall remain absent rather than become a placeholder.
+A present `requests` shall be a positive safe integer; `1` shall mean the record describes one model request, while a greater value shall mean per-request context tiers cannot be recovered from the aggregate.
+
+Where a runtime reports cost, the producer shall preserve it as `{ amount, currency: 'USD', source }` without applying a Cligent price table.
+`source` shall distinguish an `agent-estimate`, `provider-reported` value, or `account-estimate`, and no source shall be described as billed cost without such authority.
+Cost and token accounting shall remain independent so a valid runtime cost may survive absent tokens and vice versa.
+Separately priced non-token quantities shall be emitted as named `pricedUnits`, never folded into token totals.
+
+Where an adapter reads a run-owned supplementary source, it shall cross-validate that source against the runtime's ordinary terminal counters, omit the supplementary token report on absence, read or parse failure, duplication, or mismatch, and remain inside every applicable protocol boundary.
+The engine and built-in adapters shall preserve `toolUses` independently on all terminal statuses whether `tokens` and `cost` are present or absent.

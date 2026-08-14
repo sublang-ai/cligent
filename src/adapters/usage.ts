@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import type { TokenBreakdown, UsageRecord } from '../types.js';
+import type {
+  InputTokenUsage,
+  OutputTokenUsage,
+  TokenUsage,
+  TokenUsageReport,
+  UsageCost,
+  UsageCostSource,
+  UsageCoverage,
+  UsageRecord,
+} from '../types.js';
 
 export interface UsageCounterReading {
   value: number;
@@ -14,14 +23,8 @@ export interface UsageCounterReading {
   present: boolean;
 }
 
-/** Aggregates a breakdown must partition exactly (ENG-019). */
-export interface TokenAggregates {
-  inputTokens: number;
-  outputTokens: number;
-}
-
-const INPUT_SIDE = ['input', 'cacheRead', 'cacheWrite'] as const;
-const OUTPUT_SIDE = ['output', 'reasoning'] as const;
+const INPUT_DETAILS = ['uncached', 'cacheRead', 'cacheWrite'] as const;
+const OUTPUT_DETAILS = ['visible', 'reasoning'] as const;
 
 function isCounter(value: number | undefined): value is number {
   return (
@@ -53,44 +56,49 @@ export function exclusiveBase(
   return base >= 0 ? base : undefined;
 }
 
-function retainSide(
-  members: readonly (keyof TokenBreakdown)[],
-  candidate: TokenBreakdown,
-  aggregate: number,
-): TokenBreakdown | undefined {
-  const present = members.filter((member) => candidate[member] !== undefined);
-  if (present.length === 0) return undefined;
-
+function validateDetails<T extends object, K extends keyof T>(
+  total: number,
+  side: T,
+  members: readonly K[],
+): boolean {
+  let present = 0;
   let sum = 0;
-  const side: TokenBreakdown = {};
-  for (const member of present) {
-    const value = candidate[member];
-    if (!isCounter(value)) return undefined;
+  for (const member of members) {
+    const value = side[member] as number | undefined;
+    if (value === undefined) continue;
+    if (!isCounter(value)) return false;
+    present += 1;
     sum += value;
-    side[member] = value;
+    if (!Number.isSafeInteger(sum)) return false;
   }
 
-  // ENG-019: a published side partitions its aggregate exactly. A side that
-  // cannot is dropped, never reconciled by adjusting a component.
-  return sum === aggregate ? side : undefined;
+  if (sum > total) return false;
+  return present !== members.length || sum === total;
 }
 
 /**
- * Build the optional `DoneUsage.breakdown` from components already expressed
- * in the disjoint frame, enforcing ENG-028 side atomicity and the ENG-019
- * partition identities. Each side survives only if every present member is a
- * finite non-negative integer and the side sums to its aggregate; a breakdown
- * with no surviving side is omitted rather than emitted empty.
+ * Validate inclusive input/output totals and their exact optional subsets.
+ * Detail omission means unreported; when a complete detail side is present it
+ * must partition its inclusive total exactly.
  */
-export function buildTokenBreakdown(
-  aggregates: TokenAggregates,
-  components: TokenBreakdown,
-): TokenBreakdown | undefined {
-  const input = retainSide(INPUT_SIDE, components, aggregates.inputTokens);
-  const output = retainSide(OUTPUT_SIDE, components, aggregates.outputTokens);
-  if (!input && !output) return undefined;
+export function buildTokenUsage(
+  input: InputTokenUsage,
+  output: OutputTokenUsage,
+): TokenUsage | undefined {
+  if (!isCounter(input.total) || !isCounter(output.total)) return undefined;
+  if (!validateDetails(input.total, input, INPUT_DETAILS)) return undefined;
+  if (!validateDetails(output.total, output, OUTPUT_DETAILS)) return undefined;
+  return { input: { ...input }, output: { ...output } };
+}
 
-  return { ...input, ...output };
+export function buildUsageCost(
+  amount: number | undefined,
+  source: UsageCostSource,
+): UsageCost | undefined {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+    return undefined;
+  }
+  return { amount, currency: 'USD', source };
 }
 
 export function isUsageRecord(
@@ -117,9 +125,12 @@ export function readUsageCounter(
     if (
       typeof candidate !== 'number' ||
       !Number.isFinite(candidate) ||
-      !Number.isInteger(candidate) ||
+      !Number.isSafeInteger(candidate) ||
       candidate < 0
     ) {
+      return { value: 0, valid: false, present: true };
+    }
+    if (value !== undefined && candidate !== value) {
       return { value: 0, valid: false, present: true };
     }
     value ??= candidate;
@@ -128,48 +139,124 @@ export function readUsageCounter(
   return { value: value ?? 0, valid: true, present: true };
 }
 
-/**
- * Build the optional `DoneUsage.records` billable decomposition per ENG-030.
- * A record survives only if its own components satisfy the ENG-019 partition
- * identities against its own totals, and the surviving set survives only if it
- * sums to the run's published `breakdown` — otherwise the decomposition would
- * describe work the aggregates do not, and is dropped whole rather than
- * published partial.
- */
-export function buildUsageRecords(
-  breakdown: TokenBreakdown | undefined,
-  candidates: readonly UsageRecord[],
-): UsageRecord[] | undefined {
-  if (!breakdown || candidates.length === 0) return undefined;
+function sumInputDetail(
+  records: readonly UsageRecord[],
+  member: 'uncached' | 'cacheRead' | 'cacheWrite',
+): number | undefined {
+  let sum = 0;
+  for (const record of records) {
+    const value = record.tokens.input[member];
+    if (value === undefined) return undefined;
+    sum += value;
+    if (!Number.isSafeInteger(sum)) return undefined;
+  }
+  return sum;
+}
 
-  const members: (keyof TokenBreakdown)[] = [
-    'input',
-    'cacheRead',
-    'cacheWrite',
-    'output',
-    'reasoning',
-  ];
+function sumOutputDetail(
+  records: readonly UsageRecord[],
+  member: 'visible' | 'reasoning',
+): number | undefined {
+  let sum = 0;
+  for (const record of records) {
+    const value = record.tokens.output[member];
+    if (value === undefined) return undefined;
+    sum += value;
+    if (!Number.isSafeInteger(sum)) return undefined;
+  }
+  return sum;
+}
 
-  const totals: Partial<Record<keyof TokenBreakdown, number>> = {};
-  for (const record of candidates) {
-    for (const member of members) {
-      const value = record.tokens[member];
-      if (value === undefined) continue;
-      if (!isCounter(value)) return undefined;
-      totals[member] = (totals[member] ?? 0) + value;
-    }
-    if (record.requests !== undefined && !isCounter(record.requests)) {
+/** Sum records without inventing a detail that any record omitted. */
+export function sumTokenUsage(
+  records: readonly UsageRecord[],
+): TokenUsage | undefined {
+  if (records.length === 0) return undefined;
+  let inputTotal = 0;
+  let outputTotal = 0;
+  for (const record of records) {
+    const tokens = buildTokenUsage(record.tokens.input, record.tokens.output);
+    if (!tokens) return undefined;
+    inputTotal += tokens.input.total;
+    outputTotal += tokens.output.total;
+    if (!Number.isSafeInteger(inputTotal) || !Number.isSafeInteger(outputTotal)) {
       return undefined;
     }
   }
 
-  // Every component the run published must be accounted for by the records,
-  // and the records must not claim a component the run did not publish.
-  for (const member of members) {
-    if ((breakdown[member] ?? undefined) !== (totals[member] ?? undefined)) {
-      return undefined;
+  const uncached = sumInputDetail(records, 'uncached');
+  const cacheRead = sumInputDetail(records, 'cacheRead');
+  const cacheWrite = sumInputDetail(records, 'cacheWrite');
+  const visible = sumOutputDetail(records, 'visible');
+  const reasoning = sumOutputDetail(records, 'reasoning');
+
+  return buildTokenUsage(
+    {
+      total: inputTotal,
+      ...(uncached !== undefined ? { uncached } : {}),
+      ...(cacheRead !== undefined ? { cacheRead } : {}),
+      ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+    },
+    {
+      total: outputTotal,
+      ...(visible !== undefined ? { visible } : {}),
+      ...(reasoning !== undefined ? { reasoning } : {}),
+    },
+  );
+}
+
+function usageMatches(left: TokenUsage, right: TokenUsage): boolean {
+  return (
+    left.input.total === right.input.total &&
+    left.input.uncached === right.input.uncached &&
+    left.input.cacheRead === right.input.cacheRead &&
+    left.input.cacheWrite === right.input.cacheWrite &&
+    left.output.total === right.output.total &&
+    left.output.visible === right.output.visible &&
+    left.output.reasoning === right.output.reasoning
+  );
+}
+
+/** Build an authentic token report, dropping an invalid decomposition whole. */
+export function buildTokenUsageReport(
+  coverage: UsageCoverage,
+  totals: TokenUsage,
+  candidates: readonly UsageRecord[] = [],
+): TokenUsageReport | undefined {
+  const validatedTotals = buildTokenUsage(totals.input, totals.output);
+  if (!validatedTotals) return undefined;
+
+  let records: UsageRecord[] | undefined;
+  if (candidates.length > 0) {
+    const valid = candidates.every((record) => {
+      if (!buildTokenUsage(record.tokens.input, record.tokens.output)) {
+        return false;
+      }
+      if (
+        record.requests !== undefined &&
+        (!Number.isSafeInteger(record.requests) || record.requests <= 0)
+      ) {
+        return false;
+      }
+      if (record.cost && !buildUsageCost(record.cost.amount, record.cost.source)) {
+        return false;
+      }
+      return (record.pricedUnits ?? []).every(
+        (unit) =>
+          unit.name.length > 0 &&
+          Number.isSafeInteger(unit.quantity) &&
+          unit.quantity >= 0,
+      );
+    });
+    const summed = valid ? sumTokenUsage(candidates) : undefined;
+    if (summed && usageMatches(summed, validatedTotals)) {
+      records = [...candidates];
     }
   }
 
-  return [...candidates];
+  return {
+    coverage,
+    totals: validatedTotals,
+    ...(records ? { records } : {}),
+  };
 }

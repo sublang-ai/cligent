@@ -31,8 +31,8 @@ import {
   isUnsupportedRuntimeError,
 } from '../runtime-version.js';
 import {
-  buildTokenBreakdown,
-  buildUsageRecords,
+  buildTokenUsage,
+  buildTokenUsageReport,
   exclusiveBase,
   isUsageRecord,
   readUsageCounter,
@@ -46,11 +46,7 @@ type CodexDefaultPermissions =
   | ':read-only'
   | CodexWorkspaceExtraWritesProfile;
 type CodexModelReasoningEffort =
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh';
+  'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 type CodexConfigValue =
   | string
@@ -119,7 +115,10 @@ interface CodexThread {
 
 interface CodexClient {
   startThread: (options?: CodexThreadOptions) => CodexThread;
-  resumeThread?: (threadId: string, options?: CodexThreadOptions) => CodexThread;
+  resumeThread?: (
+    threadId: string,
+    options?: CodexThreadOptions,
+  ) => CodexThread;
 }
 
 interface CodexSdk {
@@ -136,9 +135,6 @@ const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
 const requireFromHere = createRequire(import.meta.url);
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
-  tokenAvailability: 'unavailable',
-  inputTokens: 0,
-  outputTokens: 0,
   toolUses: 0,
 };
 
@@ -215,7 +211,9 @@ function codexErrorMessage(value: unknown, depth = 0): string | undefined {
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 export interface CodexPermissionOptions {
@@ -248,9 +246,7 @@ function codexDefaultPermissions(
   return ':workspace';
 }
 
-function codexApprovalPolicy(
-  policy: PermissionPolicy,
-): CodexApprovalPolicy {
+function codexApprovalPolicy(policy: PermissionPolicy): CodexApprovalPolicy {
   if (policy.mode === 'auto') {
     return 'on-request';
   }
@@ -401,7 +397,11 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   if (status === 'success' || status === 'completed' || status === 'ok') {
     return 'success';
   }
-  if (status === 'interrupted' || status === 'cancelled' || status === 'aborted') {
+  if (
+    status === 'interrupted' ||
+    status === 'cancelled' ||
+    status === 'aborted'
+  ) {
     return 'interrupted';
   }
   if (status === 'max_turns' || status === 'maxturns') {
@@ -430,6 +430,11 @@ interface CodexUsageSnapshot {
   reasoningOutputTokens: number;
 }
 
+interface CodexUsageReading {
+  values: CodexUsageSnapshot;
+  present: Set<keyof CodexUsageSnapshot>;
+}
+
 const CODEX_USAGE_ALIASES: ReadonlyArray<
   readonly [keyof CodexUsageSnapshot, readonly string[], boolean]
 > = [
@@ -451,12 +456,12 @@ const CODEX_USAGE_ALIASES: ReadonlyArray<
 /**
  * Read the cumulative snapshot Codex attaches to `turn.completed`. Returns
  * undefined when any consumed counter is missing or malformed, which keeps
- * the caller on the ENG-027 unavailable path instead of differencing
- * against a partial snapshot.
+ * the caller on ENG-031's omitted-token path instead of differencing against
+ * a partial snapshot.
  */
 function readCodexUsageSnapshot(
   rawUsage: unknown,
-): { values: CodexUsageSnapshot; present: Set<keyof CodexUsageSnapshot> } | undefined {
+): CodexUsageReading | undefined {
   if (!isUsageRecord(rawUsage)) return undefined;
 
   const values: CodexUsageSnapshot = {
@@ -476,6 +481,16 @@ function readCodexUsageSnapshot(
   }
 
   return { values, present };
+}
+
+function hasMatchingOptionalUsageShape(
+  current: CodexUsageReading,
+  baseline: CodexUsageReading,
+): boolean {
+  return CODEX_USAGE_ALIASES.every(
+    ([field, , required]) =>
+      required || current.present.has(field) === baseline.present.has(field),
+  );
 }
 
 /**
@@ -536,9 +551,6 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
     false,
   );
 
-  const totalCostUsd =
-    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
-
   const reported =
     baseInput.valid &&
     cachedInput.valid &&
@@ -546,37 +558,34 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
     outputTokens.valid &&
     reasoningOutput.valid;
 
-  // CODEX-016: both Codex counters are inclusive — cached and cache-write are
-  // subsets of input_tokens, reasoning is a subset of output_tokens — so each
-  // exclusive component comes from a guarded subtraction. A side whose
-  // subtraction would go negative is dropped rather than clamped.
-  const breakdown = reported
-    ? buildTokenBreakdown(
+  // The exec SDK exposes only the current thread. Even a numerically exact
+  // delta is partial invocation coverage because Codex may create descendant
+  // threads whose usage is not included in this stream.
+  const inputDetails =
+    cachedInput.present && cacheWriteInput.present
+      ? {
+          uncached: exclusiveBase(
+            baseInput.value,
+            cachedInput.value,
+            cacheWriteInput.value,
+          ),
+          cacheRead: cachedInput.value,
+          cacheWrite: cacheWriteInput.value,
+        }
+      : {
+          ...(cachedInput.present ? { cacheRead: cachedInput.value } : {}),
+          ...(cacheWriteInput.present
+            ? { cacheWrite: cacheWriteInput.value }
+            : {}),
+        };
+  const totals = reported
+    ? buildTokenUsage(
+        { total: baseInput.value, ...inputDetails },
         {
-          inputTokens: baseInput.value,
-          outputTokens: outputTokens.value,
-        },
-        {
-          ...(cachedInput.present || cacheWriteInput.present
-            ? {
-                input: exclusiveBase(
-                  baseInput.value,
-                  cachedInput.present ? cachedInput.value : undefined,
-                  cacheWriteInput.present ? cacheWriteInput.value : undefined,
-                ),
-                ...(cachedInput.present
-                  ? { cacheRead: cachedInput.value }
-                  : {}),
-                ...(cacheWriteInput.present
-                  ? { cacheWrite: cacheWriteInput.value }
-                  : {}),
-              }
-            : { input: baseInput.value }),
-          // Without a reasoning counter the visible-output component cannot
-          // be stated, so the whole output side stays withheld.
+          total: outputTokens.value,
           ...(reasoningOutput.present
             ? {
-                output: exclusiveBase(
+                visible: exclusiveBase(
                   outputTokens.value,
                   reasoningOutput.value,
                 ),
@@ -586,14 +595,11 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
         },
       )
     : undefined;
+  const tokens = totals ? buildTokenUsageReport('partial', totals) : undefined;
 
   return {
-    tokenAvailability: reported ? 'reported' : 'unavailable',
-    inputTokens: baseInput.value,
-    outputTokens: outputTokens.value,
     toolUses,
-    ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
-    ...(breakdown ? { breakdown } : {}),
+    ...(tokens ? { tokens } : {}),
   };
 }
 
@@ -607,10 +613,9 @@ interface MappedCodexOptions {
 }
 
 function assertCodexToolRestrictionsSupported(
-  options: Pick<
-    AgentOptions<CodexEffort>,
-    'allowedTools' | 'disallowedTools'
-  > | undefined,
+  options:
+    | Pick<AgentOptions<CodexEffort>, 'allowedTools' | 'disallowedTools'>
+    | undefined,
 ): void {
   if (
     options?.allowedTools === undefined &&
@@ -652,7 +657,8 @@ export function mapAgentOptionsToCodexOptions(
       onAbort();
     } else {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
-      cleanupAbort = () => options.abortSignal?.removeEventListener('abort', onAbort);
+      cleanupAbort = () =>
+        options.abortSignal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -842,7 +848,9 @@ function codexLifecycleToolResult(
     toolName: toolUse.toolName,
     toolUseId: toolUse.toolUseId,
     status,
-    output: (failed ? (item.error ?? item.result) : (item.result ?? item.error)) ?? null,
+    output:
+      (failed ? (item.error ?? item.result) : (item.result ?? item.error)) ??
+      null,
   };
 }
 
@@ -858,9 +866,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
     target: NormalizedItemEvent[],
   ): void => {
     const toolName =
-      asString(source.toolName) ??
-      asString(source.name) ??
-      'unknown_tool';
+      asString(source.toolName) ?? asString(source.name) ?? 'unknown_tool';
 
     const toolUseId =
       asString(source.toolUseId) ??
@@ -887,7 +893,9 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
     const status: 'success' | 'error' | 'denied' =
       statusText === 'denied'
         ? 'denied'
-        : source.isError === true || source.is_error === true || statusText === 'error'
+        : source.isError === true ||
+            source.is_error === true ||
+            statusText === 'error'
           ? 'error'
           : 'success';
 
@@ -895,9 +903,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
       type: 'tool_result',
       payload: {
         toolName:
-          asString(source.toolName) ??
-          asString(source.name) ??
-          'unknown_tool',
+          asString(source.toolName) ?? asString(source.name) ?? 'unknown_tool',
         toolUseId:
           asString(source.toolUseId) ??
           asString(source.callId) ??
@@ -906,8 +912,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
           generateSessionId(),
         status,
         output: source.output ?? source.result ?? source.content ?? null,
-        durationMs:
-          asNumber(source.durationMs) ?? asNumber(source.duration_ms),
+        durationMs: asNumber(source.durationMs) ?? asNumber(source.duration_ms),
       },
     });
   };
@@ -979,7 +984,10 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
       }
 
       if (blockType === 'file_change' || blockType === 'file.changed') {
-        contentEvents.push({ type: 'codex:file_change', payload: block.file ?? block });
+        contentEvents.push({
+          type: 'codex:file_change',
+          payload: block.file ?? block,
+        });
         continue;
       }
     }
@@ -1286,10 +1294,41 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
    * baseline is keyed by backend thread identity, not by run, because a
    * later run resumes the same thread. ENG-018 permits exactly this state.
    */
-  private readonly threadUsageBaselines = new Map<string, CodexUsageSnapshot>();
+  private readonly threadUsageBaselines = new Map<string, CodexUsageReading>();
+
+  /**
+   * CODEX-017: two concurrent turns on one resumed thread would race its one
+   * cumulative counter and make either delta depend on event arrival order.
+   * Queue only equal inbound resume identities; fresh and unrelated sessions
+   * retain the adapter's normal concurrency.
+   */
+  private readonly resumeSessionTails = new Map<string, Promise<void>>();
 
   constructor(deps: CodexAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadCodexSdk;
+  }
+
+  private async acquireResumeSession(sessionId: string): Promise<() => void> {
+    const predecessor =
+      this.resumeSessionTails.get(sessionId) ?? Promise.resolve();
+    let resolveCurrent!: () => void;
+    const current = new Promise<void>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    const tail = predecessor.then(() => current);
+    this.resumeSessionTails.set(sessionId, tail);
+
+    await predecessor;
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      resolveCurrent();
+      if (this.resumeSessionTails.get(sessionId) === tail) {
+        this.resumeSessionTails.delete(sessionId);
+      }
+    };
   }
 
   /**
@@ -1297,7 +1336,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
    * usage. A fresh thread starts from zero, so its first snapshot is already
    * the turn. A resumed thread this adapter never observed has no baseline to
    * subtract, and reporting the thread total as the turn's would overstate it
-   * by every earlier turn, so accounting is unavailable instead.
+   * by every earlier turn, so token accounting is omitted instead.
    */
   private resolveTurnUsage(
     rawUsage: unknown,
@@ -1307,19 +1346,31 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   ): DonePayload['usage'] {
     const snapshot = readCodexUsageSnapshot(rawUsage);
     if (!snapshot || !threadId) {
+      // Once a cumulative snapshot for a known thread is malformed, the old
+      // baseline no longer borders the next valid turn. Keeping it would
+      // attribute both the malformed turn and its successor to the latter.
+      if (!snapshot && threadId) this.threadUsageBaselines.delete(threadId);
       return mapUsage(rawUsage, toolUses);
     }
 
     const baseline = this.threadUsageBaselines.get(threadId);
     // Always advance the baseline, so a thread recovers on its next turn even
     // when this one could not be attributed.
-    this.threadUsageBaselines.set(threadId, snapshot.values);
+    this.threadUsageBaselines.set(threadId, snapshot);
 
     if (!baseline && resumed) {
       return { ...DEFAULT_DONE_USAGE, toolUses };
     }
 
-    const delta = codexTurnDelta(snapshot.values, baseline);
+    // A newly appearing cumulative subset may contain spend from older turns,
+    // while a disappearing one destroys the base needed to difference it.
+    // Fail closed for the transition, retaining this snapshot so the next
+    // turn with the same shape can be attributed again.
+    if (baseline && !hasMatchingOptionalUsageShape(snapshot, baseline)) {
+      return { ...DEFAULT_DONE_USAGE, toolUses };
+    }
+
+    const delta = codexTurnDelta(snapshot.values, baseline?.values);
     if (!delta) {
       return { ...DEFAULT_DONE_USAGE, toolUses };
     }
@@ -1342,22 +1393,23 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   }
 
   /**
-   * CODEX-014: the turn is one billable group. Codex reports usage per turn,
-   * not per request, so the record carries no request count and no cost, and
-   * exists only to name the rate card the turn priced against. Without a model
-   * it would restate the breakdown and name nothing, so it is not published.
+   * The exec stream reports one current-thread aggregate rather than one entry
+   * per upstream request. Publish it as one unidentified-count record only
+   * when the runtime itself names the model; a requested model is not evidence
+   * that the provider did not reroute the request.
    */
   private withTurnRecord(
     usage: DonePayload['usage'],
     model: string | undefined,
   ): DonePayload['usage'] {
-    if (!model) return usage;
+    if (!model || !usage.tokens) return usage;
 
-    const records = buildUsageRecords(usage.breakdown, [
-      { model, tokens: usage.breakdown ?? {} },
-    ]);
-
-    return records ? { ...usage, records } : usage;
+    const tokens = buildTokenUsageReport(
+      usage.tokens.coverage,
+      usage.tokens.totals,
+      [{ model, tokens: usage.tokens.totals }],
+    );
+    return tokens ? { ...usage, tokens } : usage;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -1433,15 +1485,26 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
       );
     }
 
+    const releaseResumeSession = options?.resume
+      ? await this.acquireResumeSession(options.resume)
+      : () => {};
+    const finishCodexRun = async (): Promise<void> => {
+      try {
+        await cleanupCodexRun();
+      } finally {
+        releaseResumeSession();
+      }
+    };
+
     let thread: CodexThread;
     let streamResult:
-      | { events: AsyncIterable<unknown> }
-      | AsyncIterable<unknown>
-      | undefined;
+      { events: AsyncIterable<unknown> } | AsyncIterable<unknown> | undefined;
     try {
       if (options?.resume) {
         if (typeof codex.resumeThread !== 'function') {
-          throw new Error('Codex SDK does not support resumeThread() in this version');
+          throw new Error(
+            'Codex SDK does not support resumeThread() in this version',
+          );
         }
         thread = codex.resumeThread(options.resume, threadOptions);
       } else {
@@ -1452,20 +1515,23 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         | Promise<{ events: AsyncIterable<unknown> } | AsyncIterable<unknown>>
         | undefined);
     } catch (err) {
-      await cleanupCodexRun();
+      await finishCodexRun();
       throw err;
     }
 
     if (!streamResult) {
-      await cleanupCodexRun();
-      throw new Error('Codex SDK does not support runStreamed() in this version');
+      await finishCodexRun();
+      throw new Error(
+        'Codex SDK does not support runStreamed() in this version',
+      );
     }
 
     // The SDK normally returns { events: AsyncGenerator }. Prefer .events
     // but fall back to iterating the result directly if the shape differs
     // (e.g. due to transpilation or a non-standard SDK version).
     const streamObj = streamResult as Record<string, unknown>;
-    const runStream = (streamObj.events ?? streamResult) as AsyncIterable<unknown>;
+    const runStream = (streamObj.events ??
+      streamResult) as AsyncIterable<unknown>;
 
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
@@ -1479,11 +1545,9 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const completedToolUseIds = new Set<string>();
     const observedToolUseIds = new Set<string>();
 
-    // CODEX-014: the rate-card key for the turn. Codex reports no model on its
-    // typed event surface, so this is normally the pinned request model; an
-    // event that does carry one is preferred only where nothing was pinned,
-    // keeping the record and `init` in agreement.
-    let rateCardModel: string | undefined = options?.model;
+    // A requested model is not an observed rate-card key: the backend may
+    // reroute it. Retain a model only when this run's event stream names one.
+    let rateCardModel: string | undefined;
 
     const buildInitPayload = (
       sourceEvent?: Record<string, unknown>,
@@ -1545,6 +1609,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         }
 
         const event = asRecord(rawEvent);
+        rateCardModel ??= asString(event.model);
         if (!initYielded) {
           yield createEvent('init', AGENT, buildInitPayload(event), sessionId);
           initYielded = true;
@@ -1611,18 +1676,33 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
 
             if (itemEvent.type === 'tool_use') {
               observedToolUseIds.add(itemEvent.payload.toolUseId);
-              yield createEvent('tool_use', AGENT, itemEvent.payload, sessionId);
+              yield createEvent(
+                'tool_use',
+                AGENT,
+                itemEvent.payload,
+                sessionId,
+              );
               continue;
             }
 
             if (itemEvent.type === 'tool_result') {
               observedToolUseIds.add(itemEvent.payload.toolUseId);
-              yield createEvent('tool_result', AGENT, itemEvent.payload, sessionId);
+              yield createEvent(
+                'tool_result',
+                AGENT,
+                itemEvent.payload,
+                sessionId,
+              );
               continue;
             }
 
             if (itemEvent.type === 'codex:file_change') {
-              yield createEvent('codex:file_change', AGENT, itemEvent.payload, sessionId);
+              yield createEvent(
+                'codex:file_change',
+                AGENT,
+                itemEvent.payload,
+                sessionId,
+              );
               continue;
             }
           }
@@ -1664,7 +1744,15 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: mapUsage(event.usage, observedToolUseIds.size),
+              usage: this.withTurnRecord(
+                this.resolveTurnUsage(
+                  event.usage,
+                  observedToolUseIds.size,
+                  backendProvidedSessionId ? sessionId : options?.resume,
+                  options?.resume !== undefined,
+                ),
+                rateCardModel,
+              ),
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1736,7 +1824,10 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 sessionId,
                 options?.resume,
               ),
-              usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
+              usage: {
+                ...DEFAULT_DONE_USAGE,
+                toolUses: observedToolUseIds.size,
+              },
               durationMs: Date.now() - startTime,
             },
             sessionId,
@@ -1749,7 +1840,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
           AGENT,
           {
             code: 'MISSING_TURN_DONE',
-            message: 'Protocol violation: Codex stream ended without turn.completed',
+            message:
+              'Protocol violation: Codex stream ended without turn.completed',
             recoverable: false,
           },
           sessionId,
@@ -1815,7 +1907,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         sessionId,
       );
     } finally {
-      await cleanupCodexRun();
+      await finishCodexRun();
     }
   }
 }

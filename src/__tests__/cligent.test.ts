@@ -106,10 +106,11 @@ function doneEvent(
     {
       status,
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 10,
-        outputTokens: 20,
         toolUses: 1,
+        tokens: {
+          coverage: 'complete',
+          totals: { input: { total: 10 }, output: { total: 20 } },
+        },
       },
       durationMs: 100,
       ...extra,
@@ -627,7 +628,7 @@ describe('Cligent protocol hardening', () => {
     expect((events[2].payload as DonePayload).status).toBe('error');
   });
 
-  it('synthesized done marks zeroed token placeholders unavailable', async () => {
+  it('synthesized done omits token placeholders', async () => {
     const adapter = createMockAdapter('claude-code', [], {
       throwAfter: 0,
       throwError: new Error('fail'),
@@ -637,9 +638,8 @@ describe('Cligent protocol hardening', () => {
 
     const done = events.find((e) => e.type === 'done')!;
     const payload = done.payload as DonePayload;
-    expect(payload.usage.tokenAvailability).toBe('unavailable');
-    expect(payload.usage.inputTokens).toBe(0);
-    expect(payload.usage.outputTokens).toBe(0);
+    expect(payload.usage.tokens).toBeUndefined();
+    expect(payload.usage.cost).toBeUndefined();
     expect(payload.usage.toolUses).toBe(0);
     expect(payload.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -665,9 +665,6 @@ describe('Cligent protocol hardening', () => {
     const events = await collectEvents(agent.run('hi'));
     const done = events.find((event) => event.type === 'done')!;
     expect((done.payload as DonePayload).usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 1,
     });
   });

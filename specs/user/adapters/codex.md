@@ -25,15 +25,15 @@ The adapter module shall be importable without the SDK installed so consumers ca
 
 The adapter shall normalize Codex events to `AgentEvent` types:
 
-| Codex Event | AgentEvent |
-| --- | --- |
-| `item.completed` (text content) | `text` |
-| First observed lifecycle event of a `command_execution` or `mcp_tool_call` item | `tool_use` |
-| `item.completed` of a `command_execution` or `mcp_tool_call` item | `tool_result` |
-| File change events | `codex:file_change` (extension) |
-| `turn.completed` | `done` (usage) |
-| `turn.failed` | `error` followed by `done` (`status: 'error'`) |
-| Errors | `error` |
+| Codex Event                                                                     | AgentEvent                                     |
+| ------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `item.completed` (text content)                                                 | `text`                                         |
+| First observed lifecycle event of a `command_execution` or `mcp_tool_call` item | `tool_use`                                     |
+| `item.completed` of a `command_execution` or `mcp_tool_call` item               | `tool_result`                                  |
+| File change events                                                              | `codex:file_change` (extension)                |
+| `turn.completed`                                                                | `done` (usage)                                 |
+| `turn.failed`                                                                   | `error` followed by `done` (`status: 'error'`) |
+| Errors                                                                          | `error`                                        |
 
 The SDK represents shell commands and MCP tool invocations as `command_execution` and `mcp_tool_call` thread items that evolve across `item.started`, `item.updated`, and `item.completed` events and correlate by item `id` [[1]].
 For each such item `id`, the adapter shall emit exactly one `tool_use`, on the first lifecycle event observed for the `id`, and at most one terminal `tool_result`, on the item's `item.completed` event, whether the item completed or failed.
@@ -47,6 +47,8 @@ The `tool_result` payload shall map native status `failed` to `status: 'error'` 
 Where an `item.completed` item instead carries legacy alias tool shapes — `tool_call`, `function_call`, or `tool_use` calls and `tool_result`, `function_call_result`, or `tool_output` results, at item top level or among content blocks — the adapter shall normalize them to the same `tool_use` and `tool_result` events as a compatibility fallback, preserving their native status (including `denied`) and duration detail, with their identifiers counted through the same unique-`toolUseId` rule below.
 
 Because the SDK usage object carries token counts but no tool-count metric, the adapter shall report `DonePayload.usage.toolUses` on every terminal `done` event as the number of unique `toolUseId` values observed during the run — for canonical SDK streams, the unique `command_execution` and `mcp_tool_call` item `id`s — independent of token-usage fields.
+_The following released flat-accounting behavior is superseded by [CODEX-017](#codex-017)._
+
 Where the SDK supplies canonical `Usage`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and shall not add those detail counters to the inclusive input or output total a second time [[6]][[7]].
 
 When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream. This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
@@ -99,15 +101,15 @@ The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` 
 
 Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Codex-specific `AgentOptions.effort` vocabulary from [ENG-020](../engine.md#eng-020) and preserve the following native values through the documented effort and configuration surfaces per [[1]], [[3]], and [[5]]:
 
-| `AgentOptions.effort` | Transport | Native value |
-| --- | --- | --- |
-| `minimal` | SDK `ThreadOptions.modelReasoningEffort` | `minimal` |
-| `low` | SDK `ThreadOptions.modelReasoningEffort` | `low` |
-| `medium` | SDK `ThreadOptions.modelReasoningEffort` | `medium` |
-| `high` | SDK `ThreadOptions.modelReasoningEffort` | `high` |
-| `xhigh` | SDK `ThreadOptions.modelReasoningEffort` | `xhigh` |
-| `max` | Codex constructor `config.model_reasoning_effort` | `max` |
-| `ultra` | Codex constructor `config.model_reasoning_effort` | `ultra` |
+| `AgentOptions.effort` | Transport                                         | Native value |
+| --------------------- | ------------------------------------------------- | ------------ |
+| `minimal`             | SDK `ThreadOptions.modelReasoningEffort`          | `minimal`    |
+| `low`                 | SDK `ThreadOptions.modelReasoningEffort`          | `low`        |
+| `medium`              | SDK `ThreadOptions.modelReasoningEffort`          | `medium`     |
+| `high`                | SDK `ThreadOptions.modelReasoningEffort`          | `high`       |
+| `xhigh`               | SDK `ThreadOptions.modelReasoningEffort`          | `xhigh`      |
+| `max`                 | Codex constructor `config.model_reasoning_effort` | `max`        |
+| `ultra`               | Codex constructor `config.model_reasoning_effort` | `ultra`      |
 
 The minimum compatible Codex SDK thread option supports `minimal` through `xhigh`; for `max` and `ultra`, the adapter shall use the constructor configuration pass-through so the installed SDK spawns Codex with `--config model_reasoning_effort="<value>"`, and shall leave the thread `modelReasoningEffort` field unset per [[3]] and [[5]].
 When effort is omitted, the adapter shall set neither effort transport and shall leave [CODEX-004](#codex-004)'s independently selected configuration-isolation behavior unchanged, preserving only defaults applicable to that run.
@@ -122,31 +124,46 @@ Where both fields are omitted, the adapter shall preserve Codex's native availab
 ### CODEX-015
 
 The usage attached to `turn.completed` is the thread's cumulative total rather than the completed turn's, so the adapter shall report the difference between that snapshot and the snapshot it last observed for the same thread.
-Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall report token accounting as `'unavailable'` per [ENG-027](../engine.md#eng-027), because the thread's accumulated total includes turns this run did not perform.
+Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall omit token accounting per [ENG-031](../engine.md#eng-031), because the thread's accumulated total includes turns this run did not perform.
 Where the run created the thread, the absent baseline shall be treated as zero, since the thread's first snapshot is that turn's usage.
-Where any counter in the new snapshot is smaller than the corresponding baseline counter, the thread's accounting has restarted and the adapter shall report `'unavailable'` rather than attribute an unexplained decrease to the turn.
-In every case the adapter shall retain the newest snapshot as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
-The baseline shall be retained per backend thread identifier under [ENG-018](../engine.md#eng-018).
+Where any counter in the new snapshot is smaller than the corresponding baseline counter, the thread's accounting has restarted and the adapter shall omit token accounting rather than attribute an unexplained decrease to the turn.
+For every valid snapshot the adapter shall retain the newest value as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
+Where a known thread's cumulative snapshot is malformed, the adapter shall discard its prior baseline; the next valid resumed snapshot shall establish a new baseline without reporting a delta, and only a later stable snapshot may recover attribution.
+The retained snapshot shall preserve which optional cache and reasoning counters were present; where that presence shape changes from the preceding snapshot, the adapter shall omit the transition's tokens because a newly appearing cumulative counter may include older turns and a disappearing counter cannot be differenced, then retain the new shape so the next stable turn can recover.
+The baseline shall be retained per backend thread identifier under [ENG-018](../engine.md#eng-018), and concurrent runs carrying the same resume identifier shall be serialized for the full backend turn so their snapshots cannot race; different sessions and fresh runs shall remain concurrent.
 
 ### CODEX-016
 
-Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive component of [ENG-028](../engine.md#eng-028) by subtracting the reported subsets from their inclusive base rather than by adding them.
-Where a cache counter is absent, the adapter shall omit its component and leave the remaining input components partitioning the aggregate.
-Where the reasoning counter is absent, the adapter shall omit the whole output side, because no measured visible-output component can be stated without it.
-Where a subtraction would be negative, the adapter shall omit the affected side per [ENG-019](../engine.md#eng-019) rather than clamp it.
+Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive detail of [ENG-031](../engine.md#eng-031) by subtracting the reported subsets from their inclusive base rather than by adding them.
+Where a cache counter is absent, the adapter shall omit that detail and shall omit `uncached` unless every cache subset needed for exact subtraction is present, while preserving the authentic inclusive input total.
+Where the reasoning counter is absent, the adapter shall preserve the authentic inclusive output total while omitting both `visible` and `reasoning` details.
+Where a reported subset exceeds its inclusive total or an exact subtraction would be negative, the adapter shall omit token accounting per [ENG-031](../engine.md#eng-031) rather than clamp it.
 Both sides shall be derived from the per-turn delta of [CODEX-015](#codex-015), never from the thread's cumulative snapshot.
 
 ### CODEX-014
 
+_Superseded by [CODEX-017](#codex-017); retained for the unreleased first billable-record design._
+
 Codex reports usage once per turn rather than once per request, so the turn is a single billable group: the adapter shall publish one [ENG-030](../engine.md#eng-030) record covering the turn's whole breakdown, omitting the request count because the turn covers an unreported number of requests, and omitting cost because Codex reports none.
 The record's rate-card key shall be `AgentOptions.model` where the run pinned one, and otherwise a model reported by the run's own events; where neither names a model, the adapter shall publish no records, a single unidentified group being the breakdown restated.
 
+### CODEX-017
+
+The adapter shall expose an exact [ENG-031](../engine.md#eng-031) token report only after differencing the current root thread's cumulative snapshot per [CODEX-015](#codex-015).
+The report shall use partial coverage because the pinned exec surface does not aggregate descendant Codex threads.
+Where the stream reports the effective model, one record shall carry the report's inclusive input and output totals plus any reported cache-read, cache-write, and reasoning subsets; visible output and uncached input shall be obtained by exact non-negative subtraction where their subsets are present.
+Where the stream reports no effective model, `records` shall be absent because an unidentified record would merely restate the totals without selecting a rate card.
+The adapter shall never label a record with `AgentOptions.model`, because a requested model is not evidence of the effective model or a reroute.
+Where a resumed thread has no retained baseline, a snapshot decreases, a mapped counter is malformed, or an exact subset exceeds its inclusive total, the adapter shall omit tokens rather than emit a cumulative total, placeholder, or estimate.
+Where optional counter presence changes or another run on the same resumed session is active, the adapter shall apply [CODEX-015](#codex-015)'s provenance and serialization rules before publishing a delta.
+Codex exec reports no cost, so the adapter shall publish none.
+
 ## References
 
-[1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md "Codex TypeScript SDK"
-[2]: https://developers.openai.com/codex/concepts/sandboxing/auto-review "Codex: Auto-review"
-[3]: https://developers.openai.com/codex/config-reference "Codex: Configuration Reference"
-[4]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
-[5]: https://openai.com/index/gpt-5-6/ "Introducing GPT-5.6"
-[6]: https://github.com/openai/codex/blob/rust-v0.146.0/sdk/typescript/src/events.ts#L20-L36 "Codex SDK 0.146.0 turn usage"
-[7]: https://github.com/openai/codex/blob/rust-v0.146.0/codex-rs/protocol/src/protocol.rs#L2215-L2230 "Codex 0.146.0 token-usage protocol"
+[1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md 'Codex TypeScript SDK'
+[2]: https://developers.openai.com/codex/concepts/sandboxing/auto-review 'Codex: Auto-review'
+[3]: https://developers.openai.com/codex/config-reference 'Codex: Configuration Reference'
+[4]: https://developers.openai.com/codex/permissions 'Codex: Permission profiles and sandbox settings'
+[5]: https://openai.com/index/gpt-5-6/ 'Introducing GPT-5.6'
+[6]: https://github.com/openai/codex/blob/rust-v0.146.0/sdk/typescript/src/events.ts#L20-L36 'Codex SDK 0.146.0 turn usage'
+[7]: https://github.com/openai/codex/blob/rust-v0.146.0/codex-rs/protocol/src/protocol.rs#L2215-L2230 'Codex 0.146.0 token-usage protocol'

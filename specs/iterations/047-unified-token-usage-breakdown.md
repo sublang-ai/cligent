@@ -13,6 +13,10 @@ runtimes whose aggregates are currently wrong or unreachable.
 
 Complete except task 8, which is deferred pending live verification
 
+This record preserves the first additive breakdown implementation.
+The current [DR-014](../decisions/014-unified-token-usage-breakdown.md) replaces that unreleased shape with
+inclusive nested totals and completes Gemini through run-owned telemetry.
+
 ## Deliverables
 
 - [x] [DR-014](../decisions/014-unified-token-usage-breakdown.md) records the component frame, the

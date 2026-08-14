@@ -82,37 +82,61 @@ export interface ToolResultPayload {
   durationMs?: number;
 }
 
-export type TokenUsageAvailability = 'reported' | 'unavailable';
+export type UsageCoverage = 'complete' | 'partial';
 
-/**
- * Disjoint partition of `DoneUsage.inputTokens` and `DoneUsage.outputTokens`
- * per DR-014. Every token is counted by at most one member.
- *
- * A present member is a measured count; an absent member means the runtime
- * does not report that quantity. A present `0` is therefore a measurement,
- * never a stand-in for an unreported component.
- *
- * Members form two sides — `input`/`cacheRead`/`cacheWrite` and
- * `output`/`reasoning` — each published in full or omitted in full. Where a
- * side is present, its members sum exactly to the matching aggregate.
- */
-export interface TokenBreakdown {
-  /** Input tokens neither read from nor written to the prompt cache. */
-  input?: number;
-  /** Input tokens served from the prompt cache. */
+/** Inclusive input-token accounting for one measured scope. */
+export interface InputTokenUsage {
+  /** All input tokens, including every reported cache tier. */
+  total: number;
+  /** Input tokens that were neither cache reads nor cache writes. */
+  uncached?: number;
+  /** Input tokens served from a prompt cache. */
   cacheRead?: number;
-  /** Input tokens written into the prompt cache. */
+  /** Input tokens written into a prompt cache. */
   cacheWrite?: number;
-  /** Model output tokens excluding reasoning. */
-  output?: number;
-  /** Reasoning or thinking tokens. */
+}
+
+/** Inclusive output-token accounting for one measured scope. */
+export interface OutputTokenUsage {
+  /** All model-generated output, including reasoning or thinking. */
+  total: number;
+  /** Model-visible output excluding reasoning or thinking. */
+  visible?: number;
+  /** Reasoning or thinking tokens included in `total`. */
   reasoning?: number;
 }
 
 /**
- * One billable group of a run's work per DR-014: the tokens attributable to a
- * single rate-card entry. Cost is `Σ records of rate(model, …) × tokens`, so a
- * caller prices a run by walking these rather than the turn totals.
+ * Authentic inclusive token totals plus any exact subsets the runtime
+ * exposes. An absent detail is unreported; a present zero is measured.
+ */
+export interface TokenUsage {
+  input: InputTokenUsage;
+  output: OutputTokenUsage;
+}
+
+export type UsageCostSource =
+  | 'agent-estimate'
+  | 'provider-reported'
+  | 'account-estimate';
+
+/** Cost reported by an upstream runtime. Cligent never computes this value. */
+export interface UsageCost {
+  amount: number;
+  currency: 'USD';
+  source: UsageCostSource;
+}
+
+/** A non-token rate-card unit reported by the runtime. */
+export interface PricedUsageUnit {
+  name: string;
+  quantity: number;
+}
+
+/**
+ * One rate-card group of a run's work per DR-014. A caller combines these
+ * authentic dimensions with the applicable price table; Cligent does not
+ * assume that tokens alone capture every billed unit or modifier.
  */
 export interface UsageRecord {
   /**
@@ -128,41 +152,31 @@ export interface UsageRecord {
    * tiers are selected per request and these counts are a sum.
    */
   requests?: number;
-  /** This group's share of the run, in the DR-014 disjoint frame. */
-  tokens: TokenBreakdown;
-  /**
-   * Cost the runtime itself computed for this group, where it computes one.
-   * Preferred over any caller-side calculation, since the runtime applied the
-   * rates and tiers in force at the time.
-   */
-  costUsd?: number;
+  /** Inclusive totals and exact subsets for this rate-card group. */
+  tokens: TokenUsage;
+  /** Cost reported by the runtime for this group, where available. */
+  cost?: UsageCost;
+  /** Separately priced non-token units, where the runtime reports them. */
+  pricedUnits?: PricedUsageUnit[];
+}
+
+/** Token accounting observed for one `AgentAdapter.run()` invocation. */
+export interface TokenUsageReport {
+  /** Whether the report covers every model request caused by the invocation. */
+  coverage: UsageCoverage;
+  /** Inclusive totals for the requests this report covers. */
+  totals: TokenUsage;
+  /** Optional rate-card decomposition of those same totals. */
+  records?: UsageRecord[];
 }
 
 export interface DoneUsage {
-  /**
-   * Whether inputTokens and outputTokens came from upstream accounting.
-   * When unavailable, both token fields are compatibility placeholders and
-   * must not be interpreted as measured zeroes. Tool counts remain
-   * independently meaningful in either state.
-   */
-  tokenAvailability: TokenUsageAvailability;
-  inputTokens: number;
-  outputTokens: number;
+  /** Unique tool calls independently observed during the invocation. */
   toolUses: number;
-  totalCostUsd?: number;
-  /**
-   * Component partition of the aggregates above, present only where the
-   * runtime measures it. Always absent when tokenAvailability is
-   * 'unavailable'.
-   */
-  breakdown?: TokenBreakdown;
-  /**
-   * Billable decomposition of the run: which model did how much work. Present
-   * only where the runtime attributes usage to a rate-card key. Where present,
-   * the records' tokens sum to `breakdown`. Always absent when
-   * tokenAvailability is 'unavailable'.
-   */
-  records?: UsageRecord[];
+  /** Omitted when authentic token accounting is unavailable. */
+  tokens?: TokenUsageReport;
+  /** Whole-invocation cost reported by the runtime, where available. */
+  cost?: UsageCost;
 }
 
 export interface DonePayload {

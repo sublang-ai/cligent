@@ -167,6 +167,61 @@ function expectReasoningAlias(
   });
 }
 
+function apiResponseLog(values: {
+  timestamp: string;
+  model: string;
+  input: number;
+  output: number;
+  cached: number;
+  thoughts: number;
+  tool?: number;
+  total: number;
+  promptId?: string;
+  role?: string;
+  authType?: string;
+}): string {
+  return JSON.stringify(
+    {
+      timestamp: values.timestamp,
+      attributes: {
+        'event.name': 'gemini_cli.api_response',
+        model: values.model,
+        input_token_count: values.input,
+        output_token_count: values.output,
+        cached_content_token_count: values.cached,
+        thoughts_token_count: values.thoughts,
+        tool_token_count: values.tool ?? 0,
+        total_token_count: values.total,
+        prompt_id: values.promptId ?? 'prompt-1',
+        role: values.role ?? 'model',
+        auth_type: values.authType ?? 'gemini-api-key',
+        duration_ms: 12,
+        status_code: 200,
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function telemetryCapture(source: string, onRead?: () => void) {
+  return async () => ({
+    env: {
+      GEMINI_TELEMETRY_ENABLED: 'true',
+      GEMINI_TELEMETRY_TARGET: 'local',
+      GEMINI_TELEMETRY_OUTFILE: '/tmp/gemini-test-telemetry.json',
+      GEMINI_TELEMETRY_LOG_PROMPTS: 'false',
+      GEMINI_TELEMETRY_TRACES_ENABLED: 'false',
+      GEMINI_TELEMETRY_USE_COLLECTOR: 'false',
+    },
+    read: async () => {
+      onRead?.();
+      return source;
+    },
+    cleanup: async () => {},
+  });
+}
+
 describe('GeminiAdapter', () => {
   it('maps Gemini NDJSON events to unified events', async () => {
     const { spawnProcess } = makeSpawn((process) => {
@@ -255,7 +310,11 @@ describe('GeminiAdapter', () => {
     expect(text.payload.content).toBe('Hello from Gemini');
 
     const toolUse = events[2] as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse.payload.toolName).toBe('ShellTool');
     expect(toolUse.payload.toolUseId).toBe('tool-1');
@@ -288,10 +347,7 @@ describe('GeminiAdapter', () => {
         status: string;
         result?: string;
         usage: {
-          inputTokens: number;
-          outputTokens: number;
           toolUses: number;
-          totalCostUsd?: number;
         };
         durationMs: number;
       };
@@ -299,11 +355,7 @@ describe('GeminiAdapter', () => {
     expect(done.payload.status).toBe('max_turns');
     expect(done.payload.result).toBe('summary');
     expect(done.payload.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 12,
-      outputTokens: 34,
       toolUses: 1,
-      totalCostUsd: 0.02,
     });
     expect(done.payload.durationMs).toBe(222);
   });
@@ -349,9 +401,7 @@ describe('GeminiAdapter', () => {
       toolsSource: 'configured',
     });
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
-      'reported',
-    );
+    expect((done.payload as DonePayload).usage).toEqual({ toolUses: 0 });
   });
 
   it('marks missing token accounting unavailable and keeps observed tool uses', async () => {
@@ -383,9 +433,6 @@ describe('GeminiAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
     expect((done.payload as DonePayload).usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 1,
     });
   });
@@ -438,14 +485,20 @@ describe('GeminiAdapter', () => {
     const events = await collect(adapter.run('read a file'));
 
     const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse).toBeDefined();
     expect(toolUse.payload.toolName).toBe('Read');
     expect(toolUse.payload.toolUseId).toBe('read-42');
     expect(toolUse.payload.input).toEqual({ file_path: '/repo/file.txt' });
 
-    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
+    const toolResult = events.find(
+      (e) => e.type === 'tool_result',
+    ) as AgentEvent & {
       payload: { toolName: string; toolUseId: string; status: string };
     };
     expect(toolResult).toBeDefined();
@@ -502,15 +555,26 @@ describe('GeminiAdapter', () => {
     const events = await collect(adapter.run('read it'));
 
     const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse).toBeDefined();
     expect(toolUse.payload.toolName).toBe('Read');
     expect(toolUse.payload.toolUseId).toBe('call-99');
     expect(toolUse.payload.input).toEqual({ path: '/a' });
 
-    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; status: string; output: unknown };
+    const toolResult = events.find(
+      (e) => e.type === 'tool_result',
+    ) as AgentEvent & {
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        status: string;
+        output: unknown;
+      };
     };
     expect(toolResult).toBeDefined();
     expect(toolResult.payload.toolName).toBe('Read');
@@ -535,7 +599,11 @@ describe('GeminiAdapter', () => {
             type: 'tool_use',
             sessionId: 'val-wrap',
             value: {
-              functionCall: { name: 'Bash', id: 'bash-1', args: { command: 'ls' } },
+              functionCall: {
+                name: 'Bash',
+                id: 'bash-1',
+                args: { command: 'ls' },
+              },
             },
           }),
           // value wrapper around functionResponse
@@ -571,15 +639,26 @@ describe('GeminiAdapter', () => {
     const events = await collect(adapter.run('list files'));
 
     const toolUse = events.find((e) => e.type === 'tool_use') as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; input: Record<string, unknown> };
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        input: Record<string, unknown>;
+      };
     };
     expect(toolUse).toBeDefined();
     expect(toolUse.payload.toolName).toBe('Bash');
     expect(toolUse.payload.toolUseId).toBe('bash-1');
     expect(toolUse.payload.input).toEqual({ command: 'ls' });
 
-    const toolResult = events.find((e) => e.type === 'tool_result') as AgentEvent & {
-      payload: { toolName: string; toolUseId: string; status: string; output: unknown };
+    const toolResult = events.find(
+      (e) => e.type === 'tool_result',
+    ) as AgentEvent & {
+      payload: {
+        toolName: string;
+        toolUseId: string;
+        status: string;
+        output: unknown;
+      };
     };
     expect(toolResult).toBeDefined();
     expect(toolResult.payload.toolName).toBe('Bash');
@@ -593,9 +672,18 @@ describe('GeminiAdapter', () => {
       writeEventsAndClose(
         process,
         [
-          JSON.stringify({ type: 'init', sessionId: 's-parse', model: 'gem', cwd: '/tmp' }),
+          JSON.stringify({
+            type: 'init',
+            sessionId: 's-parse',
+            model: 'gem',
+            cwd: '/tmp',
+          }),
           '{bad json',
-          JSON.stringify({ type: 'message', sessionId: 's-parse', content: 'after parse error' }),
+          JSON.stringify({
+            type: 'message',
+            sessionId: 's-parse',
+            content: 'after parse error',
+          }),
           JSON.stringify({
             type: 'result',
             sessionId: 's-parse',
@@ -615,7 +703,12 @@ describe('GeminiAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
 
-    expect(events.map((event) => event.type)).toEqual(['init', 'error', 'text', 'done']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'text',
+      'done',
+    ]);
 
     const parseError = events[1] as AgentEvent & {
       payload: { code?: string; message: string; recoverable: boolean };
@@ -633,12 +726,19 @@ describe('GeminiAdapter', () => {
       writeEventsAndClose(
         process,
         [
-          JSON.stringify({ type: 'init', sessionId: 's-err', model: 'gem', cwd: '/tmp' }),
+          JSON.stringify({
+            type: 'init',
+            sessionId: 's-err',
+            model: 'gem',
+            cwd: '/tmp',
+          }),
           JSON.stringify({
             type: 'result',
             sessionId: 's-err',
             status: 'error',
-            error: { message: 'API key not valid. Please pass a valid API key.' },
+            error: {
+              message: 'API key not valid. Please pass a valid API key.',
+            },
             stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
           }),
         ],
@@ -677,7 +777,12 @@ describe('GeminiAdapter', () => {
       writeEventsAndClose(
         process,
         [
-          JSON.stringify({ type: 'init', sessionId: 's-bare', model: 'gem', cwd: '/tmp' }),
+          JSON.stringify({
+            type: 'init',
+            sessionId: 's-bare',
+            model: 'gem',
+            cwd: '/tmp',
+          }),
           JSON.stringify({
             type: 'result',
             sessionId: 's-bare',
@@ -712,42 +817,56 @@ describe('GeminiAdapter', () => {
     { code: 1, expected: 'error', hasError: true },
     { code: 42, expected: 'error', hasError: true },
     { code: 53, expected: 'max_turns', hasError: false },
-  ])('maps exit code $code to done status $expected', async ({ code, expected, hasError }) => {
-    const { spawnProcess } = makeSpawn((process) => {
-      writeEventsAndClose(
-        process,
-        [
-          JSON.stringify({ type: 'init', sessionId: `exit-${code}`, model: 'gem', cwd: '/repo' }),
-          JSON.stringify({ type: 'message', sessionId: `exit-${code}`, content: 'no result event' }),
-        ],
-        code,
-        null,
-      );
-    });
+  ])(
+    'maps exit code $code to done status $expected',
+    async ({ code, expected, hasError }) => {
+      const { spawnProcess } = makeSpawn((process) => {
+        writeEventsAndClose(
+          process,
+          [
+            JSON.stringify({
+              type: 'init',
+              sessionId: `exit-${code}`,
+              model: 'gem',
+              cwd: '/repo',
+            }),
+            JSON.stringify({
+              type: 'message',
+              sessionId: `exit-${code}`,
+              content: 'no result event',
+            }),
+          ],
+          code,
+          null,
+        );
+      });
 
-    const adapter = new GeminiAdapter({
-      spawnProcess,
-      probeAvailability: async () => true,
-    });
+      const adapter = new GeminiAdapter({
+        spawnProcess,
+        probeAvailability: async () => true,
+      });
 
-    const events = await collect(adapter.run('prompt'));
-    const expectedTypes = hasError
-      ? ['init', 'text', 'error', 'done']
-      : ['init', 'text', 'done'];
-    expect(events.map((event) => event.type)).toEqual(expectedTypes);
+      const events = await collect(adapter.run('prompt'));
+      const expectedTypes = hasError
+        ? ['init', 'text', 'error', 'done']
+        : ['init', 'text', 'done'];
+      expect(events.map((event) => event.type)).toEqual(expectedTypes);
 
-    const done = events[events.length - 1] as AgentEvent & { payload: { status: string; result?: string } };
-    expect(done.payload.status).toBe(expected);
-
-    if (hasError) {
-      const errorEvt = events[events.length - 2] as AgentEvent & {
-        payload: { code?: string; message: string };
+      const done = events[events.length - 1] as AgentEvent & {
+        payload: { status: string; result?: string };
       };
-      expect(errorEvt.payload.code).toBe('GEMINI_EXIT_ERROR');
-      expect(errorEvt.payload.message).toContain(`code ${code}`);
-      expect(done.payload.result).toContain(`code ${code}`);
-    }
-  });
+      expect(done.payload.status).toBe(expected);
+
+      if (hasError) {
+        const errorEvt = events[events.length - 2] as AgentEvent & {
+          payload: { code?: string; message: string };
+        };
+        expect(errorEvt.payload.code).toBe('GEMINI_EXIT_ERROR');
+        expect(errorEvt.payload.message).toContain(`code ${code}`);
+        expect(done.payload.result).toContain(`code ${code}`);
+      }
+    },
+  );
 
   it('maps permission policy combinations to Gemini 0.50 policy rules', () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
@@ -1036,7 +1155,10 @@ describe('GeminiAdapter', () => {
   });
 
   it('passes the prompt through one joined headless option token', () => {
-    const mapped = mapAgentOptionsToGeminiCommand('explain this code', undefined);
+    const mapped = mapAgentOptionsToGeminiCommand(
+      'explain this code',
+      undefined,
+    );
 
     expect(mapped.args[mapped.args.length - 1]).toBe(
       '--prompt=explain this code',
@@ -1548,6 +1670,104 @@ describe('GeminiAdapter', () => {
     }
   });
 
+  it('forces private run-scoped local telemetry after settings environment values', async () => {
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [JSON.stringify({ type: 'result', status: 'success' })],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createSettingsOverride: async () => ({
+        env: {
+          GEMINI_TELEMETRY_ENABLED: 'false',
+          GEMINI_TELEMETRY_TARGET: 'gcp',
+          GEMINI_TELEMETRY_OUTFILE: '/wrong/shared-file.json',
+          GEMINI_TELEMETRY_LOG_PROMPTS: 'true',
+          GEMINI_TELEMETRY_TRACES_ENABLED: 'true',
+          GEMINI_TELEMETRY_USE_COLLECTOR: 'true',
+        },
+        cleanup: async () => {},
+      }),
+    });
+
+    await collect(adapter.run('private prompt'));
+
+    const env = invocations[0]?.options.env;
+    expect(env).toMatchObject({
+      GEMINI_TELEMETRY_ENABLED: 'true',
+      GEMINI_TELEMETRY_TARGET: 'local',
+      GEMINI_TELEMETRY_LOG_PROMPTS: 'false',
+      GEMINI_TELEMETRY_TRACES_ENABLED: 'false',
+      GEMINI_TELEMETRY_USE_COLLECTOR: 'false',
+    });
+    expect(env?.GEMINI_TELEMETRY_OUTFILE).toMatch(
+      /cligent-gemini-telemetry-[^/]+\/telemetry\.json$/u,
+    );
+  });
+
+  it.each(['success', 'error', 'abort'] as const)(
+    'cleans run-owned telemetry after %s',
+    async (outcome) => {
+      const controller = new AbortController();
+      let cleanupCalls = 0;
+      const { spawnProcess } = makeSpawn((process) => {
+        if (outcome === 'success') {
+          writeEventsAndClose(
+            process,
+            [JSON.stringify({ type: 'result', status: 'success' })],
+            0,
+            null,
+          );
+          return;
+        }
+
+        if (outcome === 'error') {
+          process.stderr.end();
+          process.stdout.destroy(new Error('fake stream failed'));
+          process.emit('close', 1, null);
+          return;
+        }
+
+        process.kill = (signal?: NodeJS.Signals | number): boolean => {
+          process.killed = true;
+          process.killSignals.push(signal);
+          queueMicrotask(() => {
+            process.stdout.end();
+            process.stderr.end();
+            process.emit('close', null, 'SIGTERM');
+          });
+          return true;
+        };
+        process.stdout.write(
+          `${JSON.stringify({ type: 'init', sessionId: 'telemetry-abort' })}\n`,
+        );
+        queueMicrotask(() => controller.abort());
+      });
+      const adapter = new GeminiAdapter({
+        spawnProcess,
+        createTelemetryCapture: async () => ({
+          env: {},
+          read: async () => '',
+          cleanup: async () => {
+            cleanupCalls += 1;
+          },
+        }),
+      });
+
+      await collect(
+        adapter.run('private prompt', {
+          ...(outcome === 'abort' ? { abortSignal: controller.signal } : {}),
+        }),
+      );
+
+      expect(cleanupCalls).toBe(1);
+    },
+  );
+
   it('preserves an existing Gemini workspace trust environment value', async () => {
     const previousTrust = process.env.GEMINI_CLI_TRUST_WORKSPACE;
     process.env.GEMINI_CLI_TRUST_WORKSPACE = 'false';
@@ -1842,7 +2062,9 @@ describe('GeminiAdapter', () => {
         }
       }
 
-      const done = events.find((event) => event.type === 'done') as AgentEvent & {
+      const done = events.find(
+        (event) => event.type === 'done',
+      ) as AgentEvent & {
         payload: { status: string; resumeToken?: string };
       };
       expect(done.payload.status).toBe('interrupted');
@@ -1954,9 +2176,9 @@ describe('GeminiAdapter', () => {
     expect(payload.resumeToken).toBeUndefined();
   });
 
-  it('preserves cache-inclusive StreamStats input and canonical tool calls', async () => {
+  it('reports complete telemetry with tool prompts in inclusive input', async () => {
     const stats = {
-      total_tokens: 140,
+      total_tokens: 156,
       input_tokens: 120,
       output_tokens: 20,
       cached: 80,
@@ -1965,7 +2187,7 @@ describe('GeminiAdapter', () => {
       tool_calls: 5,
       models: {
         'gemini-2.5-pro': {
-          total_tokens: 140,
+          total_tokens: 156,
           input_tokens: 120,
           output_tokens: 20,
           cached: 80,
@@ -1973,6 +2195,7 @@ describe('GeminiAdapter', () => {
         },
       },
     } satisfies GeminiStreamStats;
+    let closed = false;
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(
         process,
@@ -1994,7 +2217,32 @@ describe('GeminiAdapter', () => {
         0,
         null,
       );
+      closed = true;
     });
+
+    const telemetry = [
+      JSON.stringify(
+        {
+          timestamp: '2026-08-13T01:00:00.000Z',
+          attributes: {
+            'event.name': 'gemini_cli.config',
+            note: 'quoted braces do not split { objects }',
+          },
+        },
+        null,
+        2,
+      ),
+      apiResponseLog({
+        timestamp: '2026-08-13T01:00:01.000Z',
+        model: 'gemini-2.5-pro',
+        input: 120,
+        output: 20,
+        cached: 80,
+        thoughts: 10,
+        tool: 6,
+        total: 156,
+      }),
+    ].join('\n');
 
     const adapter = new GeminiAdapter({
       spawnProcess,
@@ -2003,133 +2251,84 @@ describe('GeminiAdapter', () => {
         env: {},
         cleanup: async () => {},
       }),
+      createTelemetryCapture: telemetryCapture(telemetry, () => {
+        expect(closed).toBe(true);
+      }),
     });
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const usage = (done.payload as DonePayload).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(120);
-    expect(usage.outputTokens).toBe(20);
-    expect(usage.toolUses).toBe(5);
+    expect(usage).toEqual({
+      toolUses: 0,
+      tokens: {
+        coverage: 'complete',
+        totals: {
+          input: { total: 126, uncached: 46, cacheRead: 80 },
+          output: { total: 30, visible: 20, reasoning: 10 },
+        },
+        records: [
+          {
+            model: 'gemini-2.5-pro',
+            provider: 'gemini-api-key',
+            requests: 1,
+            tokens: {
+              input: { total: 126, uncached: 46, cacheRead: 80 },
+              output: { total: 30, visible: 20, reasoning: 10 },
+            },
+          },
+        ],
+      },
+    });
   });
 
-  it.each([
-    [
-      'negative input',
-      {
-        total_tokens: 3,
-        input_tokens: -1,
-        output_tokens: 2,
-        cached: 0,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
+  it('deduplicates exact exporter records and preserves one record per model request', async () => {
+    const first = apiResponseLog({
+      timestamp: '2026-08-13T02:00:00.000Z',
+      model: 'gemini-2.5-pro',
+      input: 10,
+      output: 3,
+      cached: 2,
+      thoughts: 1,
+      total: 14,
+    });
+    const second = apiResponseLog({
+      timestamp: '2026-08-13T02:00:01.000Z',
+      model: 'gemini-2.5-flash',
+      input: 5,
+      output: 2,
+      cached: 0,
+      thoughts: 0,
+      total: 7,
+      promptId: 'prompt-2',
+      role: 'subagent',
+      authType: 'vertex-ai',
+    });
+    const stats: GeminiStreamStats = {
+      total_tokens: 21,
+      input_tokens: 15,
+      output_tokens: 5,
+      cached: 2,
+      input: 13,
+      duration_ms: 1,
+      tool_calls: 7,
+      models: {
+        'gemini-2.5-pro': {
+          total_tokens: 14,
+          input_tokens: 10,
+          output_tokens: 3,
+          cached: 2,
+          input: 8,
+        },
+        'gemini-2.5-flash': {
+          total_tokens: 7,
+          input_tokens: 5,
+          output_tokens: 2,
+          cached: 0,
+          input: 5,
+        },
       },
-    ],
-    [
-      'fractional output',
-      {
-        total_tokens: 3,
-        input_tokens: 1,
-        output_tokens: 2.5,
-        cached: 0,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'invalid cached detail',
-      {
-        total_tokens: 3,
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: '3',
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'invalid uncached-input detail',
-      {
-        total_tokens: 3,
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: 0,
-        input: -1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'unpartitioned aggregate residual',
-      {
-        total_tokens: 4,
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: 0,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'aggregate below mapped input and output',
-      {
-        total_tokens: 2,
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: 0,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'missing canonical aggregate',
-      {
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: 0,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'missing canonical cached detail',
-      {
-        total_tokens: 3,
-        input_tokens: 1,
-        output_tokens: 2,
-        input: 1,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-    [
-      'missing canonical uncached-input detail',
-      {
-        total_tokens: 3,
-        input_tokens: 1,
-        output_tokens: 2,
-        cached: 0,
-        duration_ms: 1,
-        tool_calls: 0,
-        models: {},
-      },
-    ],
-  ])('marks %s accounting unavailable', async (_case, stats) => {
+    };
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(
         process,
@@ -2146,13 +2345,281 @@ describe('GeminiAdapter', () => {
         null,
       );
     });
-    const adapter = new GeminiAdapter({ spawnProcess });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createTelemetryCapture: telemetryCapture(
+        [first, first, second].join('\n'),
+      ),
+    });
 
     const events = await collect(adapter.run('prompt'));
     const done = events.find((event) => event.type === 'done')!;
-    expect((done.payload as DonePayload).usage.tokenAvailability).toBe(
-      'unavailable',
-    );
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.toolUses).toBe(0);
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 15, uncached: 13, cacheRead: 2 },
+      output: { total: 6, visible: 5, reasoning: 1 },
+    });
+    expect(usage.tokens?.records).toHaveLength(2);
+    expect(
+      usage.tokens?.records?.map(({ model, provider, requests }) => ({
+        model,
+        provider,
+        requests,
+      })),
+    ).toEqual([
+      {
+        model: 'gemini-2.5-pro',
+        provider: 'gemini-api-key',
+        requests: 1,
+      },
+      {
+        model: 'gemini-2.5-flash',
+        provider: 'vertex-ai',
+        requests: 1,
+      },
+    ]);
+  });
+
+  it('marks exact successful-response tokens partial after an API error', async () => {
+    const stats: GeminiStreamStats = {
+      total_tokens: 3,
+      input_tokens: 1,
+      output_tokens: 2,
+      cached: 0,
+      input: 1,
+      duration_ms: 1,
+      tool_calls: 0,
+      models: {
+        'gemini-pro': {
+          total_tokens: 3,
+          input_tokens: 1,
+          output_tokens: 2,
+          cached: 0,
+          input: 1,
+        },
+      },
+    };
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({ type: 'init', model: 'gemini-pro', tools: [] }),
+          JSON.stringify({ type: 'result', status: 'success', stats }),
+        ],
+        0,
+        null,
+      );
+    });
+    const apiError = JSON.stringify({
+      timestamp: '2026-08-13T02:59:59.000Z',
+      attributes: {
+        'event.name': 'gemini_cli.api_error',
+        model_name: 'gemini-pro',
+        prompt_id: 'failed-prompt',
+        auth_type: 'gemini-api-key',
+      },
+    });
+    const successful = apiResponseLog({
+      timestamp: '2026-08-13T03:00:00.000Z',
+      model: 'gemini-pro',
+      input: 1,
+      output: 2,
+      cached: 0,
+      thoughts: 0,
+      total: 3,
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createTelemetryCapture: telemetryCapture(
+        [apiError, successful].join('\n'),
+      ),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.totals).toEqual({
+      input: { total: 1, uncached: 1, cacheRead: 0 },
+      output: { total: 2, visible: 2, reasoning: 0 },
+    });
+  });
+
+  it('marks tokens partial when StreamStats retains a failed zero-token model', async () => {
+    const stats: GeminiStreamStats = {
+      total_tokens: 3,
+      input_tokens: 1,
+      output_tokens: 2,
+      cached: 0,
+      input: 1,
+      duration_ms: 1,
+      tool_calls: 0,
+      models: {
+        'gemini-pro': {
+          total_tokens: 3,
+          input_tokens: 1,
+          output_tokens: 2,
+          cached: 0,
+          input: 1,
+        },
+        'gemini-failed-route': {
+          total_tokens: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cached: 0,
+          input: 0,
+        },
+      },
+    };
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({ type: 'init', model: 'gemini-pro', tools: [] }),
+          JSON.stringify({ type: 'result', status: 'success', stats }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createTelemetryCapture: telemetryCapture(
+        apiResponseLog({
+          timestamp: '2026-08-13T03:00:00.000Z',
+          model: 'gemini-pro',
+          input: 1,
+          output: 2,
+          cached: 0,
+          thoughts: 0,
+          total: 3,
+        }),
+      ),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    const usage = (done.payload as DonePayload).usage;
+    expect(usage.tokens?.coverage).toBe('partial');
+    expect(usage.tokens?.records).toHaveLength(1);
+  });
+
+  it.each([
+    ['missing exporter data', ''],
+    [
+      'malformed response accounting',
+      apiResponseLog({
+        timestamp: '2026-08-13T03:00:00.000Z',
+        model: 'gemini-pro',
+        input: 1,
+        output: 2,
+        cached: 0,
+        thoughts: 1,
+        total: 3,
+      }),
+    ],
+    [
+      'stream/exporter mismatch',
+      apiResponseLog({
+        timestamp: '2026-08-13T03:00:01.000Z',
+        model: 'gemini-pro',
+        input: 2,
+        output: 1,
+        cached: 0,
+        thoughts: 0,
+        total: 3,
+      }),
+    ],
+    [
+      'tool-prompt/stream total mismatch',
+      apiResponseLog({
+        timestamp: '2026-08-13T03:00:02.000Z',
+        model: 'gemini-pro',
+        input: 1,
+        output: 2,
+        cached: 0,
+        thoughts: 0,
+        tool: 1,
+        total: 4,
+      }),
+    ],
+    [
+      'missing authentication rate-card identity',
+      apiResponseLog({
+        timestamp: '2026-08-13T03:00:02.500Z',
+        model: 'gemini-pro',
+        input: 1,
+        output: 2,
+        cached: 0,
+        thoughts: 0,
+        total: 3,
+        authType: '',
+      }),
+    ],
+    [
+      'conflicting duplicate identity',
+      [
+        apiResponseLog({
+          timestamp: '2026-08-13T03:00:03.000Z',
+          model: 'gemini-pro',
+          input: 0,
+          output: 1,
+          cached: 0,
+          thoughts: 0,
+          total: 1,
+        }),
+        apiResponseLog({
+          timestamp: '2026-08-13T03:00:03.000Z',
+          model: 'gemini-pro',
+          input: 1,
+          output: 1,
+          cached: 0,
+          thoughts: 0,
+          total: 2,
+        }),
+      ].join('\n'),
+    ],
+  ])('omits tokens for %s', async (_case, telemetry) => {
+    const stats: GeminiStreamStats = {
+      total_tokens: 3,
+      input_tokens: 1,
+      output_tokens: 2,
+      cached: 0,
+      input: 1,
+      duration_ms: 1,
+      tool_calls: 0,
+      models: {
+        'gemini-pro': {
+          total_tokens: 3,
+          input_tokens: 1,
+          output_tokens: 2,
+          cached: 0,
+          input: 1,
+        },
+      },
+    };
+    const { spawnProcess } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({ type: 'init', model: 'gemini-pro', tools: [] }),
+          JSON.stringify({ type: 'result', status: 'success', stats }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      createTelemetryCapture: telemetryCapture(telemetry),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    const done = events.find((event) => event.type === 'done')!;
+    expect((done.payload as DonePayload).usage).toEqual({
+      toolUses: 0,
+    });
   });
 
   it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per ENG-021', () => {

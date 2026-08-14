@@ -17,30 +17,31 @@ import {
   runParallel,
 } from '../index.js';
 import type {
-  AgentAdapter,
-  AgentOptions,
-  ClaudeEffort,
-  CodexEffort,
-  Effort,
-  GeminiEffort,
-  KimiEffort,
-  OpenCodeEffort,
-  PortableEffort,
-} from '../index.js';
-import type {
   AgentEvent,
   AgentEventType,
+  AgentAdapter,
+  AgentOptions,
   BaseEvent,
+  ClaudeEffort,
+  CodexEffort,
   DonePayload,
   DoneUsage,
-  TextPayload,
-  TokenBreakdown,
-  TokenUsageAvailability,
+  Effort,
+  GeminiEffort,
+  InputTokenUsage,
+  KimiEffort,
+  OpenCodeEffort,
+  OutputTokenUsage,
   PermissionCapability,
   PermissionPolicy,
+  PortableEffort,
+  TextPayload,
+  TokenUsage,
+  TokenUsageReport,
+  UsageCost,
   WritablePathsEnforcement,
   WritablePathsPermissionMapping,
-} from '../types.js';
+} from '../index.js';
 
 type SupportEffortMap = {
   [
@@ -139,77 +140,101 @@ describe('core types', () => {
     expectTypeOf<string>().toMatchTypeOf<BaseEvent['type']>();
   });
 
-  it('requires an explicit token-usage availability state on done usage', () => {
+  it('uses omission instead of flat token placeholders on done usage', () => {
     const measuredZero: DoneUsage = {
-      tokenAvailability: 'reported',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 0,
+      tokens: {
+        coverage: 'complete',
+        totals: { input: { total: 0 }, output: { total: 0 } },
+      },
     };
     const unavailable: DoneUsage = {
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 3,
     };
-    expectTypeOf(measuredZero.tokenAvailability).toEqualTypeOf<
-      TokenUsageAvailability
+    expectTypeOf(measuredZero.tokens).toEqualTypeOf<
+      TokenUsageReport | undefined
     >();
     expectTypeOf(unavailable).toEqualTypeOf<DonePayload['usage']>();
 
-    // @ts-expect-error - legacy payloads must migrate and declare whether
-    // their numeric token fields are measurements or placeholders.
-    const ambiguous: DoneUsage = {
+    const legacyInput: DoneUsage = {
+      // @ts-expect-error - released flat token placeholders were removed.
       inputTokens: 0,
+      toolUses: 0,
+    };
+    const legacyOutput: DoneUsage = {
+      // @ts-expect-error - released flat token placeholders were removed.
       outputTokens: 0,
       toolUses: 0,
     };
-    void ambiguous;
+    const legacyAvailability: DoneUsage = {
+      // @ts-expect-error - the availability discriminator was removed.
+      tokenAvailability: 'unavailable',
+      toolUses: 0,
+    };
+    const legacyCost: DoneUsage = {
+      // @ts-expect-error - unprovenanced flat cost was removed.
+      totalCostUsd: 0,
+      toolUses: 0,
+    };
+    const legacyBreakdown: DoneUsage = {
+      // @ts-expect-error - the disjoint top-level breakdown was removed.
+      breakdown: { input: 0, output: 0 },
+      toolUses: 0,
+    };
+    const legacyRecords: DoneUsage = {
+      // @ts-expect-error - records now live inside an authentic token report.
+      records: [],
+      toolUses: 0,
+    };
+    void legacyInput;
+    void legacyOutput;
+    void legacyAvailability;
+    void legacyCost;
+    void legacyBreakdown;
+    void legacyRecords;
 
     const invalid: DoneUsage = {
-      // @ts-expect-error - availability is a closed, non-estimating state.
-      tokenAvailability: 'estimated',
-      inputTokens: 1,
-      outputTokens: 1,
       toolUses: 0,
+      tokens: {
+        // @ts-expect-error - coverage is a closed claim.
+        coverage: 'estimated',
+        totals: { input: { total: 1 }, output: { total: 1 } },
+      },
     };
     void invalid;
   });
 
-  it('keeps every token breakdown component optional and numeric', () => {
-    const full: TokenBreakdown = {
-      input: 1,
+  it('types inclusive token totals, exact subsets, and cost provenance', () => {
+    const input: InputTokenUsage = {
+      total: 6,
+      uncached: 1,
       cacheRead: 2,
       cacheWrite: 3,
-      output: 4,
-      reasoning: 5,
     };
-    // A runtime that measures only its input side omits the rest; absence is
-    // the encoding for "this runtime does not report it" (ENG-028).
-    const inputSideOnly: TokenBreakdown = { input: 1, cacheRead: 2, cacheWrite: 0 };
-    expectTypeOf(full.cacheRead).toEqualTypeOf<number | undefined>();
-    expectTypeOf(inputSideOnly).toMatchTypeOf<TokenBreakdown>();
+    const output: OutputTokenUsage = { total: 9, visible: 4, reasoning: 5 };
+    const totals: TokenUsage = { input, output };
+    const cost: UsageCost = {
+      amount: 0,
+      currency: 'USD',
+      source: 'agent-estimate',
+    };
+    expectTypeOf(input.cacheRead).toEqualTypeOf<number | undefined>();
+    expectTypeOf(output.reasoning).toEqualTypeOf<number | undefined>();
 
     const usage: DoneUsage = {
-      tokenAvailability: 'reported',
-      inputTokens: 3,
-      outputTokens: 9,
       toolUses: 0,
-      breakdown: full,
+      tokens: { coverage: 'partial', totals },
+      cost,
     };
-    expectTypeOf(usage.breakdown).toEqualTypeOf<TokenBreakdown | undefined>();
+    expectTypeOf(usage.tokens).toEqualTypeOf<TokenUsageReport | undefined>();
+    expectTypeOf(usage.cost).toEqualTypeOf<UsageCost | undefined>();
 
-    // Breakdown stays optional so existing producers keep compiling.
-    const withoutBreakdown: DoneUsage = {
-      tokenAvailability: 'reported',
-      inputTokens: 0,
-      outputTokens: 0,
-      toolUses: 0,
-    };
-    void withoutBreakdown;
+    const withoutTokens: DoneUsage = { toolUses: 0 };
+    void withoutTokens;
 
-    const unknownComponent: TokenBreakdown = {
-      // @ts-expect-error - the component vocabulary is closed.
+    const unknownComponent: InputTokenUsage = {
+      total: 1,
+      // @ts-expect-error - the token detail vocabulary is closed.
       cachedTokens: 1,
     };
     void unknownComponent;

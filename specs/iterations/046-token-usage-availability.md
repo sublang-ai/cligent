@@ -14,6 +14,11 @@ counts and existing provider cache folding
 
 Complete
 
+The discriminator and flat-field deliverables below record the behavior when
+this iteration completed.
+[DR-014](../decisions/014-unified-token-usage-breakdown.md) later supersedes
+them with optional authentic nested usage reports.
+
 ## Deliverables
 
 - [x] The public `DoneUsage` schema carries one required reported/unavailable

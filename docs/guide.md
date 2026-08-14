@@ -306,102 +306,93 @@ agent.run('Use this', { resume: 'other-token' }); // explicit token
 
 ## Token usage
 
-Every `done` event carries a `usage` object. Because agents can legitimately
-report *no* accounting, always check `tokenAvailability` before doing token
-arithmetic — a zero is a measurement, not a stand-in for "unknown".
+Every `done` event carries `usage.toolUses`, the number of normalized tool calls
+Cligent observed. Authentic token accounting is optional at `usage.tokens`.
+Absence means the agent exposed no trustworthy report; a present zero is a
+measurement, never a placeholder.
 
 ```ts
 for await (const event of agent.run('Summarize the README')) {
   if (event.type !== 'done') continue;
 
   const { usage } = event.payload as DonePayload;
-  if (usage.tokenAvailability !== 'reported') {
+  if (!usage.tokens) {
     console.log('token usage unavailable for this turn');
     continue;
   }
 
-  console.log(usage.inputTokens, usage.outputTokens, usage.toolUses);
+  const { input, output } = usage.tokens.totals;
+  console.log(input.total, output.total, usage.tokens.coverage);
 }
 ```
 
-`inputTokens` counts every input token regardless of caching tier, and
-`outputTokens` counts every generated token including reasoning. These two
-totals are the portable numbers: they mean the same thing on every agent.
+`input.total` includes every cache tier, and `output.total` includes reasoning
+or thinking. The details are exact subsets:
 
-### Component breakdown
-
-Cache reads, cache writes, and reasoning are billed at different rates, so a
-total alone cannot be turned into a cost. When the agent measures them,
-`usage.breakdown` splits the totals into components that never overlap:
-
-| Component    | Meaning                                              |
-| ------------ | ---------------------------------------------------- |
-| `input`      | input tokens neither read from nor written to cache  |
-| `cacheRead`  | input tokens served from the prompt cache            |
-| `cacheWrite` | input tokens written into the prompt cache           |
-| `output`     | generated tokens excluding reasoning                 |
-| `reasoning`  | reasoning or thinking tokens                         |
+| Field              | Meaning                                        |
+| ------------------ | ---------------------------------------------- |
+| `input.uncached`   | input neither read from nor written to cache   |
+| `input.cacheRead`  | input served from the prompt cache             |
+| `input.cacheWrite` | input written into the prompt cache            |
+| `output.visible`   | generated output excluding reasoning           |
+| `output.reasoning` | reasoning or thinking included in output total |
 
 ```ts
-const { breakdown } = usage;
-if (breakdown?.cacheRead !== undefined) {
-  console.log(`${breakdown.cacheRead} tokens were cache hits`);
+const report = usage.tokens;
+if (report?.totals.input.cacheRead !== undefined) {
+  console.log(`${report.totals.input.cacheRead} tokens were cache hits`);
 }
 ```
 
-Two rules make the object safe to consume:
-
-- **A present number is measured; an absent one is not reported.** A
-  `cacheWrite` of `0` means the agent wrote nothing to cache. A missing
-  `cacheWrite` means the agent does not report that quantity at all. Never
-  read an absent component as zero.
-- **Components come in two sides, and a side is all-or-nothing.** When
-  `input` / `cacheRead` / `cacheWrite` are present they add up to exactly
-  `inputTokens`; when `output` / `reasoning` are present they add up to
-  exactly `outputTokens`. If an agent cannot produce an exact split, the
-  whole side is omitted rather than approximated — so the aggregates stay
-  trustworthy either way.
-
-`breakdown` is absent entirely whenever `tokenAvailability` is
-`'unavailable'`.
+An absent detail is unreported, not zero. When every detail on one side is
+present, those details add up exactly to its total. `coverage: 'complete'`
+means all model requests caused by this invocation, including subagents, are
+represented. `'partial'` means the numbers are exact but the runtime surface
+may omit work. A cost calculator should reject partial coverage unless it is
+deliberately calculating a lower bound.
 
 ### Which rate card applies
 
-A component split still cannot be priced without knowing *what* was billed at
-*which* rate. `usage.records` answers that: each entry is one billable group of
-the run.
+A component split still cannot be priced without knowing _what_ was billed at
+_which_ rate. `usage.tokens.records` answers that: each entry is one billable
+group of the report.
 
 ```ts
-for (const record of usage.records ?? []) {
-  console.log(record.model, record.tokens, record.requests, record.costUsd);
+for (const record of usage.tokens?.records ?? []) {
+  console.log(record.model, record.tokens, record.requests, record.cost);
 }
 ```
 
-| Field      | Meaning |
-| ---------- | ------- |
-| `model`    | the identifier the agent prices against — **absent when the agent never names it** |
-| `provider` | who served the request, where the agent reports it |
-| `tokens`   | this group's components, in the same frame as `breakdown` |
-| `requests` | how many API requests the group covers; `1` means a context-length tier follows from this record's own token counts, more than `1` means it does not, and absent means the count is unreported |
-| `costUsd`  | the cost the agent itself computed for the group, where it computes one |
+| Field         | Meaning                                                                                                                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`       | the identifier the agent prices against — **absent when the agent never names it**                                                                                                             |
+| `provider`    | the reported rate-card family, including a billing/authentication route where the runtime distinguishes one                                                                                    |
+| `tokens`      | this group's inclusive totals and exact subsets                                                                                                                                                |
+| `requests`    | how many API requests the group covers; `1` means a context-length tier follows from this record's own token counts, more than `1` means it does not, and absent means the count is unreported |
+| `cost`        | upstream amount, USD currency, and provenance; never a Cligent calculation                                                                                                                     |
+| `pricedUnits` | separately priced non-token quantities such as reported search requests                                                                                                                        |
 
-The records of a run add up to `breakdown`, component by component. If that
-identity cannot hold, `records` is omitted entirely rather than published
-partial — so summing records is always safe.
+Records add up to the report totals and every aggregate detail it publishes.
+If that identity cannot hold, records are omitted rather than guessed.
+
+`usage.cost` is independent of tokens. Claude Code and OpenCode can report
+client-side cost estimates, which Cligent labels `agent-estimate`; that is not
+an invoice. Cligent never applies its own rate table.
 
 ### What each agent reports
 
-| Agent         | Input side                     | Output side | Records | Notes |
-| ------------- | ------------------------------ | ----------- | ------- | ----- |
-| `opencode`    | ✅ all three                   | ✅          | per request | Reports every component directly, and one step per model request with its own model, provider, and cost. |
-| `codex`       | ✅ all three                   | ✅          | per turn | Usage is per turn, differenced from the thread total, so one record covers the turn and carries no request count. Its model is the one you passed in. |
-| `claude-code` | ✅ all three                   | ❌          | per model | Totals cover the whole run including subagents. Thinking is billed inside `outputTokens` and not exposed separately, so no visible-output split is published. |
-| `gemini`      | ❌                             | ❌          | ❌ | The streamed statistics omit thinking and tool-prompt tokens, so accounting stays unavailable on thinking models. |
-| `kimi`        | ❌                             | ❌          | ❌ | The protocol's usage structure is unstable and the CLI does not populate it. |
+| Agent         | Coverage                                                                                                                                                      | Records                                            | Direct cost    | Important limitation                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude-code` | complete                                                                                                                                                      | per model                                          | agent estimate | request count and cache-write TTL are not exposed                                                                                                                                                                                                     |
+| `codex`       | partial                                                                                                                                                       | per turn only when the effective model is observed | none           | exec omits descendant threads and often the effective model                                                                                                                                                                                           |
+| `gemini`      | complete after telemetry reconciliation; partial after failed-request evidence                                                                                | per response with authentication route             | none           | failed-request tokens, subscription tier, storage duration, grounding, modality, and service-tier dimensions may be absent                                                                                                                            |
+| `opencode`    | complete only when the live server matches the tested version and the title and pinned causal boundaries prove the settled task tree; otherwise exact partial | per request                                        | agent estimate | missing or mismatched server proof, reused task sessions, causal/unattributed retries, overflow replay, unproved internal prompts, or unsettled background work prevent complete coverage; the estimate follows OpenCode's price catalog, not billing |
+| `kimi`        | unavailable                                                                                                                                                   | none                                               | none           | Kimi 0.31.1 exposes no usage over ACP                                                                                                                                                                                                                 |
 
-Coverage tracks what each runtime measures, so it changes as the agents do.
-Cligent reports usage, never cost derived from a rate card of its own: prices
-change, and a stale table is worse than no table.
+Token records are enough to calculate ordinary text-token list price only when
+the model, request tier, cache details, and service-specific modifiers are all
+known. Tool fees, cache storage time, subscriptions, account credits, regions,
+modalities, and rate changes can still prevent an exact invoice calculation.
 
 ## Permissions
 
@@ -591,15 +582,15 @@ for await (const event of agent.run('Fix the login bug', {
 - `timestamp` — Unix epoch milliseconds
 - `sessionId` — groups all events within one `run()` call
 
-| Type                 | Payload                                         | Description                            |
-| -------------------- | ----------------------------------------------- | -------------------------------------- |
-| `init`               | `model`, `cwd`, `tools`                         | Session started                        |
-| `text`               | `content`                                       | Complete text response                 |
-| `text_delta`         | `delta`                                         | Streaming text chunk                   |
-| `thinking`           | `summary`                                       | Agent reasoning                        |
-| `tool_use`           | `toolName`, `toolUseId`, `input`                | Tool invocation                        |
-| `tool_result`        | `toolUseId`, `status`, `output`                 | Tool outcome                           |
-| `permission_request` | `toolName`, `toolUseId`, `input`                | Agent asks for permission              |
-| `opencode:permission_decision` | `requestId`, `permission`, `patterns`, `toolUseId`, `decision`, `automated`, `input` | Successful OpenCode auto approval audit |
-| `error`              | `code`, `message`, `recoverable`                | Error                                  |
-| `done`               | `status`, `resumeToken?`, `usage`, `durationMs` | Terminal event — always the last event (see [Token usage](#token-usage)) |
+| Type                           | Payload                                                                              | Description                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `init`                         | `model`, `cwd`, `tools`                                                              | Session started                                                          |
+| `text`                         | `content`                                                                            | Complete text response                                                   |
+| `text_delta`                   | `delta`                                                                              | Streaming text chunk                                                     |
+| `thinking`                     | `summary`                                                                            | Agent reasoning                                                          |
+| `tool_use`                     | `toolName`, `toolUseId`, `input`                                                     | Tool invocation                                                          |
+| `tool_result`                  | `toolUseId`, `status`, `output`                                                      | Tool outcome                                                             |
+| `permission_request`           | `toolName`, `toolUseId`, `input`                                                     | Agent asks for permission                                                |
+| `opencode:permission_decision` | `requestId`, `permission`, `patterns`, `toolUseId`, `decision`, `automated`, `input` | Successful OpenCode auto approval audit                                  |
+| `error`                        | `code`, `message`, `recoverable`                                                     | Error                                                                    |
+| `done`                         | `status`, `resumeToken?`, `usage`, `durationMs`                                      | Terminal event — always the last event (see [Token usage](#token-usage)) |

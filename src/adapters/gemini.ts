@@ -23,6 +23,8 @@ import type {
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
+  TokenUsageReport,
+  UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
@@ -32,14 +34,18 @@ import {
   assertRuntimeSupported,
   isCliRuntimeSupported,
 } from '../runtime-version.js';
-import { isUsageRecord, readUsageCounter } from './usage.js';
+import {
+  buildTokenUsage,
+  buildTokenUsageReport,
+  isUsageRecord,
+  sumTokenUsage,
+} from './usage.js';
 
 const AGENT = 'gemini' as const;
+const GEMINI_API_RESPONSE_EVENT = 'gemini_cli.api_response';
+const GEMINI_API_ERROR_EVENT = 'gemini_cli.api_error';
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
-  tokenAvailability: 'unavailable',
-  inputTokens: 0,
-  outputTokens: 0,
   toolUses: 0,
 };
 
@@ -54,6 +60,12 @@ interface CloseResult {
   signal: NodeJS.Signals | null;
 }
 
+interface GeminiTelemetryCapture {
+  env: Record<string, string>;
+  read: () => Promise<string>;
+  cleanup: () => Promise<void>;
+}
+
 interface GeminiAdapterDeps {
   spawnProcess?: SpawnProcessFn;
   probeAvailability?: () => Promise<boolean>;
@@ -63,6 +75,7 @@ interface GeminiAdapterDeps {
   createPolicyOverride?: (
     toolConfig: GeminiToolConfig,
   ) => Promise<GeminiPolicyOverride>;
+  createTelemetryCapture?: () => Promise<GeminiTelemetryCapture>;
 }
 
 const CAPABILITY_TOOL_GROUPS: Record<PermissionCapability, string[]> = {
@@ -108,10 +121,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
-function normalizePermissionLevel(value: PermissionLevel | undefined): PermissionLevel {
+function normalizePermissionLevel(
+  value: PermissionLevel | undefined,
+): PermissionLevel {
   return value ?? 'ask';
 }
 
@@ -145,7 +162,11 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   if (status === 'success' || status === 'completed' || status === 'ok') {
     return 'success';
   }
-  if (status === 'interrupted' || status === 'cancelled' || status === 'aborted') {
+  if (
+    status === 'interrupted' ||
+    status === 'cancelled' ||
+    status === 'aborted'
+  ) {
     return 'interrupted';
   }
   if (status === 'max_turns' || status === 'maxturns') {
@@ -165,88 +186,322 @@ function mapDoneStatus(rawStatus: string | undefined): DonePayload['status'] {
   return 'success';
 }
 
-function mapUsage(
-  rawUsage: unknown,
-  observedToolUses: number,
-): DonePayload['usage'] {
-  if (!isUsageRecord(rawUsage)) {
-    return { ...DEFAULT_DONE_USAGE, toolUses: observedToolUses };
+function requiredCounter(
+  source: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = source[key];
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+/** Parse the file exporter's consecutive, pretty-printed JSON objects. */
+function parseJsonObjectSequence(source: string): unknown[] | undefined {
+  const values: unknown[] = [];
+  let start = -1;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]!;
+    if (start < 0) {
+      if (/\s/u.test(char)) continue;
+      if (char !== '{') return undefined;
+      start = index;
+      depth = 1;
+      continue;
+    }
+
+    if (quoted) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        quoted = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = true;
+    } else if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          values.push(JSON.parse(source.slice(start, index + 1)) as unknown);
+        } catch {
+          return undefined;
+        }
+        start = -1;
+      }
+    }
   }
 
-  const baseInput = readUsageCounter(
-    rawUsage,
-    ['inputTokens', 'input_tokens'],
-    true,
-  );
-  const canonicalStreamStats = [
-    'total_tokens',
-    'cached',
-    'input',
-    'tool_calls',
-    'models',
-  ].some((key) => Object.prototype.hasOwnProperty.call(rawUsage, key));
-  const totalTokens = readUsageCounter(
-    rawUsage,
-    ['totalTokens', 'total_tokens'],
-    canonicalStreamStats,
-  );
-  // Gemini StreamStats.input_tokens already includes cached input. Validate
-  // the canonical cached/uncached detail counters without adding either one
-  // to the inclusive provider total.
-  const cachedInput = readUsageCounter(
-    rawUsage,
-    ['cached'],
-    canonicalStreamStats,
-  );
-  const uncachedInput = readUsageCounter(
-    rawUsage,
-    ['input'],
-    canonicalStreamStats,
-  );
-  const outputTokens = readUsageCounter(
-    rawUsage,
-    ['outputTokens', 'output_tokens'],
-    true,
-  );
-  const totalTokensObserved = ['totalTokens', 'total_tokens'].some((key) =>
-    Object.prototype.hasOwnProperty.call(rawUsage, key),
-  );
-  // Canonical StreamStats output covers candidates, while its aggregate may
-  // also contain thoughts and tool-use-prompt input it does not partition.
-  // Only an exact reconciliation proves the normalized input/output pair is
-  // complete; allocating an unexplained residual would be an estimate.
-  const totalTokensReconciled =
-    !totalTokensObserved ||
-    (totalTokens.valid &&
-      totalTokens.value === baseInput.value + outputTokens.value);
-  const reportedToolUses = readUsageCounter(
-    rawUsage,
-    ['toolCalls', 'tool_calls', 'toolUses', 'tool_uses'],
-    false,
-  );
-  const toolUses = Math.max(
-    reportedToolUses.valid ? reportedToolUses.value : 0,
-    observedToolUses,
-  );
+  return start < 0 && !quoted && values.length > 0 ? values : undefined;
+}
 
-  const totalCostUsd =
-    asNumber(rawUsage.totalCostUsd) ?? asNumber(rawUsage.total_cost_usd);
+interface GeminiApiResponseUsage {
+  model: string;
+  authType: string;
+  input: number;
+  output: number;
+  cached: number;
+  thoughts: number;
+  tool: number;
+  total: number;
+  identity: string;
+  signature: string;
+}
+
+function readApiResponseUsage(
+  value: unknown,
+): GeminiApiResponseUsage | null | undefined {
+  if (!isUsageRecord(value) || !isUsageRecord(value.attributes)) return null;
+  const attributes = value.attributes;
+  if (attributes['event.name'] !== GEMINI_API_RESPONSE_EVENT) return null;
+
+  const model = asString(attributes.model);
+  const promptId = asString(attributes.prompt_id);
+  const authType = asString(attributes.auth_type);
+  const input = requiredCounter(attributes, 'input_token_count');
+  const output = requiredCounter(attributes, 'output_token_count');
+  const cached = requiredCounter(attributes, 'cached_content_token_count');
+  const thoughts = requiredCounter(attributes, 'thoughts_token_count');
+  const tool = requiredCounter(attributes, 'tool_token_count');
+  const total = requiredCounter(attributes, 'total_token_count');
+  const timestamp =
+    value.timestamp ??
+    value.timeUnixNano ??
+    value.hrTime ??
+    value.observedTimestamp;
+
+  if (
+    !model ||
+    !promptId ||
+    !authType ||
+    input === undefined ||
+    output === undefined ||
+    cached === undefined ||
+    thoughts === undefined ||
+    tool === undefined ||
+    total === undefined ||
+    timestamp === undefined ||
+    cached > input ||
+    total !== input + output + tool + thoughts
+  ) {
+    return undefined;
+  }
 
   return {
-    tokenAvailability:
-      baseInput.valid &&
-      totalTokens.valid &&
-      cachedInput.valid &&
-      uncachedInput.valid &&
-      outputTokens.valid &&
-      totalTokensReconciled
-        ? 'reported'
-        : 'unavailable',
-    inputTokens: baseInput.value,
-    outputTokens: outputTokens.value,
-    toolUses,
-    ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+    model,
+    authType,
+    input,
+    output,
+    cached,
+    thoughts,
+    tool,
+    total,
+    identity: JSON.stringify([timestamp, promptId, model]),
+    signature: JSON.stringify([
+      authType,
+      attributes.role,
+      input,
+      output,
+      cached,
+      thoughts,
+      tool,
+      total,
+      attributes.duration_ms,
+      attributes.status_code,
+    ]),
   };
+}
+
+interface GeminiStreamTokenStats {
+  total: number;
+  input: number;
+  output: number;
+  cached: number;
+  uncached: number;
+}
+
+function readStreamTokenStats(
+  value: unknown,
+): GeminiStreamTokenStats | undefined {
+  if (!isUsageRecord(value)) return undefined;
+  const total = requiredCounter(value, 'total_tokens');
+  const input = requiredCounter(value, 'input_tokens');
+  const output = requiredCounter(value, 'output_tokens');
+  const cached = requiredCounter(value, 'cached');
+  const uncached = requiredCounter(value, 'input');
+  if (
+    total === undefined ||
+    input === undefined ||
+    output === undefined ||
+    cached === undefined ||
+    uncached === undefined ||
+    cached + uncached !== input
+  ) {
+    return undefined;
+  }
+  return { total, input, output, cached, uncached };
+}
+
+function sameStreamStats(
+  left: GeminiStreamTokenStats,
+  right: GeminiStreamTokenStats,
+): boolean {
+  return (
+    left.total === right.total &&
+    left.input === right.input &&
+    left.output === right.output &&
+    left.cached === right.cached &&
+    left.uncached === right.uncached
+  );
+}
+
+function addStreamStats(
+  target: GeminiStreamTokenStats,
+  source: GeminiStreamTokenStats,
+): boolean {
+  target.total += source.total;
+  target.input += source.input;
+  target.output += source.output;
+  target.cached += source.cached;
+  target.uncached += source.uncached;
+  return Object.values(target).every(Number.isSafeInteger);
+}
+
+function mapTelemetryUsage(
+  telemetrySource: string,
+  rawStreamStats: unknown,
+): TokenUsageReport | undefined {
+  const values = parseJsonObjectSequence(telemetrySource);
+  if (!values || !isUsageRecord(rawStreamStats)) return undefined;
+
+  const responses: GeminiApiResponseUsage[] = [];
+  const identities = new Map<string, string>();
+  let sawApiError = false;
+  for (const value of values) {
+    if (
+      isUsageRecord(value) &&
+      isUsageRecord(value.attributes) &&
+      value.attributes['event.name'] === GEMINI_API_ERROR_EVENT
+    ) {
+      // The failed request is causal work, but this event has no token
+      // counters. Preserve exact successful-response accounting as partial.
+      sawApiError = true;
+    }
+    const response = readApiResponseUsage(value);
+    if (response === undefined) return undefined;
+    if (!response) continue;
+    const prior = identities.get(response.identity);
+    if (prior !== undefined) {
+      if (prior !== response.signature) return undefined;
+      continue;
+    }
+    identities.set(response.identity, response.signature);
+    responses.push(response);
+  }
+  if (responses.length === 0) return undefined;
+
+  const records: UsageRecord[] = [];
+  const byModel = new Map<string, GeminiStreamTokenStats>();
+  const telemetryTotal: GeminiStreamTokenStats = {
+    total: 0,
+    input: 0,
+    output: 0,
+    cached: 0,
+    uncached: 0,
+  };
+
+  for (const response of responses) {
+    const tokens = buildTokenUsage(
+      {
+        // Gemini's UsageMetadata counts tool-result prompts separately from
+        // promptTokenCount, but they are still model input. StreamStats keeps
+        // the raw prompt counter, so normalize the inclusive public total only
+        // after the raw counters have been retained for reconciliation below.
+        total: response.input + response.tool,
+        uncached: response.input - response.cached + response.tool,
+        cacheRead: response.cached,
+      },
+      {
+        total: response.output + response.thoughts,
+        visible: response.output,
+        reasoning: response.thoughts,
+      },
+    );
+    if (!tokens) return undefined;
+    records.push({
+      model: response.model,
+      // Gemini CLI authentication selects materially different quota and
+      // billing families (Developer API, Vertex, Code Assist, or gateway).
+      provider: response.authType,
+      requests: 1,
+      tokens,
+    });
+
+    const responseStats: GeminiStreamTokenStats = {
+      total: response.total,
+      input: response.input,
+      output: response.output,
+      cached: response.cached,
+      uncached: response.input - response.cached,
+    };
+    if (!addStreamStats(telemetryTotal, responseStats)) return undefined;
+    const modelStats = byModel.get(response.model) ?? {
+      total: 0,
+      input: 0,
+      output: 0,
+      cached: 0,
+      uncached: 0,
+    };
+    if (!addStreamStats(modelStats, responseStats)) return undefined;
+    byModel.set(response.model, modelStats);
+  }
+
+  const streamTotal = readStreamTokenStats(rawStreamStats);
+  const streamModels = rawStreamStats.models;
+  if (
+    !streamTotal ||
+    !isUsageRecord(streamModels) ||
+    !sameStreamStats(streamTotal, telemetryTotal)
+  ) {
+    return undefined;
+  }
+
+  const remainingModels = new Map(byModel);
+  for (const [model, value] of Object.entries(streamModels)) {
+    const streamModel = readStreamTokenStats(value);
+    if (!streamModel) return undefined;
+    const telemetryModel = remainingModels.get(model);
+    if (!telemetryModel) {
+      // StreamStats can retain a routed model whose failed requests consumed
+      // no tokens and therefore emitted no successful api_response log.
+      if (Object.values(streamModel).some((count) => count !== 0))
+        return undefined;
+      sawApiError = true;
+      continue;
+    }
+    if (!sameStreamStats(streamModel, telemetryModel)) return undefined;
+    remainingModels.delete(model);
+  }
+  if (remainingModels.size > 0) return undefined;
+
+  const totals = sumTokenUsage(records);
+  return totals
+    ? buildTokenUsageReport(
+        sawApiError ? 'partial' : 'complete',
+        totals,
+        records,
+      )
+    : undefined;
 }
 
 function loadSessionId(message: unknown): string | undefined {
@@ -280,14 +535,10 @@ function toErrorPayload(message: unknown): {
   const nested = asRecord(top.error);
 
   const code =
-    asString(top.code) ??
-    asString(nested.code) ??
-    asString(nested.type);
+    asString(top.code) ?? asString(nested.code) ?? asString(nested.type);
 
   const text =
-    asString(top.message) ??
-    asString(nested.message) ??
-    'Gemini CLI error';
+    asString(top.message) ?? asString(nested.message) ?? 'Gemini CLI error';
 
   const recoverable =
     top.recoverable === true ||
@@ -403,6 +654,35 @@ const NOOP_POLICY_OVERRIDE: GeminiPolicyOverride = {
   args: [],
   cleanup: async () => {},
 };
+
+const NOOP_TELEMETRY_CAPTURE: GeminiTelemetryCapture = {
+  env: {},
+  read: async () => '',
+  cleanup: async () => {},
+};
+
+async function defaultCreateTelemetryCapture(): Promise<GeminiTelemetryCapture> {
+  const dir = await mkdtemp(join(tmpdir(), 'cligent-gemini-telemetry-'));
+  const filePath = join(dir, 'telemetry.json');
+
+  return {
+    // These controls are deliberately applied after every ambient and
+    // settings-derived environment entry. The file belongs to this child,
+    // prompts are excluded, and shutdown flushes it before Cligent reads it.
+    env: {
+      GEMINI_TELEMETRY_ENABLED: 'true',
+      GEMINI_TELEMETRY_TARGET: 'local',
+      GEMINI_TELEMETRY_OUTFILE: filePath,
+      GEMINI_TELEMETRY_LOG_PROMPTS: 'false',
+      GEMINI_TELEMETRY_TRACES_ENABLED: 'false',
+      GEMINI_TELEMETRY_USE_COLLECTOR: 'false',
+    },
+    read: async () => readFile(filePath, 'utf8'),
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
 
 export function buildGeminiToolSettings(
   toolConfig: GeminiToolConfig,
@@ -592,21 +872,24 @@ function mapEffortToGemini25ThinkingBudget(
   }
 }
 
-export function buildGeminiSettings(
-  settingsConfig: GeminiSettingsConfig,
-): {
-  tools?: { core?: string[]; exclude?: string[] };
-  modelConfigs?: {
-    customAliases: Record<string, {
-      modelConfig: {
-        model: string;
-        generateContentConfig: {
-          thinkingConfig: GeminiThinkingConfig;
-        };
+export function buildGeminiSettings(settingsConfig: GeminiSettingsConfig):
+  | {
+      tools?: { core?: string[]; exclude?: string[] };
+      modelConfigs?: {
+        customAliases: Record<
+          string,
+          {
+            modelConfig: {
+              model: string;
+              generateContentConfig: {
+                thinkingConfig: GeminiThinkingConfig;
+              };
+            };
+          }
+        >;
       };
-    }>;
-  };
-} | undefined {
+    }
+  | undefined {
   const toolSettings = buildGeminiToolSettings(settingsConfig.toolConfig);
   const alias = settingsConfig.modelAlias;
 
@@ -1051,14 +1334,13 @@ function buildInitPayload(
   const sourceTools = asStringArray(sourceEvent?.tools);
   const configuredAllowlist = options?.allowedTools !== undefined;
 
-  const tools =
-    configuredAllowlist
-      ? toolConfig.allowedTools
-      : sourceTools.length > 0
-        ? sourceTools
-        : toolConfig.allowedTools.length > 0
-          ? toolConfig.allowedTools
-          : [];
+  const tools = configuredAllowlist
+    ? toolConfig.allowedTools
+    : sourceTools.length > 0
+      ? sourceTools
+      : toolConfig.allowedTools.length > 0
+        ? toolConfig.allowedTools
+        : [];
 
   return {
     model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
@@ -1069,14 +1351,13 @@ function buildInitPayload(
         configuredAllowlist ||
         sourceTools.length > 0 ||
         toolConfig.allowedTools.length > 0,
-      toolsSource:
-        configuredAllowlist
-          ? 'configured'
-          : sourceTools.length > 0
-            ? 'stream'
-            : toolConfig.allowedTools.length > 0
-              ? 'configured'
-              : 'unavailable',
+      toolsSource: configuredAllowlist
+        ? 'configured'
+        : sourceTools.length > 0
+          ? 'stream'
+          : toolConfig.allowedTools.length > 0
+            ? 'configured'
+            : 'unavailable',
       disallowedTools: toolConfig.disallowedTools,
     },
   };
@@ -1097,6 +1378,8 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     toolConfig: GeminiToolConfig,
   ) => Promise<GeminiPolicyOverride>;
 
+  private readonly createTelemetryCapture: () => Promise<GeminiTelemetryCapture>;
+
   constructor(deps: GeminiAdapterDeps = {}) {
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
     this.probeAvailability = deps.probeAvailability ?? defaultProbeAvailability;
@@ -1104,6 +1387,8 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       deps.createSettingsOverride ?? defaultCreateSettingsOverride;
     this.createPolicyOverride =
       deps.createPolicyOverride ?? defaultCreatePolicyOverride;
+    this.createTelemetryCapture =
+      deps.createTelemetryCapture ?? defaultCreateTelemetryCapture;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -1128,11 +1413,14 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let closePromise: Promise<CloseResult> | undefined;
     let settingsOverride: GeminiSettingsOverride = NOOP_SETTINGS_OVERRIDE;
     let policyOverride: GeminiPolicyOverride = NOOP_POLICY_OVERRIDE;
+    let telemetryCapture: GeminiTelemetryCapture = NOOP_TELEMETRY_CAPTURE;
 
     const startTime = Date.now();
     let sessionId = options?.resume ?? generateSessionId();
     let backendProvidedSessionId = false;
     let doneYielded = false;
+    let pendingDone: Omit<DonePayload, 'usage'> | undefined;
+    let pendingStreamStats: unknown;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
     let stderr = '';
@@ -1153,8 +1441,16 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     }
 
     try {
-      settingsOverride = await this.createSettingsOverride(mapped.settingsConfig);
+      settingsOverride = await this.createSettingsOverride(
+        mapped.settingsConfig,
+      );
       policyOverride = await this.createPolicyOverride(mapped.toolConfig);
+      try {
+        telemetryCapture = await this.createTelemetryCapture();
+      } catch {
+        // Telemetry is supplementary accounting. A capture setup failure must
+        // not prevent the coding-agent run itself from proceeding.
+      }
       const spawnOptions: SpawnOptionsWithoutStdio = {
         ...mapped.spawnOptions,
         env: {
@@ -1163,6 +1459,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             process.env.GEMINI_CLI_TRUST_WORKSPACE ?? 'true',
           ...(mapped.spawnOptions.env ?? {}),
           ...settingsOverride.env,
+          ...telemetryCapture.env,
         },
       };
 
@@ -1190,7 +1487,10 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       closePromise = new Promise<CloseResult>((resolve, reject) => {
-        const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+        const onClose = (
+          code: number | null,
+          signal: NodeJS.Signals | null,
+        ) => {
           processExited = true;
           cleanup();
           resolve({ code, signal });
@@ -1226,7 +1526,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             initYielded = true;
           }
 
-          if (!doneYielded) {
+          if (!doneYielded && !pendingDone) {
             yield createEvent(
               'error',
               AGENT,
@@ -1242,6 +1542,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         }
 
         const message = asRecord(parsed.data);
+        if (pendingDone || doneYielded) continue;
         const loadedId = loadSessionId(parsed.data);
         if (loadedId) {
           sessionId = loadedId;
@@ -1273,8 +1574,6 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           );
           initYielded = true;
         }
-
-        if (doneYielded) continue;
 
         if (eventType === 'message') {
           const content =
@@ -1423,18 +1722,21 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
               asString(resultError.message) ??
               asString((message as Record<string, unknown>).errorMessage) ??
               asString(message.result);
-            const diagMsg = errorMsg
-              || `Gemini result error (raw: ${JSON.stringify({ error: message.error, result: message.result, status: message.status })})`;
+            const diagMsg =
+              errorMsg ||
+              `Gemini result error (raw: ${JSON.stringify({ error: message.error, result: message.result, status: message.status })})`;
 
             yield createEvent(
               'error',
               AGENT,
               {
-                ...(errorMsg ? toErrorPayload(message) : {
-                  code: 'GEMINI_RESULT_ERROR',
-                  message: diagMsg,
-                  recoverable: false,
-                }),
+                ...(errorMsg
+                  ? toErrorPayload(message)
+                  : {
+                      code: 'GEMINI_RESULT_ERROR',
+                      message: diagMsg,
+                      recoverable: false,
+                    }),
               },
               sessionId,
             );
@@ -1444,27 +1746,21 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             asString(message.result) ??
             asString(asRecord(message.error).message);
 
-          yield createEvent(
-            'done',
-            AGENT,
-            {
-              status: doneStatus,
-              result: resultText,
-              ...doneResumeTokenPayload(
-                doneStatus,
-                backendProvidedSessionId,
-                sessionId,
-                options?.resume,
-              ),
-              usage: mapUsage(message.stats, observedToolUseIds.size),
-              durationMs:
-                asNumber(message.durationMs) ??
-                asNumber(message.duration_ms) ??
-                Date.now() - startTime,
-            },
-            sessionId,
-          );
-          doneYielded = true;
+          pendingDone = {
+            status: doneStatus,
+            result: resultText,
+            ...doneResumeTokenPayload(
+              doneStatus,
+              backendProvidedSessionId,
+              sessionId,
+              options?.resume,
+            ),
+            durationMs:
+              asNumber(message.durationMs) ??
+              asNumber(message.duration_ms) ??
+              Date.now() - startTime,
+          };
+          pendingStreamStats = message.stats;
           continue;
         }
       }
@@ -1481,12 +1777,39 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         initYielded = true;
       }
 
-      if (!doneYielded) {
+      if (pendingDone) {
+        let tokens: TokenUsageReport | undefined;
+        try {
+          tokens = mapTelemetryUsage(
+            await telemetryCapture.read(),
+            pendingStreamStats,
+          );
+        } catch {
+          // Missing/unreadable telemetry is represented by an absent token
+          // report, never by a reconstructed or stream-only estimate.
+        }
+
+        yield createEvent(
+          'done',
+          AGENT,
+          {
+            ...pendingDone,
+            usage: {
+              toolUses: observedToolUseIds.size,
+              ...(tokens ? { tokens } : {}),
+            },
+          },
+          sessionId,
+        );
+        doneYielded = true;
+      } else if (!doneYielded) {
         const status = mapExitCodeToDoneStatus(close, abortRequested);
         const stderrText = stderr.trim();
-        const fallbackMsg = stderrText || (status === 'error'
-          ? `Gemini CLI exited with code ${close?.code ?? 'null'} without a result event`
-          : undefined);
+        const fallbackMsg =
+          stderrText ||
+          (status === 'error'
+            ? `Gemini CLI exited with code ${close?.code ?? 'null'} without a result event`
+            : undefined);
 
         if (status === 'error' && fallbackMsg) {
           yield createEvent(
@@ -1534,6 +1857,22 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       if (!doneYielded) {
+        if (pendingDone) {
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              ...pendingDone,
+              usage: {
+                toolUses: observedToolUseIds.size,
+              },
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          return;
+        }
+
         if (abortRequested || options?.abortSignal?.aborted) {
           yield createEvent(
             'done',
@@ -1606,6 +1945,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       const cleanupResults = await Promise.allSettled([
+        telemetryCapture.cleanup(),
         policyOverride.cleanup(),
         settingsOverride.cleanup(),
       ]);

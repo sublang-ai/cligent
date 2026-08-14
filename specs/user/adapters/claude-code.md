@@ -39,6 +39,8 @@ Claude Code emits `system` messages throughout a run for hook lifecycle, compact
 Emitting `init` from a notice would announce an empty tool list, and doing so before the handshake would leave that empty list as the run's established capabilities.
 A `system` message that carries no subtype shall be treated as the handshake, no runtime notice being unlabelled.
 
+_The following released flat-accounting behavior is superseded by [CLAUDE-012](#claude-012)._
+
 Where the `result` message supplies complete usage, the adapter shall publish the [ENG-028](../engine.md#eng-028) input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
 The adapter shall publish no output side, because Claude Code bills thinking tokens inside `output_tokens` and does not expose them separately, so no measured visible-output component exists to state.
 
@@ -110,13 +112,25 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 
 ### CLAUDE-011
 
+_Superseded by [CLAUDE-012](#claude-012); retained for the unreleased first billable-record design._
+
 Claude Code reports two accountings on its terminal `result` message: `usage`, which counts the main conversation loop only, and `modelUsage`, which counts every model request the run made — including subagents and internal inference — partitioned per model into input, cache-read, cache-creation, and output counters.
 The adapter shall derive `DonePayload.usage` from the per-model accounting by summing those counters across models, so the reported totals cover the whole run and share the scope of the runtime's own cost figure.
 Where the per-model accounting is absent, or any counter it supplies is not a finite non-negative integer, the adapter shall fall back to the main-loop counters; in that case the reported totals cover the main conversation loop only and may understate a run that spawned subagents.
 The adapter shall publish the per-model entries as the run's [ENG-030](../engine.md#eng-030) billable records, keyed by the canonical model identifier Claude Code prices against rather than the raw map key, carrying the provider and the runtime-computed per-model cost where present, and carrying the input side alone because the runtime reports no per-model output split.
 The adapter shall determine the [CLAUDE-010](#claude-010) no-op repair signature from the main-loop counters rather than the whole-run totals, because the repair turn reports zero main-loop tokens while the run as a whole may already have spent some.
 
+### CLAUDE-012
+
+The adapter shall publish [ENG-031](../engine.md#eng-031) complete token coverage only from the terminal `modelUsage` map, because that surface includes every model request made by the main loop, subagents, and internal inference [[3]].
+Each per-model record shall carry inclusive input and output totals, exact uncached, cache-read, and cache-write input details, the canonical model and provider where supplied, the runtime's non-negative per-model cost as `agent-estimate`, and a `web_search_request` priced unit where the runtime reports one.
+The records shall sum to the report totals.
+Reasoning detail shall remain absent because Claude Code includes it in output but does not expose the subset.
+Where `modelUsage` is absent or malformed, the adapter shall omit token accounting rather than promote the main-loop-only `usage` object to an invocation report; that narrow object shall remain usable only for [CLAUDE-010](#claude-010)'s internal repair signature.
+The terminal `total_cost_usd`, where finite and non-negative, shall be exposed independently as a whole-invocation `agent-estimate` even when tokens are absent.
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
 [2]: https://code.claude.com/docs/en/workflows#let-claude-decide-with-ultracode "Claude Code workflows: let Claude decide with ultracode"
+[3]: https://code.claude.com/docs/en/agent-sdk/cost-tracking "Claude Code cost and usage tracking"

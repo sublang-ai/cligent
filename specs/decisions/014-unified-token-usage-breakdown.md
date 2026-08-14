@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
 
-# DR-014: Unified Token-Usage Breakdown
+# DR-014: Unified Usage Accounting
 
 ## Status
 
@@ -9,145 +9,180 @@ Accepted
 
 ## Context
 
-[DR-002](002-unified-event-stream-and-adapter-interface.md#key-payloads) publishes token accounting as two
-scalars, `inputTokens` and `outputTokens`, plus the `tokenAvailability` discriminator.
-Callers that price a run, budget a session, or attribute spend cannot use two scalars: cache reads, cache
-writes, and reasoning are billed at different rates, so a single input total and a single output total cannot
-be converted to cost.
+[DR-002](002-unified-event-stream-and-adapter-interface.md#key-payloads) originally required
+`inputTokens` and `outputTokens` on every terminal event.
+[ENG-027](../user/engine.md#eng-027) later added `tokenAvailability` because a required numeric zero could
+not distinguish measured zero from missing accounting.
+The first form of this decision added a disjoint `breakdown` and billable `records` beside those fields.
 
-Every supported runtime measures more than cligent publishes, and each measures it in a different frame.
+That compatibility shape is not a sound cost ledger.
+It retains numeric placeholders, gives one availability state to several independently reported dimensions,
+and loses an authentic inclusive output total where a runtime reports output but not its reasoning subset.
+It also does not say whether a total includes subagents, resumed history, or only a root conversation.
 
-| Runtime | Base input | Reasoning | Aggregate surface |
-| --- | --- | --- | --- |
-| Claude Code | cache-exclusive | billed inside the output total, not separately exposed | complete |
-| Codex | cache-inclusive | subset of the output total | thread-cumulative, not per-turn |
-| Gemini CLI | cache-inclusive | disjoint, and omitted from the streamed statistics | incomplete |
-| OpenCode | cache-exclusive | disjoint | complete |
-| Kimi Code | cache-exclusive | not reported | absent |
+The supported runtimes expose materially different accounting surfaces.
 
-Three consequences follow, and they are the reason this record exists rather than a payload edit.
+| Runtime     | Authentic source              | Important boundary                                 |
+| ----------- | ----------------------------- | -------------------------------------------------- |
+| Claude Code | terminal per-model accounting | complete agent tree; client-estimated cost         |
+| Codex       | cumulative thread usage       | root thread only; resumed calls require a baseline |
+| Gemini CLI  | run-owned local telemetry     | per response, including thinking and subagents     |
+| OpenCode    | causal step-finish parts      | per request across the invocation's task tree      |
+| Kimi Code   | ACP prompt response           | the pinned runtime reports no usage                |
 
-Adopting any one runtime's frame silently corrupts the others, because a counter that is a subset in one
-frame is an addend in another.
-A single availability flag cannot describe a runtime that measures three of five components, which is the
-common case rather than the exception.
-Two runtimes can only reach full fidelity by reading state the runtime writes outside the protocol stream
-cligent consumes, which is a question about the adapter boundary that no existing record answers.
+The normalized shape must preserve authentic totals, expose exact pricing subsets without double counting,
+state its coverage, and omit unavailable data instead of manufacturing zero.
 
 ## Decision
 
-### Frame
+### Public shape
 
-Token components are a **disjoint partition**: every token is counted by exactly one component.
+`DoneUsage` carries the independently observed `toolUses` count plus two optional reports:
 
-| Component | Meaning |
-| --- | --- |
-| `input` | input tokens that were neither read from nor written to the prompt cache |
-| `cacheRead` | input tokens served from the prompt cache |
-| `cacheWrite` | input tokens written into the prompt cache |
-| `output` | model output tokens excluding reasoning |
-| `reasoning` | reasoning or thinking tokens |
+- `tokens`, an authentic token report for the invocation; and
+- `cost`, a cost value the runtime itself supplied.
 
-A runtime whose base input counter is cache-inclusive is normalized into this frame by subtraction, never by
-clamping, so that the partition cannot exceed the aggregate it partitions.
+The released flat fields `tokenAvailability`, `inputTokens`, `outputTokens`, and `totalCostUsd`, together
+with the unreleased `breakdown` field, are removed.
+Their absence is the availability model: an absent `tokens` report means no authentic token accounting is
+available, while a present zero inside that report is a measurement.
 
-### Shape
+The token report has the following shape.
 
-The breakdown is **additive and optional**.
-`inputTokens` and `outputTokens` keep their current definitions and values, so no shipped consumer changes.
-Components are grouped in one nested optional field rather than flattened beside the aggregates, because a
-flat `input` adjacent to `inputTokens` differs from it by the cache tokens that dominate real runs, and that
-adjacency is the shape most likely to be misread.
+```typescript
+interface TokenUsageReport {
+  coverage: 'complete' | 'partial';
+  totals: TokenUsage;
+  records?: UsageRecord[];
+}
 
-### Absence
+interface TokenUsage {
+  input: {
+    total: number;
+    uncached?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
+  output: {
+    total: number;
+    visible?: number;
+    reasoning?: number;
+  };
+}
+```
 
-Component absence is expressed by omission, not by a second discriminator and not by per-component wrappers.
+`input.total` includes cache reads and cache writes.
+`output.total` includes reasoning or thinking.
+The remaining fields are exact subsets of those inclusive totals, following the inclusive aggregate
+convention used by OpenTelemetry's generative-AI semantic conventions [[1]].
+When every detail of one side is present, the details shall sum exactly to its total.
+An absent detail is unreported and shall not be interpreted as zero.
 
-- An **absent** component means the runtime does not report that quantity.
-- A **present** `0` means the runtime measured zero.
+`coverage: 'complete'` means the report covers every model request causally owned by this
+`AgentAdapter.run()` invocation, including descendant-agent work and excluding resumed history.
+`'partial'` means every published number is authentic but some invocation work may be outside the runtime
+surface or causal boundary.
+Coverage describes request inclusion, not field availability.
 
-This preserves [ENG-027](../user/engine.md#eng-027)'s rule that a numeric zero is never ambiguous.
-`tokenAvailability` exists only because DR-002 froze `inputTokens` and `outputTokens` as required fields, so
-their absence had to be lifted into a sibling flag; new optional fields express absence directly and need no
-flag.
+### Billable records
 
-A second discriminator was rejected because it is all-or-nothing while no runtime is: the discriminator could
-not say that one component is structurally absent while the others are measured.
-Per-component `{ value, availability }` wrappers were rejected as encoding the same fact with more
-indirection at every call site.
+`records` decomposes the report into rate-card groups.
+Every record uses the same inclusive token shape and may carry the model, provider, request count, a
+runtime-reported cost, and separately priced non-token units.
+Here `provider` means the runtime's rate-card family: it may be a serving provider identifier or, where the
+runtime distinguishes billing through authentication, an authentication or billing route.
 
-### Constraints
+- Records shall sum to `totals` for both inclusive totals and every aggregate detail the report publishes.
+- A missing model or provider shall remain absent rather than becoming a placeholder.
+- `requests: 1` means a per-request context tier can be selected from the record; a greater count means the
+  record aggregates requests and cannot establish each request's tier.
+- A record whose source cannot be authenticated, scoped, or reconciled is omitted rather than estimated.
 
-- **Side atomicity.** The input components and the output components form two sides. A side is published in
-  full or omitted in full, and a breakdown carrying neither side is omitted rather than emitted empty.
-- **Exact partition.** Where a side is published, its components sum exactly to the corresponding aggregate.
-  An adapter that cannot satisfy this omits the side rather than publishing an inexact one.
-- **Structurally absent versus unmeasured.** A component may be omitted from a published side only when the
-  runtime's accounting model has no such counter. Where a runtime is known to bill a quantity it does not
-  expose, the whole side is omitted, because publishing the remainder under a component name would assert a
-  meaning that quantity does not have.
-- **Suppression.** Where token accounting is unavailable, no breakdown is published. A partially populated
-  breakdown beside an unavailable aggregate would create a third state DR-002 does not define, in which a
-  consumer could sum components into a number that is not the run's usage.
+### Costs and priced units
 
-### Billable decomposition
+Cligent shall not apply a price table.
+Prices, context tiers, service modes, cache time-to-live, modalities, regions, subscriptions, and separately
+priced tools change independently of the package.
 
-A partition of the whole run is not enough to price it, because a rate is selected per model and per request,
-not per turn.
-The run therefore also carries an optional list of **usage records**, each one billable group's share of the
-run: its rate-card key, its components in the frame above, how many requests it covers, and the cost the
-runtime computed for it where it computes one.
-
-- A record's `requests` count is what tells a caller whether a context-length pricing tier is determinable.
-  One request means the tier follows from the record's own tokens; more means it does not, because tiers are
-  selected per request and the counts are a sum.
-- Where a runtime does not name the model that ran, the record omits the field rather than naming a
-  placeholder, because a placeholder selects a wrong rate as readily as a right one.
-- The records sum to the breakdown, or they are omitted. A decomposition that describes work the aggregates
-  do not is worse than none.
-
-This supersedes the deferral of per-model attribution recorded when this decision was first accepted.
-That deferral rested on partial runtime coverage, but partial coverage is what the absence model already
-expresses, and without a rate-card key the component partition cannot serve the purpose this record exists
-for.
+A runtime-supplied cost is represented as `{ amount, currency: 'USD', source }`, where `source` is one of
+`agent-estimate`, `provider-reported`, or `account-estimate`.
+Claude Code and OpenCode values are `agent-estimate`; neither is asserted to be an invoice total.
+A valid cost may be published even when token accounting is absent, because the two have independent
+failure domains.
+Non-token quantities such as an agent-reported web-search request count use `pricedUnits`; they are never
+folded into token totals.
 
 ### Fidelity sources
 
-An adapter may derive token accounting from a source other than the protocol stream it already consumes —
-including state the runtime writes to disk — only under all of the following.
+An adapter may use a runtime-owned source outside its normal event stream only when all of the following
+hold.
 
-- The derived totals are **cross-validated** against the aggregates the protocol stream itself reported, and
-  any mismatch, absence, parse failure, or unreadable source falls back to the protocol result.
-- The fallback is the runtime's existing behavior, including `'unavailable'` where the protocol result is
-  incomplete, so a supplementary source can only add fidelity and can never subtract correctness.
-- The source does not cross a protocol boundary an earlier record established. In particular
-  [DR-011](011-kimi-code-acp-integration.md) confines the Kimi adapter to ACP, so Kimi accounting stays
-  whatever ACP reports.
+- The source is scoped uniquely to the current child process or invocation.
+- Its totals are cross-validated against the runtime's ordinary terminal accounting.
+- Missing, unreadable, malformed, unidentifiable duplicate, conflicting duplicate, or mismatched data makes
+  the supplementary report absent; exact duplicate exporter records are deduplicated and never added twice.
+- The source stays within an applicable protocol decision.
+  In particular, [DR-011](011-kimi-code-acp-integration.md) confines Kimi to ACP.
+- The source is covered by the runtime pin in
+  [DR-013](013-cligent-owned-runtime-compatibility.md) and is reverified when that pin changes.
 
-Cross-validation is what makes this safe: an undocumented on-disk format that changes shape stops matching
-the protocol aggregates and is therefore discarded, rather than silently producing wrong numbers.
-[DR-013](013-cligent-owned-runtime-compatibility.md)'s pinned runtime targets bound the exposure further, by
-forcing re-verification whenever a runtime moves.
+Gemini's supported local telemetry exporter meets this rule and exposes per-response model and complete token
+details [[4]].
+OpenCode's SDK event and session schema supplies causal, identified step-finish parts [[5]].
+Claude Code's terminal per-model result is already part of its supported protocol [[2]].
+Codex's exec surface remains thread-cumulative; its app-server offers richer per-thread and per-response
+events, but those are not silently substituted for the pinned adapter transport [[3]].
+
+### Adapter mapping
+
+- **Claude Code:** sum terminal `modelUsage` entries for complete coverage; publish one record per model,
+  inclusive output even when reasoning detail is absent, per-model and whole-run agent-estimated cost, and
+  separately reported priced units.
+  A main-loop-only fallback is not a whole-run token report.
+- **Codex:** difference the current root thread's cumulative snapshot from a retained baseline and label the
+  exact result partial, because descendant threads are outside the exec event surface.
+  An unseen resumed baseline yields no token report.
+- **Gemini CLI:** collect one record per `gemini_cli.api_response` from a prompt-free, run-owned local
+  telemetry file after process close. Preserve the response's authentication type as the rate-card family,
+  fold separately reported tool-use-prompt tokens into inclusive input, retain thinking in inclusive output,
+  and cross-validate the raw prompt, candidate, cache, and overall sums against terminal stream statistics
+  [[6]]. A run with a causal API-error event or an unmatched zero-token routed model keeps its exact
+  successful-response records but uses partial coverage because the failed request exposes no token counters.
+- **OpenCode:** collect canonical step-finish parts causally descended from the submitted prompt, keyed by
+  session and part identifier, and replace repeated snapshots instead of adding them.
+  Child conversation remains filtered even though its accounting is included.
+  Prove the live server is healthy at the exact conformance version before allowing complete coverage;
+  missing, failed, malformed, or different-version proof preserves the exact observed subset as partial.
+  Suppress and verify the otherwise unledgered title request, extend causality only through pinned task and
+  compaction boundaries, and downgrade exact subsets after causal or uncorrelatable retries, overflow replay,
+  reused task sessions, missing child identity, unsettled background work, or any unproved post-activation
+  request [[7]][[8]][[9]].
+- **Kimi Code:** publish no token report for the pinned runtime because ACP supplies none.
+  Independently observed tool calls remain reported.
 
 ## Consequences
 
-- Callers can compute cost, because the components a provider prices differently are now separable.
-- Gemini token accounting can become reportable instead of structurally unavailable, by reading one
-  runtime-owned transcript file under cross-validation. Its streamed statistics provably cannot partition the
-  residual, so no cheaper source exists.
-- Codex per-turn accounting requires retaining a per-thread baseline across calls, which
-  [ENG-018](../user/engine.md#eng-018) otherwise forbids; the carve-out is narrow and fails closed when no
-  baseline is held.
-- Claude Code publishes an input side only. Its reasoning tokens are billed inside the output total and the
-  runtime does not expose them, so the output side is withheld rather than mislabeled.
-- Kimi Code publishes no breakdown, and its existing cache-exclusive folding stays an assumption about the
-  agent rather than a guarantee ACP makes.
-- A runtime that reports one component as a constant zero is indistinguishable from one that measured zero,
-  where the reporting surface does not identify the provider. Adapter items record the affected cases.
+- Callers never need an availability discriminator or compatibility zero.
+- Inclusive totals remain usable where a runtime cannot expose a cache or reasoning split.
+- A cost calculator can reject partial coverage, missing model/request dimensions, or absent cache details
+  instead of presenting a precise-looking underestimate.
+- Claude Code and OpenCode direct costs are exposed with their estimate provenance.
+- Gemini becomes priceable for ordinary pay-as-you-go text requests through model- and
+  authentication-specific per-response records, while subscription tier, cache storage duration, grounding
+  charges, modality tiers, and other unreported dimensions stay absent.
+- Codex remains only root-thread priceable on the pinned exec transport; exact agent-tree pricing requires a
+  separately decided app-server migration.
+- Kimi is not token-priceable through Cligent until its supported ACP runtime emits stable usage.
+- Removing the released flat fields is a breaking public API change.
 
-Recognized and deferred, each being a separate unified-shape question with its own coverage gaps: server-side
-tool request counts and cache time-to-live tiers.
-Both are measured against one vendor only, and neither changes which rate applies, unlike the model identity
-promoted above.
-Cache storage billed per unit time is structurally absent for every runtime as cligent drives them, and is
-recorded here as a finding rather than an omission.
+## References
+
+[1]: https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md 'OpenTelemetry generative AI token attributes'
+[2]: https://code.claude.com/docs/en/agent-sdk/cost-tracking 'Claude Code cost and usage tracking'
+[3]: https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md 'Codex app-server protocol'
+[4]: https://geminicli.com/docs/cli/telemetry/ 'Gemini CLI telemetry'
+[5]: https://opencode.ai/docs/sdk/ 'OpenCode SDK'
+[6]: https://github.com/googleapis/js-genai/blob/38cac5bbf4941ec5fa760238bd423c0ecc2c6f04/src/types.ts#L2607-L2628 'Google Gen AI SDK 1.30.0 UsageMetadata'
+[7]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L448 'OpenCode 1.18.13 title and foreground-task flow'
+[8]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/compaction.ts#L356-L535 'OpenCode 1.18.13 compaction flow'
+[9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/processor.ts#L630-L680 'OpenCode 1.18.13 retry boundary'

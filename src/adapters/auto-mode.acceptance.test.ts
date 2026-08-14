@@ -568,9 +568,6 @@ function doneEvent(
       status,
       ...(result ? { result } : {}),
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 0,
-        outputTokens: 0,
         toolUses: 0,
       },
       durationMs: 0,

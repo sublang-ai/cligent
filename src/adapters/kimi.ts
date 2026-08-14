@@ -24,7 +24,7 @@ import type {
   ToolCallContent,
   ToolCallStatus,
 } from '@agentclientprotocol/sdk';
-import type { AcpSessionConfigOption, AcpUsage } from './acp-schema.js';
+import type { AcpSessionConfigOption } from './acp-schema.js';
 import {
   ACTED_ON_UPDATES,
   zAcpError as zError,
@@ -65,9 +65,6 @@ const CANCEL_TERMINATION_DELAY_MS = 1_000;
 const STDERR_BUFFER_LIMIT = 64 * 1024;
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
-  tokenAvailability: 'unavailable',
-  inputTokens: 0,
-  outputTokens: 0,
   toolUses: 0,
 };
 
@@ -539,22 +536,6 @@ function selectedConfigValue(
   // restates that guarantee for the loose non-select arm of the union.
   const { currentValue } = option as { currentValue?: unknown };
   return typeof currentValue === 'string' ? currentValue : undefined;
-}
-
-function mapUsage(
-  usage: AcpUsage | null | undefined,
-  toolUses: number,
-): DonePayload['usage'] {
-  if (!usage) return { ...DEFAULT_DONE_USAGE, toolUses };
-  return {
-    tokenAvailability: 'reported',
-    inputTokens:
-      usage.inputTokens +
-      (usage.cachedReadTokens ?? 0) +
-      (usage.cachedWriteTokens ?? 0),
-    outputTokens: usage.outputTokens,
-    toolUses,
-  };
 }
 
 function errorCode(error: unknown): number | undefined {
@@ -1220,7 +1201,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         } else {
           status = 'success';
         }
-        finish(status, mapUsage(result.usage, emittedToolUses));
+        // Kimi Code 0.31.1's ACP prompt response does not publish token
+        // accounting. Keep the optional wire member isolated from terminal
+        // status, but never promote it into Cligent's authentic usage report.
+        finish(status);
       } catch (error) {
         if (abortRequested) {
           finish('interrupted');

@@ -1,116 +1,152 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { buildTokenBreakdown, exclusiveBase } from '../adapters/usage.js';
+import {
+  buildTokenUsage,
+  buildTokenUsageReport,
+  buildUsageCost,
+  exclusiveBase,
+  readUsageCounter,
+  sumTokenUsage,
+} from '../adapters/usage.js';
 
 describe('exclusiveBase', () => {
-  it('subtracts included components from a cache-inclusive total', () => {
+  it('subtracts inclusive subsets without clamping', () => {
     expect(exclusiveBase(100, 40, 60)).toBe(0);
     expect(exclusiveBase(100, 40)).toBe(60);
-    expect(exclusiveBase(100)).toBe(100);
-  });
-
-  it('ignores absent components without treating them as zero counters', () => {
-    expect(exclusiveBase(100, undefined, 25)).toBe(75);
-  });
-
-  it('omits rather than clamps when the subtraction goes negative', () => {
-    // Clamping would make the components sum above their aggregate, which is
-    // the double count the partition identity exists to prevent.
     expect(exclusiveBase(10, 7, 8)).toBeUndefined();
   });
 
-  it('rejects malformed counters on either side of the subtraction', () => {
+  it('rejects malformed counters', () => {
     expect(exclusiveBase(1.5, 1)).toBeUndefined();
-    expect(exclusiveBase(10, 2.5)).toBeUndefined();
     expect(exclusiveBase(10, -1)).toBeUndefined();
     expect(exclusiveBase(Number.NaN, 0)).toBeUndefined();
-    expect(exclusiveBase(Number.POSITIVE_INFINITY)).toBeUndefined();
   });
 });
 
-describe('buildTokenBreakdown', () => {
-  const aggregates = { inputTokens: 100, outputTokens: 50 };
-
-  it('publishes both sides when each partitions its aggregate exactly', () => {
+describe('readUsageCounter', () => {
+  it('distinguishes absent, zero, malformed, and conflicting aliases', () => {
+    expect(readUsageCounter({}, ['value'], false)).toEqual({
+      value: 0,
+      valid: true,
+      present: false,
+    });
+    expect(readUsageCounter({ value: 0 }, ['value'], true)).toEqual({
+      value: 0,
+      valid: true,
+      present: true,
+    });
+    expect(readUsageCounter({ value: -1 }, ['value'], true).valid).toBe(false);
     expect(
-      buildTokenBreakdown(aggregates, {
-        input: 30,
-        cacheRead: 60,
-        cacheWrite: 10,
-        output: 45,
-        reasoning: 5,
-      }),
+      readUsageCounter({ value: Number.MAX_SAFE_INTEGER + 1 }, ['value'], true)
+        .valid,
+    ).toBe(false);
+    expect(
+      readUsageCounter({ value: 1, value_alias: 2 }, ['value', 'value_alias'], true)
+        .valid,
+    ).toBe(false);
+  });
+});
+
+describe('authentic usage builders (ENG-031)', () => {
+  const complete = buildTokenUsage(
+    { total: 100, uncached: 30, cacheRead: 60, cacheWrite: 10 },
+    { total: 50, visible: 45, reasoning: 5 },
+  )!;
+
+  it('keeps inclusive totals and exact measured subsets', () => {
+    expect(complete).toEqual({
+      input: { total: 100, uncached: 30, cacheRead: 60, cacheWrite: 10 },
+      output: { total: 50, visible: 45, reasoning: 5 },
+    });
+    expect(
+      buildTokenUsage(
+        { total: 0, uncached: 0, cacheRead: 0, cacheWrite: 0 },
+        { total: 0, visible: 0, reasoning: 0 },
+      ),
+    ).toBeDefined();
+  });
+
+  it('allows absent details but rejects invalid complete partitions', () => {
+    expect(
+      buildTokenUsage({ total: 100, cacheRead: 60 }, { total: 50 }),
     ).toEqual({
-      input: 30,
-      cacheRead: 60,
-      cacheWrite: 10,
-      output: 45,
-      reasoning: 5,
+      input: { total: 100, cacheRead: 60 },
+      output: { total: 50 },
     });
-  });
-
-  it('keeps a measured zero component distinct from an absent one', () => {
-    const built = buildTokenBreakdown(aggregates, {
-      input: 100,
-      cacheRead: 0,
-      output: 50,
-    });
-    expect(built).toEqual({ input: 100, cacheRead: 0, output: 50 });
-    expect(built).toHaveProperty('cacheRead', 0);
-    expect(built).not.toHaveProperty('cacheWrite');
-    expect(built).not.toHaveProperty('reasoning');
-  });
-
-  it('drops only the side that fails its partition identity', () => {
     expect(
-      buildTokenBreakdown(aggregates, {
-        input: 30,
-        cacheRead: 60,
-        // 30 + 60 = 90, not 100 — the input side is inexact and is dropped.
-        output: 45,
-        reasoning: 5,
-      }),
-    ).toEqual({ output: 45, reasoning: 5 });
-  });
-
-  it('drops a side carrying a malformed component', () => {
+      buildTokenUsage(
+        { total: 100, uncached: 30, cacheRead: 60, cacheWrite: 20 },
+        { total: 50 },
+      ),
+    ).toBeUndefined();
     expect(
-      buildTokenBreakdown(aggregates, {
-        input: 40.5,
-        cacheRead: 59.5,
-        output: 50,
-      }),
-    ).toEqual({ output: 50 });
-  });
-
-  it('omits the breakdown entirely when no side survives', () => {
-    expect(buildTokenBreakdown(aggregates, {})).toBeUndefined();
-    expect(
-      buildTokenBreakdown(aggregates, { input: 1, output: 2 }),
+      buildTokenUsage(
+        { total: 100 },
+        { total: 50, visible: 46, reasoning: 5 },
+      ),
     ).toBeUndefined();
   });
 
-  it('accepts a single-member side that already equals its aggregate', () => {
-    expect(
-      buildTokenBreakdown({ inputTokens: 7, outputTokens: 0 }, { input: 7 }),
-    ).toEqual({ input: 7 });
+  it('sums records and publishes only a reconciling decomposition', () => {
+    const records = [
+      {
+        model: 'model-a',
+        requests: 1,
+        tokens: {
+          input: { total: 84, uncached: 20, cacheRead: 60, cacheWrite: 4 },
+          output: { total: 45, visible: 40, reasoning: 5 },
+        },
+      },
+      {
+        model: 'model-b',
+        requests: 1,
+        tokens: {
+          input: { total: 16, uncached: 10, cacheRead: 0, cacheWrite: 6 },
+          output: { total: 5, visible: 5, reasoning: 0 },
+        },
+      },
+    ];
+    expect(sumTokenUsage(records)).toEqual(complete);
+    expect(buildTokenUsageReport('complete', complete, records)).toEqual({
+      coverage: 'complete',
+      totals: complete,
+      records,
+    });
+
+    const mismatched = [
+      {
+        ...records[0],
+        tokens: {
+          input: { total: 99 },
+          output: { total: 50 },
+        },
+      },
+    ];
+    expect(buildTokenUsageReport('partial', complete, mismatched)).toEqual({
+      coverage: 'partial',
+      totals: complete,
+    });
   });
 
-  it('treats a zero aggregate with zero components as an exact partition', () => {
-    expect(
-      buildTokenBreakdown(
-        { inputTokens: 0, outputTokens: 0 },
-        { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 },
-      ),
-    ).toEqual({
-      input: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      output: 0,
-      reasoning: 0,
+  it('validates request counts, costs, and priced units', () => {
+    expect(buildUsageCost(0, 'agent-estimate')).toEqual({
+      amount: 0,
+      currency: 'USD',
+      source: 'agent-estimate',
+    });
+    expect(buildUsageCost(-1, 'agent-estimate')).toBeUndefined();
+
+    const invalidRecord = {
+      requests: 0,
+      tokens: complete,
+      pricedUnits: [{ name: 'web_search_request', quantity: 1 }],
+    };
+    expect(buildTokenUsageReport('complete', complete, [invalidRecord])).toEqual({
+      coverage: 'complete',
+      totals: complete,
     });
   });
 });

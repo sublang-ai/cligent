@@ -515,9 +515,6 @@ describe('KimiAdapter', () => {
       result: 'Hello world',
       resumeToken: 'fresh-kimi-session',
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 13,
-        outputTokens: 4,
         toolUses: 1,
       },
     });
@@ -527,7 +524,7 @@ describe('KimiAdapter', () => {
     });
   });
 
-  it('represents an explicitly reported zero token total', async () => {
+  it('does not promote hypothetical ACP usage into token accounting', async () => {
     const fake = new FakeKimi({
       prompt: async () => ({
         stopReason: 'end_turn',
@@ -542,9 +539,6 @@ describe('KimiAdapter', () => {
 
     const events = await collect(adapter.run('Do nothing'));
     expect(eventOf(events, 'done').payload.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 0,
     });
   });
@@ -587,9 +581,6 @@ describe('KimiAdapter', () => {
       status: 'success',
       result: 'kept',
       usage: {
-        tokenAvailability: 'unavailable',
-        inputTokens: 0,
-        outputTokens: 0,
         toolUses: 1,
       },
     });
@@ -617,9 +608,6 @@ describe('KimiAdapter', () => {
     expect(eventOf(events, 'done').payload).toMatchObject({
       status: 'success',
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 5,
-        outputTokens: 3,
         toolUses: 0,
       },
     });
@@ -676,12 +664,9 @@ describe('KimiAdapter', () => {
       output: { stderr: 'boom' },
     });
     expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
-    // KIMI-005: an absent usage object keeps compatibility zeroes but marks
-    // them unavailable, with toolUses tracking emitted calls independently.
+    // KIMI-005: ACP supplies no authentic accounting in the pinned runtime;
+    // toolUses remains independently observed.
     expect(eventOf(events, 'done').payload.usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 1,
     });
   });

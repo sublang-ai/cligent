@@ -30,9 +30,9 @@ import type {
   AgentEvent,
   AgentOptions,
   CodexEffort,
+  DonePayload,
   PermissionLevel,
   PermissionPolicy,
-  TokenBreakdown,
 } from '../types.js';
 import {
   CANONICAL_THREAD_ID,
@@ -45,6 +45,7 @@ import {
   canonicalMcpFailed,
   canonicalMcpResult,
   canonicalToolLifecycleEvents,
+  canonicalUsage,
   duplicatedCompletionEvents,
   failedCommandEvents,
   failedMcpEvents,
@@ -86,14 +87,7 @@ interface DoneAssertion {
   status: string;
   result?: string;
   resumeToken?: string;
-  usage: {
-    tokenAvailability: 'reported' | 'unavailable';
-    inputTokens: number;
-    outputTokens: number;
-    toolUses: number;
-    totalCostUsd?: number;
-    breakdown?: TokenBreakdown;
-  };
+  usage: DonePayload['usage'];
   durationMs: number;
 }
 
@@ -148,9 +142,12 @@ function makeQueuedLoader(
   batches: unknown[][],
 ): () => Promise<{ Codex: new () => MockCodexClient }> {
   let index = 0;
-  const nextBatch = (): unknown[] => batches[Math.min(index++, batches.length - 1)] ?? [];
+  const nextBatch = (): unknown[] =>
+    batches[Math.min(index++, batches.length - 1)] ?? [];
 
-  async function* eventStream(batch: unknown[]): AsyncGenerator<unknown, void, void> {
+  async function* eventStream(
+    batch: unknown[],
+  ): AsyncGenerator<unknown, void, void> {
     for (const event of batch) yield event;
   }
 
@@ -198,50 +195,51 @@ function makeLoader(config: {
     }
   }
 
-  return async () => ({
-    Codex: class {
-      constructor(options?: MockCodexConstructorOptions) {
-        config.onConstruct?.(options);
-      }
+  return async () =>
+    ({
+      Codex: class {
+        constructor(options?: MockCodexConstructorOptions) {
+          config.onConstruct?.(options);
+        }
 
-      startThread(options?: MockThreadOptions): MockCodexThread {
-        config.onStartThread?.(options);
-        return {
-          async runStreamed(
-            prompt: string,
-            runOptions?: MockRunOptions,
-          ): Promise<{ events: AsyncIterable<unknown> }> {
-            config.onRun?.(prompt, runOptions);
-            return {
-              events: {
-                [Symbol.asyncIterator]: () => eventStream(),
-              },
-            };
-          },
-        };
-      }
+        startThread(options?: MockThreadOptions): MockCodexThread {
+          config.onStartThread?.(options);
+          return {
+            async runStreamed(
+              prompt: string,
+              runOptions?: MockRunOptions,
+            ): Promise<{ events: AsyncIterable<unknown> }> {
+              config.onRun?.(prompt, runOptions);
+              return {
+                events: {
+                  [Symbol.asyncIterator]: () => eventStream(),
+                },
+              };
+            },
+          };
+        }
 
-      resumeThread(
-        threadId: string,
-        options?: MockThreadOptions,
-      ): MockCodexThread {
-        config.onResumeThread?.(threadId, options);
-        return {
-          async runStreamed(
-            prompt: string,
-            runOptions?: MockRunOptions,
-          ): Promise<{ events: AsyncIterable<unknown> }> {
-            config.onRun?.(prompt, runOptions);
-            return {
-              events: {
-                [Symbol.asyncIterator]: () => eventStream(),
-              },
-            };
-          },
-        };
-      }
-    },
-  }) as unknown as { Codex: new (options?: unknown) => MockCodexClient };
+        resumeThread(
+          threadId: string,
+          options?: MockThreadOptions,
+        ): MockCodexThread {
+          config.onResumeThread?.(threadId, options);
+          return {
+            async runStreamed(
+              prompt: string,
+              runOptions?: MockRunOptions,
+            ): Promise<{ events: AsyncIterable<unknown> }> {
+              config.onRun?.(prompt, runOptions);
+              return {
+                events: {
+                  [Symbol.asyncIterator]: () => eventStream(),
+                },
+              };
+            },
+          };
+        }
+      },
+    }) as unknown as { Codex: new (options?: unknown) => MockCodexClient };
 }
 
 async function collect(
@@ -324,48 +322,73 @@ describe('CodexAdapter', () => {
     // toolUses derives from the unique observed tool item ids; the SDK
     // usage object carries token counts only.
     expect(done.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 33,
-      outputTokens: 44,
       toolUses: 2,
-      // Codex reports cache and reasoning as subsets, so each exclusive
-      // component is a subtraction and each side sums back to its aggregate.
-      breakdown: {
-        input: 16,
-        cacheRead: 12,
-        cacheWrite: 5,
-        output: 38,
-        reasoning: 6,
-      },
-      // Codex meters per turn, not per request, so the turn is one billable
-      // group; the record exists to name the rate card it priced against.
-      records: [
-        {
-          model: 'gpt-5-codex',
-          tokens: {
-            input: 16,
+      tokens: {
+        coverage: 'partial',
+        totals: {
+          input: {
+            total: 33,
+            uncached: 16,
             cacheRead: 12,
             cacheWrite: 5,
-            output: 38,
+          },
+          output: {
+            total: 44,
+            visible: 38,
             reasoning: 6,
           },
         },
-      ],
+      },
     });
   });
 
   // TADAPT-039
-  it('publishes no records when the run pinned no model', async () => {
+  it('does not substitute the requested model for an observed rate-card key', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
     });
 
-    const events = await collect(adapter.run('do it', { cwd: '/repo' }));
+    const events = await collect(
+      adapter.run('do it', { cwd: '/repo', model: 'requested-model' }),
+    );
     const done = donePayload(events.at(-1)!);
-    // Nothing named the model, so the only group has no rate-card key and
-    // would restate the breakdown; ENG-030 omits it rather than guess.
-    expect(done.usage.breakdown).toBeDefined();
-    expect(done.usage.records).toBeUndefined();
+    // Nothing in the runtime stream named the effective model. The requested
+    // model may have been rerouted, so it is not published as a rate-card key.
+    expect(done.usage.tokens).toBeDefined();
+    expect(done.usage.tokens?.records).toBeUndefined();
+  });
+
+  it('publishes a turn record when the runtime names the effective model', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          { type: 'thread.started', thread_id: 'thread-model' },
+          {
+            type: 'turn.completed',
+            model: 'runtime-model',
+            usage: canonicalUsage,
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('do it', { model: 'requested-model' }),
+    );
+    expect(donePayload(events.at(-1)!).usage.tokens?.records).toEqual([
+      {
+        model: 'runtime-model',
+        tokens: {
+          input: {
+            total: 33,
+            uncached: 16,
+            cacheRead: 12,
+            cacheWrite: 5,
+          },
+          output: { total: 44, visible: 38, reasoning: 6 },
+        },
+      },
+    ]);
   });
 
   it('emits one tool_use and one terminal tool_result across repeated updates', async () => {
@@ -400,13 +423,14 @@ describe('CodexAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     expect(donePayload(events.at(-1)!).usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 0,
-      // No cache or reasoning counters in the payload, so only the base
-      // input component is measured and the output side stays withheld.
-      breakdown: { input: 0 },
+      tokens: {
+        coverage: 'partial',
+        totals: {
+          input: { total: 0 },
+          output: { total: 0 },
+        },
+      },
     });
   });
 
@@ -445,23 +469,201 @@ describe('CodexAdapter', () => {
     });
 
     const first = await collect(adapter.run('one'));
-    expect(donePayload(first.at(-1)!).usage).toMatchObject({
-      tokenAvailability: 'reported',
-      inputTokens: 100,
-      outputTokens: 30,
+    expect(donePayload(first.at(-1)!).usage.tokens).toMatchObject({
+      coverage: 'partial',
+      totals: { input: { total: 100 }, output: { total: 30 } },
     });
 
     const second = await collect(
       adapter.run('two', { resume: 'thread-delta' }),
     );
-    expect(donePayload(second.at(-1)!).usage).toMatchObject({
-      tokenAvailability: 'reported',
-      inputTokens: 160,
-      outputTokens: 25,
+    expect(donePayload(second.at(-1)!).usage.tokens).toMatchObject({
+      coverage: 'partial',
+      totals: { input: { total: 160 }, output: { total: 25 } },
     });
   });
 
-  it('withholds the output side when no reasoning counter is reported', async () => {
+  it('omits an absent-to-present optional-counter transition, then recovers', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-shape-appears' },
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 100, output_tokens: 30 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 160,
+              cached_input_tokens: 40,
+              output_tokens: 50,
+            },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 200,
+              cached_input_tokens: 50,
+              output_tokens: 60,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await collect(adapter.run('seed'));
+    const transition = await collect(
+      adapter.run('transition', { resume: 'thread-shape-appears' }),
+    );
+    expect(donePayload(transition.at(-1)!).usage.tokens).toBeUndefined();
+
+    const stable = await collect(
+      adapter.run('stable', { resume: 'thread-shape-appears' }),
+    );
+    expect(donePayload(stable.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 40, cacheRead: 10 },
+      output: { total: 10 },
+    });
+  });
+
+  it('omits a present-to-absent optional-counter transition, then recovers', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-shape-disappears' },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 100,
+              cached_input_tokens: 30,
+              output_tokens: 30,
+              reasoning_output_tokens: 10,
+            },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 160, output_tokens: 50 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 200, output_tokens: 60 },
+          },
+        ],
+      ]),
+    });
+
+    await collect(adapter.run('seed'));
+    const transition = await collect(
+      adapter.run('transition', { resume: 'thread-shape-disappears' }),
+    );
+    expect(donePayload(transition.at(-1)!).usage.tokens).toBeUndefined();
+
+    const stable = await collect(
+      adapter.run('stable', { resume: 'thread-shape-disappears' }),
+    );
+    expect(donePayload(stable.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 40 },
+      output: { total: 10 },
+    });
+  });
+
+  it('serializes concurrent turns resumed on the same cumulative thread', async () => {
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let markSecondConstructed!: () => void;
+    const secondConstructed = new Promise<void>((resolve) => {
+      markSecondConstructed = resolve;
+    });
+    const startedPrompts: string[] = [];
+    let constructions = 0;
+
+    const snapshots: Record<
+      string,
+      { input_tokens: number; output_tokens: number }
+    > = {
+      seed: { input_tokens: 100, output_tokens: 40 },
+      first: { input_tokens: 130, output_tokens: 52 },
+      second: { input_tokens: 175, output_tokens: 70 },
+    };
+    const thread: MockCodexThread = {
+      async runStreamed(prompt): Promise<{ events: AsyncIterable<unknown> }> {
+        startedPrompts.push(prompt);
+        if (prompt === 'first') markFirstStarted();
+
+        async function* events(): AsyncGenerator<unknown, void, void> {
+          if (prompt === 'first') await firstMayFinish;
+          if (prompt === 'seed') {
+            yield { type: 'thread.started', thread_id: 'thread-serialized' };
+          }
+          yield { type: 'turn.completed', usage: snapshots[prompt] };
+        }
+
+        return { events: { [Symbol.asyncIterator]: () => events() } };
+      },
+    };
+    const adapter = new CodexAdapter({
+      loadSdk: async () => ({
+        Codex: class {
+          constructor() {
+            constructions += 1;
+            if (constructions === 3) markSecondConstructed();
+          }
+
+          startThread(): MockCodexThread {
+            return thread;
+          }
+
+          resumeThread(): MockCodexThread {
+            return thread;
+          }
+        },
+      }),
+    });
+
+    await collect(adapter.run('seed'));
+    const firstRun = collect(
+      adapter.run('first', { resume: 'thread-serialized' }),
+    );
+    await firstStarted;
+    const secondRun = collect(
+      adapter.run('second', { resume: 'thread-serialized' }),
+    );
+    await secondConstructed;
+
+    // The second invocation has reached the adapter, but its prompt cannot
+    // start while the first still owns this resumed session's baseline.
+    expect(startedPrompts).toEqual(['seed', 'first']);
+
+    releaseFirst();
+    const first = await firstRun;
+    const second = await secondRun;
+    expect(startedPrompts).toEqual(['seed', 'first', 'second']);
+    expect(donePayload(first.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 30 },
+      output: { total: 12 },
+    });
+    expect(donePayload(second.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 45 },
+      output: { total: 18 },
+    });
+  });
+
+  it('keeps inclusive output while omitting unreported reasoning detail', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeQueuedLoader([
         [
@@ -479,15 +681,13 @@ describe('CodexAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    // Without a reasoning counter there is no measured visible-output
-    // component, so the side is omitted rather than equated to the total.
-    expect(donePayload(events.at(-1)!).usage.breakdown).toEqual({
-      input: 60,
-      cacheRead: 30,
+    expect(donePayload(events.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 90, cacheRead: 30 },
+      output: { total: 20 },
     });
   });
 
-  it('withholds a side whose subtraction would go negative', async () => {
+  it('omits tokens when a reported subset exceeds its inclusive total', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeQueuedLoader([
         [
@@ -509,8 +709,7 @@ describe('CodexAdapter', () => {
 
     const events = await collect(adapter.run('prompt'));
     const usage = donePayload(events.at(-1)!).usage;
-    expect(usage.inputTokens).toBe(10);
-    expect(usage.breakdown).toEqual({ output: 5, reasoning: 3 });
+    expect(usage.tokens).toBeUndefined();
   });
 
   it('reports unavailable for a resumed thread it holds no baseline for', async () => {
@@ -529,9 +728,6 @@ describe('CodexAdapter', () => {
       adapter.run('resumed', { resume: 'thread-unseen' }),
     );
     expect(donePayload(events.at(-1)!).usage).toEqual({
-      tokenAvailability: 'unavailable',
-      inputTokens: 0,
-      outputTokens: 0,
       toolUses: 0,
     });
   });
@@ -565,18 +761,67 @@ describe('CodexAdapter', () => {
 
     await collect(adapter.run('one'));
     const reset = await collect(adapter.run('two', { resume: 'thread-reset' }));
-    expect(donePayload(reset.at(-1)!).usage.tokenAvailability).toBe(
-      'unavailable',
-    );
+    expect(donePayload(reset.at(-1)!).usage.tokens).toBeUndefined();
 
     // The baseline advanced anyway, so the next turn is attributable again.
     const recovered = await collect(
       adapter.run('three', { resume: 'thread-reset' }),
     );
-    expect(donePayload(recovered.at(-1)!).usage).toMatchObject({
-      tokenAvailability: 'reported',
-      inputTokens: 80,
-      outputTokens: 50,
+    expect(donePayload(recovered.at(-1)!).usage.tokens).toMatchObject({
+      coverage: 'partial',
+      totals: { input: { total: 80 }, output: { total: 50 } },
+    });
+  });
+
+  it('invalidates a stale baseline after a malformed cumulative snapshot', async () => {
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([
+        [
+          { type: 'thread.started', thread_id: 'thread-malformed' },
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 10, output_tokens: 4 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 'bad', output_tokens: 6 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 20, output_tokens: 8 },
+          },
+        ],
+        [
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 25, output_tokens: 10 },
+          },
+        ],
+      ]),
+    });
+
+    await collect(adapter.run('seed'));
+    const malformed = await collect(
+      adapter.run('malformed', { resume: 'thread-malformed' }),
+    );
+    expect(donePayload(malformed.at(-1)!).usage.tokens).toBeUndefined();
+
+    // The next valid total cannot be subtracted across the malformed turn.
+    const rebaseline = await collect(
+      adapter.run('rebaseline', { resume: 'thread-malformed' }),
+    );
+    expect(donePayload(rebaseline.at(-1)!).usage.tokens).toBeUndefined();
+
+    const recovered = await collect(
+      adapter.run('recovered', { resume: 'thread-malformed' }),
+    );
+    expect(donePayload(recovered.at(-1)!).usage.tokens?.totals).toEqual({
+      input: { total: 5 },
+      output: { total: 2 },
     });
   });
 
@@ -614,7 +859,7 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('MISSING_TURN_DONE');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
-    expect(done.usage.tokenAvailability).toBe('unavailable');
+    expect(done.usage.tokens).toBeUndefined();
     expect(done.usage.toolUses).toBe(1);
   });
 
@@ -638,7 +883,7 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('SDK_STREAM_ERROR');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
-    expect(done.usage.tokenAvailability).toBe('unavailable');
+    expect(done.usage.tokens).toBeUndefined();
     expect(done.usage.toolUses).toBe(1);
   });
 
@@ -796,7 +1041,11 @@ describe('CodexAdapter', () => {
                   output: { stdout: 'file.txt' },
                   duration_ms: 15,
                 },
-                { type: 'file_change', path: '/repo/file.txt', action: 'modified' },
+                {
+                  type: 'file_change',
+                  path: '/repo/file.txt',
+                  action: 'modified',
+                },
               ],
             },
           },
@@ -867,10 +1116,14 @@ describe('CodexAdapter', () => {
     expect(toolResult.output).toEqual({ stdout: 'file.txt' });
     expect(toolResult.durationMs).toBe(15);
 
-    const fileChangeOne = events[4] as AgentEvent & { payload: Record<string, unknown> };
+    const fileChangeOne = events[4] as AgentEvent & {
+      payload: Record<string, unknown>;
+    };
     expect(fileChangeOne.payload.path).toBe('/repo/file.txt');
 
-    const fileChangeTwo = events[5] as AgentEvent & { payload: Record<string, unknown> };
+    const fileChangeTwo = events[5] as AgentEvent & {
+      payload: Record<string, unknown>;
+    };
     expect(fileChangeTwo.payload.path).toBe('/repo/another.ts');
 
     const error = events[6] as AgentEvent & {
@@ -886,13 +1139,14 @@ describe('CodexAdapter', () => {
     // toolUses derives from the unique observed tool-call ids (call-1);
     // the legacy usage field tool_uses: 2 is deliberately not consulted.
     expect(done.usage).toEqual({
-      tokenAvailability: 'reported',
-      inputTokens: 33,
-      outputTokens: 44,
       toolUses: 1,
-      totalCostUsd: 0.17,
-      breakdown: { input: 33 },
-      records: [{ model: 'gpt-5-codex', tokens: { input: 33 } }],
+      tokens: {
+        coverage: 'partial',
+        totals: {
+          input: { total: 33 },
+          output: { total: 44 },
+        },
+      },
     });
     expect(done.durationMs).toBe(222);
   });
@@ -906,7 +1160,12 @@ describe('CodexAdapter', () => {
             item: {
               type: 'message',
               content: [
-                { type: 'tool_call', id: 'call-order', name: 'bash', arguments: '{}' },
+                {
+                  type: 'tool_call',
+                  id: 'call-order',
+                  name: 'bash',
+                  arguments: '{}',
+                },
                 { type: 'output_text', text: 'After tool call' },
                 {
                   type: 'tool_result',
@@ -966,9 +1225,10 @@ describe('CodexAdapter', () => {
     expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
     const textEvents = events.filter((event) => event.type === 'text');
     expect(textEvents).toHaveLength(1);
-    expect((textEvents[0] as AgentEvent & { payload: { content: string } }).payload.content).toBe(
-      'hello',
-    );
+    expect(
+      (textEvents[0] as AgentEvent & { payload: { content: string } }).payload
+        .content,
+    ).toBe('hello');
   });
 
   it('emits unknown-tools init when tool set cannot be inferred', async () => {
@@ -1019,7 +1279,11 @@ describe('CodexAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    expect(events.map((event) => event.type)).toEqual(['init', 'error', 'done']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
 
     const init = events[0] as AgentEvent & {
       payload: {
@@ -1060,8 +1324,7 @@ describe('CodexAdapter', () => {
           {
             type: 'turn.failed',
             error: {
-              message:
-                "The 'gpt-5.5' model requires a newer version of Codex.",
+              message: "The 'gpt-5.5' model requires a newer version of Codex.",
               code: 'model_not_found',
             },
           },
@@ -1113,8 +1376,7 @@ describe('CodexAdapter', () => {
           {
             type: 'turn.failed',
             message: JSON.stringify({
-              detail:
-                "The 'gpt-5.5' model requires a newer version of Codex.",
+              detail: "The 'gpt-5.5' model requires a newer version of Codex.",
               code: 'model_not_found',
             }),
           },
@@ -1221,7 +1483,9 @@ describe('CodexAdapter', () => {
     expect(agentMapped.codexCliConfigOverrides).toBeUndefined();
     expect(agentMapped.threadOptions).not.toHaveProperty('approvalPolicy');
     expect(agentMapped.threadOptions).not.toHaveProperty('sandboxMode');
-    expect(agentMapped.threadOptions).not.toHaveProperty('networkAccessEnabled');
+    expect(agentMapped.threadOptions).not.toHaveProperty(
+      'networkAccessEnabled',
+    );
   });
 
   it('keeps network-only deny on the workspace default_permissions profile', () => {
@@ -1578,7 +1842,11 @@ describe('CodexAdapter', () => {
               async runStreamed(): Promise<{ events: AsyncIterable<unknown> }> {
                 return {
                   events: {
-                    async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {},
+                    async *[Symbol.asyncIterator](): AsyncGenerator<
+                      unknown,
+                      void,
+                      void
+                    > {},
                   },
                 };
               },
@@ -1610,10 +1878,18 @@ describe('CodexAdapter', () => {
                 capturedSignal = runOptions?.signal;
                 return {
                   events: {
-                    async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                    async *[Symbol.asyncIterator](): AsyncGenerator<
+                      unknown,
+                      void,
+                      void
+                    > {
                       yield {
                         type: 'item.completed',
-                        item: { id: 'item_msg', type: 'agent_message', text: 'started' },
+                        item: {
+                          id: 'item_msg',
+                          type: 'agent_message',
+                          text: 'started',
+                        },
                       };
                       yield {
                         type: 'item.completed',
@@ -1625,9 +1901,13 @@ describe('CodexAdapter', () => {
                           resolve();
                           return;
                         }
-                        runOptions?.signal?.addEventListener('abort', () => resolve(), {
-                          once: true,
-                        });
+                        runOptions?.signal?.addEventListener(
+                          'abort',
+                          () => resolve(),
+                          {
+                            once: true,
+                          },
+                        );
                       });
                     },
                   },
@@ -1681,10 +1961,18 @@ describe('CodexAdapter', () => {
         ): Promise<{ events: AsyncIterable<unknown> }> {
           return {
             events: {
-              async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+              async *[Symbol.asyncIterator](): AsyncGenerator<
+                unknown,
+                void,
+                void
+              > {
                 yield {
                   type: 'item.completed',
-                  item: { id: 'item_msg', type: 'agent_message', text: 'started' },
+                  item: {
+                    id: 'item_msg',
+                    type: 'agent_message',
+                    text: 'started',
+                  },
                   ...(options.backendThreadId
                     ? { threadId: options.backendThreadId }
                     : {}),
@@ -1695,9 +1983,13 @@ describe('CodexAdapter', () => {
                     resolve();
                     return;
                   }
-                  runOptions?.signal?.addEventListener('abort', () => resolve(), {
-                    once: true,
-                  });
+                  runOptions?.signal?.addEventListener(
+                    'abort',
+                    () => resolve(),
+                    {
+                      once: true,
+                    },
+                  );
                 });
               },
             },
@@ -1785,7 +2077,9 @@ describe('CodexAdapter', () => {
     const mapped = mapAgentOptionsToCodexOptions({});
     expect(mapped.threadOptions.skipGitRepoCheck).toBe(true);
 
-    const mappedWithCwd = mapAgentOptionsToCodexOptions({ cwd: '/tmp/elsewhere' });
+    const mappedWithCwd = mapAgentOptionsToCodexOptions({
+      cwd: '/tmp/elsewhere',
+    });
     expect(mappedWithCwd.threadOptions.workingDirectory).toBe('/tmp/elsewhere');
     expect(mappedWithCwd.threadOptions.skipGitRepoCheck).toBe(true);
   });
@@ -1998,9 +2292,7 @@ describe('CodexAdapter', () => {
       );
 
       if (threadEffort === undefined) {
-        expect(mapped.threadOptions).not.toHaveProperty(
-          'modelReasoningEffort',
-        );
+        expect(mapped.threadOptions).not.toHaveProperty('modelReasoningEffort');
       } else {
         expect(mapped.threadOptions.modelReasoningEffort).toBe(threadEffort);
       }
@@ -2120,9 +2412,7 @@ describe('CodexAdapter', () => {
       }),
     });
 
-    const events = await collect(
-      adapter.run('prompt', { effort: 'ultra' }),
-    );
+    const events = await collect(adapter.run('prompt', { effort: 'ultra' }));
 
     expect(events.map((event) => event.type)).toEqual([
       'init',
@@ -2170,7 +2460,11 @@ describe('CodexAdapter', () => {
             return {
               async runStreamed(): Promise<AsyncIterable<unknown>> {
                 return {
-                  async *[Symbol.asyncIterator](): AsyncGenerator<unknown, void, void> {
+                  async *[Symbol.asyncIterator](): AsyncGenerator<
+                    unknown,
+                    void,
+                    void
+                  > {
                     yield {
                       type: 'item.completed',
                       item: { type: 'message', text: 'direct iterable' },
@@ -2179,7 +2473,11 @@ describe('CodexAdapter', () => {
                       type: 'turn.completed',
                       turn: {
                         status: 'success',
-                        usage: { input_tokens: 1, output_tokens: 2, tool_uses: 0 },
+                        usage: {
+                          input_tokens: 1,
+                          output_tokens: 2,
+                          tool_uses: 0,
+                        },
                       },
                     };
                   },
@@ -2275,9 +2573,18 @@ describe('CodexAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     const done = events.find((e) => e.type === 'done')!;
     const usage = donePayload(done).usage;
-    expect(usage.tokenAvailability).toBe('reported');
-    expect(usage.inputTokens).toBe(120);
-    expect(usage.outputTokens).toBe(20);
+    expect(usage.tokens).toEqual({
+      coverage: 'partial',
+      totals: {
+        input: {
+          total: 120,
+          uncached: 10,
+          cacheRead: 80,
+          cacheWrite: 30,
+        },
+        output: { total: 20, visible: 15, reasoning: 5 },
+      },
+    });
   });
 
   it.each([
@@ -2307,7 +2614,7 @@ describe('CodexAdapter', () => {
         reasoning_output_tokens: 0.5,
       },
     ],
-  ])('marks %s accounting unavailable', async (_case, rawUsage) => {
+  ])('omits tokens for %s accounting', async (_case, rawUsage) => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
         events: [{ type: 'turn.completed', usage: rawUsage }],
@@ -2315,9 +2622,7 @@ describe('CodexAdapter', () => {
     });
 
     const events = await collect(adapter.run('prompt'));
-    expect(donePayload(events.at(-1)!).usage.tokenAvailability).toBe(
-      'unavailable',
-    );
+    expect(donePayload(events.at(-1)!).usage.tokens).toBeUndefined();
   });
 
   it('maps PermissionPolicy.mode to Codex approval axis and default_permissions per ENG-021', () => {
@@ -2476,12 +2781,13 @@ describe('resolveCodexBinPath', () => {
 
   it('resolves the SDK-owned entry through loader resolution alone', () => {
     withTree({ sdk: true, sdkOwnedCodex: true }, (tree) => {
-      const detachedRoot = mkdtempSync(join(tmpdir(), 'cligent-codex-detached-'));
+      const detachedRoot = mkdtempSync(
+        join(tmpdir(), 'cligent-codex-detached-'),
+      );
       try {
         const resolved = resolveCodexBinPath({
           baseRequire: createRequire(join(detachedRoot, 'probe.mjs')),
-          importMetaResolve: () =>
-            pathToFileURL(tree.sdkEntry ?? '').href,
+          importMetaResolve: () => pathToFileURL(tree.sdkEntry ?? '').href,
         });
         expect(resolved).toBe(realpathSync(tree.sdkOwnedBin ?? ''));
       } finally {
@@ -2583,9 +2889,9 @@ describe('resolveCodexBinPath', () => {
       try {
         // Injecting only baseRequire must scope resolution to that tree; the
         // repository's own SDK stays out of the result.
-        expect(
-          resolveCodexBinPath({ baseRequire: tree.baseRequire }),
-        ).toBe(realpathSync(tree.topLevelBin ?? ''));
+        expect(resolveCodexBinPath({ baseRequire: tree.baseRequire })).toBe(
+          realpathSync(tree.topLevelBin ?? ''),
+        );
 
         expect(() =>
           resolveCodexBinPath({

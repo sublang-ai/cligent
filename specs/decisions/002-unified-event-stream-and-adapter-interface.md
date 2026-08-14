@@ -122,23 +122,43 @@ interface ToolResultPayload {
   durationMs?: number;
 }
 
-type TokenUsageAvailability = 'reported' | 'unavailable';
+interface TokenUsage {
+  input: {
+    total: number;           // inclusive of cache reads and writes
+    uncached?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
+  output: {
+    total: number;           // inclusive of reasoning or thinking
+    visible?: number;
+    reasoning?: number;
+  };
+}
 
-interface TokenBreakdown {   // disjoint partition of the aggregates (DR-014)
-  input?: number;            // input excluding cache read and cache write
-  cacheRead?: number;
-  cacheWrite?: number;
-  output?: number;           // output excluding reasoning
-  reasoning?: number;
+interface UsageCost {
+  amount: number;
+  currency: 'USD';
+  source: 'agent-estimate' | 'provider-reported' | 'account-estimate';
+}
+
+interface UsageRecord {
+  model?: string;
+  provider?: string;
+  requests?: number;
+  tokens: TokenUsage;
+  cost?: UsageCost;
+  pricedUnits?: Array<{ name: string; quantity: number }>;
 }
 
 interface DoneUsage {
-  tokenAvailability: TokenUsageAvailability;
-  inputTokens: number;
-  outputTokens: number;
   toolUses: number;
-  totalCostUsd?: number;
-  breakdown?: TokenBreakdown;
+  tokens?: {
+    coverage: 'complete' | 'partial';
+    totals: TokenUsage;
+    records?: UsageRecord[];
+  };
+  cost?: UsageCost;
 }
 
 interface DonePayload {
@@ -164,32 +184,19 @@ type AgentEvent =
 
 Adapters should emit `init` first when possible to establish capabilities.
 
-`DoneUsage.tokenAvailability` is the required discriminator for token
-accounting.
-`'reported'` means the upstream supplied complete finite non-negative integer
-input and output counters, including when both are zero, and every present
-mapped cache counter is valid.
-Provider cache-read and cache-write counters are either already included in an
-inclusive provider input total or folded into an exclusive base exactly once.
-The output total includes all model-generated output tokens, including
-reasoning or thinking tokens; a provider's disjoint reasoning detail is folded
-into an exclusive visible-output base exactly once.
-Where an aggregate exposes token use that the provider does not partition
-between normalized input and output, accounting is unavailable rather than
-allocating the residual by estimation.
-`'unavailable'` means complete token totals were not supplied, including every
-engine- or adapter-synthesized terminal path; the numeric token fields retain
-their stable object shape for compatibility but are not measurements and shall
-not be estimated.
-`toolUses` remains independently meaningful in either state and shall preserve
-the count of tool calls the adapter observed.
-Consumers shall branch on `tokenAvailability` before token arithmetic or
-rendering; persisted payloads from before this discriminator existed shall be
-treated as unavailable.
-`DoneUsage.breakdown` is the optional disjoint partition of those aggregates
-defined by [DR-014](014-unified-token-usage-breakdown.md), which governs which
-components an adapter may publish; it is absent whenever `tokenAvailability` is
-`'unavailable'`.
+`DoneUsage.tokens` is the optional authentic accounting report defined by
+[DR-014](014-unified-token-usage-breakdown.md).
+Its input and output totals are inclusive, its cache and reasoning details are
+exact subsets, and its coverage states whether all causally owned requests in
+the invocation are represented.
+An absent report or detail is unavailable, while a present zero is measured;
+no producer shall emit a numeric placeholder or allocate an unexplained
+residual by estimation.
+`DoneUsage.cost`, where present, is a provenance-bearing value supplied by the
+runtime rather than a price Cligent calculated.
+`toolUses` remains independently meaningful and shall preserve the count of
+normalized tool calls the adapter observed even when token and cost reports are
+absent.
 
 ### Unified Permission Model (UPM)
 

@@ -1476,9 +1476,6 @@ describe('tmux-play real-tmux acceptance', () => {
             yield createEvent('done', agent, {
               status: 'success',
               usage: {
-                tokenAvailability: 'reported',
-                inputTokens: 0,
-                outputTokens: 0,
                 toolUses: 0,
               },
               durationMs: 0,
@@ -2685,9 +2682,6 @@ function makeCapturingAdapter<E extends string>(
         {
           status: 'success',
           usage: {
-            tokenAvailability: 'reported',
-            inputTokens: 0,
-            outputTokens: 0,
             toolUses: 0,
           },
           durationMs: 0,

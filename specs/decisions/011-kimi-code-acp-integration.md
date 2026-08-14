@@ -64,7 +64,12 @@ Wire-schema ownership sits with the adapter, not with the protocol SDK.
 The SDK generates a complete set of schemas but publishes them only inside its build output, so consuming them means depending on a file layout rather than on an interface — a dependency its `1.3.0` `exports` map ended, without offering any public replacement.
 Their generation also diverges from what this adapter needs in kind rather than in detail: they validate the entire protocol where the adapter reads a small subset of it, and they broadly salvage malformed payloads.
 The adapter therefore validates control fields it consumes against schemas held in this repository, strictly, while ignoring everything else, so an agent may extend the protocol without this client calling valid traffic malformed.
-Optional prompt usage is the deliberate exception: its consumed counters are validated, but a failure is isolated as unavailable accounting per [KIMI-005](../user/adapters/kimi.md#kimi-005) instead of changing an otherwise completed turn into the malformed-control error required by [KIMI-006](../user/adapters/kimi.md#kimi-006).
+Optional prompt usage is the deliberate exception: the pinned runtime does not
+expose it as public accounting per
+[KIMI-013](../user/adapters/kimi.md#kimi-013), and a malformed unstable
+extension is ignored instead of changing an otherwise completed turn into the
+malformed-control error required by
+[KIMI-006](../user/adapters/kimi.md#kimi-006).
 Credential-free CI shall always exercise the exact ACP initialization handshake.
 This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].

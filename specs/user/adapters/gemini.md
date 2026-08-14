@@ -38,16 +38,18 @@ The adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` in the spawned Gemini CL
 
 The adapter shall normalize NDJSON objects to `AgentEvent` types:
 
-| NDJSON Event | AgentEvent |
-| --- | --- |
-| `init` | `init` (model, cwd, tools) |
-| `message` | `text` |
-| `tool_use` | `tool_use` |
-| `tool_result` | `tool_result` |
-| `error` | `error` |
-| `result` | `done` (usage, status) |
+| NDJSON Event  | AgentEvent                 |
+| ------------- | -------------------------- |
+| `init`        | `init` (model, cwd, tools) |
+| `message`     | `text`                     |
+| `tool_use`    | `tool_use`                 |
+| `tool_result` | `tool_result`              |
+| `error`       | `error`                    |
+| `result`      | `done` (usage, status)     |
 
 When `parseNDJSON()` yields `{ ok: false }`, the adapter shall emit an `error` event with `recoverable: true`.
+
+_The following released stream-only accounting behavior is superseded by [GEMINI-017](#gemini-017)._
 
 Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate the `total_tokens`, `cached`, and uncached `input` details without adding either input detail to the inclusive total a second time, and shall map valid `tool_calls` to `toolUses` while retaining any greater independently observed tool-call count [[5]][[6]].
 Canonical `output_tokens` contains candidates but omits separately tracked thinking and tool-use-prompt tokens; where `total_tokens` does not equal `input_tokens + output_tokens`, the omitted residual is not partitioned well enough to normalize without estimation, so token accounting shall be `'unavailable'` rather than reporting the candidate count as complete or assigning the residual to output [[6]][[7]].
@@ -57,12 +59,12 @@ Where any supplied canonical token or cache detail is absent, negative, fraction
 
 The adapter shall map process exit codes to `done` status:
 
-| Exit Code | Done Status |
-| --- | --- |
-| `0` | `'success'` |
-| `1` | `'error'` |
-| `42` | `'error'` |
-| `53` | `'max_turns'` |
+| Exit Code | Done Status   |
+| --------- | ------------- |
+| `0`       | `'success'`   |
+| `1`       | `'error'`     |
+| `42`      | `'error'`     |
+| `53`      | `'max_turns'` |
 
 ## Permission Mapping
 
@@ -70,13 +72,13 @@ The adapter shall map process exit codes to `done` status:
 
 Where `PermissionPolicy` is provided with `mode` omitted, or `allowedTools` or `disallowedTools` is provided, the adapter shall map the supplied capability and tool-list restrictions to non-interactive User-tier Gemini Policy Engine rules per [[3]] and the following table:
 
-| Input | Policy outcome |
-| --- | --- |
-| capability `allow` | `decision = "allow"` for that capability's current built-in tools |
-| capability `ask` or omitted inside a provided policy | `decision = "ask_user"`, which denies in headless mode |
-| capability `deny` | `decision = "deny"` |
-| explicit `allowedTools` | priority-999 allows for effective listed tools plus a priority-998 catch-all deny, including when the effective list is empty |
-| explicit `disallowedTools` | deny rules that take precedence over allows |
+| Input                                                | Policy outcome                                                                                                                |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| capability `allow`                                   | `decision = "allow"` for that capability's current built-in tools                                                             |
+| capability `ask` or omitted inside a provided policy | `decision = "ask_user"`, which denies in headless mode                                                                        |
+| capability `deny`                                    | `decision = "deny"`                                                                                                           |
+| explicit `allowedTools`                              | priority-999 allows for effective listed tools plus a priority-998 catch-all deny, including when the effective list is empty |
+| explicit `disallowedTools`                           | deny rules that take precedence over allows                                                                                   |
 
 The capability tools shall be file writes `replace` and `write_file`, shell execution `run_shell_command`, and network access `google_web_search` and `web_fetch`.
 Capability-level allows shall not widen an explicit allowlist.
@@ -111,10 +113,10 @@ Where Gemini CLI exposes no compatible turn-limit flag, the adapter shall ignore
 
 Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), where a portable `AgentOptions.effort` is provided, the adapter shall select its per-run Gemini settings behavior from this model-condition table per [[1]] and [[2]]:
 
-| Model condition | Outcome |
-| --- | --- |
-| concrete ID matching `^gemini-3` | unique self-contained alias with the original model and mapped `thinkingLevel` |
-| concrete ID matching `^gemini-2\.5` | unique self-contained alias with the original model and mapped `thinkingBudget` |
+| Model condition                                                                                                       | Outcome                                                                             |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| concrete ID matching `^gemini-3`                                                                                      | unique self-contained alias with the original model and mapped `thinkingLevel`      |
+| concrete ID matching `^gemini-2\.5`                                                                                   | unique self-contained alias with the original model and mapped `thinkingBudget`     |
 | model unset, a CLI alias such as `auto`, `pro`, `flash`, `flash-lite`, or `chat-base*`, or another non-matching value | no effort alias; preserve ordinary model forwarding and ignore effort for that call |
 
 The generated alias shall be merged into a temporary copy of configured system defaults selected through `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, preserving pre-existing defaults and leaving `GEMINI_CLI_SYSTEM_SETTINGS_PATH` unchanged so system overrides, Admin policy, user settings, and project settings retain authority.
@@ -123,26 +125,26 @@ The temporary defaults file shall be removed after the run.
 Gemini 3 mapping:
 
 | `AgentOptions.effort` | `thinkingLevel` |
-| --- | --- |
-| `minimal` | `MINIMAL` |
-| `low` | `LOW` |
-| `medium` | `MEDIUM` |
-| `high` | `HIGH` |
-| `xhigh` | `HIGH` |
-| `max` | `HIGH` |
+| --------------------- | --------------- |
+| `minimal`             | `MINIMAL`       |
+| `low`                 | `LOW`           |
+| `medium`              | `MEDIUM`        |
+| `high`                | `HIGH`          |
+| `xhigh`               | `HIGH`          |
+| `max`                 | `HIGH`          |
 
 Gemini 3 exposes four thinking levels; `xhigh` and `max` collapse to `HIGH` per [ENG-020](../engine.md#eng-020)'s nearest-neighbour rule.
 
 Gemini 2.5 mapping:
 
-| `AgentOptions.effort` | `thinkingBudget` |
-| --- | --- |
-| `minimal` | `1024` |
-| `low` | `4096` |
-| `medium` | `8192` |
-| `high` | `16384` |
-| `xhigh` | `24576` |
-| `max` | `32768` for `gemini-2.5-pro*`; `24576` for `gemini-2.5-flash*` and `gemini-2.5-flash-lite*` |
+| `AgentOptions.effort` | `thinkingBudget`                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `minimal`             | `1024`                                                                                      |
+| `low`                 | `4096`                                                                                      |
+| `medium`              | `8192`                                                                                      |
+| `high`                | `16384`                                                                                     |
+| `xhigh`               | `24576`                                                                                     |
+| `max`                 | `32768` for `gemini-2.5-pro*`; `24576` for `gemini-2.5-flash*` and `gemini-2.5-flash-lite*` |
 
 The Gemini 2.5 ladder shall stay within each supported model family's documented bounds: Pro `128..32768`, Flash `0..24576`, and Flash Lite `512..24576` per [[1]].
 `max` maps to the model family's upper bound rather than Google's dynamic-thinking sentinel because [ENG-020](../engine.md#eng-020) defines `max` as the greatest reasoning depth.
@@ -158,6 +160,19 @@ Where effort is outside the Gemini portable vocabulary, including `ultracode` or
 Where `AgentOptions.allowedTools` is provided, the adapter's `init` event shall report the effective allowlist as a configured, known tool set even when that list is empty.
 The configured allowlist shall take precedence over a broader tool list reported by the Gemini stream because [GEMINI-006](#gemini-006)'s catch-all deny makes unlisted tools unavailable.
 Where `allowedTools` is omitted, the adapter shall continue to report the stream tool list when available and otherwise report tool availability as unknown.
+
+## Token Accounting
+
+### GEMINI-017
+
+For each run, the adapter shall enable Gemini CLI's supported local telemetry exporter to a unique prompt-free file, disable prompt and trace logging, and parse the file only after the child process closes [[8]].
+It shall accept one `gemini_cli.api_response` record per successful model response, deduplicate exact exporter records, and reject conflicting or unidentifiable duplicates.
+Gemini's pinned `UsageMetadata` defines `totalTokenCount` as prompt, candidate, tool-use-prompt, and thinking tokens, with tool-use-prompt content supplied back to the model as input [[9]]. The adapter shall therefore add tool-use-prompt tokens to inclusive input and its uncached subset, retain thinking in inclusive output, and preserve exact cache-read, visible-output, and thinking subsets.
+The adapter shall publish one `requests: 1` record per response with the actual model and non-empty telemetry `auth_type` as its rate-card family, and shall include root and descendant-agent responses without emitting their hidden conversation [[8]].
+It shall sum those records and cross-validate raw prompt, candidate, cached, and overall total counters against the ordinary terminal StreamStats; any missing file, parse defect, invalid counter, duplicate conflict, or mismatch shall make tokens absent rather than estimated.
+A reconciled report shall have complete coverage only when the run-owned file contains no `gemini_cli.api_error` and StreamStats identifies no unmatched zero-token routed model; either condition proves a failed request without token counters, so the adapter shall retain the exact reconciled successful-response records with partial coverage [[8]].
+Telemetry configuration shall be applied after inherited settings so user telemetry cannot redirect or contaminate the run-owned ledger, and cleanup shall remove the temporary file after success, error, and abort.
+Gemini CLI reports no direct dollar cost on this surface, so the adapter shall publish none; callers shall distinguish API-key, Vertex, account/subscription, and gateway records by `provider` rather than assuming one Google price table.
 
 ## Abort Handling
 
@@ -175,10 +190,12 @@ When terminal `done` is not interrupted and no session identifier was received, 
 
 ## References
 
-[1]: https://ai.google.dev/gemini-api/docs/thinking "Gemini API: Thinking"
-[2]: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md "Google Gemini CLI: Configuration reference"
-[3]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI: Policy engine"
-[4]: https://geminicli.com/docs/cli/cli-reference/ "Gemini CLI: CLI reference"
-[5]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/types.ts#L81-L109 "Gemini CLI 0.53.1 stream output types"
-[6]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/stream-json-formatter.ts#L37-L86 "Gemini CLI 0.53.1 StreamStats construction"
-[7]: https://ai.google.dev/api/generate-content#UsageMetadata "Gemini API UsageMetadata"
+[1]: https://ai.google.dev/gemini-api/docs/thinking 'Gemini API: Thinking'
+[2]: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md 'Google Gemini CLI: Configuration reference'
+[3]: https://geminicli.com/docs/reference/policy-engine/ 'Gemini CLI: Policy engine'
+[4]: https://geminicli.com/docs/cli/cli-reference/ 'Gemini CLI: CLI reference'
+[5]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/types.ts#L81-L109 'Gemini CLI 0.53.1 stream output types'
+[6]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/stream-json-formatter.ts#L37-L86 'Gemini CLI 0.53.1 StreamStats construction'
+[7]: https://ai.google.dev/api/generate-content#UsageMetadata 'Gemini API UsageMetadata'
+[8]: https://geminicli.com/docs/cli/telemetry/ 'Gemini CLI telemetry'
+[9]: https://github.com/googleapis/js-genai/blob/38cac5bbf4941ec5fa760238bd423c0ecc2c6f04/src/types.ts#L2607-L2628 'Google Gen AI SDK 1.30.0 UsageMetadata'

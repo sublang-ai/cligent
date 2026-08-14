@@ -55,6 +55,8 @@ The adapter shall normalize ACP traffic to `AgentEvent` values:
 Tool state shall be keyed by ACP `toolCallId` and shall tolerate a pending lazy-create notification whose parsed `rawInput` arrives in a later update.
 The adapter shall use the best structured `rawInput` available and shall not emit duplicate `tool_use` or terminal `tool_result` events for one call.
 Assistant text deltas shall be accumulated in order for `DonePayload.result`.
+_The following hypothetical ACP-usage behavior is superseded by [KIMI-013](#kimi-013)._
+
 When the ACP prompt response supplies schema-valid unsigned-integer usage, including explicit zeroes for required `totalTokens`, `inputTokens`, and `outputTokens` and for any present optional cache counter, the adapter shall mark token accounting as `'reported'`, shall fold `cachedReadTokens` and `cachedWriteTokens` into `inputTokens`, and shall preserve `outputTokens`.
 Where required usage structure or any consumed token or cache counter is negative, fractional, non-finite, or non-numeric, the adapter shall isolate the optional accounting failure: the prompt's schema-valid `stopReason` shall still determine terminal status, token accounting shall be `'unavailable'`, and accumulated result text and tool use shall remain intact.
 Unconsumed usage extension details such as `thoughtTokens` shall not affect availability, and a null optional cache counter shall be treated as absent.
@@ -119,6 +121,14 @@ After a terminal prompt response, adapter-initiated `SIGTERM` following a bounde
 The adapter shall use the backend session identifier returned by `session/new` or the resumed identifier as every event's `sessionId` once known and as `DonePayload.resumeToken`.
 When abort or failure occurs before a backend identifier is observed, it shall preserve a non-empty inbound `AgentOptions.resume` token and shall otherwise omit `resumeToken`; a locally generated correlation identifier shall never be exposed as resumable.
 
+## Token Accounting
+
+### KIMI-013
+
+The adapter shall publish no [ENG-031](../engine.md#eng-031) token or cost report for the pinned Kimi Code runtime, because its supported ACP prompt response supplies neither [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
+An absent report shall replace the former zero-valued availability placeholder and shall not change the prompt stop status, accumulated result, or independently observed `toolUses`.
+The adapter may retain schema validation for a future ACP usage extension, but shall not promote that unstable shape to cost-grade public accounting until a supported runtime emits it and its turn/session and cache/reasoning semantics are verified.
+
 ## References
 
 [1]: https://github.com/MoonshotAI/kimi-code "MoonshotAI Kimi Code"
@@ -129,3 +139,4 @@ When abort or failure occurs before a backend identifier is observed, it shall p
 [6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
 [7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
 [8]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code ACP authentication gate"
+[9]: https://github.com/MoonshotAI/kimi-code/blob/6b56c11697771fe596099b38bafae539820309a4/packages/acp-adapter/src/session.ts#L1228-L1273 "Kimi Code 0.31.1 ACP prompt response"

@@ -80,27 +80,29 @@ describe('formatCligentEvent', () => {
     const event = makeEvent('done', {
       status: 'success',
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 100,
-        outputTokens: 50,
         toolUses: 2,
+        tokens: {
+          coverage: 'complete',
+          totals: { input: { total: 100 }, output: { total: 50 } },
+        },
       },
       durationMs: 5000,
     });
     expect(formatCligentEvent(event)).toBe('\n[success | in: 100 out: 50]\n');
   });
 
-  it('renders only the breakdown components the producer measured', () => {
+  it('renders only the token details the producer measured', () => {
     const event = makeEvent('done', {
       status: 'success',
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 100,
-        outputTokens: 50,
         toolUses: 2,
-        // Input side only, with a measured zero — the shape Claude Code and
-        // Gemini produce when a cache tier is genuinely unused.
-        breakdown: { input: 40, cacheRead: 60, cacheWrite: 0 },
+        tokens: {
+          coverage: 'complete',
+          totals: {
+            input: { total: 100, uncached: 40, cacheRead: 60, cacheWrite: 0 },
+            output: { total: 50 },
+          },
+        },
       },
       durationMs: 5000,
     });
@@ -109,28 +111,27 @@ describe('formatCligentEvent', () => {
     );
   });
 
-  it('formats done events unchanged when no breakdown is published', () => {
+  it('marks exact partial token coverage', () => {
     const event = makeEvent('done', {
       status: 'success',
       usage: {
-        tokenAvailability: 'reported',
-        inputTokens: 7,
-        outputTokens: 3,
         toolUses: 0,
-        breakdown: undefined,
+        tokens: {
+          coverage: 'partial',
+          totals: { input: { total: 7 }, output: { total: 3 } },
+        },
       },
       durationMs: 10,
     });
-    expect(formatCligentEvent(event)).toBe('\n[success | in: 7 out: 3]\n');
+    expect(formatCligentEvent(event)).toBe(
+      '\n[success | in: 7 out: 3 | coverage: partial]\n',
+    );
   });
 
   it('does not render unavailable token placeholders as measured zeroes', () => {
     const event = makeEvent('done', {
       status: 'interrupted',
       usage: {
-        tokenAvailability: 'unavailable',
-        inputTokens: 0,
-        outputTokens: 0,
         toolUses: 3,
       },
       durationMs: 5000,
@@ -140,7 +141,7 @@ describe('formatCligentEvent', () => {
     );
   });
 
-  it('treats legacy done events without availability as unavailable', () => {
+  it('treats legacy flat-token done events as unavailable', () => {
     const event = makeEvent('done', {
       status: 'success',
       usage: { inputTokens: 0, outputTokens: 0, toolUses: 0 },

@@ -113,11 +113,15 @@ Where the installed version is at or above the floor and at or below the tested 
 ### TENG-019
 Verifies: [ENG-013](../user/engine.md#eng-013), [ENG-027](../user/engine.md#eng-027)
 
+_Superseded by [TENG-022](#teng-022)._
+
 Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `tokenAvailability` and shall reject values outside `'reported' | 'unavailable'`.
 When the engine synthesizes any terminal `done`, its zero-valued token fields shall carry `'unavailable'` and its `toolUses` shall preserve the unique tool calls already observed on that stream.
 
 ### TENG-020
 Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [ENG-028](../user/engine.md#eng-028)
+
+_Superseded by [TENG-022](#teng-022)._
 
 Where an adapter publishes `DoneUsage.breakdown` on a terminal `done` observed through `Cligent.run()`, every present member shall be a finite non-negative integer, a published input side shall sum exactly to `inputTokens`, and a published output side shall sum exactly to `outputTokens`.
 Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `breakdown`.
@@ -126,6 +130,17 @@ Where a runtime reports a component as zero and omits another, the emitted break
 ### TENG-021
 Verifies: [ENG-027](../user/engine.md#eng-027), [ENG-030](../user/engine.md#eng-030)
 
+_Superseded by [TENG-022](#teng-022)._
+
 Where a terminal `done` observed through `Cligent.run()` carries `DoneUsage.records`, the records' components shall sum member by member to `breakdown`, no record shall carry a component `breakdown` omits, and every present `requests` count shall be a finite non-negative integer.
 Where a record's model is unknown to the producer, the record shall omit `model` rather than carry a placeholder value.
 Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `records`.
+
+### TENG-022
+Verifies: [ENG-013](../user/engine.md#eng-013), [ENG-031](../user/engine.md#eng-031)
+
+Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `toolUses`, shall accept optional nested `tokens` and provenance-bearing `cost`, and shall reject the removed flat token, availability, cost, and breakdown fields.
+Where the engine synthesizes any terminal `done`, `usage` shall contain the unique observed tool count and no token or cost placeholder.
+Where a producer publishes a token report, all numeric fields shall satisfy [ENG-031](../user/engine.md#eng-031), a complete detail side shall reconcile to its inclusive total, records shall sum exactly to report totals and published details, and measured zero shall remain distinguishable from omission.
+Where request coverage is incomplete but exact counters exist, the report shall say `'partial'`; where no authentic counters exist, `tokens` shall be absent.
+Where a cost is present without tokens or tokens without cost, both shapes shall remain valid, and every cost shall carry USD currency and an allowed provenance source.

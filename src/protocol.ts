@@ -166,9 +166,6 @@ export function makeSynthDone(
       status,
       ...doneExtra,
       usage: {
-        tokenAvailability: 'unavailable',
-        inputTokens: 0,
-        outputTokens: 0,
         toolUses,
       },
       durationMs: Date.now() - startTime,
