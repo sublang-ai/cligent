@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-15
+
 ### Changed
 
 - Concurrent OpenCode runs must use distinct sessions. OpenCode events carry session identity but no turn identity, so overlapping writers and delayed background continuations on one session cannot be separated reliably and remain an explicitly unsupported environmental constraint — OPENCODE-006, ENG-018
-- tmux-play now requires tmux 3.3 or newer so attached-client layout reconciliation can use the post-negotiation `window-resized` hook — TMUX-044
+- **Breaking:** tmux-play now requires tmux 3.3 or newer so attached-client layout reconciliation can use the post-negotiation `window-resized` hook — TMUX-044
 
 ### Fixed
 
@@ -409,7 +411,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/sublang-ai/cligent/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/sublang-ai/cligent/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/sublang-ai/cligent/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/sublang-ai/cligent/compare/v0.18.0...v0.19.0
