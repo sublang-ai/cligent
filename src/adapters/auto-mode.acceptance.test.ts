@@ -370,20 +370,46 @@ function expectOpenCodeUsage(
   expect(done, `${label}: terminal done events`).toHaveLength(1);
 
   const report = done[0]?.usage.tokens;
+  // A live failure here is expensive to reproduce, so every message carries
+  // the report that produced it.
+  const shown = JSON.stringify(report);
+  // Presence is the regression guard the boundary work needs: a run that
+  // cannot prove which prompt was its own omits the report entirely rather
+  // than bill work it did not do.
   expect(report, `${label}: authentic token report`).toBeDefined();
-  expect(report!.coverage, `${label}: causal coverage`).toBe('complete');
-  expect(report!.totals.input.total, `${label}: input`).toBeGreaterThan(0);
-  expect(report!.totals.output.total, `${label}: output`).toBeGreaterThan(0);
+  // Coverage is deliberately not pinned to 'complete'. OPENCODE-021 degrades
+  // it to 'partial' for conditions no adapter change can prevent — a provider
+  // retry above all, which upstream capacity errors produce routinely, and a
+  // timed-out health query. Pinning it asserted the provider's weather rather
+  // than the adapter's behavior: it passed locally and failed in CI on a run
+  // whose own log recorded `529 Overloaded` from upstream.
   expect(
-    report!.records?.length ?? 0,
-    `${label}: per-request records`,
+    ['complete', 'partial'],
+    `${label}: causal coverage ${shown}`,
+  ).toContain(report!.coverage);
+  expect(
+    report!.totals.input.total,
+    `${label}: input ${shown}`,
   ).toBeGreaterThan(0);
-  for (const record of report!.records ?? []) {
-    expect(record.model?.length ?? 0, `${label}: record model`).toBeGreaterThan(
-      0,
-    );
-    expect(record.requests, `${label}: record request count`).toBe(1);
+  expect(
+    report!.totals.output.total,
+    `${label}: output ${shown}`,
+  ).toBeGreaterThan(0);
+  const records = report!.records ?? [];
+  expect(
+    records.length,
+    `${label}: per-request records ${shown}`,
+  ).toBeGreaterThan(0);
+  for (const record of records) {
+    expect(
+      record.model?.length ?? 0,
+      `${label}: record model ${shown}`,
+    ).toBeGreaterThan(0);
+    expect(record.requests, `${label}: record request count ${shown}`).toBe(1);
   }
+  // Records summing to the totals is not asserted here: buildTokenUsageReport
+  // attaches records only when their sum already matches, so the check could
+  // never fail. The unit suite covers that invariant where it can be violated.
 }
 
 describe('auto-mode transient retry policy (TADAPT-019)', () => {
