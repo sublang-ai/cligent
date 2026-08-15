@@ -58,6 +58,7 @@ type SpawnProcessFn = (
 interface CloseResult {
   code: number | null;
   signal: NodeJS.Signals | null;
+  error?: Error;
 }
 
 interface GeminiTelemetryCapture {
@@ -1406,6 +1407,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       AGENT_RUNTIME_TARGETS.gemini[0]!,
       `npm install -g ${AGENT_RUNTIME_TARGETS.gemini[0]!.repairSpec}`,
     );
+    const resumeSessionId = asString(options?.resume);
     const mapped = mapAgentOptionsToGeminiCommand(prompt, options);
 
     let processExited = false;
@@ -1416,7 +1418,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let telemetryCapture: GeminiTelemetryCapture = NOOP_TELEMETRY_CAPTURE;
 
     const startTime = Date.now();
-    let sessionId = options?.resume ?? generateSessionId();
+    let sessionId = resumeSessionId ?? generateSessionId();
     let backendProvidedSessionId = false;
     let doneYielded = false;
     let pendingDone: Omit<DonePayload, 'usage'> | undefined;
@@ -1486,7 +1488,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         });
       }
 
-      closePromise = new Promise<CloseResult>((resolve, reject) => {
+      closePromise = new Promise<CloseResult>((resolve) => {
         const onClose = (
           code: number | null,
           signal: NodeJS.Signals | null,
@@ -1497,8 +1499,9 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         };
 
         const onError = (error: Error) => {
+          processExited = true;
           cleanup();
-          reject(error);
+          resolve({ code: null, signal: null, error });
         };
 
         const cleanup = () => {
@@ -1753,7 +1756,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
               doneStatus,
               backendProvidedSessionId,
               sessionId,
-              options?.resume,
+              resumeSessionId,
             ),
             durationMs:
               asNumber(message.durationMs) ??
@@ -1766,6 +1769,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       const close = await closePromise;
+      if (close.error) throw close.error;
 
       if (!initYielded) {
         yield createEvent(
@@ -1833,7 +1837,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
               status,
               backendProvidedSessionId,
               sessionId,
-              options?.resume,
+              resumeSessionId,
             ),
             ...(fallbackMsg ? { result: fallbackMsg } : {}),
             usage: {
@@ -1883,7 +1887,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
                 'interrupted',
                 backendProvidedSessionId,
                 sessionId,
-                options?.resume,
+                resumeSessionId,
               ),
               usage: {
                 ...DEFAULT_DONE_USAGE,

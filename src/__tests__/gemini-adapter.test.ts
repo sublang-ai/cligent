@@ -868,6 +868,37 @@ describe('GeminiAdapter', () => {
     },
   );
 
+  it('normalizes asynchronous child process errors', async () => {
+    const { spawnProcess } = makeSpawn((process) => {
+      const error = Object.assign(new Error('spawn gemini ENOENT'), {
+        code: 'ENOENT',
+      });
+      process.emit('error', error);
+      setImmediate(() => {
+        process.stdout.end();
+        process.stderr.end();
+      });
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('prompt'));
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      code: 'GEMINI_STREAM_ERROR',
+      message: 'spawn gemini ENOENT',
+      recoverable: false,
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
+  });
+
   it('maps permission policy combinations to Gemini 0.50 policy rules', () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
     const toolGroups = {
@@ -1152,6 +1183,42 @@ describe('GeminiAdapter', () => {
       '--resume=01234567-89ab-cdef-0123-456789abcdef',
       '--prompt=continue this',
     ]);
+  });
+
+  it('treats an empty resume value as a fresh run', async () => {
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      writeEventsAndClose(
+        process,
+        [
+          JSON.stringify({
+            type: 'init',
+            model: 'gem',
+            cwd: '/repo',
+          }),
+          JSON.stringify({
+            type: 'result',
+            status: 'success',
+            result: 'done',
+            stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+          }),
+        ],
+        0,
+        null,
+      );
+    });
+    const adapter = new GeminiAdapter({
+      spawnProcess,
+      probeAvailability: async () => true,
+    });
+
+    const events = await collect(adapter.run('start fresh', { resume: '' }));
+
+    expect(invocations[0]?.args.some((arg) => arg.startsWith('--resume='))).toBe(
+      false,
+    );
+    expect(events.every((event) => event.sessionId.length > 0)).toBe(true);
+    expect(new Set(events.map((event) => event.sessionId)).size).toBe(1);
+    expect((events.at(-1)?.payload as DonePayload).resumeToken).toBeUndefined();
   });
 
   it('passes the prompt through one joined headless option token', () => {

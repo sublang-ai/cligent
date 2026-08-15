@@ -82,7 +82,8 @@ When `PermissionPolicy.writablePaths` is non-empty per [ENG-022](../engine.md#en
 
 ### CODEX-005
 
-When `resume` is provided in options, the adapter shall continue the previous thread identified by the token.
+When `resume` is a non-empty string, the adapter shall continue the previous thread identified by the token.
+When `resume` is absent or empty, the adapter shall start a fresh thread with a non-empty correlation identifier.
 
 ### CODEX-006
 

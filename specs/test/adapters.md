@@ -66,13 +66,13 @@ Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and
 
 Verifies: [NDJSON-001](../user/ndjson.md#ndjson-001), [NDJSON-002](../user/ndjson.md#ndjson-002), [NDJSON-003](../user/ndjson.md#ndjson-003), [NDJSON-004](../user/ndjson.md#ndjson-004), [NDJSON-005](../user/ndjson.md#ndjson-005), [GEMINI-003](../user/adapters/gemini.md#gemini-003)
 
-Given partial lines, malformed JSON, and empty lines, `parseNDJSON()` shall produce the correct `NDJSONParseResult` values. Given process exit codes 0, 1, 42, and 53, the Gemini adapter shall yield the corresponding `done` status.
+Given partial lines, malformed JSON, and empty lines, `parseNDJSON()` shall produce the correct `NDJSONParseResult` values. Given process exit codes 0, 1, 42, and 53, the Gemini adapter shall yield the corresponding `done` status. Given the child process reports an asynchronous launch error, the Gemini adapter shall emit a non-recoverable `error` followed by terminal `done` with `status: 'error'`.
 
 ### TADAPT-025
 
 Verifies: [GEMINI-003](../user/adapters/gemini.md#gemini-003), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-007](../user/adapters/gemini.md#gemini-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [GEMINI-012](../user/adapters/gemini.md#gemini-012), [GEMINI-013](../user/adapters/gemini.md#gemini-013), [GEMINI-014](../user/adapters/gemini.md#gemini-014)
 
-Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surfaces while capturing argv and temporary files, when the adapter runs, arbitrary prompts, model values, and resume tokens shall arrive through joined option tokens; unsupported turn-limit and deprecated tool controls shall be absent; generated policy rules, precedence, serialization, native-default omission, configuration authority, and cleanup shall match the cited Gemini items.
+Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surfaces while capturing argv and temporary files, when the adapter runs, arbitrary prompts, model values, and non-empty resume tokens shall arrive through joined option tokens; absent or empty resume shall create a fresh run whose pre-backend events share a generated non-empty correlation identifier; unsupported turn-limit and deprecated tool controls shall be absent; generated policy rules, precedence, serialization, native-default omission, configuration authority, and cleanup shall match the cited Gemini items.
 
 ## OpenCode
 
@@ -377,9 +377,9 @@ Where an adapter does not document an environmental constraint, concurrent `run(
 
 ### TADAPT-015
 
-Verifies: [CODEX-005](../user/adapters/codex.md#codex-005)
+Verifies: [CODEX-005](../user/adapters/codex.md#codex-005), [CODEX-015](../user/adapters/codex.md#codex-015)
 
-When `resume` is provided, the Codex adapter shall continue the previous thread per [CODEX-005](../user/adapters/codex.md#codex-005).
+When `resume` is a non-empty string, the Codex adapter shall continue the previous thread per [CODEX-005](../user/adapters/codex.md#codex-005). When `resume` is absent or empty, it shall start a fresh thread whose events carry a non-empty correlation identifier and whose first cumulative usage snapshot is treated as fresh-turn accounting.
 
 ## Kimi
 
@@ -450,7 +450,7 @@ Repeated task-part snapshots shall enrich a missing child identity at most once,
 Malformed task identity and descendant idle observed before later causal child accounting shall never support complete coverage.
 Where Claude Code or OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent.
 OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, which an assistant repeating that text verbatim shall not displace.
-Before prompt dispatch, the OpenCode wrapper shall begin the live event stream's first read and await either its first event or a bounded readiness grace; it shall preserve that first event for normal consumption, and a stream that announces no connection shall not stall dispatch indefinitely.
+Before prompt dispatch, the OpenCode adapter shall subscribe to the live event stream; no event published after subscription, including the first, shall be lost, and absence of a streamed connection event shall not defer prompt dispatch indefinitely.
 A background task's injected result, and a concurrent caller's prompt that streams first, shall neither resolve the boundary nor bill their work to the run.
 A run that created its root session, including a call whose resume value is absent or empty, may fall back to the first sighting it does not recognize as a background result; a run carrying a non-empty resume value shall not, and where no boundary resolves the terminal `usage.tokens` shall be absent rather than carry totals the run cannot attribute.
 

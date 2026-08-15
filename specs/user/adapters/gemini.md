@@ -25,6 +25,7 @@ The adapter shall implement `AgentAdapter` with `agent: 'gemini'`; it has no SDK
 
 `run()` shall spawn Gemini CLI in non-interactive mode with `gemini --output-format stream-json --prompt=<prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001) and [[4]].
 The adapter shall keep the option and arbitrary prompt in one argv token so Gemini CLI 0.50 treats the value as a headless prompt and does not reparse a leading-dash prompt as an option.
+When the child process reports an asynchronous launch error, the adapter shall emit a non-recoverable `error` event followed by terminal `done` with `status: 'error'` rather than letting the process error escape the event stream.
 
 ## Environment
 
@@ -107,6 +108,7 @@ Permission mapping shall not redirect Gemini's system settings or system-default
 ### GEMINI-007
 
 The adapter shall map `AgentOptions.model` to `--model=<model>` and a non-empty `AgentOptions.resume` to `--resume=<token>`, keeping each value in the same argv token as its option so leading dashes are not reinterpreted.
+When `AgentOptions.resume` is absent or empty, the adapter shall start a fresh run with the same generated non-empty correlation identifier until the backend supplies its own session identifier.
 Where Gemini CLI exposes no compatible turn-limit flag, the adapter shall ignore `AgentOptions.maxTurns` and shall not pass the unsupported `--max-session-turns` flag.
 
 ### GEMINI-011

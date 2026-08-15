@@ -1833,6 +1833,45 @@ describe('CodexAdapter', () => {
     expect(resumeThreadCalledWith).toBe('thread-xyz');
   });
 
+  it('treats an empty resume value as a fresh thread', async () => {
+    let startThreadCalled = false;
+    let resumeThreadCalled = false;
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'item.completed',
+            item: { id: 'before-id', type: 'agent_message', text: 'hello' },
+          },
+          { type: 'thread.started', thread_id: 'empty-resume-thread' },
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 5, output_tokens: 2 },
+            },
+          },
+        ],
+        onStartThread() {
+          startThreadCalled = true;
+        },
+        onResumeThread() {
+          resumeThreadCalled = true;
+        },
+      }),
+    });
+
+    const events = await collect(adapter.run('start fresh', { resume: '' }));
+
+    expect(startThreadCalled).toBe(true);
+    expect(resumeThreadCalled).toBe(false);
+    expect(events[0]?.sessionId).toBeTruthy();
+    expect(events[0]?.sessionId).not.toBe('');
+    expect(events[1]?.sessionId).toBe(events[0]?.sessionId);
+    expect(events.at(-1)?.sessionId).toBe('empty-resume-thread');
+    expect(donePayload(events.at(-1)!).usage.tokens?.totals.input.total).toBe(5);
+  });
+
   it('throws when resume is requested but SDK lacks resumeThread', async () => {
     const adapter = new CodexAdapter({
       loadSdk: async () => ({

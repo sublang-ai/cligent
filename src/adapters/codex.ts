@@ -1426,6 +1426,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     options?: AgentOptions<CodexEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertCodexToolRestrictionsSupported(options);
+    const resumeSessionId = asString(options?.resume);
 
     let sdk: CodexSdk;
     try {
@@ -1485,8 +1486,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
       );
     }
 
-    const releaseResumeSession = options?.resume
-      ? await this.acquireResumeSession(options.resume)
+    const releaseResumeSession = resumeSessionId
+      ? await this.acquireResumeSession(resumeSessionId)
       : () => {};
     const finishCodexRun = async (): Promise<void> => {
       try {
@@ -1500,13 +1501,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     let streamResult:
       { events: AsyncIterable<unknown> } | AsyncIterable<unknown> | undefined;
     try {
-      if (options?.resume) {
+      if (resumeSessionId) {
         if (typeof codex.resumeThread !== 'function') {
           throw new Error(
             'Codex SDK does not support resumeThread() in this version',
           );
         }
-        thread = codex.resumeThread(options.resume, threadOptions);
+        thread = codex.resumeThread(resumeSessionId, threadOptions);
       } else {
         thread = codex.startThread(threadOptions);
       }
@@ -1533,7 +1534,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const runStream = (streamObj.events ??
       streamResult) as AsyncIterable<unknown>;
 
-    let sessionId = options?.resume ?? generateSessionId();
+    let sessionId = resumeSessionId ?? generateSessionId();
     let backendProvidedSessionId = false;
     const startTime = Date.now();
     let doneYielded = false;
@@ -1742,14 +1743,14 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 'error',
                 backendProvidedSessionId,
                 sessionId,
-                options?.resume,
+                resumeSessionId,
               ),
               usage: this.withTurnRecord(
                 this.resolveTurnUsage(
                   event.usage,
                   observedToolUseIds.size,
-                  backendProvidedSessionId ? sessionId : options?.resume,
-                  options?.resume !== undefined,
+                  backendProvidedSessionId ? sessionId : resumeSessionId,
+                  resumeSessionId !== undefined,
                 ),
                 rateCardModel,
               ),
@@ -1784,7 +1785,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 status,
                 backendProvidedSessionId,
                 sessionId,
-                options?.resume,
+                resumeSessionId,
               ),
               usage: this.withTurnRecord(
                 this.resolveTurnUsage(
@@ -1792,8 +1793,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                   observedToolUseIds.size,
                   // A resumed turn need not repeat thread.started, so the
                   // inbound token identifies the same thread.
-                  backendProvidedSessionId ? sessionId : options?.resume,
-                  options?.resume !== undefined,
+                  backendProvidedSessionId ? sessionId : resumeSessionId,
+                  resumeSessionId !== undefined,
                 ),
                 rateCardModel,
               ),
@@ -1822,7 +1823,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
                 'interrupted',
                 backendProvidedSessionId,
                 sessionId,
-                options?.resume,
+                resumeSessionId,
               ),
               usage: {
                 ...DEFAULT_DONE_USAGE,
@@ -1873,7 +1874,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
               'interrupted',
               backendProvidedSessionId,
               sessionId,
-              options?.resume,
+              resumeSessionId,
             ),
             usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
             durationMs: Date.now() - startTime,
