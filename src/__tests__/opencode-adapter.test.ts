@@ -8282,6 +8282,44 @@ describe('OpenCode SSE event structure', () => {
     expect(usage.cost).toBeUndefined();
   });
 
+  it('anchors on its own prompt when foreign root activity streams first', async () => {
+    // Another caller is driving the same resumed root session, and its
+    // assistant message reaches the stream before this run's own. Position
+    // would hand the boundary to the foreign prompt; the submitted text is
+    // what proves which root message belongs to this run.
+    const usage = await collectAccountingUsage(
+      'shared-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'shared-root',
+          'foreign-assistant',
+          'assistant',
+          'foreign-prompt',
+          { modelID: 'foreign-model', providerID: 'foreign-provider' },
+        ),
+        accountingStep('shared-root', 'foreign-assistant', 'foreign-step'),
+        accountingMessage('shared-root', promptMessageId, 'user'),
+        accountingPart('shared-root', promptMessageId, 'own-part', 'text', {
+          text: 'account this run',
+        }),
+        accountingMessage(
+          'shared-root',
+          'own-assistant',
+          'assistant',
+          promptMessageId,
+          { modelID: 'own-model', providerID: 'own-provider' },
+        ),
+        accountingStep('shared-root', 'own-assistant', 'own-step'),
+        accountingIdle('shared-root'),
+      ],
+    );
+
+    // The billed record must be this run's own work, not the foreign step
+    // that streamed first; counting records alone would not tell them apart.
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('own-model');
+  });
+
   it('does not anchor the run on a background result injected before its prompt', async () => {
     // A task started by an earlier invocation completes during this resumed
     // run and injects its result as a fresh prompt into the root session,
@@ -9289,8 +9327,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'reuse-root' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield message(
@@ -9460,8 +9496,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'partial-root' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -9576,8 +9610,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'zero-usage-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -9666,8 +9698,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'cost-overflow-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -9809,8 +9839,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'mixed-usage-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -9909,8 +9937,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'mixed-causality-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -10001,8 +10027,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'incomplete-usage-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(
@@ -10057,8 +10081,6 @@ describe('OpenCode SSE event structure', () => {
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'aborted-usage-session' },
-          onRun(options) {
-          },
           eventStreamFactory: () => ({
             async *[Symbol.asyncIterator]() {
               yield makeV2MessageUpdated(

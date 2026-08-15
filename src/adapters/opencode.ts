@@ -2031,6 +2031,22 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // Sightings stay ordered so resolution keeps the stream's own order; only
     // ineligible ones are skipped.
     const rootPromptSightings: string[] = [];
+    // Stream position cannot tell this run's prompt from a concurrent caller's
+    // in the same root session. The submitted text can: OpenCode stores the
+    // prompt verbatim on the user message it creates, so a matching root part
+    // proves ownership. Two identical concurrent prompts stay unprovable.
+    const provenRootPromptIds = new Set<string>();
+    const observeSubmittedPrompt = (
+      part: Record<string, unknown>,
+      eventSessionId: string,
+    ): void => {
+      if (eventSessionId !== sessionId) return;
+      if (asString(part.type)?.toLowerCase() !== 'text') return;
+      if (part.synthetic === true) return;
+      if (asString(part.text) !== prompt) return;
+      const messageId = asString(part.messageID);
+      if (messageId) provenRootPromptIds.add(messageId);
+    };
     const isBackgroundResultPrompt = (messageId: string): boolean => {
       const key = openCodeUsageKey(sessionId, messageId);
       for (const observation of internalPromptObservations.values()) {
@@ -2043,10 +2059,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
       return false;
     };
-    const resolveRootPromptMessageId = (): string | undefined =>
-      rootPromptSightings.find(
+    const resolveRootPromptMessageId = (): string | undefined => {
+      if (provenRootPromptIds.size > 1) return undefined;
+      const [proven] = provenRootPromptIds;
+      if (proven && !isBackgroundResultPrompt(proven)) return proven;
+      return rootPromptSightings.find(
         (messageId) => !isBackgroundResultPrompt(messageId),
       );
+    };
     let accumulatedToolUses = 0;
     let accountingSequence = 0;
     const causalSessionActivation = new Map<string, number>();
@@ -2705,10 +2725,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ? 'complete'
         : 'partial';
       if (wrapperUsageCoverageIncomplete) coverage = 'partial';
-      // An unproven causal boundary cannot scope this run's work: either no
-      // candidate prompt was observed, or foreign root-session activity left
-      // several. Report the shortfall rather than attribute across it.
-      if (resolveRootPromptMessageId() === undefined) coverage = 'partial';
       let malformedCausalStep = false;
       const observedCausalStepMessages = new Set<string>();
       const hasPriorCausalMessage = (
@@ -4091,6 +4107,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               eventSessionId,
               accountingEventSequence,
             );
+            observeSubmittedPrompt(accountingPart, eventSessionId);
             const accountingPartType = asString(
               accountingPart.type,
             )?.toLowerCase();

@@ -449,11 +449,13 @@ Task parts that reuse an existing `task_id` shall retain exact parent records as
 Repeated task-part snapshots shall enrich a missing child identity at most once, while a conflicting non-empty parent or child identity shall preserve only the first exact subset and force partial coverage.
 Malformed task identity and descendant idle observed before later causal child accounting shall never support complete coverage.
 Where Claude Code or OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent.
+OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, falling back to the first root-session sighting it does not recognize as a background result.
+A background task's injected result, and a concurrent caller's prompt that streams first, shall neither resolve the boundary nor bill their work to the run.
+Where no boundary resolves, terminal `usage.tokens` shall be absent rather than carry totals the run cannot attribute.
 
 ## Real-run Acceptance
 
 Items in this section verify behavior end-to-end against the real coding-agent SDKs and CLIs (not mocks or canned events). They live under `src/adapters/*.acceptance.test.ts` and run via `npm run test:acceptance`. The SDK packages the adapters load (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`) are cligent `devDependencies`, while the ACP SDK used by Kimi is a runtime dependency, so any checkout able to run this suite has installed them via `npm install`; their absence is therefore not a skip condition. An item shall self-skip per adapter when an _external_ CLI the adapter spawns is absent from `PATH` — the `gemini` CLI for Gemini, the `opencode` CLI for OpenCode's managed server, or the `kimi` CLI for Kimi — or when that adapter's credential is absent from the environment; a missing dependency for one adapter shall not skip the others. Under `CI` the items shall instead hard-fail on a missing dependency so a misconfigured runner is not silently green. Exact credential-free Kimi ACP initialization remains an additional mandatory CI conformance check.
-
 ### TADAPT-019
 
 Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [CLAUDE-005](../user/adapters/claude-code.md#claude-005), [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
@@ -530,7 +532,6 @@ canned-event lifecycle check: the canned fixtures encode the wire schema this
 release was written against, so only a live run can catch a later OpenCode
 release changing the `ToolPart` lifecycle shape the way the pre-1.18
 normalization drifted.
-Given an OpenCode run, the prompt it submits shall carry no message identifier, and its usage report shall resolve the causal boundary from the run's own stream: a root-session user message, or the `parentID` a root-session assistant names. Given the root session also carries a background task's injected result, that injected prompt shall not resolve the boundary and the run's records shall exclude its work; given no eligible prompt identifier is observed at all, coverage shall be `partial` rather than attributed.
 
 ### TADAPT-041
 
