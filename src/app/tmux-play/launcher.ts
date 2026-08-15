@@ -23,6 +23,7 @@ import {
   attachTmuxSession,
   hasTmuxPane,
   isTmuxAvailable,
+  isTmuxPlayVersionSupported,
   killTmuxSession,
   runTmux,
   runTmuxOutput,
@@ -75,6 +76,8 @@ const INITIAL_TIMER_TEXT = formatTimerDuration(0);
 const INITIAL_TIMER_RUNNING = '0';
 const OSC11_QUERY = '\x1b]11;?\x07';
 const OSC11_TIMEOUT_MS = 100;
+const LAYOUT_RECONCILE_GENERATION_OPTION =
+  '@cligent_layout_reconcile_generation';
 // `tmux kill-session` is synchronous as a process call but pane visibility can
 // lag briefly behind its successful return. Keep forced retirement bounded by
 // a small, fixed proof window without extending the caller's graceful bound.
@@ -454,6 +457,11 @@ async function launchTmuxPlayInternal(
   if (!isTmuxAvailable()) {
     throw new Error(
       'tmux is not installed — see https://github.com/tmux/tmux#installation',
+    );
+  }
+  if (!isTmuxPlayVersionSupported()) {
+    throw new Error(
+      'tmux-play requires tmux 3.3 or newer for reliable attached-client resizing',
     );
   }
   // TMUX-051: glow is the Markdown renderer the presenter delegates wrapping
@@ -2086,23 +2094,65 @@ function computeLayoutSizes(
 // for the 1-cell right-side tmux border). The rightmost column absorbs the
 // remainder and needs no explicit resize. `resize-pane -x` does not accept
 // tmux format expansion, so the arithmetic is shell-evaluated at hook fire.
+//
+// Hooks stay backgrounded so tmux's command queue is never blocked by a shell
+// that recursively invokes tmux. A per-session wait-for mutex makes every
+// worker read the width only after earlier workers finish, and the generation
+// rejects a worker installed for a pane shape that has since been rebuilt.
+// Each current worker verifies that the negotiated width stayed unchanged
+// while it resized and repeats immediately when it did not. This makes the
+// final window width the final writer instead of whichever background shell
+// happened to finish last.
 function configureLayoutHooks(
   sessionName: string,
   weights: readonly number[],
 ): void {
+  const generation = randomBytes(8).toString('hex');
+  const reconcileLock = `${sessionName}-layout-reconcile`;
   const sum = weights.reduce((acc, value) => acc + value, 0);
-  const widthCmd = `tmux display-message -t ${sessionName} -p '#{window_width}'`;
+  // `##` so the format survives run-shell's own expansion and reaches the
+  // worker's shell intact. Written raw, tmux substitutes the width when the
+  // hook fires, baking one event-time constant into both reads below: the
+  // verification would then compare that constant to itself and a worker
+  // holding a stale width could still win the lock and write it.
+  const widthCmd = `tmux display-message -t ${sessionName} -p '##{window_width}'`;
+  const generationCmd =
+    `tmux show-options -qv -t ${sessionName} ` +
+    LAYOUT_RECONCILE_GENERATION_OPTION;
   const resizes: string[] = [];
   for (let i = 0; i < weights.length - 1; i++) {
     resizes.push(
-      `tmux resize-pane -t ${sessionName}:0.${i} -x $((W * ${weights[i]} / ${sum} - 1))`,
+      `tmux resize-pane -t ${sessionName}:0.${i} -x $((W * ${weights[i]} / ${sum} - 1)) || break;`,
     );
   }
-  const shell = [`W=$(${widthCmd})`, ...resizes].join(' && ');
+  const shell =
+    `tmux wait-for -L ${reconcileLock} && ` +
+    `trap 'tmux wait-for -U ${reconcileLock}' EXIT && ` +
+    `if [ x$(${generationCmd}) = x${generation} ]; then while :; do ` +
+    `W=$(${widthCmd}) || break; ` +
+    resizes.join(' ') +
+    ` [ x$(${generationCmd}) = x${generation} ] || break; ` +
+    `[ $(${widthCmd}) -eq $((W)) ] && break; ` +
+    `done; fi`;
   const hookCommand = `run-shell -b "${shell}"`;
-  for (const hook of ['client-resized', 'after-resize-window']) {
+  runTmux(
+    'set-option',
+    '-t',
+    sessionName,
+    LAYOUT_RECONCILE_GENERATION_OPTION,
+    generation,
+  );
+  for (const hook of [
+    'client-resized',
+    'window-resized',
+    'after-resize-window',
+  ]) {
     runTmux('set-hook', '-t', sessionName, hook, hookCommand);
   }
+  // Pane visibility rebuilds may not resize the tmux window and therefore may
+  // fire no hook. Queue the current generation once so the rebuilt shape is
+  // reconciled against the already-attached client's actual width.
+  runTmux('run-shell', '-b', shell);
 }
 
 function tailCommand(

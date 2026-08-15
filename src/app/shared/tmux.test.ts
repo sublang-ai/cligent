@@ -17,6 +17,7 @@ import {
   isOrchestratorInTmux,
   isolateOrchestratorFromAgents,
   isTmuxAvailable,
+  isTmuxPlayVersionSupported,
   killTmuxSession,
   queryPaneTargetsByTitle,
   runTmux,
@@ -48,6 +49,34 @@ describe('tmux helpers', () => {
     spawnSyncMock.mockReturnValue({ status: 1 });
 
     expect(isTmuxAvailable()).toBe(false);
+  });
+
+  it.each([
+    ['tmux 3.2a\n', false],
+    ['tmux 3.3\n', true],
+    ['tmux 3.3a\n', true],
+    ['tmux 3.6a\n', true],
+    ['tmux 4.0\n', true],
+    ['tmux next-3.3\n', false],
+  ])('classifies the tmux-play 3.3 floor from %j', (version, expected) => {
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(version),
+    });
+
+    expect(isTmuxPlayVersionSupported()).toBe(expected);
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', ['-V'], {
+      stdio: 'pipe',
+    });
+  });
+
+  it('rejects the tmux-play version floor when the probe fails', () => {
+    spawnSyncMock.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from('tmux 3.6a\n'),
+    });
+
+    expect(isTmuxPlayVersionSupported()).toBe(false);
   });
 
   it('requires pane output even when tmux exits successfully', () => {

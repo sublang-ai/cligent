@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- tmux-play now requires tmux 3.3 or newer so attached-client layout reconciliation can use the post-negotiation `window-resized` hook — TMUX-044
+
+### Fixed
+
+- Rapid terminal resizing can no longer leave weighted tmux-play columns at an earlier width. Background resize workers now serialize per session, reject superseded visible-pane generations, verify the final negotiated width before retiring, and reconcile each rebuilt pane shape immediately. Each worker also reads that width itself: `run-shell` expands formats in the command it is given, so a bare `#{window_width}` was substituted once when the hook fired and baked that instant's width into the worker — both sides of its verification compared the same constant, and a worker that reached the lock after a newer one repainted the older width unchallenged. Escaping the format lets it reach the worker's own shell, so a late worker resizes to the width the window holds when it runs. The attached-client coverage now parks a stale worker before it takes the reconcile lock rather than inside its resize, since blocking after acquisition holds the lock and makes the newest width write last no matter what — the ordering the test exists to provoke could not occur — TMUX-044, TTMUX-035
+
 ## [0.21.0] - 2026-08-14
 
 ### Added

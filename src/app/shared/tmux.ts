@@ -73,6 +73,26 @@ export function isTmuxAvailable(): boolean {
   return probe.error === undefined && probe.status === 0;
 }
 
+/**
+ * Whether the installed tmux exposes the post-negotiation `window-resized`
+ * hook used by tmux-play's weighted layout reconciler (TMUX-044).
+ */
+export function isTmuxPlayVersionSupported(): boolean {
+  const probe = spawnSync('tmux', ['-V'], { stdio: 'pipe' });
+  if (probe.error !== undefined || probe.status !== 0) {
+    return false;
+  }
+  const match = /^tmux (\d+)\.(\d+)/.exec(
+    probe.stdout?.toString().trim() ?? '',
+  );
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major > 3 || (major === 3 && minor >= 3);
+}
+
 export function hasTmuxPane(target: string): boolean {
   const result = spawnSync(
     'tmux',

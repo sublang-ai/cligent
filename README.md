@@ -148,7 +148,7 @@ hand.
 
 Requirements:
 
-- [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+- [`tmux`](https://github.com/tmux/tmux/wiki/Installing) 3.3 or newer.
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
 - An installed runtime, plus credentials, for each adapter your config uses:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),

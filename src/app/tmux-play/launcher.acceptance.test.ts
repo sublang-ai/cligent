@@ -5,7 +5,9 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -259,6 +261,190 @@ describe('tmux-play real-tmux acceptance', () => {
           captainRegion: captainExpected,
           coderRegion: coderExpected,
           reviewerRegion: reviewerExpected,
+        });
+      }
+    },
+    60_000,
+  );
+
+  acceptanceIt(
+    'settles rapid attached-client resizes at the final negotiated width',
+    async () => {
+      cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
+      const configPath = join(cwd, 'tmux-play.config.yaml');
+      writeFileSync(configPath, defaultYamlConfig());
+
+      const result = await launchTmuxPlay({
+        cwd,
+        configPath,
+        sessionId: `client-resize-${randomBytes(4).toString('hex')}`,
+        workDir,
+        selfBin: BUILT_CLI_PATH,
+        attach: false,
+      });
+      sessionName = result.sessionName;
+
+      const shimDir = join(cwd, 'resize-shim');
+      const gateDir = join(cwd, 'resize-gate.lock');
+      const gateArm = join(cwd, 'resize-gate.arm');
+      const gateEntered = join(cwd, 'resize-gate.entered');
+      const gateRelease = join(cwd, 'resize-gate.release');
+      const gateFinished = join(cwd, 'resize-gate.finished');
+      const windowHookLog = join(cwd, 'window-resized-hook.log');
+      mkdirSync(shimDir);
+      const tmuxPathResult = spawnSync('which', ['tmux'], { encoding: 'utf8' });
+      if (tmuxPathResult.status !== 0 || !tmuxPathResult.stdout.trim()) {
+        throw new Error('which tmux failed for attached resize probe');
+      }
+      const tmuxPath = tmuxPathResult.stdout.trim();
+      const shimPath = join(shimDir, 'tmux');
+      writeFileSync(
+        shimPath,
+        [
+          '#!/bin/sh',
+          // Gate before the worker takes the reconcile lock, not inside its
+          // resize. Blocking after acquisition holds the lock and forces every
+          // later worker to queue behind this one, so the newest width always
+          // writes last and a stale worker never gets to be the final writer —
+          // the very ordering this test exists to provoke.
+          `if [ "$1" = wait-for ] && [ "$2" = -L ] && [ -f ${shellQuote(gateArm)} ] && mkdir ${shellQuote(gateDir)} 2>/dev/null; then`,
+          `  printf 'entered\\n' > ${shellQuote(gateEntered)}`,
+          `  while [ ! -f ${shellQuote(gateRelease)} ]; do sleep 0.01; done`,
+          `  ${shellQuote(tmuxPath)} "$@"`,
+          '  status=$?',
+          `  printf 'finished\\n' > ${shellQuote(gateFinished)}`,
+          '  exit $status',
+          'fi',
+          `exec ${shellQuote(tmuxPath)} "$@"`,
+          '',
+        ].join('\n'),
+      );
+      chmodSync(shimPath, 0o755);
+      for (const hook of [
+        'client-resized',
+        'window-resized',
+        'after-resize-window',
+      ]) {
+        const command = showHookCommand(sessionName, hook);
+        const gatedCommand = command.replaceAll(
+          'tmux wait-for -L',
+          `${shimPath} wait-for -L`,
+        );
+        expect(gatedCommand).not.toBe(command);
+        runOrThrow('tmux', [
+          'set-hook',
+          '-t',
+          sessionName,
+          hook,
+          gatedCommand,
+        ]);
+      }
+      runOrThrow('tmux', [
+        'set-hook',
+        '-a',
+        '-t',
+        sessionName,
+        'window-resized',
+        `run-shell -b "printf 'fired\\n' >> ${windowHookLog}"`,
+      ]);
+
+      const outerSession = `tmux-play-resize-client-${randomBytes(4).toString('hex')}`;
+
+      try {
+        runOrThrow('tmux', [
+          'new-session',
+          '-d',
+          '-s',
+          outerSession,
+          '-x',
+          '108',
+          '-y',
+          '30',
+          'sleep 120',
+        ]);
+        runOrThrow('tmux', ['set-option', '-t', outerSession, 'status', 'off']);
+        runOrThrow('tmux', [
+          'set-window-option',
+          '-t',
+          outerSession,
+          'window-size',
+          'manual',
+        ]);
+        runOrThrow('tmux', [
+          'resize-window',
+          '-t',
+          outerSession,
+          '-x',
+          '108',
+          '-y',
+          '30',
+        ]);
+        runOrThrow('tmux', [
+          'respawn-pane',
+          '-k',
+          '-t',
+          `${outerSession}:0.0`,
+          `sh -lc 'unset TMUX TMUX_PANE; exec tmux attach-session -t ${sessionName}'`,
+        ]);
+        await waitForWindowWidth(sessionName, 108, 5_000);
+        await waitForStableRegions(
+          sessionName,
+          [36, 36, 36],
+          5_000,
+          200,
+        );
+        writeFileSync(gateArm, 'armed\n');
+
+        runOrThrow('tmux', [
+          'resize-window',
+          '-t',
+          outerSession,
+          '-x',
+          '61',
+          '-y',
+          '30',
+        ]);
+        await waitForWindowWidth(sessionName, 61, 5_000);
+        await waitForNonEmptyFile(windowHookLog, 2_000);
+        await waitForNonEmptyFile(gateEntered, 5_000);
+
+        runOrThrow('tmux', [
+          'resize-window',
+          '-t',
+          outerSession,
+          '-x',
+          '83',
+          '-y',
+          '30',
+        ]);
+        await waitForWindowWidth(sessionName, 83, 5_000);
+        runOrThrow('tmux', [
+          'resize-window',
+          '-t',
+          outerSession,
+          '-x',
+          '142',
+          '-y',
+          '30',
+        ]);
+        await waitForWindowWidth(sessionName, 142, 5_000);
+
+        // The stale worker is still parked outside the lock, so the later
+        // workers ran unobstructed and the layout is already correct for 142.
+        await waitForStableRegions(sessionName, [47, 47, 48], 5_000, 300);
+
+        // Now let it in. It acquires the lock last and is therefore the final
+        // writer. It must resize to the width tmux holds now, not the 61 its
+        // hook fired at: a worker whose width was captured when the hook fired
+        // would repaint 61-column regions over the settled layout, and would
+        // see its own stale value on both sides of its verification.
+        writeFileSync(gateRelease, 'release\n');
+        await waitForNonEmptyFile(gateFinished, 5_000);
+        await waitForStableRegions(sessionName, [47, 47, 48], 5_000, 300);
+      } finally {
+        spawnSync('tmux', ['kill-session', '-t', outerSession], {
+          stdio: 'ignore',
         });
       }
     },
@@ -2853,6 +3039,21 @@ function showWindowOption(session: string, option: string): string {
   return result.stdout.trimEnd();
 }
 
+function showHookCommand(session: string, hook: string): string {
+  const result = spawnSync('tmux', ['show-hooks', '-t', session, hook], {
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`tmux show-hooks failed: ${result.stderr.trim()}`);
+  }
+  const prefix = `${hook}[0] `;
+  const line = result.stdout.trimEnd();
+  if (!line.startsWith(prefix)) {
+    throw new Error(`tmux show-hooks returned no ${hook} command: ${line}`);
+  }
+  return line.slice(prefix.length);
+}
+
 function keyBinding(table: string, key: string): string {
   const result = spawnSync('tmux', ['list-keys', '-T', table, key], {
     encoding: 'utf8',
@@ -3296,6 +3497,58 @@ async function waitForRegions(
   }
   throw new Error(
     `Layout did not reach expected regions [${expectedRegions.join(',')}] within ${timeoutMs}ms; last seen: ${JSON.stringify(lastSeen)}`,
+  );
+}
+
+async function waitForStableRegions(
+  session: string,
+  expectedRegions: readonly number[],
+  timeoutMs: number,
+  stableMs: number,
+): Promise<readonly PaneRow[]> {
+  const start = Date.now();
+  let stableSince: number | undefined;
+  let lastSeen: readonly PaneRow[] = [];
+  while (Date.now() - start < timeoutMs) {
+    const panes = listPanes(session);
+    lastSeen = panes;
+    const matches =
+      panes.length === expectedRegions.length &&
+      panes.every(
+        (pane, idx) =>
+          regionWidthFor(pane, panes, idx) === expectedRegions[idx],
+      );
+    if (matches) {
+      stableSince ??= Date.now();
+      if (Date.now() - stableSince >= stableMs) {
+        return panes;
+      }
+    } else {
+      stableSince = undefined;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Layout did not remain at expected regions [${expectedRegions.join(',')}] for ${stableMs}ms within ${timeoutMs}ms; last seen: ${JSON.stringify(lastSeen)}`,
+  );
+}
+
+async function waitForWindowWidth(
+  session: string,
+  expectedWidth: number,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    last = displayMessage(session, '#{window_width}');
+    if (Number(last) === expectedWidth) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `window_width did not reach ${expectedWidth} within ${timeoutMs}ms; last seen ${last}`,
   );
 }
 

@@ -390,7 +390,9 @@ Terminals that honor the sequence (xterm, Konsole, GNOME Terminal, iTerm2 with t
 ### TMUX-044
 
 The weighted region split required by [TMUX-028](#tmux-028) shall hold at every window size, not only at session creation.
-The launcher shall configure session-scoped tmux hooks (`client-resized` and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W` with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` from [TMUX-064](#tmux-064)'s resolved column weights for the current visible-column shape, each non-rightmost column `i < N-1` is `floor(W * w_i / sum(w))` cells and the rightmost column absorbs the remainder.
+The launcher shall reject tmux versions older than 3.3 before config resolution or session construction because `window-resized`, the post-negotiation signal this invariant requires, first exists in tmux 3.3 [[3]].
+The launcher shall configure session-scoped tmux hooks (`client-resized`, `window-resized`, and `after-resize-window`) that re-apply pane widths via `resize-pane -x` so that, at any window width `W` with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` from [TMUX-064](#tmux-064)'s resolved column weights for the current visible-column shape, each non-rightmost column `i < N-1` is `floor(W * w_i / sum(w))` cells and the rightmost column absorbs the remainder.
+Resize reconciliation shall remain backgrounded, serialize workers per session, reject a worker from a superseded visible-column shape, and recheck the negotiated width before finishing so no earlier client-size event or pane shape may become the final writer after a later window resize or visibility rebuild.
 With the shipped defaults: `[1, 1]` for one visible player yields `floor(W / 2)` for the Boss/Captain region and the remainder for the player pane; `[1, 1, 1]` for two or more visible players yields `floor(W / 3)` for the Boss/Captain region, `floor(W / 3)` for the first player column, and the remainder for the second player column.
 Pane content widths are one less than their region for every pane that has a right-side tmux border separator; the rightmost pane's content width equals its region.
 
@@ -861,3 +863,4 @@ Where the tmux server normalizes non-ASCII display text — a non-UTF-8 server l
 
 [1]: https://catppuccin.com/palette/ "Catppuccin Palette"
 [2]: https://github.com/charmbracelet/glow "glow — Render Markdown on the CLI"
+[3]: https://github.com/tmux/tmux/blob/3.3/CHANGES "tmux 3.3 changes"

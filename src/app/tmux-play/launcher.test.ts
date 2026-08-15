@@ -19,6 +19,7 @@ const {
   attachTmuxSessionMock,
   hasTmuxPaneMock,
   isTmuxAvailableMock,
+  isTmuxPlayVersionSupportedMock,
   killTmuxSessionMock,
   runTmuxMock,
   runTmuxOutputMock,
@@ -28,6 +29,7 @@ const {
   attachTmuxSessionMock: vi.fn(),
   hasTmuxPaneMock: vi.fn(),
   isTmuxAvailableMock: vi.fn(),
+  isTmuxPlayVersionSupportedMock: vi.fn(),
   killTmuxSessionMock: vi.fn(),
   runTmuxMock: vi.fn(),
   runTmuxOutputMock: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock('../shared/tmux.js', () => ({
   isolateOrchestratorFromAgents: vi.fn(),
   isOrchestratorInTmux: () => false,
   isTmuxAvailable: isTmuxAvailableMock,
+  isTmuxPlayVersionSupported: isTmuxPlayVersionSupportedMock,
   killTmuxSession: killTmuxSessionMock,
   runTmux: runTmuxMock,
   runTmuxOutput: runTmuxOutputMock,
@@ -136,6 +139,7 @@ describe('launchTmuxPlay', () => {
 
   beforeEach(() => {
     isTmuxAvailableMock.mockReturnValue(true);
+    isTmuxPlayVersionSupportedMock.mockReturnValue(true);
     isGlowAvailableMock.mockReturnValue(true);
     runTmuxMock.mockReset();
     runTmuxOutputMock.mockReset();
@@ -322,10 +326,12 @@ describe('launchTmuxPlay', () => {
     );
     // TMUX-044: shell-evaluated `W * w_i / sum(w)` per non-rightmost column.
     // sum([1, 1, 1]) = 3; rightmost column absorbs the remainder.
-    const expectedHookCmd =
-      `run-shell -b "W=$(tmux display-message -t tmux-play-abc123 -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.0 -x $((W * 1 / 3 - 1))` +
-      ` && tmux resize-pane -t tmux-play-abc123:0.1 -x $((W * 1 / 3 - 1))"`;
+    const generation = layoutGeneration('tmux-play-abc123');
+    const expectedHookCmd = expectedLayoutHookCommand(
+      'tmux-play-abc123',
+      generation,
+      [1, 1, 1],
+    );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -339,6 +345,18 @@ describe('launchTmuxPlay', () => {
       'tmux-play-abc123',
       'after-resize-window',
       expectedHookCmd,
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-abc123',
+      'window-resized',
+      expectedHookCmd,
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'run-shell',
+      '-b',
+      expectedLayoutReconcileShell('tmux-play-abc123', generation, [1, 1, 1]),
     );
     expect(runTmuxMock.mock.calls.at(-1)).toEqual([
       'select-pane',
@@ -1457,9 +1475,11 @@ describe('launchTmuxPlay', () => {
     const layoutHooks = runTmuxMock.mock.calls.filter(
       (call) =>
         call[0] === 'set-hook' &&
-        (call[3] === 'client-resized' || call[3] === 'after-resize-window'),
+        (call[3] === 'client-resized' ||
+          call[3] === 'window-resized' ||
+          call[3] === 'after-resize-window'),
     );
-    expect(layoutHooks).toHaveLength(2);
+    expect(layoutHooks).toHaveLength(3);
     for (const hook of layoutHooks) {
       expect(String(hook.at(-1))).toContain('display-message');
       expect(String(hook.at(-1))).not.toContain('resize-pane');
@@ -1570,6 +1590,53 @@ describe('launchTmuxPlay', () => {
       // Not the unbounded startup form.
       expect(String(split.at(-1))).not.toMatch(/tail -f/);
     }
+  });
+
+  it('invalidates queued resize workers when the visible pane shape is rebuilt', () => {
+    const common = {
+      sessionName: 'tmux-play-generation',
+      workDir: '/work',
+      layout: {
+        window: { columns: 174, rows: 49 },
+        initialVisible: ['alpha', 'beta'],
+        singlePlayerColumnWeights: [1, 1] as [number, number],
+        multiPlayerColumnWeights: [1, 1, 1] as [number, number, number],
+        columnWeights: [1, 1, 1] as [number, number, number],
+      },
+      captainAdapter: 'claude',
+      themeFlavor: 'mocha' as const,
+    };
+
+    runTmuxMock.mockReset();
+    buildPlayerArea({
+      ...common,
+      visiblePlayers: [{ id: 'alpha', adapter: 'codex' }],
+    });
+    const firstGeneration = layoutGeneration(common.sessionName);
+    const firstWorker = expectedLayoutReconcileShell(
+      common.sessionName,
+      firstGeneration,
+      [1, 1],
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith('run-shell', '-b', firstWorker);
+
+    runTmuxMock.mockClear();
+    buildPlayerArea({
+      ...common,
+      visiblePlayers: [
+        { id: 'alpha', adapter: 'codex' },
+        { id: 'beta', adapter: 'codex' },
+      ],
+    });
+    const secondGeneration = layoutGeneration(common.sessionName);
+    expect(secondGeneration).not.toBe(firstGeneration);
+    const secondWorker = expectedLayoutReconcileShell(
+      common.sessionName,
+      secondGeneration,
+      [1, 1, 1],
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith('run-shell', '-b', secondWorker);
+    expect(secondWorker).not.toContain(firstGeneration);
   });
 
   it('preserves mouse selection and copies it to the system clipboard on right-click without changing clipboard policy', async () => {
@@ -2435,9 +2502,12 @@ describe('launchTmuxPlay', () => {
 
     // TMUX-044: single-player default weights `[1, 1]` (sum = 2). The rightmost
     // player pane absorbs the remainder; only pane 0 needs an explicit resize.
-    const expectedHookCmd =
-      `run-shell -b "W=$(tmux display-message -t tmux-play-one -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-one:0.0 -x $((W * 1 / 2 - 1))"`;
+    const generation = layoutGeneration('tmux-play-one');
+    const expectedHookCmd = expectedLayoutHookCommand(
+      'tmux-play-one',
+      generation,
+      [1, 1],
+    );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -2450,6 +2520,13 @@ describe('launchTmuxPlay', () => {
       '-t',
       'tmux-play-one',
       'after-resize-window',
+      expectedHookCmd,
+    );
+    expect(runTmuxMock).toHaveBeenCalledWith(
+      'set-hook',
+      '-t',
+      'tmux-play-one',
+      'window-resized',
       expectedHookCmd,
     );
   });
@@ -2563,10 +2640,12 @@ describe('launchTmuxPlay', () => {
     expect(valueAfter(splits[0] ?? [], '-l')).toBe('160'); // player area
     expect(valueAfter(splits[1] ?? [], '-l')).toBe('94'); // second column (remainder)
 
-    const expectedHookCmd =
-      `run-shell -b "W=$(tmux display-message -t tmux-play-override -p '#{window_width}')` +
-      ` && tmux resize-pane -t tmux-play-override:0.0 -x $((W * 3 / 15 - 1))` +
-      ` && tmux resize-pane -t tmux-play-override:0.1 -x $((W * 5 / 15 - 1))"`;
+    const generation = layoutGeneration('tmux-play-override');
+    const expectedHookCmd = expectedLayoutHookCommand(
+      'tmux-play-override',
+      generation,
+      [3, 5, 7],
+    );
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-hook',
       '-t',
@@ -2771,6 +2850,17 @@ describe('launchTmuxPlay', () => {
     await expect(
       launchTmuxPlay({ configPath: '/missing/config.yaml' }),
     ).rejects.toThrow('tmux is not installed');
+    expect(runTmuxMock).not.toHaveBeenCalled();
+  });
+
+  it('fails before config loading when tmux predates window-resized', async () => {
+    isTmuxPlayVersionSupportedMock.mockReturnValue(false);
+
+    await expect(
+      launchTmuxPlay({ configPath: '/missing/config.yaml' }),
+    ).rejects.toThrow(
+      'tmux-play requires tmux 3.3 or newer for reliable attached-client resizing',
+    );
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
@@ -2994,6 +3084,63 @@ function windowSetValue(window: string, option: string): string {
     throw new Error(`Missing ${option} window set call for ${window}`);
   }
   return value;
+}
+
+function layoutGeneration(sessionName: string): string {
+  const call = runTmuxMock.mock.calls.find(
+    (args) =>
+      args[0] === 'set-option' &&
+      args[2] === sessionName &&
+      args[3] === '@cligent_layout_reconcile_generation',
+  );
+  const value = call?.[4];
+  if (typeof value !== 'string') {
+    throw new Error(`Missing layout generation for ${sessionName}`);
+  }
+  return value;
+}
+
+function expectedLayoutReconcileShell(
+  sessionName: string,
+  generation: string,
+  weights: readonly number[],
+): string {
+  const sum = weights.reduce((acc, value) => acc + value, 0);
+  // `##` so run-shell's own expansion yields a live format for the worker
+  // rather than the width at hook-fire time.
+  const widthCmd = `tmux display-message -t ${sessionName} -p '##{window_width}'`;
+  const generationCmd =
+    `tmux show-options -qv -t ${sessionName} ` +
+    '@cligent_layout_reconcile_generation';
+  const resizes = weights
+    .slice(0, -1)
+    .map(
+      (weight, index) =>
+        `tmux resize-pane -t ${sessionName}:0.${index} -x $((W * ${weight} / ${sum} - 1)) || break;`,
+    )
+    .join(' ');
+  return (
+    `tmux wait-for -L ${sessionName}-layout-reconcile && ` +
+    `trap 'tmux wait-for -U ${sessionName}-layout-reconcile' EXIT && ` +
+    `if [ x$(${generationCmd}) = x${generation} ]; then while :; do ` +
+    `W=$(${widthCmd}) || break; ` +
+    resizes +
+    ` [ x$(${generationCmd}) = x${generation} ] || break; ` +
+    `[ $(${widthCmd}) -eq $((W)) ] && break; ` +
+    `done; fi`
+  );
+}
+
+function expectedLayoutHookCommand(
+  sessionName: string,
+  generation: string,
+  weights: readonly number[],
+): string {
+  return `run-shell -b "${expectedLayoutReconcileShell(
+    sessionName,
+    generation,
+    weights,
+  )}"`;
 }
 
 function valueAfter(args: readonly unknown[], flag: string): string {

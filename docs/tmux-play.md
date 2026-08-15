@@ -15,7 +15,7 @@ tmux-play --config ./tmux-play.config.yaml
 
 Requirements:
 
-- [`tmux`](https://github.com/tmux/tmux/wiki/Installing).
+- [`tmux`](https://github.com/tmux/tmux/wiki/Installing) 3.3 or newer.
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
 - An installed runtime for every adapter your config uses — the optional peer
   SDK the adapter imports, plus any CLI it spawns — installed wherever the

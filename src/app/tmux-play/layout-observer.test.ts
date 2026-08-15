@@ -11,6 +11,7 @@ const { runTmuxMock } = vi.hoisted(() => ({ runTmuxMock: vi.fn() }));
 vi.mock('../shared/tmux.js', () => ({
   attachTmuxSession: vi.fn(),
   isTmuxAvailable: vi.fn(() => true),
+  isTmuxPlayVersionSupported: vi.fn(() => true),
   runTmux: runTmuxMock,
 }));
 
