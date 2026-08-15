@@ -2046,7 +2046,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let finishStreamWait: ((result: StreamWaitResult) => void) | undefined;
     let abortPermissionWait: (() => void) | undefined;
 
-    let sessionId = options?.resume ?? generateSessionId();
+    const resumeSessionId = asString(options?.resume);
+    let sessionId = resumeSessionId ?? generateSessionId();
     let backendProvidedSessionId = false;
     let sessionAbortAttempted = false;
     let sessionAbortPromise: Promise<void> | undefined;
@@ -2100,7 +2101,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     // party holds an id that did not exist before it. A resumed session is
     // not — another caller may drive it concurrently — so there the boundary
     // is proven from the submitted text or it stays unresolved.
-    const rootSessionIsExclusive = options?.resume === undefined;
+    const rootSessionIsExclusive = resumeSessionId === undefined;
     const resolveRootPromptMessageId = (): string | undefined => {
       // An assistant echoing the prompt verbatim carries the same text
       // without being this run's prompt. Only a *known* assistant role
@@ -3492,7 +3493,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ),
         ...(variant ? { variant } : {}),
         ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
-        ...(options?.resume ? { sessionId: options.resume } : {}),
+        ...(resumeSessionId ? { sessionId: resumeSessionId } : {}),
         ...mappedPermissions,
       });
       const runOutcomePromise = runPromise.then(

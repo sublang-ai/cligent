@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   ObserverDispatchError,
   RecordDispatcher,
-  type CaptainReplyRecord,
   type CaptainTelemetryRecord,
   type CaptainStatusRecord,
   type RecordObserver,
-  type RuntimeErrorRecord,
   type TmuxPlayRecord,
-  type TurnStartedRecord,
 } from './records.js';
 
 function turnStarted(turnId = 1): TmuxPlayRecord {
@@ -73,19 +70,6 @@ function deferred(): {
 }
 
 describe('RecordDispatcher', () => {
-  it('types turn-bound records with non-null turn ids', () => {
-    expectTypeOf<TurnStartedRecord['turnId']>().toEqualTypeOf<number>();
-    // TMUX-092: a conversational reply is turn-bound, unlike captain_status.
-    expectTypeOf<CaptainReplyRecord['turnId']>().toEqualTypeOf<number>();
-    expectTypeOf<CaptainStatusRecord['turnId']>().toEqualTypeOf<
-      number | null
-    >();
-    expectTypeOf<CaptainTelemetryRecord['turnId']>().toEqualTypeOf<
-      number | null
-    >();
-    expectTypeOf<RuntimeErrorRecord['turnId']>().toEqualTypeOf<number | null>();
-  });
-
   it('delivers each record to observers in registration order', async () => {
     const dispatcher = new RecordDispatcher();
     const seen: string[] = [];

@@ -28,8 +28,15 @@ adapters you use:
 npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
 npm install "@openai/codex-sdk@>=0.144.0"                # Codex
 npm install "@opencode-ai/sdk@>=1.18.12"                 # OpenCode
-# Gemini needs no SDK — the adapter drives the installed `gemini` CLI
-# Kimi needs its CLI — see the separately pinned install below
+```
+
+Gemini and default managed-mode OpenCode also need their CLI on `PATH`.
+External-mode OpenCode connects to a caller-owned server and needs only the
+SDK. Kimi has its own pinned CLI setup below.
+
+```bash
+npm install -g @google/gemini-cli   # Gemini CLI
+npm install -g opencode-ai          # OpenCode managed server
 ```
 
 cligent owns which versions of those runtimes work. It refuses one it does
@@ -95,7 +102,7 @@ for await (const event of agent.run('Now add tests for it')) {
 - **Codex CLI** — via `@openai/codex-sdk`
 - **Gemini CLI** — via child-process NDJSON
 - **Kimi Code** — via one short-lived `kimi acp` process per run
-- **OpenCode** — via `@opencode-ai/sdk`
+- **OpenCode** — via `@opencode-ai/sdk` and, in managed mode, `opencode`
 
 ## tmux-play
 

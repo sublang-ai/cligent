@@ -4417,6 +4417,130 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(returnCalls).toBe(1);
   });
 
+  it('establishes the SSE stream before prompt dispatch and preserves its first event', async () => {
+    const order: string[] = [];
+    let resolveFirst!: (result: IteratorResult<unknown>) => void;
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const firstRead = new Promise<IteratorResult<unknown>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const rawIterator: AsyncIterator<unknown> = {
+      next() {
+        order.push('read');
+        markReadStarted();
+        return firstRead;
+      },
+      async return(value?: unknown) {
+        return { done: true, value };
+      },
+    };
+    const client = wrapOpencodeClient(
+      {
+        session: {
+          async create() {
+            return { data: { id: 'ready-session', title: 'Cligent run' } };
+          },
+          async promptAsync() {
+            order.push('prompt');
+            return {};
+          },
+        },
+        event: {
+          async subscribe() {
+            order.push('subscribe');
+            return {
+              stream: {
+                [Symbol.asyncIterator]() {
+                  return rawIterator;
+                },
+              },
+            };
+          },
+        },
+      },
+      { apiVersion: 'v2' },
+    );
+
+    const runPromise = client.run?.({ prompt: 'wait for readiness' });
+    await readStarted;
+    expect(order).toEqual(['subscribe', 'read']);
+
+    const connected = {
+      done: false as const,
+      value: { type: 'server.connected' },
+    };
+    resolveFirst(connected);
+    const result = (await runPromise) as { events: AsyncIterable<unknown> };
+    expect(order).toEqual(['subscribe', 'read', 'prompt']);
+    const iterator = result.events[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual(connected);
+    await iterator.return?.();
+  });
+
+  it('bounds SSE readiness when the server announces no connection', async () => {
+    vi.useFakeTimers();
+    try {
+      let promptCalled = false;
+      let markReadStarted!: () => void;
+      let resolveFirst!: (result: IteratorResult<unknown>) => void;
+      const readStarted = new Promise<void>((resolve) => {
+        markReadStarted = resolve;
+      });
+      const firstRead = new Promise<IteratorResult<unknown>>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const rawIterator: AsyncIterator<unknown> = {
+        next() {
+          markReadStarted();
+          return firstRead;
+        },
+        async return(value?: unknown) {
+          const result = { done: true as const, value };
+          resolveFirst(result);
+          return result;
+        },
+      };
+      const client = wrapOpencodeClient(
+        {
+          session: {
+            async create() {
+              return { data: { id: 'bounded-session', title: 'Cligent run' } };
+            },
+            async promptAsync() {
+              promptCalled = true;
+              return {};
+            },
+          },
+          event: {
+            async subscribe() {
+              return {
+                stream: {
+                  [Symbol.asyncIterator]() {
+                    return rawIterator;
+                  },
+                },
+              };
+            },
+          },
+        },
+        { apiVersion: 'v2' },
+      );
+
+      const runPromise = client.run?.({ prompt: 'bounded readiness' });
+      await readStarted;
+      expect(promptCalled).toBe(false);
+      await vi.advanceTimersByTimeAsync(250);
+      const result = (await runPromise) as { events: AsyncIterable<unknown> };
+      expect(promptCalled).toBe(true);
+      await result.events[Symbol.asyncIterator]().return?.();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('creates session and forwards prompt through session.prompt', async () => {
     let capturedPromptArgs: unknown;
 
@@ -8380,6 +8504,29 @@ describe('OpenCode SSE event structure', () => {
       ],
       {},
       { resume: 'resumed-root' },
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('own-model');
+  });
+
+  it('treats an empty resume value as a fresh accounting root', async () => {
+    const usage = await collectAccountingUsage(
+      'empty-resume-root',
+      (promptMessageId) => [
+        accountingMessage(
+          'empty-resume-root',
+          'own-assistant',
+          'assistant',
+          promptMessageId,
+          { modelID: 'own-model', providerID: 'own-provider' },
+        ),
+        accountingStep('empty-resume-root', 'own-assistant', 'own-step'),
+        accountingIdle('empty-resume-root'),
+      ],
+      {},
+      { resume: '' },
     );
 
     expect(usage.tokens?.coverage).toBe('complete');
