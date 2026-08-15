@@ -240,8 +240,8 @@ interface AgentAdapter {
 
   /** Must be safe for concurrent calls on the same instance unless the
       adapter explicitly documents an environmental constraint (DR-003).
-      Each call shall create fresh local state; run() shall not mutate
-      adapter instance state. */
+      Each call shall create fresh run-local state except for the cumulative
+      accounting state narrowly permitted by ENG-018. */
   run(
     prompt: string,
     options?: AgentOptions
@@ -293,7 +293,7 @@ for await (const event of Cligent.parallel([
 
 ## Consequences
 
-- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are stateless and thread-safe for concurrent `run()` calls unless they document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
+- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are run-local and thread-safe for concurrent `run()` calls unless they retain the cumulative-accounting state permitted by [ENG-018](../user/engine.md#eng-018) or document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
 - **`Cligent` class** is the primary API ([DR-003](003-role-scoped-session-management.md)) — wraps adapter with role config, session state, and protocol hardening
 - **UPM** uses capability primitives (`fileWrite`, `shellExecute`, `networkAccess`) mapped by adapters to vendor controls
 - **AbortSignal** standardizes interruption (no custom `interrupt()` method)

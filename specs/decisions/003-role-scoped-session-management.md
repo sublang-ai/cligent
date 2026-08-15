@@ -77,7 +77,7 @@ interface RunOptions extends CligentOptions {
 
 | Layer | Responsibility | State | Shared? |
 |-------|---------------|-------|---------|
-| **Adapter** | Vendor translation (SDK/CLI ↔ `AgentEvent`) | Stateless; constructor holds only DI deps | Yes — one instance per agent type |
+| **Adapter** | Vendor translation (SDK/CLI ↔ `AgentEvent`) | Run-local by default; may retain only spec-authorized accounting state | Yes — one instance per agent type |
 | **Cligent** | Role config, session continuity, protocol hardening, role attribution | `resumeToken`, `role`, default options | No — one per role |
 | **`run()` call** | Single prompt execution | Per-call overrides (`abortSignal`, model) | N/A |
 
@@ -114,12 +114,14 @@ No capability flag is needed. The presence or absence of `resumeToken` in `done`
 
 ### Adapter Thread Safety
 
-Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: `run()` shall not mutate adapter instance state, and each call shall create fresh local state. Adapters that manage external resources (e.g., an adapter spawning a managed server on a fixed port) may have environmental constraints that prevent true concurrent execution; such adapters shall document this limitation. Callers needing concurrent sessions on constrained adapters should instantiate separate adapter instances with distinct resource configurations.
+Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: each call shall create fresh local state, except for the cumulative-accounting baseline and ordering queue narrowly permitted by [ENG-018](../user/engine.md#eng-018).
+Adapters that manage external resources (e.g., an adapter spawning a managed server on a fixed port) may have environmental constraints that prevent true concurrent execution; such adapters shall document this limitation.
+Callers needing concurrent sessions on constrained adapters should instantiate separate adapter instances with distinct resource configurations.
 
 ## Consequences
 
 - **`Cligent` is the primary API** — wraps adapter + role config + session state
-- **Adapters unchanged** — stateless translators, interface contract from [DR-002](002-unified-event-stream-and-adapter-interface.md) preserved
+- **Adapters remain run-local translators** — only spec-authorized cumulative-accounting state may cross calls; the interface contract from [DR-002](002-unified-event-stream-and-adapter-interface.md) is preserved
 - **Protocol hardening** (abort racing, synthetic done/error, post-done suppression) moves into `Cligent.prototype.run()`
 - **`Cligent.parallel()`** takes `Cligent` instances, interleaving `CligentEvent` streams
 - **`CligentEvent` extends `AgentEvent`** with optional `role` field

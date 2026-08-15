@@ -371,7 +371,7 @@ The Gemini adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` by default in the
 
 Verifies: [ENG-018](../user/engine.md#eng-018)
 
-Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and not mutate adapter instance state per [ENG-018](../user/engine.md#eng-018).
+Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and retain no cross-run state except the cumulative-accounting baseline and ordering queue permitted by [ENG-018](../user/engine.md#eng-018).
 
 ## Codex Resume
 
@@ -449,9 +449,9 @@ Task parts that reuse an existing `task_id` shall retain exact parent records as
 Repeated task-part snapshots shall enrich a missing child identity at most once, while a conflicting non-empty parent or child identity shall preserve only the first exact subset and force partial coverage.
 Malformed task identity and descendant idle observed before later causal child accounting shall never support complete coverage.
 Where Claude Code or OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent.
-OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, falling back to the first root-session sighting it does not recognize as a background result.
+OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, which an assistant repeating that text verbatim shall not displace.
 A background task's injected result, and a concurrent caller's prompt that streams first, shall neither resolve the boundary nor bill their work to the run.
-Where no boundary resolves, terminal `usage.tokens` shall be absent rather than carry totals the run cannot attribute.
+A run that created its root session may fall back to the first sighting it does not recognize as a background result; a run that resumed one shall not, and where no boundary resolves the terminal `usage.tokens` shall be absent rather than carry totals the run cannot attribute.
 
 ## Real-run Acceptance
 

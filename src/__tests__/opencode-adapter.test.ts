@@ -6184,6 +6184,9 @@ describe('OpenCode SSE event structure', () => {
     sessionId: string,
     eventFactory: (promptMessageId: string) => unknown[],
     runResult: Record<string, unknown> = {},
+    // A resumed root is not the run's alone, so the boundary rules differ
+    // there; fixtures opt in by naming the session they resume.
+    runOptions: { resume?: string } = {},
   ): Promise<DonePayload['usage']> => {
     // OpenCode mints the user-message id; the run observes it rather than
     // dictating one, so the fixture owns the value the same way a server does.
@@ -6201,7 +6204,7 @@ describe('OpenCode SSE event structure', () => {
         }),
       },
     );
-    const events = await collect(adapter.run('account this run'));
+    const events = await collect(adapter.run('account this run', runOptions));
     return (
       events.find((event) => event.type === 'done')!.payload as DonePayload
     ).usage;
@@ -8312,12 +8315,102 @@ describe('OpenCode SSE event structure', () => {
         accountingStep('shared-root', 'own-assistant', 'own-step'),
         accountingIdle('shared-root'),
       ],
+      {},
+      { resume: 'shared-root' },
     );
 
     // The billed record must be this run's own work, not the foreign step
     // that streamed first; counting records alone would not tell them apart.
     expect(usage.tokens?.records).toHaveLength(1);
     expect(usage.tokens?.records?.[0]?.model).toBe('own-model');
+  });
+
+  it('keeps accounting when an assistant echoes the prompt verbatim', async () => {
+    // A short prompt is easy for a model to repeat word for word. That echo
+    // carries the submitted text without being the submitted message, so a
+    // text match alone would see two "proofs", call the boundary ambiguous,
+    // and drop this ordinary run's whole token report.
+    const usage = await collectAccountingUsage(
+      'echo-session',
+      (promptMessageId) => [
+        accountingMessage('echo-session', promptMessageId, 'user'),
+        accountingPart('echo-session', promptMessageId, 'own-part', 'text', {
+          text: 'account this run',
+        }),
+        accountingMessage(
+          'echo-session',
+          'own-assistant',
+          'assistant',
+          promptMessageId,
+          { modelID: 'own-model', providerID: 'own-provider' },
+        ),
+        accountingPart('echo-session', 'own-assistant', 'echo-part', 'text', {
+          text: 'account this run',
+        }),
+        accountingStep('echo-session', 'own-assistant', 'own-step'),
+        accountingIdle('echo-session'),
+      ],
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('own-model');
+  });
+
+  it('reports a resumed run that proves its own prompt', async () => {
+    // The proof is what a resumed run now depends on, so the ordinary
+    // resumed path must stay covered by the default suite rather than only
+    // by the gated live leg.
+    const usage = await collectAccountingUsage(
+      'resumed-root',
+      (promptMessageId) => [
+        accountingMessage('resumed-root', promptMessageId, 'user'),
+        accountingPart('resumed-root', promptMessageId, 'own-part', 'text', {
+          text: 'account this run',
+        }),
+        accountingMessage(
+          'resumed-root',
+          'own-assistant',
+          'assistant',
+          promptMessageId,
+          { modelID: 'own-model', providerID: 'own-provider' },
+        ),
+        accountingStep('resumed-root', 'own-assistant', 'own-step'),
+        accountingIdle('resumed-root'),
+      ],
+      {},
+      { resume: 'resumed-root' },
+    );
+
+    expect(usage.tokens?.coverage).toBe('complete');
+    expect(usage.tokens?.records).toHaveLength(1);
+    expect(usage.tokens?.records?.[0]?.model).toBe('own-model');
+  });
+
+  it('omits tokens when a resumed run never observes its own prompt', async () => {
+    // The stream carries only another caller's exchange — this run's own
+    // prompt was never seen. On a session the run did not create, first-seen
+    // order is the other caller's message, so there is nothing to bill from.
+    const usage = await collectAccountingUsage(
+      'contested-root',
+      () => [
+        accountingMessage('contested-root', 'foreign-prompt', 'user'),
+        accountingMessage(
+          'contested-root',
+          'foreign-assistant',
+          'assistant',
+          'foreign-prompt',
+          { modelID: 'foreign-model', providerID: 'foreign-provider' },
+        ),
+        accountingStep('contested-root', 'foreign-assistant', 'foreign-step'),
+        accountingIdle('contested-root'),
+      ],
+      {},
+      { resume: 'contested-root' },
+    );
+
+    expect(usage.tokens).toBeUndefined();
+    expect(usage.cost).toBeUndefined();
   });
 
   it('does not anchor the run on a background result injected before its prompt', async () => {

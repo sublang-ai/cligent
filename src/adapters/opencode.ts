@@ -57,6 +57,7 @@ const ITERATOR_CLEANUP_TIMEOUT_MS = 250;
 const DEFAULT_MANAGED_SERVER_TERM_GRACE_MS = 1_500;
 const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
 const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
+const STREAM_CONNECT_GRACE_MS = 250;
 const CLIGENT_SESSION_TITLE = 'Cligent run';
 const OPENCODE_ACCOUNTING_SERVER_VERSION =
   AGENT_RUNTIME_TARGETS.opencode[0]!.tested;
@@ -626,6 +627,31 @@ function maybeCallAsync(
     );
   } catch {
     return Promise.resolve();
+  }
+}
+
+/**
+ * Wait for `pending` to settle, giving up after `timeoutMs`. Neither a
+ * rejection nor the timeout is an error here: the caller is establishing a
+ * best-effort precondition, not consuming the result.
+ */
+async function settledOrTimedOut(
+  pending: Promise<unknown>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      pending.then(
+        () => undefined,
+        () => undefined,
+      ),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -1596,7 +1622,17 @@ export function wrapOpencodeClient(
           // returns its wrapper. Keep the original rejection for consumers,
           // while also marking it handled if dispatch abort discards the stream.
           void eagerFirst.catch(() => {});
+          // Triggering the fetch is not the same as being connected, and the
+          // endpoint replays nothing: an event published before the socket is
+          // up is lost, including this run's own prompt. OpenCode opens the
+          // stream with a `server.connected` handshake, so this first read
+          // resolves on connection rather than on session activity. The wait
+          // is bounded because a server that sends no handshake would not
+          // resolve it until after the prompt this wait precedes.
+          await settledOrTimedOut(eagerFirst, STREAM_CONNECT_GRACE_MS);
         }
+
+        if (signal?.aborted) return stopAbortedDispatch();
 
         if (sessionPromptAsync) {
           // Fire-and-forget: promptAsync returns 204 immediately.
@@ -2059,10 +2095,26 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
       return false;
     };
+    // Ordering can only name this run's prompt where the session is
+    // structurally the run's alone. A session this run created is: no other
+    // party holds an id that did not exist before it. A resumed session is
+    // not — another caller may drive it concurrently — so there the boundary
+    // is proven from the submitted text or it stays unresolved.
+    const rootSessionIsExclusive = options?.resume === undefined;
     const resolveRootPromptMessageId = (): string | undefined => {
-      if (provenRootPromptIds.size > 1) return undefined;
-      const [proven] = provenRootPromptIds;
-      if (proven && !isBackgroundResultPrompt(proven)) return proven;
+      // An assistant echoing the prompt verbatim carries the same text
+      // without being this run's prompt. Only a *known* assistant role
+      // disqualifies a candidate: a user text part whose own message was
+      // never separately observed still carries the text this run submitted.
+      const proven = [...provenRootPromptIds].filter(
+        (messageId) =>
+          messageFacts.get(openCodeUsageKey(sessionId, messageId))?.role !==
+          'assistant',
+      );
+      if (proven.length > 1) return undefined;
+      const [only] = proven;
+      if (only && !isBackgroundResultPrompt(only)) return only;
+      if (!rootSessionIsExclusive) return undefined;
       return rootPromptSightings.find(
         (messageId) => !isBackgroundResultPrompt(messageId),
       );
