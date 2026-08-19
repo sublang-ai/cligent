@@ -112,8 +112,9 @@ Three questions are open, and no further item moves until each is answered.
    A yes requires amending that clause, and `meta.md` carries a standing instruction against editing it without human approval.
 
 The second question chooses between two shapes; the first and third can each be refused, and either refusal stops the migration, there being no lawful ID form without the one and no lawful merge without the other.
-A refusal is undone by reverting the commits that made the generation refresh and the fold, which restores the legacy files those commits deleted and the citations they retargeted, and which is itself the editing of `meta.md` the refusal authorizes.
-This record is then marked `Rejected` and kept, in the sections the restored law requires, so the refusal and its reasons stay on record rather than leaving the same migration to be proposed again.
+A refusal is defined by the state it leaves, not by the steps that get there: `specs/` returns to what it held at `v0.22.0`, the last release before the refresh, save for this record alone.
+This record stays as a short refusal — `Rejected`, in the sections that restored law requires, citing only law present in that tree, and indexed in the restored `map.md` — so the refusal and its reasons survive rather than leaving the same migration to be proposed again.
+Reverting the commits behind the refresh and the fold is the way there and needs the `meta.md` edit the refusal authorizes, but both reverts conflict against later work, so `git diff v0.22.0 -- specs/` showing nothing but this record is what settles it.
 
 ## Consequences
 
