@@ -7,10 +7,11 @@
 
 In progress.
 Tasks 1 through 4 and task 6 are done; task 5 and tasks 7 through 21 remain.
-The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 5 puts both to the owner, task 16 waits on the one it must retarget, and completion waits on both.
+The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 5 has put both to the owner as that record's fourth and fifth gates, each drafted with the law restoring it would write and what retiring it would cost.
+Task 5 stays open on those answers, task 16 waits on `META-26`'s for the dead link it must retarget, and completion waits on both.
 Task 6 ran ahead of that open question, its destinations fixed by [DR-017](../decisions/017-spec-generation-migration.md) whichever way the answer falls, but the law a restored carrier writes would still govern the items it produced, so task 5 re-checks them.
 Task 6 also found the parser conflict that task 20 now carries, and completion waits on that too.
-The three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
+The first three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
 

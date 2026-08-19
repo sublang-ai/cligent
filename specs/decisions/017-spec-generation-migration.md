@@ -607,7 +607,7 @@ Two find no carrier and stay open, so the migration cannot be called complete wh
 
 ### Approvals
 
-The owner answered the three questions this migration turned on, the shape question before the renumbering one it scoped.
+The owner answered the three questions this migration turned on, the shape question before the renumbering one it scoped, and two stay open, one for each released framework item the map found without a carrier.
 
 1. Respelling the IDs that public releases carried is approved, the migration's own terms rather than the released-ID clause being what required that approval, so every legacy ID takes the lowercase `<pack>-<N>` form [[meta-11](../meta.md#meta-11)].
    The spelling was never cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
@@ -619,6 +619,16 @@ The owner answered the three questions this migration turned on, the shape quest
    That clause now admits a one-time migration whose authorizing decision record maps each renumbered ID to what keeps its concern [[meta-12](../meta.md#meta-12)].
    Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, relocating a released test clause into another subject's package, and the refresh's own move of `META-3` to `meta-30` each move a released number that the clause forbade outright before the amendment.
    This record is the authorization that clause requires, and the per-item map it must carry beside the family table is the condition attached rather than a convenience, so a later migration reaches no released number without a record of its own.
+
+4. `META-15` is open on the two terms above: a carrier restored, or an approved amendment admitting the retirement.
+   It read: "Each spec package shall minimize references to the containing project. When a project-specific reference is essential to a package's intent, it shall be documented in the package's `## Intent` section."
+   Restoring it writes an item of the current law [[meta-11](../meta.md#meta-11)] obliging every package to hold its project references down and to disclose an essential one in `Intent`, which `git`, `licensing`, and `release` already practise with their `It is project-local.` line and which `package`, `tmux-play`, the adapters, and `engine` would each owe as they land.
+   Retiring it leaves no law asking a package to minimize those references or to say why it keeps one.
+
+5. `META-26` is open on the same two terms.
+   It read: "A spec item shall describe behavior as observable outcomes (e.g., file state, exit code, printed output, return value, network call) under named conditions, including any conditions under which a particular outcome shall not occur."
+   Its named conditions survive in the GEARS clauses [[meta-6](../meta.md#meta-6)], so restoring it adds only the demand that an outcome be observable and that an item name where an outcome shall not occur, which would redraft `release-1`'s SemVer rule, `release-4`'s pre-tag procedure, `release-10`'s checklist, and `git-3`'s bullets-if-clearer judgment, none of them stating something anyone can observe.
+   Retiring it leaves the GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] as the only shape an item must take, and the dead `meta-26` link in `iterations/022-tmux-play-layout-configuration.md` loses its target for good.
 
 ## Consequences
 
