@@ -64,6 +64,7 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - A test clause that moves to another subject's package leaves its source number behind, that number belonging to a different series, and takes the lowest free number in the destination's `+200` block.
 - A legacy item reconciles onto the current-generation item that carries its concern, whatever number that item holds.
 - Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
+- The per-item resolution of these rules belongs in this record beside the family table, one row per destination where a clause splits, so a released ID stays traceable once the plan that moved it is gone.
 - That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, the scope and detector items promoting the legacy `Exclusions` and `License File Detection` subsections, and `git-1`'s widened actor and reporting duty, which bind whoever prepares a commit rather than an AI agent alone.
 
 ### Records

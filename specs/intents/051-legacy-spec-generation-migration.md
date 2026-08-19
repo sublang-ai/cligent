@@ -35,12 +35,12 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map built in task 4 and reconciled in task 19, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 19, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
    Add `specs/decisions/017-spec-generation-migration.md` as `Proposed`, fixing the destination package set, the `+100` and `+200` ID blocks and the dropped zero padding, the dissolution of the cross-adapter test file into per-package verification, `tmux-play` remaining one package, and the exemption of released changelog history from the rename.
-   Record the three owner-approval questions it turns on, each standing on its own: respelling the item IDs that public releases carried, renumbering them where a merge or relocation collides [[meta-12](../meta.md#meta-12)], and duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package.
+   Record the three owner-approval questions it turns on — respelling the item IDs that public releases carried, duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package, and renumbering the IDs where a merge or relocation collides [[meta-12](../meta.md#meta-12)] — the second scoping the third.
    No file moves in this task.
 
 2. **Fold `git` and `licensing` onto their scaffold seeds.**
@@ -49,13 +49,14 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 3. **Settle the approval gates.**
    Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the verification-shape gate before the renumbering gate it scopes, and record each outcome on its own.
-   Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 together with the whole generation refresh that arrived before it — the refreshed law and its decision record, the agent guidance, the index, the two seeded packages, and the seeded SPDX-header record — because reverting task 2 alone would leave the current law standing over an unmigrated tree.
-   Where the shared-contract alternative wins the shape gate, replan tasks 5 through 13 against the destinations it creates before the renumbering gate is asked, those destinations being what it is asked about.
+   Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 and remove everything this migration introduced whenever it arrived — the refreshed law and its decision record, the agent guidance, the index changes, the two seeded packages, the seeded SPDX-header record, this plan, and the migration's own decision record — because any survivor would cite a law the rollback takes away.
+   Where the shared-contract alternative wins the shape gate, rewrite the decision record's Decision and Consequences and the index summary to that outcome, then replan tasks 5 through 13 against the destinations it creates before the renumbering gate is asked, those destinations being what it is asked about.
    Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number.
-   Set the decision record to `Accepted` on whichever outcomes are granted.
+   Set the decision record to `Accepted` only once its text states the combination the owner chose.
 
 4. **Build the complete rename map.**
-   Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and record it in this plan for the moves and the final reconciliation to read.
+   Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits.
+   Record it in [DR-017](../decisions/017-spec-generation-migration.md), extending the family table there to per-item resolution, because the map outlives this plan as the only bridge from a released ID to where its concern went [[meta-28](../meta.md#meta-28)].
    The migration's own terms require the map before content moves, and the settled gates are what make it decidable.
 
 5. **Migrate `ndjson` and `release`.**
@@ -119,11 +120,11 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 - `spex lint` reports no error and no warning.
 - No path under `specs/user/`, `specs/dev/`, `specs/test/`, or `specs/iterations/` exists, and no file in the repository links to one.
-- No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own decision record and rename map, which exist to bridge those IDs.
+- No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own decision record, whose rename map bridges those IDs.
 - Each of the 402 items in that baseline resolves through the rename map to at least one live destination anchor, a split clause resolving to one per branch so that no branch is dropped to make the count come out.
 - Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
-- `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, the code changes being comments and test names only.
+- `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 18 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
 - A human settles each of the decision record's three approval gates and reviews the full diff before it merges.
