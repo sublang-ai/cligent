@@ -27,7 +27,7 @@ Seven invariants govern every task:
 - A destination package lands complete in one commit — `Intent`, `External Behavior`, optional `Internal Behavior`, `Verification`, in that order [[meta-30](../meta.md#meta-30)] — because a package without `Verification` is unlawful and cannot be staged across commits.
 - A legacy test file survives until its last item reaches a lawful home: a test item's behavior citations stay inside its own package [[meta-20](../meta.md#meta-20)], so a clause verifying a peer's behavior waits for that peer's task.
 - A task that changes where a released concern lives — splitting an item [[meta-29](../meta.md#meta-29)], dropping a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moving a clause — records the added, removed, or retargeted row in the same commit, so the map never lags the tree.
-- A released item found false of the artifact it describes moves unchanged, because a move settles where a requirement lives and never what it says; its contradiction becomes a task of its own ahead of the handover, closed by conforming the artifact to the item or by recording the decision that amends the item, and this plan stays incomplete until every such task closes.
+- A released item found false of the artifact it describes moves unchanged, because a move settles where a requirement lives and never what it says; its contradiction becomes a task of its own ahead of the handover, closed by conforming the artifact to the item or by a decision record [[meta-24](../meta.md#meta-24)] carrying the decision that amends the item, and this plan stays incomplete until every such task closes.
 - Every citation the tree carries is rewritten as it moves: 1249 item citations still use the legacy unbracketed `[ID](path#anchor)` form rather than the outer-bracketed form the current law requires [[meta-16](../meta.md#meta-16)].
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
@@ -128,7 +128,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 20. **Settle the parser's unterminated-tail conflict.**
     `ndjson-2` carries `NDJSON-002`'s rule that a result follows only a complete newline-delimited line, while `parseNDJSON()` has read an unterminated final line since it was written, a passing test pins that flush, and the Gemini adapter is its only consumer.
-    Put the contradiction to the owner, who either conforms the parser and its test to the rule, the package then standing as written, or records the decision that adopts the flush, which amends `ndjson-2` to stop excluding the end of the stream, gains the package an item for the tail, and gains the map its row.
+    Put the contradiction to the owner, who either conforms the parser and its test to the rule, the package's `External Behavior` then standing as written, or writes the decision record adopting the flush, which amends `ndjson-2` to stop excluding the end of the stream, gains the package an item for the tail, and gains the map its row.
+    Either branch ends the silence this question bought: `ndjson-207` gains the assertion of what a stream ending without a newline yields, and the trigger that carries it.
     Task 6 found this and left it open rather than settling a behavior question inside a move.
     Leave this plan incomplete until it closes.
 
