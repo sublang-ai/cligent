@@ -166,7 +166,7 @@ A spec package shall minimize references to its containing project.
 
 ### meta-36
 
-Where a reference to its containing project is essential to a spec package's intent, the package shall document that reference in its `Intent` section [[meta-30](#meta-30)].
+Where a project-specific reference is essential to a spec package's intent, the package shall document that reference in its `Intent` section [[meta-30](#meta-30)].
 
 ### meta-31
 
