@@ -24,7 +24,7 @@ Four invariants govern every task:
 - Each task's citation figure counts inbound citations from other files, a package's own internal citations moving with it.
 - A destination package lands complete in one commit — `Intent`, `External Behavior`, optional `Internal Behavior`, `Verification`, in that order [[meta-30](../meta.md#meta-30)] — because a package without `Verification` is unlawful and cannot be staged across commits.
 - A legacy test file survives until its last item reaches a lawful home: a test item's behavior citations stay inside its own package [[meta-20](../meta.md#meta-20)], so a clause verifying a peer's behavior waits for that peer's task.
-- A task that splits a released item into more than one requirement [[meta-29](../meta.md#meta-29)] adds the new destination to the map, so a branch is never dropped for having appeared after the map was built.
+- A task that changes where a released concern lives — splitting an item [[meta-29](../meta.md#meta-29)], dropping a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moving a clause — records the added, removed, or retargeted row in the same commit, so the map never lags the tree.
 - Every citation the tree carries is rewritten as it moves: 1249 item citations still use the legacy unbracketed `[ID](path#anchor)` form rather than the outer-bracketed form the current law requires [[meta-16](../meta.md#meta-16)].
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
@@ -63,7 +63,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 5. **Resolve the two losses the map found.**
    Put `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule to the owner, each closing as [DR-017](../decisions/017-spec-generation-migration.md) requires: a carrier restored, or an approved amendment admitting the retirement.
    Restoring either writes law that every task below must then satisfy, which is why this comes before the packages move rather than after.
-   Record each outcome in the map's framework table, and leave this plan incomplete for as long as a row stays open.
+   Carry each outcome into every place that states the loss: the map's framework table, that record's finding and its consequence, this plan's status, and the index summary.
+   Leave this plan incomplete for as long as a row stays open.
 
 6. **Migrate `ndjson` and `release`.**
    Create `packages/ndjson.md` and `packages/release.md`, moving the parser's verification out of `test/adapters.md` and deleting `user/ndjson.md` and `dev/release.md`.
@@ -136,4 +137,4 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 19 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
-- A human settles each of the decision record's three approval gates and reviews the full diff before it merges.
+- A human settles each of the decision record's three approval gates and each loss its map records, then reviews the full diff before it merges.

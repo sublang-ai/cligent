@@ -71,8 +71,8 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 ### Per-item map
 
 The rules above resolve to this map, which every later move reads and which outlives the plan that produced it.
-It carries 402 released item IDs over 473 rows, an item taking one row per package it cites, wherever the citation sits in it.
-A released ID gains a row when a later task splits its item into more than one requirement [[meta-29](../meta.md#meta-29)], the splitting task recording the new destination here, so the map tracks the tree rather than the moment it was built.
+It was built carrying 402 released item IDs over 473 rows, an item taking one row per package it cites, wherever the citation sits in it.
+It is kept true as the tree changes: a task that splits an item [[meta-29](../meta.md#meta-29)], drops a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moves a clause records the added, removed, or retargeted row here in the same commit.
 
 | Released ID | Destination |
 | --- | --- |
