@@ -6,7 +6,8 @@
 ## Status
 
 Proposed.
-The two approval gates in the Decision are open, and the first is a precondition for the merges that renumber released IDs.
+Both approval gates in the Decision are open.
+The first blocks every further change to a released ID and covers one spelling change already made; the second can still overturn the per-package verification the migration builds.
 
 ## Context
 
@@ -91,12 +92,12 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 
 ### Approval gates
 
-1. Re-rendering an ID is not a rename, and this record settles that on the law's own terms rather than leaving it to the gate.
-   An item's identity is its file's basename and its number [[meta-11](../meta.md#meta-11)], and moving a file changes no item ID or anchor [[meta-31](../meta.md#meta-31)].
-   Every legacy short form is the previous generation's uppercase rendering of that same basename — `ENG` of `engine`, `TMUX` of `tmux-play`, `GIT` of `git` — so `GIT-001` already named `git-1`, and `TMUX-069` already named `tmux-play-69`.
-   Renumbering is the genuine conflict, and it arises four ways: merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package.
-   Each moves a released number, which [[meta-12](../meta.md#meta-12)] forbids outright, so amending that law is the precondition for all four, and `meta.md` carries a standing instruction against editing it without human approval.
-   Reconciling the two seeded packages needed none of it, having moved no number.
+1. Every legacy ID changes spelling, and where that ID appeared in a public release the change needs the owner's approval before any editing.
+   The spelling is not cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
+   `GIT-001` and `ENG-018` were therefore published identifiers in their own right, not renderings of `git-1` and `engine-18`.
+   Renumbering goes further: merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
+   Those four also need that clause amended, and `meta.md` carries a standing instruction against editing it without human approval.
+   Reconciling the two seeded packages respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled; it moved no number, but it awaits the same ratification and is reverted if the owner withholds it.
 2. Restating a shared criterion once per destination package, rather than introducing a shared adapter-contract package, is the alternative the owner may overturn.
 
 ## Consequences
