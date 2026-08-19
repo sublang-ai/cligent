@@ -98,7 +98,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 15. **Move the records.**
     Move the 50 records left in `specs/iterations/` to `specs/intents/`, task 2 having retired the duplicate, rename `Goal` to `Intent` and both `Acceptance criteria` and `Acceptance` to `Verification`, supply the `Status` the two remaining records without one are missing, and order the sections per [[meta-5](../meta.md#meta-5)].
-    Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the seven legacy `META-*` citations by concern: `META-11`, `META-12`, `META-19`, `META-21`, and `META-24` keep their number, the `META-20` claim about `Verifies:` lines is rewritten to the inline-citation law, and `META-26` has no successor so its sentence keeps its still-true prose and drops the link.
+    Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the seven legacy `META-*` citations to whatever the task-4 map gives each concern, rewriting any claim the current law no longer makes — the `META-20` sentence about `Verifies:` lines among them — and leaving a citation whose concern that map has not settled until it is.
 
 16. **Empty the records of design.**
     Move the design content the legacy records hold — their `Mechanism notes`, `Design decision`, and `Open questions` sections — into the decision records that own it, so deleting an intent record loses nothing [[meta-28](../meta.md#meta-28)].
