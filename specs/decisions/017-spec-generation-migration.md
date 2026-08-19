@@ -62,7 +62,7 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - A test clause that moves to another subject's package leaves its source number behind, that number belonging to a different series, and takes the lowest free number in the destination's `+200` block.
 - A legacy item reconciles onto the current-generation item that carries its concern, whatever number that item holds.
 - Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
-- The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach whatever now carries their concern, usually an item of the current `meta-<N>` set and sometimes a decision record instead.
+- The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach whatever now carries their concern, where anything still does — usually an item of the current `meta-<N>` set, sometimes a decision record instead.
 - The map establishes each of those outcomes rather than assuming it: `META-17`'s concern survives in [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other, while `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule are found in neither the current law nor a decision record, so only those two count as law removed.
 - Law found removed closes two ways and no other: a carrier is restored, or the owner approves an amendment admitting the retirement, the released-ID clause binding a released ID permanently while its exception reaches a moved ID rather than a retired one [[meta-12](../meta.md#meta-12)].
 - The per-item resolution of these rules belongs in this record beside the family table, one row per destination where a clause splits, so a released ID stays traceable once the plan that moved it is gone.
@@ -72,6 +72,7 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 
 The rules above resolve to this map, which every later move reads and which outlives the plan that produced it.
 It carries 402 released item IDs over 473 rows, an item taking one row per package it cites, wherever the citation sits in it.
+A released ID gains a row when a later task splits its item into more than one requirement [[meta-29](../meta.md#meta-29)], the splitting task recording the new destination here, so the map tracks the tree rather than the moment it was built.
 
 | Released ID | Destination |
 | --- | --- |
