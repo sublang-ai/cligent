@@ -131,13 +131,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `release`   | `release-11`'s workflow audit and `release-12`'s smoke composition                                   | `release-1`, `release-3`, `release-4`, and `release-5`, which no item cites; `release-7`'s build, notes-extraction, and GitHub-release steps, which `release-11` cites without asserting; and every `release-10` checklist line outside `smoke:release` |
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
 
-    A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)]:
-
-    - `git-6` takes `git-2`'s subject format without its type list, its imperative mood, its 50-character limit, or its ban on a trailing period;
-    - `git-6` takes `git-3`'s body without its bullets-if-clearer clause, which a check may prove unable to reach;
-    - `git-6` takes `git-4`'s trailer without its `<model> (<role>) <email>` schema, its role set, or its address;
-    - `git-6` takes `git-5`'s reference without its bare `IR-<N>` form or its subject-or-body placement;
-    - `release-11` takes the publish flags without the attestation `release-8` requires — a post-publish fact its gates-before-publishing statement cannot reach, so that one needs an item of its own — and without citing the publish step `release-7` states.
+    A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
+    `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
+    Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
 
     Where a gap cannot be closed, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
