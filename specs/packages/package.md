@@ -138,7 +138,7 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 
 ### package-105
 
-Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving that SDK at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the adapter loads through its sub-path export in both layouts [[package-7](#package-7)], that it resolves the optional peer from the tree the package itself is installed in [[package-15](#package-15)], and that the nested consumer does so on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
+Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving `@openai/codex` at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the nested consumer loads the adapter through its sub-path export [[package-7](#package-7)], that both layouts resolve the optional peer from the tree the package itself is installed in [[package-15](#package-15)], and that the nested consumer does so on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
 
 ### package-106
 
