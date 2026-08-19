@@ -104,8 +104,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Merge `user/tmux-play.md` and `test/tmux-play.md` under the `+100` block into `packages/tmux-play.md` with the lawful section order, faithful item text, renamed IDs, and all 93 `Verifies:` lines converted to inline citations.
     Move the clauses verifying adapter and engine behavior into those packages, absorb the last clauses parked in `test/package.md`, delete both tmux-play files, the emptied `test/package.md`, and the three emptied legacy directories, and retarget the 472 spec citations and 458 code references.
 
-15. **Bring the `tmux-play` items into item law.**
+15. **Bring the items into item law.**
     Split the multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classify presenter and launcher mechanics hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], and drop restatements another package already owns [[meta-34](../meta.md#meta-34)].
+    Every package is in scope, not `tmux-play` alone, which merely carries the bulk: no other task applies item law, so `release-8` — mandating its provenance attestation and its OIDC authentication independently, either able to fail while the other holds — would otherwise reach the handover unlawful.
     This task moves no file, so it can be reviewed as pure item law.
 
 16. **Move the records.**
@@ -135,7 +136,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
     Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
 
-    Where a gap cannot be closed, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
+    Where a behavior admits no check at all, `git-3`'s bullets-if-clearer clause the candidate, a decision record [[meta-24](../meta.md#meta-24)] amends it into a checkable form or retires it, the package then verifying everything it states.
+    Where a gap is neither closed nor so settled, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
 20. **Settle the parser's unterminated-tail conflict.**
     `ndjson-2` carries `NDJSON-002`'s rule that a result follows only a complete newline-delimited line, while `parseNDJSON()` has read an unterminated final line since it was written, a passing test pins that flush, and the Gemini adapter is its only consumer.
