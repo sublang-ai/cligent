@@ -14,7 +14,8 @@ Task 3 settles the three approval gates in [DR-017](../decisions/017-spec-genera
 Migrate the whole specs tree from the legacy generation — `user/` + `dev/` + `test/` item files, `iterations/` records, uppercase `<PACK>-<N>` IDs, and `Verifies:` metadata lines — to the current generation that `spex scaffold --update` reinstated in [`meta.md`](../meta.md) and [DR-000](../decisions/000-spec-structure-format.md).
 Measured when this plan was written, the tree held 402 items across 18 legacy item files and 51 legacy records, and `spex lint` reported 1110 errors and 105 warnings against the current law, so the work is decomposed below rather than attempted at once.
 Later tasks shrink those counts; they are this plan's baseline, not a live measurement.
-Every stated behavior, local extension, record state, and item concern survives the move; nothing is invented or dropped.
+Every stated behavior, local extension, record state, and item concern in the project's own spec body survives the move; nothing is invented or dropped.
+The framework law is not part of that body — the refresh replaced it wholesale — so the map records which of its released items reached no successor rather than hiding the loss.
 
 Four invariants govern every task:
 
@@ -51,7 +52,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
    Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the verification-shape gate before the renumbering gate it scopes, and record each outcome on its own.
    Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 and undo the rest as [DR-017](../decisions/017-spec-generation-migration.md) directs: return `meta.md`, `DR-000`, the agent guidance, and the index to their pre-refresh versions, and remove the two seeded packages, the seeded SPDX-header record, this plan, and that record outright, since any survivor would cite items the rollback takes away.
    Where the shared-contract alternative wins the shape gate, rewrite the decision record's Decision and Consequences and the index summary to that outcome, then replan tasks 5 through 13 against the destinations it creates before the renumbering gate is asked, those destinations being what it is asked about.
-   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number.
+   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number, while the law's own moved IDs answer to the respelling gate above.
    Set the decision record to `Accepted` only once its text states the combination the owner chose.
 
 4. **Build the complete rename map.**
@@ -120,7 +121,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 - `spex lint` reports no error and no warning.
 - No path under `specs/user/`, `specs/dev/`, `specs/test/`, or `specs/iterations/` exists, and no file in the repository links to one.
-- No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own decision record, whose rename map bridges those IDs.
+- No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own two records, which name those IDs to bridge them — the decision record through its rename map, this plan through the retargeting its tasks describe.
 - Each of the 402 items in that baseline resolves through the rename map to at least one live destination anchor, a split clause resolving to one per branch so that no branch is dropped to make the count come out.
 - Each of the 24 released `META-<N>` items resolves through that map to its successor or to an explicit no-successor row.
 - Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.

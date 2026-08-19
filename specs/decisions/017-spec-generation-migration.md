@@ -101,7 +101,8 @@ The first stands alone; the second fixes the destination set, so the third is sc
    Every legacy ID changes spelling, and where that ID appeared in a public release the migration's own terms require the owner's approval before any editing.
    The spelling is not cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
    `GIT-001` and `ENG-018` were therefore published identifiers in their own right, not renderings of `git-1` and `engine-18`.
-   Granting it ratifies the fold of the two seeded packages, which respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled.
+   Granting it ratifies the fold of the two seeded packages, which respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled, and with it the refreshed law's own released IDs, `META-3` having become `meta-30` while `META-17` and `META-26` reached no successor at all.
+   Those moves came with the refresh rather than with any later task, which is why they answer to this gate: restoring `meta.md` below undoes them, and no other branch can.
    Withholding it ends the migration rather than pausing it, the current ID form being unreachable without respelling [[meta-11](../meta.md#meta-11)], and the rollback takes two forms.
    `meta.md`, [DR-000](000-spec-structure-format.md), the agent guidance, and the index return to their pre-refresh versions, each having existed before the refresh; the two seeded packages, the seeded SPDX-header record, the migration plan, and this record are removed outright, none having existed before it.
    Nothing may be left behind, because keeping the current law over an unmigrated tree would leave law and tree in permanent conflict, and any surviving record would cite items the rollback takes away.
@@ -113,7 +114,6 @@ The first stands alone; the second fixes the destination set, so the third is sc
 3. Renumbering the IDs that public releases carried.
    Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
    Which relocations those are is what the second decision returns, so this one is asked against its outcome.
-   The refreshed law already moved its own released IDs this way — `META-3` became `meta-30`, while `META-17` and `META-26` reached no successor at all — so this decision ratifies that alongside the package families.
    Granting it requires amending that clause, and `meta.md` carries a standing instruction against editing it without human approval.
    Withholding it leaves every remaining merge and relocation unplannable, while the packages already folded stand or fall by the first decision alone.
 
