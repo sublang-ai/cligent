@@ -138,11 +138,11 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 
 ### package-105
 
-Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving that SDK at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the adapter loads through its sub-path export in both layouts [[package-7](#package-7)] and reaches the optional peer from the tree the package itself is installed in [[package-4](#package-4)], the nested consumer also on the Node 18.3.0 runtime floor without an ESM loader resolution surface.
+Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving that SDK at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the adapter loads through its sub-path export in both layouts [[package-7](#package-7)], that it resolves the optional peer from the tree the package itself is installed in [[package-15](#package-15)], and that the nested consumer does so on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
 
 ### package-106
 
-Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the absent agent SDK is an optional peer rather than a hard requirement [[package-4](#package-4)], that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
+Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
 
 ### package-228
 

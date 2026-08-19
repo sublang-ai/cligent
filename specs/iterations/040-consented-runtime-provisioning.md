@@ -135,10 +135,10 @@ checks green at its boundary.
        becomes the no-consent branch, splitting the print-nothing-on-stdout
        clause away from the declined-at-a-terminal case, and settle whether
        TMUX-002's launcher-mode step sequence gains the branch or inherits it
-       through its TMUX-089 citation; add TMUX-090 for the offer and TMUX-091
+       through its TMUX-089 citation; add an item for the offer and another
        for the npm-exec cache tree; amend TTMUX-092 and TTMUX-093 with the
-       same preconditions and add TTMUX-094 and TTMUX-095 as their
-       integration counterparts; add that record's row to the spec map and
+       same preconditions and add their integration counterparts; add that
+       record's row to the spec map and
        refresh the DR-012 and TMUX summaries there.
 7. [ ] **Specify the install-placement contract.**
        Amend package-15 to scope its prohibition to the distributable's own
