@@ -113,7 +113,7 @@ Three questions are open, and no further item moves until each is answered.
 
 The second question chooses between two shapes; the first and third can each be refused, and either refusal stops the migration, there being no lawful ID form without the one and no lawful merge without the other.
 A refusal is defined by the state it leaves, not by the steps that get there: everything the refresh and the fold touched returns to what it held at `v0.22.0` — `specs/` and the rewritten agent guidance alike, that guidance otherwise citing law the rollback removes.
-Two differences remain, and only two: this record, kept as a short refusal — `Rejected`, in the sections that restored law requires, citing only law present in that tree — and the one index row that reaches it, without which the record it preserves cannot be found.
+Two differences remain, and only two: this record, kept as a short refusal — `Rejected`, in the sections that restored law requires, citing only law present in that tree — and the one index row that reaches it, summarizing the refusal rather than the migration it declined, since a row still advertising open gates would misdescribe the very record it points at.
 Reverting the commits behind the refresh and the fold is the way there and needs the `meta.md` edit the refusal authorizes, but both reverts conflict against later work, so what settles it is `git diff v0.22.0 -- specs/ CLAUDE.md AGENTS.md` showing that record, that row, and nothing else.
 
 ## Consequences

@@ -51,7 +51,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 3. **Settle the approval gates.**
    Put the three questions of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the shape question before the renumbering one it scopes, and record each answer.
    Where the answers let the migration go on, amend the released-ID clause of [`meta.md`](../meta.md) as the renumbering answer requires, rewrite that record's Decision and Consequences and the index summary to the shape chosen, and set it to `Accepted` once its text states that combination.
-   Where either ID question is refused, bring `specs/` and the rewritten `CLAUDE.md` and `AGENTS.md` back to their `v0.22.0` state, leaving only that record as the short `Rejected` refusal [DR-017](../decisions/017-spec-generation-migration.md) describes and the index row that reaches it, then stop here: every task below moves a released ID.
+   Where either ID question is refused, bring `specs/` and the rewritten `CLAUDE.md` and `AGENTS.md` back to their `v0.22.0` state, leaving only that record as the short `Rejected` refusal [DR-017](../decisions/017-spec-generation-migration.md) describes and an index row summarizing that refusal rather than the declined migration, then stop here: every task below moves a released ID.
    Reverting the refresh and fold commits is the route, but both conflict against later work, so finish by checking that `git diff v0.22.0 -- specs/ CLAUDE.md AGENTS.md` shows those two and nothing else.
 
 4. **Build the complete rename map.**
