@@ -7,6 +7,7 @@
 
 In progress.
 Tasks 1 and 2 are done; tasks 3 through 16 remain.
+Task 3 is the first to move a released number, so tasks 3 through 11 wait on the released-ID gate in [DR-017](../decisions/017-spec-generation-migration.md), and tasks 12 through 16 wait on them.
 
 ## Intent
 
@@ -40,7 +41,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 1. **Record the migration contract.**
    Add `specs/decisions/017-spec-generation-migration.md` as `Proposed`, fixing the destination package set, the `+100` and `+200` ID blocks and the dropped zero padding, the dissolution of the cross-adapter test file into per-package verification, `tmux-play` remaining one package, and the exemption of released changelog history from the rename.
-   Record the two owner-approval questions it turns on: renaming item IDs that appeared in public releases at all [[meta-12](../meta.md#meta-12)], and duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package.
+   Record the two owner-approval questions it turns on: renumbering the item IDs that public releases carried [[meta-12](../meta.md#meta-12)], and duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package.
    No file moves in this task.
 
 2. **Fold `git` and `licensing` onto their scaffold seeds.**
@@ -99,14 +100,14 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 16. **Verify and hand over.**
     Drive `spex lint` to zero errors and zero warnings, assemble the per-item rename map and reconcile it against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, and the open questions to human diff review.
-    Hand over with them the verification gaps [[meta-33](../meta.md#meta-33)] this migration inherits rather than creates: the licensing scope and detector items, and the release behaviors.
+    Hand over with them the verification gaps [[meta-33](../meta.md#meta-33)] this migration inherits rather than creates: the licensing scope and detector items, the release behaviors, and `git-1`'s missing-identity branch, which the commit audit never exercises because it reads a commit that already exists.
 
 ## Verification
 
 - `spex lint` reports no error and no warning.
 - No path under `specs/user/`, `specs/dev/`, `specs/test/`, or `specs/iterations/` exists, and no file in the repository links to one.
-- No legacy uppercase item ID remains anywhere except `CHANGELOG.md`, whose released entries are unchanged byte-for-byte.
-- Each of the 402 items in that baseline resolves through the rename map to exactly one live destination anchor.
+- No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own decision record and rename map, which exist to bridge those IDs.
+- Each of the 402 items in that baseline resolves through the rename map to at least one live destination anchor, a split clause resolving to one per branch so that no branch is dropped to make the count come out.
 - Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.

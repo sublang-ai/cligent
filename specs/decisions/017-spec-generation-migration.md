@@ -91,13 +91,12 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 
 ### Approval gates
 
-1. The current law forbids part of what this migration does to released IDs.
-   Respelling every ID is forced by [[meta-11](../meta.md#meta-11)], which derives `<pack>` from the file's basename, and it leaves each number and each concern intact.
-   Renumbering is the conflict, and it arises four ways: merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package.
-   Each moves a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
-   This record claims no exemption, so amending that law is a precondition for those four cases, and `meta.md` carries a standing instruction against editing it without human approval.
-   The reading that separates respelling from renumbering is itself part of what the owner approves here, not a permission this record grants itself.
-   Reconciling the two seeded packages falls outside the gate because it moves no released number.
+1. Re-rendering an ID is not a rename, and this record settles that on the law's own terms rather than leaving it to the gate.
+   An item's identity is its file's basename and its number [[meta-11](../meta.md#meta-11)], and moving a file changes no item ID or anchor [[meta-31](../meta.md#meta-31)].
+   Every legacy short form is the previous generation's uppercase rendering of that same basename — `ENG` of `engine`, `TMUX` of `tmux-play`, `GIT` of `git` — so `GIT-001` already named `git-1`, and `TMUX-069` already named `tmux-play-69`.
+   Renumbering is the genuine conflict, and it arises four ways: merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package.
+   Each moves a released number, which [[meta-12](../meta.md#meta-12)] forbids outright, so amending that law is the precondition for all four, and `meta.md` carries a standing instruction against editing it without human approval.
+   Reconciling the two seeded packages needed none of it, having moved no number.
 2. Restating a shared criterion once per destination package, rather than introducing a shared adapter-contract package, is the alternative the owner may overturn.
 
 ## Consequences
