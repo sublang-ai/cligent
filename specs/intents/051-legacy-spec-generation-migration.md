@@ -51,8 +51,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 3. **Settle the approval gates.**
    Put the three questions of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the shape question before the renumbering one it scopes, and record each answer.
    Where the answers let the migration go on, amend the released-ID clause of [`meta.md`](../meta.md) as the renumbering answer requires, rewrite that record's Decision and Consequences and the index summary to the shape chosen, and set it to `Accepted` once its text states that combination.
-   Where either ID question is refused, bring `specs/` back to its `v0.22.0` state save for that record, which stays as the short `Rejected` refusal [DR-017](../decisions/017-spec-generation-migration.md) describes, and stop here: every task below moves a released ID.
-   Reverting the refresh and fold commits is the route, but both conflict against later work, so finish by checking that `git diff v0.22.0 -- specs/` shows that record and nothing else.
+   Where either ID question is refused, bring `specs/` and the rewritten `CLAUDE.md` and `AGENTS.md` back to their `v0.22.0` state, leaving only that record as the short `Rejected` refusal [DR-017](../decisions/017-spec-generation-migration.md) describes and the index row that reaches it, then stop here: every task below moves a released ID.
+   Reverting the refresh and fold commits is the route, but both conflict against later work, so finish by checking that `git diff v0.22.0 -- specs/ CLAUDE.md AGENTS.md` shows those two and nothing else.
 
 4. **Build the complete rename map.**
    Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and add the 24 released `META-<N>` items with whatever now carries each concern — an item, a decision record, or several between them — or an explicit no-successor row, checking each against the current law and the decision records rather than taking the scaffold's list as final.
