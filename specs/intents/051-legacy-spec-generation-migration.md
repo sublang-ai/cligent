@@ -6,7 +6,8 @@
 ## Status
 
 In progress.
-Tasks 1 through 3 are done; tasks 4 through 19 remain.
+Tasks 1 through 4 are done; tasks 5 through 19 remain.
+The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 15 waits on the one it must retarget and completion waits on both.
 The three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
