@@ -108,7 +108,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Split the multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classify presenter and launcher mechanics hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], and drop restatements another package already owns [[meta-34](../meta.md#meta-34)].
     Every package is in scope, not `tmux-play` alone, which merely carries the bulk: no other task applies item law, so `release-8` — mandating its provenance attestation and its OIDC authentication independently, either able to fail while the other holds — would otherwise reach the handover unlawful.
     Each split carries its verification with it: every branch takes the assertion reaching it and the citation naming it [[meta-20](../meta.md#meta-20)], [[meta-33](../meta.md#meta-33)].
-    A branch the legacy verification never reached — `TMUX-061`'s create-no-config case, which `TTMUX-061` omits — is this task's gap to close or record, task 19 reaching only `licensing`, `release`, and `git`.
+    Where the legacy verification never reached a branch — `TMUX-061`'s create-no-config case, which `TTMUX-061` omits and no test covers — this task still writes the assertion and hands the check it needs to task 19.
     This task moves no file, so it can be reviewed as pure item law.
 
 16. **Move the records.**
@@ -137,10 +137,10 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
     Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
+    The branches task 15 splits arrive here too, each carrying the assertion it wrote and no check behind it.
 
     Where a behavior admits no check at all, `git-3`'s bullets-if-clearer clause the candidate, a decision record [[meta-24](../meta.md#meta-24)] amends it into a checkable form with its concern preserved [[meta-12](../meta.md#meta-12)], the package then verifying everything it states.
-    Dropping that concern instead retires released content, which only the owner approves, closing as [DR-017](../decisions/017-spec-generation-migration.md) requires of law found removed.
-    Where a gap is neither closed nor so settled, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
+    Where a gap is neither closed nor so amended, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
 20. **Settle the parser's unterminated-tail conflict.**
     `ndjson-2` carries `NDJSON-002`'s rule that a result follows only a complete newline-delimited line, while `parseNDJSON()` has read an unterminated final line since it was written, a passing test pins that flush, and the Gemini adapter is its only consumer.
