@@ -64,7 +64,8 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - A test clause that moves to another subject's package leaves its source number behind, that number belonging to a different series, and takes the lowest free number in the destination's `+200` block.
 - A legacy item reconciles onto the current-generation item that carries its concern, whatever number that item holds.
 - Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
-- The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach the current `meta-<N>` set by concern, and those that reach nothing are recorded as law removed rather than law relocated.
+- The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach the current `meta-<N>` set by concern.
+- The map establishes each of those outcomes rather than assuming it: the scaffold reports no direct successor for `META-17` and `META-26`, yet `META-17`'s concern survives in [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other, so only a concern the map finds nowhere counts as law removed.
 - The per-item resolution of these rules belongs in this record beside the family table, one row per destination where a clause splits, so a released ID stays traceable once the plan that moved it is gone.
 - That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, the scope and detector items promoting the legacy `Exclusions` and `License File Detection` subsections, and `git-1`'s widened actor and reporting duty, which bind whoever prepares a commit rather than an AI agent alone.
 
@@ -101,8 +102,9 @@ The first stands alone; the second fixes the destination set, so the third is sc
    Every legacy ID changes spelling, and where that ID appeared in a public release the migration's own terms require the owner's approval before any editing.
    The spelling is not cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
    `GIT-001` and `ENG-018` were therefore published identifiers in their own right, not renderings of `git-1` and `engine-18`.
-   Granting it ratifies the fold of the two seeded packages, which respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled, and with it the refreshed law's own released IDs, `META-3` having become `meta-30` while `META-17` and `META-26` reached no successor at all.
-   Those moves came with the refresh rather than with any later task, which is why they answer to this gate: restoring `meta.md` below undoes them, and no other branch can.
+   Granting it ratifies the fold of the two seeded packages, which respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled, and the respelling the refreshed law applied to its own `META-<N>` items.
+   Those moves came with the refresh rather than with any later task, so restoring `meta.md` below is the only thing that undoes them.
+   Where the refresh moved a number rather than a spelling — `META-3` reaching `meta-30` — that part is a renumbering and needs the third decision too, so granting this one alone does not legalize it.
    Withholding it ends the migration rather than pausing it, the current ID form being unreachable without respelling [[meta-11](../meta.md#meta-11)], and the rollback takes two forms.
    `meta.md`, [DR-000](000-spec-structure-format.md), the agent guidance, and the index return to their pre-refresh versions, each having existed before the refresh; the two seeded packages, the seeded SPDX-header record, the migration plan, and this record are removed outright, none having existed before it.
    Nothing may be left behind, because keeping the current law over an unmigrated tree would leave law and tree in permanent conflict, and any surviving record would cite items the rollback takes away.
@@ -115,7 +117,8 @@ The first stands alone; the second fixes the destination set, so the third is sc
    Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
    Which relocations those are is what the second decision returns, so this one is asked against its outcome.
    Granting it requires amending that clause, and `meta.md` carries a standing instruction against editing it without human approval.
-   Withholding it leaves every remaining merge and relocation unplannable, while the packages already folded stand or fall by the first decision alone.
+   Withholding it leaves every remaining merge and relocation unplannable, and leaves the number the refresh already moved unlawful, so that outcome has no resting place short of restoring `meta.md` as the first decision's refusal directs.
+   This record is then `Rejected` rather than `Accepted`, its Decision prescribing moves the owner has refused.
 
 ## Consequences
 

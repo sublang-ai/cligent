@@ -52,11 +52,12 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
    Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the verification-shape gate before the renumbering gate it scopes, and record each outcome on its own.
    Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 and undo the rest as [DR-017](../decisions/017-spec-generation-migration.md) directs: return `meta.md`, `DR-000`, the agent guidance, and the index to their pre-refresh versions, and remove the two seeded packages, the seeded SPDX-header record, this plan, and that record outright, since any survivor would cite items the rollback takes away.
    Where the shared-contract alternative wins the shape gate, rewrite the decision record's Decision and Consequences and the index summary to that outcome, then replan tasks 5 through 13 against the destinations it creates before the renumbering gate is asked, those destinations being what it is asked about.
-   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number, while the law's own moved IDs answer to the respelling gate above.
-   Set the decision record to `Accepted` only once its text states the combination the owner chose.
+   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval.
+   Where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number, and the number the refresh already moved cannot stand either, so the record takes `Rejected` and the tree unwinds as the respelling refusal directs.
+   Set the decision record to `Accepted` only once its text states the combination the owner chose and every move that text prescribes is lawful under the amended law.
 
 4. **Build the complete rename map.**
-   Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and add the 24 released `META-<N>` items with the current item each concern reached or an explicit no-successor row.
+   Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and add the 24 released `META-<N>` items with the current item each concern reached or an explicit no-successor row, checking each against the current law and the decision records rather than taking the scaffold's list as final.
    Record it in [DR-017](../decisions/017-spec-generation-migration.md), extending the family table there to per-item resolution, because the map outlives this plan as the only bridge from a released ID to where its concern went [[meta-28](../meta.md#meta-28)].
    The migration's own terms require the map before content moves, and the settled gates are what make it decidable.
 
