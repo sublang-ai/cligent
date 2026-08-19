@@ -64,8 +64,8 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
 - The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach whatever now carries their concern, where anything still does — usually an item of the current `meta-<N>` set, sometimes a decision record instead.
 - The map establishes each of those outcomes rather than assuming it: `META-17`'s concern survives in [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other, while `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule were found in neither the current law nor a decision record, so only those two counted as law removed.
-- The owner closed both, one each way: `META-15`'s concern is restored as `meta-35`, and `META-26`'s retirement is approved, so its row records a successor no one will write.
-- Law found removed closes two ways and no other: a carrier is restored, or the owner approves an amendment admitting the retirement, the released-ID clause binding a released ID permanently while its exception reaches a moved ID rather than a retired one [[meta-12](../meta.md#meta-12)].
+- The owner closed both, one each way: `META-15`'s concern is restored as `meta-35` and `meta-36`, one requirement each [[meta-29](../meta.md#meta-29)], and `META-26`'s retirement is approved, so its row records a successor no one will write.
+- Law found removed closes two ways and no other: a carrier is restored, or the owner approves an amendment admitting the retirement, the released-ID clause binding a released ID permanently until an amendment of its own admits the retirement, as it already admits a recorded renumbering [[meta-12](../meta.md#meta-12)].
 - The per-item resolution of these rules belongs in this record beside the family table, one row per destination where a clause splits, so a released ID stays traceable once the plan that moved it is gone.
 - That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, the scope and detector items promoting the legacy `Exclusions` and `License File Detection` subsections, and `git-1`'s widened actor and reporting duty, which bind whoever prepares a commit rather than an AI agent alone.
 
@@ -571,6 +571,7 @@ Two found no carrier and the owner closed each, `META-15` through a restored car
 | `META-13` | `meta-13` |
 | `META-14` | `meta-14` |
 | `META-15` | `meta-35` |
+| `META-15` | `meta-36` |
 | `META-16` | `meta-16` |
 | `META-17` | [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other |
 | `META-18` | `meta-18` |
@@ -621,12 +622,13 @@ The owner answered five questions, the three this migration turned on — the sh
    Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, relocating a released test clause into another subject's package, and the refresh's own move of `META-3` to `meta-30` each move a released number that the clause forbade outright before the amendment.
    This record is the authorization that clause requires, and the per-item map it must carry beside the family table is the condition attached rather than a convenience, so a later migration reaches no released number without a record of its own.
 
-4. Restoring `META-15` is approved, its concern becoming `meta-35` and binding every package from tasks 7 through 15 onward.
+4. Restoring `META-15` is approved, its concern becoming `meta-35` and `meta-36` — the minimizing duty and the disclosure duty, which fail independently and so take one item each [[meta-29](../meta.md#meta-29)] — and binding every package from tasks 7 through 15 onward.
    It read: "Each spec package shall minimize references to the containing project. When a project-specific reference is essential to a package's intent, it shall be documented in the package's `## Intent` section."
    Restoring it writes an item of the current law [[meta-11](../meta.md#meta-11)] obliging every package to hold its project references down and to disclose an essential one in `Intent`, which `git`, `licensing`, and `release` already practise with their `It is project-local.` line and which `package`, `tmux-play`, the adapters, and `engine` would each owe as they land.
    Retiring it would have left no law asking a package to minimize those references or to say why it keeps one, and the four packages already landed satisfy the restored item unchanged.
 
-5. Retiring `META-26` is approved, the current generation having dropped it deliberately, so no successor is written and its observability-and-negative-case demand does not return.
+5. Retiring `META-26` is approved, and with it the amendment to the released-ID clause of [`meta.md`](../meta.md) that admits a retirement at all, the current generation having dropped the item deliberately, so no successor is written and its observability-and-negative-case demand does not return.
+   That clause now retires a concern only where the owner approves it and an authorizing decision record admits it [[meta-12](../meta.md#meta-12)], this record being that authorization; without the amendment the approval alone would have left the clause binding `META-26` to a concern nothing carries.
    It read: "A spec item shall describe behavior as observable outcomes (e.g., file state, exit code, printed output, return value, network call) under named conditions, including any conditions under which a particular outcome shall not occur."
    Its named conditions survive in the GEARS clauses [[meta-6](../meta.md#meta-6)], so restoring it adds only the demand that an outcome be observable and that an item name where an outcome shall not occur, which would redraft `release-1`'s SemVer rule, `release-4`'s pre-tag procedure, `release-10`'s checklist, and `git-3`'s bullets-if-clearer judgment, none of them stating something anyone can observe.
    The GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] are therefore the only shape an item must take, and the dead `meta-26` link in `iterations/022-tmux-play-layout-configuration.md` loses its target for good.
@@ -640,5 +642,5 @@ The owner answered five questions, the three this migration turned on — the sh
 - Released changelog entries keep IDs that no longer resolve in the tree, and this record's table is the only bridge back to them.
 - Numbering is left non-contiguous, with `engine-101` following `engine-31` and the gap between them free for later items.
 - The reconciled `git` and `licensing` packages arrive with requirements the legacy files never stated, so the project adopts them by completing this migration.
-- Two released framework IDs reached no carrier, and the owner closed each: `META-15`, which required a package to minimize references to its containing project, returns as `meta-35`, while `META-26`, which required an item to describe behavior as observable outcomes, is retired with no successor.
-- The framework law now admits a recorded renumbering of a released ID [[meta-12](../meta.md#meta-12)], which this record authorizes for this migration alone, leaving a later one to earn the same exception through a record and a map of its own.
+- Two released framework IDs reached no carrier, and the owner closed each: `META-15`, which required a package to minimize references to its containing project, returns as `meta-35` and `meta-36`, while `META-26`, which required an item to describe behavior as observable outcomes, is retired with no successor.
+- The framework law now admits a recorded renumbering of a released ID and, separately, an owner-approved retirement of its concern [[meta-12](../meta.md#meta-12)], both of which this record authorizes for this migration alone, leaving a later one to earn the same exceptions through a record and a map of its own.

@@ -145,6 +145,7 @@ A publicly released item ID shall remain permanently bound to the concern its it
 
 - the ID is never renumbered or reassigned, except in a one-time migration whose authorizing decision record maps each renumbered ID to what keeps its concern;
 - the item's content may evolve only with that concern preserved;
+- the concern is retired only where the owner approves the retirement and an authorizing decision record admits it;
 - an unreleased ID can be reassigned.
 
 ### meta-14
@@ -161,7 +162,11 @@ A spec package shall stand alone: readable in full without following any link â€
 
 ### meta-35
 
-A spec package shall minimize references to its containing project, documenting in its `Intent` section [[meta-30](#meta-30)] any reference its intent makes essential.
+A spec package shall minimize references to its containing project.
+
+### meta-36
+
+Where a reference to its containing project is essential to a spec package's intent, the package shall document that reference in its `Intent` section [[meta-30](#meta-30)].
 
 ### meta-31
 

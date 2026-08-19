@@ -7,7 +7,7 @@
 
 In progress.
 Tasks 1 through 6 are done; tasks 7 through 21 remain.
-The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired with no successor.
+The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and completion waits on it.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
