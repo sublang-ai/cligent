@@ -137,4 +137,4 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 19 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
-- A human settles each of the decision record's three approval gates and each loss its map records, then reviews the full diff before it merges.
+- A human settles each of the decision record's three approval gates and every loss its map has recorded, `META-15` and `META-26` among them, then reviews the full diff before it merges.
