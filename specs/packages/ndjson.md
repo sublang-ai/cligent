@@ -16,7 +16,7 @@ It owns how the stream is framed into lines and what each line parses to, not wh
 
 ### ndjson-2
 
-While a line has yet to reach its newline, `parseNDJSON()` shall buffer it across chunks and yield no result for it until the line is complete.
+`parseNDJSON()` shall buffer partial lines across chunks, emitting a result only when a complete newline-delimited line is available.
 
 ### ndjson-3
 
