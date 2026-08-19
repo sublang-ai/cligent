@@ -5,9 +5,7 @@
 
 ## Status
 
-Proposed.
-Three approval gates in the Decision are open: respelling released IDs, the shape of the cross-adapter verification, and renumbering released IDs.
-The first covers two respellings already in the tree, and the second scopes the third.
+Accepted
 
 ## Context
 
@@ -93,28 +91,20 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - Released `CHANGELOG.md` entries keep their legacy IDs, because they record what shipped under those IDs.
 - `README.md` and `docs/` quote no item ID and need no change.
 
-### Approval gates
+### Approvals
 
-Three questions are open, and no further item moves until each is answered.
+The owner answered the three questions this migration turned on, the shape question before the renumbering one it scoped.
 
-1. May the IDs that public releases carried be respelled?
-   Every legacy ID changes spelling, and where that ID appeared in a public release the migration's own terms require the owner's approval before any editing.
-   The spelling is not cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
-   `GIT-001` and `ENG-018` were therefore published identifiers in their own right, not renderings of `git-1` and `engine-18`.
-   Two respellings are already in the tree awaiting this answer: the refreshed law's own `META-<N>` items, and the fold that turned `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` into `git-1` … `git-4` and `licensing-1` … `licensing-6`.
+1. Respelling the IDs that public releases carried is approved, the migration's own terms rather than the released-ID clause being what required that approval, so every legacy ID takes the lowercase `<pack>-<N>` form [[meta-11](../meta.md#meta-11)].
+   The spelling was never cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
+   `GIT-001` and `ENG-018` were published identifiers in their own right, not renderings of `git-1` and `engine-18`, so the approval reaches the two respellings already in the tree: the refreshed law's own `META-<N>` items, and the fold that turned `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` into `git-1` … `git-4` and `licensing-1` … `licensing-6`.
 
-2. Does a shared criterion stay restated once per destination package, or does a shared adapter-contract package replace it?
-   The alternative moves those criteria into one new package and restates per-adapter behaviors as shared ones, which changes what the law says rather than where it lives.
-   This answer fixes where the dissolved cross-adapter items land, and so fixes which relocations the third question covers; it is asked before that one for exactly that reason.
+2. The shape the cross-adapter rule above states is approved, so a shared criterion stays restated once per destination package and no shared adapter-contract package is introduced.
 
-3. May those IDs be renumbered?
-   Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright, as does the refresh's own move of `META-3` to `meta-30`.
-   A yes requires amending that clause, and `meta.md` carries a standing instruction against editing it without human approval.
-
-The second question chooses between two shapes; the first and third can each be refused, and either refusal stops the migration, there being no lawful ID form without the one and no lawful merge without the other.
-A refusal is defined by the state it leaves, not by the steps that get there: everything the refresh and the fold touched returns to what it held at `v0.22.0` — `specs/` and the rewritten agent guidance alike, that guidance otherwise citing law the rollback removes.
-Two differences remain, and only two: this record, kept as a short refusal — `Rejected`, in the sections that restored law requires, citing only law present in that tree — and the one index row that reaches it, summarizing the refusal rather than the migration it declined, since a row still advertising open gates would misdescribe the very record it points at.
-Reverting the commits behind the refresh and the fold is the way there and needs the `meta.md` edit the refusal authorizes, but both reverts conflict against later work, so what settles it is `git diff v0.22.0 -- specs/ CLAUDE.md AGENTS.md` showing that record, that row, and nothing else.
+3. Renumbering those IDs is approved, and with it the amendment to the released-ID clause of [`meta.md`](../meta.md), a file carrying a standing instruction against editing it without human approval.
+   That clause now admits a one-time migration whose authorizing decision record maps each renumbered ID to what keeps its concern [[meta-12](../meta.md#meta-12)].
+   Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, relocating a released test clause into another subject's package, and the refresh's own move of `META-3` to `meta-30` each move a released number that the clause forbade outright before the amendment.
+   This record is the authorization that clause requires, and the per-item map it must carry beside the family table is the condition attached rather than a convenience, so a later migration reaches no released number without a record of its own.
 
 ## Consequences
 
@@ -125,3 +115,4 @@ Reverting the commits behind the refresh and the fold is the way there and needs
 - Released changelog entries keep IDs that no longer resolve in the tree, and this record's table is the only bridge back to them.
 - Numbering is left non-contiguous, with `engine-101` following `engine-31` and the gap between them free for later items.
 - The reconciled `git` and `licensing` packages arrive with requirements the legacy files never stated, so the project adopts them by completing this migration.
+- The framework law now admits a recorded renumbering of a released ID [[meta-12](../meta.md#meta-12)], which this record authorizes for this migration alone, leaving a later one to earn the same exception through a record and a map of its own.

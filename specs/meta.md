@@ -143,7 +143,7 @@ Each spec item shall use \<pack\>-\<N\> as its lowercase heading, anchor, and ci
 
 A publicly released item ID shall remain permanently bound to the concern its item names:
 
-- the ID is never renumbered or reassigned;
+- the ID is never renumbered or reassigned, except in a one-time migration whose authorizing decision record maps each renumbered ID to what keeps its concern;
 - the item's content may evolve only with that concern preserved;
 - an unreleased ID can be reassigned.
 
