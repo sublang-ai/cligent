@@ -23,7 +23,7 @@ The adapter shall implement `AgentAdapter` with `agent: 'gemini'`; it has no SDK
 
 ### GEMINI-003
 
-`run()` shall spawn Gemini CLI in non-interactive mode with `gemini --output-format stream-json --prompt=<prompt>` and pipe stdout through `parseNDJSON()` per [NDJSON-001](../ndjson.md#ndjson-001) and [[4]].
+`run()` shall spawn Gemini CLI in non-interactive mode with `gemini --output-format stream-json --prompt=<prompt>` and pipe stdout through `parseNDJSON()` per [[ndjson-1](../../packages/ndjson.md#ndjson-1)] and [[4]].
 The adapter shall keep the option and arbitrary prompt in one argv token so Gemini CLI 0.50 treats the value as a headless prompt and does not reparse a leading-dash prompt as an option.
 When the child process reports an asynchronous launch error, the adapter shall emit a non-recoverable `error` event followed by terminal `done` with `status: 'error'` rather than letting the process error escape the event stream.
 

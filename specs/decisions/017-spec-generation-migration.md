@@ -71,7 +71,7 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 ### Per-item map
 
 The rules above resolve to this map, which every later move reads and which outlives the plan that produced it.
-It was built carrying 402 released item IDs over 473 rows: a behavior item takes one row, in its own package, its citations of peer behavior staying citations [[meta-14](../meta.md#meta-14)], while a test item takes one row per package whose behavior it verifies, wherever in the item that citation sits, because a verification citation follows the behavior into its package [[meta-20](../meta.md#meta-20)].
+It was built carrying 402 released item IDs over 473 rows, and grows a row wherever a task since has split one released concern across two destinations: a behavior item takes one row, in its own package, its citations of peer behavior staying citations [[meta-14](../meta.md#meta-14)], while a test item takes one row per package whose behavior it verifies, wherever in the item that citation sits, because a verification citation follows the behavior into its package [[meta-20](../meta.md#meta-20)].
 It is kept true as the tree changes: a task that splits an item [[meta-29](../meta.md#meta-29)], drops a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moves a clause records the added, removed, or retargeted row here in the same commit.
 
 | Released ID | Destination |
@@ -211,9 +211,11 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TENG-022` | `engine-122` |
 | `NDJSON-001` | `ndjson-1` |
 | `NDJSON-002` | `ndjson-2` |
+| `NDJSON-002` | `ndjson-7` |
 | `NDJSON-003` | `ndjson-3` |
 | `NDJSON-004` | `ndjson-4` |
 | `NDJSON-005` | `ndjson-5` |
+| `NDJSON-005` | `ndjson-6` |
 | `TMUX-001` | `tmux-play-1` |
 | `TMUX-002` | `tmux-play-2` |
 | `TMUX-003` | `tmux-play-3` |

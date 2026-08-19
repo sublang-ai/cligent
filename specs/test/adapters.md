@@ -64,9 +64,9 @@ Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and
 
 ### TADAPT-007
 
-Verifies: [NDJSON-001](../user/ndjson.md#ndjson-001), [NDJSON-002](../user/ndjson.md#ndjson-002), [NDJSON-003](../user/ndjson.md#ndjson-003), [NDJSON-004](../user/ndjson.md#ndjson-004), [NDJSON-005](../user/ndjson.md#ndjson-005), [GEMINI-003](../user/adapters/gemini.md#gemini-003)
+Verifies: [GEMINI-003](../user/adapters/gemini.md#gemini-003)
 
-Given partial lines, malformed JSON, and empty lines, `parseNDJSON()` shall produce the correct `NDJSONParseResult` values. Given process exit codes 0, 1, 42, and 53, the Gemini adapter shall yield the corresponding `done` status. Given the child process reports an asynchronous launch error, the Gemini adapter shall emit a non-recoverable `error` followed by terminal `done` with `status: 'error'`.
+Given process exit codes 0, 1, 42, and 53, the Gemini adapter shall yield the corresponding `done` status. Given the child process reports an asynchronous launch error, the Gemini adapter shall emit a non-recoverable `error` followed by terminal `done` with `status: 'error'`.
 
 ### TADAPT-025
 

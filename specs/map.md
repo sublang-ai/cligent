@@ -152,11 +152,11 @@ meta.md     The spec of specs
 | ----- | --------------------------------- | --------------------------------------------- |
 | pkg   | [licensing.md](packages/licensing.md) | SPDX copyright and license headers: scope exclusions, license-file detection, upstream-header preservation, and the presence and preservation checks |
 
-### NDJSON
+### ndjson
 
-| Group | File                        | Summary                           |
-| ----- | --------------------------- | --------------------------------- |
-| user  | [ndjson.md](user/ndjson.md) | parseNDJSON() behavioral contract |
+| Group | File                            | Summary                                                                       |
+| ----- | ------------------------------- | ----------------------------------------------------------------------------- |
+| pkg   | [ndjson.md](packages/ndjson.md) | parseNDJSON() line framing, per-line parse outcomes, and the mixed-stream check |
 
 ### OPENCODE
 
@@ -171,11 +171,11 @@ meta.md     The spec of specs
 | dev   | [package.md](dev/package.md)  | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints, and the global-install agent-runtime contract  |
 | test  | [package.md](test/package.md) | Clean-build, TypeScript-floor, packed-consumer, export, launcher, dependency-audit, Codex-executable install-layout, and global-install onboarding acceptance |
 
-### RELEASE
+### release
 
-| Group | File                         | Summary                                                        |
-| ----- | ---------------------------- | -------------------------------------------------------------- |
-| dev   | [release.md](dev/release.md) | SemVer, changelog, tag-driven release workflow, npm provenance |
+| Group | File                              | Summary                                                                                                                     |
+| ----- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| pkg   | [release.md](packages/release.md) | SemVer, changelog form and pre-tag checklist, tag-driven publish with npm provenance, and the workflow-gate and smoke checks |
 
 ### TADAPT
 

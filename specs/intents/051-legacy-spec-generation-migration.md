@@ -6,8 +6,9 @@
 ## Status
 
 In progress.
-Tasks 1 through 4 are done; tasks 5 through 20 remain.
+Tasks 1 through 4 and task 6 are done; task 5 and tasks 7 through 20 remain.
 The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 5 puts both to the owner, task 16 waits on the one it must retarget, and completion waits on both.
+Task 6 went ahead of that open question because neither package it moves states framework law, so neither answer can invalidate it.
 The three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -119,7 +120,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Rebuild `specs/map.md` in the current shape — layout block, decisions table, packages table — with no intent-record index [[meta-18](../meta.md#meta-18)], and refresh whatever repo guidance still describes the legacy layout.
 
 19. **Close or record the inherited verification gaps.**
-    Give an integration or system check that executes the real behavior [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)] to the three gaps this migration inherits rather than creates: the licensing scope and detector items, the release behaviors, and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
+    Give an integration or system check that executes the real behavior [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)] to the three gaps this migration inherits rather than creates: the licensing scope and detector items, the release behaviors no real check reaches — the SemVer rule, the changelog format with its pre-tag procedure and heading order, every checklist line outside `smoke:release`, and the build, notes-extraction, and GitHub-release steps of the workflow, whose audit stops at the publish gates — and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
     Where a gap cannot be closed, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
 20. **Verify and hand over.**
