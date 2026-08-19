@@ -126,7 +126,7 @@ Where stale and current files exist under `dist/`, when the repository build, th
 
 ### package-102
 
-Where the tarball is installed in isolated consumers using Node 18.3.0 [[package-2](#package-2)] and TypeScript 5.4 [[package-11](#package-11)], when the runtime consumer imports the root [[package-6](#package-6)], every adapter export [[package-7](#package-7)], and the tmux-play and captain subpaths before running the installed launcher's help [[package-14](#package-14)], and the type consumer exercises adapter-scoped effort declarations, the verification shall assert that each import and help command succeeds and that strict compilation passes.
+Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when the runtime consumer imports the root, every adapter export, and the tmux-play and captain subpaths before running the installed launcher's help, and the type consumer exercises adapter-scoped effort declarations, the verification shall assert that the root entry point loads [[package-6](#package-6)], that every adapter sub-path export loads [[package-7](#package-7)], that the documented tmux-play and captain subpaths load and the executable's help exits successfully [[package-14](#package-14)], that the declared Node floor admits the 18.3.0 runtime [[package-2](#package-2)], and that strict compilation passes against the emitted declarations on TypeScript 5.4 [[package-11](#package-11)].
 
 ### package-103
 
@@ -138,11 +138,11 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 
 ### package-105
 
-Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving that SDK at the install root, when the installed adapter is loaded through its sub-path export [[package-7](#package-7)] and resolves that optional peer from the tree the package itself is installed in [[package-4](#package-4)], the verification shall assert that both layouts load the adapter and reach the peer, the nested consumer also on the Node 18.3.0 runtime floor without an ESM loader resolution surface.
+Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving that SDK at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the adapter loads through its sub-path export in both layouts [[package-7](#package-7)] and reaches the optional peer from the tree the package itself is installed in [[package-4](#package-4)], the nested consumer also on the Node 18.3.0 runtime floor without an ESM loader resolution surface.
 
 ### package-106
 
-Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer [[package-4](#package-4)] supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
+Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the absent agent SDK is an optional peer rather than a hard requirement [[package-4](#package-4)], that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
 
 ### package-228
 
