@@ -6,8 +6,8 @@
 ## Status
 
 In progress.
-Tasks 1 and 2 are done; tasks 3 through 17 remain.
-Task 3 settles the approval gates in [DR-017](../decisions/017-spec-generation-migration.md), and every task after it waits on that outcome — task 2 included, since its spelling change awaits the same ratification.
+Tasks 1 and 2 are done; tasks 3 through 18 remain.
+Task 3 settles the three approval gates in [DR-017](../decisions/017-spec-generation-migration.md), and every task after it waits on their outcomes — task 2 included, since the respelling gate ratifies or reverts it.
 
 ## Intent
 
@@ -35,12 +35,12 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map assembled in task 17, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map assembled in task 18, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
    Add `specs/decisions/017-spec-generation-migration.md` as `Proposed`, fixing the destination package set, the `+100` and `+200` ID blocks and the dropped zero padding, the dissolution of the cross-adapter test file into per-package verification, `tmux-play` remaining one package, and the exemption of released changelog history from the rename.
-   Record the two owner-approval questions it turns on: renumbering the item IDs that public releases carried [[meta-12](../meta.md#meta-12)], and duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package.
+   Record the three owner-approval questions it turns on, each standing on its own: respelling the item IDs that public releases carried, renumbering them where a merge or relocation collides [[meta-12](../meta.md#meta-12)], and duplicating a shared adapter criterion into each adapter package rather than introducing a shared adapter-contract package.
    No file moves in this task.
 
 2. **Fold `git` and `licensing` onto their scaffold seeds.**
@@ -48,14 +48,15 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
    Reconcile the duplicated SPDX-header record at `iterations/000-spdx-headers.md` into `intents/000-spdx-headers.md` with this project's true checkbox state, then delete the legacy trio and the duplicate record and retarget their 8 inbound citations.
 
 3. **Settle the approval gates.**
-   Put both gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves: the spelling change to released IDs, which task 2 already made for `git` and `licensing`, and the renumbering the merges and relocations need.
-   Where the owner grants them, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval, and set the decision record to `Accepted`.
-   Where the owner withholds them, revert task 2 and re-plan the tasks below.
-   Settle gate 2 here as well, because tasks 4 through 12 build the per-package verification it could overturn.
+   Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, and record each outcome on its own.
+   Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 and remove with it the `packages/git.md`, `packages/licensing.md`, and `intents/000-spdx-headers.md` the scaffold refresh installed, because reverting task 2 alone would leave those respelled IDs authoritative and two records claiming one ID.
+   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 4 through 12 cannot proceed, each of them moving a released number.
+   Settle the third gate here as well, because tasks 4 through 12 build the per-package verification it would replace.
+   Set the decision record to `Accepted` on whichever outcomes are granted.
 
 4. **Migrate `ndjson` and `release`.**
    Create `packages/ndjson.md` and `packages/release.md`, moving the parser's verification out of `test/adapters.md` and deleting `user/ndjson.md` and `dev/release.md`.
-   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and hand the residual coverage gap [[meta-33](../meta.md#meta-33)] to review instead of inventing tests.
+   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and leave the residual coverage gap [[meta-33](../meta.md#meta-33)] to task 17 instead of inventing tests here.
    Retarget the 5 inbound citations the parser package carries.
 
 5. **Migrate `package`.**
@@ -103,10 +104,12 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 16. **Rewrite the index and the guidance.**
     Rebuild `specs/map.md` in the current shape — layout block, decisions table, packages table — with no intent-record index [[meta-18](../meta.md#meta-18)], and refresh whatever repo guidance still describes the legacy layout.
 
-17. **Verify and hand over.**
-    Drive `spex lint` to zero errors and zero warnings, assemble the per-item rename map and reconcile it against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, and the open questions to human diff review.
-    Resolve the verification gaps [[meta-33](../meta.md#meta-33)] this migration inherits rather than creates: the licensing scope and detector items, the release behaviors, and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
-    Close each with an integration or system check [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)], or record this plan incomplete and name what stays unverified.
+17. **Close or record the inherited verification gaps.**
+    Give an integration or system check that executes the real behavior [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)] to the three gaps this migration inherits rather than creates: the licensing scope and detector items, the release behaviors, and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
+    Record as open, with its reason, any gap no such check can close, so the tree never claims coverage [[meta-33](../meta.md#meta-33)] it does not have.
+
+18. **Verify and hand over.**
+    Drive `spex lint` to zero errors and zero warnings, assemble the per-item rename map and reconcile it against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
 
 ## Verification
 
@@ -119,4 +122,4 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], or this plan names the coverage it left open, `spex lint` checking neither.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, the code changes being comments and test names only.
-- A human approves the decision record's two open questions and reviews the full diff before it merges.
+- A human settles each of the decision record's three approval gates and reviews the full diff before it merges.
