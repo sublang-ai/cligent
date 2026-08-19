@@ -54,6 +54,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 4. **Build the complete rename map.**
    Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and add the 24 released `META-<N>` items with whatever now carries each concern — an item, a decision record, or several between them — or an explicit no-successor row, checking each against the current law and the decision records rather than taking the scaffold's list as final.
+   A row that finds no carrier is a loss of released law rather than a resolved mapping, so it closes only as [DR-017](../decisions/017-spec-generation-migration.md) allows: a carrier restored, or the owner's approved amendment admitting the retirement.
    Record it in [DR-017](../decisions/017-spec-generation-migration.md), extending the family table there to per-item resolution, because the map outlives this plan as the only bridge from a released ID to where its concern went [[meta-28](../meta.md#meta-28)].
    The migration's own terms require the map before content moves, and the settled gates are what make it decidable.
 
@@ -120,7 +121,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - No path under `specs/user/`, `specs/dev/`, `specs/test/`, or `specs/iterations/` exists, and no file in the repository links to one.
 - No legacy uppercase item ID remains anywhere except in `CHANGELOG.md`, whose released entries are unchanged byte-for-byte, and in the migration's own two records, which name those IDs to bridge them — the decision record through its rename map, this plan through the retargeting its tasks describe.
 - Each of the 402 items in that baseline resolves through the rename map to at least one live destination anchor, a split clause resolving to one per branch so that no branch is dropped to make the count come out.
-- Each of the 24 released `META-<N>` items resolves through that map to every current carrier of its concern, item or decision record, or to an explicit no-successor row.
+- Each of the 24 released `META-<N>` items resolves through that map to every current carrier of its concern, item or decision record, or to a no-successor row that a restored carrier or an amended released-ID clause has settled, an unsettled one leaving this plan incomplete.
 - Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
