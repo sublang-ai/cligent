@@ -11,17 +11,19 @@ Code can be inconsistent with specs during development.
 
 Know the rules in [`meta.md`](meta.md) before authoring, modifying, or reviewing a DR, IR, or item.
 
-- DRs and IRs: see [Organization](meta.md#organization), [Record format](meta.md#record-format), and [Citation](meta.md#citation).
-- Items: see [Organization](meta.md#organization), [Item syntax](meta.md#item-syntax), [Spec packages](meta.md#spec-packages), and [Citation](meta.md#citation).
+- DRs and IRs: see [Overall](meta.md#overall), [Record format](meta.md#record-format), and [Citation](meta.md#citation).
+- Items: see [Overall](meta.md#overall), [Item syntax](meta.md#item-syntax), [Spec packages](meta.md#spec-packages), and [Citation](meta.md#citation).
 
 ## Layout
 
 ```text
 decisions/  Decision records (DRs)
-iterations/ Iteration records (IRs)
-user/       User-visible behavior
-dev/        Implementation requirements
-test/       Acceptance testing
+intents/    Intent records (IRs)
+packages/   Spec packages (one file per package)
+iterations/ Legacy iteration records, migrating to intents/
+user/       Legacy user-visible behavior, migrating to packages/
+dev/        Legacy implementation requirements, migrating to packages/
+test/       Legacy acceptance testing, migrating to packages/
 map.md      This index
 meta.md     The spec of specs
 ```
@@ -137,6 +139,7 @@ meta.md     The spec of specs
 | Group | File                 | Summary                                             |
 | ----- | -------------------- | --------------------------------------------------- |
 | dev   | [git.md](dev/git.md) | Commit message format and AI co-authorship trailers |
+| pkg   | [git.md](packages/git.md) | Current-generation git package, superseding the `dev` file |
 
 ### KIMI
 
@@ -150,6 +153,7 @@ meta.md     The spec of specs
 | ----- | --------------------------------- | --------------------------------------------- |
 | dev   | [licensing.md](dev/licensing.md)  | SPDX header requirements and file-scope rules |
 | test  | [licensing.md](test/licensing.md) | Copyright and license header presence checks  |
+| pkg   | [licensing.md](packages/licensing.md) | Current-generation licensing package, superseding the `dev` and `test` files |
 
 ### NDJSON
 
