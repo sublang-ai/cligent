@@ -25,7 +25,7 @@ import {
 // DR-013 / ENG-025 / ENG-026: cligent owns which runtime versions work. The
 // descriptor is the declaration and the loader is the enforcement; these pin
 // the comparison rules both depend on.
-describe('agent runtime targets (PKG-016)', () => {
+describe('agent runtime targets (package-16)', () => {
   it('declares a supported floor at or below the tested version', () => {
     for (const target of agentRuntimeTargets()) {
       expect(
@@ -36,7 +36,7 @@ describe('agent runtime targets (PKG-016)', () => {
   });
 
   it('keeps the paired OpenCode SDK and CLI targets equal', () => {
-    // PKG-012 requires the SDK client and its CLI server to share a target.
+    // package-12 requires the SDK client and its CLI server to share a target.
     const [sdk, cli] = AGENT_RUNTIME_TARGETS.opencode;
     expect(sdk?.tested).toBe(cli?.tested);
     expect(sdk?.supportedFrom).toBe(cli?.supportedFrom);

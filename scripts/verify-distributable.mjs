@@ -34,7 +34,7 @@ const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
   yaml: '^2.8.4',
   zod: '4.4.3',
 });
-// PKG-016: derived from the shipped descriptor, never restated here. A
+// package-16: derived from the shipped descriptor, never restated here. A
 // second copy of a floor is exactly the drift this work removes.
 const EXPECTED_OPTIONAL_PEERS = Object.freeze(
   Object.fromEntries(

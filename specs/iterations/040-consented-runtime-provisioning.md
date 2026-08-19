@@ -95,9 +95,9 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke
 checks green at its boundary.
 
 1. [x] **Record the compatibility decision and its canonical items.**
-       Record DR-013; amend PKG-009 for the no-upper-bound rule and the
-       conditions under which a floor moves, and PKG-012 for the
-       tested-versus-supported distinction; add PKG-016 for the shipped
+       Record DR-013; amend package-9 for the no-upper-bound rule and the
+       conditions under which a floor moves, and package-12 for the
+       tested-versus-supported distinction; add package-16 for the shipped
        descriptor; add ENG-025 for the load-time gate and ENG-026 for the
        structured verdict; add TENG-018; amend TMUX-089 so an incompatible
        runtime is reported distinctly from an absent one; add the DR-013 row
@@ -139,17 +139,17 @@ checks green at its boundary.
        integration counterparts; add the DR-017 row to the spec map and
        refresh the DR-012 and TMUX summaries there.
 7. [ ] **Specify the install-placement contract.**
-       Amend PKG-015 to scope its prohibition to the distributable's own
-       installation and to grant the consented install; add PKG-016 for the
-       top-level-root placement outcome; amend TPKG-003 for the absent
+       Amend package-15 to scope its prohibition to the distributable's own
+       installation and to grant the consented install; add package-16 for the
+       top-level-root placement outcome; amend package-103 for the absent
        install lifecycle script, which nothing verifies today, and TPKG-006
        for the unattached-terminal contract its harness currently satisfies
-       only by accident of piping; add TPKG-007; refresh the PKG summaries in
-       the spec map.
+       only by accident of piping; add a verification item for it; refresh the
+       package summaries in the spec map.
 8. [ ] **Specify the exported provisioning surface.**
-       Amend PKG-014 and TPKG-002 for the documented surface the export lands
+       Amend package-14 and package-102 for the documented surface the export lands
        on, state what a library caller may and may not do with the install
-       capability PKG-015 grants the executable, add an external-behavior
+       capability package-15 grants the executable, add an external-behavior
        item beside release-1 for the versioning rule that surface implies,
        and refresh the release and PKG summaries in the spec map.
 9. [ ] **Classify npm exec cache trees.**
@@ -280,7 +280,7 @@ any of them lands.
    stdin-and-stdout half already has a launcher-mode precedent in TMUX-047's
    flavor probe, which the new predicate can reuse or restate; `CI` has none
    in production code. A `--yes` flag would reintroduce the unattended
-   acquisition PKG-015 forbids.
+   acquisition package-15 forbids.
 5. **The approximate download size and the installed version.** A per-adapter
    constant is offline but goes stale; a registry query puts network access
    before consent. Running the printed command verbatim installs the latest,

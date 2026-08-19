@@ -14,7 +14,7 @@ Key design choices:
 
 - Markdown is not streamable; blocks buffer and render on completion. Token-by-token streaming is the deliberate tradeoff.
 - Panes still `tail -f` the per-player log; only complete rendered blocks are appended, no repaint machinery.
-- `glow` is a hard launch requirement, mirroring `tmux`. No fallback path — Task 2 removes the [TMUX-046](../user/tmux-play.md#tmux-046) machinery that would otherwise serve as one. Not an npm package; [PKG-003](../dev/package.md#pkg-003) is not implicated.
+- `glow` is a hard launch requirement, mirroring `tmux`. No fallback path — Task 2 removes the [TMUX-046](../user/tmux-play.md#tmux-046) machinery that would otherwise serve as one. Not an npm package; [[package-3](../packages/package.md#package-3)] is not implicated.
 - The presenter stays an observer per [DR-004](../decisions/004-tmux-play-captain-architecture.md); runtime, record set, and Captain contract are unchanged.
 
 ## Status

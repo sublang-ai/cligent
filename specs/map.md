@@ -164,12 +164,12 @@ meta.md     The spec of specs
 | ----- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | user  | [adapters/opencode.md](user/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with verified title suppression, pinned causal root/task/compaction step accounting, exact partial subsets with fail-closed omission at unproved root boundaries, idempotent per-request records and agent-estimated cost, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned session-tree liveness and descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering with same-session concurrent or delayed-background writing unsupported, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants |
 
-### PKG
+### package
 
-| Group | File                          | Summary                                                                                                                                                       |
-| ----- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| dev   | [package.md](dev/package.md)  | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints, and the global-install agent-runtime contract  |
-| test  | [package.md](test/package.md) | Clean-build, TypeScript-floor, packed-consumer, export, launcher, dependency-audit, Codex-executable install-layout, and global-install onboarding acceptance |
+| Group | File                              | Summary                                                                                                                                                                            |
+| ----- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| pkg   | [package.md](packages/package.md) | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints, the global-install agent-runtime contract, and their acceptance checks |
+| test  | [package-parked.md](test/package-parked.md) | Residual Codex-executable install-layout and global-install onboarding clauses, awaiting the `codex` and `tmux-play` packages                                                        |
 
 ### release
 

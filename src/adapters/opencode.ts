@@ -773,7 +773,7 @@ function defaultSpawnProcess(
 async function defaultProbeCliAvailability(): Promise<boolean> {
   try {
     await execFileAsync('opencode', ['--version'], { timeout: 5000 });
-    // ENG-025: PKG-012 pairs this CLI with the SDK, so an executable that
+    // ENG-025: package-12 pairs this CLI with the SDK, so an executable that
     // merely runs is not necessarily one this release supports.
     return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.opencode[1]!);
   } catch {

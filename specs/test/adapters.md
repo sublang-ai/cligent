@@ -100,12 +100,11 @@ resumed runs shall carry `ask` rules for `edit`, `bash`, and `webfetch`.
 
 ### TADAPT-028
 
-Verifies: [OPENCODE-008](../user/adapters/opencode.md#opencode-008), [PKG-012](../dev/package.md#pkg-012)
+Verifies: [OPENCODE-008](../user/adapters/opencode.md#opencode-008)
 
-Where the exact OpenCode CLI conformance target is installed, when its version
-and `serve --help` output are inspected, the reported version shall equal the
-exact CI target and the managed-server help shall expose `--hostname` and
-`--port`.
+Where the exact OpenCode CLI conformance target is installed, when its
+`serve --help` output is inspected, the managed-server help shall expose
+`--hostname` and `--port`.
 
 ### TADAPT-031
 

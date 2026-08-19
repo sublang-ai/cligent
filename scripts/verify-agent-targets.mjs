@@ -19,7 +19,7 @@ const targetsFor = (name) => AGENT_RUNTIME_TARGETS[name];
 const peerOf = (name) => targetsFor(name).find((t) => t.kind === 'peer');
 const cliOf = (name) => targetsFor(name).find((t) => t.kind === 'cli');
 
-// PKG-016: every literal below comes from the shipped descriptor, so this
+// package-16: every literal below comes from the shipped descriptor, so this
 // verifier can no longer disagree with what the package declares at runtime.
 export const EXPECTED_SDK_VERSIONS = Object.freeze({
   '@anthropic-ai/claude-agent-sdk': peerOf('claude').tested,
@@ -59,7 +59,7 @@ function assertEqual(actual, expected, label) {
 
 export function verifySdkTargets() {
   const manifest = readJson(join(repoRoot, 'package.json'));
-  // PKG-016: the descriptor is the declaration; the manifest must agree with
+  // package-16: the descriptor is the declaration; the manifest must agree with
   // it. Two sources of truth for a version is the exact drift this exists to
   // prevent, so a divergence fails here rather than at a user's first turn.
   for (const [adapter, targets] of Object.entries(AGENT_RUNTIME_TARGETS)) {

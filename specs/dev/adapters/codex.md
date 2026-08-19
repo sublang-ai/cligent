@@ -38,7 +38,7 @@ unnecessarily enable project-local configuration and executable policy.
 ### CODEX-012
 
 `@openai/codex` is a dependency of the optional `@openai/codex-sdk` peer
-([PKG-004](../package.md#pkg-004)), not of the Cligent package, so install
+([[package-4](../../packages/package.md#package-4)]), not of the Cligent package, so install
 layouts that do not hoist it — npm global prefixes and nested-strategy
 consumers — place it only inside the SDK's own tree.
 When a run requires the Codex CLI entry `@openai/codex/bin/codex.js` for the
@@ -64,7 +64,7 @@ Where both an SDK-owned copy and an independently installed `@openai/codex`
 are visible, resolution shall return the SDK-owned copy so the wrapped
 executable matches the SDK's exactly pinned dependency.
 Where the Node runtime provides no ESM loader resolution surface, as on the
-[PKG-002](../package.md#pkg-002) runtime floor, the search-path anchor shall
+[[package-2](../../packages/package.md#package-2)] runtime floor, the search-path anchor shall
 produce the same SDK-owned result.
 
 ### CODEX-013

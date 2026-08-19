@@ -10,7 +10,7 @@ Accepted
 ## Context
 
 The documented onboarding path is `npm install -g @sublang/cligent` followed by `tmux-play`.
-That path installed cleanly and then failed at the first Boss turn, because the generated default config named the `claude` and `codex` adapters while the agent SDKs those adapters import are optional peers ([PKG-004](../dev/package.md#pkg-004)) that a global install does not bring along.
+That path installed cleanly and then failed at the first Boss turn, because the generated default config named the `claude` and `codex` adapters while the agent SDKs those adapters import are optional peers ([[package-4](../packages/package.md#package-4)]) that a global install does not bring along.
 
 Two properties of the code made the failure late and opaque.
 Adapter construction never touches an SDK — each adapter imports its own lazily inside `run()` — so building the roster succeeded and only the first prompt failed.
@@ -28,7 +28,7 @@ Optional peers stay optional; cligent checks for agent runtimes and never instal
 - Launcher mode verifies every configured role's adapter runtime after resolving the config and before creating anything, and fails naming each unmet adapter, its roles, its install commands, and the config path ([TMUX-089](../user/tmux-play.md#tmux-089)).
   This covers hand-written configs, `--config` files, copied configs, and a host that drifts after generation, which roster generation alone cannot.
 - Readiness is each adapter's own `isAvailable()`, so the gate and the load it protects can never disagree.
-- Repair commands are scoped to the tree the running package resolves from: a peer SDK follows cligent's own install scope, an external CLI is always global, and the reported tree is the `node_modules` root itself so a layout no canned command repairs stays diagnosable ([PKG-015](../dev/package.md#pkg-015)).
+- Repair commands are scoped to the tree the running package resolves from: a peer SDK follows cligent's own install scope, an external CLI is always global, and the reported tree is the `node_modules` root itself so a layout no canned command repairs stays diagnosable ([[package-15](../packages/package.md#package-15)]).
   "Scoped" has to mean the command lands there when run as printed, and where a bare `npm install [-g]` lands is a property of the shell the command is pasted into — its npm environment, which npm rewrites for every lifecycle child, and its working directory, whose nearest enclosing project captures a bare project install — which the launching process can never witness.
   So the tree is classified **structurally** — a project install root carries the manifest that made it one, a global prefix's `lib` does not — rather than by whether the working directory happens to sit inside it, which misreports a project install invoked from anywhere else as global.
   And every peer-SDK command names the tree with `--prefix`, because npm's command line outranks both its environment and its project discovery, so the pinned form lands in the named tree in every context where the bare form would only sometimes.

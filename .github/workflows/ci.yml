@@ -54,7 +54,7 @@ jobs:
       - run: npm ci
 
       # The target verifier reads the shipped runtime descriptor from `dist`
-      # (PKG-016), so the emit has to exist before verification imports it.
+      # (package-16), so the emit has to exist before verification imports it.
       - run: npm run build
 
       - name: Install exact agent CLIs

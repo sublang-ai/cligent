@@ -364,7 +364,7 @@ When `tmux-play` is invoked in launcher mode (per [TMUX-002](#tmux-002)), the la
 
 ### TMUX-089
 
-Where a loaded config assigns the Captain role or a player role to an adapter whose runtime is not installed, or is installed below the version [PKG-016](../dev/package.md#pkg-016) declares supported, when `tmux-play` runs in launcher mode per [TMUX-002](#tmux-002), the launcher shall fail after resolving the config and before creating a work directory, a log directory, a config snapshot, or a tmux session, and before attaching or sending any model request.
+Where a loaded config assigns the Captain role or a player role to an adapter whose runtime is not installed, or is installed below the version [[package-16](../packages/package.md#package-16)] declares supported, when `tmux-play` runs in launcher mode per [TMUX-002](#tmux-002), the launcher shall fail after resolving the config and before creating a work directory, a log directory, a config snapshot, or a tmux session, and before attaching or sending any model request.
 The error shall name each such adapter, the roles that use it, the commands that install what it requires, and the path of the config to edit instead.
 A runtime installed below its supported version shall be reported as such, naming the installed and required versions, and shall not be reported as absent; a runtime above the tested version shall not block the launch.
 An adapter's runtime is the packages it needs before it can run: the optional peer SDK it imports, which shall be installed into the tree the running `@sublang/cligent` resolves from, plus any external CLI it spawns, which shall be installed globally whatever tree cligent itself occupies.

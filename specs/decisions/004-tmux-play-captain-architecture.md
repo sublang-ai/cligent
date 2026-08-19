@@ -229,7 +229,7 @@ Built-in Captains use the same contract as third-party ones — no internal mode
 ### Configuration
 
 `tmux-play` configs are YAML.
-Parsing uses the `yaml` package, a single-purpose runtime dep permitted under [PKG-003](../dev/package.md#pkg-003).
+Parsing uses the `yaml` package, a single-purpose runtime dep permitted under [[package-3](../packages/package.md#package-3)].
 
 Discovery checks `tmux-play.config.yaml` in the current directory first, then `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` as a home fallback.
 `--config <path>` overrides discovery.
@@ -296,7 +296,7 @@ Aborting before draining detaches producers cleanly and delivers their in-flight
 
 `tmux-play` ships in the `@sublang/cligent` npm package as a `bin` entry, replacing the prior `fanout` bin.
 The package is ESM, Node ≥18.3 per
-[PKG-002](../dev/package.md#pkg-002); there is no compiled binary.
+[[package-2](../packages/package.md#package-2)]; there is no compiled binary.
 
 The package separates the runtime API from the CLI:
 

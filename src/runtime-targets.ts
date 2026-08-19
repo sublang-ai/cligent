@@ -4,7 +4,7 @@
 /**
  * The agent runtimes each built-in adapter requires, and the versions of them
  * this release supports — the single declaration of that knowledge, per
- * [PKG-016](../specs/dev/package.md) and [DR-013](../specs/decisions/013-cligent-owned-runtime-compatibility.md).
+ * [package-16](../specs/packages/package.md#package-16) and [DR-013](../specs/decisions/013-cligent-owned-runtime-compatibility.md).
  *
  * Consumers do not carry this. A tool built on cligent inherits the policy by
  * upgrading cligent, and renders the verdict rather than recomputing it.
@@ -77,7 +77,7 @@ export type AgentRuntimeName =
 /**
  * Every runtime each adapter needs. An adapter may need more than one: the
  * OpenCode adapter resolves an SDK and, in managed mode, spawns a CLI whose
- * version PKG-012 requires to match it.
+ * version package-12 requires to match it.
  */
 export const AGENT_RUNTIME_TARGETS: Readonly<
   Record<AgentRuntimeName, readonly RuntimeTarget[]>
@@ -158,7 +158,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: 'opencode-ai',
       repairSpec: 'opencode-ai@1.18.13',
       command: 'opencode',
-      // PKG-012 requires the SDK and CLI conformance targets to match.
+      // package-12 requires the SDK and CLI conformance targets to match.
       supportedFrom: '1.18.12',
       tested: '1.18.13',
     }),

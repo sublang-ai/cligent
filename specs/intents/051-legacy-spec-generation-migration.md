@@ -6,9 +6,10 @@
 ## Status
 
 In progress.
-Tasks 1 through 6 are done; tasks 7 through 21 remain.
+Tasks 1 through 7 are done; tasks 8 through 21 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and completion waits on it.
+Task 7 landed `package` with `package-1`, `package-5`, `package-8`, `package-9`, and `package-16` unverified, a gap it inherited and handed to task 19's table.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -76,14 +77,14 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 7. **Migrate `package`.**
    Merge `dev/package.md` and `test/package.md` into `packages/package.md` under the `+100` block, take the conformance-target clause of `test/adapters.md` under the `+200` block, and retarget its 28 inbound citations and the 16 ID references in `scripts/` and `src/`.
-   Leave the clauses that verify Codex and tmux-play behavior in `test/package.md` for tasks 9 and 14 to absorb.
+   Leave the clauses that verify Codex and tmux-play behavior in `test/package-parked.md`, renamed off the `package` basename the new file now holds [[meta-10](../meta.md#meta-10)], for tasks 9 and 14 to absorb.
 
 8. **Migrate the Claude Code adapter package.**
    Merge `user/adapters/claude-code.md` with its slice of `test/adapters.md` into `packages/adapters/claude-code.md`, restating each item as one GEARS requirement and converting its `Verifies:` lines to inline citations at the verifying assertion.
    Strip the migrated claims from `test/adapters.md`, whose 14 criteria naming two or more adapters each fan out into every adapter they name, and retarget the 28 inbound citations and 7 code references.
 
 9. **Migrate the Codex adapter package.**
-   Merge `user/adapters/codex.md`, `dev/adapters/codex.md`, the Codex slice of `test/adapters.md`, and the Codex clauses parked in `test/package.md` into `packages/adapters/codex.md`, classifying the delivery and executable-resolution items as `Internal Behavior`.
+   Merge `user/adapters/codex.md`, `dev/adapters/codex.md`, the Codex slice of `test/adapters.md`, and the Codex clauses parked in `test/package-parked.md` into `packages/adapters/codex.md`, classifying the delivery and executable-resolution items as `Internal Behavior`.
    Retarget the 39 inbound citations and 7 code references.
 
 10. **Migrate the Gemini adapter package.**
@@ -101,7 +102,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 14. **Port `tmux-play` structurally.**
     Merge `user/tmux-play.md` and `test/tmux-play.md` under the `+100` block into `packages/tmux-play.md` with the lawful section order, faithful item text, renamed IDs, and all 93 `Verifies:` lines converted to inline citations.
-    Move the clauses verifying adapter and engine behavior into those packages, absorb the last clauses parked in `test/package.md`, delete both tmux-play files, the emptied `test/package.md`, and the three emptied legacy directories, and retarget the 472 spec citations and 458 code references.
+    Move the clauses verifying adapter and engine behavior into those packages, absorb the last clauses parked in `test/package-parked.md`, delete both tmux-play files, the emptied `test/package-parked.md`, and the three emptied legacy directories, and retarget the 472 spec citations and 458 code references.
 
 15. **Bring the items into item law.**
     Split the multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classify presenter and launcher mechanics hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], and drop restatements another package already owns [[meta-34](../meta.md#meta-34)].
@@ -126,18 +127,19 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Rebuild `specs/map.md` in the current shape — layout block, decisions table, packages table — with no intent-record index [[meta-18](../meta.md#meta-18)], and refresh whatever repo guidance still describes the legacy layout.
 
 19. **Close or record the verification gaps.**
-    Give every behavior of `licensing`, `release`, and `git` an integration or system check [[meta-21](../meta.md#meta-21)] that prefers real behavior to a substitute [[meta-32](../meta.md#meta-32)], implementing the audits these three state and nothing runs, and writing the verification items they still lack [[meta-33](../meta.md#meta-33)]:
+    Give every behavior in the table below an integration or system check [[meta-21](../meta.md#meta-21)] that prefers real behavior to a substitute [[meta-32](../meta.md#meta-32)], implementing the audits these three state and nothing runs, and writing the verification items they still lack [[meta-33](../meta.md#meta-33)]:
 
     | Package     | Audit stated but unrun                                                                               | Behavior no assertion reaches                                                                                                                                                                                                                           |
     | ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `licensing` | `licensing-3`, `licensing-4`, and `licensing-6`, no script, workflow, or hook reading an SPDX header | `licensing-7` and `licensing-8`, which reach `licensing-3` and `licensing-4` as preconditions only                                                                                                                                                      |
     | `release`   | `release-11`'s workflow audit and `release-12`'s smoke composition                                   | `release-1`, `release-3`, `release-4`, and `release-5`, which no item cites; `release-7`'s build, notes-extraction, and GitHub-release steps, which `release-11` cites without asserting; and every `release-10` checklist line outside `smoke:release` |
+    | `package`   | none                                                                                                 | `package-1`, `package-5`, and `package-8`, which no item cites and no check reaches; `package-9` and `package-16`, which `sdk-peer-floors.test.ts`, `runtime-version.test.ts`, and `verify-agent-targets.mjs` do execute while no item claims them |
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
     Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
-    The branches task 15 splits arrive as further rows of that table, each an assertion no check executes, and this task closes only once none is left.
+    The branches task 15 splits arrive as further rows of that table, as does any gap a migration task hands over, and this task closes only once none is left.
 
     Where a behavior admits no check at all, `git-3`'s bullets-if-clearer clause the candidate, a decision record [[meta-24](../meta.md#meta-24)] amends it into a checkable form with its concern preserved [[meta-12](../meta.md#meta-12)], the package then verifying everything it states.
     Where a gap is neither closed nor so amended, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
