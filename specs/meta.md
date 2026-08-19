@@ -159,6 +159,10 @@ A behavior item shall express every peer package relationship as a binding citat
 
 A spec package shall stand alone: readable in full without following any link — a citation never carries its meaning.
 
+### meta-35
+
+A spec package shall minimize references to its containing project, documenting in its `Intent` section [[meta-30](#meta-30)] any reference its intent makes essential.
+
 ### meta-31
 
 A lowercase kebab-case subdirectory under `specs/packages/` shall be an organizational collection only: a file's identity is its basename [[meta-10](#meta-10)]; moving a file between collections changes relative citation paths but no item ID or anchor.

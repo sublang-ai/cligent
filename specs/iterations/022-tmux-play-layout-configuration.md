@@ -64,7 +64,7 @@ Why `columnWeights` are positive integers: [TMUX-044](../user/tmux-play.md#tmux-
 A decimal weight would emit a malformed `$((…))` expression and silently break the post-creation resize invariant — the initial geometry (computed in JS via `Math.floor`) would still look right, but `client-resized` and `after-resize-window` hooks would no-op on every terminal resize.
 Loader-time rejection (TMUX-064) prevents that path from ever being taken.
 Scaling fractional ratios up to integers before configuring preserves the formula exactly: `floor(W * (k*w_i) / (k*sum)) = floor(W * w_i / sum)` for any positive scalar `k`, so the user-facing rule "scale to integers" loses no expressive power.
-This rationale lives in the IR rather than [TMUX-064](../user/tmux-play.md#tmux-064) because the constraint is observable user behavior (per [META-26](../meta.md#meta-26)) but its origin is implementation logic (per [META-24](../meta.md#meta-24)).
+This rationale lives in the IR rather than [TMUX-064](../user/tmux-play.md#tmux-064) because the constraint is observable user behavior but its origin is implementation logic (per [META-24](../meta.md#meta-24)).
 
 ## Deliverables
 

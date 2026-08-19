@@ -6,12 +6,10 @@
 ## Status
 
 In progress.
-Tasks 1 through 4 and task 6 are done; task 5 and tasks 7 through 21 remain.
-The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 5 has put both to the owner as that record's fourth and fifth gates, each drafted with the law restoring it would write and what retiring it would cost.
-Task 5 stays open on those answers, task 16 waits on `META-26`'s for the dead link it must retarget, and completion waits on both.
-Task 6 ran ahead of that open question, its destinations fixed by [DR-017](../decisions/017-spec-generation-migration.md) whichever way the answer falls, but the law a restored carrier writes would still govern the items it produced, so task 5 re-checks them.
-Task 6 also found the parser conflict that task 20 now carries, and completion waits on that too.
-The first three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
+Tasks 1 through 6 are done; tasks 7 through 21 remain.
+The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired with no successor.
+Task 6 found the parser conflict that task 20 now carries, and completion waits on it.
+All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
 
@@ -115,9 +113,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 16. **Move the records.**
     Move the 50 records left in `specs/iterations/` to `specs/intents/`, task 2 having retired the duplicate, rename `Goal` to `Intent` and both `Acceptance criteria` and `Acceptance` to `Verification`, supply the `Status` the two remaining records without one are missing, and order the sections per [[meta-5](../meta.md#meta-5)].
-    Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the seven legacy `META-*` citations on what the task-4 map settled for each concern.
+    Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the six legacy `META-*` citations left on what the task-4 map settled for each concern.
     A concern with a carrier takes a citation pointing at it, while a concern whose retirement the owner approved keeps its still-true prose and loses the link, a claim the current law no longer makes being rewritten or removed — the `META-20` sentence about `Verifies:` lines among them.
-    This task waits on that map rather than leaving a citation unresolved, one of the seven pointing at a `meta.md` anchor that is already gone.
+    This task waits on that map rather than leaving a citation unresolved.
 
 17. **Empty the records of design.**
     Move the design content the legacy records hold — their `Mechanism notes`, `Design decision`, and `Open questions` sections — into the decision records that own it, so deleting an intent record loses nothing [[meta-28](../meta.md#meta-28)].
@@ -166,4 +164,4 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 19 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
-- A human settles each of the decision record's three approval gates, every loss its map has recorded, `META-15` and `META-26` among them, and every contradiction a move recorded between an item and the artifact it describes, then reviews the full diff before it merges.
+- A human settles each of the decision record's five approval gates, every loss its map has recorded, `META-15` and `META-26` among them, and every contradiction a move recorded between an item and the artifact it describes, then reviews the full diff before it merges.

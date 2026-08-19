@@ -63,7 +63,8 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - A legacy item reconciles onto the current-generation item that carries its concern, whatever number that item holds.
 - Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
 - The framework law's own released IDs move with the rest: the 24 `META-<N>` items the previous generation published reach whatever now carries their concern, where anything still does — usually an item of the current `meta-<N>` set, sometimes a decision record instead.
-- The map establishes each of those outcomes rather than assuming it: `META-17`'s concern survives in [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other, while `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule are found in neither the current law nor a decision record, so only those two count as law removed.
+- The map establishes each of those outcomes rather than assuming it: `META-17`'s concern survives in [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other, while `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule were found in neither the current law nor a decision record, so only those two counted as law removed.
+- The owner closed both, one each way: `META-15`'s concern is restored as `meta-35`, and `META-26`'s retirement is approved, so its row records a successor no one will write.
 - Law found removed closes two ways and no other: a carrier is restored, or the owner approves an amendment admitting the retirement, the released-ID clause binding a released ID permanently while its exception reaches a moved ID rather than a retired one [[meta-12](../meta.md#meta-12)].
 - The per-item resolution of these rules belongs in this record beside the family table, one row per destination where a clause splits, so a released ID stays traceable once the plan that moved it is gone.
 - That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, the scope and detector items promoting the legacy `Exclusions` and `License File Detection` subsections, and `git-1`'s widened actor and reporting duty, which bind whoever prepares a commit rather than an AI agent alone.
@@ -552,7 +553,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TADAPT-041` | `gemini-241` |
 
 The framework law's own released IDs resolve against the current law and the decision records.
-Two find no carrier and stay open, so the migration cannot be called complete while they stand:
+Two found no carrier and the owner closed each, `META-15` through a restored carrier and `META-26` through an admitted retirement:
 
 | Released ID | Carrier of its concern |
 | --- | --- |
@@ -569,7 +570,7 @@ Two find no carrier and stay open, so the migration cannot be called complete wh
 | `META-12` | `meta-12` |
 | `META-13` | `meta-13` |
 | `META-14` | `meta-14` |
-| `META-15` | none found — open loss |
+| `META-15` | `meta-35` |
 | `META-16` | `meta-16` |
 | `META-17` | [DR-000](000-spec-structure-format.md), which still lets DRs and items cite each other |
 | `META-18` | `meta-18` |
@@ -579,7 +580,7 @@ Two find no carrier and stay open, so the migration cannot be called complete wh
 | `META-23` | `meta-23` |
 | `META-24` | `meta-24` |
 | `META-25` | `meta-25` |
-| `META-26` | none found — open loss |
+| `META-26` | none — retirement approved by the owner |
 
 ### Records
 
@@ -607,7 +608,7 @@ Two find no carrier and stay open, so the migration cannot be called complete wh
 
 ### Approvals
 
-The owner answered the three questions this migration turned on, the shape question before the renumbering one it scoped, and two stay open, one for each released framework item the map found without a carrier.
+The owner answered five questions, the three this migration turned on — the shape question before the renumbering one it scoped — and then one for each released framework item the map found without a carrier.
 
 1. Respelling the IDs that public releases carried is approved, the migration's own terms rather than the released-ID clause being what required that approval, so every legacy ID takes the lowercase `<pack>-<N>` form [[meta-11](../meta.md#meta-11)].
    The spelling was never cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
@@ -620,15 +621,15 @@ The owner answered the three questions this migration turned on, the shape quest
    Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, relocating a released test clause into another subject's package, and the refresh's own move of `META-3` to `meta-30` each move a released number that the clause forbade outright before the amendment.
    This record is the authorization that clause requires, and the per-item map it must carry beside the family table is the condition attached rather than a convenience, so a later migration reaches no released number without a record of its own.
 
-4. `META-15` is open on the two terms above: a carrier restored, or an approved amendment admitting the retirement.
+4. Restoring `META-15` is approved, its concern becoming `meta-35` and binding every package from tasks 7 through 15 onward.
    It read: "Each spec package shall minimize references to the containing project. When a project-specific reference is essential to a package's intent, it shall be documented in the package's `## Intent` section."
    Restoring it writes an item of the current law [[meta-11](../meta.md#meta-11)] obliging every package to hold its project references down and to disclose an essential one in `Intent`, which `git`, `licensing`, and `release` already practise with their `It is project-local.` line and which `package`, `tmux-play`, the adapters, and `engine` would each owe as they land.
-   Retiring it leaves no law asking a package to minimize those references or to say why it keeps one.
+   Retiring it would have left no law asking a package to minimize those references or to say why it keeps one, and the four packages already landed satisfy the restored item unchanged.
 
-5. `META-26` is open on the same two terms.
+5. Retiring `META-26` is approved, the current generation having dropped it deliberately, so no successor is written and its observability-and-negative-case demand does not return.
    It read: "A spec item shall describe behavior as observable outcomes (e.g., file state, exit code, printed output, return value, network call) under named conditions, including any conditions under which a particular outcome shall not occur."
    Its named conditions survive in the GEARS clauses [[meta-6](../meta.md#meta-6)], so restoring it adds only the demand that an outcome be observable and that an item name where an outcome shall not occur, which would redraft `release-1`'s SemVer rule, `release-4`'s pre-tag procedure, `release-10`'s checklist, and `git-3`'s bullets-if-clearer judgment, none of them stating something anyone can observe.
-   Retiring it leaves the GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] as the only shape an item must take, and the dead `meta-26` link in `iterations/022-tmux-play-layout-configuration.md` loses its target for good.
+   The GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] are therefore the only shape an item must take, and the dead `meta-26` link in `iterations/022-tmux-play-layout-configuration.md` loses its target for good.
 
 ## Consequences
 
@@ -639,5 +640,5 @@ The owner answered the three questions this migration turned on, the shape quest
 - Released changelog entries keep IDs that no longer resolve in the tree, and this record's table is the only bridge back to them.
 - Numbering is left non-contiguous, with `engine-101` following `engine-31` and the gap between them free for later items.
 - The reconciled `git` and `licensing` packages arrive with requirements the legacy files never stated, so the project adopts them by completing this migration.
-- Two released framework IDs reach no carrier — `META-15`, which required a package to minimize references to its containing project, and `META-26`, which required an item to describe behavior as observable outcomes — so the migration stays incomplete until each is restored or its retirement approved.
+- Two released framework IDs reached no carrier, and the owner closed each: `META-15`, which required a package to minimize references to its containing project, returns as `meta-35`, while `META-26`, which required an item to describe behavior as observable outcomes, is retired with no successor.
 - The framework law now admits a recorded renumbering of a released ID [[meta-12](../meta.md#meta-12)], which this record authorizes for this migration alone, leaving a later one to earn the same exception through a record and a map of its own.
