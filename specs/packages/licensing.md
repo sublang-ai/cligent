@@ -11,7 +11,7 @@ It is project-local.
 
 ## External Behavior
 
-### licensing-6
+### licensing-7
 
 When a project file is classified for licensing headers, the licensing scope shall exclude exactly these categories:
 
@@ -20,7 +20,7 @@ When a project file is classified for licensing headers, the licensing scope sha
 - generated or vendor content such as `dist/`, `node_modules/`, and vendor directories; and
 - license and legal documents.
 
-### licensing-7
+### licensing-8
 
 When the project root is inspected for its license, the license-file detector shall recognize these patterns:
 
@@ -31,26 +31,29 @@ When the project root is inspected for its license, the license-file detector sh
 
 ### licensing-1
 
-Where the file has comment syntax and is not excluded by the licensing scope [[licensing-6](#licensing-6)], while the file is git-tracked or `git add`-able, when preparing the file for inclusion in the repo, the file shall include `SPDX-FileCopyrightText` in its first comment block after any shebang.
+Where the file has comment syntax and is not excluded by the licensing scope [[licensing-7](#licensing-7)], while the file is git-tracked or `git add`-able, when preparing the file for inclusion in the repo, the file shall include `SPDX-FileCopyrightText` in its first comment block after any shebang.
 
 ### licensing-2
 
-Where the file has comment syntax, is not excluded by the licensing scope [[licensing-6](#licensing-6)], and one or more project-root license files match the license-file detector patterns [[licensing-7](#licensing-7)], while the file is git-tracked or `git add`-able, when preparing the file for inclusion in the repo, the file shall include `SPDX-License-Identifier` in its first comment block after any shebang.
+Where the file has comment syntax, is not excluded by the licensing scope [[licensing-7](#licensing-7)], and one or more project-root license files match the license-file detector patterns [[licensing-8](#licensing-8)], while the file is git-tracked or `git add`-able, when preparing the file for inclusion in the repo, the file shall include `SPDX-License-Identifier` in its first comment block after any shebang.
 
 ### licensing-5
 
-Where a file's first comment block already contains `SPDX-FileCopyrightText` or `SPDX-License-Identifier` from an upstream source (e.g., a template or vendored file copied from another project), when preparing the file for inclusion in the repo, those existing SPDX lines shall be preserved unmodified, even when the project root carries a different license — each preserved upstream line satisfying its respective copyright-header requirement [[licensing-1](#licensing-1)] or license-header requirement [[licensing-2](#licensing-2)], with any missing required line supplied from upstream, not the project license.
+Where a file's first comment block already contains `SPDX-FileCopyrightText` or `SPDX-License-Identifier` from an upstream source (e.g., a template or vendored file copied from another project), when preparing the file for inclusion in the repo, those existing SPDX lines shall be preserved unmodified, even when the project root carries a different license — the preserved upstream headers satisfying the copyright-header requirement [[licensing-1](#licensing-1)] and the license-header requirement [[licensing-2](#licensing-2)], with no project-license header appended or substituted.
 
 ## Verification
 
 ### licensing-3
 
-Where the file has comment syntax and is included by the licensing scope [[licensing-6](#licensing-6)], while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the copyright-header requirement [[licensing-1](#licensing-1)] by finding `SPDX-FileCopyrightText`.
+Where the file has comment syntax and is included by the licensing scope [[licensing-7](#licensing-7)], while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the copyright-header requirement [[licensing-1](#licensing-1)] by finding `SPDX-FileCopyrightText`.
 
 ### licensing-4
 
-Where the file has comment syntax, is included by the licensing scope [[licensing-6](#licensing-6)], and the license-file detector [[licensing-7](#licensing-7)] recognizes a project-root license, while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the license-header requirement [[licensing-2](#licensing-2)] by finding `SPDX-License-Identifier`.
+Where the file has comment syntax, is included by the licensing scope [[licensing-7](#licensing-7)], and the license-file detector [[licensing-8](#licensing-8)] recognizes a project-root license, while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the license-header requirement [[licensing-2](#licensing-2)] by finding `SPDX-License-Identifier`.
 
-### licensing-8
+### licensing-6
 
-Where a file already contains upstream SPDX lines and the project license differs, when inclusion preparation runs, the verification shall assert byte-for-byte preservation of every upstream line and use of upstream rather than project license data for any missing required line [[licensing-5](#licensing-5)].
+Where a file's first comment block already contains `SPDX-FileCopyrightText` or `SPDX-License-Identifier` from an upstream source, when checking the prepared file, the verification shall assert the upstream-preservation requirement [[licensing-5](#licensing-5)]:
+
+- every upstream SPDX line remains byte-identical to the upstream original;
+- no additional `SPDX-FileCopyrightText` or `SPDX-License-Identifier` line carrying project-specific text is appended or substituted.

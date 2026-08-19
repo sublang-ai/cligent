@@ -55,7 +55,6 @@ meta.md     The spec of specs
 
 | ID     | File                                                                                                                      | Goal                                                                                                                                                                                                                                                                                                                                                                         |
 | ------ | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IR-000 | [000-spdx-headers.md](iterations/000-spdx-headers.md)                                                                     | Add SPDX headers to applicable files                                                                                                                                                                                                                                                                                                                                         |
 | IR-001 | [001-project-scaffold-and-core-types.md](iterations/001-project-scaffold-and-core-types.md)                               | Project scaffold and all DR-002 core TypeScript interfaces                                                                                                                                                                                                                                                                                                                   |
 | IR-002 | [002-core-engine-and-adapter-registry.md](iterations/002-core-engine-and-adapter-registry.md)                             | Core engine (replaced by Cligent class in DR-003)                                                                                                                                                                                                                                                                                                                            |
 | IR-003 | [003-claude-code-adapter.md](iterations/003-claude-code-adapter.md)                                                       | Claude Code adapter via @anthropic-ai/claude-agent-sdk                                                                                                                                                                                                                                                                                                                       |
@@ -135,12 +134,11 @@ meta.md     The spec of specs
 | ----- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | user  | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization plus run-owned per-response telemetry reconciled to StreamStats for complete thinking/cache/subagent accounting, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings |
 
-### GIT
+### git
 
 | Group | File                 | Summary                                             |
 | ----- | -------------------- | --------------------------------------------------- |
-| dev   | [git.md](dev/git.md) | Commit message format and AI co-authorship trailers |
-| pkg   | [git.md](packages/git.md) | Current-generation git package, superseding the `dev` file |
+| pkg   | [git.md](packages/git.md) | Commit preparation, subject and body format, AI co-authorship trailer, intent-record reference, and the commit audit |
 
 ### KIMI
 
@@ -148,13 +146,11 @@ meta.md     The spec of specs
 | ----- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | user  | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization with honest omission of token/cost accounting the pinned runtime does not expose, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
 
-### LIC
+### licensing
 
 | Group | File                              | Summary                                       |
 | ----- | --------------------------------- | --------------------------------------------- |
-| dev   | [licensing.md](dev/licensing.md)  | SPDX header requirements and file-scope rules |
-| test  | [licensing.md](test/licensing.md) | Copyright and license header presence checks  |
-| pkg   | [licensing.md](packages/licensing.md) | Current-generation licensing package, superseding the `dev` and `test` files |
+| pkg   | [licensing.md](packages/licensing.md) | SPDX copyright and license headers: scope exclusions, license-file detection, upstream-header preservation, and the presence and preservation checks |
 
 ### NDJSON
 

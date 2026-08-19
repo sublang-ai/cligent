@@ -6,12 +6,12 @@
 ## Status
 
 Proposed.
-The two approval gates in the Decision are open, and the first is a precondition for any move.
+The two approval gates in the Decision are open, and the first is a precondition for the merges that renumber released IDs.
 
 ## Context
 
 The specs tree carries two spec generations at once.
-The current law arrived with the refreshed [`meta.md`](../meta.md) and [DR-000](000-spec-structure-format.md), while the body that predates it is still in place:
+The current law arrived with the refreshed [`meta.md`](../meta.md) and [DR-000](000-spec-structure-format.md), while the body that predates it, measured when this record was written, is still in place:
 
 | Legacy body | Size |
 | --- | --- |
@@ -51,7 +51,7 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 | `packages/package.md` | `dev/package.md`, `test/package.md` | `PKG-<N>` → `package-<N>`; `TPKG-<N>` → `package-<100+N>` |
 | `packages/release.md` | `dev/release.md` | `RELEASE-<N>` → `release-<N>` |
 | `packages/git.md` | `dev/git.md`, reconciled onto the current-generation file | `GIT-001` … `GIT-004` → `git-1` … `git-4` |
-| `packages/licensing.md` | `dev/licensing.md`, `test/licensing.md`, reconciled onto the current-generation file | `LIC-1`, `LIC-2`, `LIC-5` → `licensing-1`, `licensing-2`, `licensing-5`; `LIC-3`, `LIC-4` → `licensing-3`, `licensing-4`; `LIC-6` → `licensing-8` |
+| `packages/licensing.md` | `dev/licensing.md`, `test/licensing.md`, reconciled onto the current-generation file | `LIC-1`, `LIC-2`, `LIC-5` → `licensing-1`, `licensing-2`, `licensing-5`; `LIC-3`, `LIC-4`, `LIC-6` → `licensing-3`, `licensing-4`, `licensing-6` |
 | the eight packages it verifies | `test/adapters.md`, dissolved | `TADAPT-<N>` → `<destination>-<200+N>`, once per destination |
 
 ### Item IDs
@@ -60,8 +60,10 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 - A subject's whole test family takes a `+100` block, and the dissolved cross-adapter tests take a `+200` block in each destination.
 - A block shifts a number without reassigning it: no destination ID names a concern other than the one its source ID named, and the table above records that binding.
 - The blocks are historical rather than reserved ranges, so a later item still takes the lowest free number [[meta-11](../meta.md#meta-11)].
-- Where a current-generation file already occupies the destination, a legacy item reconciles onto the item that carries its concern rather than onto its own number, which is why `LIC-6` becomes `licensing-8`.
-- That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, and `licensing-6` / `licensing-7`, the last two promoting the legacy `Exclusions` and `License File Detection` subsections to items.
+- A test clause that moves to another subject's package leaves its source number behind, that number belonging to a different series, and takes the lowest free number in the destination's `+200` block.
+- A legacy item reconciles onto the current-generation item that carries its concern, whatever number that item holds.
+- Where the two disagree on a number, the released ID keeps it and the unreleased occupant yields, which [[meta-12](../meta.md#meta-12)] allows: `LIC-6` keeps `licensing-6`, and the scope and detector items the current-generation file added move to `licensing-7` and `licensing-8`, `packages/` appearing in no release tag.
+- That reconciliation also adopts what those files add beyond the legacy set: `git-5`, `git-6`, the scope and detector items promoting the legacy `Exclusions` and `License File Detection` subsections, and `git-1`'s widened actor and reporting duty, which bind whoever prepares a commit rather than an AI agent alone.
 
 ### Records
 
@@ -89,8 +91,13 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 
 ### Approval gates
 
-1. The current law forbids what this migration does to released IDs: it respells every one and renumbers the merged test families, while a released ID is never renumbered or reassigned [[meta-12](../meta.md#meta-12)].
-   This record claims no exemption from that law, so amending it is a precondition for the first move, and `meta.md` carries a standing instruction against editing it without human approval.
+1. The current law forbids part of what this migration does to released IDs.
+   Respelling every ID is forced by [[meta-11](../meta.md#meta-11)], which derives `<pack>` from the file's basename, and it leaves each number and each concern intact.
+   Renumbering is the conflict, and it arises four ways: merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package.
+   Each moves a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
+   This record claims no exemption, so amending that law is a precondition for those four cases, and `meta.md` carries a standing instruction against editing it without human approval.
+   The reading that separates respelling from renumbering is itself part of what the owner approves here, not a permission this record grants itself.
+   Reconciling the two seeded packages falls outside the gate because it moves no released number.
 2. Restating a shared criterion once per destination package, rather than introducing a shared adapter-contract package, is the alternative the owner may overturn.
 
 ## Consequences

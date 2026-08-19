@@ -6,12 +6,13 @@
 ## Status
 
 In progress.
-Task 1 is done; tasks 2 through 16 remain.
+Tasks 1 and 2 are done; tasks 3 through 16 remain.
 
 ## Intent
 
 Migrate the whole specs tree from the legacy generation — `user/` + `dev/` + `test/` item files, `iterations/` records, uppercase `<PACK>-<N>` IDs, and `Verifies:` metadata lines — to the current generation that `spex scaffold --update` reinstated in [`meta.md`](../meta.md) and [DR-000](../decisions/000-spec-structure-format.md).
-The tree holds 402 items across 18 legacy item files and 51 legacy records, and `spex lint` reports 1110 errors and 105 warnings against the current law, so the work is decomposed below rather than attempted at once.
+Measured when this plan was written, the tree held 402 items across 18 legacy item files and 51 legacy records, and `spex lint` reported 1110 errors and 105 warnings against the current law, so the work is decomposed below rather than attempted at once.
+Later tasks shrink those counts; they are this plan's baseline, not a live measurement.
 Every stated behavior, local extension, record state, and item concern survives the move; nothing is invented or dropped.
 
 Four invariants govern every task:
@@ -98,13 +99,15 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 16. **Verify and hand over.**
     Drive `spex lint` to zero errors and zero warnings, assemble the per-item rename map and reconcile it against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, and the open questions to human diff review.
+    Hand over with them the verification gaps [[meta-33](../meta.md#meta-33)] this migration inherits rather than creates: the licensing scope and detector items, and the release behaviors.
 
 ## Verification
 
 - `spex lint` reports no error and no warning.
 - No path under `specs/user/`, `specs/dev/`, `specs/test/`, or `specs/iterations/` exists, and no file in the repository links to one.
 - No legacy uppercase item ID remains anywhere except `CHANGELOG.md`, whose released entries are unchanged byte-for-byte.
-- Each of the 402 legacy items resolves through the rename map to exactly one live destination anchor, and each of the 51 legacy records keeps its status and checkbox state.
+- Each of the 402 items in that baseline resolves through the rename map to exactly one live destination anchor.
+- Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, the code changes being comments and test names only.
