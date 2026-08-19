@@ -6,8 +6,8 @@
 ## Status
 
 Proposed.
-Three approval gates in the Decision are open, and each stands on its own: respelling released IDs, renumbering them, and the shape of the cross-adapter verification.
-The first covers a spelling change already made.
+Three approval gates in the Decision are open: respelling released IDs, the shape of the cross-adapter verification, and renumbering released IDs.
+The first covers a spelling change already made, and the second scopes the third.
 
 ## Context
 
@@ -92,22 +92,25 @@ A subject's `user`, `dev`, and `test` sources merge into one package, and the ad
 
 ### Approval gates
 
-Three decisions are open, and each stands on its own.
+Three decisions are open.
+The first stands alone; the second fixes the destination set, so the third is scoped by whatever the second returns.
 
 1. Respelling the IDs that public releases carried.
    Every legacy ID changes spelling, and where that ID appeared in a public release the migration's own terms require the owner's approval before any editing.
    The spelling is not cosmetic: the previous generation declared a package's short form as its own attribute rather than deriving it from the basename — `package-management.md` carried the short form `PKGMGT` — and required each ID to be unique across the whole tree, which is why one `engine` basename published both `ENG` and `TENG`.
    `GIT-001` and `ENG-018` were therefore published identifiers in their own right, not renderings of `git-1` and `engine-18`.
    Granting it ratifies the fold of the two seeded packages, which respelled `GIT-001` … `GIT-004` and `LIC-1` … `LIC-6` before this gate was settled.
-   Withholding it ends the migration rather than pausing it, the current ID form being unreachable without respelling [[meta-11](../meta.md#meta-11)]: the fold reverts, the seeded `git` and `licensing` packages and the seeded SPDX-header record leave with it, and the legacy generation stands alone again.
+   Withholding it ends the migration rather than pausing it, the current ID form being unreachable without respelling [[meta-11](../meta.md#meta-11)], and the whole generation refresh reverts with the fold — the refreshed `meta.md` and [DR-000](000-spec-structure-format.md), the agent guidance, the index, the two seeded packages, and the seeded SPDX-header record — because keeping the current law over an unmigrated tree would leave law and tree in permanent conflict.
 
-2. Renumbering them.
-   Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause — including every dissolved cross-adapter item — into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
+2. Restating a shared criterion once per destination package, rather than introducing a shared adapter-contract package.
+   The alternative moves those criteria into one new package and restates per-adapter behaviors as shared ones, which changes what the law says rather than where it lives.
+   This choice fixes where the dissolved cross-adapter items land, and so fixes which relocations the third decision covers; it is settled before that one for exactly that reason.
+
+3. Renumbering the IDs that public releases carried.
+   Merging `ENG` with `TENG`, merging `TMUX` with `TTMUX`, merging `PKG` with `TPKG`, and relocating a released test clause into another subject's package each move a released number, which [[meta-12](../meta.md#meta-12)] forbids outright.
+   Which relocations those are is what the second decision returns, so this one is asked against its outcome.
    Granting it requires amending that clause, and `meta.md` carries a standing instruction against editing it without human approval.
    Withholding it leaves every remaining merge and relocation unplannable, while the packages already folded stand or fall by the first decision alone.
-
-3. Restating a shared criterion once per destination package, rather than introducing a shared adapter-contract package.
-   This decision moves no ID and bears on neither of the others, but it shapes the verification every adapter package receives, so it is settled before those packages are built.
 
 ## Consequences
 

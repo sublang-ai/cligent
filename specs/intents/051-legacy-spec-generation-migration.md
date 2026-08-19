@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 and 2 are done; tasks 3 through 18 remain.
+Tasks 1 and 2 are done; tasks 3 through 19 remain.
 Task 3 settles the three approval gates in [DR-017](../decisions/017-spec-generation-migration.md), and every task after it waits on their outcomes — task 2 included, since the respelling gate ratifies or reverts it.
 
 ## Intent
@@ -35,7 +35,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map assembled in task 18, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map built in task 4 and reconciled in task 19, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
@@ -48,68 +48,72 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
    Reconcile the duplicated SPDX-header record at `iterations/000-spdx-headers.md` into `intents/000-spdx-headers.md` with this project's true checkbox state, then delete the legacy trio and the duplicate record and retarget their 8 inbound citations.
 
 3. **Settle the approval gates.**
-   Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, and record each outcome on its own.
-   Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 and remove with it the `packages/git.md`, `packages/licensing.md`, and `intents/000-spdx-headers.md` the scaffold refresh installed, because reverting task 2 alone would leave those respelled IDs authoritative and two records claiming one ID.
-   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 4 through 12 cannot proceed, each of them moving a released number.
-   Settle the third gate here as well, because tasks 4 through 12 build the per-package verification it would replace.
+   Put the three gates of [DR-017](../decisions/017-spec-generation-migration.md) to the owner before any further item moves, taking the verification-shape gate before the renumbering gate it scopes, and record each outcome on its own.
+   Where respelling is granted, task 2 stands ratified; where it is withheld, revert task 2 together with the whole generation refresh that arrived before it — the refreshed law and its decision record, the agent guidance, the index, the two seeded packages, and the seeded SPDX-header record — because reverting task 2 alone would leave the current law standing over an unmigrated tree.
+   Where the shared-contract alternative wins the shape gate, replan tasks 5 through 13 against the destinations it creates before the renumbering gate is asked, those destinations being what it is asked about.
+   Where renumbering is granted, amend the released-ID clause of [`meta.md`](../meta.md), which may not be edited without human approval; where it is withheld, tasks 5 through 13 cannot proceed, each of them moving a released number.
    Set the decision record to `Accepted` on whichever outcomes are granted.
 
-4. **Migrate `ndjson` and `release`.**
+4. **Build the complete rename map.**
+   Enumerate every one of the 402 baseline items with the destination the settled gates give it, one row per branch where a clause splits, and record it in this plan for the moves and the final reconciliation to read.
+   The migration's own terms require the map before content moves, and the settled gates are what make it decidable.
+
+5. **Migrate `ndjson` and `release`.**
    Create `packages/ndjson.md` and `packages/release.md`, moving the parser's verification out of `test/adapters.md` and deleting `user/ndjson.md` and `dev/release.md`.
-   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and leave the residual coverage gap [[meta-33](../meta.md#meta-33)] to task 17 instead of inventing tests here.
+   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and leave the residual coverage gap [[meta-33](../meta.md#meta-33)] to task 18 instead of inventing tests here.
    Retarget the 5 inbound citations the parser package carries.
 
-5. **Migrate `package`.**
+6. **Migrate `package`.**
    Merge `dev/package.md` and `test/package.md` into `packages/package.md` under the `+100` block, take the conformance-target clause of `test/adapters.md` under the `+200` block, and retarget its 28 inbound citations and the 16 ID references in `scripts/` and `src/`.
-   Leave the clauses that verify Codex and tmux-play behavior in `test/package.md` for tasks 7 and 12 to absorb.
+   Leave the clauses that verify Codex and tmux-play behavior in `test/package.md` for tasks 8 and 13 to absorb.
 
-6. **Migrate the Claude Code adapter package.**
+7. **Migrate the Claude Code adapter package.**
    Merge `user/adapters/claude-code.md` with its slice of `test/adapters.md` into `packages/adapters/claude-code.md`, restating each item as one GEARS requirement and converting its `Verifies:` lines to inline citations at the verifying assertion.
    Strip the migrated claims from `test/adapters.md`, whose 14 criteria naming two or more adapters each fan out into every adapter they name, and retarget the 28 inbound citations and 7 code references.
 
-7. **Migrate the Codex adapter package.**
+8. **Migrate the Codex adapter package.**
    Merge `user/adapters/codex.md`, `dev/adapters/codex.md`, the Codex slice of `test/adapters.md`, and the Codex clauses parked in `test/package.md` into `packages/adapters/codex.md`, classifying the delivery and executable-resolution items as `Internal Behavior`.
    Retarget the 39 inbound citations and 7 code references.
 
-8. **Migrate the Gemini adapter package.**
+9. **Migrate the Gemini adapter package.**
    Merge `user/adapters/gemini.md` with its slice of `test/adapters.md` into `packages/adapters/gemini.md`, and retarget the 33 inbound citations.
 
-9. **Migrate the Kimi adapter package.**
-   Merge `user/adapters/kimi.md` with its slice of `test/adapters.md` into `packages/adapters/kimi.md`, and retarget the 35 inbound citations and 13 code references.
+10. **Migrate the Kimi adapter package.**
+    Merge `user/adapters/kimi.md` with its slice of `test/adapters.md` into `packages/adapters/kimi.md`, and retarget the 35 inbound citations and 13 code references.
 
-10. **Migrate the OpenCode adapter package.**
+11. **Migrate the OpenCode adapter package.**
     Merge `user/adapters/opencode.md`, the largest behavior file, with its slice of `test/adapters.md` into `packages/adapters/opencode.md`, and retarget the 69 inbound citations and 6 code references.
 
-11. **Migrate `engine`.**
+12. **Migrate `engine`.**
     Merge `user/engine.md` and `test/engine.md` under the `+100` block with the cross-adapter tests that verify engine behavior, move the clause that verifies the peer-SDK floor into `packages/package.md`, and delete `test/adapters.md` once its last item has moved.
     Retarget the 91 inbound citations and 55 code references.
 
-12. **Port `tmux-play` structurally.**
+13. **Port `tmux-play` structurally.**
     Merge `user/tmux-play.md` and `test/tmux-play.md` under the `+100` block into `packages/tmux-play.md` with the lawful section order, faithful item text, renamed IDs, and all 93 `Verifies:` lines converted to inline citations.
     Move the clauses verifying adapter and engine behavior into those packages, absorb the last clauses parked in `test/package.md`, delete both tmux-play files, the emptied `test/package.md`, and the three emptied legacy directories, and retarget the 472 spec citations and 458 code references.
 
-13. **Bring the `tmux-play` items into item law.**
+14. **Bring the `tmux-play` items into item law.**
     Split the multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classify presenter and launcher mechanics hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], and drop restatements another package already owns [[meta-34](../meta.md#meta-34)].
     This task moves no file, so it can be reviewed as pure item law.
 
-14. **Move the records.**
+15. **Move the records.**
     Move the 50 records left in `specs/iterations/` to `specs/intents/`, task 2 having retired the duplicate, rename `Goal` to `Intent` and both `Acceptance criteria` and `Acceptance` to `Verification`, supply the `Status` the two remaining records without one are missing, and order the sections per [[meta-5](../meta.md#meta-5)].
     Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the seven legacy `META-*` citations by concern: `META-11`, `META-12`, `META-19`, `META-21`, and `META-24` keep their number, the `META-20` claim about `Verifies:` lines is rewritten to the inline-citation law, and `META-26` has no successor so its sentence keeps its still-true prose and drops the link.
 
-15. **Empty the records of design.**
+16. **Empty the records of design.**
     Move the design content the legacy records hold — their `Mechanism notes`, `Design decision`, and `Open questions` sections — into the decision records that own it, so deleting an intent record loses nothing [[meta-28](../meta.md#meta-28)].
     Remove every mention of an intent record from the other specs — the index, the one decision record that names one, and the intent records that cite each other [[meta-18](../meta.md#meta-18)].
     While the decision records are open, convert the two that carry `[^n]` footnotes to the numbered external-reference markers the current law requires [[meta-19](../meta.md#meta-19)].
 
-16. **Rewrite the index and the guidance.**
+17. **Rewrite the index and the guidance.**
     Rebuild `specs/map.md` in the current shape — layout block, decisions table, packages table — with no intent-record index [[meta-18](../meta.md#meta-18)], and refresh whatever repo guidance still describes the legacy layout.
 
-17. **Close or record the inherited verification gaps.**
+18. **Close or record the inherited verification gaps.**
     Give an integration or system check that executes the real behavior [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)] to the three gaps this migration inherits rather than creates: the licensing scope and detector items, the release behaviors, and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
-    Record as open, with its reason, any gap no such check can close, so the tree never claims coverage [[meta-33](../meta.md#meta-33)] it does not have.
+    Where a gap cannot be closed, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
-18. **Verify and hand over.**
-    Drive `spex lint` to zero errors and zero warnings, assemble the per-item rename map and reconcile it against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
+19. **Verify and hand over.**
+    Drive `spex lint` to zero errors and zero warnings, reconcile the task-4 rename map against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
 
 ## Verification
 
@@ -119,7 +123,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Each of the 402 items in that baseline resolves through the rename map to at least one live destination anchor, a split clause resolving to one per branch so that no branch is dropped to make the count come out.
 - Each of the 51 baseline records keeps its status and checkbox state, except where a legacy checkbox was factually wrong and the record states why it was corrected.
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
-- Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], or this plan names the coverage it left open, `spex lint` checking neither.
+- Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
 - `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, the code changes being comments and test names only.
 - A human settles each of the decision record's three approval gates and reviews the full diff before it merges.
