@@ -74,6 +74,18 @@ describe('parseNDJSON', () => {
     });
   });
 
+  it('strips a trailing carriage return from a malformed line', async () => {
+    const stream = Readable.from(['{bad json}\r\n']);
+
+    const results = await collect(parseNDJSON(stream));
+
+    expect(results).toHaveLength(1);
+    if (results[0].ok) {
+      throw new Error('Expected parse error result');
+    }
+    expect(results[0].raw).toBe('{bad json}');
+  });
+
   it('ignores empty lines and parses final line without trailing newline', async () => {
     const stream = Readable.from([
       '\n',

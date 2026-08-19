@@ -74,9 +74,9 @@ Before tagging a release, the developer or agent shall verify:
 
 ### release-11
 
-When the release workflow is audited, the audit shall assert the gates the workflow runs before it publishes:
+When the release workflow is audited, the audit shall assert what starts the workflow and the gates it runs before publishing:
 
-- a pushed tag, and nothing else, starts the workflow [[release-6](#release-6)];
+- only a pushed git tag starts the workflow, and a run whose tag is not `vMAJOR.MINOR.PATCH` stops before publishing [[release-6](#release-6)];
 - the run compares the tag against the `package.json` version and stops before publishing where the two disagree [[release-7](#release-7)], leaving only a matching pair publishable [[release-2](#release-2)];
 - the CI run for the tagged commit is awaited while in progress, and publishing is refused unless it concluded successfully [[release-7](#release-7)];
 - the publish step carries `--provenance`, the job grants `id-token: write`, and no static npm token appears in the workflow [[release-8](#release-8)];

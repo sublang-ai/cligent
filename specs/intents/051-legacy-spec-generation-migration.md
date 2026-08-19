@@ -6,9 +6,10 @@
 ## Status
 
 In progress.
-Tasks 1 through 4 and task 6 are done; task 5 and tasks 7 through 20 remain.
+Tasks 1 through 4 and task 6 are done; task 5 and tasks 7 through 21 remain.
 The per-item map now in [DR-017](../decisions/017-spec-generation-migration.md) leaves two released framework IDs without a carrier, `META-15` and `META-26`, so task 5 puts both to the owner, task 16 waits on the one it must retarget, and completion waits on both.
-Task 6 went ahead of that open question because neither package it moves states framework law, so neither answer can invalidate it.
+Task 6 ran ahead of that open question, its destinations fixed by [DR-017](../decisions/017-spec-generation-migration.md) whichever way the answer falls, but the law a restored carrier writes would still govern the items it produced, so task 5 re-checks them.
+Task 6 also found the parser conflict that task 20 now carries, and completion waits on that too.
 The three approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -19,13 +20,14 @@ Later tasks shrink those counts; they are this plan's baseline, not a live measu
 Every stated behavior, local extension, record state, and item concern in the project's own spec body survives the move; nothing is invented or dropped.
 The framework law is not part of that body — the refresh replaced it wholesale — so the map records which of its released items reached no successor rather than hiding the loss.
 
-Four invariants govern every task:
+Seven invariants govern every task:
 
 - Each commit leaves every citation resolving: the inbound citations across `specs/` and the item IDs quoted in `src/`, `scripts/`, and `.github/workflows/` are retargeted in the same commit that moves their package.
 - Each task's citation figure counts inbound citations from other files, a package's own internal citations moving with it.
 - A destination package lands complete in one commit — `Intent`, `External Behavior`, optional `Internal Behavior`, `Verification`, in that order [[meta-30](../meta.md#meta-30)] — because a package without `Verification` is unlawful and cannot be staged across commits.
 - A legacy test file survives until its last item reaches a lawful home: a test item's behavior citations stay inside its own package [[meta-20](../meta.md#meta-20)], so a clause verifying a peer's behavior waits for that peer's task.
 - A task that changes where a released concern lives — splitting an item [[meta-29](../meta.md#meta-29)], dropping a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moving a clause — records the added, removed, or retargeted row in the same commit, so the map never lags the tree.
+- A released item found false of the artifact it describes moves unchanged, its contradiction recorded as an open question, because a move settles where a requirement lives and never what it says.
 - Every citation the tree carries is rewritten as it moves: 1249 item citations still use the legacy unbracketed `[ID](path#anchor)` form rather than the outer-bracketed form the current law requires [[meta-16](../meta.md#meta-16)].
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
@@ -39,7 +41,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 20, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 21, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
@@ -63,7 +65,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 5. **Resolve the two losses the map found.**
    Put `META-15`'s minimizing of project references and `META-26`'s observable-outcome drafting rule to the owner, each closing as [DR-017](../decisions/017-spec-generation-migration.md) requires: a carrier restored, or an approved amendment admitting the retirement.
-   Restoring either writes law that every task below must then satisfy, which is why this comes before the packages move rather than after.
+   Restoring either writes law that every task below must then satisfy.
+   Where a carrier is restored, re-check every package already migrated — `git`, `licensing`, `ndjson`, `release` — against it and redraft what it fails, in the commit that records the outcome.
    Carry each outcome into every place that states the loss: the map's framework table, that record's finding and its consequence, this plan's status, and the index summary.
    Leave this plan incomplete for as long as a row stays open.
 
@@ -123,7 +126,13 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Give an integration or system check that executes the real behavior [[meta-21](../meta.md#meta-21)], [[meta-32](../meta.md#meta-32)] to the three gaps this migration inherits rather than creates: the licensing scope and detector items, the release behaviors no real check reaches — the SemVer rule, the changelog format with its pre-tag procedure and heading order, every checklist line outside `smoke:release`, and the build, notes-extraction, and GitHub-release steps of the workflow, whose audit stops at the publish gates — and both halves of `git-1` — its reporting duty and its missing-identity branch — which the commit audit reaches neither of, reading a commit that already exists.
     Where a gap cannot be closed, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
-20. **Verify and hand over.**
+20. **Settle the parser's unterminated-tail conflict.**
+    `ndjson-2` carries `NDJSON-002`'s rule that a result follows only a complete newline-delimited line, while `parseNDJSON()` has read an unterminated final line since it was written, a passing test pins that flush, and the Gemini adapter is its only consumer.
+    Put the contradiction to the owner, who either conforms the parser and its test to the rule, or records the decision that adopts the flush, after which the package gains the item and the map gains its row.
+    Task 6 found this and left it open rather than settling a behavior question inside a move.
+    Leave this plan incomplete until it closes.
+
+21. **Verify and hand over.**
     Drive `spex lint` to zero errors and zero warnings, reconcile the task-4 rename map against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
 
 ## Verification

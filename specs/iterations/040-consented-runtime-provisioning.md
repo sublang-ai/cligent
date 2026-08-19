@@ -149,9 +149,9 @@ checks green at its boundary.
 8. [ ] **Specify the exported provisioning surface.**
        Amend PKG-014 and TPKG-002 for the documented surface the export lands
        on, state what a library caller may and may not do with the install
-       capability PKG-015 grants the executable, add RELEASE-011 under the
-       versioning section beside RELEASE-001, and refresh the RELEASE and
-       PKG summaries in the spec map.
+       capability PKG-015 grants the executable, add an external-behavior
+       item beside release-1 for the versioning rule that surface implies,
+       and refresh the release and PKG summaries in the spec map.
 9. [ ] **Classify npm exec cache trees.**
        Give `InstallTarget` an inhabitant for a tree created by `npm exec`,
        detected structurally from the resolved module path and the
