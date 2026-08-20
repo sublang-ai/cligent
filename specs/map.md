@@ -109,7 +109,7 @@ meta.md     The spec of specs
 
 | Group | File                                                       | Summary                                                                                                                                                                                                                                                                                       |
 | ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [claude-code.md](packages/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake subtype, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token, and their checks |
+| pkg   | [claude-code.md](packages/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token, and their checks |
 
 ### codex
 

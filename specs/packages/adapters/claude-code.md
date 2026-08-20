@@ -21,77 +21,201 @@ The adapter shall implement `AgentAdapter` with `agent: 'claude-code'`.
 
 ### claude-code-2
 
-The adapter module shall be importable without the SDK installed so consumers can register the adapter unconditionally.
-The SDK shall only be required at call time: `isAvailable()` shall return `false` and `run()` shall throw when the SDK is absent.
+Where the Claude Agent SDK is not installed, the adapter module shall remain importable so consumers can register it unconditionally.
+
+### claude-code-13
+
+Where the Claude Agent SDK is missing under [[engine-26](../engine.md#engine-26)] runtime readiness, when `isAvailable()` is called, the adapter shall return `false`.
+
+### claude-code-14
+
+Where the Claude Agent SDK is not installed, when `run()` is called, the adapter shall throw `ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.`.
 
 ### Event Normalization
 
 ### claude-code-3
 
-The adapter shall normalize SDK messages to `AgentEvent` types:
+When the adapter normalizes a non-terminal, non-system SDK message, it shall yield `AgentEvent` values according to this dispatch matrix:
 
 | SDK Message | AgentEvent |
 | --- | --- |
-| `system` with `subtype: 'init'` | `init` (model, cwd, tools); every other `system` notice emits nothing |
-| `assistant` with text content | `text` |
-| `assistant` with tool_use content | `tool_use` |
-| Stream events (text deltas) | `text_delta` |
-| `result` | `done` (usage, status), except an internal no-op `result` per [[claude-code-10](#claude-code-10)] |
-| Errors | `error` (recoverable flag) |
+| `assistant` | each event selected by the ordered assistant mapping below |
+| `stream`, `stream_event`, or `delta` | `text_delta` from the first non-empty `delta`, then `text`, or no event |
+| `error` | `error` with the payload selected by [[claude-code-32](#claude-code-32)] |
+| missing or any other `type` | no event |
 
-The adapter shall emit `init` exactly once per run, from the `system` message whose `subtype` is `init` — the only variant carrying the tool surface — identifying it by that subtype rather than by its position in the stream.
-Claude Code emits `system` messages throughout a run for hook lifecycle, compaction boundaries, retries, thinking-token and status notices, and similar events, and those notices arrive both before and after the handshake: a run with a `SessionStart` hook configured emits the hook's own notices first.
-Emitting `init` from a notice would announce an empty tool list, and doing so before the handshake would leave that empty list as the run's established capabilities.
-A `system` message that carries no subtype shall be treated as the handshake, no runtime notice being unlabelled.
+- An assistant message emits its non-empty top-level `text` as `text`, then its non-empty top-level `delta` as `text_delta`, then the events selected below from top-level `content` when that member is not nullish or otherwise from `message.content`, preserving block order.
 
-_The following released flat-accounting behavior is superseded by [[claude-code-12](#claude-code-12)]._
+| Assistant content block | Event payload or outcome |
+| --- | --- |
+| `text` with a string `text`, including empty | `text.content` is that string |
+| `thinking` with a non-empty string `summary` | `thinking.summary` is that string |
+| `thinking` without a non-empty summary | no event |
+| `tool_use` | `tool_use.toolUseId` is the first non-empty `id`, then `toolUseId`, or an identifier generated through [[engine-7](../engine.md#engine-7)]; `toolName` is the first non-empty `name`, then `toolName`, or `unknown_tool`; `input` is the supplied object or `{}` |
+| `tool_result` | the tool-result mapping below |
+| any other block | no event |
 
-Where the `result` message supplies complete usage, the adapter shall publish the [[engine-28](../engine.md#engine-28)] input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
-The adapter shall publish no output side, because Claude Code bills thinking tokens inside `output_tokens` and does not expose them separately, so no measured visible-output component exists to state.
+- A `tool_result` selects `toolUseId` from the first non-empty `toolUseId`, `tool_use_id`, and `id`, or generates one through [[engine-7](../engine.md#engine-7)]; selects `toolName` from non-empty `name`, then `toolName`, or `unknown_tool`; selects output from the first non-nullish `output`, `result`, and `content`, or `null`; and selects numeric duration from `durationMs`, then `duration_ms`, or omits it.
+- Its status is `denied` for case-insensitive source status `denied`, otherwise `error` for `isError: true`, `is_error: true`, or case-insensitive source status `error`, and otherwise `success`.
+
+### claude-code-32
+
+When the adapter normalizes an SDK `error` message, it shall select its payload according to this field-priority matrix:
+
+| Payload member | First available value |
+| --- | --- |
+| `code` | non-empty top-level `code`, nested `error.code`, nested `error.type`, otherwise omitted |
+| `message` | non-empty top-level `message`, nested `error.message`, otherwise `Claude Code SDK error` |
+| `recoverable` | boolean top-level `recoverable`, boolean top-level `retryable`, otherwise `false` |
+
+### claude-code-15
+
+When the adapter normalizes a sequence of SDK `system` messages, it shall select and emit the `init` handshake according to this sequence matrix:
+
+| State and message | Outcome |
+| --- | --- |
+| no `init` emitted; `subtype: 'init'` | emit `init` with model, cwd, and tools |
+| no `init` emitted; subtype absent, empty, or non-string | emit `init`, because runtime notices carry non-empty string labels |
+| no `init` emitted; any other subtype | emit nothing |
+| `init` already emitted; any `system` message | emit nothing, preserving the first handshake's capabilities |
+
+- An emitted `init` selects model from non-empty message `model`, requested model, then `unknown`; selects cwd from non-empty message `cwd`, requested cwd, then the process cwd; and retains each non-empty string tool or object tool name.
+
+### claude-code-16
+
+_Superseded by [[claude-code-12](#claude-code-12)]._
+
+Where a terminal `result` supplies complete flat usage, when the adapter publishes the [[engine-28](../engine.md#engine-28)] input side, it shall map the disjoint counters according to this table:
+
+| SDK counter | Input member |
+| --- | --- |
+| `input_tokens` | `input` |
+| `cache_read_input_tokens` | `cacheRead`, omitted when the counter is absent |
+| `cache_creation_input_tokens` | `cacheWrite`, omitted when the counter is absent |
+
+### claude-code-17
+
+_Superseded by [[claude-code-12](#claude-code-12)]._
+
+Where a terminal `result` supplies complete flat usage, when the adapter publishes token accounting, it shall omit the output side because Claude Code includes unseparated thinking tokens in `output_tokens`.
 
 ### claude-code-10
 
-Where the run was invoked with a non-empty `AgentOptions.resume`, while the adapter has yielded no `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` event in the current run, when the SDK stream yields a `result` message that classifies as `success` while carrying no non-empty `result` string and, in the main-loop accounting rather than the whole-run per-model totals [[claude-code-11](#claude-code-11)] reports, zero input-token, output-token, and tool-use counts — the shape of the CLI-internal continuation-repair no-op turn that Claude Code runs before the submitted turn when resuming a session whose previous turn ended with a dangling tool call — the adapter shall not emit terminal `done` for that message and shall continue consuming the stream so the submitted turn's messages, including its own `result`, normalize per [[claude-code-3](#claude-code-3)]; the skip shall apply to every `result` message of that shape for as long as both conditions above hold, there being nothing that distinguishes a second one from the first; where the stream then ends without a further `result` message that terminated the run — including a stream whose every `result` carried that shape — and the run was not aborted, the adapter shall yield its no-result outcome (`error` then terminal `done` with `status: 'error'`); an aborted run keeps its interrupted outcome per [[claude-code-7](#claude-code-7)]; in neither case shall the adapter yield a `success` `done` without a result.
-When the run was invoked without `AgentOptions.resume`, or when any `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` event has already been yielded in the current run, a `result` message of that same shape shall normalize as terminal `done` per [[claude-code-3](#claude-code-3)] — `status: 'success'` with no `result` value and zero usage — and the adapter shall stop consuming the stream, so an empty fresh-run success and a silent termination after real turn activity are reported as the terminals they are rather than skipped.
+When the SDK stream yields a success-classified `result` carrying no non-empty result or error text and a valid complete zero main-loop signature per [[claude-code-28](#claude-code-28)], the adapter shall classify it according to this continuation-repair matrix:
+
+| Run state | Outcome |
+| --- | --- |
+| non-empty inbound `resume`; no prior `text`, `text_delta`, `thinking`, `tool_use`, or `tool_result` | emit no terminal event and continue consuming, for every matching result while those conditions hold |
+| no inbound `resume` | emit terminal `done` with `status: 'success'`, no result value, and usage derived normally from the terminal accounting per [[claude-code-12](#claude-code-12)] and [[claude-code-31](#claude-code-31)], then stop consuming |
+| non-empty inbound `resume`; prior `text`, `text_delta`, `thinking`, or `tool_result` but no observed `tool_use` | emit terminal `done` with `status: 'success'`, no result value, and usage derived normally from the terminal accounting per [[claude-code-12](#claude-code-12)] and [[claude-code-31](#claude-code-31)], then stop consuming |
+
+### claude-code-18
+
+While a run is not aborted and has emitted no terminal `done`, when its SDK stream ends, the adapter shall yield a non-recoverable `error` with code `MISSING_RESULT` and message `Protocol violation: Claude Code SDK stream ended without a result message`, followed by terminal `done` with `status: 'error'`, elapsed duration, usage containing only the tool-use count in [[claude-code-50](#claude-code-50)], and no result or resume token.
+
+### claude-code-42
+
+While a run is not aborted, when the SDK query fails before terminal `done`, the adapter shall yield a non-recoverable `error` with code `SDK_STREAM_ERROR` and the thrown `Error` message or `Claude Code adapter failed during stream`, followed by terminal `done` with `status: 'error'`, elapsed duration, usage containing only the tool-use count in [[claude-code-50](#claude-code-50)], and no result or resume token, whether failure occurs during query invocation or iterator consumption.
+
+### claude-code-48
+
+While the mapped SDK abort controller is aborted and no terminal `done` has been emitted, when the SDK query exits, the adapter shall yield for the bounded abort drain in [[engine-9](../engine.md#engine-9)] only terminal `done` with `status: 'interrupted'`, the resume token selected by [[claude-code-26](#claude-code-26)], elapsed duration, usage containing only the tool-use count in [[claude-code-50](#claude-code-50)], and no result, whether the iterator ends or query invocation or iterator consumption throws.
 
 ### Permission Mapping
 
 ### claude-code-4
 
-The adapter shall map `PermissionPolicy` to Claude Code permission modes per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md):
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Claude Code controls per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall produce exactly this matrix, with an explicit mode taking precedence over every capability level:
 
-- All three capabilities `'allow'` → `permissionMode: 'bypassPermissions'`
-- Only `fileWrite: 'allow'` (others `'ask'`) → `permissionMode: 'acceptEdits'`
-- No capability set to `'allow'` or `'deny'` — every capability `'ask'`, which includes a missing `permissions` field — → `permissionMode: 'default'` with **no** `canUseTool` callback. Per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) a missing policy is no override, so the SDK's own `default`-mode handling governs and the adapter synthesizes nothing.
-- Any capability `'allow'` or `'deny'` present (mixed with `'ask'`) → `permissionMode: 'default'` with a `canUseTool` callback that enforces the explicit categories
+| Policy input | `permissionMode` | `allowDangerouslySkipPermissions` | `canUseTool` |
+| --- | --- | --- | --- |
+| policy absent | `default` | omitted | omitted |
+| `mode: 'auto'`, with any capability levels | `auto` | omitted | omitted; native classifier handling receives no cligent-selected capability grant |
+| `mode: 'bypass'`, with any capability levels | `bypassPermissions` | `true` | omitted |
+| mode omitted; all capabilities `allow` | `bypassPermissions` | `true` | omitted |
+| mode omitted; only `fileWrite` is `allow` and the others are omitted or `ask` | `acceptEdits` | omitted | omitted |
+| mode omitted; every capability is omitted or `ask`, including an empty policy | `default` | omitted | omitted |
+| mode omitted; every other mix containing `allow` or `deny` | `default` | omitted | callback per [[claude-code-5](#claude-code-5)], [[claude-code-20](#claude-code-20)], and [[claude-code-21](#claude-code-21)] |
 
-When `PermissionPolicy.writablePaths` is non-empty per [[engine-22](../engine.md#engine-22)] and Claude Code sandboxing is not independently active through a supported adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with `enforcement: 'ambient'` and canonical `paths`, and keep the existing permission-mode / `canUseTool` mapping unchanged.
+### claude-code-19
+
+Where Claude Code has no independently active supported filesystem-sandbox write-grant surface, when the adapter maps `PermissionPolicy.writablePaths`, it shall apply the [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)] contract according to this matrix without changing the permission controls selected by [[claude-code-4](#claude-code-4)]:
+
+| `writablePaths` input | Outcome |
+| --- | --- |
+| absent or empty | omit `WritablePathsPermissionMapping` |
+| valid non-empty entries | canonical paths with `enforcement: 'ambient'` |
+| any invalid entry | reject the mapping |
 
 ### claude-code-5
 
-The `canUseTool` callback shall conform to the Claude Agent SDK `CanUseTool` contract: the SDK invokes it as `(toolName, input, options)` and validates the resolved value against `PermissionResult`, so the callback shall resolve to `{ behavior: 'allow', updatedInput }` or `{ behavior: 'deny', message }` — a bare boolean or `undefined` fails the SDK's schema validation and raises a `ZodError` on every tool call.
-It shall match tool categories to UPM capabilities — `Write`/`Edit` → `fileWrite`, `Bash` → `shellExecute`, `WebFetch` → `networkAccess` — and resolve each call as: capability `'allow'` → `allow`; capability `'deny'` → `deny`; capability `'ask'` → `deny` (interactive approval is unavailable to a headless adapter run; the deny `message` shall name the capability); a tool matching no category → `allow`, since it is not a permission-gated capability.
+When the Claude Agent SDK invokes `canUseTool(toolName, input, options)`, the callback shall conform to its `CanUseTool` contract by resolving to `{ behavior: 'allow', updatedInput }` or `{ behavior: 'deny', message }` rather than a bare boolean or `undefined`.
+
+### claude-code-20
+
+When `canUseTool` classifies a tool name, it shall map its leading identifier to a permission capability according to this table:
+
+| Tool identifier | Capability |
+| --- | --- |
+| `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | `fileWrite` |
+| `Bash` | `shellExecute` |
+| `WebFetch` | `networkAccess` |
+| every other identifier | unclassified |
+
+### claude-code-21
+
+When `canUseTool` decides a classified or unclassified call, it shall resolve according to this headless decision matrix:
+
+| Classification and level | Result |
+| --- | --- |
+| classified; `allow` | `{ behavior: 'allow', updatedInput }` |
+| classified; `deny` | `{ behavior: 'deny', message }`, naming the capability |
+| classified; `ask` | `{ behavior: 'deny', message }`, naming the capability and unavailable interactive approval |
+| unclassified | `{ behavior: 'allow', updatedInput }` |
 
 ### Options Mapping
 
+### claude-code-46
+
+When `run(prompt, options)` invokes the SDK query, the adapter shall pass `prompt` through unchanged.
+
 ### claude-code-6
 
-The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK `cwd`, `model` → SDK `model`, `maxTurns` → SDK `maxTurns`, `maxBudgetUsd` → SDK `maxBudgetUsd`, non-empty `resume` → SDK `resume`.
+When the adapter maps `AgentOptions` to SDK query options, it shall pass through `cwd`, `model`, `maxTurns`, and `maxBudgetUsd` when present and leave their SDK values `undefined` when absent, while passing through only a non-empty `resume` and otherwise leaving it `undefined`.
+
+### claude-code-33
+
+When the adapter maps `AgentOptions.abortSignal`, it shall control SDK cancellation according to this per-run lifecycle matrix:
+
+| Input or lifecycle state | SDK `abortController` outcome |
+| --- | --- |
+| signal absent | `undefined` |
+| signal already aborted | fresh controller aborted before `query()` |
+| signal aborts during the run | fresh controller aborted when the signal fires |
+| run ends | caller-signal listener removed |
+| runs overlap or occur in sequence | controller and listener state isolated per run |
 
 ### claude-code-9
 
-Where `AgentOptions.allowedTools` is provided, the adapter shall pass the effective list to the Claude Agent SDK `tools` option so only those built-in tools are available, shall pass the list to SDK `allowedTools` to preserve automatic permission approval for the selected names, and shall set `strictMcpConfig: true` so ambient MCP configuration cannot add tools outside the explicit list.
-An explicit empty list shall map to `tools: []` and `allowedTools: []`, disabling every built-in tool rather than restoring SDK defaults; it shall additionally map to `settingSources: []` so the SDK loads no user, project, or local filesystem settings or `CLAUDE.md`.
-These fields isolate only the ambient sources covered by their documented SDK controls and shall not be represented as removing provider context outside those surfaces.
-Where `disallowedTools` is also provided, the adapter shall pass it through so those exact identifiers remain unavailable and take precedence over the allowlist per [[engine-17](../engine.md#engine-17)].
-Where `allowedTools` is omitted, the adapter shall omit SDK `tools`, `settingSources`, and `strictMcpConfig` and preserve the SDK's native available-tool, MCP, and settings behavior.
+When the adapter maps `AgentOptions.allowedTools` under the portable tool restriction in [[engine-17](../engine.md#engine-17)], it shall preserve the raw list and apply the provider controls in this matrix, which isolates only the ambient sources those controls cover and makes no claim about other provider context:
+
+| `allowedTools` input | SDK controls |
+| --- | --- |
+| omitted | leave `tools`, `allowedTools`, `settingSources`, and `strictMcpConfig` `undefined`, preserving native tool, MCP, and settings behavior |
+| empty | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
+| non-empty | copy the list to `tools`, pass it to `allowedTools`, set `strictMcpConfig: true`, and leave `settingSources` `undefined` |
+
+### claude-code-22
+
+When the adapter maps `AgentOptions.disallowedTools`, it shall pass the raw list through when present and leave the SDK value `undefined` otherwise, preserving deny precedence over `allowedTools` per [[engine-17](../engine.md#engine-17)].
 
 ### claude-code-8
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Claude-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] and map each value to the Claude Agent SDK query options per [[1]] and [[2]]:
+When the adapter maps the Claude-specific `AgentOptions.effort` vocabulary in [[engine-20](../engine.md#engine-20)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this SDK-option matrix per [[1]] and [[2]]:
 
 | `AgentOptions.effort` | SDK `effort` | SDK `settings.ultracode` |
 | --- | --- | --- |
+| omitted | omitted | omitted |
 | `minimal` | `low` | `false` |
 | `low` | `low` | `false` |
 | `medium` | `medium` | `false` |
@@ -99,20 +223,66 @@ Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the ada
 | `xhigh` | `xhigh` | `false` |
 | `max` | `max` | `false` |
 | `ultracode` | `xhigh` | `true` |
+| `ultra` or any other unsupported value | reject before invoking the SDK, naming the adapter and allowed values | not invoked |
 
-The minimum compatible Claude Agent SDK declares model effort as `'low' | 'medium' | 'high' | 'xhigh' | 'max'`, so `minimal` shall collapse to its lowest tier and `ultracode` shall use `xhigh` plus the provider's orchestration setting.
-Every explicit portable effort shall set `settings.ultracode: false` so a per-run downgrade overrides inherited ultracode configuration.
-When effort is omitted, the adapter shall set neither SDK field and shall preserve SDK and user-configuration defaults.
-Where effort is outside the Claude-specific accepted vocabulary, including the Codex-specific value `ultra`, the adapter shall reject it before invoking the SDK with an error naming the Claude adapter and allowed values.
-Mapping `ultracode` shall leave independently mapped permission controls unchanged, although the provider's delegated workflow may increase token use, latency, cost, concurrency, and tool activity per [[2]].
+### claude-code-23
+
+Where `AgentOptions.effort` is `ultracode`, when the adapter maps the same permission input with and without that effort, it shall leave every permission control unchanged.
+
+### Terminal Results
+
+### claude-code-24
+
+When the adapter normalizes an SDK `result` that is not the internal no-op in [[claude-code-10](#claude-code-10)], it shall emit terminal events according to this ordered classification matrix, using the first non-empty status field from `status`, `stopReason`, and `stop_reason` and comparing its value case-insensitively where a row calls for one:
+
+| First matching result signal | Event sequence and terminal status |
+| --- | --- |
+| `subtype: 'error_max_turns'` | `done` with `status: 'max_turns'` |
+| `subtype: 'error_max_budget_usd'` | `done` with `status: 'max_budget'` |
+| any other `error_*` subtype, `is_error: true`, or `isError: true` | non-recoverable `error`, then `done` with `status: 'error'` |
+| status `success`, `completed`, or `ok` | `done` with `status: 'success'` |
+| status `interrupted`, `cancelled`, or `aborted` | `done` with `status: 'interrupted'` |
+| status `max_turns` or `maxturns` | `done` with `status: 'max_turns'` |
+| status `max_budget`, `maxbudget`, or `budget_exceeded` | `done` with `status: 'max_budget'` |
+| status `error` or `failed` | `done` with `status: 'error'` |
+| status absent or unrecognized | `done` with `status: 'success'` |
+
+- A synthesized `error` uses its non-empty subtype or `CLAUDE_CODE_RESULT_ERROR` as code, joins non-empty `errors` entries as its message before falling back to non-empty `result`, subtype, and `Claude Code SDK error`, and carries `recoverable: false`.
+- Terminal `done.result` prefers non-empty `result`, then error text produced by subtype or error-flag classification, and is otherwise omitted; status-only classification does not promote the `errors` array to result text.
+- Terminal duration prefers numeric `durationMs`, then numeric `duration_ms`, then elapsed run time.
 
 ### Resume Token
 
 ### claude-code-7
 
-When a Claude Code run starts without `AgentOptions.resume`, the adapter shall pass a generated UUID as SDK `sessionId` so the run has a stable session identifier once Claude persists the conversation.
-When the Claude Code SDK provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
-When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: a session identifier observed on SDK activity beyond the initial `system` message, or the adapter-assigned session identifier after such activity; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+When a Claude Code run starts without `AgentOptions.resume`, the adapter shall pass a UUID generated through [[engine-7](../engine.md#engine-7)] as SDK `sessionId` so the run has a stable identifier once Claude persists the conversation.
+
+### claude-code-25
+
+When the SDK stream yields a normal terminal `result`, the adapter shall select `DonePayload.resumeToken` for `Cligent` continuity [[engine-5](../engine.md#engine-5)] per [DR-003](../../decisions/003-role-scoped-session-management.md) according to this priority matrix, using the latest backend identifier selected by [[claude-code-51](#claude-code-51)]:
+
+| Available identifier | `resumeToken` |
+| --- | --- |
+| a backend session identifier observed before or on the result | the latest backend identifier |
+| no backend identifier; non-empty inbound `AgentOptions.resume` | the inbound identifier |
+| neither; fresh run activity reached the result | the generated SDK `sessionId` from [[claude-code-7](#claude-code-7)] |
+
+### claude-code-26
+
+When an abort causes the adapter to emit terminal `done` with `status: 'interrupted'`, the adapter shall select `DonePayload.resumeToken` according to this continuity matrix:
+
+| Observed before abort | `resumeToken` |
+| --- | --- |
+| non-system SDK activity and one or more backend session identifiers observed at any point | the latest backend identifier selected by [[claude-code-51](#claude-code-51)] |
+| no backend identifier; fresh-run non-system SDK activity | the generated SDK `sessionId` from [[claude-code-7](#claude-code-7)] |
+| neither; non-empty inbound `AgentOptions.resume` | the inbound identifier |
+| none of the above | omitted |
+
+### Tool Accounting
+
+### claude-code-50
+
+When the adapter emits terminal `done`, it shall set `usage.toolUses` to the number of distinct `toolUseId` values in normalized `tool_use` events observed during the run, ignoring SDK-reported main-loop tool counts and preserving the observed count independently of token and cost accounting.
 
 ### Token Accounting
 
@@ -120,54 +290,147 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 
 _Superseded by [[claude-code-12](#claude-code-12)]; retained for the unreleased first billable-record design._
 
-Claude Code reports two accountings on its terminal `result` message: `usage`, which counts the main conversation loop only, and `modelUsage`, which counts every model request the run made — including subagents and internal inference — partitioned per model into input, cache-read, cache-creation, and output counters.
-The adapter shall derive `DonePayload.usage` from the per-model accounting by summing those counters across models, so the reported totals cover the whole run and share the scope of the runtime's own cost figure.
-Where the per-model accounting is absent, or any counter it supplies is not a finite non-negative integer, the adapter shall fall back to the main-loop counters; in that case the reported totals cover the main conversation loop only and may understate a run that spawned subagents.
-The adapter shall publish the per-model entries as the run's [[engine-30](../engine.md#engine-30)] billable records, keyed by the canonical model identifier Claude Code prices against rather than the raw map key, carrying the provider and the runtime-computed per-model cost where present, and carrying the input side alone because the runtime reports no per-model output split.
-The adapter shall determine the [[claude-code-10](#claude-code-10)] no-op repair signature from the main-loop counters rather than the whole-run totals, because the repair turn reports zero main-loop tokens while the run as a whole may already have spent some.
+When the adapter derives the superseded `DonePayload.usage` aggregate, it shall select its source according to this matrix:
+
+| Terminal accounting | Aggregate source and scope |
+| --- | --- |
+| valid per-model `modelUsage` | sum input, cache-read, cache-creation, and output counters across models, covering the whole run |
+| absent or malformed `modelUsage` | fall back to main-loop `usage`, which may omit subagent work |
+
+### claude-code-27
+
+_Superseded by [[claude-code-12](#claude-code-12)]; retained for the unreleased first billable-record design._
+
+When the adapter publishes the superseded [[engine-30](../engine.md#engine-30)] per-model records, it shall key them by the canonical priced model and carry provider and runtime cost when present, with only the input side because the runtime exposes no per-model output split.
 
 ### claude-code-12
 
-The adapter shall publish [[engine-31](../engine.md#engine-31)] complete token coverage only from the terminal `modelUsage` map, because that surface includes every model request made by the main loop, subagents, and internal inference [[3]].
-Each per-model record shall carry inclusive input and output totals, exact uncached, cache-read, and cache-write input details, the canonical model and provider where supplied, the runtime's non-negative per-model cost as `agent-estimate`, and a `web_search_request` priced unit where the runtime reports one.
-The records shall sum to the report totals.
-Reasoning detail shall remain absent because Claude Code includes it in output but does not expose the subset.
-Where `modelUsage` is absent or malformed, the adapter shall omit token accounting rather than promote the main-loop-only `usage` object to an invocation report; that narrow object shall remain usable only for [[claude-code-10](#claude-code-10)]'s internal repair signature.
-The terminal `total_cost_usd`, where finite and non-negative, shall be exposed independently as a whole-invocation `agent-estimate` even when tokens are absent.
+When the adapter selects the terminal token source, it shall publish [[engine-31](../engine.md#engine-31)] accounting according to this authenticity matrix:
+
+| `modelUsage` input | Token outcome |
+| --- | --- |
+| non-empty non-array object covering main-loop, subagent, and internal inference requests [[3]], with every entry a non-array object carrying finite non-negative safe-integer input, cache-read, cache-creation, and output counters under one or both agreeing aliases, and with every per-record and cross-record sum remaining a safe integer | `coverage: 'complete'` report derived only from that map |
+| absent, empty, not a non-array object, any entry or required counter malformed or conflicting across aliases, or any derived sum not a safe integer | omit `tokens` and never promote main-loop `usage` |
+
+### claude-code-29
+
+When the adapter publishes a per-model record from valid `modelUsage`, it shall carry this authentic [[engine-31](../engine.md#engine-31)] record shape:
+
+- camel-case or snake-case SDK token counters map to the same fields;
+- inclusive input and output totals;
+- exact uncached, cache-read, and cache-write input details;
+- the non-empty canonical model and provider when supplied, otherwise the map key and no provider;
+- the first finite numeric `costUSD`, then `costUsd`, as `agent-estimate` when that selected value is non-negative;
+- a `web_search_request` priced unit from one or both agreeing non-negative safe-integer `webSearchRequests` and `web_search_requests` counters when supplied; and
+- omission of absent or malformed optional cost and absent, malformed, or conflicting web-search output without invalidating otherwise valid token counters.
+
+### claude-code-30
+
+Where Claude Code includes reasoning tokens in its inclusive output total without exposing the subset, when the adapter publishes token accounting, it shall omit output reasoning detail per [[engine-31](../engine.md#engine-31)].
+
+### claude-code-31
+
+When the adapter selects terminal whole-run cost, it shall prefer a finite numeric `total_cost_usd`, then `totalCostUsd`, expose the selected value independently as a whole-invocation [[engine-31](../engine.md#engine-31)] `agent-estimate` when it is non-negative even if tokens are absent, and otherwise omit whole-run cost.
+
+## Internal Behavior
+
+### Resume-Repair Signature
+
+### claude-code-28
+
+When the adapter evaluates the internal no-op signature used by [[claude-code-10](#claude-code-10)], it shall ignore `modelUsage` and match exactly when this main-loop counter matrix resolves to zero, treating a valid counter as a finite non-negative safe integer and requiring simultaneous camel- and snake-case aliases to agree:
+
+| Counter | Accepted input |
+| --- | --- |
+| base input: `inputTokens` / `input_tokens` | one or both aliases present and validly zero |
+| output: `outputTokens` / `output_tokens` | one or both aliases present and validly zero |
+| cache read: `cacheReadInputTokens` / `cache_read_input_tokens` | absent or validly zero |
+| cache creation: `cacheCreationInputTokens` / `cache_creation_input_tokens` | absent or validly zero |
+| tools: `toolUses` / `tool_uses` | the greater of distinct observed tool uses and a valid reported count is zero; an absent, malformed, or conflicting reported count falls back to the observed count |
+
+### Session-Identifier Selection
+
+### claude-code-51
+
+When the adapter observes an SDK message, it shall update the current run session identifier according to this selector matrix:
+
+| Message candidates | Outcome |
+| --- | --- |
+| one or more non-empty values | replace it with the first `sessionId`, then `session_id`, then nested `session.id`, so the latest message carrying a usable identifier wins |
+| no non-empty value | retain the current identifier |
+
+### Query Environment
+
+### claude-code-34
+
+When the adapter prepares an SDK query, it shall pass a per-run clone of the caller's process environment with `CLAUDECODE` omitted while leaving the caller's environment unchanged.
 
 ## Verification
 
 ### claude-code-201
 
-Given canned native Claude Code SDK messages, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[claude-code-3](#claude-code-3)].
+Given the native non-terminal message cases, when the adapter runs, the verification shall assert every event dispatch, assistant field and content-block mapping and order, stream-delta mapping, and native-error payload in [[claude-code-3](#claude-code-3)] and [[claude-code-32](#claude-code-32)].
+
+### claude-code-43
+
+Given the system-message sequences, when the adapter runs, the verification shall assert every handshake selection, payload, and exactly-once outcome in [[claude-code-15](#claude-code-15)].
+
+### claude-code-44
+
+Given the terminal-result cases, when the adapter runs, the verification shall assert every ordered status, diagnostic, result, and duration outcome in [[claude-code-24](#claude-code-24)] and the terminal tool-use count in [[claude-code-50](#claude-code-50)].
+
+### claude-code-45
+
+Given the SDK query failure-phase cases, when the adapter runs without an abort, the verification shall assert every error-message fallback, terminal sequence, and duration outcome in [[claude-code-42](#claude-code-42)] and the terminal tool-use count in [[claude-code-50](#claude-code-50)].
+
+### claude-code-49
+
+Given SDK query invocation, iterator-failure, and iterator-exhaustion exit cases with the mapped controller aborted, when the adapter completes without an SDK terminal result, the verification shall assert the sole interrupted terminal, elapsed duration, result omission, and thrown-value suppression in [[claude-code-48](#claude-code-48)] and the terminal tool-use count in [[claude-code-50](#claude-code-50)].
+
+### claude-code-47
+
+Given prompt and present/absent `AgentOptions` cases, when the adapter invokes the SDK query, the verification shall assert unchanged prompt delivery and every scalar query-option outcome in [[claude-code-46](#claude-code-46)] and [[claude-code-6](#claude-code-6)].
 
 ### claude-code-202
 
-Where the Claude Agent SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[claude-code-2](#claude-code-2)].
+Where the Claude Agent SDK is not installed, when `isAvailable()` is called, the verification shall assert that it returns `false` [[claude-code-13](#claude-code-13)].
+
+### claude-code-35
+
+Where an installed package meets the absent-SDK precondition in [[claude-code-202](#claude-code-202)], when a consumer imports the Claude adapter subpath, the verification shall assert that the module loads without resolving the peer [[claude-code-2](#claude-code-2)].
+
+### claude-code-36
+
+Where the absent-SDK precondition in [[claude-code-202](#claude-code-202)] holds, when `run()` is called, the verification shall assert that consumption throws the installation error [[claude-code-14](#claude-code-14)].
 
 ### claude-code-203
 
-Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, ordinary effort and `ultracode` shall reach the SDK effort and orchestration surface [[claude-code-8](#claude-code-8)].
+Given an application configuration selects either representative ordinary effort or `ultracode`, when the runtime constructs and invokes the corresponding `Cligent`, the verification shall assert that the selected row reaches the SDK effort and orchestration surface [[claude-code-8](#claude-code-8)].
 
 ### claude-code-204
 
-Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[claude-code-4](#claude-code-4)], [[claude-code-5](#claude-code-5)].
+Given the complete policy-mode, capability-level, tool-category, and callback-decision matrices, when the public permission mapper and any resulting callback run, the verification shall assert every vendor control and decision outcome in [[claude-code-4](#claude-code-4)], [[claude-code-20](#claude-code-20)], and [[claude-code-21](#claude-code-21)].
+
+### claude-code-37
+
+Where the installed Claude Agent SDK declarations and the adapter's public declarations are compiled together, the verification shall assert that the mapped callback is assignable to the SDK's `CanUseTool` contract and resolves only its accepted result union [[claude-code-5](#claude-code-5)].
 
 ### claude-code-210
 
-The adapter shall set `DonePayload.resumeToken` to the session identifier from the SDK result [[claude-code-7](#claude-code-7)].
+Given fresh and resumed normal-terminal runs with and without backend identifier aliases and replacements, when the adapter completes, the verification shall assert the SDK `sessionId` input, identifier selector in [[claude-code-51](#claude-code-51)], and `DonePayload.resumeToken` output matrix in [[claude-code-7](#claude-code-7)] and [[claude-code-25](#claude-code-25)].
 
 ### claude-code-218
 
-Where each Claude-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall be SDK `effort` plus an explicit `settings.ultracode`, `ultracode` mapping to `xhigh` and `true` [[claude-code-8](#claude-code-8)]:
+Given every Claude effort input, when the adapter maps a run, the verification shall assert this provider-control matrix [[claude-code-8](#claude-code-8)]:
 
-- when effort is omitted, the adapter shall set no effort, orchestration, or settings-alias override;
-- where `ultracode` is supplied alongside permission options, the adapter's permission-related provider controls shall equal the controls derived from the same permission input without the provider-native effort value;
-- where the supplied value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and its allowed values.
+- each supported explicit value produces its exact SDK `effort` and `settings.ultracode` pair;
+- omission produces neither SDK field;
+- `ultracode` leaves the same permission input's controls unchanged [[claude-code-23](#claude-code-23)]; and
+- another adapter's value or an unknown string is rejected before backend invocation with the adapter and allowed values named.
 
 ### claude-code-219
 
-Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the adapter's auto-mode SDK knobs per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) shall let both non-destructive writes proceed without interactive approval [[claude-code-4](#claude-code-4)], [[claude-code-5](#claude-code-5)]:
+Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the adapter's auto-mode SDK knobs per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) shall let both non-destructive writes proceed without interactive approval [[claude-code-4](#claude-code-4)]:
 
 - the file shall exist with the expected contents after each phase;
 - neither stream shall contain `permission_request`, a denied tool result, or an error;
@@ -178,54 +441,71 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 
 ### claude-code-220
 
-Given the adapter has been aborted, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall report the resume token each observed state requires [[claude-code-7](#claude-code-7)]:
+Given the adapter has been aborted, when the run yields terminal `done` with `status: 'interrupted'`, the verification shall assert the identifier selector in [[claude-code-51](#claude-code-51)] and the resume token each observed state requires [[claude-code-26](#claude-code-26)]:
 
 | Observed before abort | `DonePayload.resumeToken` |
 | --- | --- |
-| a backend session identifier observed during the run | the observed backend identifier |
+| non-system SDK activity and one or more backend session identifiers observed during the run | the latest observed backend identifier |
 | no backend identifier and a non-empty `AgentOptions.resume` value | the inbound `resume` value |
-| no `AgentOptions.resume` and no SDK activity beyond the initial `system` message | omitted, a generated SDK `sessionId` having been passed |
-| no `AgentOptions.resume` and SDK activity beyond the initial `system` message | the SDK-provided or generated SDK `sessionId` |
+| no `AgentOptions.resume` and no non-system SDK activity | omitted, a generated SDK `sessionId` having been passed |
+| no `AgentOptions.resume` and non-system SDK activity | the SDK-provided or generated SDK `sessionId` |
 
 ### claude-code-222
 
-Given a `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing permission-mode and `canUseTool` mapping [[claude-code-4](#claude-code-4)].
+Given absent, empty, valid, and invalid `writablePaths` cases across the permission-control matrix, when the adapter maps each policy, the verification shall assert omission, canonical ambient output, or rejection and preservation of every control selected by [[claude-code-19](#claude-code-19)] and [[claude-code-4](#claude-code-4)].
 
-### claude-code-226
+### claude-code-38
 
-Where an effort value is valid for the adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort [[claude-code-8](#claude-code-8)].
+Given the continuation-repair cases, when the adapter consumes each SDK stream, the verification shall assert this result matrix:
+
+- every qualifying result before resumed-turn activity is skipped until a non-qualifying terminal result arrives [[claude-code-10](#claude-code-10)], with only main-loop counters deciding the signature [[claude-code-28](#claude-code-28)];
+- the same qualifying result on a fresh run or after `text`, `text_delta`, `thinking`, or orphan `tool_result` activity terminates successfully and stops consumption [[claude-code-10](#claude-code-10)];
+- an observed `tool_use` makes the zero signature fail and routes the result through ordinary terminal normalization [[claude-code-28](#claude-code-28)], [[claude-code-24](#claude-code-24)].
+
+### claude-code-39
+
+Given every absent, already-aborted, later-aborted, completed-run, and multiple-run signal case, when the adapter reaches the SDK query boundary, the verification shall assert every controller, propagation, cleanup, and isolation outcome in [[claude-code-33](#claude-code-33)].
+
+### claude-code-40
+
+Given a caller environment containing `CLAUDECODE` and unrelated values, when the adapter reaches the SDK query boundary on successive runs, the verification shall assert each query receives its own clone without `CLAUDECODE`, all other values survive, and the caller environment remains unchanged [[claude-code-34](#claude-code-34)].
+
+### claude-code-41
+
+Given a non-aborted SDK stream with no terminal result, when the stream ends, the verification shall assert the exact `MISSING_RESULT` payload followed by terminal error with elapsed duration and no result or resume token, including after one or more skipped internal no-op results [[claude-code-18](#claude-code-18)], with the terminal tool-use count from [[claude-code-50](#claude-code-50)].
 
 ### claude-code-229
 
-Where either tool-list field is explicitly provided, when the adapter runs, it shall close the provider tool surface to the effective list [[claude-code-9](#claude-code-9)]:
+Given every allowlist and denylist presence case, when the adapter maps a run, the verification shall assert this raw-list provider-control matrix [[claude-code-9](#claude-code-9)], [[claude-code-22](#claude-code-22)]:
 
-| Supplied tool lists | Observable SDK options |
+| Tool-list input | Observable SDK options |
 | --- | --- |
-| an explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
-| a non-empty allowlist with disallowed identifiers | the provider tool registry closed to the effective allowlist, deny precedence preserved, and ambient MCP additions rejected |
+| neither list supplied | allowlist controls and `disallowedTools` are `undefined` |
+| explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
+| non-empty `allowedTools` | raw list in `tools` and `allowedTools`, `strictMcpConfig: true`, and `settingSources: undefined` |
+| `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence |
 
 ### claude-code-238
 
 _Superseded by [[claude-code-240](#claude-code-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish the input side alone, a cache component the runtime omitted being absent while the remaining members of the published side still sum to their aggregate [[claude-code-3](#claude-code-3)].
+Given the adapter emits terminal `done` with complete flat upstream accounting, when a caller reads the superseded `usage.breakdown`, the verification shall assert the input mapping and output omission in [[claude-code-16](#claude-code-16)] and [[claude-code-17](#claude-code-17)].
 
 ### claude-code-239
 
 _Superseded by [[claude-code-240](#claude-code-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, the adapter shall publish one record per model in its per-model accounting [[claude-code-11](#claude-code-11)]:
-
-- each record is keyed by the canonical model identifier;
-- a record carries the group's own cost where the runtime reports one, and the costs of a run's records shall not exceed the run's reported total.
+Given valid, absent, and malformed per-model accounting, when a caller reads the superseded usage aggregate and records, the verification shall assert the source-selection matrix and one correctly keyed and attributed record per valid model in [[claude-code-11](#claude-code-11)] and [[claude-code-27](#claude-code-27)].
 
 ### claude-code-240
 
-Given authentic zero or nonzero accounting from the adapter, when a caller reads terminal `usage.tokens`, the report shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder [[claude-code-12](#claude-code-12)]:
+Given authentic zero, nonzero, absent, and malformed terminal accounting, when a caller reads `usage`, the verification shall assert this output matrix:
 
-- the report shall publish complete whole-agent-tree totals and one record per model from `modelUsage`, including inclusive output;
-- valid whole-run and per-model cost shall be preserved as `agent-estimate`, the emitted whole-run and record values being finite, non-negative USD objects, a measured zero remaining present and a missing cost remaining absent;
-- malformed or absent `modelUsage` shall omit `tokens` while preserving independently observed `toolUses`, and shall not promote main-loop usage.
+- valid `modelUsage` produces complete whole-agent-tree totals and one authentic record per model [[claude-code-12](#claude-code-12)], [[claude-code-29](#claude-code-29)];
+- records omit reasoning detail [[claude-code-30](#claude-code-30)];
+- whole-run and per-model cost preserve finite non-negative USD estimates, including present zero and absent cost, and whole-run cost survives absent tokens [[claude-code-29](#claude-code-29)], [[claude-code-31](#claude-code-31)];
+- `web_search_request` quantities preserve zero and nonzero values [[claude-code-29](#claude-code-29)]; and
+- absent, empty, or malformed `modelUsage` omits tokens and never promotes main-loop usage [[claude-code-12](#claude-code-12)], while observed tool uses remain independently preserved [[claude-code-50](#claude-code-50)].
 
 ## References
 

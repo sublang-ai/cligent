@@ -13,7 +13,7 @@ Only default values change; the [IR-022](022-tmux-play-layout-configuration.md) 
 - Captain and default `claude` player `model` `claude-opus-4-7` → `claude-opus-4-8`.
 
 Unchanged: `codex` player `model: gpt-5.5`; single-player `columnWeights: [1, 1]`; `reasoningEffort: xhigh`; `permissions: { mode: 'auto' }`; `theme: auto`.
-The model string is an opaque literal forwarded to the SDK per [[claude-code-1](../packages/adapters/claude-code.md#claude-code-1)]; the loader does not validate it.
+The model string is an opaque literal forwarded to the SDK per [[claude-code-6](../packages/adapters/claude-code.md#claude-code-6)]; the loader does not validate it.
 
 ## Status
 
@@ -53,7 +53,7 @@ Out of scope:
 
 - Per-adapter unit-test fixtures (`src/__tests__/{claude-code,codex}-adapter.test.ts`) and the tmux-play-157 reasoning-effort seam test, which reference `claude-opus-4-7` / `gpt-5.5` as opaque per-role identifiers, not as the shipped default — left untouched.
 - Single-player `[1, 1]`, `permissions`, `reasoningEffort`, `theme` defaults — unchanged.
-- Upstream `claude-opus-4-8` SDK behavior/availability; a rejected identifier surfaces as a normal adapter error per [[claude-code-2](../packages/adapters/claude-code.md#claude-code-2)].
+- Upstream `claude-opus-4-8` SDK behavior and availability after the opaque model string is forwarded — out of scope.
 
 ## Deliverables
 

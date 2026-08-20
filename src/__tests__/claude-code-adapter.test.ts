@@ -53,7 +53,7 @@ interface MockSdkOptions {
 }
 
 // 'allow' resolves to a pass-through allow; 'ask' and 'deny' both resolve to a
-// headless deny with a message per claude-code-5.
+// headless deny with a message per claude-code-21.
 function expectClaudeDecision(
   decision: ClaudeDecision,
   level: PermissionLevel,
