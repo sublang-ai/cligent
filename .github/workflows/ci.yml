@@ -96,7 +96,7 @@ jobs:
           expect -v
 
       - name: Install glow
-        # TMUX-051 makes glow a hard launcher requirement and TTMUX-050
+        # tmux-play-51 makes glow a hard launcher requirement and tmux-play-150
         # adds a real-glow acceptance probe; without this step the launcher
         # and glow acceptance suites silently self-skip per their broadened
         # skip clauses and CI passes with rotted coverage. ubuntu-latest

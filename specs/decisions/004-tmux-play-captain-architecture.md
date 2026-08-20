@@ -56,7 +56,7 @@ An empty roster uses only the full-width Boss/Captain pane.
 
 Pane display-name stems are single tokens — `Captain` for the Boss/Captain pane and the title-cased player `id` for each player pane (no `Player:` prefix).
 [[tmux-play-48](../packages/tmux-play.md#tmux-play-48)] composes each stem with its adapter into the displayed pane title, while [DR-016](016-tmux-pane-logical-identity.md) keeps that title presentation-only.
-Width split is even: each visible column gets 1/N of the window where N is the column count (1 for an empty roster, 2 for a single player, 3 for two or more); the spec items in [user/tmux-play.md](../packages/tmux-play.md) carry the normative ratios.
+Width split is even: each visible column gets 1/N of the window where N is the column count (1 for an empty roster, 2 for a single player, 3 for two or more); the spec items in [packages/tmux-play.md](../packages/tmux-play.md) carry the normative ratios.
 
 The Boss/Captain pane runs `tmux-play --session <id> --work-dir <path>`.
 Player panes tail their log and accept no input.
