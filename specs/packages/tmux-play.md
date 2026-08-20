@@ -1135,30 +1135,30 @@ Given an aborted player call carries `resumeToken`, the next fanout prompt for t
 ### tmux-play-130
 
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` shall report `174x49` [[tmux-play-35](#tmux-play-35)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-131
 
 Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights` and `layout.initialVisible` (so both configured players are visible per [[tmux-play-80](#tmux-play-80)]), when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes matching the shipped `[1, 1, 1]` multi-player default: a Boss/Captain pane at `pane_left=0` with effective width 58 columns (less tmux's 1-cell border), a first player column at `pane_left=58` with effective width 58 columns (less tmux's 1-cell border), and a second player column at `pane_left=116` with effective width 58 columns.
 Pane order in `list-panes` index space shall match config order [[tmux-play-27](#tmux-play-27)], [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-132
 
 Given a real tmux server with player ids `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -p '#{pane_title}'` against each pane shall return the title composed per [[tmux-play-48](#tmux-play-48)] from the pane's display name and its configured adapter: `Captain · <captain adapter>` for the Boss/Captain pane, `Coder · <coder adapter>` for the first player pane, and `Reviewer · <reviewer adapter>` for the second player pane [[tmux-play-36](#tmux-play-36)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-133
 
 Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, every player pane shall report `#{pane_input_off}=1` (input disabled) and the Boss/Captain pane shall report `#{pane_input_off}=0`.
 After `tmux send-keys -t <player-pane> '<probe>'` is invoked with a unique probe string, `tmux capture-pane -p` against that player pane shall not contain the probe [[tmux-play-27](#tmux-play-27)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-134
 
 Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes against a YAML config that omits `layout.window`, the writer's content shall contain the byte sequence `\x1b[8;49;174t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked [[tmux-play-43](#tmux-play-43)], [[tmux-play-64](#tmux-play-64)].
 Given the same invocation against a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the writer's content shall contain `\x1b[8;50;200t` and shall not contain `\x1b[8;49;174t`, so the pre-attach CSI 8 payload reads from the same `layout.window` source of truth as `new-session -x/-y` per [[tmux-play-35](#tmux-play-35)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-135
 
@@ -1167,12 +1167,12 @@ The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `2
 Given the same setup with an explicit non-equal `layout.columnWeights` (for example `[3, 5, 5]`), the per-column region widths shall follow the generalized formula `floor(W * w_i / sum(w))` for each non-rightmost column `i`, with the rightmost column absorbing the remainder, so an explicit override is honored distinctly from the equal-thirds default.
 Given the default three-column setup with a real attached client whose PTY is 108 columns wide, when the PTY shrinks to 61 columns and then grows through 83 to 142 columns while the client remains attached, the tmux window shall observe those widths and, after bounded settlement at 142, the pane regions shall remain continuously `[47, 47, 48]` for the stability interval, proving an earlier background worker cannot overwrite the final negotiated width.
 Given a tmux version older than 3.3, launcher preparation shall reject before config resolution or any tmux session command with a diagnostic naming the 3.3 minimum.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-136
 
 Given a real tmux server with configured players, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report `#{pane_active}=1` for the Boss/Captain pane and `#{pane_active}=0` for every player pane [[tmux-play-45](#tmux-play-45)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-137
 
@@ -1190,7 +1190,7 @@ Unicode combining marks and zero-width formatting codepoints shall not advance t
 ANSI escape sequences (CSI, OSC, and `ESC` + next-byte) shall be passed through verbatim without contributing to the cell count and shall never have a `\n  ` inserted in their interior, including when the sequence's bytes arrive in two or more streaming chunks: given three player `text_delta` events whose payloads are `hello`, `\x1b[31`, and `m world` with `W_r = 12`, the player writer's captured text shall be `<playerId>> hello\x1b[31m\n   world` — i.e., the CSI is reassembled into a single `\x1b[31m` token before the soft-wrap fires, and the wrap lands between the escape and the following space rather than inside the escape's parameter bytes.
 Pending escape state shall not leak across block boundaries: given a player `text_delta` `hello\x1b[31` followed by a `player_finished` with `status: 'ok'` and then a fresh player `text` event `next`, the player writer's captured text shall be `<playerId>> hello\x1b[31\n<playerId>> next\n` — i.e., the partial CSI is flushed verbatim into the previous block before its closing newline, and the next block's leading `n` is not consumed as the missing CSI terminator.
 Additionally, given a `TmuxPlaySession` whose stdout emits `'resize'`, the session's player pane width query (`queryPaneWidths`) shall be invoked again so subsequent writes use the post-resize width; after the session has shut down, further `'resize'` emissions on stdout shall not invoke the query.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-138
 
@@ -1267,7 +1267,7 @@ On flush, the accumulated text shall be passed once to `renderMarkdown` per [[tm
 A subsequent `text_delta` arriving after the flush shall open a fresh block whose render call is independent of the prior one [[tmux-play-50](#tmux-play-50)].
 
 Given a streaming sequence interleaved with a tool event — e.g., `text_delta('partial\n')` followed by `tool_use(...)` on the same writer — the text shall flush before the `<who>> [tool ↪] …` header so the events appear in order on the pane.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-147
 
@@ -1281,7 +1281,7 @@ A blanket multi-line trim is not applied because `glow`'s fenced-code rendering 
 Given a rendered block whose content is entirely whitespace after the outer-margin trim, the writer shall receive zero bytes — no synthesized `<who>> ` prefix and no stranded blanks — so empty content cannot surface as a bare prefix line or as padding between turns.
 
 Given a `text_delta` sequence that ends without a trailing newline followed by a `player_prompt` or other boundary event on the same writer, the open block shall flush before the new block opens; the writer shall not interleave the two speakers' content on a single line.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-148
 
@@ -1289,14 +1289,14 @@ Given a writer with a configured pane width source returning `W`, `renderMarkdow
 Given a writer with no configured pane width source, the default render width shall be `80`.
 Given the first visible rendered row would exceed `W` after adding the speaker's `<who>> ` prefix (`6` cells for `boss`, `9` for `captain`, `playerId.length + 2` for a player pane), the presenter shall split only that first row at a cell-aware word boundary, emit no line wider than `W`, and keep later continuation rows free to reach the pane edge when real rendered content reaches that width.
 Given a `tool_result` body, the render width shall be `max(1, W - 2)`, matching the two-space continuation indent the body lines carry (not the wider tool header prefix) [[tmux-play-50](#tmux-play-50)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-149
 
 Given `tmux-play` invoked in launcher mode on a host where `isGlowAvailable()` returns `false`, `launchTmuxPlay` shall reject with an error whose message names `glow` and contains the install URL `https://github.com/charmbracelet/glow#installation`.
 The launcher shall not invoke any subsequent launcher work — no config discovery, no work-directory creation, no `tmux` session construction — so the rejection surfaces before any side effects.
 The `glow` check shall run after the existing `tmux` availability check so a host missing both binaries reports `tmux` first [[tmux-play-51](#tmux-play-51)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
 
 ### tmux-play-150
 
@@ -1306,7 +1306,7 @@ This confirms `glow` rendered bold styling instead of emitting raw Markdown [[tm
 Given a fenced code block whose content is a single 200-character line rendered at width 40, the captured output shall contain the 200-character content intact after ANSI bytes are stripped — `glow` shall not insert a mid-token break inside the fenced block, matching [[tmux-play-49](#tmux-play-49)]'s "glow leaves long code lines unwrapped by design".
 
 Given a plain paragraph rendered at width 80, the captured output shall be non-empty and shall contain each source word after ANSI bytes are stripped, guarding against silent `glow` misconfiguration (for example, a `glow` build that writes nothing under `spawnSync` because it gated its output on a TTY check).
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-151
 
@@ -1325,7 +1325,7 @@ This directly pins the user-reported "excessive blank lines between player messa
 Given a text-body prose block rendered in a 40-cell pane by a real `glow` binary, at least one non-first continuation row shall be at least 39 cells wide after ANSI is stripped, and no visible row shall exceed 40 cells.
 The near-edge row shall begin with the presenter's two-space continuation indent followed by `glow`'s preserved two-space document margin.
 This pins the user-reported "empty right side of every pane" defect that remained after the trailing-padding strip: the output must compensate for `glow`'s document margin while still avoiding terminal-level rewrap.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-152
 
@@ -1637,14 +1637,14 @@ The repair commands shall follow the tree the running package occupies: an optio
 The test suite shall additionally fail unless every peer-SDK command — global and project alike — names the resolved tree with `--prefix` and pins its install scope on the command line: no observation from the launching process licenses a bare form, because that process cannot witness the environment or the working directory of the shell where the command is pasted, and an environment-supplied global mode would divert a prefix-only project command into `<prefix>/lib/node_modules`, so a project command shall carry explicit non-global `global` and `location` settings while a global command's asserted global mode alone suffices.
 A `--prefix` path a shell would split shall be printed quoted and still target the reported tree.
 A project install shall stay a project install wherever it is invoked from — classified by the manifest at its install root rather than by the working directory — and a resolved tree that no `npm install` invocation reaches shall carry no peer-SDK install command, naming instead the package and the tree to place it in.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-193
 
 Where the home and cwd are empty and exactly one supported adapter runtime is installed, when the config is resolved, the created YAML shall wire the Captain and a single player on that adapter, shall carry `model` and `effort` only where that adapter is one this project pins, and the stdout notice shall name that adapter.
 Where more than two adapter runtimes are installed, the generated roster shall hold the first two in canonical adapter order.
 Where no supported adapter runtime is installed, no file shall be created, and the failure shall name every supported adapter with the commands that install what it requires [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)].
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-196
 
@@ -1653,7 +1653,7 @@ Where settings contain accessors, unknown or incomplete values, an adapter-inval
 Each such supplied-settings rejection shall be an `AgentCallSettingsError` recognized by `isAgentCallSettingsError()`, with its prior message and original cause preserved; the predicate shall reject turn or session scope errors, unknown-player errors, provider execution failures, and observer dispatch errors.
 Where one OpenCode call installs a session permission ruleset and a later resumed complete-settings call supplies a concrete model but omits permissions, tmux-play shall clear the prior Cligent-owned session permission ruleset before dispatching the resumed prompt; the concrete model with provider-default effort shall also clear a prior variant without rejecting.
 Package declaration verification shall expose `TuningSelection`, `AgentCallSettings`, `AgentCallSettingsError`, `isAgentCallSettingsError`, `LaunchManagedTmuxPlayOptions`, `LaunchTmuxPlayResult`, `ManagedTmuxPlayAttachOptions`, `ManagedTmuxPlayLaunchContext`, `PreparedManagedTmuxPlayLaunch`, `ManagedTmuxPlayInitializeContext`, `ManagedTmuxPlayTurnContext`, `ManagedTmuxPlayAfterTurnContext`, `ManagedTmuxPlayTerminalRecord`, `ManagedTmuxPlayShutdownContext`, `ManagedTmuxPlayLifecycle`, `ManagedTmuxPlaySessionOptions`, and `TmuxPlayRuntimeHandle`; package runtime verification shall expose `AgentCallSettingsError`, `isAgentCallSettingsError`, `launchManagedTmuxPlay`, and `runManagedTmuxPlaySession`.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-197
 
@@ -1668,7 +1668,7 @@ The managed runner shall also prove that it applies [[tmux-play-74](#tmux-play-7
 Where a runtime emits an aborted terminal after a buffered reply and then resolves or rejects, the after hook shall receive that exact terminal record before settlement or propagated failure and the reply shall remain hidden; where initialization or any hook fails, the returned session promise shall reject only after awaited cleanup and shall release no reply.
 Where an attachment signal is already aborted, aborts while activation is pending, or aborts during detached coordination cleanup, the test suite shall prove that its exact reason stays primary, `beforeNativeAttach` and the native client do not run, graceful child shutdown acknowledgement and pane exit precede rejection, and cleanup defects follow the reason in one aggregate; where native attachment proceeds, it shall prove that resize completes first, the callback runs exactly once immediately before the native client, and an abort after that callback does not trigger managed cancellation.
 Where a managed turn or runtime failure and lifecycle shutdown cleanup both fail, the test suite shall prove that shutdown still runs every ordered cleanup step and exposes the primary failure followed by every distinct cleanup failure in one aggregate while preserving single-failure identity.
-The probe shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-198
 
