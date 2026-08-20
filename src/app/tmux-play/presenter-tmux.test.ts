@@ -26,7 +26,7 @@ vi.mock('../shared/glow.js', () => ({
 import { createTmuxPresenter } from './presenter-tmux.js';
 import type { CaptainEventRecord, TmuxPlayRecord } from './records.js';
 
-// Per tmux-play-38/039 the presenter emits SGR escapes around speaker prefixes
+// Per tmux-play-38, tmux-play-39 the presenter emits SGR escapes around speaker prefixes
 // and status bodies. Tests that assert visible content call `text()`
 // (ANSI-stripped); the color-aware tests query `raw()` for byte-exact
 // comparison.
@@ -867,7 +867,7 @@ describe('TmuxPresenter', () => {
     ).toThrow('Missing tmux presenter writer for player: coder');
   });
 
-  // Status line coloring (tmux-play-38/039).
+  // Status line coloring (tmux-play-38, tmux-play-39).
 
   it('renders final failures once with speaker prefixes and status SGRs', () => {
     const boss = new MemoryWriter();

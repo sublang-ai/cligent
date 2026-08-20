@@ -116,7 +116,7 @@ describe('playerAccent', () => {
 
 describe('SGR helpers', () => {
   it('emits bold + 24-bit foreground for the speaker palette anchors', () => {
-    // Anchors per tmux-play-38/039 — changes here are normative.
+    // Anchors per tmux-play-38, tmux-play-39 — changes here are normative.
     expect(SPEAKER_BOSS).toBe('#89b4fa');
     expect(SPEAKER_CAPTAIN).toBe('#cba6f7');
     expect(STATUS_ERROR).toBe('#f38ba8');

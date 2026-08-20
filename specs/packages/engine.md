@@ -434,7 +434,8 @@ Where a `Cligent` is constructed on each built-in adapter with `CligentOptions.p
 - each stream shall terminate with successful `done`;
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- each adapter's leg shall self-skip with a logged reason when the CLI that adapter spawns is absent from `PATH` or its credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
+- each adapter's leg shall self-skip with a logged reason when an *external* CLI that adapter spawns — the `gemini`, `opencode`, or `kimi` CLI — is absent from `PATH`, or when that adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
+- the SDK packages the adapters load are installed by any checkout able to run this suite, so SDK absence shall not be a skip condition;
 - where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`.
 
 ### engine-221

@@ -47,7 +47,7 @@ Out of scope: non-tmux UIs.
 
 Each task is one commit.
 
-1. [x] Layout and geometry — tmux-play-27/028, tmux-play-35, tmux-play-36.
+1. [x] Layout and geometry — tmux-play-27, tmux-play-28, tmux-play-35, tmux-play-36.
 2. [x] Presenter rewrite — tmux-play-37..040.
 3. [x] Fanout player prompt — tmux-play-42.
 4. [x] Player continuity verification — tmux-play-41.

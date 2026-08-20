@@ -89,7 +89,7 @@ export function fg24bit(hex: string): string {
   return `\x1b[38;2;${r};${g};${b}m`;
 }
 
-// tmux-play-38/039/049: speaker / status / tool palette per flavor. The presenter
+// tmux-play-38, tmux-play-39, tmux-play-49: speaker / status / tool palette per flavor. The presenter
 // resolves one of these once at session start (from the snapshot's resolved
 // theme) and uses its keys directly, instead of pulling Mocha-only consts.
 export interface PresenterPalette {

@@ -36,7 +36,7 @@ const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
 // and keeps glow output sane until a real pane width is available.
 const DEFAULT_PANE_WIDTH = 80;
 
-// tmux-play-38/039/049 SGR anchors built once per presenter instance from the
+// tmux-play-38, tmux-play-39, tmux-play-49 SGR anchors built once per presenter instance from the
 // session's resolved Catppuccin flavor, so a Latte session uses Latte ANSI
 // prefixes inside pane content and a Mocha session uses Mocha. The shape
 // matches the previous module-level constants; the difference is they're
