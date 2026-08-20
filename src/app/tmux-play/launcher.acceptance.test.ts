@@ -79,7 +79,7 @@ interface PaneRow {
   readonly active: string;
 }
 
-// tmux-play-130..036 and tmux-play-139 all drive `launchTmuxPlay`, which gates on
+// tmux-play-130..tmux-play-136 and tmux-play-139 all drive `launchTmuxPlay`, which gates on
 // `glow` per tmux-play-51 in addition to `tmux`. Skip when the runner cannot
 // create a tmux server; otherwise a sandbox or stale socket directory reports
 // a setup failure before the acceptance behavior under test can run.
