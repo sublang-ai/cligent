@@ -1324,6 +1324,15 @@ function composePrompt(
 
 function captureText(event: CligentEvent, textParts: string[]): void {
   if (event.type === 'text') {
+    // A `text` event carries one whole message. When terminal `done` brings
+    // no result and finalText falls back to the captured parts, gluing whole
+    // messages corrupts line-oriented final responses (a trailing
+    // `Commit: <id>` line stops starting a line), so each complete message
+    // begins on its own line. Deltas stay unseparated: they are fragments of
+    // one message.
+    if (textParts.length > 0 && !textParts[textParts.length - 1].endsWith('\n')) {
+      textParts.push('\n');
+    }
     textParts.push((event.payload as TextPayload).content);
   } else if (event.type === 'text_delta') {
     textParts.push((event.payload as TextDeltaPayload).delta);

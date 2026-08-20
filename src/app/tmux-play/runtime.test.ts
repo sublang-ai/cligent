@@ -141,6 +141,47 @@ async function expectAgentCallSettingsRejection(
 }
 
 describe('TmuxPlayRuntime', () => {
+  it('separates whole captured messages when done brings no result', async () => {
+    let playerResult: PlayerRunResult | undefined;
+    const captain: Captain = {
+      async handleBossTurn(turn, context) {
+        playerResult = await context.callPlayer('coder', turn.prompt);
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        codex: {
+          agent: 'codex',
+          async *run() {
+            yield textEvent('codex', 'Reworked the small packages.');
+            yield textEvent('codex', 'Commit: abc123');
+            yield doneEvent('codex', undefined);
+          },
+        },
+        claude: {
+          agent: 'claude-code',
+          async *run() {
+            yield doneEvent('claude-code', 'unused');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('feature');
+
+    expect(playerResult?.status).toBe('ok');
+    expect(playerResult?.finalText).toBe(
+      'Reworked the small packages.\nCommit: abc123',
+    );
+    const commitLines = playerResult?.finalText
+      ?.split('\n')
+      .filter((line) => line.startsWith('Commit: '));
+    expect(commitLines).toEqual(['Commit: abc123']);
+  });
+
   it('emits causal records around player and Captain calls', async () => {
     const records: TmuxPlayRecord[] = [];
     const prompts: string[] = [];
