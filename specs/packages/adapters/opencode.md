@@ -602,7 +602,7 @@ usage count shall duplicate [[opencode-5](#opencode-5)].
 
 ### opencode-232
 
-Where OpenCode acceptance dependencies are present per this section's gating,
+Where OpenCode acceptance dependencies are present per [[opencode-219](#opencode-219)]'s gating,
 when a real managed-mode OpenCode run with auto-approved permissions is
 prompted to create a file through its tools and the file exists with the
 expected content afterwards, the collected stream shall contain no two

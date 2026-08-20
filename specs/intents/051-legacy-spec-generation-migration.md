@@ -40,6 +40,7 @@ These invariants govern every task:
 - Text a task moves whole is normalized to one sentence per line as it lands [[meta-25](../meta.md#meta-25)], the legacy files being hard-wrapped so a moved line often carries a second sentence's start.
   Moving whole is otherwise the safer transformation, because a diff proves it and no restatement can be proved that way, and this is the cost it carries: it inherits the source file's line discipline along with its prose.
   A pass that skips a line opening with a citation, or that runs over the behavior sections alone, misses exactly the lines the legacy verification files are densest in, and `spex lint` has no rule that would catch what it left.
+  Moved text is resolved against the destination's structure as well as its line breaks, because a cross-reference shaped as an ID travels while one shaped as prose does not: a phrase naming the source file's own structure — a gating preamble, a rule stated above — keeps pointing at what stayed behind, and no ID sweep, diff, or lint rule sees it.
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
 
