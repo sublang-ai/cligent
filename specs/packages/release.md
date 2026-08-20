@@ -47,14 +47,18 @@ When the release workflow runs on GitHub, it shall:
 
 1. verify the tag version matches the `package.json` version [[release-2](#release-2)];
 2. require the CI run for the tagged commit — its `push` to `main` — to have concluded successfully, waiting while it is in progress and refusing to publish where it concluded unsuccessfully or never ran, as for a tag off `main`;
-3. build and validate the package;
+3. run the package's clean build [[package-10](package.md#package-10)] and validate the package;
 4. extract release notes from `CHANGELOG.md`;
-5. publish to npm with a provenance attestation;
+5. publish the scoped package to npm with `--access public` [[release-9](#release-9)], `--provenance` [[release-8](#release-8)], and OIDC trusted publishing without a static npm token [[release-13](#release-13)];
 6. create a GitHub release carrying the extracted notes.
 
 ### release-8
 
-npm packages shall be published with the `--provenance` flag for supply chain security, generating a signed attestation that links the package to its source repository and build, and authentication shall use npm OIDC trusted publishing — static npm tokens shall not be used.
+When an npm package is published, the publish command shall carry the `--provenance` flag, generating a signed attestation that links the package to its source repository and build.
+
+### release-13
+
+When authenticating an npm publication, the release workflow shall use npm OIDC trusted publishing without a static npm token.
 
 ### release-9
 
@@ -65,7 +69,7 @@ Scoped packages such as `@sublang/cligent` shall be published with `--access pub
 Before tagging a release, the developer or agent shall verify:
 
 - [ ] all tests pass;
-- [ ] `npm run smoke:release` passes locally — the single local release-smoke entry point, chaining the existing gates in order: `build`, `test:package`, `test:distributable`, `test:smoke`;
+- [ ] `npm run smoke:release` passes locally — the single local release-smoke entry point, chaining the existing gates in order: `build` [[package-10](package.md#package-10)], `test:package`, `test:distributable`, `test:smoke`;
 - [ ] `CHANGELOG.md` is updated with the new version and date;
 - [ ] the `package.json` version is bumped;
 - [ ] all changes are committed and pushed to `main`.
@@ -79,7 +83,8 @@ When the release workflow is audited, the audit shall assert what starts the wor
 - only a pushed git tag starts the workflow, and a run whose tag is not `vMAJOR.MINOR.PATCH` stops before publishing [[release-6](#release-6)];
 - the run compares the tag against the `package.json` version and stops before publishing where the two disagree [[release-7](#release-7)], leaving only a matching pair publishable [[release-2](#release-2)];
 - the CI run for the tagged commit is awaited while in progress, and publishing is refused unless it concluded successfully [[release-7](#release-7)];
-- the publish step carries `--provenance`, the job grants `id-token: write`, and no static npm token appears in the workflow [[release-8](#release-8)];
+- the publish step carries `--provenance` [[release-8](#release-8)];
+- the job grants `id-token: write`, and no static npm token appears in the workflow [[release-13](#release-13)];
 - the publish step carries `--access public` [[release-9](#release-9)].
 
 ### release-12

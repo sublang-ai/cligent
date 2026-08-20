@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 15 are done; tasks 16 through 34 remain.
+Tasks 1 through 16 are done; tasks 17 through 34 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 32 now carries, and the superseded-item cluster task 33 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 31's table.
@@ -29,12 +29,16 @@ Restating those preambles had also kept only their harness half, leaving eightee
 A fourth round then found the same expansion had never covered `..` ranges at all: eight survived half-converted, two of them descending and so impossible on their face, one in `src/` and therefore leaving this plan's own retarget invariant unmet rather than merely unverified.
 Each round's instrument had improved while its scope stayed pinned to the separator its worked example named, so the invariant now states the property — no item ID adjacent to a bare number — instead of a pattern.
 The same round found `IR-011`'s goal line had dropped eight of the ten items it claimed, a legacy citation whose text named `TMUX-027/028` and `TMUX-035..042` while its href named one anchor, the lawful conversion keeping the href and silently discarding the rest.
-That resize then over-reached: it made the package the atomic unit where only the item is one, which would have forced `tmux-play`'s entire 152-item top-level split workload into a single commit — more than half the workload the resize had just rejected — so the invariant now binds the split of one item and lets a package come into item law across commits.
+That resize then over-reached: it made the package the atomic unit where only the item is one, which would have forced `tmux-play`'s entire 161-item top-level split workload into a single commit — more than half the workload the resize had just rejected — so the invariant now binds the split of one item and lets a package come into item law across commits.
 The same round found task 15's whole output, two standing rules, resting in this plan alone, which [[meta-28](../meta.md#meta-28)] does not allow of a record whose deletion must lose nothing, so both now land in decision records.
-A last round settled three findings against the item-law task and resized it: it had grown to every package at once, 278 of 478 items carrying more than one top-level `shall`, which meta-5 does not admit and which no staging rule bounded, so it is now the rule-settling task 15, eight one-commit package tasks 16 through 23, and bounded `tmux-play` slices in tasks 24 through 27.
+A last round settled three findings against the item-law task and resized it: it had grown to every package at once, 310 of 478 items carrying more than one top-level `shall`, which meta-5 does not admit and which no staging rule bounded, so it is now the rule-settling task 15, eight one-commit package tasks 16 through 23, and bounded `tmux-play` slices in tasks 24 through 27.
 Reviewing that plan-only commit found its one `tmux-play` task still spanning several commits, its package-wide staging sentence calling unsplit multi-requirement items lawful, and its section boundary able to separate a behavior branch from the assertion reaching it, so tasks 24 through 27 now own baseline item slices and retain per-item behavior-to-verification atomicity.
 The same review found task 15 leaving framework law conditional despite both `DR-000` and `meta.md` being owner-gated, and found the retained map sections naming eighteen item IDs rather than sixteen once the two legacy `META-*` tokens are counted.
 Task 15 landed the owner's approved shared-test-precondition law as [[meta-37](../meta.md#meta-37)] with its rationale in [DR-000](../decisions/000-spec-structure-format.md), made [DR-005](../decisions/005-per-adapter-permission-configuration.md) require every built-in adapter to exhaust the closed mode set, distinguished both policy-presence cases under `undefined`, and corrected Gemini's same-control auto and bypass rows; no package item changed.
+Reviewing task 15's commit found its item census counting `shall`-bearing lines and then first paragraphs instead of normative `shall` tokens throughout top-level prose, so the corrected package and slice counts below replace that understated census.
+Task 16 found no hidden behavior, cross-package restatement, or uncited peer dependency in `licensing` or `ndjson`, and no classification move in any of its four packages.
+It removed `git-6`'s false assertion that a completed-commit audit can verify `git-1`'s preparation report and refusal, bound the release workflow to the clean package build and its publication controls, and split `RELEASE-008` between provenance in `release-8` and OIDC authentication in `release-13`.
+The new decision-map row keeps that released concern traceable, while the locator summaries in `specs/map.md` remain accurate without an edit.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -175,22 +179,22 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Nine of its twenty-four items carry more than one `shall`.
 
 18. **Apply item law to `claude-code`.**
-    Ten of its twenty-six items carry more than one `shall`, and `claude-code-4` is where the exhaustive mode-mapping contract in [DR-005](../decisions/005-per-adapter-permission-configuration.md) bites hardest, stating no `mode` row at all.
+    Twelve of its twenty-six items carry more than one `shall`, and `claude-code-4` is where the exhaustive mode-mapping contract in [DR-005](../decisions/005-per-adapter-permission-configuration.md) bites hardest, stating no `mode` row at all.
 
 19. **Apply item law to `codex`.**
-    Fourteen of its thirty-seven items carry more than one `shall`, and `codex-4`'s absent-policy rule is part of the complete matrix [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
+    Seventeen of its thirty-seven items carry more than one `shall`, and `codex-4`'s absent-policy rule is part of the complete matrix [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
 
 20. **Apply item law to `gemini`.**
-    Fourteen of its thirty-four items carry more than one `shall`, and no `gemini` item yet states the `'auto'` and `'bypass'` rows [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
+    Eighteen of its thirty-four items carry more than one `shall`, and no `gemini` item yet states the `'auto'` and `'bypass'` rows [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
 
 21. **Apply item law to `kimi`.**
-    Twelve of its twenty-seven items carry more than one `shall`, including the permission mapper to which [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s exhaustive contract applies.
+    Thirteen of its twenty-seven items carry more than one `shall`, including the permission mapper to which [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s exhaustive contract applies.
 
 22. **Apply item law to `opencode`.**
-    Twenty-seven of its forty-five items carry more than one `shall`, and no `opencode` item states the `'bypass'` rejection [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires before the run.
+    Thirty-two of its forty-five items carry more than one `shall`, and no `opencode` item states the `'bypass'` rejection [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires before the run.
 
 23. **Apply item law to `engine`.**
-    Forty of its sixty-eight items carry more than one `shall`.
+    Forty-six of its sixty-eight items carry more than one `shall`.
 
 24. **Apply item law to the first half of `tmux-play` External Behavior.**
     Split the first forty-five task-14 baseline behavior items in current document order, beginning with [[tmux-play-1](../packages/tmux-play.md#tmux-play-1)] and ending with [[tmux-play-29](../packages/tmux-play.md#tmux-play-29)], thirty-five of which carry more than one top-level `shall`.
@@ -198,18 +202,18 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Where the legacy verification never reached a branch — [[tmux-play-61](../packages/tmux-play.md#tmux-play-61)]'s create-no-config case, which [[tmux-play-161](../packages/tmux-play.md#tmux-play-161)] omits and no test covers — this task writes the assertion and, in the same commit, adds the branch to task 31's table as an audit stated but unrun.
 
 25. **Apply item law to the second half of `tmux-play` External Behavior.**
-    Split the remaining forty-five task-14 baseline behavior items in current document order, beginning with [[tmux-play-30](../packages/tmux-play.md#tmux-play-30)] and ending with [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)], thirty-five of which carry more than one top-level `shall`.
+    Split the remaining forty-five task-14 baseline behavior items in current document order, beginning with [[tmux-play-30](../packages/tmux-play.md#tmux-play-30)] and ending with [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)], forty-one of which carry more than one top-level `shall`.
     Every reaching verification assertion and citation and every changed rename-map row lands with its behavior branch; where carrying an assertion requires splitting its verifier, that verifier's whole split lands here.
 
 26. **Apply item law to baseline `tmux-play` verification items 101 through 150.**
-    Split each of those fifty task-14 baseline items that a behavior task has not already made lawful, forty-two carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
+    Split each of those fifty task-14 baseline items that a behavior task has not already made lawful, forty-four carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
     Keep the real-`tmux` condition in the behavior-verifying owner derived from [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)] and add that owner as a destination of the eleven other source rows carried by [[tmux-play-131](../packages/tmux-play.md#tmux-play-131)] through [[tmux-play-137](../packages/tmux-play.md#tmux-play-137)] and [[tmux-play-146](../packages/tmux-play.md#tmux-play-146)] through [[tmux-play-149](../packages/tmux-play.md#tmux-play-149)].
     Keep the real-`glow` condition in the behavior-verifying owner derived from [[tmux-play-150](../packages/tmux-play.md#tmux-play-150)] and add that owner as a destination of the five other source rows carried by [[tmux-play-151](../packages/tmux-play.md#tmux-play-151)], [[tmux-play-192](../packages/tmux-play.md#tmux-play-192)], [[tmux-play-193](../packages/tmux-play.md#tmux-play-193)], [[tmux-play-196](../packages/tmux-play.md#tmux-play-196)], and [[tmux-play-197](../packages/tmux-play.md#tmux-play-197)].
     Every dependent item cites its corresponding owner per [[meta-37](../meta.md#meta-37)]; the source items above 150 take that citation now, keep their substantive destinations, and remain otherwise in their baseline state for task 27.
     IDs allocated by earlier item-law tasks are outside this baseline range and do not enlarge this task.
 
 27. **Apply item law to baseline `tmux-play` verification items 151 through 201.**
-    Split each of the forty-four extant task-14 baseline items in that range that a behavior task has not already made lawful, forty carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
+    Split each of the forty-four extant task-14 baseline items in that range that a behavior task has not already made lawful, forty-one carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
     IDs allocated by earlier item-law tasks are outside this baseline range and do not enlarge this task.
 
 28. **Move the records.**

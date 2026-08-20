@@ -37,9 +37,8 @@ Where a commit realizes a recorded intent, the commit message shall reference th
 
 ### git-6
 
-When a prepared commit is audited, the audit shall assert the commit follows this package's conventions:
+When a prepared commit is audited, the audit shall assert its message follows this package's conventions:
 
-- the commit records the configured `user.name` and `user.email` [[git-1](#git-1)];
 - the subject line follows the `<type>(<scope>)<!>: <subject>` format [[git-2](#git-2)];
 - any body explains what and why, wrapped at 72 chars [[git-3](#git-3)];
 - an AI-assisted commit carries the `Co-authored-by` attribution trailer [[git-4](#git-4)];

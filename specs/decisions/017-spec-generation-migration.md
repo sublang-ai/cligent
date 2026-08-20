@@ -439,6 +439,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `RELEASE-006` | `release-6` |
 | `RELEASE-007` | `release-7` |
 | `RELEASE-008` | `release-8` |
+| `RELEASE-008` | `release-13` |
 | `RELEASE-009` | `release-9` |
 | `RELEASE-010` | `release-10` |
 | `GIT-001` | `git-1` |
