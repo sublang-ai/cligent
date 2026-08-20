@@ -346,7 +346,7 @@ Given the Codex CLI can initialize its native sandbox, when a credential-free sa
 
 ### codex-224
 
-Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access with legacy `sandbox_mode = "danger-full-access"` and `approval_policy = "never"`, when a no-policy `Cligent` and then a `mode: 'auto'` `Cligent` is invoked to write a file outside its throwaway working directory, `exec --ignore-user-config` shall isolate the permission-managed run alone [[codex-4](#codex-4)]:
+Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access with legacy `sandbox_mode = "danger-full-access"` and `approval_policy = "never"`, when a no-policy `Cligent` and then a `mode: 'auto'` `Cligent` is each invoked to write a different file outside its throwaway working directory, `exec --ignore-user-config` shall isolate the permission-managed run alone [[codex-4](#codex-4)]:
 
 - the no-policy run's file shall exist on disk afterwards, its stream shall contain no `permission_request`, no `tool_result` with `status: 'denied'`, and no `error`, and its terminal `done` status shall be `success`;
 - the permission-managed run's file shall not exist on disk afterwards, its stream shall contain no `error`, and its terminal `done` status shall be `success`;

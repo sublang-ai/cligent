@@ -24,7 +24,7 @@ Later tasks shrink those counts; they are this plan's baseline, not a live measu
 Every stated behavior, local extension, record state, and item concern in the project's own spec body survives the move; nothing is invented or dropped.
 The framework law is not part of that body — the refresh replaced it wholesale — so the map records which of its released items reached no successor rather than hiding the loss.
 
-Seven invariants govern every task:
+These invariants govern every task:
 
 - Each commit leaves every citation resolving: the inbound citations across `specs/` and the item IDs quoted in `src/`, `scripts/`, and `.github/workflows/` are retargeted in the same commit that moves their package.
 - Each task's citation figure counts inbound citations from other files, a package's own internal citations moving with it.
@@ -33,6 +33,8 @@ Seven invariants govern every task:
 - A task that changes where a released concern lives — splitting an item [[meta-29](../meta.md#meta-29)], dropping a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moving a clause — records the added, removed, or retargeted row in the same commit, so the map never lags the tree.
 - A released item found false of the artifact it describes moves unchanged, because a move settles where a requirement lives and never what it says; its contradiction becomes a task of its own ahead of the handover, closed by conforming the artifact to the item or by a decision record [[meta-24](../meta.md#meta-24)] carrying the decision that amends the item, and this plan stays incomplete until every such task closes.
 - Every citation the tree carries is rewritten as it moves: 1249 item citations still use the legacy unbracketed `[ID](path#anchor)` form rather than the outer-bracketed form the current law requires [[meta-16](../meta.md#meta-16)].
+- A task that restates a shared criterion into a package checks that restatement in both directions before it commits, clause by clause: no clause of the legacy criterion naming that package is left without a destination, and no clause of the destination is without a legacy source.
+  The behavior sections move whole and a normalized diff proves them, but a restatement is not a move and no diff can check it, so this is the only guard the verification slice has.
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
 

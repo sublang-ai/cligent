@@ -148,3 +148,6 @@ vite.config.ts.timestamp-*
 # Acceptance test temp dirs
 .test-accept/
 cligent-automode-*/
+
+# spex scaffold/lint scratch output
+spex-output.txt
