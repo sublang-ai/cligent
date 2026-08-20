@@ -37,6 +37,9 @@ These invariants govern every task:
 - A task that restates a shared criterion into a package checks that restatement in both directions before it commits, clause by clause: no clause of the legacy criterion naming that package is left without a destination, and no clause of the destination is without a legacy source.
   The behavior sections move whole and a normalized diff proves them, but a restatement is not a move and no diff can check it, so this is the only guard the verification slice has.
   The commit states the pairing the task made and whatever it found unmatched in each direction, because this check is not recomputable the way the diff is: which clauses name the package is the very judgment it exists to make, so an unreported run leaves a claim no reviewer can tell apart from a mis-scoped one.
+- Text a task moves whole is normalized to one sentence per line as it lands [[meta-25](../meta.md#meta-25)], the legacy files being hard-wrapped so a moved line often carries a second sentence's start.
+  Moving whole is otherwise the safer transformation, because a diff proves it and no restatement can be proved that way, and this is the cost it carries: it inherits the source file's line discipline along with its prose.
+  A pass that skips a line opening with a citation, or that runs over the behavior sections alone, misses exactly the lines the legacy verification files are densest in, and `spex lint` has no rule that would catch what it left.
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
 

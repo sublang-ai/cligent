@@ -131,7 +131,8 @@ not normalize to `text_delta` or a second `thinking` event; settled reasoning
 snapshots shall remain the single `thinking` representation.
 Deltas belonging
 to user messages shall remain suppressed per
-[[opencode-17](#opencode-17)]. Generic deltas received before their part
+[[opencode-17](#opencode-17)].
+Generic deltas received before their part
 metadata shall remain pending by `partID` and be released or suppressed once
 the type resolves.
 A generic delta whose type never resolves, or that carries
@@ -556,8 +557,10 @@ Where an effort value is valid for the adapter but unavailable to the selected m
 Where no `PermissionPolicy` is supplied, when OpenCode starts fresh and resumed
 runs through each supported SDK path, fresh-session creation and prompt calls
 shall omit permission data and a resumed run shall issue no permission-bearing
-session update [[opencode-13](#opencode-13)]. Prompt calls shall also omit tool-list data when both tool-list
-options are absent [[opencode-15](#opencode-15)]. Where an empty policy is supplied instead, fresh and
+session update [[opencode-13](#opencode-13)].
+Prompt calls shall also omit tool-list data when both tool-list
+options are absent [[opencode-15](#opencode-15)].
+Where an empty policy is supplied instead, fresh and
 resumed runs shall carry `ask` rules for `edit`, `bash`, and `webfetch` [[opencode-7](#opencode-7)].
 
 ### opencode-228
@@ -581,15 +584,20 @@ pending through running to `error` — the adapter shall emit exactly one
 `tool_use`/`tool_result` pair per `callID`, correlated by `callID`, preserving
 `state.input`, the terminal `state.output` or `state.error`, and the
 state-supplied duration, and shall count each call once in
-`done.usage.toolUses` [[opencode-16](#opencode-16)]. Given a terminal snapshot with no earlier snapshots for
-its `callID`, the adapter shall still emit the correlated pair. Given
+`done.usage.toolUses` [[opencode-16](#opencode-16)].
+Given a terminal snapshot with no earlier snapshots for
+its `callID`, the adapter shall still emit the correlated pair.
+Given
 interleaved snapshots for distinct `callID`s, each pair shall stay isolated per
-call. Given a rejected permission reply that resolves to a `callID` followed by
+call.
+Given a rejected permission reply that resolves to a `callID` followed by
 terminal tool-state updates for that call, the adapter shall emit exactly one
 terminal `tool_result`, carrying the call's tool name where the permission
-request named only the permission it gates. Given a rejected reply that
+request named only the permission it gates.
+Given a rejected reply that
 resolves to a call whose terminal result was already emitted, no denied
-`tool_result` shall follow. Given repeated terminal snapshots, no event or
+`tool_result` shall follow.
+Given repeated terminal snapshots, no event or
 usage count shall duplicate [[opencode-5](#opencode-5)].
 
 ### opencode-232
@@ -602,9 +610,11 @@ expected content afterwards, the collected stream shall contain no two
 non-empty `input`, exactly one terminal `tool_result` for each emitted
 `tool_use` `toolUseId` and none for any other id, no `permission_request` or
 denied `tool_result`, and a successful `done` whose `usage.toolUses` equals
-the `tool_use` count [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)]. The probe shall retry only on the explicit transient
+the `tool_use` count [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)].
+The probe shall retry only on the explicit transient
 upstream failures named in [[opencode-219](#opencode-219)], with the same attempt
-bound. A failed attempt whose failures all match those markers shall retry
+bound.
+A failed attempt whose failures all match those markers shall retry
 into a fresh throwaway directory even when the file was already created,
 because the failure can arrive after the tool ran; an attempt reaching a
 successful `done` shall never classify as transient, because its `result`
@@ -641,13 +651,16 @@ Given canonical user and assistant message envelopes and conversational part
 events, when role metadata arrives both before and after its parts, the adapter
 shall emit only assistant `text`, `text_delta`, and `thinking` events [[opencode-5](#opencode-5)], [[opencode-17](#opencode-17)], preserve
 their stream order across interleaved message identifiers even where a later
-role resolves first, and emit no user content. An assistant reply byte-equal
-to the submitted prompt shall still be emitted. Content with a message
+role resolves first, and emit no user content.
+An assistant reply byte-equal
+to the submitted prompt shall still be emitted.
+Content with a message
 identifier whose role never resolves shall not be emitted, shall not prevent
 later known assistant content from flushing before terminal `done`, and legacy
 content without a message identifier shall preserve its prior normalization.
 Removing a message with held content shall discard that content and unblock
-later events without waiting for terminal completion. Role metadata from a
+later events without waiting for terminal completion.
+Role metadata from a
 foreign session shall not resolve current-session content [[opencode-6](#opencode-6)].
 
 ### opencode-235
@@ -662,38 +675,49 @@ representation; and a rejected or non-settling status query
 shall make a bounded abort attempt and produce one status-query diagnostic plus
 one error `done` [[opencode-18](#opencode-18)].
 Given root-session or run-owned descendant progress events whose spacing stays
-below the deadline, the adapter shall not query status. Descendant lifecycle,
+below the deadline, the adapter shall not query status.
+Descendant lifecycle,
 conversation, and permission events shall each restart the deadline while
 ordinary descendant output remains filtered and permission control retains its
-native descendant-session routing [[opencode-6](#opencode-6)]. Repeated events explicitly tagged for
+native descendant-session routing [[opencode-6](#opencode-6)].
+Repeated events explicitly tagged for
 another session and repeated untagged workspace-global events shall not
-postpone the current session's deadline. When a consumer pauses after a
+postpone the current session's deadline.
+When a consumer pauses after a
 normalized event for longer than the configured deadline, that downstream
 backpressure shall not consume the provider-silence budget, and a buffered
-current-session terminal event shall complete without status recovery. An
+current-session terminal event shall complete without status recovery.
+An
 always-ready non-relevant backlog shall still expire.
 Given pending iterators that do and do not honor `AbortSignal`, external and
 managed runs shall return the iterator, close the client, initiate active
 session cancellation where required, terminate only the managed server [[opencode-8](#opencode-8)], [[opencode-9](#opencode-9)], and
 emit exactly one
-terminal event when caller abort and inactivity race. Deterministic race probes
+terminal event when caller abort and inactivity race.
+Deterministic race probes
 shall cover an already-ready terminal event and abort during prompt dispatch;
-the latter shall abort the already-created external session. The legacy SDK
+the latter shall abort the already-created external session.
+The legacy SDK
 probe shall put the same working directory in the top-level `query.directory`
-of create and prompt calls and omit it from the prompt body. A caller abort
+of create and prompt calls and omit it from the prompt body.
+A caller abort
 shall start active-session cancellation before delivering an adapter-emitted
 interrupted `done` within the engine drain window, retain the backend resume
 token, and complete bounded cancellation cleanup afterwards; managed
-`SIGTERM` shall still follow `done`. A deadline above the host timer maximum shall
+`SIGTERM` shall still follow `done`.
+A deadline above the host timer maximum shall
 remain pending until real relevant activity, and an owned managed child that
 ignores `SIGTERM` shall receive `SIGKILL` after its grace.
 Prompt-dispatch abort and failure probes shall stop any event stream opened
 before dispatch settles, and a fresh backend session created before abort
-shall remain the interrupted resume token [[opencode-11](#opencode-11)]. A run
+shall remain the interrupted resume token [[opencode-11](#opencode-11)].
+A run
 result settling concurrently with caller abort shall preserve its session
 identity, cancel its active work, and release its event stream before
-interrupted `done`. A rejected SDK cleanup operation shall not prevent the
-remaining cleanup operations or managed process termination. Legacy and v2
+interrupted `done`.
+A rejected SDK cleanup operation shall not prevent the
+remaining cleanup operations or managed process termination.
+Legacy and v2
 instance-disposal requests shall carry the run directory through
 `query.directory` and `directory`, respectively.
 Where the OpenCode CLI and SDK are available, when a credential-free real
@@ -707,15 +731,19 @@ server process exit without a multi-minute wait.
 Given canonical v1 sibling-delta, v2 explicitly typed delta, and v2 generic
 delta events interleaving assistant text, assistant reasoning, and user text,
 the adapter shall reconstruct assistant output through `text_delta` without
-reasoning or user contamination [[opencode-5](#opencode-5)], [[opencode-19](#opencode-19)]. Generic deltas shall classify correctly when
+reasoning or user contamination [[opencode-5](#opencode-5)], [[opencode-19](#opencode-19)].
+Generic deltas shall classify correctly when
 part metadata arrives before or after them, while unresolved types shall not
-default to output or block later known content. Interleaved part identifiers
+default to output or block later known content.
+Interleaved part identifiers
 shall preserve stream order when later metadata resolves first, and removing a
-part shall discard content still pending on either kind or role. Reasoning
+part shall discard content still pending on either kind or role.
+Reasoning
 shall appear only through settled `thinking` snapshots, nonconsecutive
 duplicate settled snapshots shall emit once, and an exact settled replay of a
 part's `textID`-correlated deltas shall not duplicate the combined `text` plus
-`text_delta` reconstruction. An incident-scale interleaved delta stream shall
+`text_delta` reconstruction.
+An incident-scale interleaved delta stream shall
 preserve order and terminate within the test bound; after removing a message,
 none of its parts shall emit later content and later messages shall continue [[opencode-17](#opencode-17)].
 
@@ -723,7 +751,8 @@ none of its parts shall emit later content and later messages shall continue [[o
 
 Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
 use each supported SDK path, neither the observable v1 prompt nor the v2
-session ruleset shall contain an adapter-generated wildcard [[opencode-7](#opencode-7)]. Explicitly
+session ruleset shall contain an adapter-generated wildcard [[opencode-7](#opencode-7)].
+Explicitly
 supplied capability levels shall still map, including denies, while omitted
 capabilities preserve native rules.
 Where canonical v1 `permission.updated` and v2 `permission.asked` events are
@@ -735,12 +764,15 @@ SDK route with request and session correlation intact, then emit exactly one
 `opencode:permission_decision` extension carrying the request identifier,
 native session identifier, permission, patterns, tool-use correlation,
 completed `once` decision,
-automated marker, normalized input, and optional reason [[opencode-20](#opencode-20)]. Outside auto it shall
+automated marker, normalized input, and optional reason [[opencode-20](#opencode-20)].
+Outside auto it shall
 emit the normalized request and answer `reject` without the extension.
 Where a resumed root already owns child or grandchild sessions, the wrapper
 shall recursively discover them through version-correct `session.children`
-routes under one whole-traversal deadline before prompt dispatch. Ordered
-lifecycle events shall add fresh descendants. Child permission asks shall use
+routes under one whole-traversal deadline before prompt dispatch.
+Ordered
+lifecycle events shall add fresh descendants.
+Child permission asks shall use
 the child identifier on session-scoped reply routes, while child conversational
 output remains filtered [[opencode-6](#opencode-6)].
 Where interleaved unrelated-session events and repeated owned events occur, the
@@ -757,7 +789,8 @@ While a permission response is pending in managed mode, when `AbortSignal`
 fires, the adapter shall terminate with one interrupted `done`, abort the
 run-owned signal observed by both the SSE subscription and permission
 response, close the underlying SSE iterator and SDK client, and send `SIGTERM`
-to the managed server without waiting for that response [[opencode-8](#opencode-8)], [[opencode-9](#opencode-9)]. The interrupted
+to the managed server without waiting for that response [[opencode-8](#opencode-8)], [[opencode-9](#opencode-9)].
+The interrupted
 `done` shall be yielded before `SIGTERM`, and managed termination shall begin
 before the bounded SDK cleanup waits.
 Canonical wrapper fixtures shall prove that aborting a pending v1 and v2 SSE
