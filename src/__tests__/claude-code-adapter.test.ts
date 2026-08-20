@@ -1610,7 +1610,7 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
-  // TADAPT-039
+  // claude-code-239
   it('decomposes the run into one billable record per model', async () => {
     const adapter = new ClaudeCodeAdapter({
       loadSdk: makeLoader([

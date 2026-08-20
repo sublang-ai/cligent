@@ -50,7 +50,7 @@ interface ClaudeSettings {
 // `npm run typecheck` and `npm run build` reject a `boolean`/`undefined`
 // return — the defect that made the SDK raise a `ZodError` on every tool call.
 // Drift between this mirror and the real SDK is caught at runtime by the
-// TADAPT-019 acceptance probe.
+// claude-code-219 acceptance probe.
 type ClaudePermissionResult =
   | { behavior: 'allow'; updatedInput: Record<string, unknown> }
   | { behavior: 'deny'; message: string };
@@ -158,7 +158,7 @@ interface ClaudeResultMessage {
   durationMs?: unknown;
   duration_ms?: unknown;
   sessionId?: unknown;
-  /** Per-model accounting covering every request the run made (claude-code-11). */
+  /** Per-model accounting covering every request the run made (claude-code-12). */
   modelUsage?: unknown;
   /** Runtime-computed cost, a sibling of `usage` rather than a member. */
   total_cost_usd?: unknown;
@@ -455,7 +455,7 @@ const MODEL_USAGE_ALIASES = [
 ] as const;
 
 /**
- * claude-code-11: `result.usage` counts the main conversation loop only, while
+ * claude-code-12: `result.usage` counts the main conversation loop only, while
  * `result.modelUsage` counts every request the run made, including subagents.
  * Fold the per-model entries into one usage-shaped record so the aggregates
  * describe the whole run. Returns undefined when the map is absent or any

@@ -201,7 +201,7 @@ When terminal `done` is not interrupted and no session identifier was received, 
 
 ### gemini-201
 
-Given canned native Gemini NDJSON events, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[gemini-4](#gemini-4)], including the terminal `done` status its exit-code map gives [[gemini-5](#gemini-5)].
+Given canned native Gemini NDJSON events, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[gemini-4](#gemini-4)].
 
 ### gemini-203
 
@@ -306,7 +306,8 @@ Given authentic zero or nonzero accounting from the adapter, when a caller reads
 - exact duplicate exporter records shall be deduplicated, while a missing, malformed, unidentifiable duplicate, conflicting duplicate, contaminated, or mismatched file shall yield no token report;
 - tool-use-prompt tokens shall contribute to inclusive input and its uncached subset, while StreamStats reconciliation shall preserve its raw prompt and candidate counters;
 - a run with either failed-request signal shall retain the exact reconciled successful-response records as partial;
-- run-owned telemetry cleanup shall run after success, error, and abort.
+- run-owned telemetry cleanup shall run after success, error, and abort;
+- malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses`.
 
 ### gemini-241
 

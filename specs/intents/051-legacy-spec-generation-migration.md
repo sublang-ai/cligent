@@ -6,10 +6,10 @@
 ## Status
 
 In progress.
-Tasks 1 through 10 are done; tasks 11 through 21 remain.
+Tasks 1 through 10 are done; tasks 11 through 22 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
-Task 6 found the parser conflict that task 20 now carries, and completion waits on it.
-Task 7 landed `package` with `package-1`, `package-5`, `package-8`, `package-9`, and `package-16` unverified, a gap it inherited and handed to task 19's table.
+Task 6 found the parser conflict that task 20 now carries, and the superseded-item cluster task 21 now carries, and completion waits on both.
+Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 19's table.
 Task 8 landed `claude-code` the same way, with `claude-code-1`, `claude-code-6`, and `claude-code-10` reaching no verification item, and left the cross-adapter file's engine halves for task 13.
 Task 9 landed `codex` with `codex-1` and `codex-9` reaching none, emptied `specs/dev/`, and left the two remaining Codex-bodied criteria in `test/adapters.md` for the engine halves they still verify.
 Task 10 landed `gemini` with `gemini-1` and `gemini-2` reaching none, consuming the whole `Gemini` section of `test/adapters.md` along with its three Gemini-only criteria elsewhere.
@@ -44,7 +44,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 21, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 22, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
@@ -136,10 +136,10 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `licensing` | `licensing-3`, `licensing-4`, and `licensing-6`, no script, workflow, or hook reading an SPDX header | `licensing-7` and `licensing-8`, which reach `licensing-3` and `licensing-4` as preconditions only                                                                                                                                                      |
     | `release`   | `release-11`'s workflow audit and `release-12`'s smoke composition                                   | `release-1`, `release-3`, `release-4`, and `release-5`, which no verification item cites; `release-7`'s build, notes-extraction, and GitHub-release steps, which `release-11` cites without asserting; and every `release-10` checklist line outside `smoke:release` |
-    | `package`   | none                                                                                                 | `package-1`, `package-5`, and `package-8`, which no verification item cites and no check reaches; `package-9` and `package-16`, which `sdk-peer-floors.test.ts`, `runtime-version.test.ts`, and `verify-agent-targets.mjs` do execute while no verification item claims them |
+    | `package`   | none                                                                                                 | `package-1`, `package-5`, and `package-8`, which no verification item cites and no check reaches; `package-9`, which `sdk-peer-floors.test.ts`, `runtime-version.test.ts`, and `verify-agent-targets.mjs` do execute while no verification item claims it, `package-16` being claimed by a verification item that task 13 must bring inside this package |
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
     | `claude-code` | none                                                                                               | `claude-code-1`, which no verification item cites and no check reaches; `claude-code-6` and `claude-code-10`, which no verification item cites while `claude-code-adapter.test.ts` does exercise the option pass-through and every branch of the resume-repair skip; and, within cited items, `claude-code-3`'s `init`-exactly-once and unlabelled-`system` handshake rules, `claude-code-5`'s deny-message and category cases, and `claude-code-12`'s record-sum identity, `web_search_request` unit, and tokens-absent cost exposure |
-    | `codex`     | none                                                                                                 | `codex-1`, which no verification item cites, its `agent: 'codex'` identity reaching only the engine's role-attribution checks; `codex-9`, which no verification item cites while `codex-adapter.test.ts` does assert the `skipGitRepoCheck` thread option; and, within cited items, `codex-3`'s legacy alias tool shapes and its unique-`toolUseId` tool count, which `codex-201`'s canonical-shape assertion excludes, and `codex-4`'s absent-policy knob rule, whose three unset controls `codex-224` does not assert while proving the no-policy run's outcome |
+    | `codex`     | none                                                                                                 | `codex-1`, which no verification item cites, its `agent: 'codex'` identity reaching only the engine's role-attribution checks; `codex-9`, which no verification item cites while `codex-adapter.test.ts` does assert the `skipGitRepoCheck` thread option; and, within cited items, `codex-3`'s legacy alias tool shapes and its unique-`toolUseId` tool count, which `codex-201`'s canonical-shape assertion excludes, and `codex-4`'s absent-policy knob rule, whose three unset controls `codex-224` does not assert while proving the no-policy run's outcome, though `codex-adapter.test.ts` does assert them |
     | `gemini`    | none                                                                                                 | `gemini-1`, which no verification item cites, its `agent: 'gemini'` identity and absent SDK dependency reaching no check; `gemini-2`, which no verification item cites while `gemini-adapter.test.ts` does exercise both outcomes of the spawn-based probe but not its timeout; and, within cited items, `gemini-6`'s capability-tool list and its rule that capability-level allows shall not widen an explicit allowlist, which `gemini-204` and `gemini-229` state no case for |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
@@ -157,7 +157,14 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Task 6 found this and left it open rather than settling a behavior question inside a move.
     Leave this plan incomplete until it closes.
 
-21. **Verify and hand over.**
+21. **Settle the superseded items.**
+    Twenty items across the packages and the legacy test files carry a `Superseded by` marker inherited from the released tree, and the artifacts they describe no longer follow them — `claude-code-11`, `claude-code-238`, `claude-code-239`, `codex-14`, `codex-233`, `codex-238`, `codex-239`, `gemini-233`, and the flat-accounting paragraphs inside `claude-code-3`, `codex-3`, and `gemini-4` among them.
+    An item the artifact no longer satisfies is the contradiction this plan's own rule sends to a task of its own ahead of the handover, and no earlier task carries these.
+    Put the cluster to the owner, who either restores each concern by conforming the artifact to it, or approves the retirement that a decision record then admits [[meta-12](../meta.md#meta-12)], the packages losing the item and gaining the map's row.
+    Neither `spex lint` nor the coverage criterion sees this, a superseded item stating a requirement its package never meets [[meta-34](../meta.md#meta-34)], so nothing but this task keeps it visible.
+    Leave this plan incomplete until it closes.
+
+22. **Verify and hand over.**
     Drive `spex lint` to zero errors and zero warnings, reconcile the task-4 rename map against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
 
 ## Verification

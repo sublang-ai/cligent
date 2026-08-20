@@ -342,7 +342,7 @@ describe('CodexAdapter', () => {
     });
   });
 
-  // codex-239
+  // codex-240
   it('does not substitute the requested model for an observed rate-card key', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),

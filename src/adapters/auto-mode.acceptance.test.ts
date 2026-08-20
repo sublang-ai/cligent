@@ -226,7 +226,7 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     PROBE_TIMEOUT_MS,
   );
 
-  // TADAPT-023: credential-free proof that the generated profile definition is
+  // codex-223: credential-free proof that the generated profile definition is
   // delivered to Codex's native sandbox without mutating user/repo config.
   const codexCliMissing = codexCliPath ? [] : ['@openai/codex CLI'];
   gatedIt(codexCliMissing)(
@@ -254,7 +254,7 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     PROBE_TIMEOUT_MS,
   );
 
-  // TADAPT-023: API-key-gated proof that the same policy works through the
+  // codex-223: API-key-gated proof that the same policy works through the
   // SDK adapter path and completes a real git metadata write without approval.
   gatedIt(codexMissing)(
     'codex auto mode with writablePaths writes git metadata without approval',

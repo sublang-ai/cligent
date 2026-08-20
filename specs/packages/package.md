@@ -37,16 +37,22 @@ Agent SDKs (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai
 
 ### package-9
 
-The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter supports at runtime, and shall declare no upper bound. This floor may be lower than the exact `devDependencies` version pinned for local development and CI. The floor shall be raised when adapter code begins to depend on a newer SDK surface, and may be raised when a version below the new floor can no longer serve the adapter's users — including a vendor runtime that the SDK bundles and that the adapter therefore selects. A floor shall be raised only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because a raised floor refuses a version that previously loaded.
+The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter supports at runtime, and shall declare no upper bound.
+This floor may be lower than the exact `devDependencies` version pinned for local development and CI.
+The floor shall be raised when adapter code begins to depend on a newer SDK surface, and may be raised when a version below the new floor can no longer serve the adapter's users — including a vendor runtime that the SDK bundles and that the adapter therefore selects.
+A floor shall be raised only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because a raised floor refuses a version that previously loaded.
 
-The upper bound of the supported range shall live in the runtime descriptor of [[package-16](#package-16)] and shall be enforced when the runtime loads, never in `peerDependencies`. A published upper bound on an optional peer is intersected into version selection by npm and silently resolves an older SDK without an error, which defeats the floor it accompanies.
+The upper bound of the supported range shall live in the runtime descriptor of [[package-16](#package-16)] and shall be enforced when the runtime loads, never in `peerDependencies`.
+A published upper bound on an optional peer is intersected into version selection by npm and silently resolves an older SDK without an error, which defeats the floor it accompanies.
 
 ### package-10
 
 The repository `build` script shall remove `dist/` before TypeScript emits,
-and package creation shall run that clean build. The repository-local
+and package creation shall run that clean build.
+The repository-local
 `tmux-play-dev` launcher shall likewise build from clean output before its
-outer invocation starts the CLI. A package tarball shall therefore contain
+outer invocation starts the CLI.
+A package tarball shall therefore contain
 only artifacts produced from the current source tree, never orphaned output
 from deleted or renamed source files.
 
@@ -54,7 +60,8 @@ from deleted or renamed source files.
 
 The emitted declaration files shall support TypeScript >= 5.4 because the
 public generic effort API uses the `NoInfer` utility type introduced in that
-release [[2]]. User-facing package documentation shall state this
+release [[2]].
+User-facing package documentation shall state this
 declaration-consumer floor.
 
 ### package-12
@@ -66,13 +73,16 @@ Repository verification shall compile the adapter's consumed SDK or protocol sur
 Where an adapter's conformance target consists of both an SDK client and a CLI server, their exact target versions shall match.
 The Kimi conformance target shall pair `@agentclientprotocol/sdk` `1.3.0` with the `@moonshot-ai/kimi-code` CLI `0.31.1` and verify the `kimi acp` command surface.
 
-The exact conformance target is the tested version and the optional peer floor is the lowest supported version; the two are distinct and neither shall be derived from the other automatically. Per [[package-9](#package-9)], a floor names the lowest version the adapter supports, which may sit below the tested version and moves only for the reasons that item states. Both versions shall be declared once, in the runtime descriptor of [[package-16](#package-16)], which repository verification asserts equal to the manifest.
+The exact conformance target is the tested version and the optional peer floor is the lowest supported version; the two are distinct and neither shall be derived from the other automatically.
+Per [[package-9](#package-9)], a floor names the lowest version the adapter supports, which may sit below the tested version and moves only for the reasons that item states.
+Both versions shall be declared once, in the runtime descriptor of [[package-16](#package-16)], which repository verification asserts equal to the manifest.
 
 ### package-13
 
 Where a release candidate is evaluated for readiness, both the production
 dependency graph and the complete development dependency graph shall report no
-known vulnerabilities. Remediation shall retain the runtime floor in
+known vulnerabilities.
+Remediation shall retain the runtime floor in
 [[package-2](#package-2)] and shall not rely on an ignored audit finding or an
 unsupported dependency override.
 
@@ -106,7 +116,8 @@ Each adapter shall have a sub-path export in the `"exports"` map (e.g., `"./adap
 ### package-14
 
 The package shall expose its documented `./tmux-play` and
-`./captains/fanout` subpaths and the `tmux-play` executable. Where the packed
+`./captains/fanout` subpaths and the `tmux-play` executable.
+Where the packed
 tarball is installed in an isolated consumer, the root and every documented
 subpath shall load and the executable's `--help` command shall exit
 successfully.
