@@ -11,7 +11,7 @@ Verification criteria for all adapters. Shared patterns apply to each adapter; p
 
 ### TADAPT-001
 
-Verifies: [GEMINI-004](../user/adapters/gemini.md#gemini-004), [GEMINI-005](../user/adapters/gemini.md#gemini-005), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
 
 Given canned native events for each adapter, when running the adapter, the yielded `AgentEvent` types shall match the normalization table for that adapter.
 
@@ -23,21 +23,21 @@ Where the adapter uses an SDK (OpenCode), when the SDK is not installed, `isAvai
 
 ### TADAPT-003
 
-Verifies: [ENG-009](../user/engine.md#eng-009), [GEMINI-008](../user/adapters/gemini.md#gemini-008), [KIMI-011](../user/adapters/kimi.md#kimi-011)
+Verifies: [ENG-009](../user/engine.md#eng-009), [KIMI-011](../user/adapters/kimi.md#kimi-011)
 
 When `AbortSignal` fires during an adapter's `run()`, the adapter shall yield `done` (`status: 'interrupted'`).
 
 ### TADAPT-004
 
-Verifies: [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
 
 Given all `PermissionLevel` combinations, each adapter shall map `PermissionPolicy` to the correct vendor-specific controls.
 
 ### TADAPT-022
 
-Verifies: [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
 
-Given a Gemini, OpenCode, or supported `mode: 'auto'` Kimi `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
+Given an OpenCode or supported `mode: 'auto'` Kimi `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
 
 ## Codex
 
@@ -46,20 +46,6 @@ Given a Gemini, OpenCode, or supported `mode: 'auto'` Kimi `PermissionPolicy` wh
 Verifies: [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
 
 Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and whose `writablePaths` contains valid entries, the Codex permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'profile'`, select a generated extra-writes permission profile that extends `:workspace`, and represent `write` grants under `:workspace_roots` for each canonical path. Given non-empty `writablePaths` with Codex local access resolved to `:read-only`, the mapping shall reject the policy. Given non-empty `writablePaths` with Codex local access resolved to `:danger-full-access`, the mapping shall report the canonical paths with `enforcement: 'ambient'`, shall not generate an extra-writes profile, and shall not narrow the broader posture.
-
-## Gemini
-
-### TADAPT-007
-
-Verifies: [GEMINI-003](../user/adapters/gemini.md#gemini-003)
-
-Given process exit codes 0, 1, 42, and 53, the Gemini adapter shall yield the corresponding `done` status. Given the child process reports an asynchronous launch error, the Gemini adapter shall emit a non-recoverable `error` followed by terminal `done` with `status: 'error'`.
-
-### TADAPT-025
-
-Verifies: [GEMINI-003](../user/adapters/gemini.md#gemini-003), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-007](../user/adapters/gemini.md#gemini-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [GEMINI-012](../user/adapters/gemini.md#gemini-012), [GEMINI-013](../user/adapters/gemini.md#gemini-013), [GEMINI-014](../user/adapters/gemini.md#gemini-014)
-
-Given a fake Gemini CLI implementing the 0.50 argument and Policy Engine surfaces while capturing argv and temporary files, when the adapter runs, arbitrary prompts, model values, and non-empty resume tokens shall arrive through joined option tokens; absent or empty resume shall create a fresh run whose pre-backend events share a generated non-empty correlation identifier; unsupported turn-limit and deprecated tool controls shall be absent; generated policy rules, precedence, serialization, native-default omission, configuration authority, and cleanup shall match the cited Gemini items.
 
 ## OpenCode
 
@@ -271,10 +257,9 @@ Given `allowedTools` and `disallowedTools` options, each adapter shall enforce w
 
 ### TADAPT-029
 
-Verifies: [ENG-017](../user/engine.md#eng-017), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-016](../user/adapters/gemini.md#gemini-016), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
+Verifies: [ENG-017](../user/engine.md#eng-017), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
 
-Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported: Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set.
-Where a non-empty allowlist and disallowed identifiers are provided, when Gemini runs, the adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence.
+Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported.
 Where either tool-list field is explicitly provided to OpenCode, including an empty array and including alongside a portable permission rule such as `shellExecute: 'deny'`, when the adapter runs, it shall reject before its SDK loader, compatibility wrapper, session creation, subscription, or backend prompt is invoked. Direct permission-mapper calls with either field present shall reject by the same contract. The diagnostic shall explain that OpenCode 1.18.13 merges prompt `tools` into persistent session permission rules, which can override native or explicit denies and cannot provide exact per-call tool availability.
 Where either tool-list field is explicitly provided to Kimi, including an empty array, when the adapter runs, it shall reject before spawning `kimi acp`.
 
@@ -282,13 +267,12 @@ Where either tool-list field is explicitly provided to Kimi, including an empty 
 
 ### TADAPT-018
 
-Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
 
 Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match this table and the cited adapter item:
 
 | Adapter     | Observable mapping                                                                                                                       |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Gemini      | portable values create documented aliases only for matching concrete model IDs                                                           |
 | OpenCode    | portable values select the documented top-level prompt `variant` by provider                                                             |
 | Kimi        | `off` and `on` select the ACP `thinking` option exactly; `on` uses the chosen model's native default effort                              |
 
@@ -297,7 +281,7 @@ Where a provider-specific value belongs to another built-in adapter or is an arb
 
 ### TADAPT-026
 
-Verifies: [ENG-024](../user/engine.md#eng-024), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
 
 Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort.
 
@@ -313,25 +297,13 @@ pre-prompt lineage discovery, the error `done` shall omit `resumeToken`, and a
 subsequent `Cligent.run()` shall create a fresh session rather than retrying the
 stale identifier.
 
-### TADAPT-013
-
-Verifies: [GEMINI-009](../user/adapters/gemini.md#gemini-009)
-
-Given a Gemini stream that provides a session identifier, the adapter shall set `DonePayload.resumeToken` to that value. Given a stream with no session identifier (e.g., early error), the adapter shall omit `resumeToken` per [GEMINI-009](../user/adapters/gemini.md#gemini-009).
-
 ### TADAPT-020
 
-Verifies: [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
+Verifies: [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
 
 Given each adapter has observed a backend session or thread identifier during a run, when that run is aborted and yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the observed backend identifier.
 Given each adapter is run with a non-empty `AgentOptions.resume` value and no backend session or thread identifier is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the inbound `resume` value.
-Given a Gemini, OpenCode, or Kimi adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
-
-### TADAPT-016
-
-Verifies: [GEMINI-010](../user/adapters/gemini.md#gemini-010)
-
-The Gemini adapter shall set `GEMINI_CLI_TRUST_WORKSPACE=true` by default in the spawned process environment and preserve an existing parent environment value per [GEMINI-010](../user/adapters/gemini.md#gemini-010).
+Given an OpenCode or Kimi adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
 
 ## Concurrency
 
@@ -355,13 +327,12 @@ Where permissions, tool lists, turn or budget limits, or effort values are unsup
 
 ### TADAPT-033
 
-Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [GEMINI-004](../user/adapters/gemini.md#gemini-004), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
 
 _Superseded for usage shape by [TADAPT-040](#tadapt-040)._
 
 Given each built-in adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'`, its input count shall preserve a provider-inclusive base or fold cache-read and cache-write counters into a cache-exclusive base exactly once, and, where reasoning or thinking is supplied disjoint from the output base, its output count shall add that component exactly once.
 Given OpenCode supplies canonical step-finish accounting, its visible output and disjoint reasoning counters shall be summed exactly once.
-Given Gemini supplies canonical `StreamStats`, its cache-inclusive `input_tokens` shall remain unchanged, its `cached` and uncached `input` details shall be validated without being added again, and valid `tool_calls` shall contribute to the independently known tool-use count; where `total_tokens` differs from `input_tokens + output_tokens`, accounting shall be unavailable rather than assigning the unpartitioned residual to output.
 Given a required token or cache counter is absent or any present mapped counter is negative, fractional, non-finite, or non-numeric, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'`; an absent optional cache counter alone shall retain zero contribution without invalidating otherwise complete accounting.
 Given a Kimi prompt has a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status, token accounting shall be unavailable, and accumulated result text and tool use shall remain intact; an unconsumed malformed thought detail or null optional cache detail shall not poison otherwise complete accounting.
 Given upstream omits complete token accounting or an adapter synthesizes an errored, interrupted, exhausted, or other terminal path, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced.
@@ -390,10 +361,9 @@ Given upstream accounting is incomplete, absent, or fails the partition identiti
 
 ### TADAPT-040
 
-Verifies: [ENG-031](../user/engine.md#eng-031), [GEMINI-017](../user/adapters/gemini.md#gemini-017), [KIMI-013](../user/adapters/kimi.md#kimi-013), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
+Verifies: [ENG-031](../user/engine.md#eng-031), [KIMI-013](../user/adapters/kimi.md#kimi-013), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
 
 Given authentic zero or nonzero accounting from a built-in adapter, terminal `usage.tokens` shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder; malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses`.
-Gemini shall publish a complete per-response report only from a prompt-free run-owned telemetry file whose root and descendant records carry a non-empty authentication rate-card identity, reconcile to terminal StreamStats, and contain neither an API-error event nor an unmatched zero-token routed model; exact duplicate exporter records shall be deduplicated, while a missing, malformed, unidentifiable duplicate, conflicting duplicate, contaminated, or mismatched file shall yield no token report. Tool-use-prompt tokens shall contribute to inclusive input and its uncached subset while StreamStats reconciliation shall preserve its raw prompt and candidate counters. A run with either failed-request signal shall retain exact reconciled successful-response records as partial, and run-owned telemetry cleanup shall run after success, error, and abort.
 Kimi shall publish no token or cost report for the pinned ACP runtime, including when a synthetic unstable usage extension appears, while retaining tool calls and prompt status.
 OpenCode shall include canonical causal child and grandchild steps without emitting child conversation, exclude foreign or pre-existing background work, deduplicate and replace repeated part snapshots by session and part identifier, preserve billed completed steps across removal, and publish complete coverage only when its causal ledger is valid and settled.
 Fresh and default-title root sessions shall suppress and verify OpenCode's hidden title request, while a meaningful resumed title shall remain unchanged; inability to prove suppression shall retain exact records as partial.
@@ -416,7 +386,7 @@ Items in this section verify behavior end-to-end against the real coding-agent S
 
 ### TADAPT-019
 
-Verifies: [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
 
 Where a `Cligent` is constructed on each adapter with
 `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first
@@ -430,7 +400,7 @@ a denied tool result, or an error; and each shall terminate with successful
 `done`. Filesystem state shall be the ground-truth assertion because adapters
 normalize file edits differently. The harness shall retry the complete fresh
 probe after, and only after, an explicit upstream-overload, rate-limit,
-service-unavailable, or Gemini upstream invalid-stream failure. It shall make
+or service-unavailable failure. It shall make
 at most two retries; any other failure and the third consecutive named
 transient failure shall remain fatal.
 
@@ -481,15 +451,3 @@ canned-event lifecycle check: the canned fixtures encode the wire schema this
 release was written against, so only a live run can catch a later OpenCode
 release changing the `ToolPart` lifecycle shape the way the pre-1.18
 normalization drifted.
-
-### TADAPT-041
-
-Verifies: [GEMINI-017](../user/adapters/gemini.md#gemini-017)
-
-Where the exact Gemini CLI conformance target and API-key credentials are
-available, when the real auto-mode adapter leg completes its headless create
-and update requests, each terminal shall carry a non-empty token report whose
-inclusive totals are positive and whose per-response records name a non-empty
-model, a non-empty authentication rate-card family, and exactly one request.
-An absent or unreconciled run-owned telemetry file shall fail this acceptance
-leg rather than pass on the successful coding-agent result alone.

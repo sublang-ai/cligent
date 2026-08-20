@@ -126,11 +126,11 @@ meta.md     The spec of specs
 | user  | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, authentic nested token reports with explicit coverage, exact subsets, billable records and cost provenance, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
 | test  | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, authentic usage omission/zero/coverage/record/cost invariants, and effort API verification                                                                                                                                                            |
 
-### GEMINI
+### gemini
 
-| Group | File                                          | Summary                                                                                                                                                                                                                                                         |
-| ----- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| user  | [adapters/gemini.md](user/adapters/gemini.md) | Gemini adapter: NDJSON normalization plus run-owned per-response telemetry reconciled to StreamStats for complete thinking/cache/subagent accounting, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings |
+| Group | File                                     | Summary                                                                                                                                                                                                                                                                          |
+| ----- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pkg   | [gemini.md](packages/adapters/gemini.md) | Gemini adapter: NDJSON normalization plus run-owned per-response telemetry reconciled to StreamStats for complete thinking/cache/subagent accounting, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings, and their checks |
 
 ### git
 

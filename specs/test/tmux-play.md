@@ -513,7 +513,7 @@ Given a YAML config whose `permissions.mode` is outside the closed set, when the
 ## Effort Configuration
 
 ### TTMUX-057
-Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [ENG-020](../user/engine.md#eng-020), [[claude-code-8](../packages/adapters/claude-code.md#claude-code-8)], [[codex-7](../packages/adapters/codex.md#codex-7)], [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [TMUX-056](../user/tmux-play.md#tmux-056), [ENG-020](../user/engine.md#eng-020), [[claude-code-8](../packages/adapters/claude-code.md#claude-code-8)], [[codex-7](../packages/adapters/codex.md#codex-7)], [[gemini-11](../packages/adapters/gemini.md#gemini-11)], [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
 
 Where YAML selects representative values covering each distinct adapter transport class, when the launcher/session seam constructs and invokes the corresponding `Cligent`, the value shall reach the adapter-specific surface from the cited items without cross-aliasing: Claude ordinary effort and ultracode, Codex thread and constructor effort, Gemini 3 and Gemini 2.5 concrete-model aliases, known-provider OpenCode prompt variants, and Kimi's binary ACP thinking setting. Representative unmatched Gemini and OpenCode models shall create no effort override while preserving ordinary model forwarding; Kimi `on` shall preserve model forwarding and select that model's default thinking effort.
 

@@ -523,7 +523,7 @@ void namedFanout;
   );
 }
 
-// TPKG-005: the Codex CLI entry must resolve from install layouts that do
+// codex-205: the Codex CLI entry must resolve from install layouts that do
 // not hoist @openai/codex out of the SDK's own tree (npm global prefixes,
 // nested-strategy consumers), and a real permission-managed adapter
 // invocation must get past executable resolution. The probe is written into

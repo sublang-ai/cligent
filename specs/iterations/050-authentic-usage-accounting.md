@@ -32,7 +32,7 @@ Done
    Implement [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)] and
    [[codex-17](../packages/adapters/codex.md#codex-17)], including estimate provenance and exact omission.
 3. [x] **Collect Gemini response telemetry.**
-   Implement [GEMINI-017](../user/adapters/gemini.md#gemini-017) with one run-owned local telemetry file,
+   Implement [[gemini-17](../packages/adapters/gemini.md#gemini-17)] with one run-owned local telemetry file,
    per-response records, stream cross-validation, and cleanup.
 4. [x] **Make OpenCode accounting causal and idempotent.**
    Implement [OPENCODE-021](../user/adapters/opencode.md#opencode-021) across the root/task tree without
@@ -47,7 +47,7 @@ Done
    Run focused adapter suites, type tests, typecheck, lint, build, full unit tests, package checks, and the
    feasible real-agent acceptance legs.
 8. [x] **Prove Gemini telemetry against the real CLI.**
-   Add [TADAPT-041](../test/adapters.md#tadapt-041) and require the existing credentialed Gemini acceptance
+   Add [[gemini-241](../packages/adapters/gemini.md#gemini-241)] and require the existing credentialed Gemini acceptance
    leg to emit non-empty per-response usage after strict stream reconciliation.
 
 ## Acceptance criteria

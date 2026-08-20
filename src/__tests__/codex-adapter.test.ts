@@ -253,7 +253,7 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
-  it('maps canonical SDK tool lifecycles to unified events (TADAPT-001)', async () => {
+  it('maps canonical SDK tool lifecycles to unified events (codex-201)', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),
     });
@@ -342,7 +342,7 @@ describe('CodexAdapter', () => {
     });
   });
 
-  // TADAPT-039
+  // codex-239
   it('does not substitute the requested model for an observed rate-card key', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),

@@ -13,7 +13,7 @@ import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 const available = isExecutableAvailable();
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 
-describe('Gemini CLI 0.50 argument contract (TADAPT-025)', () => {
+describe('Gemini CLI 0.50 argument contract (gemini-225)', () => {
   acceptanceIt(
     'parses joined headless and session values without credentials',
     () => {

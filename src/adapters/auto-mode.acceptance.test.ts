@@ -174,7 +174,7 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
     PROBE_TIMEOUT_MS,
   );
 
-  // TADAPT-024: live proof that permission-managed Codex runs ignore a
+  // codex-224: live proof that permission-managed Codex runs ignore a
   // conflicting CODEX_HOME/config.toml instead of letting stale user config
   // override the adapter-selected `auto_review + :workspace` profile.
   gatedIt(codexMissing)(
@@ -312,7 +312,7 @@ describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
         withIsolatedGeminiCliHome,
       );
       expectAutoMode('gemini', outcome);
-      // TADAPT-041: the same real headless requests must cross Gemini's
+      // gemini-241: the same real headless requests must cross Gemini's
       // run-owned telemetry boundary and survive strict StreamStats
       // reconciliation. Presence here proves the non-injected path works.
       expectGeminiUsage('gemini create', outcome.create.events);
