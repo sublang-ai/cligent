@@ -6,13 +6,14 @@
 ## Status
 
 In progress.
-Tasks 1 through 10 are done; tasks 11 through 22 remain.
+Tasks 1 through 11 are done; tasks 12 through 22 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and the superseded-item cluster task 21 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 19's table.
 Task 8 landed `claude-code` the same way, with `claude-code-1`, `claude-code-6`, and `claude-code-10` reaching no verification item, and left the cross-adapter file's engine halves for task 13.
 Task 9 landed `codex` with `codex-1` and `codex-9` reaching none, emptied `specs/dev/`, and left the two remaining Codex-bodied criteria in `test/adapters.md` for the engine halves they still verify.
 Task 10 landed `gemini` with `gemini-1` and `gemini-2` reaching none, consuming the whole `Gemini` section of `test/adapters.md` along with its three Gemini-only criteria elsewhere.
+Task 11 landed `kimi` as the first package whose every behavior a verification item reaches, so it hands task 19 no row.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -158,9 +159,10 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Leave this plan incomplete until it closes.
 
 21. **Settle the superseded items.**
-    Every item carrying a `Superseded by` marker when this task runs is in scope, wherever it then lives, the marker being inherited from the released tree and the artifact no longer following what the item states.
-    That rule rather than a census defines the set, because tasks 11 through 14 first carry ten more markers out of `user/adapters/kimi.md`, `user/adapters/opencode.md`, `user/engine.md`, and `user/tmux-play.md` into the packages they land.
-    Measured now the tree holds thirty — eleven already in the landed packages, nine in the legacy test files, ten awaiting those four moves — a baseline this task shall re-measure rather than trust.
+    Every item the tree marks superseded when this task runs is in scope, wherever it then lives and however the marker is worded: an item-level note retiring the whole item, and an embedded note retiring one passage of an otherwise live item alike, but not an ordinary sentence that merely uses the word.
+    What each marker admits is that the artifact stopped following the passage it covers, while the rest of a partly superseded item stays authoritative.
+    No census can stand in for that rule: the tasks below still carry markers out of the legacy files, and dissolving one superseded cross-adapter criterion copies its marker into every destination package, so the total grows as the migration proceeds rather than holding steady.
+    This task shall therefore measure the set itself, over the whole tree, at the moment it runs.
     An item the artifact no longer satisfies is the contradiction this plan's own rule sends to a task of its own ahead of the handover, and no earlier task carries these.
     Put the cluster to the owner, who either restores each concern by conforming the artifact to it, or approves the retirement that a decision record then admits [[meta-12](../meta.md#meta-12)], the packages losing the item and gaining the map's row.
     Neither `spex lint` nor the coverage criterion sees this, a superseded item stating a requirement its package never meets [[meta-34](../meta.md#meta-34)], so nothing but this task keeps it visible.

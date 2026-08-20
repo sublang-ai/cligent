@@ -440,7 +440,7 @@ describe('KimiAdapter', () => {
       }),
     );
 
-    // KIMI-003 / KIMI-004: the child and the session both take the resolved
+    // kimi-3 / kimi-4: the child and the session both take the resolved
     // absolute cwd, so `cwd: '.'` never leaves the run rooted on a relative
     // path or on the parent process's directory by accident.
     const expectedCwd = resolve('.');
@@ -664,7 +664,7 @@ describe('KimiAdapter', () => {
       output: { stderr: 'boom' },
     });
     expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
-    // KIMI-005: ACP supplies no authentic accounting in the pinned runtime;
+    // kimi-5: ACP supplies no authentic accounting in the pinned runtime;
     // toolUses remains independently observed.
     expect(eventOf(events, 'done').payload.usage).toEqual({
       toolUses: 1,
@@ -697,7 +697,7 @@ describe('KimiAdapter', () => {
       }),
     );
 
-    // KIMI-007: a headless run must never auto-approve. With no reject
+    // kimi-7: a headless run must never auto-approve. With no reject
     // option available the adapter returns a cancelled outcome rather than
     // selecting one of the allow options.
     expect(fake.permissionOutcome).toEqual({
@@ -1016,7 +1016,7 @@ describe('KimiAdapter', () => {
     expect(fake.newRequests).toHaveLength(0);
     expect(fake.children[0]?.killSignals).toEqual(['SIGTERM']);
     expect(eventOf(events, 'done').payload.status).toBe('interrupted');
-    // TADAPT-020 / KIMI-012: no backend id was observed and no inbound
+    // kimi-220 / kimi-12: no backend id was observed and no inbound
     // resume was supplied, so the locally generated correlation id must not
     // leak out as a resumable token.
     expect(eventOf(events, 'done').payload).not.toHaveProperty('resumeToken');
@@ -1095,7 +1095,7 @@ describe('KimiAdapter', () => {
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });
 
-  // IR-039 / KIMI-006: the owned pre-filter is the only layer that can raise
+  // IR-039 / kimi-6: the owned pre-filter is the only layer that can raise
   // malformed traffic. The SDK's own parser sits behind it and, since 1.3.0,
   // salvages rather than rejects — a malformed update it drops would otherwise
   // let the turn finish `success` with the defect invisible. These drive real

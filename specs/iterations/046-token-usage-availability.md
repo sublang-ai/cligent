@@ -39,7 +39,7 @@ them with optional authentic nested usage reports.
    Amend DR-002, [ENG-013](../user/engine.md#eng-013),
    [ENG-019](../user/engine.md#eng-019),
    [ENG-027](../user/engine.md#eng-027), and
-   [KIMI-005](../user/adapters/kimi.md#kimi-005); add
+   [[kimi-5](../packages/adapters/kimi.md#kimi-5)]; add
    [TENG-019](../test/engine.md#teng-019) and
    [TADAPT-033](../test/adapters.md#tadapt-033).
 2. [x] **Normalize every terminal producer.**

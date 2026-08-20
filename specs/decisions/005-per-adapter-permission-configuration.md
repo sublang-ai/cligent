@@ -107,7 +107,7 @@ SDK route per [OPENCODE-020](../user/adapters/opencode.md#opencode-020).
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
-Kimi shall therefore reject a provided no-mode capability policy, emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [KIMI-007](../user/adapters/kimi.md#kimi-007).
+Kimi shall therefore reject a provided no-mode capability policy, emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [[kimi-7](../packages/adapters/kimi.md#kimi-7)].
 
 ### Codex — modern permission-profile model
 

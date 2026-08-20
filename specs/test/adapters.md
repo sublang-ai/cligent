@@ -11,7 +11,7 @@ Verification criteria for all adapters. Shared patterns apply to each adapter; p
 
 ### TADAPT-001
 
-Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
+Verifies: [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
 
 Given canned native events for each adapter, when running the adapter, the yielded `AgentEvent` types shall match the normalization table for that adapter.
 
@@ -23,21 +23,21 @@ Where the adapter uses an SDK (OpenCode), when the SDK is not installed, `isAvai
 
 ### TADAPT-003
 
-Verifies: [ENG-009](../user/engine.md#eng-009), [KIMI-011](../user/adapters/kimi.md#kimi-011)
+Verifies: [ENG-009](../user/engine.md#eng-009)
 
 When `AbortSignal` fires during an adapter's `run()`, the adapter shall yield `done` (`status: 'interrupted'`).
 
 ### TADAPT-004
 
-Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007)
 
 Given all `PermissionLevel` combinations, each adapter shall map `PermissionPolicy` to the correct vendor-specific controls.
 
 ### TADAPT-022
 
-Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
 
-Given an OpenCode or supported `mode: 'auto'` Kimi `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
+Given an OpenCode `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
 
 ## Codex
 
@@ -257,31 +257,29 @@ Given `allowedTools` and `disallowedTools` options, each adapter shall enforce w
 
 ### TADAPT-029
 
-Verifies: [ENG-017](../user/engine.md#eng-017), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
+Verifies: [ENG-017](../user/engine.md#eng-017), [OPENCODE-015](../user/adapters/opencode.md#opencode-015)
 
 Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported.
 Where either tool-list field is explicitly provided to OpenCode, including an empty array and including alongside a portable permission rule such as `shellExecute: 'deny'`, when the adapter runs, it shall reject before its SDK loader, compatibility wrapper, session creation, subscription, or backend prompt is invoked. Direct permission-mapper calls with either field present shall reject by the same contract. The diagnostic shall explain that OpenCode 1.18.13 merges prompt `tools` into persistent session permission rules, which can override native or explicit denies and cannot provide exact per-call tool availability.
-Where either tool-list field is explicitly provided to Kimi, including an empty array, when the adapter runs, it shall reject before spawning `kimi acp`.
 
 ## Effort
 
 ### TADAPT-018
 
-Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
 
 Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match this table and the cited adapter item:
 
 | Adapter     | Observable mapping                                                                                                                       |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenCode    | portable values select the documented top-level prompt `variant` by provider                                                             |
-| Kimi        | `off` and `on` select the ACP `thinking` option exactly; `on` uses the chosen model's native default effort                              |
 
 When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
 Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [ENG-024](../user/engine.md#eng-024).
 
 ### TADAPT-026
 
-Verifies: [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-024](../user/engine.md#eng-024), [OPENCODE-012](../user/adapters/opencode.md#opencode-012)
 
 Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort.
 
@@ -299,11 +297,11 @@ stale identifier.
 
 ### TADAPT-020
 
-Verifies: [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
+Verifies: [OPENCODE-011](../user/adapters/opencode.md#opencode-011)
 
 Given each adapter has observed a backend session or thread identifier during a run, when that run is aborted and yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the observed backend identifier.
 Given each adapter is run with a non-empty `AgentOptions.resume` value and no backend session or thread identifier is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the inbound `resume` value.
-Given an OpenCode or Kimi adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
+Given an OpenCode adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
 
 ## Concurrency
 
@@ -315,36 +313,25 @@ Where an adapter does not document an environmental constraint, concurrent `run(
 
 ## Kimi
 
-### TADAPT-030
-
-Verifies: [KIMI-001](../user/adapters/kimi.md#kimi-001), [KIMI-002](../user/adapters/kimi.md#kimi-002), [KIMI-003](../user/adapters/kimi.md#kimi-003), [KIMI-004](../user/adapters/kimi.md#kimi-004), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006), [KIMI-007](../user/adapters/kimi.md#kimi-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [KIMI-009](../user/adapters/kimi.md#kimi-009), [KIMI-010](../user/adapters/kimi.md#kimi-010), [KIMI-011](../user/adapters/kimi.md#kimi-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
-
-Given a fake ACP subprocess with protocol traffic split across arbitrary stdio chunks, when Kimi runs fresh and resumed prompts, it shall initialize with empty client capabilities, select `session/new` or `session/resume`, apply model before thinking and mode configuration, emit `init` before normalized text, tool, plan, and permission events, reject reverse permission requests, suppress raw thought chunks, map every prompt stop reason, preserve the correct resume token, and terminate the per-run child exactly once.
-The adapter identity shall be `kimi`, and availability probing shall invoke `kimi --version` without starting ACP or authentication.
-Where abort occurs before and after session setup, the adapter shall cancel or terminate as appropriate and emit exactly one interrupted `done` without state leakage.
-Where authentication, protocol, or child-process failure occurs, the stream shall emit an actionable error and error `done` without starting login.
-Where permissions, tool lists, turn or budget limits, or effort values are unsupported, validation shall fail before the spawn seam is invoked.
-
 ### TADAPT-033
 
-Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+Verifies: [ENG-019](../user/engine.md#eng-019), [ENG-027](../user/engine.md#eng-027), [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
 
 _Superseded for usage shape by [TADAPT-040](#tadapt-040)._
 
 Given each built-in adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'`, its input count shall preserve a provider-inclusive base or fold cache-read and cache-write counters into a cache-exclusive base exactly once, and, where reasoning or thinking is supplied disjoint from the output base, its output count shall add that component exactly once.
 Given OpenCode supplies canonical step-finish accounting, its visible output and disjoint reasoning counters shall be summed exactly once.
 Given a required token or cache counter is absent or any present mapped counter is negative, fractional, non-finite, or non-numeric, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'`; an absent optional cache counter alone shall retain zero contribution without invalidating otherwise complete accounting.
-Given a Kimi prompt has a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status, token accounting shall be unavailable, and accumulated result text and tool use shall remain intact; an unconsumed malformed thought detail or null optional cache detail shall not poison otherwise complete accounting.
 Given upstream omits complete token accounting or an adapter synthesizes an errored, interrupted, exhausted, or other terminal path, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced.
 Where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
 
 ### TADAPT-038
 
-Verifies: [ENG-028](../user/engine.md#eng-028), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+Verifies: [ENG-028](../user/engine.md#eng-028), [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
 
 _Superseded by [TADAPT-040](#tadapt-040)._
 
-Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters and Kimi shall publish none.
+Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters.
 Given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent.
 Given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
 
@@ -361,10 +348,9 @@ Given upstream accounting is incomplete, absent, or fails the partition identiti
 
 ### TADAPT-040
 
-Verifies: [ENG-031](../user/engine.md#eng-031), [KIMI-013](../user/adapters/kimi.md#kimi-013), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
+Verifies: [ENG-031](../user/engine.md#eng-031), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
 
 Given authentic zero or nonzero accounting from a built-in adapter, terminal `usage.tokens` shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder; malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses`.
-Kimi shall publish no token or cost report for the pinned ACP runtime, including when a synthetic unstable usage extension appears, while retaining tool calls and prompt status.
 OpenCode shall include canonical causal child and grandchild steps without emitting child conversation, exclude foreign or pre-existing background work, deduplicate and replace repeated part snapshots by session and part identifier, preserve billed completed steps across removal, and publish complete coverage only when its causal ledger is valid and settled.
 Fresh and default-title root sessions shall suppress and verify OpenCode's hidden title request, while a meaningful resumed title shall remain unchanged; inability to prove suppression shall retain exact records as partial.
 The wrapper shall query the live server's global health before dispatch and shall permit complete accounting only for a healthy response naming the exact tested OpenCode version; a missing, failed, timed-out, unhealthy, malformed, or different-version response shall preserve exact records as partial without blocking the run.
@@ -386,7 +372,7 @@ Items in this section verify behavior end-to-end against the real coding-agent S
 
 ### TADAPT-019
 
-Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [OPENCODE-007](../user/adapters/opencode.md#opencode-007)
 
 Where a `Cligent` is constructed on each adapter with
 `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first
@@ -405,12 +391,6 @@ at most two retries; any other failure and the third consecutive named
 transient failure shall remain fatal.
 
 Where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`.
-
-Kimi Code `0.31.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay; `MOONSHOT_API_KEY` alone satisfies none of them.
-The acceptance harness exercises the OAuth route exclusively, so its credential probe shall run with the `KIMI_MODEL_*` overlay removed exactly as the live legs do; inheriting it would let an environment-configured model report a spent OAuth credential as usable, after which those legs fail instead of self-skipping.
-Because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use.
-The harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in this repository.
-The credential-free ACP initialization conformance check shall remain mandatory in `CI` regardless, so a protocol-surface regression still fails the build. Locally, the Kimi source home shall resolve in order from `CLIGENT_KIMI_ACCEPTANCE_HOME`, an absolute `KIMI_CODE_HOME`, or the documented `~/.kimi-code` default. The Kimi CLI shall resolve from PATH or that source home's managed `bin` directory. Under `CI`, `CLIGENT_KIMI_ACCEPTANCE_HOME` shall name an absolute, dedicated source home containing regular files at `config.toml` and `credentials/kimi-code.json`; missing or invalid Kimi credentials or CLI shall fail like every other adapter dependency. The harness shall dereference and copy only the source config and credentials into one temporary `KIMI_CODE_HOME`, harden the copied config, credential files, and directories to owner-only permissions, share that clone across the complete acceptance suite including bounded retries and fanout, restore the caller's environment and PATH around each consumer, and remove the temporary home after the suite. It shall not mutate the source. Acceptance files shall run serially so the shared clone has one writer. An absent or invalid automatically discovered local source shall self-skip with a precise reason. A dedicated CI source is disposable, and a local source may require `kimi login` again, because an OAuth refresh against the clone may leave its prior token stale.
 
 ### TADAPT-023
 

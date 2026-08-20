@@ -66,10 +66,10 @@ Their generation also diverges from what this adapter needs in kind rather than 
 The adapter therefore validates control fields it consumes against schemas held in this repository, strictly, while ignoring everything else, so an agent may extend the protocol without this client calling valid traffic malformed.
 Optional prompt usage is the deliberate exception: the pinned runtime does not
 expose it as public accounting per
-[KIMI-013](../user/adapters/kimi.md#kimi-013), and a malformed unstable
+[[kimi-13](../packages/adapters/kimi.md#kimi-13)], and a malformed unstable
 extension is ignored instead of changing an otherwise completed turn into the
 malformed-control error required by
-[KIMI-006](../user/adapters/kimi.md#kimi-006).
+[[kimi-6](../packages/adapters/kimi.md#kimi-6)].
 Credential-free CI shall always exercise the exact ACP initialization handshake.
 This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].

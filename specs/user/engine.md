@@ -130,7 +130,7 @@ A custom adapter may bind an arbitrary string-literal vocabulary with any names 
 On the legacy name-based mutable-registry path, `runAgent()` shall accept `AgentOptions<string>` and forward the exact effort string unchanged; because registrations may be removed and rebound dynamically, that path shall not claim compile-time agent-name-to-vocabulary correlation.
 Built-in adapters shall perform their specified runtime validation on the dynamic path, while custom adapters remain responsible for validating their own dynamic inputs; callers requiring compile-time correlation shall use a statically adapter-bound surface such as direct `AgentAdapter<E>` calls, `Cligent`, `Cligent.parallel()`, or `runParallel()`.
 
-The built-in vocabularies and provider mappings are defined by [[claude-code-8](../packages/adapters/claude-code.md#claude-code-8)], [[codex-7](../packages/adapters/codex.md#codex-7)], [[gemini-11](../packages/adapters/gemini.md#gemini-11)], [OPENCODE-012](adapters/opencode.md#opencode-012), and [KIMI-009](adapters/kimi.md#kimi-009).
+The built-in vocabularies and provider mappings are defined by [[claude-code-8](../packages/adapters/claude-code.md#claude-code-8)], [[codex-7](../packages/adapters/codex.md#codex-7)], [[gemini-11](../packages/adapters/gemini.md#gemini-11)], [OPENCODE-012](adapters/opencode.md#opencode-012), and [[kimi-9](../packages/adapters/kimi.md#kimi-9)].
 
 ### ENG-024
 

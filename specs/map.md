@@ -138,11 +138,11 @@ meta.md     The spec of specs
 | ----- | -------------------- | --------------------------------------------------- |
 | pkg   | [git.md](packages/git.md) | Commit preparation, subject and body format, AI co-authorship trailer, intent-record reference, and the commit audit |
 
-### KIMI
+### kimi
 
-| Group | File                                      | Summary                                                                                                                                                                                                                                         |
-| ----- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| user  | [adapters/kimi.md](user/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization with honest omission of token/cost accounting the pinned runtime does not expose, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, and resume token |
+| Group | File                                 | Summary                                                                                                                                                                                                                                                     |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pkg   | [kimi.md](packages/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization with honest omission of token/cost accounting the pinned runtime does not expose, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, resume token, and their checks |
 
 ### licensing
 

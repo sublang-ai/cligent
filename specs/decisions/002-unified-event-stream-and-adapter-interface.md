@@ -230,7 +230,7 @@ type ReasoningEffort =
 
 Adapters translate these primitives to vendor-specific controls where supported.
 Omitted capability fields default to `'ask'` inside a provided policy; omitting the policy leaves adapter-native defaults in effect per [DR-005](005-per-adapter-permission-configuration.md).
-An adapter whose vendor protocol cannot enforce a provided policy shall reject before backend invocation rather than weaken it; Kimi's exact boundary is [KIMI-007](../user/adapters/kimi.md#kimi-007).
+An adapter whose vendor protocol cannot enforce a provided policy shall reject before backend invocation rather than weaken it; Kimi's exact boundary is [[kimi-7](../packages/adapters/kimi.md#kimi-7)].
 
 ### Adapter Interface
 

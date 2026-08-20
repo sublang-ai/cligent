@@ -53,7 +53,7 @@ The adapter shall normalize NDJSON objects to `AgentEvent` types:
 | `error`       | `error`                    |
 | `result`      | `done` (usage, status)     |
 
-When `parseNDJSON()` yields `{ ok: false }`, the adapter shall emit an `error` event with `recoverable: true`.
+When `parseNDJSON()` yields `{ ok: false }` for a malformed line per [[ndjson-4](../ndjson.md#ndjson-4)], the adapter shall emit an `error` event with `recoverable: true`.
 
 _The following released stream-only accounting behavior is superseded by [[gemini-17](#gemini-17)]._
 

@@ -13,8 +13,8 @@ import { z } from 'zod';
  * artifact, not on an interface. The generated schemas also validate the whole
  * protocol, while the adapter reads a small, stable subset of it, and their
  * newer generation deliberately salvages malformed payloads. This adapter
- * keeps control fields strict per KIMI-006, while failure-isolating optional
- * accounting per KIMI-005 so bad telemetry cannot change a completed turn's
+ * keeps control fields strict per kimi-6, while failure-isolating optional
+ * accounting per kimi-5 so bad telemetry cannot change a completed turn's
  * terminal status.
  *
  * These schemas therefore encode one rule: protocol structure the adapter

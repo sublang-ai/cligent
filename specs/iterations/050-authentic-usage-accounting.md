@@ -38,7 +38,7 @@ Done
    Implement [OPENCODE-021](../user/adapters/opencode.md#opencode-021) across the root/task tree without
    widening conversational output or charging unrelated background sessions.
 5. [x] **Keep Kimi honest.**
-   Implement [KIMI-013](../user/adapters/kimi.md#kimi-013): omit accounting the pinned ACP runtime does not
+   Implement [[kimi-13](../packages/adapters/kimi.md#kimi-13)]: omit accounting the pinned ACP runtime does not
    expose while preserving stop status, result, and tool count.
 6. [x] **Migrate callers and documentation.**
    Update internal formatters, fixtures, [TADAPT-040](../test/adapters.md#tadapt-040), the guide, map, and

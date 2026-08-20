@@ -43,7 +43,7 @@ precede every code change.
    Amend [ENG-019](../user/engine.md#eng-019) and [ENG-027](../user/engine.md#eng-027); add
    [ENG-028](../user/engine.md#eng-028) for presence semantics and
    [ENG-029](../user/engine.md#eng-029) for the fidelity-source rule; amend
-   [KIMI-005](../user/adapters/kimi.md#kimi-005) to record that ACP reports no usage today and that the
+   [[kimi-5](../packages/adapters/kimi.md#kimi-5)] to record that ACP reports no usage today and that the
    cache-exclusive fold is an assumption about the agent.
 3. [x] **Add the type and the shared builder.**
    Add `TokenBreakdown` and the optional `DonePayload.usage.breakdown`; add a shared builder that enforces
