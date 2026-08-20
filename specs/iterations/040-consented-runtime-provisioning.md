@@ -99,8 +99,8 @@ checks green at its boundary.
        Record DR-013; amend package-9 for the no-upper-bound rule and the
        conditions under which a floor moves, and package-12 for the
        tested-versus-supported distinction; add package-16 for the shipped
-       descriptor; add ENG-025 for the load-time gate and ENG-026 for the
-       structured verdict; add TENG-018; amend TMUX-089 so an incompatible
+       descriptor; add engine-25 for the load-time gate and engine-26 for the
+       structured verdict; add engine-118; amend TMUX-089 so an incompatible
        runtime is reported distinctly from an absent one; add the DR-013 row
        and refresh the PKG and ENG summaries in the spec map.
 2. [x] **Ship the runtime descriptor.**

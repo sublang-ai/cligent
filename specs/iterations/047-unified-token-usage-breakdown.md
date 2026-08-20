@@ -40,9 +40,9 @@ precede every code change.
    Add DR-014 and this record; amend [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md)
    `Key payloads` with the optional field and a pointer; index both in `map.md`.
 2. [x] **Specify the engine contract.**
-   Amend [ENG-019](../user/engine.md#eng-019) and [ENG-027](../user/engine.md#eng-027); add
-   [ENG-028](../user/engine.md#eng-028) for presence semantics and
-   [ENG-029](../user/engine.md#eng-029) for the fidelity-source rule; amend
+   Amend [[engine-19](../packages/engine.md#engine-19)] and [[engine-27](../packages/engine.md#engine-27)]; add
+   [[engine-28](../packages/engine.md#engine-28)] for presence semantics and
+   [[engine-29](../packages/engine.md#engine-29)] for the fidelity-source rule; amend
    [[kimi-5](../packages/adapters/kimi.md#kimi-5)] to record that ACP reports no usage today and that the
    cache-exclusive fold is an assumption about the agent.
 3. [x] **Add the type and the shared builder.**
@@ -59,7 +59,7 @@ precede every code change.
    [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)] for the cost-versus-token scope mismatch.
 6. [x] **Correct Codex per-turn accounting.**
    Subtract a per-thread baseline from the cumulative snapshot, guard non-monotonic snapshots, and fail
-   closed with no baseline; add [[codex-15](../packages/adapters/codex.md#codex-15)] and amend ENG-018 with the
+   closed with no baseline; add [[codex-15](../packages/adapters/codex.md#codex-15)] and amend engine-18 with the
    baseline carve-out.
 7. [x] **Publish the Codex breakdown.**
    Derive both sides by guarded subtraction from the per-turn delta; add
@@ -79,7 +79,7 @@ precede every code change.
    ship machinery whose value cannot be demonstrated, so the task waits on one credentialed Gemini run.
    Until then Gemini keeps its current, correct fail-closed behavior.
 9. [x] **Pin acceptance coverage.**
-   Add [TENG-020](../test/engine.md#teng-020) and [TADAPT-038](../test/adapters.md#tadapt-038) with their
+   Add [[engine-120](../packages/engine.md#engine-120)] and [[engine-238](../packages/engine.md#engine-238)] with their
    `Verifies:` lines, plus the integration coverage they name.
 10. [x] **Document the feature.**
     Add a token-usage section to the user guide with the per-agent coverage table, point to it from the

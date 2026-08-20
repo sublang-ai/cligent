@@ -26,8 +26,8 @@ Done
 
 1. [x] **Replace the public contract.**
    Amend [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md),
-   [DR-014](../decisions/014-unified-token-usage-breakdown.md), [ENG-031](../user/engine.md#eng-031), and
-   [TENG-022](../test/engine.md#teng-022); replace the declarations and shared validators.
+   [DR-014](../decisions/014-unified-token-usage-breakdown.md), [[engine-31](../packages/engine.md#engine-31)], and
+   [[engine-122](../packages/engine.md#engine-122)]; replace the declarations and shared validators.
 2. [x] **Publish whole-tree Claude accounting and scoped Codex deltas.**
    Implement [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)] and
    [[codex-17](../packages/adapters/codex.md#codex-17)], including estimate provenance and exact omission.
@@ -41,7 +41,7 @@ Done
    Implement [[kimi-13](../packages/adapters/kimi.md#kimi-13)]: omit accounting the pinned ACP runtime does not
    expose while preserving stop status, result, and tool count.
 6. [x] **Migrate callers and documentation.**
-   Update internal formatters, fixtures, [TADAPT-040](../test/adapters.md#tadapt-040), the guide, map, and
+   Update internal formatters, fixtures, [[engine-240](../packages/engine.md#engine-240)], the guide, map, and
    changelog; document which agents remain insufficient for exact price calculation.
 7. [x] **Verify the release surface.**
    Run focused adapter suites, type tests, typecheck, lint, build, full unit tests, package checks, and the

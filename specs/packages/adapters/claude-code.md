@@ -46,7 +46,7 @@ A `system` message that carries no subtype shall be treated as the handshake, no
 
 _The following released flat-accounting behavior is superseded by [[claude-code-12](#claude-code-12)]._
 
-Where the `result` message supplies complete usage, the adapter shall publish the [[ENG-028](../../user/engine.md#eng-028)] input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
+Where the `result` message supplies complete usage, the adapter shall publish the [[engine-28](../engine.md#engine-28)] input side by mapping `input_tokens` to `input`, `cache_read_input_tokens` to `cacheRead`, and `cache_creation_input_tokens` to `cacheWrite`, omitting a cache member the message did not carry, because Anthropic's base input counter already excludes both cache tiers and the three therefore partition the input aggregate exactly.
 The adapter shall publish no output side, because Claude Code bills thinking tokens inside `output_tokens` and does not expose them separately, so no measured visible-output component exists to state.
 
 ### claude-code-10
@@ -65,7 +65,7 @@ The adapter shall map `PermissionPolicy` to Claude Code permission modes per [DR
 - No capability set to `'allow'` or `'deny'` — every capability `'ask'`, which includes a missing `permissions` field — → `permissionMode: 'default'` with **no** `canUseTool` callback. Per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) a missing policy is no override, so the SDK's own `default`-mode handling governs and the adapter synthesizes nothing.
 - Any capability `'allow'` or `'deny'` present (mixed with `'ask'`) → `permissionMode: 'default'` with a `canUseTool` callback that enforces the explicit categories
 
-When `PermissionPolicy.writablePaths` is non-empty per [[ENG-022](../../user/engine.md#eng-022)] and Claude Code sandboxing is not independently active through a supported adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [[ENG-023](../../user/engine.md#eng-023)] with `enforcement: 'ambient'` and canonical `paths`, and keep the existing permission-mode / `canUseTool` mapping unchanged.
+When `PermissionPolicy.writablePaths` is non-empty per [[engine-22](../engine.md#engine-22)] and Claude Code sandboxing is not independently active through a supported adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with `enforcement: 'ambient'` and canonical `paths`, and keep the existing permission-mode / `canUseTool` mapping unchanged.
 
 ### claude-code-5
 
@@ -83,12 +83,12 @@ The adapter shall map `AgentOptions` fields to SDK query options: `cwd` → SDK 
 Where `AgentOptions.allowedTools` is provided, the adapter shall pass the effective list to the Claude Agent SDK `tools` option so only those built-in tools are available, shall pass the list to SDK `allowedTools` to preserve automatic permission approval for the selected names, and shall set `strictMcpConfig: true` so ambient MCP configuration cannot add tools outside the explicit list.
 An explicit empty list shall map to `tools: []` and `allowedTools: []`, disabling every built-in tool rather than restoring SDK defaults; it shall additionally map to `settingSources: []` so the SDK loads no user, project, or local filesystem settings or `CLAUDE.md`.
 These fields isolate only the ambient sources covered by their documented SDK controls and shall not be represented as removing provider context outside those surfaces.
-Where `disallowedTools` is also provided, the adapter shall pass it through so those exact identifiers remain unavailable and take precedence over the allowlist per [[ENG-017](../../user/engine.md#eng-017)].
+Where `disallowedTools` is also provided, the adapter shall pass it through so those exact identifiers remain unavailable and take precedence over the allowlist per [[engine-17](../engine.md#engine-17)].
 Where `allowedTools` is omitted, the adapter shall omit SDK `tools`, `settingSources`, and `strictMcpConfig` and preserve the SDK's native available-tool, MCP, and settings behavior.
 
 ### claude-code-8
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Claude-specific `AgentOptions.effort` vocabulary from [[ENG-020](../../user/engine.md#eng-020)] and map each value to the Claude Agent SDK query options per [[1]] and [[2]]:
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Claude-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] and map each value to the Claude Agent SDK query options per [[1]] and [[2]]:
 
 | `AgentOptions.effort` | SDK `effort` | SDK `settings.ultracode` |
 | --- | --- | --- |
@@ -123,12 +123,12 @@ _Superseded by [[claude-code-12](#claude-code-12)]; retained for the unreleased 
 Claude Code reports two accountings on its terminal `result` message: `usage`, which counts the main conversation loop only, and `modelUsage`, which counts every model request the run made — including subagents and internal inference — partitioned per model into input, cache-read, cache-creation, and output counters.
 The adapter shall derive `DonePayload.usage` from the per-model accounting by summing those counters across models, so the reported totals cover the whole run and share the scope of the runtime's own cost figure.
 Where the per-model accounting is absent, or any counter it supplies is not a finite non-negative integer, the adapter shall fall back to the main-loop counters; in that case the reported totals cover the main conversation loop only and may understate a run that spawned subagents.
-The adapter shall publish the per-model entries as the run's [[ENG-030](../../user/engine.md#eng-030)] billable records, keyed by the canonical model identifier Claude Code prices against rather than the raw map key, carrying the provider and the runtime-computed per-model cost where present, and carrying the input side alone because the runtime reports no per-model output split.
+The adapter shall publish the per-model entries as the run's [[engine-30](../engine.md#engine-30)] billable records, keyed by the canonical model identifier Claude Code prices against rather than the raw map key, carrying the provider and the runtime-computed per-model cost where present, and carrying the input side alone because the runtime reports no per-model output split.
 The adapter shall determine the [[claude-code-10](#claude-code-10)] no-op repair signature from the main-loop counters rather than the whole-run totals, because the repair turn reports zero main-loop tokens while the run as a whole may already have spent some.
 
 ### claude-code-12
 
-The adapter shall publish [[ENG-031](../../user/engine.md#eng-031)] complete token coverage only from the terminal `modelUsage` map, because that surface includes every model request made by the main loop, subagents, and internal inference [[3]].
+The adapter shall publish [[engine-31](../engine.md#engine-31)] complete token coverage only from the terminal `modelUsage` map, because that surface includes every model request made by the main loop, subagents, and internal inference [[3]].
 Each per-model record shall carry inclusive input and output totals, exact uncached, cache-read, and cache-write input details, the canonical model and provider where supplied, the runtime's non-negative per-model cost as `agent-estimate`, and a `web_search_request` priced unit where the runtime reports one.
 The records shall sum to the report totals.
 Reasoning detail shall remain absent because Claude Code includes it in output but does not expose the subset.

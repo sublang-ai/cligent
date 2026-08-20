@@ -59,10 +59,10 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 _The following root-stream accounting behavior is superseded by [[opencode-21](#opencode-21)]._
 
 Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
-Those five counters are already the disjoint partition of [[ENG-028](../../user/engine.md#eng-028)], so where step accounting is complete the adapter shall publish both breakdown sides from their step-wise sums, mapping `tokens.input` to `input`, `tokens.cache.read` to `cacheRead`, `tokens.cache.write` to `cacheWrite`, `tokens.output` to `output`, and `tokens.reasoning` to `reasoning`.
+Those five counters are already the disjoint partition of [[engine-28](../engine.md#engine-28)], so where step accounting is complete the adapter shall publish both breakdown sides from their step-wise sums, mapping `tokens.input` to `input`, `tokens.cache.read` to `cacheRead`, `tokens.cache.write` to `cacheWrite`, `tokens.output` to `output`, and `tokens.reasoning` to `reasoning`.
 The adapter shall not consume `tokens.total`, which OpenCode passes through from the provider and which is therefore not guaranteed to equal the sum of the five counters.
 A component OpenCode reports as a constant zero for a given provider, such as reasoning on providers that do not separate it, is indistinguishable from a measured zero: knowing which provider ran a step does not say which components that provider separates, so the adapter shall publish the zero as measured rather than infer absence.
-Each step part is one model request, so the adapter shall publish one [[ENG-030](../../user/engine.md#eng-030)] billable record per step part, carrying `requests: 1`, that step's five counters as its tokens, and its own `cost` where present.
+Each step part is one model request, so the adapter shall publish one [[engine-30](../engine.md#engine-30)] billable record per step part, carrying `requests: 1`, that step's five counters as its tokens, and its own `cost` where present.
 The rate-card identity of a step is the `modelID` and `providerID` of the assistant message that owns the part, correlated per [[opencode-17](#opencode-17)]; where the run supplied no such identity for a step's message, its record shall omit both fields.
 
 ### opencode-16
@@ -172,7 +172,7 @@ Where another invocation or client drives the same OpenCode session
 concurrently, or delayed background work from an earlier invocation later
 writes to it [[16]], the adapter shall make no event-isolation guarantee
 because the stream carries session identity but no turn identity; this is an
-environmental constraint per [[ENG-018](../../user/engine.md#eng-018)], and callers
+environmental constraint per [[engine-18](../engine.md#engine-18)], and callers
 requiring concurrency shall use distinct sessions.
 
 ### Permission Mapping
@@ -201,8 +201,8 @@ no longer accepts the legacy `permission` map.
 A provided empty `PermissionPolicy` shall remain distinct from absence and map
 the three omitted capabilities to `ask`.
 Where `PermissionPolicy.writablePaths` is non-empty per
-[[ENG-022](../../user/engine.md#eng-022)], the adapter shall accept valid entries, expose
-`WritablePathsPermissionMapping` per [[ENG-023](../../user/engine.md#eng-023)] with
+[[engine-22](../engine.md#engine-22)], the adapter shall accept valid entries, expose
+`WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with
 `enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
 permission mapping unchanged.
 `writablePaths` is reporting, not confinement: the OpenCode process retains
@@ -395,13 +395,13 @@ OpenCode-provided identifier on a non-interrupted failure.
 When OpenCode
 rejects that resumed session before prompt dispatch, the adapter shall omit
 `resumeToken` so `Cligent` clears the stale value per
-[[ENG-006](../../user/engine.md#eng-006)].
+[[engine-6](../engine.md#engine-6)].
 
 ### Options Mapping
 
 ### opencode-12
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall map portable `AgentOptions.effort` values from [[ENG-020](../../user/engine.md#eng-020)] to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall map portable `AgentOptions.effort` values from [[engine-20](../engine.md#engine-20)] to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
 The prompt-body surface, rather than session creation, shall be used so the value applies to both fresh and resumed sessions.
 Provider dispatch shall use the `provider/model` prefix in `AgentOptions.model`.
 When the provider has no documented built-in variant set, the adapter shall leave `variant` unset and defer to the user's `opencode.jsonc`.
@@ -415,12 +415,12 @@ When the provider has no documented built-in variant set, the adapter shall leav
 | `xhigh`               | `max`     | `xhigh`   | `high` | unset |
 | `max`                 | `max`     | `xhigh`   | `high` | unset |
 
-Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [[ENG-020](../../user/engine.md#eng-020)].
+Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [[engine-20](../engine.md#engine-20)].
 
 ### opencode-14
 
 When effort is omitted, the adapter shall not set a prompt-body `variant` and shall preserve OpenCode and user-configuration defaults.
-Where effort is outside the OpenCode portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before prompting the session with the metadata-backed allowed-values error from [[ENG-024](../../user/engine.md#eng-024)].
+Where effort is outside the OpenCode portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before prompting the session with the metadata-backed allowed-values error from [[engine-24](../engine.md#engine-24)].
 
 ### opencode-15
 
@@ -440,7 +440,7 @@ prompt-scoped request can change a resumed session after that cligent call ends
 [[6]][[7]].
 The provider also canonicalizes some tool identifiers to shared permission
 names, so this surface cannot guarantee
-[[ENG-017](../../user/engine.md#eng-017)]'s exact identifier semantics [[6]].
+[[engine-17](../engine.md#engine-17)]'s exact identifier semantics [[6]].
 When both options are omitted, the adapter shall send no prompt `tools` data
 and preserve OpenCode's native available-tool surface.
 
@@ -461,7 +461,7 @@ Where the submitted text still identifies more than one root-session message, th
 Within [[opencode-6](#opencode-6)]'s single-writer constraint, ordering may stand in for that proof only where the invocation created the root session.
 Such a run, including one whose resume value is absent or empty, may fall back to the first root-session sighting — a user message, or the identifier a root assistant names as its `parentID` — that it does not recognize as a background result.
 A run carrying a non-empty resume value shall not fall back.
-Where no boundary is resolved, no step is causal, so the adapter shall omit the token report per [[ENG-031](../../user/engine.md#eng-031)] rather than attribute across an unproven boundary or publish fabricated totals.
+Where no boundary is resolved, no step is causal, so the adapter shall omit the token report per [[engine-31](../engine.md#engine-31)] rather than attribute across an unproven boundary or publish fabricated totals.
 It shall collect canonical step-finish accounting for the root and those causal descendants before applying [[opencode-6](#opencode-6)]'s root-only conversation filter; foreign, merely pre-existing, and unscoped session activity shall not enter the ledger.
 Each step shall be keyed by native session and part identifier, an identical repeat shall count once, and a changed snapshot shall replace the earlier value rather than add to it.
 Removing a completed part shall not erase its billed request from the invocation ledger.

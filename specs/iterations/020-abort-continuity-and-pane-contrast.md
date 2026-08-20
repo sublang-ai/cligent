@@ -61,7 +61,7 @@ Bumping to `subtext1` (`#bac2de`) keeps the timer subdued relative to the active
 ## Deliverables
 
 - [x] `specs/packages/adapters/{claude-code,codex,gemini,opencode}.md` — amend claude-code-7 / codex-6 / gemini-9 / opencode-11 with the interrupt-token clause.
-- [x] `specs/test/adapters.md` — add a new TADAPT item verifying the interrupt-with-token contract across all four adapters.
+- [x] `specs/test/adapters.md` — add a new cross-adapter item verifying the interrupt-with-token contract across all four adapters.
 - [x] `specs/user/tmux-play.md` — amend TMUX-033 / TMUX-041 (interrupted result exposure), TMUX-042 (fanout recovery for tokenless aborts), TMUX-048 (pane-border row surface continuity), and TMUX-054 (timer color contrast).
 - [x] `specs/map.md` — index IR-020.
 - [x] `src/adapters/{claude-code,codex,gemini,opencode}.ts` — apply the three-stage `resumeToken` rule (via a shared helper) at every interrupt-path `done` emission (8 touch points).

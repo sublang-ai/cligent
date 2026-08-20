@@ -119,12 +119,11 @@ meta.md     The spec of specs
 | ----- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | pkg   | [codex.md](packages/adapters/codex.md) | Codex adapter: SDK normalization including exact partial root-thread usage differenced from the cumulative snapshot, inclusive cache/reasoning subsets without requested-model substitution, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping, internal profile delivery and SDK-anchored executable resolution, and their checks |
 
-### ENG
+### engine
 
-| Group | File                        | Summary                                                                                                                                                                                                                                                                                                                                                                 |
-| ----- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| user  | [engine.md](user/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, authentic nested token reports with explicit coverage, exact subsets, billable records and cost provenance, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts |
-| test  | [engine.md](test/engine.md) | Cligent lifecycle, session continuity including interrupted-done resume capture across abort, protocol hardening, authentic usage omission/zero/coverage/record/cost invariants, and effort API verification                                                                                                                                                            |
+| Group | File                            | Summary |
+| ----- | ------------------------------- | ------- |
+| pkg   | [engine.md](packages/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, authentic nested token reports with explicit coverage, exact subsets, billable records and cost provenance, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts, and their checks including the cross-adapter criteria the dissolved adapter-test file left |
 
 ### gemini
 
@@ -174,12 +173,6 @@ meta.md     The spec of specs
 | Group | File                              | Summary                                                                                                                     |
 | ----- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | pkg   | [release.md](packages/release.md) | SemVer, changelog form and pre-tag checklist, tag-driven publish with npm provenance, and the workflow-gate and smoke checks |
-
-### TADAPT
-
-| Group | File                            | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| test  | [adapters.md](test/adapters.md) | Residual engine-verifying criteria left by the adapter migrations: abort interruption, tool-list precedence, effort vocabulary and metadata, concurrency isolation, authentic nested usage with causal coverage and rate-card records, writablePaths enforcement/reporting, and the Codex writable-paths real-run leg, all awaiting the `engine` package |
 
 ### TMUX
 

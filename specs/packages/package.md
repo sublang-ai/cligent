@@ -155,6 +155,14 @@ Where the packed tarball and the exact Codex SDK target are installed into a glo
 
 Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
 
+### package-201
+
+Where an adapter's runtime is installed at a version the shipped descriptor classifies, when the adapter loads it and the readiness verdict is computed, the verdict shall follow the descriptor's declared range and tested version [[package-16](#package-16)]:
+
+- at or above the floor and at or below the tested version, the load shall succeed and the verdict shall report `'satisfied'`;
+- above the tested version, the load shall succeed and the verdict shall report `'untested'`;
+- where the version cannot be read, the load shall succeed and the verdict shall report `'unknown'`.
+
 ### package-228
 
 Where the exact OpenCode CLI conformance target is installed, when its reported version is inspected, the verification shall assert that the version equals the exact CI target [[package-12](#package-12)].

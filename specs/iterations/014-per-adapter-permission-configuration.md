@@ -63,7 +63,7 @@ Deferred to a later iteration:
 - [x] `src/app/tmux-play/contract.ts` + `src/app/tmux-play/runtime.ts` + `src/app/tmux-play/session.ts` — captain `permissions` reach the captain `Cligent` constructor; player `permissions` reach `resolvePlayers` via `RuntimePlayerConfig`.
 - [x] `src/app/tmux-play/launcher.acceptance.test.ts` — end-to-end probe (a): YAML `mode: 'auto'` reaches `AgentOptions.permissions` at the player adapter seam, and the adapter's exported mapping function emits the spec-defined SDK knob.
 - [x] `src/app/tmux-play/cli.smoke.test.ts` — end-to-end probe (b): invalid YAML `mode` exits the built CLI nonzero with stderr naming the offending path; no `runtime_error` record, no tmux session.
-- [x] `specs/user/engine.md` — new ENG-021 for `PermissionPolicy.mode`.
+- [x] `specs/packages/engine.md` — new engine-21 for `PermissionPolicy.mode`.
 - [x] `specs/user/tmux-play.md` — new [TMUX-052](../user/tmux-play.md#tmux-052) for YAML `permissions` on players and captain; TMUX-006, TMUX-007, and TMUX-029 updated to include the optional field.
 - [x] `specs/test/tmux-play.md` — new TTMUX-052, TTMUX-053, TTMUX-054 for YAML acceptance/rejection, adapter seam, and CLI-abort behavior.
 - [x] `docs/tmux-play.md` — Config section documents `permissions` with `mode: 'auto'` example.

@@ -581,7 +581,7 @@ const execFileAsync = promisify(execFile);
 async function defaultProbeAvailability(): Promise<boolean> {
   try {
     await execFileAsync('gemini', ['--version'], { timeout: 5000 });
-    // ENG-025: an executable that runs is not necessarily one this release
+    // engine-25: an executable that runs is not necessarily one this release
     // supports, and reporting it available here while the readiness verdict
     // calls it unsupported is exactly the disagreement DR-013 forbids.
     return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.gemini[0]!);
@@ -592,7 +592,7 @@ async function defaultProbeAvailability(): Promise<boolean> {
 
 /**
  * Gemini CLI `--approval-mode` value. `'yolo'` auto-approves all operations
- * — used as the target for ENG-021 `mode: 'auto'` since gemini exposes no
+ * — used as the target for engine-21 `mode: 'auto'` since gemini exposes no
  * distinct "auto with safety" tier (its `auto_edit` only covers edits, not
  * the full automation intent).
  */
@@ -1400,7 +1400,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     prompt: string,
     options?: AgentOptions<GeminiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
-    // ENG-025: `isAvailable()` is not on this path. Cligent.run() reaches
+    // engine-25: `isAvailable()` is not on this path. Cligent.run() reaches
     // the adapter directly, so without this a below-floor CLI is spawned and
     // fails mid-turn — the failure mode this work exists to remove.
     assertRuntimeSupported(

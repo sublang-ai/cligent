@@ -174,7 +174,7 @@ function defaultSpawnProcess(
 async function defaultProbeAvailability(): Promise<boolean> {
   try {
     await execFileAsync('kimi', ['--version'], { timeout: 5000 });
-    // ENG-025: an executable that runs is not necessarily one this release
+    // engine-25: an executable that runs is not necessarily one this release
     // supports, and reporting it available here while the readiness verdict
     // calls it unsupported is exactly the disagreement DR-013 forbids.
     return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.kimi[0]!);
@@ -662,7 +662,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     prompt: string,
     options?: AgentOptions<KimiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
-    // ENG-025: gate the direct run path too, not only `isAvailable()`.
+    // engine-25: gate the direct run path too, not only `isAvailable()`.
     assertRuntimeSupported(
       AGENT_RUNTIME_TARGETS.kimi[0]!,
       `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0]!.repairSpec}`,

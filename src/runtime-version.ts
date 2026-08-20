@@ -23,7 +23,7 @@ const UNSUPPORTED_RUNTIME = Symbol.for('cligent.unsupportedRuntime');
  * runtimes from, so the version read is the version that would load.
  *
  * Returns `undefined` when the package cannot be resolved or its manifest
- * cannot be read. Per [ENG-025](../specs/user/engine.md), an unreadable
+ * cannot be read. Per [engine-25](../specs/packages/engine.md), an unreadable
  * version is not evidence of an unsupported one: vendored, bundled, and
  * archived layouts are legitimate installations whose manifests this walk
  * cannot always reach, and blocking them would turn a working install into a
@@ -179,7 +179,7 @@ export function assertRuntimeSupported(
   }
 }
 
-/** The state of one runtime an adapter requires, per ENG-026. */
+/** The state of one runtime an adapter requires, per engine-26. */
 export type RuntimeReadinessState =
   | 'satisfied'
   | 'missing'

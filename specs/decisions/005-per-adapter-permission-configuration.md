@@ -121,7 +121,7 @@ The approval/reviewer posture and the local-access surface are independent Codex
 - **Approval/reviewer axis** — `ThreadOptions.approvalPolicy` plus `CodexOptions.config.approvals_reviewer`. `mode: 'auto'` selects `approvalPolicy: 'on-request'` + `approvals_reviewer: 'auto_review'` (auto-review applies only under interactive approvals [[6]]); `mode: 'bypass'` selects `approvalPolicy: 'never'` and no reviewer.
 - **Local-access axis** — `CodexOptions.config.default_permissions`, a built-in profile (`:read-only` / `:workspace` / `:danger-full-access`).
 
-`mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [ENG-021](../user/engine.md#eng-021) orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
+`mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [[engine-21](../packages/engine.md#engine-21)] orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
 The exact per-capability → profile mapping is [[codex-4](../packages/adapters/codex.md#codex-4)].
 Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
 

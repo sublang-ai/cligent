@@ -81,7 +81,7 @@ describe('core types', () => {
     expectTypeOf(empty).toMatchTypeOf<PermissionPolicy>();
   });
 
-  it('PermissionPolicy.mode narrows to the auto / bypass union per ENG-021', () => {
+  it('PermissionPolicy.mode narrows to the auto / bypass union per engine-21', () => {
     const auto: PermissionPolicy = { mode: 'auto' };
     const bypass: PermissionPolicy = { mode: 'bypass' };
     expectTypeOf(auto.mode).toEqualTypeOf<'auto' | 'bypass' | undefined>();

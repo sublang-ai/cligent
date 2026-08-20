@@ -61,7 +61,7 @@ interface CligentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;  // adapter-mapped per ENG-020
+  reasoningEffort?: ReasoningEffort;  // adapter-mapped per engine-20
   allowedTools?: string[];
   disallowedTools?: string[];
 }
@@ -114,7 +114,7 @@ No capability flag is needed. The presence or absence of `resumeToken` in `done`
 
 ### Adapter Thread Safety
 
-Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: each call shall create fresh local state, except for the cumulative-accounting baseline and ordering queue narrowly permitted by [ENG-018](../user/engine.md#eng-018).
+Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: each call shall create fresh local state, except for the cumulative-accounting baseline and ordering queue narrowly permitted by [[engine-18](../packages/engine.md#engine-18)].
 Adapters that manage external resources (e.g., an adapter spawning a managed server on a fixed port) may have environmental constraints that prevent true concurrent execution; such adapters shall document this limitation.
 Callers needing concurrent sessions on constrained adapters should instantiate separate adapter instances with distinct resource configurations.
 

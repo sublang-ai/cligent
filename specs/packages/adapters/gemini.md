@@ -59,7 +59,7 @@ _The following released stream-only accounting behavior is superseded by [[gemin
 
 Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate the `total_tokens`, `cached`, and uncached `input` details without adding either input detail to the inclusive total a second time, and shall map valid `tool_calls` to `toolUses` while retaining any greater independently observed tool-call count [[5]][[6]].
 Canonical `output_tokens` contains candidates but omits separately tracked thinking and tool-use-prompt tokens; where `total_tokens` does not equal `input_tokens + output_tokens`, the omitted residual is not partitioned well enough to normalize without estimation, so token accounting shall be `'unavailable'` rather than reporting the candidate count as complete or assigning the residual to output [[6]][[7]].
-Where any supplied canonical token or cache detail is absent, negative, fractional, non-finite, or non-numeric, token accounting shall likewise be `'unavailable'` per [[ENG-027](../../user/engine.md#eng-027)].
+Where any supplied canonical token or cache detail is absent, negative, fractional, non-finite, or non-numeric, token accounting shall likewise be `'unavailable'` per [[engine-27](../engine.md#engine-27)].
 
 ### gemini-5
 
@@ -88,10 +88,10 @@ Where `PermissionPolicy` is provided with `mode` omitted, or `allowedTools` or `
 
 The capability tools shall be file writes `replace` and `write_file`, shell execution `run_shell_command`, and network access `google_web_search` and `web_fetch`.
 Capability-level allows shall not widen an explicit allowlist.
-When `PermissionPolicy.mode` is `'auto'` or `'bypass'`, the existing approval-mode mapping shall take precedence over per-capability fields per [[ENG-021](../../user/engine.md#eng-021)]; independently supplied tool lists may still generate policy rules.
+When `PermissionPolicy.mode` is `'auto'` or `'bypass'`, the existing approval-mode mapping shall take precedence over per-capability fields per [[engine-21](../engine.md#engine-21)]; independently supplied tool lists may still generate policy rules.
 Where mapping generates at least one rule, the adapter shall write a per-run User-tier policy file and pass it through `--policy`; otherwise it shall generate no policy file or flag.
 The adapter runtime shall emit neither deprecated `--allowed-tools` nor deprecated `tools.exclude`; compatibility-only exported settings helpers may retain their historical return shape but shall not drive `run()`.
-When `PermissionPolicy.writablePaths` is non-empty per [[ENG-022](../../user/engine.md#eng-022)] and Gemini sandboxing is not independently active through a selected adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [[ENG-023](../../user/engine.md#eng-023)] with `enforcement: 'ambient'` and canonical `paths`, and keep the existing tool-control and approval-mode mapping unchanged.
+When `PermissionPolicy.writablePaths` is non-empty per [[engine-22](../engine.md#engine-22)] and Gemini sandboxing is not independently active through a selected adapter surface, the adapter shall accept valid entries, expose `WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with `enforcement: 'ambient'` and canonical `paths`, and keep the existing tool-control and approval-mode mapping unchanged.
 
 ### gemini-12
 
@@ -140,7 +140,7 @@ Gemini 3 mapping:
 | `xhigh`               | `HIGH`          |
 | `max`                 | `HIGH`          |
 
-Gemini 3 exposes four thinking levels; `xhigh` and `max` collapse to `HIGH` per [[ENG-020](../../user/engine.md#eng-020)]'s nearest-neighbour rule.
+Gemini 3 exposes four thinking levels; `xhigh` and `max` collapse to `HIGH` per [[engine-20](../engine.md#engine-20)]'s nearest-neighbour rule.
 
 Gemini 2.5 mapping:
 
@@ -154,13 +154,13 @@ Gemini 2.5 mapping:
 | `max`                 | `32768` for `gemini-2.5-pro*`; `24576` for `gemini-2.5-flash*` and `gemini-2.5-flash-lite*` |
 
 The Gemini 2.5 ladder shall stay within each supported model family's documented bounds: Pro `128..32768`, Flash `0..24576`, and Flash Lite `512..24576` per [[1]].
-`max` maps to the model family's upper bound rather than Google's dynamic-thinking sentinel because [[ENG-020](../../user/engine.md#eng-020)] defines `max` as the greatest reasoning depth.
+`max` maps to the model family's upper bound rather than Google's dynamic-thinking sentinel because [[engine-20](../engine.md#engine-20)] defines `max` as the greatest reasoning depth.
 For Flash and Flash Lite, `xhigh` and `max` both map to `24576`, the nearest supported ceiling.
 
 ### gemini-15
 
 When effort is omitted, the adapter shall create no effort-specific alias and shall preserve Gemini CLI and user-configuration defaults.
-Where effort is outside the Gemini portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before spawning Gemini with the metadata-backed allowed-values error from [[ENG-024](../../user/engine.md#eng-024)].
+Where effort is outside the Gemini portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before spawning Gemini with the metadata-backed allowed-values error from [[engine-24](../engine.md#engine-24)].
 
 ### gemini-16
 
@@ -176,7 +176,7 @@ For each run, the adapter shall enable Gemini CLI's supported local telemetry ex
 It shall accept one `gemini_cli.api_response` record per successful model response, deduplicate exact exporter records, and reject conflicting or unidentifiable duplicates.
 Gemini's pinned `UsageMetadata` defines `totalTokenCount` as prompt, candidate, tool-use-prompt, and thinking tokens, with tool-use-prompt content supplied back to the model as input [[9]].
 The adapter shall therefore add tool-use-prompt tokens to inclusive input and its uncached subset, retain thinking in inclusive output, and preserve exact cache-read, visible-output, and thinking subsets.
-The adapter shall publish one [[ENG-031](../../user/engine.md#eng-031)] `requests: 1` record per response with the actual model and non-empty telemetry `auth_type` as its rate-card family, and shall include root and descendant-agent responses without emitting their hidden conversation [[8]].
+The adapter shall publish one [[engine-31](../engine.md#engine-31)] `requests: 1` record per response with the actual model and non-empty telemetry `auth_type` as its rate-card family, and shall include root and descendant-agent responses without emitting their hidden conversation [[8]].
 It shall sum those records and cross-validate raw prompt, candidate, cached, and overall total counters against the ordinary terminal StreamStats; any missing file, parse defect, invalid counter, duplicate conflict, or mismatch shall make tokens absent rather than estimated.
 A reconciled report shall have complete coverage only when the run-owned file contains no `gemini_cli.api_error` and StreamStats identifies no unmatched zero-token routed model; either condition proves a failed request without token counters, so the adapter shall retain the exact reconciled successful-response records with partial coverage [[8]].
 Telemetry configuration shall be applied after inherited settings so user telemetry cannot redirect or contaminate the run-owned ledger, and cleanup shall remove the temporary file after success, error, and abort.

@@ -151,7 +151,7 @@ export class Cligent<E extends string = Effort> {
     const signal = agentOptions.abortSignal;
 
     try {
-      // Pre-abort short-circuit (ENG-009)
+      // Pre-abort short-circuit (engine-9)
       if (signal?.aborted) {
         yield injectRole(
           makeSynthDone(
@@ -182,7 +182,7 @@ export class Cligent<E extends string = Effort> {
             abortDone = next.abortDone;
             aborted = next.aborted;
           } catch (err) {
-            // Adapter threw (ENG-008)
+            // Adapter threw (engine-8)
             if (!doneYielded) {
               const msg = err instanceof Error ? err.message : String(err);
               yield injectRole(
@@ -202,7 +202,7 @@ export class Cligent<E extends string = Effort> {
             return;
           }
 
-          // Abort after awaiting (ENG-009)
+          // Abort after awaiting (engine-9)
           if (aborted) {
             if (!doneYielded) {
               if (abortDone) {
@@ -232,7 +232,7 @@ export class Cligent<E extends string = Effort> {
           }
 
           if (result.done) {
-            // Generator exhausted without done (ENG-012)
+            // Generator exhausted without done (engine-12)
             if (!doneYielded) {
               yield injectRole(
                 makeSynthError(
@@ -257,7 +257,7 @@ export class Cligent<E extends string = Effort> {
 
           const event = result.value;
 
-          // Post-done suppression (ENG-010)
+          // Post-done suppression (engine-10)
           if (doneYielded) {
             continue;
           }
@@ -268,7 +268,7 @@ export class Cligent<E extends string = Effort> {
 
           if (event.type === 'done') {
             doneYielded = true;
-            // Capture resume token from adapter's done payload (ENG-005)
+            // Capture resume token from adapter's done payload (engine-5)
             const payload = event.payload as DonePayload;
             this.captureDoneState(payload);
             safeReturn(gen);
@@ -330,7 +330,7 @@ export class Cligent<E extends string = Effort> {
         if (raceResult.isError) {
           // run() normally handles its own errors, but if the generator
           // itself throws (e.g. single-flight), yield synthetic error + done
-          // so the caller sees every task complete (ENG-015).
+          // so the caller sees every task complete (engine-15).
           const task = tasks[index];
           const agentName = task.agent.agentType;
           const taskRole = task.agent.role;

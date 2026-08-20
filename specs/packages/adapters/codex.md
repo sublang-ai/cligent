@@ -68,7 +68,7 @@ The adapter may further unwrap nested `error` envelopes to reach those human-rea
 
 ### codex-4
 
-The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) and [[ENG-021](../../user/engine.md#eng-021)], using Codex's modern permission-profile model [[3]][[4]].
+The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) and [[engine-21](../engine.md#engine-21)], using Codex's modern permission-profile model [[3]][[4]].
 The adapter shall express the local-access surface through the `CodexOptions.config` override `default_permissions` and shall not set `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`, because a present legacy `sandbox_mode` makes Codex ignore `default_permissions` [[4]].
 
 When the resolved `AgentOptions` carries no `permissions` policy, the adapter shall set none of `default_permissions`, `approvals_reviewer`, or `ThreadOptions.approvalPolicy`, leaving Codex's own default posture in effect per [DR-005](../../decisions/005-per-adapter-permission-configuration.md)'s no-project-wide-default rule.
@@ -89,11 +89,11 @@ The `default_permissions` profile shall be selected as follows:
 - `PermissionPolicy.mode: 'bypass'` → `approvalPolicy: 'never'` and no `approvals_reviewer`.
 - `PermissionPolicy.mode` unset → `approvalPolicy` from the per-capability levels (all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; otherwise → `'on-request'`) and no `approvals_reviewer`.
 
-When `PermissionPolicy.writablePaths` is non-empty per [[ENG-022](../../user/engine.md#eng-022)] and the resolved `default_permissions` profile would otherwise be `:workspace`, the adapter shall select a generated `cligent-workspace-extra-writes` permission profile whose definition extends `:workspace` and grants `write` for each canonicalized path under `:workspace_roots`.
-The adapter shall expose `WritablePathsPermissionMapping` per [[ENG-023](../../user/engine.md#eng-023)] with `enforcement: 'profile'` and the canonical `paths`.
+When `PermissionPolicy.writablePaths` is non-empty per [[engine-22](../engine.md#engine-22)] and the resolved `default_permissions` profile would otherwise be `:workspace`, the adapter shall select a generated `cligent-workspace-extra-writes` permission profile whose definition extends `:workspace` and grants `write` for each canonicalized path under `:workspace_roots`.
+The adapter shall expose `WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with `enforcement: 'profile'` and the canonical `paths`.
 The generated profile may be delivered through any Codex route that satisfies [DR-006](../../decisions/006-workspace-writable-paths.md)'s config-delivery constraints.
 When non-empty `writablePaths` resolves alongside `:read-only`, the adapter shall reject the policy before starting a Codex thread.
-When the resolved `default_permissions` profile is `:danger-full-access`, `writablePaths` shall not narrow that broader posture, no extra-writes profile shall be generated, and the adapter shall report the canonical paths with `enforcement: 'ambient'` per [[ENG-023](../../user/engine.md#eng-023)].
+When the resolved `default_permissions` profile is `:danger-full-access`, `writablePaths` shall not narrow that broader posture, no extra-writes profile shall be generated, and the adapter shall report the canonical paths with `enforcement: 'ambient'` per [[engine-23](../engine.md#engine-23)].
 
 ### Thread Resumption
 
@@ -118,7 +118,7 @@ The `workingDirectory` is selected deliberately by the caller (per [[TMUX-034](.
 
 ### codex-7
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Codex-specific `AgentOptions.effort` vocabulary from [[ENG-020](../../user/engine.md#eng-020)] and preserve the following native values through the documented effort and configuration surfaces per [[1]], [[3]], and [[5]]:
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Codex-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] and preserve the following native values through the documented effort and configuration surfaces per [[1]], [[3]], and [[5]]:
 
 | `AgentOptions.effort` | Transport                                         | Native value |
 | --------------------- | ------------------------------------------------- | ------------ |
@@ -145,32 +145,32 @@ Where both fields are omitted, the adapter shall preserve Codex's native availab
 ### codex-15
 
 The usage attached to `turn.completed` is the thread's cumulative total rather than the completed turn's, so the adapter shall report the difference between that snapshot and the snapshot it last observed for the same thread.
-Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall omit token accounting per [[ENG-031](../../user/engine.md#eng-031)], because the thread's accumulated total includes turns this run did not perform.
+Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall omit token accounting per [[engine-31](../engine.md#engine-31)], because the thread's accumulated total includes turns this run did not perform.
 Where the run created the thread, the absent baseline shall be treated as zero, since the thread's first snapshot is that turn's usage.
 Where any counter in the new snapshot is smaller than the corresponding baseline counter, the thread's accounting has restarted and the adapter shall omit token accounting rather than attribute an unexplained decrease to the turn.
 For every valid snapshot the adapter shall retain the newest value as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
 Where a known thread's cumulative snapshot is malformed, the adapter shall discard its prior baseline; the next valid resumed snapshot shall establish a new baseline without reporting a delta, and only a later stable snapshot may recover attribution.
 The retained snapshot shall preserve which optional cache and reasoning counters were present; where that presence shape changes from the preceding snapshot, the adapter shall omit the transition's tokens because a newly appearing cumulative counter may include older turns and a disappearing counter cannot be differenced, then retain the new shape so the next stable turn can recover.
-The baseline shall be retained per backend thread identifier under [[ENG-018](../../user/engine.md#eng-018)], and concurrent runs carrying the same resume identifier shall be serialized for the full backend turn so their snapshots cannot race; different sessions and fresh runs shall remain concurrent.
+The baseline shall be retained per backend thread identifier under [[engine-18](../engine.md#engine-18)], and concurrent runs carrying the same resume identifier shall be serialized for the full backend turn so their snapshots cannot race; different sessions and fresh runs shall remain concurrent.
 
 ### codex-16
 
-Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive detail of [[ENG-031](../../user/engine.md#eng-031)] by subtracting the reported subsets from their inclusive base rather than by adding them.
+Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive detail of [[engine-31](../engine.md#engine-31)] by subtracting the reported subsets from their inclusive base rather than by adding them.
 Where a cache counter is absent, the adapter shall omit that detail and shall omit `uncached` unless every cache subset needed for exact subtraction is present, while preserving the authentic inclusive input total.
 Where the reasoning counter is absent, the adapter shall preserve the authentic inclusive output total while omitting both `visible` and `reasoning` details.
-Where a reported subset exceeds its inclusive total or an exact subtraction would be negative, the adapter shall omit token accounting per [[ENG-031](../../user/engine.md#eng-031)] rather than clamp it.
+Where a reported subset exceeds its inclusive total or an exact subtraction would be negative, the adapter shall omit token accounting per [[engine-31](../engine.md#engine-31)] rather than clamp it.
 Both sides shall be derived from the per-turn delta of [[codex-15](#codex-15)], never from the thread's cumulative snapshot.
 
 ### codex-14
 
 _Superseded by [[codex-17](#codex-17)]; retained for the unreleased first billable-record design._
 
-Codex reports usage once per turn rather than once per request, so the turn is a single billable group: the adapter shall publish one [[ENG-030](../../user/engine.md#eng-030)] record covering the turn's whole breakdown, omitting the request count because the turn covers an unreported number of requests, and omitting cost because Codex reports none.
+Codex reports usage once per turn rather than once per request, so the turn is a single billable group: the adapter shall publish one [[engine-30](../engine.md#engine-30)] record covering the turn's whole breakdown, omitting the request count because the turn covers an unreported number of requests, and omitting cost because Codex reports none.
 The record's rate-card key shall be `AgentOptions.model` where the run pinned one, and otherwise a model reported by the run's own events; where neither names a model, the adapter shall publish no records, a single unidentified group being the breakdown restated.
 
 ### codex-17
 
-The adapter shall expose an exact [[ENG-031](../../user/engine.md#eng-031)] token report only after differencing the current root thread's cumulative snapshot per [[codex-15](#codex-15)].
+The adapter shall expose an exact [[engine-31](../engine.md#engine-31)] token report only after differencing the current root thread's cumulative snapshot per [[codex-15](#codex-15)].
 The report shall use partial coverage because the pinned exec surface does not aggregate descendant Codex threads.
 Where the stream reports the effective model, one record shall carry the report's inclusive input and output totals plus any reported cache-read, cache-write, and reasoning subsets; visible output and uncached input shall be obtained by exact non-negative subtraction where their subsets are present.
 Where the stream reports no effective model, `records` shall be absent because an unidentified record would merely restate the totals without selecting a rate card.

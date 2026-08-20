@@ -265,7 +265,7 @@ export function mapPermissionsToClaudeOptions(
 ): ClaudePermissionOptions {
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
 
-  // ENG-021: session-wide auto-mode posture takes precedence over the
+  // engine-21: session-wide auto-mode posture takes precedence over the
   // per-capability levels. 'auto' maps to claude's classifier-backed
   // auto-mode (still blocks high-risk actions, falls back to prompts
   // after consecutive/total denies); 'bypass' maps to the unchecked
@@ -747,7 +747,7 @@ export async function loadClaudeAgentSdk(): Promise<ClaudeAgentSdk> {
     throw new Error('@anthropic-ai/claude-agent-sdk does not export query()');
   }
 
-  // ENG-025: an importable SDK is not necessarily a supported one.
+  // engine-25: an importable SDK is not necessarily a supported one.
   assertRuntimeSupported(
     AGENT_RUNTIME_TARGETS.claude[0]!,
     `npm install @anthropic-ai/claude-agent-sdk@${AGENT_RUNTIME_TARGETS.claude[0]!.tested}`,

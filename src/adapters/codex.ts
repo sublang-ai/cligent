@@ -456,7 +456,7 @@ const CODEX_USAGE_ALIASES: ReadonlyArray<
 /**
  * Read the cumulative snapshot Codex attaches to `turn.completed`. Returns
  * undefined when any consumed counter is missing or malformed, which keeps
- * the caller on ENG-031's omitted-token path instead of differencing against
+ * the caller on engine-31's omitted-token path instead of differencing against
  * a partial snapshot.
  */
 function readCodexUsageSnapshot(
@@ -1270,7 +1270,7 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
     throw new Error('@openai/codex-sdk does not export Codex');
   }
 
-  // ENG-025: the SDK imported, which says nothing about whether the Codex
+  // engine-25: the SDK imported, which says nothing about whether the Codex
   // executable it selects is new enough to serve the caller's model. Check
   // here, inside the loader isAvailable() and run() share.
   assertRuntimeSupported(
@@ -1292,7 +1292,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
    * codex-15: `turn.completed.usage` reports the thread's cumulative total,
    * so the turn's own usage is the delta against the previous snapshot. The
    * baseline is keyed by backend thread identity, not by run, because a
-   * later run resumes the same thread. ENG-018 permits exactly this state.
+   * later run resumes the same thread. engine-18 permits exactly this state.
    */
   private readonly threadUsageBaselines = new Map<string, CodexUsageReading>();
 
@@ -1376,7 +1376,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     }
 
     // Rebuild only the counters the snapshot actually carried, so a counter
-    // Codex never sent does not become a measured zero (ENG-028).
+    // Codex never sent does not become a measured zero (engine-28).
     const differenced: Record<string, unknown> = {
       ...(isUsageRecord(rawUsage) ? rawUsage : {}),
     };

@@ -2217,7 +2217,7 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
-  it('maps PermissionPolicy.mode to claude permissionMode per ENG-021', () => {
+  it('maps PermissionPolicy.mode to claude permissionMode per engine-21', () => {
     const auto = mapPermissionsToClaudeOptions({ mode: 'auto' });
     expect(auto.permissionMode).toBe('auto');
     expect(auto.allowDangerouslySkipPermissions).toBeUndefined();

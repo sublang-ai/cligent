@@ -11,7 +11,7 @@ Accepted
 
 [DR-002](002-unified-event-stream-and-adapter-interface.md#key-payloads) originally required
 `inputTokens` and `outputTokens` on every terminal event.
-[ENG-027](../user/engine.md#eng-027) later added `tokenAvailability` because a required numeric zero could
+[[engine-27](../packages/engine.md#engine-27)] later added `tokenAvailability` because a required numeric zero could
 not distinguish measured zero from missing accounting.
 The first form of this decision added a disjoint `breakdown` and billable `records` beside those fields.
 

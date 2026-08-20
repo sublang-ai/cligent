@@ -36,12 +36,12 @@ them with optional authentic nested usage reports.
 ## Tasks
 
 1. [x] **Specify the availability model.**
-   Amend DR-002, [ENG-013](../user/engine.md#eng-013),
-   [ENG-019](../user/engine.md#eng-019),
-   [ENG-027](../user/engine.md#eng-027), and
+   Amend DR-002, [[engine-13](../packages/engine.md#engine-13)],
+   [[engine-19](../packages/engine.md#engine-19)],
+   [[engine-27](../packages/engine.md#engine-27)], and
    [[kimi-5](../packages/adapters/kimi.md#kimi-5)]; add
-   [TENG-019](../test/engine.md#teng-019) and
-   [TADAPT-033](../test/adapters.md#tadapt-033).
+   [[engine-119](../packages/engine.md#engine-119)] and
+   [[engine-233](../packages/engine.md#engine-233)].
 2. [x] **Normalize every terminal producer.**
    Update all built-in adapter success, failure, interruption, exhaustion, and
    missing-accounting paths plus shared engine synthesis.

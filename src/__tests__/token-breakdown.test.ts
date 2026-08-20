@@ -90,7 +90,7 @@ async function terminalUsage(adapter: AgentAdapter): Promise<DoneUsage> {
   return usage!;
 }
 
-describe('authentic usage invariants through Cligent (TENG-022)', () => {
+describe('authentic usage invariants through Cligent (engine-122)', () => {
   it('preserves complete inclusive totals, details, and records', async () => {
     const usage = await terminalUsage(
       stubAdapter({

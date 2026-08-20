@@ -4233,7 +4233,7 @@ describe('OpenCodeAdapter', () => {
     expect(types).toEqual(['init', 'text', 'done']);
   });
 
-  it('preserves native rules when selecting OpenCode auto mode per ENG-021', () => {
+  it('preserves native rules when selecting OpenCode auto mode per engine-21', () => {
     const auto = mapPermissionsToOpenCodeOptions({ mode: 'auto' });
     expect(auto.permission).toBeUndefined();
   });

@@ -22,7 +22,7 @@ import {
   unsupportedRuntimeError,
 } from '../runtime-version.js';
 
-// DR-013 / ENG-025 / ENG-026: cligent owns which runtime versions work. The
+// DR-013 / engine-25 / engine-26: cligent owns which runtime versions work. The
 // descriptor is the declaration and the loader is the enforcement; these pin
 // the comparison rules both depend on.
 describe('agent runtime targets (package-16)', () => {
@@ -54,7 +54,7 @@ describe('agent runtime targets (package-16)', () => {
   });
 });
 
-describe('runtime version comparison (ENG-025)', () => {
+describe('runtime version comparison (engine-25)', () => {
   const target: RuntimeTarget = {
     kind: 'peer',
     package: '@example/sdk',
@@ -83,7 +83,7 @@ describe('runtime version comparison (ENG-025)', () => {
   });
 
   it('never reports an unknown version as unsupported', () => {
-    // ENG-025 fails open: vendored and archived layouts are legitimate.
+    // engine-25 fails open: vendored and archived layouts are legitimate.
     expect(isBelowFloor(undefined, target)).toBe(false);
     expect(isAboveTested(undefined, target)).toBe(false);
     expect(readPackageVersion('@example/definitely-not-installed')).toBeUndefined();
@@ -193,7 +193,7 @@ describe('the runtimes DR-013 was written about', () => {
   });
 
   it('carries the repair the verdict promises', () => {
-    // ENG-026 and the changelog both say the verdict carries repair
+    // engine-26 and the changelog both say the verdict carries repair
     // commands; without it a consumer rebuilds the adapter-to-package map
     // this work exists to delete.
     // An explicit version keeps this a pure classification check: the

@@ -38,7 +38,7 @@ Permission reverse requests shall emit `permission_request` for observability an
 
 An omitted permission policy shall leave Kimi's native configuration in effect.
 `PermissionPolicy.mode: 'auto'` shall select Kimi's native ACP `auto` mode.
-`mode: 'bypass'` shall be rejected because Kimi's `yolo` mode retains higher-priority static rules and sensitive-operation checks and is not ENG-021's unchecked bypass [[9]][[10]].
+`mode: 'bypass'` shall be rejected because Kimi's `yolo` mode retains higher-priority static rules and sensitive-operation checks and is not engine-21's unchecked bypass [[9]][[10]].
 A provided policy with no supported whole-mode mapping shall be rejected because ACP sees only permission decisions that Kimi has already reduced to `ask`; it cannot override earlier configured allows, denies, or native safe-tool decisions.
 Explicit tool lists shall likewise be rejected because ACP exposes no exact tool-registry restriction.
 Valid `writablePaths` accompanying a supported `auto` policy shall be reported as ambient rather than sandbox-enforced.

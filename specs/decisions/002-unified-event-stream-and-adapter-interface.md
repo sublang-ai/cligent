@@ -218,7 +218,7 @@ interface PermissionPolicy {
 }
 
 /** Reasoning depth, ordered least → greatest. Adapters whose SDK lacks a tier
-    collapse lossy per their own spec (see ENG-020). */
+    collapse lossy per their own spec (see engine-20). */
 type ReasoningEffort =
   | 'minimal'
   | 'low'
@@ -241,7 +241,7 @@ interface AgentAdapter {
   /** Must be safe for concurrent calls on the same instance unless the
       adapter explicitly documents an environmental constraint (DR-003).
       Each call shall create fresh run-local state except for the cumulative
-      accounting state narrowly permitted by ENG-018. */
+      accounting state narrowly permitted by engine-18. */
   run(
     prompt: string,
     options?: AgentOptions
@@ -256,7 +256,7 @@ interface AgentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;  // adapter-mapped per ENG-020
+  reasoningEffort?: ReasoningEffort;  // adapter-mapped per engine-20
   resume?: string;             // backend session token for resumption
   abortSignal?: AbortSignal;
   allowedTools?: string[];     // whitelist: only these tools can be used
@@ -293,7 +293,7 @@ for await (const event of Cligent.parallel([
 
 ## Consequences
 
-- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are run-local and thread-safe for concurrent `run()` calls unless they retain the cumulative-accounting state permitted by [ENG-018](../user/engine.md#eng-018) or document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
+- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are run-local and thread-safe for concurrent `run()` calls unless they retain the cumulative-accounting state permitted by [[engine-18](../packages/engine.md#engine-18)] or document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
 - **`Cligent` class** is the primary API ([DR-003](003-role-scoped-session-management.md)) — wraps adapter with role config, session state, and protocol hardening
 - **UPM** uses capability primitives (`fileWrite`, `shellExecute`, `networkAccess`) mapped by adapters to vendor controls
 - **AbortSignal** standardizes interruption (no custom `interrupt()` method)

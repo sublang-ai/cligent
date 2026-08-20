@@ -67,7 +67,7 @@ Where required usage structure or any consumed token or cache counter is negativ
 Unconsumed usage extension details such as `thoughtTokens` shall not affect availability, and a null optional cache counter shall be treated as absent.
 When ACP omits usage, the adapter shall mark token accounting as `'unavailable'` and retain zero-valued compatibility placeholders rather than reporting measured zero or estimating tokens.
 In either state, `toolUses` shall equal the emitted tool calls independently of token accounting.
-The adapter shall publish no `DoneUsage.breakdown` partition per [[ENG-028](../../user/engine.md#eng-028)], because ACP's `Usage` structure is an unstable protocol extension that the conformance-target Kimi Code release does not populate, leaving nothing measured to decompose.
+The adapter shall publish no `DoneUsage.breakdown` partition per [[engine-28](../engine.md#engine-28)], because ACP's `Usage` structure is an unstable protocol extension that the conformance-target Kimi Code release does not populate, leaving nothing measured to decompose.
 The fold of `cachedReadTokens` and `cachedWriteTokens` into `inputTokens` reflects the agent's own cache-exclusive convention rather than a guarantee ACP makes about the field, so the adapter shall confine that fold to this ACP agent and shall not treat it as a portable ACP rule.
 
 ### kimi-6
@@ -83,7 +83,7 @@ Authentication guidance shall name `kimi login`; the adapter shall never launch 
 ### kimi-7
 
 Where `PermissionPolicy` is absent, the adapter shall set no ACP mode and preserve Kimi's native permission configuration.
-Where `PermissionPolicy.mode` is `'auto'`, the adapter shall set ACP config option `mode` to `auto`; per-capability fields in the same policy are superseded by the whole-mode selection per [[ENG-021](../../user/engine.md#eng-021)].
+Where `PermissionPolicy.mode` is `'auto'`, the adapter shall set ACP config option `mode` to `auto`; per-capability fields in the same policy are superseded by the whole-mode selection per [[engine-21](../engine.md#engine-21)].
 Where mode is `'bypass'`, the adapter shall reject before spawn because Kimi's `yolo` mode is not an unchecked bypass per [DR-011](../../decisions/011-kimi-code-acp-integration.md).
 Where a policy is provided with mode omitted, including an empty policy, the adapter shall reject before spawn because ACP cannot deterministically impose Cligent's default-ask capability policy over Kimi's earlier native rule decisions.
 This limitation follows Kimi's configured permission-rule evaluation, which may decide operations before an ACP permission request is exposed [[4]].
@@ -92,7 +92,7 @@ Where Kimi plan review exposes both `Revise` and `Reject and Exit` as reject-onc
 
 ### kimi-8
 
-Where a supported `mode: 'auto'` policy contains non-empty `writablePaths`, the adapter shall validate and canonicalize them per [[ENG-022](../../user/engine.md#eng-022)], report `WritablePathsPermissionMapping` with `enforcement: 'ambient'`, and shall not advertise a filesystem sandbox or ACP filesystem capabilities.
+Where a supported `mode: 'auto'` policy contains non-empty `writablePaths`, the adapter shall validate and canonicalize them per [[engine-22](../engine.md#engine-22)], report `WritablePathsPermissionMapping` with `enforcement: 'ambient'`, and shall not advertise a filesystem sandbox or ACP filesystem capabilities.
 Invalid paths shall fail before spawn.
 
 ### Options Mapping
@@ -103,7 +103,7 @@ The adapter shall apply a provided `AgentOptions.model` through ACP config optio
 `KimiEffort` shall be the provider-native union `'off' | 'on'` per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md).
 The adapter shall map it exactly through ACP config option `thinking`; `on` selects the chosen model's native default thinking effort rather than a Cligent portable tier per [[5]].
 When effort is omitted, the adapter shall set no thinking override.
-Where a dynamic caller supplies any other effort value, the adapter shall reject it before spawn with the metadata-backed allowed-values error from [[ENG-024](../../user/engine.md#eng-024)].
+Where a dynamic caller supplies any other effort value, the adapter shall reject it before spawn with the metadata-backed allowed-values error from [[engine-24](../engine.md#engine-24)].
 
 ### kimi-10
 
@@ -130,7 +130,7 @@ When abort or failure occurs before a backend identifier is observed, it shall p
 
 ### kimi-13
 
-The adapter shall publish no [[ENG-031](../../user/engine.md#eng-031)] token or cost report for the pinned Kimi Code runtime, because its supported ACP prompt response supplies neither [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
+The adapter shall publish no [[engine-31](../engine.md#engine-31)] token or cost report for the pinned Kimi Code runtime, because its supported ACP prompt response supplies neither [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
 An absent report shall replace the former zero-valued availability placeholder and shall not change the prompt stop status, accumulated result, or independently observed `toolUses`.
 The adapter may retain schema validation for a future ACP usage extension, but shall not promote that unstable shape to cost-grade public accounting until a supported runtime emits it and its turn/session and cache/reasoning semantics are verified.
 

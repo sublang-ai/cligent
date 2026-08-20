@@ -773,7 +773,7 @@ function defaultSpawnProcess(
 async function defaultProbeCliAvailability(): Promise<boolean> {
   try {
     await execFileAsync('opencode', ['--version'], { timeout: 5000 });
-    // ENG-025: package-12 pairs this CLI with the SDK, so an executable that
+    // engine-25: package-12 pairs this CLI with the SDK, so an executable that
     // merely runs is not necessarily one this release supports.
     return isCliRuntimeSupported(AGENT_RUNTIME_TARGETS.opencode[1]!);
   } catch {
@@ -1880,7 +1880,7 @@ export function wrapOpencodeClient(
 }
 
 export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
-  // ENG-025: an importable SDK is not necessarily a supported one.
+  // engine-25: an importable SDK is not necessarily a supported one.
   assertRuntimeSupported(
     AGENT_RUNTIME_TARGETS.opencode[0]!,
     `npm install ${AGENT_RUNTIME_TARGETS.opencode[0]!.repairSpec}`,
@@ -3426,7 +3426,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
     try {
       if (this.mode === 'managed') {
-        // ENG-025: the peer gate sits in the SDK loader, but managed mode
+        // engine-25: the peer gate sits in the SDK loader, but managed mode
         // also spawns the paired CLI, and Cligent.run() reaches here without
         // ever calling `isAvailable()`.
         assertRuntimeSupported(

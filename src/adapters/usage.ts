@@ -16,7 +16,7 @@ export interface UsageCounterReading {
   value: number;
   valid: boolean;
   /**
-   * Whether upstream actually carried the counter. ENG-028 needs this to tell
+   * Whether upstream actually carried the counter. engine-28 needs this to tell
    * a measured zero from a component the runtime does not report; `value`
    * alone cannot, because an absent optional counter also reads as zero.
    */
@@ -37,7 +37,7 @@ function isCounter(value: number | undefined): value is number {
 /**
  * Subtract known components from a provider total that includes them,
  * yielding the exclusive base for the disjoint frame. Returns undefined when
- * the subtraction would go negative — ENG-019 requires omitting the side
+ * the subtraction would go negative — engine-19 requires omitting the side
  * rather than clamping, since a clamped base would exceed its aggregate.
  */
 export function exclusiveBase(

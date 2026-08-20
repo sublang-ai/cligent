@@ -124,7 +124,7 @@ function doneEvent(
 // ---------------------------------------------------------------------------
 
 describe('Cligent lifecycle', () => {
-  // TENG-001: Role injection
+  // engine-101: Role injection
   it('injects role into every event when role is set', async () => {
     const adapter = createMockAdapter('claude-code', [
       textEvent('claude-code', 'hello'),
@@ -153,7 +153,7 @@ describe('Cligent lifecycle', () => {
     }
   });
 
-  // TENG-002: Single-flight
+  // engine-102: Single-flight
   it('throws when run() is called while already active', async () => {
     const adapter: AgentAdapter = {
       agent: 'claude-code',
@@ -194,7 +194,7 @@ describe('Cligent lifecycle', () => {
     expect(events2).toHaveLength(2);
   });
 
-  // TENG-003: Option merging
+  // engine-103: Option merging
   it('merges options: per-call overrides scalars, deep-merges permissions', async () => {
     const { adapter, captured } = createCapturingAdapter('claude-code', [
       textEvent('claude-code', 'hi'),
@@ -284,7 +284,7 @@ describe('Cligent lifecycle', () => {
 // ---------------------------------------------------------------------------
 
 describe('Cligent session continuity', () => {
-  // TENG-004: resumeToken capture and auto-inject
+  // engine-104: resumeToken capture and auto-inject
   it('captures resumeToken from done and auto-injects on next run', async () => {
     const SID_NEW = 'new-session-from-backend';
     const { adapter, captured } = createCapturingAdapter('claude-code', [
@@ -339,7 +339,7 @@ describe('Cligent session continuity', () => {
     expect(opts.resume).toBeUndefined();
   });
 
-  // TENG-005: no token, no auto-inject
+  // engine-105: no token, no auto-inject
   it('no resume injected when adapter omits resumeToken', async () => {
     const { adapter, captured } = createCapturingAdapter('claude-code', [
       textEvent('claude-code', 'hello'),
@@ -395,7 +395,7 @@ describe('Cligent session continuity', () => {
     await collectEvents(agent.run('first'));
     expect(agent.resumeToken).toBe('tok-A');
 
-    // Run 2: adapter omits resumeToken → clears stored token (ENG-006)
+    // Run 2: adapter omits resumeToken → clears stored token (engine-6)
     await collectEvents(agent.run('second'));
     expect(agent.resumeToken).toBeUndefined();
 
@@ -410,7 +410,7 @@ describe('Cligent session continuity', () => {
 // ---------------------------------------------------------------------------
 
 describe('Cligent protocol hardening', () => {
-  // TENG-006: event ordering
+  // engine-106: event ordering
   it('yields events in order with exactly one done', async () => {
     const adapter = createMockAdapter('claude-code', [
       textEvent('claude-code', 'hello'),
@@ -426,7 +426,7 @@ describe('Cligent protocol hardening', () => {
     expect(events[2].type).toBe('done');
   });
 
-  // TENG-007: abort
+  // engine-107: abort
   it('yields done(interrupted) on abort', async () => {
     const controller = new AbortController();
     const adapter: AgentAdapter = {
@@ -610,7 +610,7 @@ describe('Cligent protocol hardening', () => {
     expect((events[0].payload as DonePayload).status).toBe('interrupted');
   });
 
-  // TENG-008: adapter throw
+  // engine-108: adapter throw
   it('yields error + done on adapter throw', async () => {
     const adapter = createMockAdapter(
       'claude-code',
@@ -669,7 +669,7 @@ describe('Cligent protocol hardening', () => {
     });
   });
 
-  // TENG-009: missing done
+  // engine-109: missing done
   it('synthesizes MISSING_DONE on exhaustion without done', async () => {
     const adapter = createMockAdapter('claude-code', [
       textEvent('claude-code', 'hello'),
@@ -684,7 +684,7 @@ describe('Cligent protocol hardening', () => {
     expect((events[2].payload as DonePayload).status).toBe('error');
   });
 
-  // TENG-010: done-cardinality race
+  // engine-110: done-cardinality race
   it('yields exactly one done when abort races adapter done', async () => {
     const controller = new AbortController();
     const adapter: AgentAdapter = {
@@ -745,7 +745,7 @@ describe('Cligent protocol hardening', () => {
 // ---------------------------------------------------------------------------
 
 describe('Cligent.parallel', () => {
-  // TENG-011: interleaving
+  // engine-111: interleaving
   it('interleaves events from multiple agents', async () => {
     const a1 = createMockAdapter('claude-code', [
       textEvent('claude-code', 'a1'),
@@ -775,7 +775,7 @@ describe('Cligent.parallel', () => {
     expect(events.some((e) => e.role === 'reviewer')).toBe(true);
   });
 
-  // TENG-012: error isolation
+  // engine-112: error isolation
   it('isolates errors: one fails, other continues', async () => {
     const failing = createMockAdapter(
       'claude-code',
@@ -811,7 +811,7 @@ describe('Cligent.parallel', () => {
     ).toBe(true);
   });
 
-  // TENG-013: missing-done isolation
+  // engine-113: missing-done isolation
   it('missing-done on one agent does not affect others', async () => {
     const noDone = createMockAdapter('claude-code', [
       textEvent('claude-code', 'hi'),
@@ -850,7 +850,7 @@ describe('Cligent.parallel', () => {
     ).toBe(true);
   });
 
-  // TENG-014: per-task and shared abort
+  // engine-114: per-task and shared abort
   it('per-task abort only affects that task', async () => {
     const controller = new AbortController();
     const stalling: AgentAdapter = {

@@ -56,7 +56,7 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
    Read `total_cost_usd` from the result message.
 4. [x] **Add the record structure.**
    Add `UsageRecord` and `DoneUsage.records`, the summing builder, and
-   [ENG-030](../user/engine.md#eng-030); amend [DR-014](../decisions/014-unified-token-usage-breakdown.md)
+   [[engine-30](../packages/engine.md#engine-30)]; amend [DR-014](../decisions/014-unified-token-usage-breakdown.md)
    to promote per-model attribution off its deferral list; publish Claude's per-model records.
 5. [x] **Record OpenCode per request.**
    One record per step-finish part with `requests: 1`, its own cost, and the model and provider of the
@@ -65,7 +65,7 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
    One record for the turn with the pinned model and no request count; add
    [[codex-14](../packages/adapters/codex.md#codex-14)].
 7. [x] **Pin acceptance coverage.**
-   Add [TENG-021](../test/engine.md#teng-021) and [TADAPT-039](../test/adapters.md#tadapt-039) with their
+   Add [[engine-121](../packages/engine.md#engine-121)] and [[engine-239](../packages/engine.md#engine-239)] with their
    `Verifies:` lines, plus the integration coverage they name.
 8. [x] **Document the decomposition.**
    Extend the guide's token-usage section with the record fields and per-agent granularity, and record the

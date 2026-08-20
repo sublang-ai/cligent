@@ -3,7 +3,7 @@
 
 import type { CligentEvent, TokenUsage } from '../../types.js';
 
-/** Render only the exact subsets the producer reported (ENG-031). */
+/** Render only the exact subsets the producer reported (engine-31). */
 function formatTokenDetails(tokens: TokenUsage): string {
   const parts = [
     ['fresh', tokens.input.uncached],
