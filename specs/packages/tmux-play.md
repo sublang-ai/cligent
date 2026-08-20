@@ -383,7 +383,7 @@ When a `callCaptain` call's terminal `done` carries a `resumeToken`, `CaptainRun
 
 ### tmux-play-59
 
-Where a player or Captain call emits two or more complete `text` events before a terminal `done` whose `result` is absent, the programmatic runtime shall preserve each complete message on its own line in `finalText`, inserting one newline before a later message only where the preceding captured content does not already end with one.
+Where a player or Captain call emits one or more complete `text` events after earlier captured `text` or `text_delta` content and before a terminal `done` whose `result` is absent, the programmatic runtime shall preserve each later complete message on its own line in `finalText`, inserting one newline before it only where the preceding captured content does not already end with one.
 
 ### Launcher → Session Protocol
 
@@ -987,14 +987,18 @@ Where the tmux server normalizes non-ASCII display text — a non-UTF-8 server l
 
 ### tmux-play-73
 
-Where scripted adapters emit two complete `text` messages before a terminal `done` with no `result`, when the programmatic runtime executes player and Captain calls across both preceding-message endings, the verification shall assert this `finalText` matrix [[tmux-play-59](#tmux-play-59)]:
+Where scripted adapters emit a complete `text` message after captured `text` or `text_delta` content and before a terminal `done` with no `result`, when the programmatic runtime executes player and Captain calls across both preceding-content endings, the verification shall assert this `finalText` matrix [[tmux-play-59](#tmux-play-59)]:
 
-| Call | First `text` content | Second `text` content | Exact `finalText` | Lines beginning `Commit: ` |
-| --- | --- | --- | --- | --- |
-| player | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
-| player | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
-| Captain | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
-| Captain | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Call | First event | First content | Second `text` content | Exact `finalText` | Lines beginning `Commit: ` |
+| --- | --- | --- | --- | --- | --- |
+| player | `text` | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| player | `text` | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `text` | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `text` | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| player | `text_delta` | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| player | `text_delta` | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `text_delta` | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `text_delta` | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
 
 ### tmux-play-101
 

@@ -87,10 +87,11 @@ The repository shall pin every conformance target at an exact version in the dep
 
 ### package-22
 
-When repository conformance prepares an acceptance run, it shall check the installed target surfaces:
+When repository conformance prepares an acceptance run, it shall check that every installed Gemini, OpenCode, and Kimi CLI reports its exact target version.
 
-- every installed Gemini, OpenCode, and Kimi CLI reports its exact target version; and
-- every SDK or protocol surface consumed by an adapter compiles against the installed declarations.
+### package-34
+
+Repository verification shall compile every SDK or protocol surface consumed by an adapter against the installed declarations.
 
 ### package-23
 
@@ -142,6 +143,8 @@ The runtime descriptor in [[package-16](#package-16)] shall be reachable through
 ### package-30
 
 User-facing package documentation shall identify the runtime-descriptor module in [[package-29](#package-29)] and explain its supported and tested version fields.
+
+### TypeScript
 
 ### package-5
 
@@ -230,7 +233,8 @@ Where the release dependency graph and optional agent peers are resolved, when p
 Where repository conformance runs with installed SDK, protocol, and CLI dependencies, when package metadata, CLI-reported versions, declarations, command help, runtime descriptors, the manifest, and floor-change history are checked, the verification shall assert the conformance-target contract:
 
 - resolved SDK and protocol versions and reported CLI versions equal their exact targets in the required dependency locations [[package-12](#package-12)];
-- CLI versions are checked before acceptance and consumed type surfaces compile against the installed declarations [[package-22](#package-22)];
+- CLI versions are checked before acceptance [[package-22](#package-22)];
+- consumed SDK and protocol surfaces compile against the installed declarations [[package-34](#package-34)];
 - the OpenCode targets match and the exact Kimi SDK and CLI targets are paired [[package-23](#package-23)];
 - the `kimi acp` command initializes successfully [[package-24](#package-24)];
 - every floor change follows the reasons and release level in [[package-17](#package-17)], and tested versions remain independent of supported floors [[package-25](#package-25)];
@@ -239,7 +243,7 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 
 ### package-105
 
-Where the packed tarball and each exact optional agent SDK target are installed in turn into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with no copy of the tested SDK at either install root, when each installed adapter loads and resolves its optional peer, the verification shall assert this own-tree-resolution matrix [[package-32](#package-32)]:
+Where the packed tarball and each exact optional agent SDK target are installed in turn both into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with neither Codex layout leaving `@openai/codex` at its install root, when each installed adapter loads and resolves its optional peer, the verification shall assert this own-tree-resolution matrix [[package-32](#package-32)]:
 
 | Adapter | Optional peer resolved in both layouts |
 | --- | --- |
