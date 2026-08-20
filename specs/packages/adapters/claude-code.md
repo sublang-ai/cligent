@@ -170,7 +170,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - each stream shall terminate with successful `done`;
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- the leg shall run against the real SDK, whose package the distributable does not install, so the leg shall self-skip when the adapter's credential is absent from the environment and shall hard-fail instead under `CI`, a missing dependency for one adapter never skipping another's leg.
+- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip when the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg.
 
 ### claude-code-220
 

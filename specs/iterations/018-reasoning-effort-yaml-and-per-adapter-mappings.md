@@ -47,7 +47,7 @@ Out of scope (separate future IR):
 | `xhigh` | `'xhigh'` |
 | `max` | `'max'` |
 
-### Codex — unchanged from [CODEX-007](../user/adapters/codex.md#codex-007)
+### Codex — unchanged from [[codex-7](../packages/adapters/codex.md#codex-7)]
 
 | `reasoningEffort` | `modelReasoningEffort` |
 | --- | --- |

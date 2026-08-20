@@ -22,7 +22,6 @@ intents/    Intent records (IRs)
 packages/   Spec packages (one file per package)
 iterations/ Legacy iteration records, migrating to intents/
 user/       Legacy user-visible behavior, migrating to packages/
-dev/        Legacy implementation requirements, migrating to packages/
 test/       Legacy acceptance testing, migrating to packages/
 map.md      This index
 meta.md     The spec of specs
@@ -114,12 +113,11 @@ meta.md     The spec of specs
 | ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | pkg   | [claude-code.md](packages/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake subtype, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token, and their checks |
 
-### CODEX
+### codex
 
-| Group | File                                        | Summary                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| user  | [adapters/codex.md](user/adapters/codex.md) | Codex adapter: SDK normalization including exact partial root-thread usage differenced from the cumulative snapshot, inclusive cache/reasoning subsets without requested-model substitution, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping |
-| dev   | [adapters/codex.md](dev/adapters/codex.md)  | Codex adapter implementation: generated writablePaths profile delivery, permission-managed project trust without repository/user config mutation, and SDK-anchored Codex executable resolution across install layouts with diagnostic failure                                                                                                                                                |
+| Group | File                                   | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pkg   | [codex.md](packages/adapters/codex.md) | Codex adapter: SDK normalization including exact partial root-thread usage differenced from the cumulative snapshot, inclusive cache/reasoning subsets without requested-model substitution, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping, internal profile delivery and SDK-anchored executable resolution, and their checks |
 
 ### ENG
 
@@ -169,7 +167,7 @@ meta.md     The spec of specs
 | Group | File                              | Summary                                                                                                                                                                            |
 | ----- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | pkg   | [package.md](packages/package.md) | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints, the global-install agent-runtime contract, and their acceptance checks |
-| test  | [package-parked.md](test/package-parked.md) | Residual Codex-executable install-layout and global-install onboarding clauses, awaiting the `codex` and `tmux-play` packages                                                        |
+| test  | [package-parked.md](test/package-parked.md) | Residual global-install onboarding clause, awaiting the `tmux-play` package                                                                                                         |
 
 ### release
 
@@ -181,7 +179,7 @@ meta.md     The spec of specs
 
 | Group | File                            | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| test  | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including authentic nested usage, causal coverage, rate-card records, direct-cost provenance, Codex per-turn differencing, effort mappings, interrupted resume tokens, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
+| test  | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including authentic nested usage, causal coverage, rate-card records, direct-cost provenance, effort mappings, interrupted resume tokens, writablePaths enforcement/reporting, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
 
 ### TMUX
 

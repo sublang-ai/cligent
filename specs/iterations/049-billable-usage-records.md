@@ -63,7 +63,7 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
    owning assistant message; amend [OPENCODE-005](../user/adapters/opencode.md#opencode-005).
 6. [x] **Record the Codex turn.**
    One record for the turn with the pinned model and no request count; add
-   [CODEX-014](../user/adapters/codex.md#codex-014).
+   [[codex-14](../packages/adapters/codex.md#codex-14)].
 7. [x] **Pin acceptance coverage.**
    Add [TENG-021](../test/engine.md#teng-021) and [TADAPT-039](../test/adapters.md#tadapt-039) with their
    `Verifies:` lines, plus the integration coverage they name.

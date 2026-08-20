@@ -494,7 +494,7 @@ function hasMatchingOptionalUsageShape(
 }
 
 /**
- * CODEX-015: subtract the previous cumulative snapshot to obtain this turn's
+ * codex-15: subtract the previous cumulative snapshot to obtain this turn's
  * usage. A snapshot that decreased means the thread's accounting restarted
  * (compaction or a context-window refill), which cannot be attributed to one
  * turn, so the caller fails closed rather than reporting a guess.
@@ -516,7 +516,7 @@ function codexTurnDelta(
 }
 
 // The SDK usage object carries token counts only; toolUses is derived from
-// the unique tool item ids observed during the run (CODEX-003), so the
+// the unique tool item ids observed during the run (codex-3), so the
 // caller supplies it rather than this parser reading a usage field.
 function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
   if (!isUsageRecord(rawUsage)) {
@@ -789,7 +789,7 @@ type NormalizedItemEvent =
 
 // The SDK's canonical tool items: shell commands and MCP tool invocations
 // evolve across item.started / item.updated / item.completed and correlate
-// by item id (CODEX-003).
+// by item id (codex-3).
 type CodexToolLifecycleType = 'command_execution' | 'mcp_tool_call';
 
 function codexToolLifecycleType(
@@ -1289,7 +1289,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   private readonly loadSdk: () => Promise<CodexSdk>;
 
   /**
-   * CODEX-015: `turn.completed.usage` reports the thread's cumulative total,
+   * codex-15: `turn.completed.usage` reports the thread's cumulative total,
    * so the turn's own usage is the delta against the previous snapshot. The
    * baseline is keyed by backend thread identity, not by run, because a
    * later run resumes the same thread. ENG-018 permits exactly this state.
@@ -1297,7 +1297,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   private readonly threadUsageBaselines = new Map<string, CodexUsageReading>();
 
   /**
-   * CODEX-017: two concurrent turns on one resumed thread would race its one
+   * codex-17: two concurrent turns on one resumed thread would race its one
    * cumulative counter and make either delta depend on event arrival order.
    * Queue only equal inbound resume identities; fresh and unrelated sessions
    * retain the adapter's normal concurrency.
@@ -1332,7 +1332,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   }
 
   /**
-   * CODEX-015: turn the cumulative `turn.completed` snapshot into this turn's
+   * codex-15: turn the cumulative `turn.completed` snapshot into this turn's
    * usage. A fresh thread starts from zero, so its first snapshot is already
    * the turn. A resumed thread this adapter never observed has no baseline to
    * subtract, and reporting the thread total as the turn's would overstate it
@@ -1539,7 +1539,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
-    // Tool lifecycle correlation (CODEX-003): ids that already produced a
+    // Tool lifecycle correlation (codex-3): ids that already produced a
     // tool_use, ids that already produced their terminal tool_result, and
     // every unique tool-call id observed — the toolUses count on done.
     const announcedToolUseIds = new Set<string>();

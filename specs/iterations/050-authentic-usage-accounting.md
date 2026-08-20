@@ -30,7 +30,7 @@ Done
    [TENG-022](../test/engine.md#teng-022); replace the declarations and shared validators.
 2. [x] **Publish whole-tree Claude accounting and scoped Codex deltas.**
    Implement [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)] and
-   [CODEX-017](../user/adapters/codex.md#codex-017), including estimate provenance and exact omission.
+   [[codex-17](../packages/adapters/codex.md#codex-17)], including estimate provenance and exact omission.
 3. [x] **Collect Gemini response telemetry.**
    Implement [GEMINI-017](../user/adapters/gemini.md#gemini-017) with one run-owned local telemetry file,
    per-response records, stream cross-validation, and cleanup.

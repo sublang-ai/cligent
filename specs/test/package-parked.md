@@ -5,25 +5,7 @@
 
 ## Intent
 
-This component holds the clauses of the package acceptance checks that verify Codex and tmux-play behavior, awaiting those packages; the package behaviors themselves moved to [packages/package.md](../packages/package.md).
-
-### TPKG-005
-Verifies: [CODEX-012](../dev/adapters/codex.md#codex-012), [CODEX-013](../dev/adapters/codex.md#codex-013)
-
-Where the packed tarball and the exact Codex SDK target are installed both
-into a global-style prefix whose package trees are independent and into a
-nested-strategy consumer, each leaving no `@openai/codex` at the install
-root, when the installed Codex adapter resolves the executable entry,
-generates a per-run configuration wrapper, and runs a real permission-managed
-aborted invocation, resolution shall return the SDK-owned executable in both
-layouts — in the nested consumer also on the Node 18.3.0 runtime floor
-without an ESM loader resolution surface — the wrapper shall embed that
-executable path, and the aborted invocation shall terminate without a module
-resolution failure.
-Where the installed consumer resolves no `@openai/codex` from any route, when
-the adapter resolves the executable entry, the raised error shall name the
-attempted entry and anchors and direct installing `@openai/codex-sdk` as the
-repair.
+This component holds the clauses of the package acceptance checks that verify tmux-play behavior, awaiting that package; the package behaviors themselves moved to [packages/package.md](../packages/package.md).
 
 ### TPKG-006
 Verifies: [TMUX-010](../user/tmux-play.md#tmux-010), [TMUX-011](../user/tmux-play.md#tmux-011), [TMUX-089](../user/tmux-play.md#tmux-089)
