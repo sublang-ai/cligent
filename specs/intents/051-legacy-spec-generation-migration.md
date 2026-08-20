@@ -256,6 +256,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
+    Also add and audit the trailer-block integrity rule that every raw commit-message line beginning `Co-authored-by:` shall parse as a Git trailer, so a separated attribution cannot masquerade as body text.
     Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
     The branches tasks 16 through 27 split arrive as further rows of that table, as does any gap a migration task hands over, and this task closes only once none is left.
 
