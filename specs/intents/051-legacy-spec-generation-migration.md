@@ -158,7 +158,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Leave this plan incomplete until it closes.
 
 21. **Settle the superseded items.**
-    Twenty items across the packages and the legacy test files carry a `Superseded by` marker inherited from the released tree, and the artifacts they describe no longer follow them — `claude-code-11`, `claude-code-238`, `claude-code-239`, `codex-14`, `codex-233`, `codex-238`, `codex-239`, `gemini-233`, and the flat-accounting paragraphs inside `claude-code-3`, `codex-3`, and `gemini-4` among them.
+    Every item carrying a `Superseded by` marker when this task runs is in scope, wherever it then lives, the marker being inherited from the released tree and the artifact no longer following what the item states.
+    That rule rather than a census defines the set, because tasks 11 through 14 first carry ten more markers out of `user/adapters/kimi.md`, `user/adapters/opencode.md`, `user/engine.md`, and `user/tmux-play.md` into the packages they land.
+    Measured now the tree holds thirty — eleven already in the landed packages, nine in the legacy test files, ten awaiting those four moves — a baseline this task shall re-measure rather than trust.
     An item the artifact no longer satisfies is the contradiction this plan's own rule sends to a task of its own ahead of the handover, and no earlier task carries these.
     Put the cluster to the owner, who either restores each concern by conforming the artifact to it, or approves the retirement that a decision record then admits [[meta-12](../meta.md#meta-12)], the packages losing the item and gaining the map's row.
     Neither `spex lint` nor the coverage criterion sees this, a superseded item stating a requirement its package never meets [[meta-34](../meta.md#meta-34)], so nothing but this task keeps it visible.

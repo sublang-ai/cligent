@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Codex through the `@openai/codex-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns how a portable request becomes a Codex thread and how that thread's stream, permission profiles, per-run configuration delivery, and executable resolution become unified events, thread continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns how a portable request becomes a Codex thread, how that thread's stream becomes unified events, permission profiles, thread continuity, and token accounting, and the per-run configuration delivery and executable resolution those require, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 Three further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the `cligent-workspace-extra-writes` profile this adapter generates, and the launcher whose snapshotted work directory motivates the git-repo gate.
 
