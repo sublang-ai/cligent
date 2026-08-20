@@ -63,7 +63,7 @@ export interface CaptainFinishedRecord extends BaseRecord<'captain_finished'> {
 }
 
 /**
- * TMUX-092: emitted once per {@link CaptainContext.emitReply} call. Carries a
+ * tmux-play-92: emitted once per {@link CaptainContext.emitReply} call. Carries a
  * conversational Captain reply the tmux presenter renders as ordinary Captain
  * prose (glow Markdown under the `captain> ` prefix), unlike the bracketed
  * `[status]` operational line of `captain_status`. Turn-bound: it always
@@ -86,9 +86,9 @@ export interface CaptainTelemetryRecord
 }
 
 /**
- * TMUX-082: emitted once per accepted {@link CaptainSession.setVisiblePlayers}
+ * tmux-play-82: emitted once per accepted {@link CaptainSession.setVisiblePlayers}
  * / {@link CaptainContext.setVisiblePlayers} call. Carries the requested
- * visible player ids in order; the TMUX-083 layout observer consumes it to
+ * visible player ids in order; the tmux-play-83 layout observer consumes it to
  * reconcile the visible player panes. Carries the active turn id when emitted
  * during a turn, else `null` (session-scoped between-turn calls).
  */

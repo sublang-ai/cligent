@@ -6,8 +6,8 @@ import { isGlowAvailable, renderMarkdown } from './glow.js';
 
 // Mirror the launcher.acceptance.test.ts pattern: gate the suite on a real
 // `glow --version` probe so a runner without glow installed self-skips cleanly
-// rather than failing on the first spawn. TMUX-051 makes glow a hard launch
-// requirement, and TTMUX-050 / the Real-tmux Acceptance preamble agree that
+// rather than failing on the first spawn. tmux-play-51 makes glow a hard launch
+// requirement, and tmux-play-150 / the Real-tmux Acceptance preamble agree that
 // acceptance suites self-skip when their external binary is unavailable.
 const GLOW_AVAILABLE = isGlowAvailable();
 const acceptanceIt = GLOW_AVAILABLE ? it : it.skip;
@@ -42,7 +42,7 @@ describe('glow render acceptance', () => {
 
       // Pinned at width 40 to force a word-wrap on prose; glow shall still
       // leave the fenced code block's 200-character line intact, matching
-      // TMUX-049's "glow leaves long code lines unwrapped by design".
+      // tmux-play-49's "glow leaves long code lines unwrapped by design".
       const output = renderMarkdown(fenced, 40);
       expect(stripAnsi(output)).toContain(longLine);
     },

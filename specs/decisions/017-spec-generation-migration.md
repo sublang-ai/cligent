@@ -500,12 +500,12 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TADAPT-021` | `codex-221` |
 | `TADAPT-021` | `engine-221` |
 | `TADAPT-022` | `claude-code-222` |
-| `TADAPT-022` | `engine-222` |
+| `TADAPT-022` | `engine-221` |
 | `TADAPT-022` | `gemini-222` |
 | `TADAPT-022` | `kimi-222` |
 | `TADAPT-022` | `opencode-222` |
 | `TADAPT-023` | `codex-223` |
-| `TADAPT-023` | `engine-223` |
+| `TADAPT-023` | `engine-221` |
 | `TADAPT-024` | `codex-224` |
 | `TADAPT-025` | `gemini-225` |
 | `TADAPT-026` | `claude-code-226` |

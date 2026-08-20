@@ -70,7 +70,7 @@ describe('LayoutObserver', () => {
     runTmuxMock.mockReturnValue(undefined);
   });
 
-  it('rebuilds the player area for an accepted change: kill non-Boss panes, recreate in order with a bounded tail, restore Boss focus (TTMUX-085)', () => {
+  it('rebuilds the player area for an accepted change: kill non-Boss panes, recreate in order with a bounded tail, restore Boss focus (tmux-play-185)', () => {
     const observer = makeObserver();
     observer.onRecord(viewChanged(['analyst', 'coder']));
 
@@ -98,14 +98,14 @@ describe('LayoutObserver', () => {
     );
   });
 
-  it('treats a record repeating the tracked visible set as a no-op (TTMUX-085)', () => {
+  it('treats a record repeating the tracked visible set as a no-op (tmux-play-185)', () => {
     const observer = makeObserver();
     // Same ids in the same order as the initial visible set.
     observer.onRecord(viewChanged(['coder', 'reviewer']));
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
-  it('treats the empty record in a Boss-only session as a no-op (TTMUX-085)', () => {
+  it('treats the empty record in a Boss-only session as a no-op (tmux-play-185)', () => {
     const observer = makeObserver({
       players: [],
       initialVisible: [],
@@ -155,7 +155,7 @@ describe('LayoutObserver', () => {
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
-  it('swallows a tmux failure without throwing and leaves the tracked set unchanged (TTMUX-085)', () => {
+  it('swallows a tmux failure without throwing and leaves the tracked set unchanged (tmux-play-185)', () => {
     const errors: unknown[] = [];
     runTmuxMock.mockImplementation((...args: unknown[]) => {
       if (args[0] === 'kill-pane') {
@@ -176,7 +176,7 @@ describe('LayoutObserver', () => {
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
-  it('swallows a throwing onError so the failure reporter cannot abort dispatch (TMUX-083)', () => {
+  it('swallows a throwing onError so the failure reporter cannot abort dispatch (tmux-play-83)', () => {
     runTmuxMock.mockImplementation((...args: unknown[]) => {
       if (args[0] === 'kill-pane') {
         throw new Error('boom');

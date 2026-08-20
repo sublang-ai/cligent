@@ -20,7 +20,7 @@ In scope:
 - Add local Codex SDK constructor option/config types, widen `CodexSdk['Codex']` from a zero-argument constructor to one accepting those options, and keep `loadCodexSdk()`'s cast aligned with that local seam.
 - Construct the SDK `Codex` client with the mapped config overrides before starting or resuming a thread.
 - Update Codex mapping tests to assert both thread options and constructor config for `mode: 'auto'`.
-- Update tmux-play acceptance coverage for [TTMUX-053](../test/tmux-play.md#ttmux-053) so the Codex case verifies the reviewer config path, not only the Claude case.
+- Update tmux-play acceptance coverage for [[tmux-play-153](../packages/tmux-play.md#tmux-play-153)] so the Codex case verifies the reviewer config path, not only the Claude case.
 
 Out of scope:
 
@@ -32,7 +32,7 @@ Out of scope:
 
 - [x] `src/adapters/codex.ts` — local Codex SDK constructor/config types are widened; `mapPermissionsToCodexOptions` / `mapAgentOptionsToCodexOptions` return Codex SDK constructor config overrides for `mode: 'auto'`; `run()` passes those overrides to `new sdk.Codex(...)`.
 - [x] `src/__tests__/codex-adapter.test.ts` — mapping and adapter tests assert `config: { approvals_reviewer: 'auto_review' }` reaches `new Codex(...)` and bypass mode does not set it.
-- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — TTMUX-053 probe includes a Codex player path that verifies the auto-review config surface.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` — tmux-play-153 probe includes a Codex player path that verifies the auto-review config surface.
 
 ## Tasks
 
@@ -44,6 +44,6 @@ Out of scope:
 
 - `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` pass at every task boundary.
 - `npm test -- src/__tests__/codex-adapter.test.ts` and the updated tmux-play acceptance probe pass while developing the targeted Codex changes.
-- After Task 3, `npm run test:acceptance` passes with the updated TTMUX-053 Codex reviewer-config probe.
+- After Task 3, `npm run test:acceptance` passes with the updated tmux-play-153 Codex reviewer-config probe.
 - A Codex `mode: 'auto'` mapping produces thread options `{ approvalPolicy: 'on-request', sandboxMode: 'workspace-write', networkAccessEnabled: false }` plus SDK constructor config `{ approvals_reviewer: 'auto_review' }`.
 - A Codex `mode: 'bypass'` mapping produces thread options `{ approvalPolicy: 'never', sandboxMode: 'danger-full-access', networkAccessEnabled: true }` and no reviewer config.

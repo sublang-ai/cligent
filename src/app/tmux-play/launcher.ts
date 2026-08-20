@@ -65,7 +65,7 @@ const SYSTEM_CLIPBOARD_COPY_COMMAND =
   'elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then exec xsel --clipboard --input; ' +
   'elif command -v clip.exe >/dev/null 2>&1; then exec clip.exe; ' +
   'else exec tmux load-buffer -w -; fi';
-// TMUX-071: the initial timer text the launcher writes to every pane
+// tmux-play-71: the initial timer text the launcher writes to every pane
 // and to the status-bar option shall be the same `hh:mm:ss` rendering
 // that `TimingObserver` would push for zero elapsed milliseconds, so the
 // surface a Boss sees at launch (before the first turn opens) reads as
@@ -122,12 +122,12 @@ export interface LaunchTmuxPlayOptions {
    */
   readonly themeProbe?: Osc11Probe;
   /**
-   * @internal Test hook for the adapter-runtime gate per TMUX-089. Production
+   * @internal Test hook for the adapter-runtime gate per tmux-play-89. Production
    * callers leave this unset so the installed runtimes decide.
    */
   readonly adapterImports?: PlayerAdapterImports;
   /**
-   * @internal Test hook for the first-run default roster per TMUX-011.
+   * @internal Test hook for the first-run default roster per tmux-play-11.
    * Production callers leave this unset.
    */
   readonly readyAdapters?: () => Promise<readonly PlayerAdapterName[]>;
@@ -464,7 +464,7 @@ async function launchTmuxPlayInternal(
       'tmux-play requires tmux 3.3 or newer for reliable attached-client resizing',
     );
   }
-  // TMUX-051: glow is the Markdown renderer the presenter delegates wrapping
+  // tmux-play-51: glow is the Markdown renderer the presenter delegates wrapping
   // and styling to. Gate launch on its availability before any other work so
   // a missing binary surfaces as an install pointer rather than a runtime
   // render failure deep inside session mode.
@@ -489,7 +489,7 @@ async function launchTmuxPlayInternal(
       options.stderr ?? process.stderr,
     ),
   });
-  // TMUX-089: every configured role's adapter runtime must be installed
+  // tmux-play-89: every configured role's adapter runtime must be installed
   // before a session exists. The adapters import their SDKs lazily inside
   // run(), so without this gate a missing optional peer stays invisible until
   // the first Boss turn — inside tmux, where the repair command is hardest to
@@ -626,7 +626,7 @@ export interface TmuxPlayThemeDiagnosticsOptions {
 export async function tmuxPlayThemeDiagnostics(
   options: TmuxPlayThemeDiagnosticsOptions = {},
 ): Promise<ThemeDiagnostics> {
-  // TMUX-061: theme diagnostics answers a terminal question, so it reports on
+  // tmux-play-61: theme diagnostics answers a terminal question, so it reports on
   // whatever config exists and creates none. Generating one would tie a colour
   // probe to the installed agent runtimes that the first-run roster needs.
   if (
@@ -665,7 +665,7 @@ export async function tmuxPlayThemeDiagnostics(
 }
 
 /**
- * TMUX-010 / TMUX-011: the first-run notice names the created path and the
+ * tmux-play-10 / tmux-play-11: the first-run notice names the created path and the
  * installed adapters the generated roster was built from, so the roster is
  * never a silent function of host state.
  */
@@ -738,7 +738,7 @@ function buildTmuxSession(
   if (options.captureBossPaneId) {
     options.onSessionCreated?.(bossPaneId ?? '');
   }
-  // TMUX-080 / TMUX-083: the player area is built from the resolved initial
+  // tmux-play-80 / tmux-play-83: the player area is built from the resolved initial
   // visible set (not the whole roster) by a routine the layout observer reuses
   // on a visibility change. Its splits run first so they stay the calls right
   // after `new-session`; the session-wide chrome and key bindings below run
@@ -796,14 +796,14 @@ export interface PlayerAreaOptions {
   /**
    * Lines of the per-player log to replay when (re)creating a pane. Omitted
    * for startup panes, which follow live from session start with an unbounded
-   * `tail -f`. The TMUX-083 layout observer passes `200` so a re-shown hidden
+   * `tail -f`. The tmux-play-83 layout observer passes `200` so a re-shown hidden
    * player's pane renders a bounded recent-log view (`tail -n 200 -f`); the
-   * full backlog stays in the log file, not pane scrollback (TMUX-084).
+   * full backlog stays in the log file, not pane scrollback (tmux-play-84).
    */
   readonly replayLines?: number;
 }
 
-// TMUX-083: build the player area from a single Boss/Captain pane — the split
+// tmux-play-83: build the player area from a single Boss/Captain pane — the split
 // sequence, per-pane `tail` view, titles, timer options, read-only input,
 // mouse bindings, and weighted resize hooks for the visible set. The launcher
 // runs this at startup with the initial visible set; the layout observer
@@ -835,7 +835,7 @@ export function buildPlayerArea(options: PlayerAreaOptions): PlayerPane[] {
 }
 
 // Active-shape column weights for the visible-column count: zero visible
-// players -> Boss-only, one -> single-player, two or more -> multi (TMUX-028).
+// players -> Boss-only, one -> single-player, two or more -> multi (tmux-play-28).
 function activeColumnWeightsFor(
   layout: LayoutConfig,
   visibleCount: number,
@@ -847,7 +847,7 @@ function activeColumnWeightsFor(
 }
 
 // Map the resolved visible player ids to their PlayerConfig in visible order
-// (TMUX-080). Config validation guarantees the ids are a subset of the roster;
+// (tmux-play-80). Config validation guarantees the ids are a subset of the roster;
 // the guard keeps the launcher honest if a caller passes an unknown id.
 export function resolveVisiblePlayers(
   players: readonly PlayerConfig[],
@@ -1069,7 +1069,7 @@ function normalizedChannel(hex: string): number | undefined {
   return value / (hex.length === 2 ? 0xff : 0xffff);
 }
 
-// TMUX-047: apply the Catppuccin flavor to the session's surface options
+// tmux-play-47: apply the Catppuccin flavor to the session's surface options
 // (status bar, pane borders, message popups, accents). We deliberately do
 // NOT claim `window-style` / `window-active-style`: the canonical Catppuccin
 // tmux plugin leaves the pane content area as the user's terminal-native
@@ -1088,7 +1088,7 @@ function applyCatppuccinTheme(sessionName: string, c: CatppuccinPalette): void {
     'status-style',
     `fg=${c.text},bg=${c.mantle}`,
   );
-  // TMUX-048: dim inactive borders to overlay0 so the active blue border
+  // tmux-play-48: dim inactive borders to overlay0 so the active blue border
   // stands out more strongly. window-status-style / window-status-current-
   // style are not claimed: the window-list formats below are empty strings,
   // so those style options have nothing to color.
@@ -1114,10 +1114,10 @@ function applyCatppuccinTheme(sessionName: string, c: CatppuccinPalette): void {
 }
 
 function paneBorderFormat(c: CatppuccinPalette): string {
-  // TMUX-048: only the Captain pane (index 0) carries the highlighted blue
+  // tmux-play-48: only the Captain pane (index 0) carries the highlighted blue
   // title block, and only while it is the active pane. Player panes — even
   // when active — render on the flavor's mantle surface with no highlight
-  // block (they're read-only per TMUX-027 and don't need a focus indicator).
+  // block (they're read-only per tmux-play-27 and don't need a focus indicator).
   // The row carries an explicit mantle background end-to-end so it reads as
   // the theme's own surface, tonally distinct from the user's terminal-
   // native pane content above it. Symmetry: one leading space before
@@ -1143,8 +1143,8 @@ function statusLeftFormat(c: CatppuccinPalette): string {
 }
 
 function statusRightFormat(c: CatppuccinPalette): string {
-  // TMUX-055: the status-total timer uses the same hourglass pair as the
-  // per-pane title timers (TMUX-054) — ⏳ while a Boss turn is open and ⌛
+  // tmux-play-55: the status-total timer uses the same hourglass pair as the
+  // per-pane title timers (tmux-play-54) — ⏳ while a Boss turn is open and ⌛
   // between turns — so the bottom-right status timer carries the same
   // flowing-vs-settled cue as the pane titles above it. The duration text
   // still carries the running/frozen Catppuccin color cue.
@@ -1620,7 +1620,7 @@ export interface PlayerPane {
   readonly paneIndex: number;
 }
 
-// TMUX-048: pane titles carry `<player> · <adapter>` so each pane reveals which
+// tmux-play-48: pane titles carry `<player> · <adapter>` so each pane reveals which
 // model is in it at a glance, even when the player id is generic (e.g. "Coder").
 function setPaneTitles(
   sessionName: string,
@@ -1715,11 +1715,11 @@ function configureMouseInteraction(
 ): void {
   runTmux('set-option', '-t', sessionName, 'mouse', 'on');
   const condition = `#{==:#{session_name},${sessionName}}`;
-  // The launcher binds no `WheelUpPane` override (see TMUX-062): tmux's stock
+  // The launcher binds no `WheelUpPane` override (see tmux-play-62): tmux's stock
   // root and copy-mode wheel-up handling already clamps the viewport at the
   // oldest history line, so a wheel-up cannot scroll past the top. The earlier
   // overscroll/phantom-line reports came from the Boss pane's scrollback being
-  // polluted by readline redraws, fixed at the source by TMUX-079.
+  // polluted by readline redraws, fixed at the source by tmux-play-79.
   for (const table of ['copy-mode', 'copy-mode-vi']) {
     runTmux(
       'bind-key',
@@ -1730,13 +1730,13 @@ function configureMouseInteraction(
       '-X',
       'stop-selection',
     );
-    // TMUX-062: right-click copy uses `copy-pipe` (not
+    // tmux-play-62: right-click copy uses `copy-pipe` (not
     // `copy-pipe-and-cancel`) so the clicked pane keeps its current
     // copy-mode scroll position after the copy. `copy-pipe-and-cancel`
     // exits copy-mode entirely, which snaps a scrolled-back pane back
     // to its live tail — the "right-click on a scrolled-back pane
     // jumps to the last line" defect, the right-click analogue of the
-    // left-click defect TMUX-068 fixes for the `MouseDown1Pane`
+    // left-click defect tmux-play-68 fixes for the `MouseDown1Pane`
     // override below. `copy-pipe` still clears the active selection
     // (matching the left-click `clear-selection` story so the copy
     // surfaces a visible cue and a stale selection cannot survive the
@@ -1744,11 +1744,11 @@ function configureMouseInteraction(
     // scroll position. Users who want to leave copy-mode after the
     // copy can press `q` as usual.
     //
-    // TMUX-062 copy-confirmation toast: right-click also surfaces a
+    // tmux-play-62 copy-confirmation toast: right-click also surfaces a
     // brief `Copied!` toast when a selection is present. The toast is a
     // status-line `display-message` (not a floating `display-popup`) so
     // it inherits the session's `message-style` (`fg=base,bg=peach` per
-    // TMUX-047) and renders `Copied!` in the flavor's base-on-peach
+    // tmux-play-47) and renders `Copied!` in the flavor's base-on-peach
     // styling — the same band tmux uses for its own status messages,
     // which is the requested look (dark text on Mocha's light peach,
     // light text on Latte's vivid peach).
@@ -1785,7 +1785,7 @@ function configureMouseInteraction(
     // falsely claims "Copied!". The two-command true branch is passed as
     // ONE quoted argv token — its internal ` ; ` separates the toast
     // from the copy when if-shell re-parses the branch, exactly like the
-    // TMUX-065 `C-c` true branch. A standalone `;` argv element would
+    // tmux-play-65 `C-c` true branch. A standalone `;` argv element would
     // instead split the bind-key call itself into two top-level tmux
     // commands (binding only the toast and running a bare `copy-pipe`
     // against a not-in-mode pane), so the sequence MUST live inside the
@@ -1810,16 +1810,16 @@ function configureMouseInteraction(
       copyCommand,
     );
   }
-  // TMUX-068 (supersedes TMUX-066 and TMUX-067): a left-click in any
+  // tmux-play-68 (supersedes tmux-play-66 and tmux-play-67): a left-click in any
   // pane in the launched session shall clear any active copy-mode
   // selection on every pane in the session while preserving each
-  // pane's copy-mode state and scroll position. The retired TMUX-066
+  // pane's copy-mode state and scroll position. The retired tmux-play-66
   // chain used `send-keys -X cancel`, which exits copy-mode entirely
   // and snaps a scrolled-back pane to its live tail (the
   // "previously focused pane jumps to the last line" defect).
-  // TMUX-067 then dropped the override altogether, which restored
+  // tmux-play-67 then dropped the override altogether, which restored
   // scroll preservation but reintroduced the original
-  // "click doesn't release selection" defect that TMUX-066 was
+  // "click doesn't release selection" defect that tmux-play-66 was
   // written to fix. `send-keys -X clear-selection` (in place of
   // `cancel`) is the tmux primitive that splits the two effects: it
   // clears the active selection but does NOT exit copy-mode, so a
@@ -1848,9 +1848,9 @@ function configureMouseInteraction(
   // false branch is the verbatim stock tail so a tmux server reused
   // across launches has any prior session-scoped override overwritten
   // by the new binding (tmux key tables are server-global per
-  // TMUX-062 / TMUX-063 / TMUX-065).
+  // tmux-play-62 / tmux-play-63 / tmux-play-65).
   //
-  // Drag-select per TMUX-062 is unaffected: `MouseDown1Pane` fires
+  // Drag-select per tmux-play-62 is unaffected: `MouseDown1Pane` fires
   // first and clears any prior selection, then `MouseDrag1Pane`
   // (tmux's stock binding) enters `copy-mode -M` on the dragged pane
   // and begins a fresh selection.
@@ -1888,7 +1888,7 @@ function configureMouseInteraction(
   }
 }
 
-// TMUX-063: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at
+// tmux-play-63: bind Ctrl+Left / Ctrl+Right and Shift+Left / Shift+Right at
 // the root key table so the Boss can switch panes directly without the
 // Ctrl+b prefix the navigation hints in `status-left` advertise. Both
 // pairs map to the same `select-pane -L` / `select-pane -R` actions so
@@ -1898,7 +1898,7 @@ function configureMouseInteraction(
 // `Ctrl+←/→` for shell word-movement, while many Linux desktops swallow
 // `Shift+←/→` for window-manager workspace switching. Shipping both
 // avoids forcing per-platform documentation or user keybinding tweaks.
-// Like the copy-mode bindings in TMUX-062, the root key table is
+// Like the copy-mode bindings in tmux-play-62, the root key table is
 // server-global — tmux does not offer per-session root bindings — so the
 // launcher scopes each binding with `if-shell -F` against the current
 // session name. Inside the launcher's own tmux-play session the binding
@@ -1930,15 +1930,15 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
   }
 }
 
-// TMUX-065 (C-c, amended by IR-024) and TMUX-070 (Escape): forward the
+// tmux-play-65 (C-c, amended by IR-024) and tmux-play-70 (Escape): forward the
 // key to the Boss/Captain pane (pane index 0) from any pane in the
 // launched session, in any mode, with a single press. The two keys share
 // the same forwarding pattern because they share the same dispatch
 // hazards:
 //
-//   1. Player panes are read-only per TMUX-027 (`pane-input-off=1`) and
+//   1. Player panes are read-only per tmux-play-27 (`pane-input-off=1`) and
 //      would otherwise swallow the key entirely — fixed for C-c by the
-//      original TMUX-065 root binding and for Escape by TMUX-070.
+//      original tmux-play-65 root binding and for Escape by tmux-play-70.
 //   2. A pane scrolled back into copy-mode dispatches its keys through
 //      tmux's `copy-mode` / `copy-mode-vi` key tables, where the stock
 //      C-c and Escape bindings run `-X cancel` (and, in `copy-mode-vi`,
@@ -1959,16 +1959,16 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
 // never reaches the Boss readline — so without it the forwarded key would
 // be swallowed whenever pane 0 is the scrolled pane. Once pane 0 is out of
 // copy-mode the forwarded byte reaches the Captain process exactly as if
-// pressed there: readline raises SIGINT on C-c per TMUX-026 (shutdown) and
+// pressed there: readline raises SIGINT on C-c per tmux-play-26 (shutdown) and
 // the keypress listener calls `abortActiveTurn('ESC')` on bare ESC per
-// TMUX-057.
+// tmux-play-57.
 //
 // Each binding is scoped to the launched session via `if-shell -F`
 // against `#{session_name}`. The false branch reproduces the per-(key,
 // table) tmux stock binding verbatim so other tmux sessions on the same
 // server retain stock semantics (and any prior session-scoped override on
 // a reused server is overwritten). Because tmux key tables are
-// server-global (see TMUX-062 / TMUX-063 / TMUX-065), a single false
+// server-global (see tmux-play-62 / tmux-play-63 / tmux-play-65), a single false
 // branch that did not match the exact stock would silently downgrade the
 // corresponding key in every other tmux session on the host.
 //
@@ -1979,7 +1979,7 @@ function configureBossPaneSwitchKeys(sessionName: string): void {
 // copy-mode (the `q` key is the vi-mode exit). Collapsing `(Escape,
 // copy-mode-vi)` to `-X cancel` would change every unrelated vi-mode
 // user's Escape from "drop selection, keep scrollback" to "exit copy-mode,
-// snap to live tail" — the same scroll-snapping regression class TMUX-068
+// snap to live tail" — the same scroll-snapping regression class tmux-play-68
 // spelled out for mouse events.
 const FORWARD_KEY_TABLES = ['root', 'copy-mode', 'copy-mode-vi'] as const;
 type ForwardKey = 'C-c' | 'Escape';
@@ -2032,7 +2032,7 @@ function selectBossPane(sessionName: string): void {
   runTmux('select-pane', '-t', paneTarget(sessionName, 0));
 }
 
-// TMUX-043: emit `\x1b[8;<rows>;<columns>t` from the resolved layout.window,
+// tmux-play-43: emit `\x1b[8;<rows>;<columns>t` from the resolved layout.window,
 // so the pre-attach terminal-size request matches `new-session -x/-y` for
 // either the default 174x49 grid or an explicit YAML override. Reading both
 // from the same source prevents tmux's default `window-size` negotiation
@@ -2053,7 +2053,7 @@ interface LayoutSizes {
   readonly secondColumnSize: number;
 }
 
-// TMUX-028 / TMUX-044: derive the initial `split-window -l` cell counts so
+// tmux-play-28 / tmux-play-44: derive the initial `split-window -l` cell counts so
 // they match the resize-hook formula at session creation. Non-rightmost
 // regions take `floor(W * w_i / sum(w))` cells; the rightmost column
 // absorbs the remainder. The initial second-column `-l` is the remainder,
@@ -2088,7 +2088,7 @@ function computeLayoutSizes(
   };
 }
 
-// TMUX-044: keep the weighted region split invariant under any window
+// tmux-play-44: keep the weighted region split invariant under any window
 // resize. Each non-rightmost column receives `floor(W * w_i / sum(w)) - 1`
 // cells of content (`resize-pane -x` sets content width; the `-1` accounts
 // for the 1-cell right-side tmux border). The rightmost column absorbs the
@@ -2163,7 +2163,7 @@ function tailCommand(
   if (!player) {
     throw new Error('tmux-play requires at least one player pane');
   }
-  // TMUX-083 / TMUX-084: startup panes follow live from session start with an
+  // tmux-play-83 / tmux-play-84: startup panes follow live from session start with an
   // unbounded `tail -f`. When the layout observer recreates a re-shown hidden
   // player's pane it passes `replayLines` (200) for a bounded `tail -n 200 -f`
   // recent-log view, since the full backlog lives in the log file, not pane

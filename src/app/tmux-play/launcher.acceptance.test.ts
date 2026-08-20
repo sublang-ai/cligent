@@ -79,8 +79,8 @@ interface PaneRow {
   readonly active: string;
 }
 
-// TTMUX-030..036 and TTMUX-039 all drive `launchTmuxPlay`, which gates on
-// `glow` per TMUX-051 in addition to `tmux`. Skip when the runner cannot
+// tmux-play-130..036 and tmux-play-139 all drive `launchTmuxPlay`, which gates on
+// `glow` per tmux-play-51 in addition to `tmux`. Skip when the runner cannot
 // create a tmux server; otherwise a sandbox or stale socket directory reports
 // a setup failure before the acceptance behavior under test can run.
 const TMUX_AVAILABLE = isTmuxAvailable();
@@ -239,7 +239,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '-y',
           String(height),
         ]);
-        // TMUX-044 / TMUX-064: shipped multi-player default weights
+        // tmux-play-44 / tmux-play-64: shipped multi-player default weights
         // `[1, 1, 1]` (sum = 3). Each non-rightmost column gets
         // `floor(W * w_i / sum)`; the rightmost absorbs the remainder.
         const captainExpected = Math.floor(width / 3);
@@ -452,7 +452,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'keeps an empty roster as one full-width Boss/Captain pane across resize (TTMUX-014, TTMUX-082)',
+    'keeps an empty roster as one full-width Boss/Captain pane across resize (tmux-play-114, tmux-play-182)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -544,7 +544,7 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      // TTMUX-030: 174x49 grid
+      // tmux-play-130: 174x49 grid
       expect(
         displayMessage(sessionName, '#{window_width}x#{window_height}'),
       ).toBe('174x49');
@@ -556,7 +556,7 @@ describe('tmux-play real-tmux acceptance', () => {
       const coder = paneByTitle(panes, 'Coder · codex');
       const reviewer = paneByTitle(panes, 'Reviewer · claude');
 
-      // TTMUX-031 / TMUX-064: shipped multi-player default weights `[1, 1, 1]`
+      // tmux-play-131 / tmux-play-64: shipped multi-player default weights `[1, 1, 1]`
       // (sum = 3) on the 174-cell window yield regions 58/58/58. Two 1-cell
       // right-side separators eat 1 col from captain (border with coder) and
       // 1 col from coder (border with reviewer). pane_left advances by the
@@ -569,22 +569,22 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(reviewer.left).toBe(116);
       expect(reviewer.width).toBe(58);
 
-      // TTMUX-032 + TTMUX-040: pane titles carry `· <adapter>`.
+      // tmux-play-132 + tmux-play-140: pane titles carry `· <adapter>`.
       expect(captain.title).toBe('Captain · claude');
       expect(coder.title).toBe('Coder · codex');
       expect(reviewer.title).toBe('Reviewer · claude');
 
-      // TTMUX-033: player panes read-only, captain pane writable
+      // tmux-play-133: player panes read-only, captain pane writable
       expect(captain.inputOff).toBe('0');
       expect(coder.inputOff).toBe('1');
       expect(reviewer.inputOff).toBe('1');
 
-      // TTMUX-036: startup focus
+      // tmux-play-136: startup focus
       expect(captain.active).toBe('1');
       expect(coder.active).toBe('0');
       expect(reviewer.active).toBe('0');
 
-      // TTMUX-062: pane-local mouse selection is enabled for this session.
+      // tmux-play-162: pane-local mouse selection is enabled for this session.
       expect(showSessionOption(sessionName, 'mouse')).toBe('on');
       expect(keyBinding('copy-mode', 'MouseDragEnd1Pane')).toContain(
         'stop-selection',
@@ -593,7 +593,7 @@ describe('tmux-play real-tmux acceptance', () => {
         'stop-selection',
       );
       for (const table of ['copy-mode', 'copy-mode-vi']) {
-        // TMUX-062: the copy + toast fire on the button RELEASE
+        // tmux-play-62: the copy + toast fire on the button RELEASE
         // (`MouseUp3Pane`), not the press. tmux clears a status-line
         // message on the next key event, and a right-click is a press
         // immediately followed by a release; a toast painted on the press
@@ -609,18 +609,18 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickPressBinding).not.toContain('Copied!');
         expect(rightClickPressBinding).not.toContain('select-pane');
         const rightClickCopyBinding = keyBinding(table, 'MouseUp3Pane');
-        // TMUX-062: `copy-pipe` (not `copy-pipe-and-cancel`) preserves
+        // tmux-play-62: `copy-pipe` (not `copy-pipe-and-cancel`) preserves
         // the clicked pane's scroll position after copy. Pin the
         // primitive precisely so a regression to the scroll-snapping
         // `copy-pipe-and-cancel` variant fails the assertion.
         expect(rightClickCopyBinding).toMatch(/\bcopy-pipe\b/);
         expect(rightClickCopyBinding).not.toContain('copy-pipe-and-cancel');
-        // TMUX-062 copy-confirmation toast: the release binding is a single
+        // tmux-play-62 copy-confirmation toast: the release binding is a single
         // `if-shell -F '#{selection_present}'` whose selection-present
         // branch fires a `display-message Copied!` toast alongside the
         // copy and whose empty branch copies silently, so an empty
         // right-click does not falsely confirm. The toast inherits the
-        // session's peach `message-style` per TMUX-047.
+        // session's peach `message-style` per tmux-play-47.
         expect(rightClickCopyBinding).toContain('display-message');
         expect(rightClickCopyBinding).toContain('Copied!');
         expect(rightClickCopyBinding).toContain('selection_present');
@@ -643,7 +643,7 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(rightClickCopyBinding).toContain('clip.exe');
         expect(rightClickCopyBinding).toContain('tmux load-buffer -w -');
       }
-      // TMUX-079 / TMUX-062: the launcher installs no session-scoped
+      // tmux-play-79 / tmux-play-62: the launcher installs no session-scoped
       // `WheelUpPane` override in any key table. Stock tmux wheel-up already
       // clamps the viewport at the oldest history line, and the Boss-pane
       // phantom-scrollback report it once chased is fixed at the source
@@ -657,16 +657,16 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(wheelUp).not.toContain('refresh-client');
       }
 
-      // TTMUX-068 (supersedes TTMUX-066 / TTMUX-067): the launcher
+      // tmux-play-168 (supersedes tmux-play-166 / tmux-play-167): the launcher
       // installs a session-scoped MouseDown1Pane override that
       // chains `send-keys -X clear-selection` per in-mode pane
       // before the per-table stock tail. `clear-selection` drops the
       // active selection without exiting copy-mode, so a click
       // anywhere releases any active selection while every
       // scrolled-back pane keeps its scroll position. The retired
-      // `-X cancel` primitive (TMUX-066) exited copy-mode entirely
+      // `-X cancel` primitive (tmux-play-66) exited copy-mode entirely
       // and snapped scrolled panes to the live tail; the retired
-      // stock-only install (TMUX-067) preserved scroll but never
+      // stock-only install (tmux-play-67) preserved scroll but never
       // cleared selections. clear-selection is the tmux primitive
       // that splits the two effects.
       for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
@@ -692,9 +692,9 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(keyBinding(table, 'MouseDown1Pane')).not.toContain(' -M');
       }
 
-      // TTMUX-068 behavioral probe: pin the observable consequence,
+      // tmux-play-168 behavioral probe: pin the observable consequence,
       // not only the binding string. Asserting only the binding
-      // strings is what allowed TTMUX-067 to land with the
+      // strings is what allowed tmux-play-167 to land with the
       // click-doesn't-release-selection regression intact.
       //
       // Layout: pane 0 = Boss/Captain (not in copy-mode); pane 1 =
@@ -781,7 +781,7 @@ describe('tmux-play real-tmux acceptance', () => {
         ]);
       }
 
-      // TTMUX-068 outcome: selection cleared on pane 1; pane 1 still in
+      // tmux-play-168 outcome: selection cleared on pane 1; pane 1 still in
       // copy-mode (not snapped out by clear-selection); pane 2 still in
       // copy-mode; pane 0 still not in mode.
       expect(
@@ -813,7 +813,7 @@ describe('tmux-play real-tmux acceptance', () => {
         ]);
       }
 
-      // TTMUX-063: Ctrl+Left/Right and Shift+Left/Right at the root key
+      // tmux-play-163: Ctrl+Left/Right and Shift+Left/Right at the root key
       // table both switch panes directly inside this session. Each
       // binding gates on the session name via if-shell so other tmux
       // sessions on the same server forward the key unchanged.
@@ -842,7 +842,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(shiftRightBinding).toContain('select-pane -R');
       expect(shiftRightBinding).toContain('send-keys S-Right');
 
-      // TTMUX-065: Ctrl+C is bound in root, copy-mode, and copy-mode-vi
+      // tmux-play-165: Ctrl+C is bound in root, copy-mode, and copy-mode-vi
       // so a single press fires the exit lifecycle from any pane in any
       // mode. Player panes are read-only (pane-input-off=1) and would
       // otherwise swallow the key; and once a pane is scrolled back into
@@ -873,9 +873,9 @@ describe('tmux-play real-tmux acceptance', () => {
         'send-keys -X cancel',
       );
 
-      // TTMUX-070: Escape forwards to pane 0 across the same three tables,
+      // tmux-play-170: Escape forwards to pane 0 across the same three tables,
       // mirroring the Ctrl+C cancel-then-forward pattern so the readline
-      // keypress handler (TMUX-057) sees ESC regardless of which pane the
+      // keypress handler (tmux-play-57) sees ESC regardless of which pane the
       // Boss pressed it in or whether that pane was scrolled. Player panes
       // carry pane-input-off=1 and would swallow ESC without this binding;
       // scrolled panes would have ESC consumed by the stock `Escape -X
@@ -900,7 +900,7 @@ describe('tmux-play real-tmux acceptance', () => {
       // false branch must reproduce each table's stock verbatim or the
       // binding silently degrades Escape for every unrelated vi-mode
       // user on the host — the scroll-snapping regression class
-      // TTMUX-068 already enumerates for mouse events.
+      // tmux-play-168 already enumerates for mouse events.
       expect(keyBinding('root', 'Escape')).toContain('send-keys Escape');
       expect(keyBinding('copy-mode', 'Escape')).toContain('-X cancel');
       expect(keyBinding('copy-mode-vi', 'Escape')).toContain(
@@ -930,7 +930,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'builds startup panes only for the initial visible subset on a real tmux server (TTMUX-082)',
+    'builds startup panes only for the initial visible subset on a real tmux server (tmux-play-182)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -973,7 +973,7 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      // TMUX-080 / TMUX-083: only the Boss/Captain pane plus the two visible
+      // tmux-play-80 / tmux-play-83: only the Boss/Captain pane plus the two visible
       // players have panes; the hidden `reviewer` has none.
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
@@ -1001,7 +1001,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'rebuilds the visible player panes on a player_view_changed via the layout observer (TTMUX-085)',
+    'rebuilds the visible player panes on a player_view_changed via the layout observer (tmux-play-185)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1067,7 +1067,7 @@ describe('tmux-play real-tmux acceptance', () => {
         visiblePlayerIds,
       });
 
-      // TMUX-083: show only analyst (hidden at startup). The player area
+      // tmux-play-83: show only analyst (hidden at startup). The player area
       // rebuilds to a single read-only pane reconstructed from analyst.log;
       // coder / reviewer panes are killed and the Boss/Captain pane keeps focus.
       observer.onRecord(viewChanged(['analyst']));
@@ -1086,7 +1086,7 @@ describe('tmux-play real-tmux acceptance', () => {
 
       // Re-show a previously hidden player (coder). Seed coder.log while it is
       // hidden so the rebuilt pane must replay it from the log tail, not show
-      // an empty pane (TMUX-084: the backlog lives in the log, not scrollback).
+      // an empty pane (tmux-play-84: the backlog lives in the log, not scrollback).
       const replayMarker = `coder-replay-${randomBytes(4).toString('hex')}`;
       appendFileSync(join(workDir, 'coder.log'), `${replayMarker}\n`);
       observer.onRecord(viewChanged(['coder']));
@@ -1096,7 +1096,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(coderPane.inputOff).toBe('1');
       expect(panes.map((pane) => pane.title)).not.toContain('Analyst · codex');
 
-      // TMUX-083 / TTMUX-085: the reconstructed pane renders the recent tail of
+      // tmux-play-83 / tmux-play-185: the reconstructed pane renders the recent tail of
       // coder.log via the bounded `tail -n 200 -f` replay. Poll capture-pane
       // since `tail -f` paints the pane asynchronously after the split.
       let captured = '';
@@ -1113,7 +1113,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   attachedClientIt(
-    'forwards single-press Ctrl+C and Escape to pane 0 through root and copy-mode key tables (TMUX-065, TMUX-070)',
+    'forwards single-press Ctrl+C and Escape to pane 0 through root and copy-mode key tables (tmux-play-65, tmux-play-70)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1250,7 +1250,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    "runs the right-click binding's selection-gated if-shell branches: the selection-present branch copies and clears without leaving copy-mode, the no-selection branch copies nothing (TMUX-062)",
+    "runs the right-click binding's selection-gated if-shell branches: the selection-present branch copies and clears without leaving copy-mode, the no-selection branch copies nothing (tmux-play-62)",
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1297,7 +1297,7 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(displayMessage(target, '#{selection_present}')).toBe('1');
       expect(displayMessage(target, '#{pane_in_mode}')).toBe('1');
 
-      // TMUX-062: drive the copy through the right-click binding's actual
+      // tmux-play-62: drive the copy through the right-click binding's actual
       // selection-present `if-shell` branch rather than a bare `copy-pipe`,
       // so the test reparses and executes the true-branch command string
       // `display-message Copied! ; send-keys -X copy-pipe <sink>` exactly
@@ -1363,7 +1363,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   mouseDispatchIt(
-    'copies and clears the selection through a real attached-client right-click press+release, proving the copy fires on the button release without leaving copy-mode (TMUX-062)',
+    'copies and clears the selection through a real attached-client right-click press+release, proving the copy fires on the button release without leaving copy-mode (tmux-play-62)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1467,7 +1467,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   mouseDispatchIt(
-    'keeps the Copied! toast on the status line after the right-click release (TMUX-062)',
+    'keeps the Copied! toast on the status line after the right-click release (tmux-play-62)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1563,7 +1563,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'returns a scrolled pane to its live tail when the runtime + presenter write to it, with the written content visible and a sibling pane left scrolled (TMUX-069)',
+    'returns a scrolled pane to its live tail when the runtime + presenter write to it, with the written content visible and a sibling pane left scrolled (tmux-play-69)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1748,7 +1748,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   mouseDispatchIt(
-    'clears a stopped selection and preserves scroll position through a real attached-client left-click (TMUX-068)',
+    'clears a stopped selection and preserves scroll position through a real attached-client left-click (tmux-play-68)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1804,7 +1804,7 @@ describe('tmux-play real-tmux acceptance', () => {
       // The player panes launch with empty scrollback (history_size 0):
       // the acceptance suite runs without adapter API keys, so the adapters
       // stream nothing and there is nothing to scroll back through. But a
-      // genuinely scrolled-back pane is exactly the state TMUX-068 must
+      // genuinely scrolled-back pane is exactly the state tmux-play-68 must
       // preserve, so seed deterministic history into the two player panes
       // with `respawn-pane`. The MouseDown1Pane binding under test is
       // session- and `pane_in_mode`-gated and independent of what each pane
@@ -1825,7 +1825,7 @@ describe('tmux-play real-tmux acceptance', () => {
       await waitForHistory(sessionName, reviewer.index, 100, 2_000);
 
       // Pane A (Coder): scroll back into history, then stop a selection
-      // there. Covers TMUX-068's "a pane that holds an active selection
+      // there. Covers tmux-play-68's "a pane that holds an active selection
       // shall stay in copy-mode at the same scroll position with the
       // selection cleared".
       runOrThrow('tmux', [
@@ -1862,7 +1862,7 @@ describe('tmux-play real-tmux acceptance', () => {
       }
 
       // Pane B (Reviewer): scroll back into history WITHOUT a selection.
-      // Covers TMUX-068's "a pane that is in copy-mode without an active
+      // Covers tmux-play-68's "a pane that is in copy-mode without an active
       // selection (a scrolled-back pane) shall stay in copy-mode at its
       // existing scroll position" — the previously unverified sibling case.
       runOrThrow('tmux', [
@@ -1930,7 +1930,7 @@ describe('tmux-play real-tmux acceptance', () => {
         captain.top + 2,
       );
 
-      // TMUX-068 outcome through the real click path: Coder's stopped
+      // tmux-play-68 outcome through the real click path: Coder's stopped
       // selection is cleared...
       expect(
         displayMessage(
@@ -1943,7 +1943,7 @@ describe('tmux-play real-tmux acceptance', () => {
         displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       // ...and at the same scroll position (the user-visible "jumps to the
-      // last line" regression that -X cancel caused under TMUX-066).
+      // last line" regression that -X cancel caused under tmux-play-66).
       expect(
         displayMessage(`${sessionName}:0.${coder.index}`, '#{scroll_position}'),
       ).toBe(coderScrollBefore);
@@ -1972,7 +1972,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'does not pollute the Boss/Captain pane scrollback when the prompt is edited (TMUX-079)',
+    'does not pollute the Boss/Captain pane scrollback when the prompt is edited (tmux-play-79)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -2005,7 +2005,7 @@ describe('tmux-play real-tmux acceptance', () => {
       sessionName = result.sessionName;
 
       // A short window keeps the readline prompt at the top of a mostly-empty
-      // pane — the geometry where, before TMUX-079, readline's per-edit
+      // pane — the geometry where, before tmux-play-79, readline's per-edit
       // clear-to-end-of-display made tmux scroll the erased rows into history.
       runOrThrow('tmux', [
         'set-window-option',
@@ -2056,7 +2056,7 @@ describe('tmux-play real-tmux acceptance', () => {
       // The edit cycle adds nothing to the pane's scrollback, and none of the
       // intermediate edit states (`boss> abc`, `boss> ab`, `boss> a`) survive
       // in history — so a later scroll-up reveals no phantom rows above the
-      // first line. Before TMUX-079 the three backspaces grew `#{history_size}`
+      // first line. Before tmux-play-79 the three backspaces grew `#{history_size}`
       // by three and left those exact rows in scrollback.
       expect(Number(displayMessage(target, '#{history_size}'))).toBe(
         historyBefore,
@@ -2070,7 +2070,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'honors an explicit YAML layout override end-to-end (TMUX-064)',
+    'honors an explicit YAML layout override end-to-end (tmux-play-64)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -2081,7 +2081,7 @@ describe('tmux-play real-tmux acceptance', () => {
       cwd = mkdtempSync(join(tmpdir(), 'tmux-play-accept-cwd-'));
       workDir = mkdtempSync(join(tmpdir(), 'tmux-play-accept-work-'));
       const configPath = join(cwd, 'tmux-play.config.yaml');
-      // TMUX-035 / TMUX-044 / TMUX-064: window 200x50, weights [3, 5, 7]
+      // tmux-play-35 / tmux-play-44 / tmux-play-64: window 200x50, weights [3, 5, 7]
       // (sum = 15). Boss region = floor(200 * 3 / 15) = 40; first player
       // column region = floor(200 * 5 / 15) = 66; second player column
       // absorbs the remainder = 200 - 40 - 66 = 94.
@@ -2139,7 +2139,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'enables 24-bit color on the launched session (TTMUX-039)',
+    'enables 24-bit color on the launched session (tmux-play-139)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -2163,11 +2163,11 @@ describe('tmux-play real-tmux acceptance', () => {
       sessionName = result.sessionName;
 
       // Real-server option probe: the launcher's `tmux set` calls applied
-      // to an actual server (stricter than TTMUX-038's argv inspection).
+      // to an actual server (stricter than tmux-play-138's argv inspection).
       // tmux normalizes the leading-comma terminal-overrides append to the
       // stored entry `*:RGB`. Whether a real terminal client subsequently
       // negotiates the RGB capability is tmux's own contract beyond the
-      // launcher's control surface and is not asserted here — see TTMUX-039.
+      // launcher's control surface and is not asserted here — see tmux-play-139.
       const defaultTerminal = showOption(sessionName, 'default-terminal');
       expect(defaultTerminal).toBe('tmux-256color');
 
@@ -2178,7 +2178,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'renders run-time timers on pane borders and the tmux status bar (TTMUX-056)',
+    'renders run-time timers on pane borders and the tmux status bar (tmux-play-156)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -2226,14 +2226,14 @@ describe('tmux-play real-tmux acceptance', () => {
       expect(paneBorderFormat).toContain('⌛');
 
       const statusLeft = showSessionOption(sessionName, 'status-left');
-      // TMUX-055: status-left opens with the `Spex` brand heading and
+      // tmux-play-55: status-left opens with the `Spex` brand heading and
       // not the retired `tmux-play` label.
       expect(statusLeft).toContain('Spex');
       expect(statusLeft).not.toContain('spex');
       expect(statusLeft).not.toContain('Cligent');
       expect(statusLeft).not.toContain('tmux-play');
-      // TMUX-055 + TMUX-063: status-left renders the navigation hints,
-      // and the hint shape is the exact substring TMUX-063 owns —
+      // tmux-play-55 + tmux-play-63: status-left renders the navigation hints,
+      // and the hint shape is the exact substring tmux-play-63 owns —
       // including the `or shift+←/→` tail that makes pane switching
       // work out of the box on hosts where one of Ctrl+arrow or
       // Shift+arrow is intercepted before tmux sees it. Pin the full
@@ -2352,7 +2352,7 @@ describe('tmux-play real-tmux acceptance', () => {
           '⌛ #[fg=#7f849c]00:00:12',
         );
 
-        // TMUX-071 / TTMUX-056 — pin the `hh:mm:ss` format on a real
+        // tmux-play-71 / tmux-play-156 — pin the `hh:mm:ss` format on a real
         // tmux server at the two regression-relevant magnitudes where
         // the sub-minute samples above are not enough to catch
         // regressions:
@@ -2369,7 +2369,7 @@ describe('tmux-play real-tmux acceptance', () => {
         // at every surface is pinned byte-for-byte so an arithmetic
         // regression with the right shape (e.g., off-by-one closing
         // of overlapping intervals) is still caught here per
-        // TTMUX-056's "component values shall match the byte-for-byte
+        // tmux-play-156's "component values shall match the byte-for-byte
         // expected text" clause.
         //
         //   coder delta:  162_000 - 100_000 = 62_000 ms (62 s)
@@ -2403,7 +2403,7 @@ describe('tmux-play real-tmux acceptance', () => {
         // timer past one hour. Locks in both the non-zero `HH`
         // component and the retained `MM:SS` tail (no `1h00m` rollup
         // that would drop seconds). Expected values are again pinned
-        // byte-for-byte per TTMUX-056.
+        // byte-for-byte per tmux-play-156.
         //
         //   coder delta:  4_000_000 - 300_000 = 3_700_000 ms (3700 s)
         //                 prior 65 s + 3700 s   = 3765 s → 01:02:45
@@ -2439,7 +2439,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 });
 
-// TTMUX-053: YAML `permissions` reaches the adapter's `run()` call as
+// tmux-play-153: YAML `permissions` reaches the adapter's `run()` call as
 // `AgentOptions.permissions`, and the adapter's exported mapping function
 // translates the policy to the spec-defined SDK knobs. The probe does not
 // spawn tmux (so it does not gate on tmux availability) and does not call
@@ -2598,7 +2598,7 @@ describe('tmux-play YAML → adapter permission seam', () => {
   });
 });
 
-// TTMUX-057: canonical YAML `effort` reaches each adapter's `run()` call as
+// tmux-play-157: canonical YAML `effort` reaches each adapter's `run()` call as
 // the exact adapter-scoped value, then the exported mapping seam translates it
 // to that provider's native control surface.
 describe('tmux-play YAML → adapter effort seam', () => {
@@ -2611,7 +2611,7 @@ describe('tmux-play YAML → adapter effort seam', () => {
     }
   });
 
-  it('routes representative YAML effort transport classes (TTMUX-057)', async () => {
+  it('routes representative YAML effort transport classes (tmux-play-157)', async () => {
     cwd = mkdtempSync(join(tmpdir(), 'tmux-play-effort-'));
     const configPath = join(cwd, 'tmux-play.config.yaml');
     writeFileSync(
@@ -2977,7 +2977,7 @@ function bossOnlyYamlConfig(): string {
 }
 
 // A config whose captain is a local no-op module, so the Boss/Captain pane runs
-// the real session readline without needing adapter API keys (TTMUX-078).
+// the real session readline without needing adapter API keys (tmux-play-178).
 function liveReadlineYamlConfig(): string {
   return [
     'captain:',
@@ -3255,7 +3255,7 @@ function sendAttachedClientRightClick(
 ): void {
   // SGR mouse: right button is code 2; `M` is press, `m` is release. A real
   // right-click delivers BOTH, in that order — exactly the sequence whose
-  // release-clears-the-toast quirk TMUX-062 addresses by binding the copy +
+  // release-clears-the-toast quirk tmux-play-62 addresses by binding the copy +
   // toast to the release. Sending only the press would not exercise the
   // press-then-release routing this probe exists to verify.
   const script = [

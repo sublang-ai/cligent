@@ -112,7 +112,7 @@ When an abort causes terminal `done` with `status: 'interrupted'`, the adapter s
 ### codex-9
 
 The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` so the CLI's interactive-user git-repo gate does not refuse programmatic invocations.
-The `workingDirectory` is selected deliberately by the caller (per [[TMUX-034](../../user/tmux-play.md#tmux-034)] the tmux-play launcher targets a snapshotted work dir, and library consumers pass `AgentOptions.cwd` explicitly); the gate was designed to catch surprise CLI use, not these paths.
+The `workingDirectory` is selected deliberately by the caller (per [[[tmux-play-34](../tmux-play.md#tmux-play-34)]] the tmux-play launcher targets a snapshotted work dir, and library consumers pass `AgentOptions.cwd` explicitly); the gate was designed to catch surprise CLI use, not these paths.
 
 ### Options Mapping
 
@@ -264,6 +264,10 @@ Given canned native Codex events shaped as the SDK's canonical exported event ty
 ### codex-202
 
 Where the Codex SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[codex-2](#codex-2)].
+
+### codex-203
+
+Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, thread effort and constructor effort shall each reach their own native transport [[codex-7](#codex-7)].
 
 ### codex-204
 

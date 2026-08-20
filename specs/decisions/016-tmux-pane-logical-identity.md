@@ -10,7 +10,7 @@ Accepted
 ## Context
 
 - Operational lookups — pane width for soft-wrap, per-pane timers, copy-mode live-follow — key on the
-  displayed pane title (`<Display> · <adapter>` per [TMUX-048](../user/tmux-play.md#tmux-048)) parsed from
+  displayed pane title (`<Display> · <adapter>` per [[tmux-play-48](../packages/tmux-play.md#tmux-play-48)]) parsed from
   tab-separated `list-panes -F` output.
 - Under a non-UTF-8 locale (observed byte-level with `LC_CTYPE=C` on tmux 3.6a), tmux normalizes both the
   title's ` · ` and the tab separator to `_`, so every lookup misses and the features silently degrade.
@@ -34,8 +34,8 @@ Accepted
 
 ## Consequences
 
-- [TMUX-096](../user/tmux-play.md#tmux-096) specifies the observable contract and
-  [TTMUX-098](../test/tmux-play.md#ttmux-098) pins title-replacement acceptance with the round-trip
+- [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)] specifies the observable contract and
+  [[tmux-play-198](../packages/tmux-play.md#tmux-play-198)] pins title-replacement acceptance with the round-trip
   warning legs.
 - The shared tmux query helpers and the width, timer, and follow consumers change in an implementing
   iteration; until then the code still parses titles.

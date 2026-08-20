@@ -8,7 +8,7 @@ import { captainPaneTitle, playerPaneTitle } from './pane-title.js';
 import type { PlayerConfig } from './players.js';
 import type { RecordObserver, TmuxPlayRecord } from './records.js';
 
-// TMUX-069: when the session writes new content to a pane that is currently
+// tmux-play-69: when the session writes new content to a pane that is currently
 // scrolled back into copy-mode, return that pane to its live tail so the new
 // content is visible. The follow observer mirrors `TimingObserver`: it is a
 // `RecordObserver` registered in `session.ts`'s `observers` array, resolves a
@@ -18,7 +18,7 @@ import type { RecordObserver, TmuxPlayRecord } from './records.js';
 // (`send-keys -X cancel`).
 //
 // The observer keys on the records and events that drive a *presenter pane
-// write* (TMUX-050): the presenter buffers `text_delta` into a per-pane open
+// write* (tmux-play-50): the presenter buffers `text_delta` into a per-pane open
 // block and only emits via `writer.write` at a block boundary, so a follow
 // must not fire on a buffered delta in isolation but must fire when the block
 // is flushed (by a later non-text event, a tool line, or the pane's
@@ -34,7 +34,7 @@ export interface FollowTmuxClient {
   /**
    * Return `paneTarget` to its live tail when it is in copy-mode. The
    * implementation gates on `#{pane_in_mode}` so a pane that is not in a mode
-   * is left untouched (an error-free no-op), per TMUX-069.
+   * is left untouched (an error-free no-op), per tmux-play-69.
    */
   followPane(paneTarget: string): void;
 }
@@ -135,7 +135,7 @@ export class FollowObserver implements RecordObserver {
         // The presenter flushes the boss block then writes a bracketed line.
         return this.flushedWrite(this.captainTitle);
       case 'captain_reply': {
-        // TMUX-092: the presenter flushes the open block, then renders the
+        // tmux-play-92: the presenter flushes the open block, then renders the
         // reply as its own prose block — but writes zero bytes for an
         // all-blank reply (`flushBlock` skips empty text and `applyPrefix`
         // returns '' for whitespace-only rendered output), so follow iff
@@ -148,7 +148,7 @@ export class FollowObserver implements RecordObserver {
         };
       }
       case 'captain_finished':
-        // TMUX-072: a hidden Captain call puts zero bytes on the pane
+        // tmux-play-72: a hidden Captain call puts zero bytes on the pane
         // (presenter-tmux.ts skips its captain_event / captain_finished), so it
         // must drive no follow. Mirror the presenter's skip exactly — report no
         // write and leave the pending-block state untouched, since a hidden
@@ -243,7 +243,7 @@ export class FollowObserver implements RecordObserver {
 // Mirror the presenter's all-blank suppression. The presenter renders each
 // text block through glow and `applyPrefix` returns '' — no bytes — when the
 // result holds no visible content (`trimOuterMargin` + `visibleNonblank` in
-// presenter-tmux.ts). glow can't be run here, but the case the TMUX-069 rule
+// presenter-tmux.ts). glow can't be run here, but the case the tmux-play-69 rule
 // must honor is a whitespace-only stream: text whose only characters are
 // spaces/newlines renders to nothing, so it must not count as output that
 // justifies snapping a deliberately scrolled pane back to its tail. A string

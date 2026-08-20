@@ -145,6 +145,10 @@ Given canned native Claude Code SDK messages, when the adapter runs, the yielded
 
 Where the Claude Agent SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[claude-code-2](#claude-code-2)].
 
+### claude-code-203
+
+Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, ordinary effort and `ultracode` shall reach the SDK effort and orchestration surface [[claude-code-8](#claude-code-8)].
+
 ### claude-code-204
 
 Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[claude-code-4](#claude-code-4)], [[claude-code-5](#claude-code-5)].

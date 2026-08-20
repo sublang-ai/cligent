@@ -31,7 +31,7 @@ When the source changed or the update cannot be written, the loader continues wi
 The alternatives rejected are a global superset accepted by every adapter, normalized ordinal aliases for provider-native orchestration modes, and unchecked opaque strings for built-in adapters.
 
 This decision supersedes the global `ReasoningEffort` field and vocabulary in [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md); all unrelated decisions in those records remain in force.
-Canonical behavior is specified by [[engine-20](../packages/engine.md#engine-20)] and [TMUX-056](../user/tmux-play.md#tmux-056).
+Canonical behavior is specified by [[engine-20](../packages/engine.md#engine-20)] and [[tmux-play-56](../packages/tmux-play.md#tmux-play-56)].
 
 Static TypeScript correlation applies where the adapter identity remains present in the type.
 On the legacy name-based mutable-registry path, `runAgent()` accepts `AgentOptions<string>` and forwards the exact effort string unchanged.

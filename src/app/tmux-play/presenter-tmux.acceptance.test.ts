@@ -9,7 +9,7 @@ import { createTmuxPresenter } from './presenter-tmux.js';
 import type { TmuxPlayRecord } from './records.js';
 
 // The unit suite mocks renderMarkdown so the presenter logic stays hermetic
-// and fast; the real-glow acceptance probes (TTMUX-050) cover glow in
+// and fast; the real-glow acceptance probes (tmux-play-150) cover glow in
 // isolation. Neither layer exercises the integration seam — "presenter +
 // real glow output shape" — where every IR-013 polish-round bug lived
 // (trim-all, .trimEnd(), space-padded blanks, fallback double-strip).
@@ -136,7 +136,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
       });
 
       // Payload ends with an intentional blank row (think `cat` on a file
-      // whose final line is empty). The TMUX-049 contract is that this
+      // whose final line is empty). The tmux-play-49 contract is that this
       // blank survives the fence + glow + indent pipeline, AND under
       // IR-021's unified grammar the header now reads as the speaker
       // prefix plus a bracketed `[tool ✓]` tag — not the retired
@@ -145,7 +145,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
 
       const visible = coder.text();
 
-      // Unified header form (TMUX-038 speaker prefix + TMUX-039 bracketed
+      // Unified header form (tmux-play-38 speaker prefix + tmux-play-39 bracketed
       // tag): the visible (ANSI-stripped) header line is exactly
       // `coder> [tool ✓] Cat`. Asserting the literal substring catches a
       // regression that restores the retired `tool< ` prefix replacement
@@ -156,7 +156,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
       expect(visible).not.toContain('tool< ');
       expect(visible).not.toContain('tool> ');
 
-      // Pre-existing payload-preservation invariant (TMUX-049): somewhere
+      // Pre-existing payload-preservation invariant (tmux-play-49): somewhere
       // in the output, `foo` is followed by a blank line before the next
       // content (the closing fence row). We don't pin exact bytes — real
       // glow's fenced-code rendering varies in padding — but the
@@ -167,7 +167,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
       // Pre-existing two-space continuation indent invariant: the body
       // line carrying `foo` sits under the header with the indent applied
       // (matching how text-body continuations look). This pins
-      // [TTMUX-049]'s indent rule through real glow output rather than
+      // [tmux-play-149]'s indent rule through real glow output rather than
       // against an identity mock.
       const lines = visible.split('\n');
       const fooLine = lines.find((line) => /foo/.test(line));

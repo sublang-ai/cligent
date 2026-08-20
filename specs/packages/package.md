@@ -7,7 +7,7 @@
 
 This package fixes how the distributable is configured, packaged, and depended upon, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md) and [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md): its module system, dependency placement, TypeScript settings, exports, and the runtime descriptor a consumer reads.
 It owns the manifest's shape and constraints, not the behavior of any adapter it ships.
-It is project-local.
+It is project-local: the distributable it configures is `@sublang/cligent`.
 
 ## External Behavior
 

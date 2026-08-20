@@ -23,19 +23,19 @@ Done — Tasks 1 (specs + map), 2 (config + config tests), and 3 (launcher tests
 
 Spec items — swap the default values only (validation rules, override paths, and single-player defaults are unchanged):
 
-- [TMUX-011](../user/tmux-play.md#tmux-011): default home YAML — Captain + `claude` player `model: claude-opus-4-8`; `layout.window: { columns: 174, rows: 49 }`; `layout.columnWeights: [1, 1, 1]`.
-- [TMUX-028](../user/tmux-play.md#tmux-028) / [TMUX-044](../user/tmux-play.md#tmux-044): multi-player default `[1, 1, 1]` → `floor(W/3)` per column, rightmost absorbs remainder (zero at `W=174`).
-- [TMUX-035](../user/tmux-play.md#tmux-035): `new-session -x/-y` grid `174×49`.
-- [TMUX-043](../user/tmux-play.md#tmux-043): pre-attach CSI 8 payload `\x1b[8;49;174t`.
-- [TMUX-064](../user/tmux-play.md#tmux-064): `layout.window` defaults to `{ columns: 174, rows: 49 }` (sub-fields default independently); multi-player `columnWeights` defaults to `[1, 1, 1]`.
-- [TMUX-055](../user/tmux-play.md#tmux-055): status-length note's initial-window reference `240` → `174` columns, tracking the [TMUX-035](../user/tmux-play.md#tmux-035) grid change. The `status-left-length` / `status-right-length` budgets themselves are unchanged.
-- [TTMUX-001](../test/tmux-play.md#ttmux-001): Captain + `claude` player assert `claude-opus-4-8`; `codex` still `gpt-5.5`; the created home YAML also asserts the `layout` block (`window: { columns: 174, rows: 49 }`, `columnWeights: [1, 1, 1]`) per [TMUX-011](../user/tmux-play.md#tmux-011).
-- [TTMUX-014](../test/tmux-play.md#ttmux-014): multi-player default weights `[1, 1, 1]`.
-- [TTMUX-021](../test/tmux-play.md#ttmux-021) / [TTMUX-030](../test/tmux-play.md#ttmux-030): window `174×49`.
-- [TTMUX-022](../test/tmux-play.md#ttmux-022) / [TTMUX-031](../test/tmux-play.md#ttmux-031): three columns at `58 / 58 / 58` (`pane_left` 0 / 58 / 116; non-rightmost content width is region − 1 for the border).
-- [TTMUX-034](../test/tmux-play.md#ttmux-034): CSI 8 sequence `\x1b[8;49;174t`.
-- [TTMUX-035](../test/tmux-play.md#ttmux-035): multi-player formula collapses to `floor(W/3)` per column; the explicit-override probe shall use a non-equal weights set (e.g. `[3, 5, 5]`) so it still distinguishes default from override.
-- [TTMUX-064](../test/tmux-play.md#ttmux-064): snapshot defaults — `{ window: { columns: 174, rows: 49 }, columnWeights: [1, 1] }` (one player) / `[1, 1, 1]` (≥2 players); partial-window case `{ columns: 200, rows: 49 }`.
+- [[tmux-play-11](../packages/tmux-play.md#tmux-play-11)]: default home YAML — Captain + `claude` player `model: claude-opus-4-8`; `layout.window: { columns: 174, rows: 49 }`; `layout.columnWeights: [1, 1, 1]`.
+- [[tmux-play-28](../packages/tmux-play.md#tmux-play-28)] / [[tmux-play-44](../packages/tmux-play.md#tmux-play-44)]: multi-player default `[1, 1, 1]` → `floor(W/3)` per column, rightmost absorbs remainder (zero at `W=174`).
+- [[tmux-play-35](../packages/tmux-play.md#tmux-play-35)]: `new-session -x/-y` grid `174×49`.
+- [[tmux-play-43](../packages/tmux-play.md#tmux-play-43)]: pre-attach CSI 8 payload `\x1b[8;49;174t`.
+- [[tmux-play-64](../packages/tmux-play.md#tmux-play-64)]: `layout.window` defaults to `{ columns: 174, rows: 49 }` (sub-fields default independently); multi-player `columnWeights` defaults to `[1, 1, 1]`.
+- [[tmux-play-55](../packages/tmux-play.md#tmux-play-55)]: status-length note's initial-window reference `240` → `174` columns, tracking the [[tmux-play-35](../packages/tmux-play.md#tmux-play-35)] grid change. The `status-left-length` / `status-right-length` budgets themselves are unchanged.
+- [[tmux-play-101](../packages/tmux-play.md#tmux-play-101)]: Captain + `claude` player assert `claude-opus-4-8`; `codex` still `gpt-5.5`; the created home YAML also asserts the `layout` block (`window: { columns: 174, rows: 49 }`, `columnWeights: [1, 1, 1]`) per [[tmux-play-11](../packages/tmux-play.md#tmux-play-11)].
+- [[tmux-play-114](../packages/tmux-play.md#tmux-play-114)]: multi-player default weights `[1, 1, 1]`.
+- [[tmux-play-121](../packages/tmux-play.md#tmux-play-121)] / [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)]: window `174×49`.
+- [[tmux-play-122](../packages/tmux-play.md#tmux-play-122)] / [[tmux-play-131](../packages/tmux-play.md#tmux-play-131)]: three columns at `58 / 58 / 58` (`pane_left` 0 / 58 / 116; non-rightmost content width is region − 1 for the border).
+- [[tmux-play-134](../packages/tmux-play.md#tmux-play-134)]: CSI 8 sequence `\x1b[8;49;174t`.
+- [[tmux-play-135](../packages/tmux-play.md#tmux-play-135)]: multi-player formula collapses to `floor(W/3)` per column; the explicit-override probe shall use a non-equal weights set (e.g. `[3, 5, 5]`) so it still distinguishes default from override.
+- [[tmux-play-164](../packages/tmux-play.md#tmux-play-164)]: snapshot defaults — `{ window: { columns: 174, rows: 49 }, columnWeights: [1, 1] }` (one player) / `[1, 1, 1]` (≥2 players); partial-window case `{ columns: 200, rows: 49 }`.
 - [DR-004](../decisions/004-tmux-play-captain-architecture.md): example YAML Captain model → `claude-opus-4-8`.
 
 Source + tests:
@@ -43,7 +43,7 @@ Source + tests:
 - `src/app/tmux-play/config.ts`: `DEFAULT_TMUX_PLAY_CONFIG`, `DEFAULT_LAYOUT_WINDOW`, `defaultColumnWeights` updated in lockstep so per-call defaults match the auto-created YAML.
 - `src/app/tmux-play/config.test.ts`: `validConfig()` fixture, first-run-default assertions (model + layout), single/multi default-layout cases, partial-window (`{ columns: 200, rows: 49 }`) case.
 - `src/app/tmux-play/launcher.test.ts`: multi-player geometry (`-x 174 -y 49`, `split-window -h -l 116` for the player area, `-l 58` for the second column), resize-hook (`-x $((W/3 - 1))`), CSI 8 sequence, and the 4/5-player `it.each` grid cases.
-- `src/app/tmux-play/launcher.acceptance.test.ts`: exactly two `acceptanceIt` blocks — the resize-invariant sweep (swap `[240, 67] → [174, 49]`, update inline math to `Math.floor(width / 3)`) and the default-geometry block (rename to `174x49 / 58/58/58`, update `displayMessage` and the three pane assertions). The explicit-override block and the TTMUX-057 reasoning-effort seam stay untouched.
+- `src/app/tmux-play/launcher.acceptance.test.ts`: exactly two `acceptanceIt` blocks — the resize-invariant sweep (swap `[240, 67] → [174, 49]`, update inline math to `Math.floor(width / 3)`) and the default-geometry block (rename to `174x49 / 58/58/58`, update `displayMessage` and the three pane assertions). The explicit-override block and the tmux-play-157 reasoning-effort seam stay untouched.
 - `src/app/tmux-play/cli.smoke.test.ts`: synthesized YAML Captain model → `claude-opus-4-8`.
 - `README.md`: quick-start `Cligent` model → `claude-opus-4-8`.
 - `docs/tmux-play.md`: example YAML Captain model → `claude-opus-4-8`, and the `## Layout` paragraph's "Sessions start on a 240x67 grid" → `174x49` (the "evenly sized 1/N" prose already matches `[1, 1, 1]`).
@@ -51,14 +51,14 @@ Source + tests:
 
 Out of scope:
 
-- Per-adapter unit-test fixtures (`src/__tests__/{claude-code,codex}-adapter.test.ts`) and the TTMUX-057 reasoning-effort seam test, which reference `claude-opus-4-7` / `gpt-5.5` as opaque per-role identifiers, not as the shipped default — left untouched.
+- Per-adapter unit-test fixtures (`src/__tests__/{claude-code,codex}-adapter.test.ts`) and the tmux-play-157 reasoning-effort seam test, which reference `claude-opus-4-7` / `gpt-5.5` as opaque per-role identifiers, not as the shipped default — left untouched.
 - Single-player `[1, 1]`, `permissions`, `reasoningEffort`, `theme` defaults — unchanged.
 - Upstream `claude-opus-4-8` SDK behavior/availability; a rejected identifier surfaces as a normal adapter error per [[claude-code-2](../packages/adapters/claude-code.md#claude-code-2)].
 
 ## Deliverables
 
-- [x] `specs/user/tmux-play.md` — TMUX-011, TMUX-028, TMUX-035, TMUX-043, TMUX-044, TMUX-055, TMUX-064.
-- [x] `specs/test/tmux-play.md` — TTMUX-001, TTMUX-014, TTMUX-021, TTMUX-022, TTMUX-030, TTMUX-031, TTMUX-034, TTMUX-035, TTMUX-064.
+- [x] `specs/user/tmux-play.md` — tmux-play-11, tmux-play-28, tmux-play-35, tmux-play-43, tmux-play-44, tmux-play-55, tmux-play-64.
+- [x] `specs/test/tmux-play.md` — tmux-play-101, tmux-play-114, tmux-play-121, tmux-play-122, tmux-play-130, tmux-play-131, tmux-play-134, tmux-play-135, tmux-play-164.
 - [x] `specs/decisions/004-tmux-play-captain-architecture.md` — example YAML Captain model.
 - [x] `specs/map.md` — IR-023 index row.
 - [x] `src/app/tmux-play/config.ts` — `DEFAULT_TMUX_PLAY_CONFIG`, `DEFAULT_LAYOUT_WINDOW`, `defaultColumnWeights`.

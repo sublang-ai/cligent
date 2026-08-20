@@ -215,7 +215,7 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock.mock.calls[0]?.at(-1)).toContain(
       "'/tmp/tmux play/cli.js'",
     );
-    // TMUX-028 / TMUX-064: with the shipped multi-player default
+    // tmux-play-28 / tmux-play-64: with the shipped multi-player default
     // `columnWeights: [1, 1, 1]` on the 174-cell window, the player area is
     // 116 cells (174 - floor(174 * 1 / 3)) and the second player column is
     // 58 cells (the remainder after subtracting the 58-cell first column).
@@ -324,7 +324,7 @@ describe('launchTmuxPlay', () => {
       'mouse',
       'on',
     );
-    // TMUX-044: shell-evaluated `W * w_i / sum(w)` per non-rightmost column.
+    // tmux-play-44: shell-evaluated `W * w_i / sum(w)` per non-rightmost column.
     // sum([1, 1, 1]) = 3; rightmost column absorbs the remainder.
     const generation = layoutGeneration('tmux-play-abc123');
     const expectedHookCmd = expectedLayoutHookCommand(
@@ -1347,7 +1347,7 @@ describe('launchTmuxPlay', () => {
     expect(existsSync(coordinationDir)).toBe(false);
   });
 
-  it('builds startup panes only for the initial visible subset, in order (TTMUX-082)', async () => {
+  it('builds startup panes only for the initial visible subset, in order (tmux-play-182)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = join(tempDir, 'tmux-play.config.yaml');
     writeFileSync(
@@ -1428,7 +1428,7 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
-  it('builds a safe Boss-only tmux session for an empty roster (TTMUX-014, TTMUX-082)', async () => {
+  it('builds a safe Boss-only tmux session for an empty roster (tmux-play-114, tmux-play-182)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, []);
     const workDir = join(tempDir, 'work');
@@ -1497,7 +1497,7 @@ describe('launchTmuxPlay', () => {
     expect(snapshot.layout.columnWeights).toEqual([1]);
   });
 
-  it('uses the single-player column shape when one player is initially visible (TTMUX-082)', async () => {
+  it('uses the single-player column shape when one player is initially visible (tmux-play-182)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = join(tempDir, 'tmux-play.config.yaml');
     writeFileSync(
@@ -1557,7 +1557,7 @@ describe('launchTmuxPlay', () => {
     );
   });
 
-  it('buildPlayerArea recreates panes with a bounded tail when replayLines is set (TMUX-083 reuse surface)', () => {
+  it('buildPlayerArea recreates panes with a bounded tail when replayLines is set (tmux-play-83 reuse surface)', () => {
     // The layout observer (Task 7) reuses this exported routine on a visibility
     // change, passing replayLines so a re-shown hidden player's pane renders a
     // bounded `tail -n 200 -f` recent-log view rather than the startup `tail -f`.
@@ -1662,7 +1662,7 @@ describe('launchTmuxPlay', () => {
         '-X',
         'stop-selection',
       );
-      // TMUX-062: the copy + toast fire on the button RELEASE, not the
+      // tmux-play-62: the copy + toast fire on the button RELEASE, not the
       // press. tmux clears a status-line message on the next key event,
       // and a right-click is a press immediately followed by a release;
       // a toast painted on `MouseDown3Pane` is wiped by the release
@@ -1692,12 +1692,12 @@ describe('launchTmuxPlay', () => {
           call[2] === table &&
           call[3] === 'MouseUp3Pane',
       );
-      // TMUX-062 copy-confirmation toast: the release binding is a single
+      // tmux-play-62 copy-confirmation toast: the release binding is a single
       // `if-shell -F '#{selection_present}'` whose true branch toasts
       // then copies and whose false branch copies silently, so a
       // right-click over a live selection surfaces a brief peach
       // status-line `Copied!` (styled by the session `message-style` per
-      // TMUX-047) while an empty right-click never falsely claims it.
+      // tmux-play-47) while an empty right-click never falsely claims it.
       // The gate is read before `copy-pipe` clears the selection. The
       // two-command true branch is ONE argv token (its internal ` ; `
       // is re-parsed by if-shell); a standalone `;` element would split
@@ -1738,7 +1738,7 @@ describe('launchTmuxPlay', () => {
     expect(
       runTmuxMock.mock.calls.some((call) => call.includes('set-clipboard')),
     ).toBe(false);
-    // TMUX-079 / TMUX-062: the launcher binds no `WheelUpPane` override in any
+    // tmux-play-79 / tmux-play-62: the launcher binds no `WheelUpPane` override in any
     // key table — stock tmux already clamps wheel-up at the top of history, and
     // the Boss-pane phantom-scrollback report it once chased is fixed at the
     // source (readline redraws no longer pollute pane history).
@@ -1764,7 +1764,7 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
-  it('binds MouseDown1Pane in all three key tables to clear any active selection per in-mode pane while preserving copy-mode state and scroll position, per TMUX-068 (supersedes TMUX-066 and TMUX-067)', async () => {
+  it('binds MouseDown1Pane in all three key tables to clear any active selection per in-mode pane while preserving copy-mode state and scroll position, per tmux-play-68 (supersedes tmux-play-66 and tmux-play-67)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     // Two players → Boss/Captain at pane 0, players at panes 1..2.
     // paneCount = 3 so the per-pane iteration covers indices 0, 1, 2.
@@ -1780,7 +1780,7 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
-    // TMUX-068: each in-mode pane gets `send-keys -X clear-selection`
+    // tmux-play-68: each in-mode pane gets `send-keys -X clear-selection`
     // (not the retired `-X cancel`). clear-selection drops the active
     // selection without exiting copy-mode, so a scrolled-back pane
     // keeps its scroll position while a selection-bearing pane drops
@@ -1843,11 +1843,11 @@ describe('launchTmuxPlay', () => {
       expect(bindings).toHaveLength(1);
     }
 
-    // The TMUX-068 supersession is in part *negative*: no
+    // The tmux-play-68 supersession is in part *negative*: no
     // MouseDown1Pane body shall reference `-X cancel`, the retired
-    // [TMUX-066] primitive that exits copy-mode entirely and snaps a
+    // [tmux-play-66] primitive that exits copy-mode entirely and snaps a
     // scrolled-back pane to its live tail. The negative assertion is
-    // the static counterpart to the behavioral probe in TTMUX-068.
+    // the static counterpart to the behavioral probe in tmux-play-168.
     for (const call of runTmuxMock.mock.calls) {
       if (
         call[0] !== 'bind-key' ||
@@ -1864,7 +1864,7 @@ describe('launchTmuxPlay', () => {
     // The per-pane iteration must scale with paneCount: a regression
     // that hard-coded `paneCount = 1` would fail this check on a
     // multi-player session, while a regression that omitted the
-    // iteration entirely (the retired TMUX-067 stock-only shape)
+    // iteration entirely (the retired tmux-play-67 stock-only shape)
     // would also fail. Pin both the per-pane gate and the per-pane
     // send-keys target so neither degrades silently.
     const rootBinding = runTmuxMock.mock.calls.find(
@@ -1898,7 +1898,7 @@ describe('launchTmuxPlay', () => {
     });
 
     const condition = '#{==:#{session_name},tmux-play-pane-switch}';
-    // TMUX-063: ship both Ctrl+←/→ and Shift+←/→ so pane switching works
+    // tmux-play-63: ship both Ctrl+←/→ and Shift+←/→ so pane switching works
     // out of the box across macOS, Windows, and Linux terminals that may
     // intercept one pair or the other for shell word-movement,
     // workspace switching, etc.
@@ -1961,7 +1961,7 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
-    // TTMUX-065: player panes have pane-input-off=1, so a press of Ctrl+C
+    // tmux-play-165: player panes have pane-input-off=1, so a press of Ctrl+C
     // in a player pane is normally swallowed; and once any pane is
     // scrolled back into copy-mode, C-c is dispatched through the
     // copy-mode / copy-mode-vi key table (stock `send-keys -X cancel`),
@@ -1970,7 +1970,7 @@ describe('launchTmuxPlay', () => {
     // pane 0's copy-mode when pane 0 is itself scrolled (otherwise the
     // forwarded C-c is consumed by copy-mode's stock cancel) and then
     // forwards the byte to pane 0, where the Captain process runs the
-    // existing SIGINT lifecycle from TMUX-026. Each false branch
+    // existing SIGINT lifecycle from tmux-play-26. Each false branch
     // reproduces that table's stock binding verbatim so other tmux
     // sessions on the same server are unaffected.
     const condition = '#{==:#{session_name},tmux-play-exit-key}';
@@ -2013,7 +2013,7 @@ describe('launchTmuxPlay', () => {
     );
   });
 
-  it('binds Escape in root, copy-mode, and copy-mode-vi with a cancel-then-forward true branch and per-table stock false branch, mirroring the Ctrl+C pattern (TMUX-070)', async () => {
+  it('binds Escape in root, copy-mode, and copy-mode-vi with a cancel-then-forward true branch and per-table stock false branch, mirroring the Ctrl+C pattern (tmux-play-70)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder']);
 
@@ -2026,7 +2026,7 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
-    // TTMUX-070: ESC pressed on a player pane is swallowed by
+    // tmux-play-170: ESC pressed on a player pane is swallowed by
     // pane-input-off=1; ESC pressed on any pane scrolled back into
     // copy-mode hits the stock `Escape` binding first (emacs-mode
     // `-X cancel`, vi-mode `-X clear-selection`). The binding is installed
@@ -2034,7 +2034,7 @@ describe('launchTmuxPlay', () => {
     // mode. Each true branch first exits pane 0's copy-mode when pane 0 is
     // itself scrolled (otherwise the forwarded Escape is consumed by
     // copy-mode's stock cancel) and then forwards the byte to pane 0, where
-    // the existing TMUX-057 readline keypress handler calls
+    // the existing tmux-play-57 readline keypress handler calls
     // `abortActiveTurn('ESC')`.
     //
     // Each false branch reproduces that table's *exact* stock binding
@@ -2045,7 +2045,7 @@ describe('launchTmuxPlay', () => {
     // to exit). Because tmux key tables are server-global, collapsing the
     // vi-mode false branch to `-X cancel` would silently snap every
     // unrelated vi-mode user's scrolled pane back to its live tail on
-    // Escape — the same scroll-snapping regression class TMUX-068
+    // Escape — the same scroll-snapping regression class tmux-play-68
     // enumerated for mouse events.
     const condition = '#{==:#{session_name},tmux-play-esc-key}';
     const trueBranch =
@@ -2120,7 +2120,7 @@ describe('launchTmuxPlay', () => {
     const commandIndexOf = (option: string): number =>
       runTmuxMock.mock.calls.findIndex((call) => call.includes(option));
 
-    // TMUX-047 (truecolor): default-terminal scoped to this session, and
+    // tmux-play-47 (truecolor): default-terminal scoped to this session, and
     // terminal-overrides appended on the server with the leading-comma idiom.
     expect(setCalls).toContainEqual([
       'set',
@@ -2136,7 +2136,7 @@ describe('launchTmuxPlay', () => {
       ',*:RGB',
     );
 
-    // TMUX-047: window-style / window-active-style are NOT claimed. The
+    // tmux-play-47: window-style / window-active-style are NOT claimed. The
     // canonical Catppuccin tmux pattern leaves the pane content area as the
     // user's terminal-native canvas; the theme paints only the status bar,
     // pane-border row, and accents. Switching flavor by host bg keeps the
@@ -2160,7 +2160,7 @@ describe('launchTmuxPlay', () => {
       'pane-active-border-style',
       'fg=#89b4fa',
     ]);
-    // TMUX-048: inactive pane border dimmed to overlay0 for stronger contrast
+    // tmux-play-48: inactive pane border dimmed to overlay0 for stronger contrast
     // with the active blue border.
     expect(setCalls).toContainEqual([
       'set',
@@ -2350,7 +2350,7 @@ describe('launchTmuxPlay', () => {
       'tmux-play-timers:0.1',
       'tmux-play-timers:0.2',
     ]) {
-      // TMUX-071: launcher seeds every per-pane timer with the
+      // tmux-play-71: launcher seeds every per-pane timer with the
       // canonical zero rendering `00:00:00`, not the retired `0s`
       // literal, so the surface a Boss sees at launch matches the
       // hh:mm:ss form before any `TimingObserver` record arrives.
@@ -2371,7 +2371,7 @@ describe('launchTmuxPlay', () => {
         '0',
       );
     }
-    // TMUX-071: same zero rendering for the status-bar total timer.
+    // tmux-play-71: same zero rendering for the status-bar total timer.
     expect(runTmuxMock).toHaveBeenCalledWith(
       'set-option',
       '-t',
@@ -2399,7 +2399,7 @@ describe('launchTmuxPlay', () => {
       'pane-border-format',
     );
     expect(paneBorderFormat).toContain('#{pane_title}');
-    // TMUX-048: only the Captain pane (index 0) carries the blue highlight
+    // tmux-play-48: only the Captain pane (index 0) carries the blue highlight
     // block, and only while active. The else branch carries Mocha text on
     // the mantle surface — every other pane (inactive Captain, active
     // player, inactive player) reads against the theme's own surface band.
@@ -2415,7 +2415,7 @@ describe('launchTmuxPlay', () => {
     expect(paneBorderFormat).toContain(
       `#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1}`,
     );
-    // TMUX-054: frozen timer color is subtext1, picked for legibility on
+    // tmux-play-54: frozen timer color is subtext1, picked for legibility on
     // the Mocha mantle surface the pane-border row carries.
     expect(paneBorderFormat).toContain(
       `#{?#{==:#{${TMUX_PANE_TIMER_RUNNING_OPTION}},1},#[fg=#{${TMUX_PANE_TIMER_ACCENT_OPTION}}],#[fg=#bac2de]}`,
@@ -2435,11 +2435,11 @@ describe('launchTmuxPlay', () => {
     );
 
     const statusLeft = setValue('tmux-play-timers', 'status-left');
-    // TMUX-055: status-left opens with the bold-blue `Spex` brand heading.
+    // tmux-play-55: status-left opens with the bold-blue `Spex` brand heading.
     expect(statusLeft).toContain('Spex');
     expect(statusLeft).not.toContain('spex');
     expect(statusLeft).not.toContain('Cligent');
-    // TMUX-063: status-left advertises direct pane switching and the esc
+    // tmux-play-63: status-left advertises direct pane switching and the esc
     // stop / Ctrl+C exit shortcuts. The retired Ctrl+b prefix mentions
     // (`d=detach`, `o=switch pane`, `[=scroll`) are gone.
     expect(statusLeft).toContain('switch pane: ctrl+←/→ or shift+←/→');
@@ -2500,7 +2500,7 @@ describe('launchTmuxPlay', () => {
       attach: false,
     });
 
-    // TMUX-044: single-player default weights `[1, 1]` (sum = 2). The rightmost
+    // tmux-play-44: single-player default weights `[1, 1]` (sum = 2). The rightmost
     // player pane absorbs the remainder; only pane 0 needs an explicit resize.
     const generation = layoutGeneration('tmux-play-one');
     const expectedHookCmd = expectedLayoutHookCommand(
@@ -2532,7 +2532,7 @@ describe('launchTmuxPlay', () => {
   });
 
   it('rejects decimal layout.columnWeights before emitting any tmux call', async () => {
-    // TMUX-064: decimal weights would interpolate raw into the TMUX-044
+    // tmux-play-64: decimal weights would interpolate raw into the tmux-play-44
     // POSIX shell-arithmetic hook (`$((W * 0.5 / 1.5 - 1))`), which is a
     // syntax error in /bin/sh and dash. Loader-time rejection is the only
     // safeguard — if it ever regressed, the launcher would emit a broken
@@ -2577,7 +2577,7 @@ describe('launchTmuxPlay', () => {
   });
 
   it('threads an explicit layout override into new-session, splits, hook, and CSI 8', async () => {
-    // TMUX-035 / TMUX-043 / TMUX-044 / TMUX-064: a YAML override of
+    // tmux-play-35 / tmux-play-43 / tmux-play-44 / tmux-play-64: a YAML override of
     // layout.window and layout.columnWeights must reach every launcher
     // surface (new-session -x/-y, split-window -l sizes, the resize hook
     // formula, and the pre-attach CSI 8 payload) from the same source of
@@ -2654,7 +2654,7 @@ describe('launchTmuxPlay', () => {
       expectedHookCmd,
     );
 
-    // TMUX-043: pre-attach CSI 8 payload reads the same layout.window, so an
+    // tmux-play-43: pre-attach CSI 8 payload reads the same layout.window, so an
     // override of `columns: 200, rows: 50` writes `\x1b[8;50;200t` rather
     // than the default 174x49 sequence — preventing tmux's `window-size`
     // negotiation from silently overriding the override on attach.
@@ -2784,7 +2784,7 @@ describe('launchTmuxPlay', () => {
       adapterImports: availableAdapterImports(),
     });
 
-    // TMUX-011: the notice names the roster's basis, so a generated roster is
+    // tmux-play-11: the notice names the roster's basis, so a generated roster is
     // never a silent function of which runtimes the host happens to have.
     expect(stdout.text()).toContain(
       `Created tmux-play config at ${join(configHome, 'tmux-play/config.yaml')} for installed adapters: claude, codex`,
@@ -2812,10 +2812,10 @@ describe('launchTmuxPlay', () => {
       stdout,
       stderr,
       attach: false,
-      // TTMUX-011's legacy-warning Given names only the ignored cwd config —
+      // tmux-play-111's legacy-warning Given names only the ignored cwd config —
       // never the host's adapter roster — so pin the first-run generation
-      // this launch falls through to (TMUX-011 seam) and the runtime gate
-      // (TMUX-089 seam) off the host's CLIs. The unstubbed default probed
+      // this launch falls through to (tmux-play-11 seam) and the runtime gate
+      // (tmux-play-89 seam) off the host's CLIs. The unstubbed default probed
       // all five adapter runtimes, whose spawned --version checks sum past
       // the test timeout on a loaded host.
       readyAdapters: async () => ['claude', 'codex'],
@@ -2875,7 +2875,7 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
-  // TTMUX-092: a configured role whose adapter runtime is missing stops the
+  // tmux-play-192: a configured role whose adapter runtime is missing stops the
   // launch while it is still on the terminal the user can read — tmux's
   // alternate screen would otherwise cover the report for the whole session.
   it('fails before creating a session when a configured runtime is missing', async () => {
@@ -2914,7 +2914,7 @@ describe('launchTmuxPlay', () => {
     expect(error).toBeDefined();
     expect(error!.message).toContain('claude (captain)');
     // The gate resolves the real repository checkout as the install tree, and
-    // every peer-SDK command pins that tree with --prefix (TMUX-089): where a
+    // every peer-SDK command pins that tree with --prefix (tmux-play-89): where a
     // bare install would land belongs to the paste-time shell, not to this
     // process.
     const expectedPrefix = shellQuote(resolveInstallRoot(cligentPackageRoot()));
@@ -2950,7 +2950,7 @@ describe('launchTmuxPlay', () => {
 });
 
 /**
- * TMUX-089: adapter imports whose runtimes report as installed (or not),
+ * tmux-play-89: adapter imports whose runtimes report as installed (or not),
  * so launcher tests pin the gate instead of probing the host's own SDKs and
  * agent CLIs.
  */

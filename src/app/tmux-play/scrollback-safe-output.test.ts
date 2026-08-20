@@ -8,7 +8,7 @@ import {
   wrapScrollbackSafeOutput,
 } from './scrollback-safe-output.js';
 
-describe('clampClearScreenDown (TMUX-079)', () => {
+describe('clampClearScreenDown (tmux-play-79)', () => {
   it('passes chunks without escape sequences through unchanged', () => {
     expect(clampClearScreenDown('boss> abc', 10)).toBe('boss> abc');
     expect(clampClearScreenDown('', 10)).toBe('');
@@ -70,7 +70,7 @@ describe('clampClearScreenDown (TMUX-079)', () => {
   });
 });
 
-describe('wrapScrollbackSafeOutput (TMUX-079)', () => {
+describe('wrapScrollbackSafeOutput (tmux-play-79)', () => {
   it('rewrites clearScreenDown on string writes using the stream height', () => {
     const sink = new PassThrough();
     const chunks: string[] = [];

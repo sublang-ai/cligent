@@ -107,12 +107,12 @@ describe('runTmuxPlayCli', () => {
     });
   });
 
-  // TTMUX-073 / TMUX-074: pin the isolation at the session-dispatch boundary,
+  // tmux-play-173 / tmux-play-74: pin the isolation at the session-dispatch boundary,
   // not just at the helper. A unit test of isolateOrchestratorFromAgents would
   // still pass if cli.ts dropped the call before constructing the session —
   // the exact regression that took down a live run. Capture the environment a
   // player adapter would inherit at the moment runSession is invoked.
-  it('isolates player agents from the run tmux before constructing the session (TMUX-074)', async () => {
+  it('isolates player agents from the run tmux before constructing the session (tmux-play-74)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-cli-'));
     const savedTmux = process.env.TMUX;
     const savedPane = process.env.TMUX_PANE;

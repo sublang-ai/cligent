@@ -224,17 +224,17 @@ export class TmuxPlaySession {
   private keypressListener:
     ((str: string | undefined, key: Keypress) => void) | undefined;
   private activeBossTurn = false;
-  // TMUX-075: count of Boss turns that have been submitted but not yet finished
+  // tmux-play-75: count of Boss turns that have been submitted but not yet finished
   // — the one currently running plus any lines the Boss submitted behind it that
-  // queued for the serialized runtime (TMUX-018). A fresh ready `boss> ` prompt
+  // queued for the serialized runtime (tmux-play-18). A fresh ready `boss> ` prompt
   // is painted only when this reaches zero, so no spurious prompt appears between
   // consecutive queued turns or amid an active turn's streaming output.
   private pendingTurns = 0;
-  // TMUX-075: the colored `boss> ` prompt string is captured at start so the
+  // tmux-play-75: the colored `boss> ` prompt string is captured at start so the
   // turn-active suspension can blank the prompt and restore this exact value
   // at turn end. `terminalInput` records whether stdin is a TTY; outside a TTY
   // the readline runs in non-terminal mode (no echo), so the suspension is a
-  // no-op per TMUX-075.
+  // no-op per tmux-play-75.
   private bossPrompt = '';
   private terminalInput = false;
   private bracketedPasteEnabled = false;
@@ -283,7 +283,7 @@ export class TmuxPlaySession {
       config.players.map((player) => [player.id, player.adapter]),
     );
     // The snapshot carries the launcher-resolved Catppuccin flavor
-    // (mocha | latte) per TMUX-047, so prefix / status / tool SGRs in
+    // (mocha | latte) per tmux-play-47, so prefix / status / tool SGRs in
     // pane content — including the readline prompt below — match the
     // flavor of the tmux chrome.
     const themeFlavor: CatppuccinFlavor =
@@ -306,7 +306,7 @@ export class TmuxPlaySession {
     this.timingObserver = timingObserver;
     timingObserver.refresh();
 
-    // TMUX-069: return a scrolled-back (copy-mode) pane to its live tail when
+    // tmux-play-69: return a scrolled-back (copy-mode) pane to its live tail when
     // the session writes new content to it, so streaming output is visible
     // even after a wheel-scroll. Display-only and failure-swallowing like the
     // timing observer; registered after the presenter so a pane's follow runs
@@ -320,7 +320,7 @@ export class TmuxPlaySession {
       notifications: config.notifications,
       output,
     });
-    // TMUX-083: reconcile the visible player panes on each accepted
+    // tmux-play-83: reconcile the visible player panes on each accepted
     // `player_view_changed` via a full player-area rebuild. Display-only and
     // failure-swallowing; registered first so its rebuild runs before later
     // records for a newly visible player are presented.
@@ -376,7 +376,7 @@ export class TmuxPlaySession {
 
     const input = this.options.input ?? process.stdin;
     this.terminalInput = isTty(input);
-    // TMUX-079: route the readline's redraws through a scrollback-safe wrapper
+    // tmux-play-79: route the readline's redraws through a scrollback-safe wrapper
     // so its per-edit `clearScreenDown` does not scroll the Boss prompt's
     // intermediate edit states into the pane's tmux history. The presenter
     // keeps writing to the raw `output`, so streamed turn output still scrolls
@@ -390,7 +390,7 @@ export class TmuxPlaySession {
       output: readlineOutput,
       escapeCodeTimeout: READLINE_ESCAPE_CODE_TIMEOUT_MS,
     });
-    // TMUX-038: color the `boss> ` prefix with the boss role color from
+    // tmux-play-38: color the `boss> ` prefix with the boss role color from
     // the resolved flavor (Mocha `#89b4fa` on dark, Latte `#1e66f5` on
     // light), so the prompt keeps contrast against the user's terminal
     // background. Node ≥18's readline strips ANSI escapes when computing
@@ -474,7 +474,7 @@ export class TmuxPlaySession {
   private enqueueLine(line: string): void {
     const prompt = line.trim();
     if (!prompt) {
-      // TMUX-075: an empty / whitespace-only submission paints a fresh ready
+      // tmux-play-75: an empty / whitespace-only submission paints a fresh ready
       // prompt only while no Boss turn is active or queued; submitted amid a
       // turn it must not repaint `boss> ` over the streaming output.
       if (this.pendingTurns === 0) {
@@ -561,7 +561,7 @@ export class TmuxPlaySession {
           // records by the runtime and rendered by the tmux presenter.
           // Observer dispatch failures bypass that path because the failing
           // observer is the presenter itself, so we emit the line directly
-          // under the TMUX-039 bracketed-tag grammar.
+          // under the tmux-play-39 bracketed-tag grammar.
           if (error instanceof ObserverDispatchError) {
             this.writeOutput(
               `captain> [runtime error] ${errorMessage(error)}\n`,
@@ -569,7 +569,7 @@ export class TmuxPlaySession {
           }
         }
       } finally {
-        // TMUX-075: this finally runs on every settle path — normal
+        // tmux-play-75: this finally runs on every settle path — normal
         // completion, ESC abort, the runtime-error / observer-dispatch
         // branches above, an early shutdown return, or any unexpected throw —
         // so the increment in `enqueueLine` is always balanced. It restores
@@ -595,18 +595,18 @@ export class TmuxPlaySession {
         void this.shutdown('turn failure', error);
         return;
       }
-      // Same TMUX-039 bracketed-tag grammar for the catch-all failure
+      // Same tmux-play-39 bracketed-tag grammar for the catch-all failure
       // path: bracketed tag carries the kind, message sits outside.
       this.writeOutput(`captain> [runtime error] ${errorMessage(error)}\n`);
     });
   }
 
-  // TMUX-075: while a Boss turn is active, blank the live readline prompt so
+  // tmux-play-75: while a Boss turn is active, blank the live readline prompt so
   // any line refresh triggered by Boss type-ahead paints no fresh `boss> `
   // chrome amid the turn's streaming presenter output — which a turn-completion
   // consumer reading the pane would misread as an implicit turn-over signal.
   // The edit buffer is left untouched, so type-ahead (typed or pasted) is
-  // preserved per TMUX-057 / TMUX-058 and surfaces when restorePrompt re-arms
+  // preserved per tmux-play-57 / tmux-play-58 and surfaces when restorePrompt re-arms
   // the colored prompt. `readline.pause()` is deliberately not used: pausing
   // the input stream also stops keypress delivery, breaking the ESC handler.
   private suspendPrompt(): void {
@@ -994,7 +994,7 @@ class ManagedPresentationGate implements RecordObserver {
 }
 
 function defaultQueryPaneWidths(sessionName: string): Map<string, number> {
-  // TMUX-074: the orchestrator scrubs TMUX from process.env to sandbox player agents
+  // tmux-play-74: the orchestrator scrubs TMUX from process.env to sandbox player agents
   // (see isolateOrchestratorFromAgents), so consult the pinned tmux env rather
   // than process.env.TMUX directly — otherwise pane-width queries would no-op
   // for the whole run.
@@ -1019,7 +1019,7 @@ function isTty(stream: Readable | Writable): boolean {
 export async function runTmuxPlaySession(
   options: TmuxPlaySessionOptions,
 ): Promise<void> {
-  // TMUX-074: public embedders can enter session mode without passing
+  // tmux-play-74: public embedders can enter session mode without passing
   // through the CLI dispatcher. Isolate at the construction boundary so
   // every runtime and adapter inherits the scrubbed agent environment.
   isolateOrchestratorFromAgents();

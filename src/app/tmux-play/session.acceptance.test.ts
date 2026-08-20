@@ -21,7 +21,7 @@ import { shellQuote } from '../shared/shell.js';
 import { isTmuxAvailable } from '../shared/tmux.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 
-// TTMUX-074 (real-tmux clause), verifying TMUX-075: with a real tmux server,
+// tmux-play-174 (real-tmux clause), verifying tmux-play-75: with a real tmux server,
 // an attached client, and a Boss turn in flight, pane 0 shows no fresh
 // `boss> ` readline prompt line after the turn's streamed Captain output
 // between `turn_started` and the turn's terminal record. The session-level
@@ -83,7 +83,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
   });
 
   probeIt(
-    'paints no fresh boss> prompt on pane 0 while a Boss turn is in flight, restoring it once the turn ends (TTMUX-074)',
+    'paints no fresh boss> prompt on pane 0 while a Boss turn is in flight, restoring it once the turn ends (tmux-play-174)',
     async () => {
       if (!existsSync(BUILT_SESSION_PATH)) {
         throw new Error(
@@ -160,7 +160,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
       await waitForPaneContains(sessionName, 0, 'boss>', 5_000);
 
       // Submit a Boss prompt to open a turn. readline echoes `boss> go`
-      // (the submitted-prompt input line per TMUX-037).
+      // (the submitted-prompt input line per tmux-play-37).
       runTmux(['send-keys', '-t', `${sessionName}:0.0`, 'go', 'Enter']);
 
       // The turn is now in flight: the Captain streamed its status marker to
@@ -174,7 +174,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
       // `_writeToOutput`, not `_refreshLine`), so it never repaints `boss> `
       // and would not discriminate. A trailing sentinel byte deleted with
       // Backspace drives `_refreshLine`, which redraws `<prompt> + <buffer>`:
-      // without TMUX-075 that is `boss> <buffer>` amid the streamed output;
+      // without tmux-play-75 that is `boss> <buffer>` amid the streamed output;
       // with the prompt suspended it is just `<buffer>`, so no fresh `boss> `
       // line reaches the pane.
       const typeahead = `TYPED${randomBytes(3).toString('hex').toUpperCase()}`;
@@ -191,7 +191,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
         5_000,
       );
 
-      // TMUX-075: after the streamed Captain output, no fresh `boss> ` prompt
+      // tmux-play-75: after the streamed Captain output, no fresh `boss> ` prompt
       // line is painted while the turn is active. The submitted-prompt echo
       // line that opened the turn sits before the marker and is unaffected.
       const inflightPlain = stripAnsi(inflight);
@@ -200,7 +200,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
       expect(inflightPlain).toContain('boss> go');
 
       // End the turn; the suspended prompt is restored exactly once, with the
-      // type-ahead preserved per TMUX-057 and surfaced on the restored prompt.
+      // type-ahead preserved per tmux-play-57 and surfaced on the restored prompt.
       writeFileSync(releasePath, 'release');
       const restored = await waitForPaneMatch(
         sessionName,
@@ -217,7 +217,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
         restoredPlain.indexOf(marker),
       );
       // Exactly one restored prompt after the marker, carrying the type-ahead
-      // buffered during the turn on the same line per TMUX-057.
+      // buffered during the turn on the same line per tmux-play-57.
       expect(restoredAfterMarker.match(/boss>/g) ?? []).toHaveLength(1);
       expect(restoredAfterMarker).toContain(`boss> ${typeahead}`);
     },
@@ -225,7 +225,7 @@ describe('TmuxPlaySession real-tmux prompt-suspension acceptance', () => {
   );
 
   macBellProbeIt(
-    'raises a real tmux bell when the macOS turn-finished desktop notification fires (TTMUX-076)',
+    'raises a real tmux bell when the macOS turn-finished desktop notification fires (tmux-play-176)',
     async () => {
       if (!existsSync(BUILT_SESSION_PATH)) {
         throw new Error(

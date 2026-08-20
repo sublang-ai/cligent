@@ -29,7 +29,7 @@ import {
 import type { PlayerAdapterName } from './players.js';
 
 /**
- * TMUX-011: pin the first-run roster instead of probing whatever agent
+ * tmux-play-11: pin the first-run roster instead of probing whatever agent
  * runtimes the host happens to have installed.
  */
 function readyAdapters(
@@ -67,7 +67,7 @@ function validConfig(
       turn_finished: 'off',
       turn_aborted: 'off',
     },
-    // TMUX-064: resolved layout carries both canonical shape arrays plus the
+    // tmux-play-64: resolved layout carries both canonical shape arrays plus the
     // active (multi-player roster) weights. writeYamlConfig emits only the
     // `columnWeights` alias, which resolves back to this same shape.
     layout: {
@@ -257,7 +257,7 @@ describe('tmux-play config loading', () => {
       turn_finished: 'desktop',
       turn_aborted: 'off',
     });
-    // TMUX-011 (amended) + TMUX-064: the shipped default home YAML carries
+    // tmux-play-11 (amended) + tmux-play-64: the shipped default home YAML carries
     // an explicit `layout` block with the canonical 174x49 grid and the
     // equal-thirds [1, 1, 1] multi-player column weights, so first-run users
     // see the knobs.
@@ -270,7 +270,7 @@ describe('tmux-play config loading', () => {
     });
     const homeSource = readFileSync(homeConfig, 'utf8');
     expect(homeSource).toContain('layout:');
-    // TMUX-011/TTMUX-081: the authored default YAML uses the canonical
+    // tmux-play-11/tmux-play-181: the authored default YAML uses the canonical
     // `multiPlayerColumnWeights` field and carries no `columnWeights` key.
     expect(homeSource).toContain('multiPlayerColumnWeights:');
     expect(homeSource).not.toMatch(/^\s*columnWeights:/m);
@@ -280,7 +280,7 @@ describe('tmux-play config loading', () => {
     expect(homeSource).not.toContain('turn_aborted:');
   });
 
-  // TTMUX-092: the generated roster follows the installed runtimes, so the
+  // tmux-play-192: the generated roster follows the installed runtimes, so the
   // config a first run creates is one the first Boss turn can actually run.
   it('generates the first-run roster from one installed adapter', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
@@ -303,7 +303,7 @@ describe('tmux-play config loading', () => {
       'codex',
     ]);
     expect(loaded.config.players.map((player) => player.id)).toEqual(['codex']);
-    // TMUX-064: a one-player roster resolves the single-player weights.
+    // tmux-play-64: a one-player roster resolves the single-player weights.
     expect(loaded.config.layout.columnWeights).toEqual([1, 1]);
     expect(loaded.config.layout.initialVisible).toEqual(['codex']);
     const homeSource = readFileSync(
@@ -1481,7 +1481,7 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('accepts a two- or three-element columnWeights alias regardless of player count (TTMUX-079)', async () => {
+  it('accepts a two- or three-element columnWeights alias regardless of player count (tmux-play-179)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const twoPlayersTwoWeights = join(workDir, 'two-players-two-weights.yaml');
     const onePlayerThreeWeights = join(workDir, 'one-player-three-weights.yaml');
@@ -1542,7 +1542,7 @@ describe('tmux-play config loading', () => {
     expect(threeWeights.config.layout.columnWeights).toEqual([1, 1]);
   });
 
-  it('rejects a columnWeights alias whose length is not 2 or 3 (TTMUX-079)', async () => {
+  it('rejects a columnWeights alias whose length is not 2 or 3 (tmux-play-179)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const body = (weights: number[]): string =>
       [
@@ -1571,7 +1571,7 @@ describe('tmux-play config loading', () => {
     ).rejects.toThrow('layout.columnWeights length must be 2');
   });
 
-  it('resolves explicit canonical column-weight fields (TTMUX-079)', async () => {
+  it('resolves explicit canonical column-weight fields (tmux-play-179)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
     writeFileSync(
@@ -1605,7 +1605,7 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.layout.columnWeights).toEqual([4, 6, 6]);
   });
 
-  it('rejects a columnWeights alias alongside the same-shape canonical field, accepts different shapes (TTMUX-079)', async () => {
+  it('rejects a columnWeights alias alongside the same-shape canonical field, accepts different shapes (tmux-play-179)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const conflict = join(workDir, 'conflict.yaml');
     const distinct = join(workDir, 'distinct.yaml');
@@ -1667,7 +1667,7 @@ describe('tmux-play config loading', () => {
     expect(distinctLoaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
   });
 
-  it('rejects a canonical column-weight field of the wrong length (TTMUX-079)', async () => {
+  it('rejects a canonical column-weight field of the wrong length (tmux-play-179)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const badSingle = join(workDir, 'bad-single.yaml');
     const badMulti = join(workDir, 'bad-multi.yaml');
@@ -1717,7 +1717,7 @@ describe('tmux-play config loading', () => {
     );
   });
 
-  it('migrates a legacy home columnWeights to its canonical field (TTMUX-081)', async () => {
+  it('migrates a legacy home columnWeights to its canonical field (tmux-play-181)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const cwd = join(workDir, 'project');
     mkdirSync(cwd);
@@ -1760,7 +1760,7 @@ describe('tmux-play config loading', () => {
     expect(singleLoaded.config.layout.columnWeights).toEqual([2, 3]);
   });
 
-  it('does not migrate a home columnWeights that conflicts with a canonical field (TTMUX-081)', async () => {
+  it('does not migrate a home columnWeights that conflicts with a canonical field (tmux-play-181)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const cwd = join(workDir, 'project');
     const configHome = join(workDir, 'xdg');
@@ -1800,7 +1800,7 @@ describe('tmux-play config loading', () => {
     expect(onDisk).toMatch(/^\s*columnWeights:/m);
   });
 
-  it('does not rewrite an explicit-path config that uses the columnWeights alias (TTMUX-081)', async () => {
+  it('does not rewrite an explicit-path config that uses the columnWeights alias (tmux-play-181)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
     const source = [
@@ -1828,7 +1828,7 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.layout.multiPlayerColumnWeights).toEqual([4, 6, 6]);
   });
 
-  it('resolves layout.initialVisible as a validated, ordered subset (TTMUX-080)', async () => {
+  it('resolves layout.initialVisible as a validated, ordered subset (tmux-play-180)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const sessionWorkDir = join(workDir, 'session');
     const captain = [
@@ -1888,7 +1888,7 @@ describe('tmux-play config loading', () => {
     expect(single.config.layout.columnWeights).toEqual([1, 1]);
   });
 
-  it('resolves an empty roster to the Boss-only layout and snapshots it (TTMUX-080)', async () => {
+  it('resolves an empty roster to the Boss-only layout and snapshots it (tmux-play-180)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const sessionWorkDir = join(workDir, 'session');
     const captain = [
@@ -1929,7 +1929,7 @@ describe('tmux-play config loading', () => {
     expect(snapshot.layout.columnWeights).toEqual([1]);
   });
 
-  it('rejects a malformed layout.initialVisible (TTMUX-080)', async () => {
+  it('rejects a malformed layout.initialVisible (tmux-play-180)', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const captain = [
       'captain:',
@@ -2148,8 +2148,8 @@ describe('tmux-play config loading', () => {
   });
 
   it('rejects decimal layout.columnWeights with the offending index', async () => {
-    // TMUX-064: weights are restricted to positive integers because the
-    // TMUX-044 resize hook interpolates each weight into POSIX shell
+    // tmux-play-64: weights are restricted to positive integers because the
+    // tmux-play-44 resize hook interpolates each weight into POSIX shell
     // arithmetic (`$((W * w_i / sum - 1))`), which is integer-only. A
     // decimal like `0.5` would emit a malformed `$((…))` expression and
     // silently break the post-creation resize invariant; loader-time

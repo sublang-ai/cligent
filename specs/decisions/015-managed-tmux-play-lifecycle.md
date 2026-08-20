@@ -27,8 +27,8 @@ Accepted
 
 ## Decision
 
-Adopt the two-phase managed lifecycle as specified by [TMUX-094](../user/tmux-play.md#tmux-094) and
-verified by [TTMUX-097](../test/tmux-play.md#ttmux-097); the one-phase design is superseded.
+Adopt the two-phase managed lifecycle as specified by [[tmux-play-94](../packages/tmux-play.md#tmux-play-94)] and
+verified by [[tmux-play-197](../packages/tmux-play.md#tmux-play-197)]; the one-phase design is superseded.
 
 - Readiness, input activation, and shutdown are each explicit, acknowledged transitions; coordination
   markers are atomic and create-once, so a child observes either no marker or a complete one.
@@ -50,7 +50,7 @@ Constraints carried forward from the one-phase review, still unimplemented on th
 
 ## Consequences
 
-- [TMUX-094](../user/tmux-play.md#tmux-094) carries the collision and mutation-order clauses; the
+- [[tmux-play-94](../packages/tmux-play.md#tmux-play-94)] carries the collision and mutation-order clauses; the
   implementing change and its acceptance legs follow in a dedicated iteration.
 - The superseded one-phase items (a prepared handle with readiness-as-activation) were never merged; no
   code implements them and none shall.

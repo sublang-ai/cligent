@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 13 are done; tasks 14 through 22 remain.
+Tasks 1 through 14 are done; tasks 15 through 22 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and the superseded-item cluster task 21 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 19's table.
@@ -16,6 +16,9 @@ Task 10 landed `gemini` with `gemini-1` and `gemini-2` reaching none, consuming 
 Task 11 landed `kimi` as the first adapter package whose every behavior a verification item reaches, so it hands task 19 no row, as `ndjson` already did at task 6.
 Task 12 landed `opencode` with `opencode-1` and `opencode-4` reaching none, moving ten of its twenty-three criteria whole rather than restating them, and left `test/adapters.md` holding engine-verifying items alone.
 Task 13 landed `engine` with `engine-7` and `engine-29` reaching none, deleted `test/adapters.md` and `test/engine.md`, moved the peer-SDK-floor clause to `package-201`, and restored `engine-219`, whose engine half task 12 had consumed because it lived in a body citation rather than a `Verifies:` line.
+Its review found `engine-221` restating `codex-221` in Codex-internal vocabulary, and scoping that by concept rather than by the instance named found `engine-222` and `engine-223` doing the same to `opencode-222` and `codex-223`: task 13 had moved each dissolved criterion's adapter body into the engine package instead of writing the engine copy [DR-017](../decisions/017-spec-generation-migration.md) requires, so task 14's commit consolidates all three into one adapter-neutral `engine-221` covering [[meta-34](../meta.md#meta-34)] the `writablePaths` contract alone and retargets the two map rows.
+The same review found `engine-219` reconstructed without the retry bound and sandbox self-skip its source carried, and without the gating its deleted section preamble supplied, leaving a five-adapter live-API item no reader could implement without hard-failing every credential-less host; task 14's commit states that gating inline [[meta-15](../meta.md#meta-15)].
+Task 14 landed `tmux-play` as 184 items matching the map exactly, emptied `specs/user/` and `specs/test/`, and handed task 19 ten uncovered behaviors; two defects its move carried out of the legacy generation were resolved against the destination's law in the same commit, `tmux-play-152` citing peer behavior a verification item may not reach [[meta-20](../meta.md#meta-20)] and `tmux-play-116` deferring its Kimi harness discipline to a citation instead of stating it [[meta-15](../meta.md#meta-15)].
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -50,7 +53,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 ## Deliverables
 
 - [x] A decision record fixes the destination package set, the ID scheme, the disposition of the cross-adapter test file, and what the migration leaves alone.
-- [ ] `specs/packages/` holds one lawful package per subject, and `specs/user/`, `specs/dev/`, and `specs/test/` are gone.
+- [x] `specs/packages/` holds one lawful package per subject, and `specs/user/`, `specs/dev/`, and `specs/test/` are gone.
 - [ ] `specs/intents/` holds every intent record with its status and checkbox state intact, and `specs/iterations/` is gone.
 - [ ] Every item states one GEARS requirement [[meta-29](../meta.md#meta-29)] under the current section order, with peer relationships and verification evidence carried only by inline citations [[meta-14](../meta.md#meta-14)], [[meta-16](../meta.md#meta-16)], [[meta-20](../meta.md#meta-20)], and no `Verifies:` line survives.
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
@@ -157,6 +160,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `engine`    | none                                                                                                 | `engine-7`, whose exported `createEvent()`, `generateSessionId()`, and `isAgentEvent()` helpers no verification item cites; and `engine-29`, superseded by `engine-31` and cited by no verification item, which task 21 settles rather than task 19 |
     | `opencode`  | none                                                                                                 | `opencode-1`, which no verification item cites, its `agent: 'opencode'` identity reaching no check; and `opencode-4`, whose managed-versus-external mode selection no verification item cites, though `opencode-208`, `opencode-228`, and `opencode-235` each exercise a managed-mode run |
     | `gemini`    | none                                                                                                 | `gemini-1`, which no verification item cites, its `agent: 'gemini'` identity and absent SDK dependency reaching no check; `gemini-2`, which no verification item cites while `gemini-adapter.test.ts` does exercise both outcomes of the spawn-based probe but not its timeout; and, within cited items, `gemini-6`'s capability-tool list and its rule that capability-level allows shall not widen an explicit allowlist, which `gemini-204` and `gemini-229` state no case for |
+    | `tmux-play` | none                                                                                                 | `tmux-play-4`, `tmux-play-14`, `tmux-play-15`, `tmux-play-20`, `tmux-play-31`, `tmux-play-32`, and `tmux-play-60`, which no verification item cites and no check reaches; `tmux-play-33`, whose `PlayerRunResult` shape only `presenter-tmux.ts` reads and no check asserts; and `tmux-play-92`, whose turn-scoped `emitReply` surface `follow-observer.test.ts` and `presenter-tmux.test.ts` do exercise while no verification item claims it; `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, is task 21's rather than this task's |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.

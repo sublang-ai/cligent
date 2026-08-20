@@ -19,7 +19,7 @@ import {
   playerAccent,
 } from './player-colors.js';
 
-// TMUX-048 fallback pools; changes here are normative. Sapphire is absent
+// tmux-play-48 fallback pools; changes here are normative. Sapphire is absent
 // from both because the `kimi` adapter claims it.
 const FALLBACK_POOL_MOCHA = new Set([
   '#89dceb', // sky
@@ -39,7 +39,7 @@ const KNOWN_ADAPTERS = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
 
 describe('playerAccent', () => {
   it('returns the canonical Mocha accent for each known adapter', () => {
-    // Anchors per TMUX-048; changes here are normative.
+    // Anchors per tmux-play-48; changes here are normative.
     expect(playerAccent('claude')).toBe('#a6e3a1');
     expect(playerAccent('codex')).toBe('#94e2d5');
     expect(playerAccent('gemini')).toBe('#b4befe');
@@ -69,7 +69,7 @@ describe('playerAccent', () => {
   });
 
   it('never hands an unknown adapter a known adapter accent', () => {
-    // TMUX-048: neither pool may contain an accent assigned to a known
+    // tmux-play-48: neither pool may contain an accent assigned to a known
     // adapter. `kimi` claimed sapphire, so sapphire left both pools —
     // otherwise `cursor`/`qwen`/`agentx`/`cline` would render identically
     // to a `kimi` player in the same session.
@@ -116,7 +116,7 @@ describe('playerAccent', () => {
 
 describe('SGR helpers', () => {
   it('emits bold + 24-bit foreground for the speaker palette anchors', () => {
-    // Anchors per TMUX-038/039 — changes here are normative.
+    // Anchors per tmux-play-38/039 — changes here are normative.
     expect(SPEAKER_BOSS).toBe('#89b4fa');
     expect(SPEAKER_CAPTAIN).toBe('#cba6f7');
     expect(STATUS_ERROR).toBe('#f38ba8');
@@ -134,7 +134,7 @@ describe('SGR helpers', () => {
     expect(SGR_RESET).toBe('\x1b[0m');
   });
 
-  it('exposes the tool lifecycle palette anchors per TMUX-049', () => {
+  it('exposes the tool lifecycle palette anchors per tmux-play-49', () => {
     expect(TOOL_INVOKE).toBe('#fab387'); // peach
     expect(TOOL_OK).toBe('#a6e3a1'); // green
     expect(TOOL_FAIL).toBe('#f38ba8'); // red

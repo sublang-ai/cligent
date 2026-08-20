@@ -5,7 +5,7 @@
 
 ## Goal
 
-Implement [TMUX-027/028](../user/tmux-play.md#tmux-027) and [TMUX-035..042](../user/tmux-play.md#tmux-035).
+Implement [[tmux-play-27](../packages/tmux-play.md#tmux-play-27)] and [[tmux-play-35](../packages/tmux-play.md#tmux-play-35)].
 
 ## Status
 
@@ -26,7 +26,7 @@ In scope:
 - Fanout player prompts without identity preamble.
 - Read-only player panes (input disabled).
 - Real-tmux acceptance test that verifies geometry, layout, titles, and read-only player panes against an actual tmux server.
-- Pre-attach terminal resize request (xterm CSI 8 t) so honoring terminals expand to 240×67 to match TMUX-035.
+- Pre-attach terminal resize request (xterm CSI 8 t) so honoring terminals expand to 240×67 to match tmux-play-35.
 - Resize-invariant 4/6/6 layout via session-scoped tmux hooks, so the spec's region split holds at any window size, not only at creation.
 
 Out of scope: non-tmux UIs.
@@ -36,25 +36,25 @@ Out of scope: non-tmux UIs.
 - [x] `src/app/tmux-play/launcher.ts`.
 - [x] `src/app/tmux-play/presenter-tmux.ts`.
 - [x] `src/captains/fanout.ts`.
-- [x] Tests for TTMUX-021..029; update TTMUX-014.
+- [x] Tests for tmux-play-121..029; update tmux-play-114.
 - [x] Read-only player panes in `src/app/tmux-play/launcher.ts` and matching unit-test assertions.
-- [x] `src/app/tmux-play/launcher.acceptance.test.ts` covering TTMUX-030..033.
-- [x] TTMUX-030..033 in `specs/test/tmux-play.md`.
-- [x] Pre-attach `CSI 8 t` resize request in `src/app/tmux-play/launcher.ts`, TMUX-043 in `specs/user/tmux-play.md`, and TTMUX-034 in `specs/test/tmux-play.md`.
-- [x] Session-scoped `client-resized` / `after-resize-window` hooks in `src/app/tmux-play/launcher.ts` (TMUX-044), unit-test coverage of the `set-hook` calls, and TTMUX-035 acceptance verification of the invariant at multiple window sizes.
+- [x] `src/app/tmux-play/launcher.acceptance.test.ts` covering tmux-play-130..033.
+- [x] tmux-play-130..033 in `specs/test/tmux-play.md`.
+- [x] Pre-attach `CSI 8 t` resize request in `src/app/tmux-play/launcher.ts`, tmux-play-43 in `specs/user/tmux-play.md`, and tmux-play-134 in `specs/test/tmux-play.md`.
+- [x] Session-scoped `client-resized` / `after-resize-window` hooks in `src/app/tmux-play/launcher.ts` (tmux-play-44), unit-test coverage of the `set-hook` calls, and tmux-play-135 acceptance verification of the invariant at multiple window sizes.
 
 ## Tasks
 
 Each task is one commit.
 
-1. [x] Layout and geometry — TMUX-027/028, TMUX-035, TMUX-036.
-2. [x] Presenter rewrite — TMUX-037..040.
-3. [x] Fanout player prompt — TMUX-042.
-4. [x] Player continuity verification — TMUX-041.
-5. [x] Read-only player panes — TMUX-027 (`select-pane -d`) and unit-test coverage.
-6. [x] Real-tmux acceptance gate — TTMUX-030..033 against an actual tmux server.
-7. [x] Pre-attach terminal resize request — TMUX-043 (`CSI 8 ; 67 ; 240 t`) and TTMUX-034 unit-test coverage.
-8. [x] Resize-invariant 4/6/6 layout — TMUX-044 (session-scoped `client-resized` and `after-resize-window` hooks), unit-test of `set-hook` invocations, and TTMUX-035 real-tmux verification at multiple window sizes.
+1. [x] Layout and geometry — tmux-play-27/028, tmux-play-35, tmux-play-36.
+2. [x] Presenter rewrite — tmux-play-37..040.
+3. [x] Fanout player prompt — tmux-play-42.
+4. [x] Player continuity verification — tmux-play-41.
+5. [x] Read-only player panes — tmux-play-27 (`select-pane -d`) and unit-test coverage.
+6. [x] Real-tmux acceptance gate — tmux-play-130..033 against an actual tmux server.
+7. [x] Pre-attach terminal resize request — tmux-play-43 (`CSI 8 ; 67 ; 240 t`) and tmux-play-134 unit-test coverage.
+8. [x] Resize-invariant 4/6/6 layout — tmux-play-44 (session-scoped `client-resized` and `after-resize-window` hooks), unit-test of `set-hook` invocations, and tmux-play-135 real-tmux verification at multiple window sizes.
 
 ## Acceptance criteria
 

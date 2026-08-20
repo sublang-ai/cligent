@@ -3,7 +3,7 @@
 
 import type { Writable } from 'node:stream';
 
-// TMUX-079: Node's readline redraws the live prompt with `clearScreenDown`
+// tmux-play-79: Node's readline redraws the live prompt with `clearScreenDown`
 // (CSI 0J — erase from the cursor to the end of the display) on every edit,
 // including each backspace. When the Boss/Captain prompt sits at the top of
 // its tmux pane (the common case — the pane is mostly empty), that

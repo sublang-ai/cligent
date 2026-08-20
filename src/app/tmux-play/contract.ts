@@ -10,7 +10,7 @@ export interface Captain {
   init?(session: CaptainSession): Promise<void>;
   handleBossTurn(turn: BossTurn, context: CaptainContext): Promise<void>;
   /**
-   * TMUX-085: final live-session hook. Runs once after the active turn
+   * tmux-play-85: final live-session hook. Runs once after the active turn
    * unwinds, while CaptainSession emissions are still accepted, and before
    * the session signal aborts. Use dispose() for post-close resource release.
    */
@@ -30,7 +30,7 @@ export interface CaptainSession {
   emitStatus(message: string, data?: Record<string, unknown>): Promise<void>;
   emitTelemetry(event: CaptainTelemetry): Promise<void>;
   /**
-   * TMUX-081: change which configured players have panes in the main tmux
+   * tmux-play-81: change which configured players have panes in the main tmux
    * window, for phase setup in `init()` or between Boss turns. `playerIds`
    * must be a duplicate-free subset of the configured player ids. The empty
    * set is accepted only for an empty configured roster; an invalid argument
@@ -148,7 +148,7 @@ export interface CallPlayerOptions {
 }
 
 /**
- * TMUX-016: the turn-scoped surface passed to each `handleBossTurn`. Every
+ * tmux-play-16: the turn-scoped surface passed to each `handleBossTurn`. Every
  * turn-scoped member — `callPlayer`, `callCaptain`, `setVisiblePlayers`,
  * `emitReply` — shares one admission boundary: once the runtime resumes from
  * `handleBossTurn`, a new call rejects before emitting any record. Calls
@@ -169,7 +169,7 @@ export interface CaptainContext {
     options?: CallCaptainOptions,
   ): Promise<CaptainRunResult>;
   /**
-   * TMUX-092: emit one turn-scoped conversational Captain reply. The text is
+   * tmux-play-92: emit one turn-scoped conversational Captain reply. The text is
    * rendered in the Boss/Captain pane as ordinary Captain prose — the same
    * Markdown pipeline and `captain> ` prefix as visible Captain speech — not
    * as a bracketed `[status]` operational line. The emitted `captain_reply`
@@ -178,7 +178,7 @@ export interface CaptainContext {
    */
   emitReply(text: string): Promise<void>;
   /**
-   * TMUX-081: turn-scoped variant of {@link CaptainSession.setVisiblePlayers}
+   * tmux-play-81: turn-scoped variant of {@link CaptainSession.setVisiblePlayers}
    * for mid-turn workflow transitions. Same validation and rejection
    * semantics; an accepted call emits one `player_view_changed` carrying the
    * active turn id.

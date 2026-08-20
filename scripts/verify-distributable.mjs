@@ -663,7 +663,7 @@ if (expectation === 'missing') {
   return probePath;
 }
 
-// TPKG-006: the documented onboarding path (`npm install -g @sublang/cligent`
+// tmux-play-201: the documented onboarding path (`npm install -g @sublang/cligent`
 // then `tmux-play`) has to reach a session whose adapters resolve. Driving the
 // installed executable is the only way to see that: the launcher, the config
 // it generates, and the adapter runtimes it needs all live behind the bin.
@@ -1077,7 +1077,7 @@ try {
     cwd: consumerDirectory,
   });
 
-  // TPKG-006: the documented global install, with no agent SDK beside it.
+  // tmux-play-201: the documented global install, with no agent SDK beside it.
   mkdirSync(tmuxPlayGlobalPrefix, { recursive: true });
   run(npm, [
     'install',
@@ -1130,7 +1130,7 @@ try {
     fail('tmux-play created a tmux session before reporting a missing runtime');
   }
 
-  // TPKG-006: repair by running what the user was actually shown, verbatim.
+  // tmux-play-201: repair by running what the user was actually shown, verbatim.
   // Substituting a hand-written install here is what let a command scoped to
   // the wrong tree pass: this prefix is supplied out of band, so a bare
   // `npm install -g` would resolve against npm's own prefix instead.

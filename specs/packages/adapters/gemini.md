@@ -203,6 +203,10 @@ When terminal `done` is not interrupted and no session identifier was received, 
 
 Given canned native Gemini NDJSON events, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[gemini-4](#gemini-4)].
 
+### gemini-202
+
+Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, Gemini 3 and Gemini 2.5 concrete-model aliases shall be created, while a representative unmatched model shall create no effort override and preserve ordinary model forwarding [[gemini-11](#gemini-11)].
+
 ### gemini-203
 
 When `AbortSignal` fires during the adapter's `run()`, the adapter shall yield `done` with `status: 'interrupted'` [[gemini-8](#gemini-8)].

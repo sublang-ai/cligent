@@ -48,8 +48,8 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke
 checks green at its boundary.
 
 1. [x] **Specify the runtime-derived defaults and the launcher gate.**
-       Record DR-012, amend TMUX-002, TMUX-010, TMUX-011, TMUX-061, and
-       TTMUX-001, add TMUX-089, TTMUX-092, TTMUX-093, package-15, and TPKG-006,
+       Record DR-012, amend tmux-play-2, tmux-play-10, tmux-play-11, tmux-play-61, and
+       tmux-play-101, add tmux-play-89, tmux-play-192, tmux-play-193, package-15, and tmux-play-201,
        record IR-038, and update the spec map.
 2. [x] **Implement readiness-derived defaults and the pre-session gate.**
        Add the readiness module, generate the first-run roster from installed

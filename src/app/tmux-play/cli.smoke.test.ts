@@ -95,7 +95,7 @@ describe('tmux-play built CLI smoke', () => {
     ]);
   });
 
-  // TTMUX-092: the built CLI refuses a config whose adapter runtime is not
+  // tmux-play-192: the built CLI refuses a config whose adapter runtime is not
   // installed. `kimi` needs the `kimi` executable, and the harness PATH holds
   // only the stub bin directory, so the runtime is reliably absent whatever
   // the developer has installed.
@@ -180,7 +180,7 @@ describe('tmux-play built CLI smoke', () => {
     );
   });
 
-  // TTMUX-054: invalid YAML permissions.mode aborts the launcher at the
+  // tmux-play-154: invalid YAML permissions.mode aborts the launcher at the
   // CLI boundary — stderr names the offending path, exit code is nonzero,
   // and the runtime never starts, so no `runtime_error` record can be
   // observable. Uses the fake tmux + glow harness so the test does not
@@ -220,8 +220,8 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.stdout).not.toContain('runtime_error');
   });
 
-  // TTMUX-064: invalid YAML layout — a decimal columnWeights value — aborts
-  // the launcher at the CLI boundary. The TMUX-044 resize hook would
+  // tmux-play-164: invalid YAML layout — a decimal columnWeights value — aborts
+  // the launcher at the CLI boundary. The tmux-play-44 resize hook would
   // interpolate the weight verbatim into POSIX integer-only shell
   // arithmetic, so loader-time rejection prevents a broken `$((…))`
   // expression from ever being emitted. Uses the fake tmux + glow harness
@@ -264,7 +264,7 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.stdout).not.toContain('runtime_error');
   });
 
-  // TTMUX-058: adapter-invalid effort at either config location aborts the
+  // tmux-play-158: adapter-invalid effort at either config location aborts the
   // launcher at the CLI boundary before the runtime exists.
   it.each([
     {
@@ -401,7 +401,7 @@ function createHarness(): SmokeHarness {
   );
   chmodSync(fakeTmux, 0o755);
 
-  // TMUX-051 launcher gate now probes glow before loading config. Stub it
+  // tmux-play-51 launcher gate now probes glow before loading config. Stub it
   // alongside the fake tmux so launcher-mode smoke flows don't depend on a
   // real glow on the runner; session-mode rendering isn't exercised here.
   const fakeGlow = join(binDir, 'glow');
@@ -416,7 +416,7 @@ function createHarness(): SmokeHarness {
   );
   chmodSync(fakeGlow, 0o755);
 
-  // TTMUX-092: the stub bin directory also carries node, so a test can scrub
+  // tmux-play-192: the stub bin directory also carries node, so a test can scrub
   // PATH down to it and know no agent CLI is reachable.
   symlinkSync(realpathSync(process.execPath), join(binDir, 'node'));
 

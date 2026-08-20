@@ -41,7 +41,7 @@ Today's gap is two-layered:
 
 YAML carries permissions through typed runtime configuration fields that reach `Cligent.run()` as `AgentOptions`, never through adapter constructors.
 This preserves DR-003's "constructor = DI deps only" and DR-002's `run(prompt, options)` boundary.
-Generic `Cligent` callers may retain instance defaults through `CligentOptions`; tmux-play instead keeps its YAML values as runtime-held call defaults so [TMUX-093](../user/tmux-play.md#tmux-093)'s complete settings can replace or omit every configured field on one call.
+Generic `Cligent` callers may retain instance defaults through `CligentOptions`; tmux-play instead keeps its YAML values as runtime-held call defaults so [[tmux-play-93](../packages/tmux-play.md#tmux-play-93)]'s complete settings can replace or omit every configured field on one call.
 
 Specifically:
 
@@ -144,7 +144,7 @@ Documentation and example configs may recommend classifier-, sandbox-, or review
 Invalid permission options surface at two distinct phases, neither of which is the runtime's `runtime_error` record path:
 
 - **At launcher startup**, before the runtime exists: `createTmuxPlayRuntime` constructs every player and captain `Cligent` before instantiating `TmuxPlayRuntime`. Adapter-construction or `Cligent`-construction failures at this phase propagate as thrown Promise rejections from `createRuntime`, caught at the launcher session-mode entrypoint, and exit with a stderr error and nonzero status. There are no observers to dispatch records to at this phase.
-- **At first `run()` call**, after the runtime exists: an invalid `AgentOptions.permissions` value (e.g., a mapping function that cannot translate the requested mode) surfaces as a `player_finished` or `captain_finished` record with `status: 'error'` per the existing runtime contract, and is rendered through the presenter per [TMUX-039](../user/tmux-play.md#tmux-039).
+- **At first `run()` call**, after the runtime exists: an invalid `AgentOptions.permissions` value (e.g., a mapping function that cannot translate the requested mode) surfaces as a `player_finished` or `captain_finished` record with `status: 'error'` per the existing runtime contract, and is rendered through the presenter per [[tmux-play-39](../packages/tmux-play.md#tmux-play-39)].
 
 The DR does not introduce new error machinery; it constrains where errors should appear so future implementations don't assume the wrong path.
 
@@ -153,7 +153,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 - Per-adapter knob escape hatches in YAML (e.g., setting `default_permissions` directly bypassing `PermissionPolicy`).
 - Inheriting the user's machine-level Codex permission config; a `mode: 'auto'` Codex posture is always a cligent-selected profile, never a deferral to `~/.codex/config.toml`.
 - Per-tool ACL rules in YAML distinct from `PermissionPolicy`.
-- Partial runtime permission merges above a tmux-play YAML default; [TMUX-093](../user/tmux-play.md#tmux-093)'s public complete-settings surface replaces that default with a typed complete `PermissionPolicy`, while generic `RunOptions.permissions` keeps DR-003's merge behavior.
+- Partial runtime permission merges above a tmux-play YAML default; [[tmux-play-93](../packages/tmux-play.md#tmux-play-93)]'s public complete-settings surface replaces that default with a typed complete `PermissionPolicy`, while generic `RunOptions.permissions` keeps DR-003's merge behavior.
 - Automatic permission-mode escalation or down-shift based on context.
 
 ## Consequences

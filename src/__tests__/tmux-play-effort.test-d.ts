@@ -49,7 +49,7 @@ type ConfigSurfaceEfforts = {
   runtimePlayer: EffortMap<RuntimePlayerConfig>;
 };
 
-describe('tmux-play effort types (TTMUX-090)', () => {
+describe('tmux-play effort types (tmux-play-190)', () => {
   it('keeps every config surface adapter-discriminated', () => {
     expectTypeOf<ConfigSurfaceEfforts>().toEqualTypeOf<{
       captain: ExpectedEffortMap;

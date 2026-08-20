@@ -16,7 +16,7 @@ Done
 
 In scope:
 
-- The DR-005, [[engine-21](../packages/engine.md#engine-21)], [[codex-4](../packages/adapters/codex.md#codex-4)], [TTMUX-053](../test/tmux-play.md#ttmux-053), and [TMUX-011](../user/tmux-play.md#tmux-011) amendments (Task 1).
+- The DR-005, [[engine-21](../packages/engine.md#engine-21)], [[codex-4](../packages/adapters/codex.md#codex-4)], [[tmux-play-153](../packages/tmux-play.md#tmux-play-153)], and [[tmux-play-11](../packages/tmux-play.md#tmux-play-11)] amendments (Task 1).
 - Rewriting the Codex adapter mapping: `default_permissions` profile derivation, the `approvalPolicy` + `approvals_reviewer` axis, and removal of `sandboxMode` / `networkAccessEnabled`.
 - Widening the local Codex SDK `config` type to carry `default_permissions`.
 - Updating the Codex mapping unit tests and the auto-mode / tmux-play acceptance probes.
@@ -29,17 +29,17 @@ Out of scope:
 
 ## Deliverables
 
-- [x] `specs/` — DR-005, engine-21, codex-4, TTMUX-053, and TMUX-011 amended; the Codex permissions doc added as a reference; `map.md` indexes this IR.
+- [x] `specs/` — DR-005, engine-21, codex-4, tmux-play-153, and tmux-play-11 amended; the Codex permissions doc added as a reference; `map.md` indexes this IR.
 - [x] `src/adapters/codex.ts` — `mapPermissionsToCodexOptions` / `mapAgentOptionsToCodexOptions` emit `CodexOptions.config.default_permissions` and no `sandboxMode` / `networkAccessEnabled`; the local Codex `config` type is widened.
 - [x] `src/__tests__/codex-adapter.test.ts` — mapping tests assert the modern knobs.
-- [x] `src/adapters/auto-mode.acceptance.test.ts` / `src/app/tmux-play/launcher.acceptance.test.ts` — codex-219 confirms Codex auto-mode write/delete behavior through the real SDK, and TTMUX-053 asserts the modern Codex knobs.
+- [x] `src/adapters/auto-mode.acceptance.test.ts` / `src/app/tmux-play/launcher.acceptance.test.ts` — codex-219 confirms Codex auto-mode write/delete behavior through the real SDK, and tmux-play-153 asserts the modern Codex knobs.
 
 ## Tasks
 
-1. [x] **Spec** — amend DR-005 (Codex modern permission-profile model, determinism caveat, inherit deferred), engine-21 (orthogonal automation-posture / local-access-surface axis composition), codex-4 (the new mapping), TTMUX-053, and TMUX-011; add the Codex permissions doc reference; index this IR in `map.md`.
+1. [x] **Spec** — amend DR-005 (Codex modern permission-profile model, determinism caveat, inherit deferred), engine-21 (orthogonal automation-posture / local-access-surface axis composition), codex-4 (the new mapping), tmux-play-153, and tmux-play-11; add the Codex permissions doc reference; index this IR in `map.md`.
 2. [x] **Codex adapter mapping** — rewrite the Codex mapping to derive `CodexOptions.config.default_permissions` (`:danger-full-access` for `mode: 'bypass'` and for all-`'allow'` capabilities; `:read-only` when `fileWrite` or `shellExecute` is `'deny'`; `:workspace` otherwise, so a network-only `'deny'` stays `:workspace`), set `approvalPolicy` + `approvals_reviewer` per the approval/reviewer axis, and stop emitting `ThreadOptions.sandboxMode` / `networkAccessEnabled`; widen the local Codex `config` type with `default_permissions`.
 3. [x] **Codex unit tests** — update `codex-adapter.test.ts` so the `mode: 'auto'`, `mode: 'bypass'`, per-capability (including a network-only `'deny'`), and absent-policy cases assert the `default_permissions` profile, the `approvalPolicy`, and the absence of `sandboxMode` / `networkAccessEnabled`.
-4. [x] **Acceptance tests** — keep the codex-219 Codex auto-mode probe focused on real-SDK write/delete behavior, update the TTMUX-053 Codex seam probe to assert the modern knobs, confirm the `:workspace` profile still lets the temp-file write and delete proceed, and run `npm run test:acceptance`.
+4. [x] **Acceptance tests** — keep the codex-219 Codex auto-mode probe focused on real-SDK write/delete behavior, update the tmux-play-153 Codex seam probe to assert the modern knobs, confirm the `:workspace` profile still lets the temp-file write and delete proceed, and run `npm run test:acceptance`.
 
 ## Acceptance criteria
 
@@ -49,4 +49,4 @@ Out of scope:
 - A Codex policy `{ fileWrite: 'allow', shellExecute: 'allow', networkAccess: 'deny' }` maps to `default_permissions: ':workspace'`; a denied `networkAccess` alone never selects `:read-only`.
 - Given a resolved `AgentOptions` with no `permissions` policy, no Codex mapping path sets `default_permissions`, `approvals_reviewer`, or `ThreadOptions.approvalPolicy`.
 - No Codex mapping path sets `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`.
-- After Task 4, `npm run test:acceptance` passes with the Codex auto-mode and TTMUX-053 probes asserting the modern knobs.
+- After Task 4, `npm run test:acceptance` passes with the Codex auto-mode and tmux-play-153 probes asserting the modern knobs.

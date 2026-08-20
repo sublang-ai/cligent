@@ -7,7 +7,7 @@
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
 It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, runtime readiness, and the shape of an authentic usage report — not how any one adapter reaches those outcomes.
-Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements.
+Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
 
@@ -206,7 +206,7 @@ Where an adapter's runtime is an executable found through `PATH`, the adapter sh
 
 `Cligent` shall expose a runtime-readiness verdict for an adapter reporting one of the closed set `'satisfied' | 'missing' | 'unsupported' | 'untested' | 'unknown'`, carrying the installed version where one was read, the supported range and tested version from [[package-16](package.md#package-16)], the resolved `node_modules` tree or executable path, and the repair commands.
 `'unsupported'` shall name a runtime below the supported floor and `'untested'` a runtime above the tested version, and the two shall not be reported as the same verdict.
-`'unknown'` shall report a runtime whose version could not be read and shall not be treated as a failure by any caller-facing behavior in this repository.
+`'unknown'` shall report a runtime whose version could not be read and shall not be treated as a failure by any caller-facing behavior this package defines.
 `adapter.isAvailable()` shall remain a boolean and shall report `false` for exactly `'missing'` and `'unsupported'`, so a caller that has not adopted the verdict keeps its current contract while a caller that has can distinguish an absent runtime from an incompatible one.
 
 ### Token Usage Availability
@@ -311,9 +311,9 @@ Given a mock adapter that yields canned events, when calling `run()`, the consum
 
 ### engine-107
 
-When `AbortSignal` fires during `run()`, the engine shall yield `done` (`status: 'interrupted'`) and no further events [[engine-5](#engine-5)], [[engine-9](#engine-9)], [[engine-10](#engine-10)], [[engine-13](#engine-13)].
-When the adapter responds to that abort by yielding non-terminal flush events followed by its own terminal `done` with `status: 'interrupted'` and `resumeToken` during the bounded abort drain, the engine shall suppress the non-terminal events, yield that adapter `done` rather than a synthesized one, capture the token, and pass it as `resume` on the next `Cligent.run()` call.
-When the adapter does not settle to terminal `done` during the abort drain, the engine shall synthesize `done` (`status: 'interrupted'`) without clearing the previously stored resume token.
+When `AbortSignal` fires during `run()`, the engine shall yield `done` (`status: 'interrupted'`) and no further events [[engine-9](#engine-9)], [[engine-10](#engine-10)].
+When the adapter responds to that abort by yielding non-terminal flush events followed by its own terminal `done` with `status: 'interrupted'` and `resumeToken` during the bounded abort drain, the engine shall suppress the non-terminal events, yield that adapter `done` rather than a synthesized one [[engine-13](#engine-13)], capture the token, and pass it as `resume` on the next `Cligent.run()` call [[engine-5](#engine-5)].
+When the adapter does not settle to terminal `done` during the abort drain, the engine shall synthesize `done` (`status: 'interrupted'`) [[engine-13](#engine-13)] without clearing the previously stored resume token [[engine-5](#engine-5)].
 
 ### engine-108
 
@@ -394,21 +394,33 @@ Where a producer publishes a token report, all numeric fields shall satisfy [[en
 Where request coverage is incomplete but exact counters exist, the report shall say `'partial'`; where no authentic counters exist, `tokens` shall be absent.
 Where a cost is present without tokens or tokens without cost, both shapes shall remain valid, and every cost shall carry USD currency and an allowed provenance source.
 
+### engine-201
+
+Given an application configuration that supplies a permission policy for an agent role, when the configuration loader returns, the loaded value shall be a typed `PermissionPolicy` whose `writablePaths` entries are validated and canonicalized [[engine-21](#engine-21)], [[engine-22](#engine-22)].
+
+### engine-202
+
+Given a `PermissionPolicy` accepted by a caller, when the runtime constructs the corresponding `Cligent`, the value shall reach the adapter as `AgentOptions.permissions` at the next `run()` call, its `mode` and any canonicalized `writablePaths` surviving unchanged for the adapter to map [[engine-21](#engine-21)], [[engine-22](#engine-22)], [[engine-23](#engine-23)].
+
 ### engine-203
 
 When `AbortSignal` fires during an adapter's `run()`, the adapter shall yield `done` (`status: 'interrupted'`) [[engine-9](#engine-9)].
 
+### engine-204
+
+Where a caller selects representative effort values covering each distinct adapter transport class, when the runtime constructs and invokes the corresponding `Cligent`, each value shall reach that adapter's own effort surface without cross-aliasing into another adapter's vocabulary [[engine-20](#engine-20)].
+
 ### engine-209
 
-Given `allowedTools` and `disallowedTools` options, each adapter shall enforce whitelist and precedence semantics or reject before backend invocation when it has no compatible restriction surface, per [[engine-17](#engine-17)] [[engine-17](#engine-17)].
+Given `allowedTools` and `disallowedTools` options, each adapter shall enforce whitelist and precedence semantics or reject before backend invocation when it has no compatible restriction surface, per [[engine-17](#engine-17)].
 
 ### engine-214
 
-Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and retain no cross-run state except the cumulative-accounting baseline and ordering queue permitted by [[engine-18](#engine-18)] [[engine-18](#engine-18)].
+Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and retain no cross-run state except the cumulative-accounting baseline and ordering queue permitted by [[engine-18](#engine-18)].
 
 ### engine-218
 
-Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match the cited adapter item [[engine-20](#engine-20)], [[engine-24](#engine-24)].
+Where each value in an adapter's exposed effort vocabulary is supplied, when the adapter maps a run, that adapter shall set an observable provider control for that value and shall set no control belonging to another adapter's vocabulary [[engine-20](#engine-20)], [[engine-24](#engine-24)].
 
 When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
 Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [[engine-24](#engine-24)].
@@ -420,25 +432,19 @@ Where a `Cligent` is constructed on each built-in adapter with `CligentOptions.p
 - the file shall exist with the expected contents after each phase;
 - neither stream shall contain `permission_request`, a denied tool result, or an error;
 - each stream shall terminate with successful `done`;
-- filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently.
+- filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
+- the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
+- each adapter's leg shall self-skip with a logged reason when the CLI that adapter spawns is absent from `PATH` or its credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
+- where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`.
 
 ### engine-221
 
-Given a Codex `PermissionPolicy` whose local access resolves to `:workspace` and whose `writablePaths` contains valid entries, the Codex permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'profile'`, select a generated extra-writes permission profile that extends `:workspace`, and represent `write` grants under `:workspace_roots` for each canonical path.
-Given non-empty `writablePaths` with Codex local access resolved to `:read-only`, the mapping shall reject the policy.
-Given non-empty `writablePaths` with Codex local access resolved to `:danger-full-access`, the mapping shall report the canonical paths with `enforcement: 'ambient'`, shall not generate an extra-writes profile, and shall not narrow the broader posture [[engine-22](#engine-22)], [[engine-23](#engine-23)].
+Given each built-in adapter's permission mapping and a `PermissionPolicy` carrying `writablePaths`, when the mapping is exercised over valid and invalid entries, the reported `WritablePathsPermissionMapping` shall satisfy the portable contract every adapter implements [[engine-22](#engine-22)], [[engine-23](#engine-23)]:
 
-### engine-222
-
-Given an OpenCode `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping.
-Given invalid `writablePaths`, the mapping shall reject the policy [[engine-22](#engine-22)], [[engine-23](#engine-23)].
-
-### engine-223
-
-Given the Codex CLI can initialize its native sandbox, a credential-free Codex sandbox probe shall show that the built-in `:workspace` profile cannot write inside `.git`, while cligent's generated extra-writes profile delivery grants `write` for `.git` without creating or modifying repository `.codex/config.toml` or user-level Codex `config.toml`.
-Mapping tests shall prove that managed writable mappings encode active-project trust as a top-level `projects={<path>={trust_level="trusted"}}` inline table rather than a quoted dotted path, perform Codex-compatible Windows device-prefix simplification, and resolve linked worktrees to Codex's main-repository trust root; read-only mappings and mappings without a non-empty caller `cwd` shall not inject project trust.
-Given `CligentOptions.permissions = { mode: 'auto', writablePaths: ['.git'] }` and Codex credentials, a real Codex SDK run in a throwaway git repository shall complete a git metadata write without `permission_request`, denied tool results, or error events, and without creating or modifying repository or user-level Codex config files, including persisted `projects.<path>.trust_level` entries for the throwaway workspace.
-As in [[codex-219](adapters/codex.md#codex-219)], the Codex leg shall self-skip with a logged reason when the host cannot initialize Codex's native sandbox, and shall hard-fail under `CI` for missing Codex dependencies or credentials [[engine-22](#engine-22)], [[engine-23](#engine-23)].
+- an accepted entry shall be reported canonically — `/` separators, no leading `./` component, no trailing slash, and no `.` component — whatever spelling the caller supplied;
+- the reported `enforcement` shall be a member of the closed set `'profile' | 'sandbox' | 'ambient'`;
+- an empty entry, a root-equivalent entry such as `.` or `./`, an absolute path, a path containing `..`, an empty segment, a glob metacharacter, a shell expansion character, or a control character shall cause the mapping to reject the policy;
+- where `writablePaths` is absent or empty, the mapping shall emit no `WritablePathsPermissionMapping` payload.
 
 ### engine-226
 

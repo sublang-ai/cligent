@@ -140,6 +140,10 @@ The adapter may retain schema validation for a future ACP usage extension, but s
 
 Given canned native ACP traffic, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[kimi-5](#kimi-5)], its one terminal `done` carrying the status its stop reason maps to [[kimi-6](#kimi-6)].
 
+### kimi-202
+
+Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, the binary ACP thinking setting shall be selected exactly, `on` preserving model forwarding and selecting that model's default thinking effort [[kimi-9](#kimi-9)].
+
 ### kimi-203
 
 When `AbortSignal` fires during the adapter's `run()`, the adapter shall yield `done` with `status: 'interrupted'` [[kimi-11](#kimi-11)].
@@ -168,7 +172,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - Kimi Code `0.31.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them;
 - the harness exercises the OAuth route exclusively, so its credential probe shall run with the `KIMI_MODEL_*` overlay removed exactly as the live legs do, inheriting it being what would let an environment-configured model report a spent OAuth credential as usable and make those legs fail instead of self-skipping;
 - because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use;
-- the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in this repository;
+- the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in the behavior under test;
 - the credential-free ACP initialization conformance check shall remain mandatory in `CI` regardless, so a protocol-surface regression still fails the build;
 - locally, the Kimi source home shall resolve in order from `CLIGENT_KIMI_ACCEPTANCE_HOME`, an absolute `KIMI_CODE_HOME`, or the documented `~/.kimi-code` default, and the Kimi CLI shall resolve from `PATH` or that source home's managed `bin` directory;
 - under `CI`, `CLIGENT_KIMI_ACCEPTANCE_HOME` shall name an absolute, dedicated source home containing regular files at `config.toml` and `credentials/kimi-code.json`, missing or invalid Kimi credentials or CLI failing like every other adapter dependency;

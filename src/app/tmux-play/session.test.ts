@@ -162,7 +162,7 @@ describe('TmuxPlaySession', () => {
 
     await session.start();
 
-    // TMUX-038: boss> prefix wrapped in blue SGR (#89b4fa) and reset.
+    // tmux-play-38: boss> prefix wrapped in blue SGR (#89b4fa) and reset.
     expect(readline.promptValue).toBe('\x1b[1;38;2;137;180;250mboss> \x1b[0m');
     expect(readline.promptCount).toBe(1);
     expect(factory).toHaveBeenCalledTimes(1);
@@ -188,8 +188,8 @@ describe('TmuxPlaySession', () => {
         players: [expect.objectContaining({ id: 'coder', effort: 'ultra' })],
       }),
     );
-    // Order: the TMUX-083 layout observer first, then the presenter, the
-    // TMUX-069 follow observer (constructed internally), timing, notifications,
+    // Order: the tmux-play-83 layout observer first, then the presenter, the
+    // tmux-play-69 follow observer (constructed internally), timing, notifications,
     // and finally any opt-in observers. The concrete-type slots are pinned (not
     // `expect.any(Object)`), so swapping these display-side observers fails
     // here.
@@ -214,7 +214,7 @@ describe('TmuxPlaySession', () => {
   });
 
   it('colors the boss> prompt with the snapshot-resolved Latte blue', async () => {
-    // TMUX-038 + TMUX-047: when the snapshot's `theme` is `latte` the
+    // tmux-play-38 + tmux-play-47: when the snapshot's `theme` is `latte` the
     // readline prompt shall render in Latte `speakerBoss` (#1e66f5 / RGB
     // 30,102,245), not the Mocha default. Mirrors the Mocha assertion
     // above so a regression in either direction surfaces here.
@@ -340,7 +340,7 @@ describe('TmuxPlaySession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // Per TMUX-039 the bracketed tag is `[runtime error]` with the message
+    // Per tmux-play-39 the bracketed tag is `[runtime error]` with the message
     // outside the brackets; assert the new form doesn't appear either so a
     // regression that re-emits a runtime_error via the bypass path is caught.
     expect(output.text()).not.toContain('[runtime error] captain failed');
@@ -384,7 +384,7 @@ describe('TmuxPlaySession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // Per TMUX-039 unified grammar: bracketed tag is `[runtime error]` with
+    // Per tmux-play-39 unified grammar: bracketed tag is `[runtime error]` with
     // the message in the body outside the brackets.
     expect(output.text()).toContain(
       'captain> [runtime error] Record observer 0 failed while handling turn_started: observer failed',
@@ -561,7 +561,7 @@ describe('TmuxPlaySession', () => {
     expect(records).toEqual([
       expect.objectContaining({ type: 'turn_aborted', reason: 'ESC' }),
     ]);
-    // Per TMUX-039 unified grammar: bracketed tag `[turn aborted]` carries
+    // Per tmux-play-39 unified grammar: bracketed tag `[turn aborted]` carries
     // the yellow outcome SGR span, then a `\x1b[0m` reset, then the reason
     // `ESC` sits outside the brackets unstyled. The reset bytes separate
     // the closing `]` from the space + `ESC`, so we strip ANSI before
@@ -652,13 +652,13 @@ describe('TmuxPlaySession', () => {
     expect(nonTtyOutput.text()).not.toContain(BRACKETED_PASTE_DISABLE);
   });
 
-  // TTMUX-074: while a Boss turn is in flight, the live readline prompt is
+  // tmux-play-174: while a Boss turn is in flight, the live readline prompt is
   // suspended so type-ahead paints no fresh `boss> ` line into the pane amid
   // the streamed Captain output; the colored prompt is restored exactly once
   // at turn end and the buffered type-ahead surfaces as one runBossTurn on the
   // next Enter. A stubbed readline does not echo prompt chrome and would pass
   // vacuously, so the probe drives a real `createInterface` over a TTY pair (as
-  // the TTMUX-059 ESC probe does), wrapping only `prompt` with a call-through
+  // the tmux-play-159 ESC probe does), wrapping only `prompt` with a call-through
   // spy to count restorations.
   it('suspends the boss> prompt during an active turn and restores it once for typed type-ahead', async () => {
     tempDir = makeWorkDir();
@@ -670,8 +670,8 @@ describe('TmuxPlaySession', () => {
         return;
       }
       // Stream a Captain `captain> ` line into the Boss/Captain pane. A
-      // captain_status line bypasses glow (TMUX-050) yet still routes to the
-      // boss writer per TMUX-040, standing in for streamed Captain output.
+      // captain_status line bypasses glow (tmux-play-50) yet still routes to the
+      // boss writer per tmux-play-40, standing in for streamed Captain output.
       const runtimeOptions = createRuntime.mock.calls[0]?.[0];
       for (const observer of runtimeOptions?.observers ?? []) {
         await observer.onRecord({
@@ -796,7 +796,7 @@ describe('TmuxPlaySession', () => {
     expect(promptSpy?.mock.calls.length).toBe(2);
 
     // The pasted type-ahead submits as one runBossTurn whose prompt preserves
-    // the embedded newline per TMUX-058.
+    // the embedded newline per tmux-play-58.
     input.write('\n');
     await waitUntil(() => runBossTurn.mock.calls.length === 2);
     expect(runBossTurn.mock.calls.map((call) => call[0])).toEqual([
@@ -808,7 +808,7 @@ describe('TmuxPlaySession', () => {
     await session.done;
   });
 
-  // TTMUX-074: a fresh ready `boss> ` prompt is painted only once the queue of
+  // tmux-play-174: a fresh ready `boss> ` prompt is painted only once the queue of
   // submitted Boss lines drains. When the Boss types Enter ahead and a second
   // line queues behind the active turn, releasing the first turn must not
   // repaint the prompt while the second is still queued; exactly one repaint
@@ -1019,7 +1019,7 @@ describe('TmuxPlaySession', () => {
     expect(order.slice(-2)).toEqual(['runtime.dispose', 'shutdown']);
   });
 
-  it('isolates agents before managed runtime initialization (TMUX-074)', async () => {
+  it('isolates agents before managed runtime initialization (tmux-play-74)', async () => {
     tempDir = makeWorkDir({ emptyPlayers: true });
     const paths = managedPaths(tempDir);
     const readline = new FakeReadline();
@@ -1082,7 +1082,7 @@ describe('TmuxPlaySession', () => {
     }
   });
 
-  it('isolates agents before stock runtime construction (TMUX-074)', async () => {
+  it('isolates agents before stock runtime construction (tmux-play-74)', async () => {
     tempDir = makeWorkDir();
     const readline = new FakeReadline();
     const savedTmux = process.env.TMUX;

@@ -61,10 +61,10 @@ import {
 interface ActiveTurn {
   readonly turn: BossTurn;
   readonly controller: AbortController;
-  // TMUX-022: settlement signals for the callPlayer / callCaptain calls this
+  // tmux-play-22: settlement signals for the callPlayer / callCaptain calls this
   // turn admitted, joined before its terminal record dispatches.
   readonly admittedCalls: Set<Promise<void>>;
-  // TMUX-016: true once the runtime has resumed from handleBossTurn. Closing
+  // tmux-play-16: true once the runtime has resumed from handleBossTurn. Closing
   // admission is a state of the turn, not the end of it: the turn stays
   // reachable so ESC, an external signal, and disposal can still abort the
   // calls it already admitted, which is what bounds the join below.
@@ -320,7 +320,7 @@ export class TmuxPlayRuntime {
           );
         }
       } finally {
-        // TMUX-016 / TMUX-022: the Captain run is the turn's scope, so
+        // tmux-play-16 / tmux-play-22: the Captain run is the turn's scope, so
         // admission closes the instant the runtime holds control again —
         // whatever the outcome, and before the runtime takes any action of
         // its own. Closing it here rather than on each path below is what
@@ -339,7 +339,7 @@ export class TmuxPlayRuntime {
       await this.joinAdmittedCalls(active);
       await this.dispatcher.drain();
 
-      // TMUX-016 / TMUX-021 / TMUX-081 / TMUX-092: fence the turn before its
+      // tmux-play-16 / tmux-play-21 / tmux-play-81 / tmux-play-92: fence the turn before its
       // terminal record is enqueued. Records enqueued earlier keep their
       // place ahead of it, and from here session-scoped emissions stamp the
       // null turn lane.
@@ -372,7 +372,7 @@ export class TmuxPlayRuntime {
     }
   }
 
-  // TMUX-022: register a call the turn just admitted and return its release.
+  // tmux-play-22: register a call the turn just admitted and return its release.
   // The turn-scope gate ran first, so the active turn is this call's turn,
   // and both run in one synchronous segment: passing the gate means being
   // admitted. The tracked promise resolves and never rejects, so the runtime
@@ -395,7 +395,7 @@ export class TmuxPlayRuntime {
     };
   }
 
-  // TMUX-022 / TMUX-024: wait for the calls this turn admitted, so their
+  // tmux-play-22 / tmux-play-24: wait for the calls this turn admitted, so their
   // player_prompt → player_event* → player_finished (captain_prompt →
   // captain_event* → captain_finished) sequences dispatch before the terminal
   // record — including when the Captain never awaited the call and let
@@ -412,18 +412,18 @@ export class TmuxPlayRuntime {
     return {
       signal,
       players: this.playerHandles,
-      // TMUX-016: turn-scoped calls carry this turn's id and reject once the
+      // tmux-play-16: turn-scoped calls carry this turn's id and reject once the
       // turn's admission closes, so no call's records can trail its terminal
-      // record. TMUX-022 makes starting one without awaiting a supported
+      // record. tmux-play-22 makes starting one without awaiting a supported
       // style, so every surface here is `handled`: the runtime owns the
       // failure of a call it owns the settlement of.
       callPlayer: (playerId, prompt, options) =>
         handled(this.callPlayer(turn, signal, playerId, prompt, options)),
       callCaptain: (prompt, options) =>
         handled(this.callCaptain(turn, signal, prompt, options)),
-      // TMUX-092: a turn-scoped conversational reply carries this turn's id.
+      // tmux-play-92: a turn-scoped conversational reply carries this turn's id.
       emitReply: (text) => handled(this.emitTurnReply(turn, text)),
-      // TMUX-081: a turn-scoped call carries this turn's id.
+      // tmux-play-81: a turn-scoped call carries this turn's id.
       setVisiblePlayers: (playerIds) =>
         handled(this.setContextVisiblePlayers(turn, playerIds)),
     };
@@ -580,7 +580,7 @@ export class TmuxPlayRuntime {
     return this.dispatcher.emit(record);
   }
 
-  // TMUX-092: turn-scoped counterpart of emitSessionStatus. Where the status
+  // tmux-play-92: turn-scoped counterpart of emitSessionStatus. Where the status
   // lane is session-scoped (nullable turn id, open until shutdown), a
   // conversational reply belongs to the turn that produced it: the record
   // always carries the context turn's id, and — through the shared turn-scope
@@ -600,7 +600,7 @@ export class TmuxPlayRuntime {
     });
   }
 
-  // TMUX-016 / TMUX-081 / TMUX-092: the single turn-scope gate every
+  // tmux-play-16 / tmux-play-81 / tmux-play-92: the single turn-scope gate every
   // turn-scoped CaptainContext surface (callPlayer, callCaptain,
   // setVisiblePlayers, emitReply) checks before emitting anything. It rejects
   // on either half of the turn's end: once admission closes, so nothing joins
@@ -618,7 +618,7 @@ export class TmuxPlayRuntime {
     return undefined;
   }
 
-  // TMUX-016 / TMUX-081 / TMUX-092: called ahead of a turn's terminal record
+  // tmux-play-16 / tmux-play-81 / tmux-play-92: called ahead of a turn's terminal record
   // on the ordered dispatch path — the last thing before it on the completed
   // path, before the runtime_error handleRuntimeFailure emits on the failure
   // one — the one fence behind every turn-scoped surface. Invalidating the
@@ -626,7 +626,7 @@ export class TmuxPlayRuntime {
   // late callPlayer / callCaptain / setVisiblePlayers / emitReply calls
   // reject via the turn-scope gate, and moves late session-scoped emitStatus
   // / emitTelemetry / setVisiblePlayers onto the ordering-legal null turn
-  // lane per TMUX-021. Records enqueued before the fence keep their place
+  // lane per tmux-play-21. Records enqueued before the fence keep their place
   // ahead of the terminal record on the FIFO dispatch chain.
   private fenceActiveTurn(turnId: number): void {
     if (this.activeTurn?.turn.id === turnId) {
@@ -659,10 +659,10 @@ export class TmuxPlayRuntime {
     );
   }
 
-  // TMUX-081 / TMUX-082: validate the requested visible set and, when valid,
+  // tmux-play-81 / tmux-play-82: validate the requested visible set and, when valid,
   // emit exactly one `player_view_changed` on the ordered, awaited dispatch
   // path. The runtime validates and emits only; pane reconciliation is the
-  // TMUX-083 layout observer's job. Validation throwing here rejects the
+  // tmux-play-83 layout observer's job. Validation throwing here rejects the
   // returned Promise before any record is emitted, so a rejected call leaves
   // the layout observer's tracked visible set unchanged.
   private async setVisiblePlayers(
@@ -676,7 +676,7 @@ export class TmuxPlayRuntime {
     });
   }
 
-  // TMUX-081: the turn-scoped CaptainContext variant. The turn-scope gate
+  // tmux-play-81: the turn-scoped CaptainContext variant. The turn-scope gate
   // rejects a stashed context — after the fence or during a later turn —
   // before validation, so no player_view_changed can trail the turn's
   // terminal record or misattribute a closed turn's id.
@@ -700,7 +700,7 @@ export class TmuxPlayRuntime {
     if (error) {
       throw error;
     }
-    // TMUX-021 / TMUX-081: a session-scoped call carries the active turn id
+    // tmux-play-21 / tmux-play-81: a session-scoped call carries the active turn id
     // when a turn is in flight, otherwise `null`.
     await this.setVisiblePlayers(playerIds, this.activeTurn?.turn.id ?? null);
   }
@@ -789,7 +789,7 @@ export class TmuxPlayRuntime {
 }
 
 /**
- * TMUX-022: marks a turn-scoped surface's rejection as observed.
+ * tmux-play-22: marks a turn-scoped surface's rejection as observed.
  *
  * Starting a call without awaiting it is a supported style, and the runtime
  * both admits and joins such a call — so it owns that call's failure too. An

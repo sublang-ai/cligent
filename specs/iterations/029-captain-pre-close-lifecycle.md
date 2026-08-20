@@ -13,7 +13,7 @@ Complete
 
 ## Deliverables
 
-- [x] Add [DR-008](../decisions/008-captain-pre-close-lifecycle.md), [TMUX-085](../user/tmux-play.md#tmux-085), and [TTMUX-086](../test/tmux-play.md#ttmux-086).
+- [x] Add [DR-008](../decisions/008-captain-pre-close-lifecycle.md), [[tmux-play-85](../packages/tmux-play.md#tmux-play-85)], and [[tmux-play-186](../packages/tmux-play.md#tmux-play-186)].
 - [x] Add optional `Captain.prepareDispose()` to the public tmux-play contract.
 - [x] Invoke pre-close and final-disposal hooks exactly once in their respective emission phases during normal and initialization-failure cleanup.
 - [x] Surface pre-close and final-disposal failures without skipping later cleanup, including observer failures caused by pre-close emissions, while preserving legacy handling of earlier dispatcher failures.

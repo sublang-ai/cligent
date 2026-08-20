@@ -59,7 +59,7 @@ describe('FollowObserver', () => {
   it('follows the boss pane on a conversational captain reply', () => {
     const { observer, followed } = makeObserver();
 
-    // TMUX-092: the presenter renders the reply as a complete prose block on
+    // tmux-play-92: the presenter renders the reply as a complete prose block on
     // the boss pane, so the follow fires like any other flushed write.
     observer.onRecord(captainReply('On it.'));
 
@@ -100,7 +100,7 @@ describe('FollowObserver', () => {
   it('does not follow on hidden captain events or hidden finished records', () => {
     const { observer, followed } = makeObserver();
 
-    // A hidden Captain call (TMUX-072) puts zero bytes on the boss pane — the
+    // A hidden Captain call (tmux-play-72) puts zero bytes on the boss pane — the
     // presenter skips its captain_event and captain_finished records — so none
     // of these may snap a scrolled pane to its tail, regardless of event type
     // or finished status.

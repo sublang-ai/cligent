@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// TTMUX-055: real-run end-to-end probe that the Claude player can do file work
+// tmux-play-155: real-run end-to-end probe that the Claude player can do file work
 // through the tmux-play runtime. It reproduces and guards the user-reported
 // failure — "write a file to a temporary location and delete it" did nothing
 // — by driving a create turn and a delete turn through the fanout Captain and
@@ -48,7 +48,7 @@ interface ScenarioOutcome {
   readonly fileAfterDelete: boolean;
 }
 
-describe('tmux-play Claude player file write/delete (TTMUX-055)', () => {
+describe('tmux-play Claude player file write/delete (tmux-play-155)', () => {
   acceptanceIt(
     'writes then deletes a file via the fanout Captain runtime',
     async () => {
@@ -129,7 +129,7 @@ async function runScenario(): Promise<ScenarioOutcome> {
     });
 
     // Turn 1 only creates — it must not forbid deletion, since the player's
-    // session resumes on turn 2 (TMUX-041) and Claude would treat a turn-1
+    // session resumes on turn 2 (tmux-play-41) and Claude would treat a turn-1
     // "do not delete" against a turn-2 "delete" as a contradiction to refuse.
     await runtime.runBossTurn(
       `Create a file named ${fileName} in the current working directory ` +

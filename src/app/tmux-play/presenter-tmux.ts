@@ -36,7 +36,7 @@ const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
 // and keeps glow output sane until a real pane width is available.
 const DEFAULT_PANE_WIDTH = 80;
 
-// TMUX-038/039/049 SGR anchors built once per presenter instance from the
+// tmux-play-38/039/049 SGR anchors built once per presenter instance from the
 // session's resolved Catppuccin flavor, so a Latte session uses Latte ANSI
 // prefixes inside pane content and a Mocha session uses Mocha. The shape
 // matches the previous module-level constants; the difference is they're
@@ -75,7 +75,7 @@ export interface TmuxPresenterOptions {
   readonly bossWidth?: WidthSource;
   readonly playerWidths?: ReadonlyMap<string, WidthSource>;
   // player-id → adapter-name. Used to pick the player's prefix SGR color from
-  // the adapter map per TMUX-048. When absent the player prefix stays uncolored
+  // the adapter map per tmux-play-48. When absent the player prefix stays uncolored
   // (graceful fallback for callers / older tests that don't supply it).
   readonly playerAdapters?: ReadonlyMap<string, string>;
   /**
@@ -99,7 +99,7 @@ export class TmuxPresenter implements RecordObserver {
   private readonly flavor: CatppuccinFlavor;
   private readonly sgr: PresenterSgr;
   private readonly widths = new WeakMap<TmuxPresenterWriter, WidthSource>();
-  // TMUX-050: per-writer accumulator for the open text block. A block opens
+  // tmux-play-50: per-writer accumulator for the open text block. A block opens
   // on the first text / text_delta event for a writer and flushes through
   // glow at the next boundary (run result, prompt, tool event, status,
   // runtime error, turn abort). Markdown is not streamable — glow needs the
@@ -134,7 +134,7 @@ export class TmuxPresenter implements RecordObserver {
         break;
       case 'turn_aborted':
         this.flushBlock(this.boss);
-        // TMUX-039 kind table: `[turn aborted]` body is the abort reason
+        // tmux-play-39 kind table: `[turn aborted]` body is the abort reason
         // "when present" — no synthesized fallback. A record without a
         // reason renders as just `captain> [turn aborted]\n`; under the
         // outside-brackets grammar a fallback word would read as an actual
@@ -158,21 +158,21 @@ export class TmuxPresenter implements RecordObserver {
         this.writePlayerFinished(record);
         break;
       case 'captain_event':
-        // TMUX-072: a hidden Captain call produces zero Boss-pane output.
+        // tmux-play-72: a hidden Captain call produces zero Boss-pane output.
         // Skipping the event keeps it out of the open text block, so a
         // hidden call never accumulates content to flush.
         if (record.visibility === 'hidden') break;
         this.writeFormatted(this.boss, 'captain', record.event);
         break;
       case 'captain_finished':
-        // TMUX-072: skip the flush + status line for a hidden call. Visible
+        // tmux-play-72: skip the flush + status line for a hidden call. Visible
         // calls flush their own block at their captain_finished, so there is
         // no stale open block to drain here.
         if (record.visibility === 'hidden') break;
         this.writeRunResult(this.boss, 'captain', record.result);
         break;
       case 'captain_reply':
-        // TMUX-092: a conversational Captain reply renders as ordinary
+        // tmux-play-92: a conversational Captain reply renders as ordinary
         // Captain prose — the same glow Markdown pipeline and `captain> `
         // prefix as visible captain_event text — not as a bracketed
         // operational line. writeBlock flushes any open block first, so the
@@ -242,7 +242,7 @@ export class TmuxPresenter implements RecordObserver {
         result.error ?? 'Agent run failed',
       );
     } else {
-      // Aborted: no body — TMUX-033 says aborted results need not carry a reason.
+      // Aborted: no body — tmux-play-33 says aborted results need not carry a reason.
       this.writeBracketedLine(
         writer,
         who,
@@ -263,8 +263,8 @@ export class TmuxPresenter implements RecordObserver {
     // would duplicate failures and reintroduce noisy ok/usage footers.
     if (event.type === 'done' || event.type === 'error') return;
 
-    // TMUX-049: tool lifecycle uses the standard speaker prefix plus the
-    // [tool …] bracketed tag from TMUX-039's kind table — single-line
+    // tmux-play-49: tool lifecycle uses the standard speaker prefix plus the
+    // [tool …] bracketed tag from tmux-play-39's kind table — single-line
     // operational text that bypasses the Markdown pipeline.
     if (event.type === 'tool_use') {
       this.writeToolInvoke(writer, who, event.payload as ToolUsePayload);
@@ -320,7 +320,7 @@ export class TmuxPresenter implements RecordObserver {
   }
 
   // Render the open block on `writer` through glow and emit the result with
-  // the TMUX-038 prefix/indent grammar applied. No-op when no block is open
+  // the tmux-play-38 prefix/indent grammar applied. No-op when no block is open
   // or the buffered text is empty.
   private flushBlock(writer: TmuxPresenterWriter): void {
     const block = this.blocks.get(writer);
@@ -357,8 +357,8 @@ export class TmuxPresenter implements RecordObserver {
     writer.write(this.applyPrefix(block.who, rendered, effective));
   }
 
-  // TMUX-039 unified operational-line shape: `<who>> [<tag> <optional glyph>]
-  // <optional body>`. The speaker prefix carries the TMUX-038 color span; the
+  // tmux-play-39 unified operational-line shape: `<who>> [<tag> <optional glyph>]
+  // <optional body>`. The speaker prefix carries the tmux-play-38 color span; the
   // bracketed tag carries its own outcome SGR span (red/yellow/green) when
   // the kind is colored, or is emitted plain for uncolored kinds (status,
   // tool ↪). The body — when present — lives outside the brackets and is
@@ -392,7 +392,7 @@ export class TmuxPresenter implements RecordObserver {
     const prefix = prefixSgr ? `${prefixSgr}${who}> ${SGR_RESET}` : `${who}> `;
     const tagInner = glyph ? `[${tag} ${glyph}]` : `[${tag}]`;
     const tagSpan = tagSgr ? `${tagSgr}${tagInner}${SGR_RESET}` : tagInner;
-    // Trailing space rule (TMUX-049): when there's no body, the line ends at
+    // Trailing space rule (tmux-play-49): when there's no body, the line ends at
     // the closing bracket — no stranded space. When a body is present, it
     // sits one space outside the brackets, unstyled.
     const trailer = body !== undefined && body.length > 0 ? ` ${body}` : '';
@@ -408,7 +408,7 @@ export class TmuxPresenter implements RecordObserver {
     const inputSummary = summarizeToolInput(payload.input);
     // Body is `<toolName>` when no input summary exists, or `<toolName>
     // <inputSummary>` otherwise. The bracketed tag `[tool ↪]` is uncolored
-    // per TMUX-039 — speaker identity is carried by the `<who>> ` prefix.
+    // per tmux-play-39 — speaker identity is carried by the `<who>> ` prefix.
     const body = inputSummary
       ? `${payload.toolName} ${inputSummary}`
       : payload.toolName;
@@ -431,7 +431,7 @@ export class TmuxPresenter implements RecordObserver {
     // payload's last line — so a plain `foo\n` does not surface as
     // `foo` + a phantom blank inside the fence. A blanket `.trimEnd()`
     // would also strip payload-intended trailing blank lines, which the
-    // TMUX-049 amendment promises to preserve through the outer-margin
+    // tmux-play-49 amendment promises to preserve through the outer-margin
     // trim in renderToolBody.
     const raw = stringifyToolOutput(payload.output);
     const body = raw.endsWith('\n') ? raw.slice(0, -1) : raw;
@@ -442,7 +442,7 @@ export class TmuxPresenter implements RecordObserver {
   }
 
   // Render a tool-result body through glow as a fenced code block (per
-  // TMUX-049) so glow leaves the content unwrapped, then indent every line
+  // tmux-play-49) so glow leaves the content unwrapped, then indent every line
   // by two spaces so the body trails its `<who>> [tool …]` header line
   // under the standard continuation-indent grammar. The fence is selected
   // to be safe against an embedded triple-backtick block in the payload
@@ -469,7 +469,7 @@ export class TmuxPresenter implements RecordObserver {
       // paragraph margin to trim. Routing it through indentLines would
       // call trimOuterMargin, which would mistake a payload trailing blank
       // line for a glow margin and silently lose it — directly violating
-      // the TMUX-049 promise to preserve payload trailing blanks AND to
+      // the tmux-play-49 promise to preserve payload trailing blanks AND to
       // emit raw body text on render failure. Indent the body directly
       // without the outer-margin trim.
       return indentLinesRaw(body, CONTINUATION_INDENT);
@@ -504,7 +504,7 @@ export class TmuxPresenter implements RecordObserver {
     return writer;
   }
 
-  // Apply the TMUX-038 prefix/indent grammar to glow's rendered output:
+  // Apply the tmux-play-38 prefix/indent grammar to glow's rendered output:
   // the first nonblank line carries the colored `<who>> ` prefix; every
   // nonblank continuation line carries the two-space hanging indent; blank
   // lines inside the rendered block stay blank. Only `glow`'s outermost
@@ -678,7 +678,7 @@ function stripGlowRightPadding(text: string): string {
     .join('\n');
 }
 
-// Pick a backtick fence safe to wrap `body` for TMUX-049's fenced-code
+// Pick a backtick fence safe to wrap `body` for tmux-play-49's fenced-code
 // pipeline. Per CommonMark, a fenced code block opened with N backticks is
 // closed by a line beginning with ≥ N backticks, so the wrapper must be at
 // least one longer than the longest backtick run anywhere in the payload;
@@ -715,13 +715,13 @@ function indentLines(rendered: string, indent: string): string {
 // path where the input is the raw payload — never passed through glow — so
 // there is no glow margin to strip. Using `indentLines` here would let
 // `trimOuterMargin` mistake a payload trailing blank line for a glow
-// margin and silently lose it, violating TMUX-049's promise to preserve
+// margin and silently lose it, violating tmux-play-49's promise to preserve
 // trailing payload blanks on the failure path.
 //
 // `visibleNonblank` (not `length === 0`) is the blank check: glow's
 // structural blank rows are space-padded — sometimes with ANSI background
 // SGRs — so checking length alone would silently indent them, breaking
-// the TMUX-049 promise that the body's "frame and payload edge blanks
+// the tmux-play-49 promise that the body's "frame and payload edge blanks
 // read as the user would see them in a glow pane outside this presenter".
 function indentLinesRaw(text: string, indent: string): string {
   if (text.length === 0) return '';
@@ -753,9 +753,9 @@ function trimOuterMargin(text: string): string {
   return lines.slice(start, end).join('\n');
 }
 
-// TMUX-049 tool-result outcome → bracketed-tag glyph + tag SGR. The SGR
+// tmux-play-49 tool-result outcome → bracketed-tag glyph + tag SGR. The SGR
 // opens the bracketed tag (`[tool ✓]` / `[tool ✗]` / `[tool ·]`) per
-// TMUX-039's kind table; the body sits outside the brackets unstyled, so
+// tmux-play-39's kind table; the body sits outside the brackets unstyled, so
 // the SGR span is now narrower than the retired `tool< <symbol>` prefix
 // span that covered the whole header line.
 function toolResultStyle(
@@ -819,7 +819,7 @@ function formatDuration(ms: number | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-// Truncate `value` to at most `maxCells` terminal cells (TMUX-049). Iterates
+// Truncate `value` to at most `maxCells` terminal cells (tmux-play-49). Iterates
 // the display-token stream so CJK / emoji are measured by cells (1 or 2)
 // rather than UTF-16 code units, and surrogate pairs are never split.
 function truncateCells(value: string, maxCells: number): string {

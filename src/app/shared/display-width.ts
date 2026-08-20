@@ -235,7 +235,7 @@ function isCombiningMark(cp: number): boolean {
 // releases. EAW=W codepoints that are neither in the listed blocks nor
 // `Emoji_Presentation` (e.g., certain archaic scripts and rare symbol
 // blocks not yet enumerated) may still fall through to one cell — see
-// TMUX-046 for the documented scope.
+// tmux-play-46 for the documented scope.
 function isWide(cp: number): boolean {
   if (
     (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo

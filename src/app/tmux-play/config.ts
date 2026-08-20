@@ -88,8 +88,8 @@ export type NotificationConfig = Record<NotificationEvent, NotificationSink>;
 /**
  * Initial tmux session cell grid for {@link
  * https://github.com/charmbracelet/glow tmux} `new-session -x/-y` per
- * TMUX-035 and the pre-attach CSI 8 sequence per TMUX-043. Both axes
- * default independently (TMUX-064): a partial YAML `layout.window`
+ * tmux-play-35 and the pre-attach CSI 8 sequence per tmux-play-43. Both axes
+ * default independently (tmux-play-64): a partial YAML `layout.window`
  * preserves any supplied sub-field verbatim while filling in any
  * missing sub-field from the full default.
  */
@@ -99,11 +99,11 @@ export interface LayoutWindowConfig {
 }
 
 /**
- * Resolved layout configuration per TMUX-064. The loader fills in
- * defaults at normalization time so the snapshot per TMUX-034 always
+ * Resolved layout configuration per tmux-play-64. The loader fills in
+ * defaults at normalization time so the snapshot per tmux-play-34 always
  * carries concrete values for session mode to consume.
  *
- * `initialVisible` (TMUX-080) is the resolved startup-visible player IDs
+ * `initialVisible` (tmux-play-80) is the resolved startup-visible player IDs
  * in pane order, defaulting to every configured player in `players`
  * order when `layout.initialVisible` is omitted. The visible-column
  * shape derives from this set's size, not the configured roster size. An
@@ -114,7 +114,7 @@ export interface LayoutWindowConfig {
  * resolved so the snapshot can render either visible-column shape. The
  * YAML `columnWeights` alias (a two-/three-element compatibility field)
  * and the shape defaults (`[1, 1]` / `[1, 1, 1]`) feed these per the
- * TMUX-064 resolution precedence: explicit canonical field, then the
+ * tmux-play-64 resolution precedence: explicit canonical field, then the
  * matching alias, then the default.
  *
  * `columnWeights` is the active shape's resolved weights, selected here by
@@ -147,7 +147,7 @@ export interface TmuxPlayConfig {
    */
   theme?: CatppuccinFlavorConfig;
   /**
-   * Resolved layout per TMUX-064. Always concrete after normalization
+   * Resolved layout per tmux-play-64. Always concrete after normalization
    * by {@link loadTmuxPlayConfig} (the loader fills in any missing
    * field with its default), so the launcher and snapshot consumers
    * never have to re-resolve.
@@ -197,7 +197,7 @@ const LEGACY_CONFIG_FILES = [
 const FANOUT_CAPTAIN_SPECIFIER = '@sublang/cligent/captains/fanout';
 
 /**
- * The largest generated player roster (TMUX-011). Two players fill the
+ * The largest generated player roster (tmux-play-11). Two players fill the
  * shipped three-column layout; a host with only one ready adapter gets a
  * one-player roster rather than two players sharing a backend.
  */
@@ -224,7 +224,7 @@ const DEFAULT_ROLE_BY_ADAPTER: {
 
 /**
  * The first-run default config for a roster of adapters whose runtimes are
- * installed (TMUX-011). The Captain runs the built-in `fanout` Captain on the
+ * installed (tmux-play-11). The Captain runs the built-in `fanout` Captain on the
  * first adapter; every adapter in the roster also plays.
  */
 function defaultTmuxPlayConfig(
@@ -243,18 +243,18 @@ function defaultTmuxPlayConfig(
     },
     layout: {
       window: { ...DEFAULT_LAYOUT_WINDOW },
-      // Resolved startup-visible set (TMUX-080): all configured players in
+      // Resolved startup-visible set (tmux-play-80): all configured players in
       // order. `defaultHomeConfigValue` strips it so the authored YAML omits
       // it (every player visible by default).
       initialVisible: [...roster],
-      // Canonical shape-specific weights (TMUX-064). The shipped multi-player
+      // Canonical shape-specific weights (tmux-play-64). The shipped multi-player
       // default is equal-thirds [1, 1, 1] (Boss/Captain and each player column
       // each take floor(W / 3), rightmost absorbing the remainder); the
       // single-player default [1, 1] is resolved too so the snapshot can
       // render either shape. `columnWeights` is the active resolved weights
       // for this roster's shape. `defaultHomeConfigValue` strips the
       // resolved-only fields so the authored YAML surfaces only
-      // `multiPlayerColumnWeights` per TMUX-011.
+      // `multiPlayerColumnWeights` per tmux-play-11.
       singlePlayerColumnWeights: [...DEFAULT_SINGLE_PLAYER_WEIGHTS],
       multiPlayerColumnWeights: [...DEFAULT_MULTI_PLAYER_WEIGHTS],
       columnWeights:
@@ -342,7 +342,7 @@ export async function loadTmuxPlayConfig(
   }
 
   if (!configPath) {
-    // TMUX-011: generate the first-run roster from the adapters whose
+    // tmux-play-11: generate the first-run roster from the adapters whose
     // runtimes are actually installed, so the config this creates is one the
     // very next Boss turn can run. With none installed, write nothing: a
     // config naming absent runtimes is the defect this avoids, and a later
@@ -566,7 +566,7 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set<string>([
 
 function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   const input = requireObject(value, 'config');
-  // TMUX-008: reject unknown top-level fields so a typo like `layoutt:`
+  // tmux-play-8: reject unknown top-level fields so a typo like `layoutt:`
   // surfaces at load time instead of being silently ignored and falling
   // through to defaults. The peer scopes (`captain`, `players[i]`, the
   // `layout` block) already enforce this; the root scope was the only
@@ -579,7 +579,7 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
     input.notifications,
     'notifications',
   );
-  // TMUX-064 / TMUX-080: defaulting at load time so loaded.config.layout is
+  // tmux-play-64 / tmux-play-80: defaulting at load time so loaded.config.layout is
   // always concrete. The visible-column shape depends on the resolved initial
   // visible set size (0 → 1 column, 1 → 2 columns, ≥2 → 3 columns);
   // `layout.initialVisible` is validated against the configured player ids.
@@ -635,7 +635,7 @@ const DEFAULT_MULTI_PLAYER_WEIGHTS: readonly number[] = [1, 1, 1];
 
 const DEFAULT_LAYOUT_WINDOW: LayoutWindowConfig = { columns: 174, rows: 49 };
 
-// Active-shape weights keyed to the visible-column count (TMUX-028): zero
+// Active-shape weights keyed to the visible-column count (tmux-play-28): zero
 // visible players -> Boss-only, one -> single-player, two or more -> multi.
 function activeColumnWeights(
   visibleCount: number,
@@ -683,7 +683,7 @@ function resolveLayoutConfig(
   );
 
   // Canonical shape-specific fields, each validated to its fixed length
-  // (TMUX-064) independent of the configured player count.
+  // (tmux-play-64) independent of the configured player count.
   const explicitSingle = resolveCanonicalWeights(
     input.singlePlayerColumnWeights,
     SINGLE_PLAYER_SHAPE_LENGTH,
@@ -696,7 +696,7 @@ function resolveLayoutConfig(
   );
 
   // `columnWeights` is a two-/three-element alias selecting a shape by its
-  // length (TMUX-064).
+  // length (tmux-play-64).
   let aliasSingle: number[] | undefined;
   let aliasMulti: number[] | undefined;
   if (input.columnWeights !== undefined) {
@@ -717,7 +717,7 @@ function resolveLayoutConfig(
   }
 
   // A `columnWeights` alias and the canonical field for the same shape are a
-  // conflict the loader rejects rather than silently picking one (TMUX-064).
+  // conflict the loader rejects rather than silently picking one (tmux-play-64).
   if (aliasSingle && explicitSingle) {
     throw new Error(
       `${path}.columnWeights conflicts with ${path}.singlePlayerColumnWeights; ` +
@@ -731,7 +731,7 @@ function resolveLayoutConfig(
     );
   }
 
-  // Resolution precedence (TMUX-064): explicit canonical field, then the
+  // Resolution precedence (tmux-play-64): explicit canonical field, then the
   // matching alias, then the shape default.
   const singlePlayerColumnWeights =
     explicitSingle ?? aliasSingle ?? [...DEFAULT_SINGLE_PLAYER_WEIGHTS];
@@ -756,7 +756,7 @@ function resolveInitialVisible(
   playerIds: readonly string[],
   path: string,
 ): string[] {
-  // TMUX-080: omitted -> every configured player visible, in `players` order.
+  // tmux-play-80: omitted -> every configured player visible, in `players` order.
   if (value === undefined) {
     return [...playerIds];
   }
@@ -792,7 +792,7 @@ function resolveLayoutWindow(
   value: unknown,
   path: string,
 ): LayoutWindowConfig {
-  // TMUX-064: missing sub-fields default independently — a partial
+  // tmux-play-64: missing sub-fields default independently — a partial
   // {columns: 200} resolves to {columns: 200, rows: 49}, not wholesale
   // back to the full default.
   if (value === undefined) {
@@ -818,7 +818,7 @@ function parseWeightArray(value: unknown, path: string): number[] {
   const result: number[] = [];
   for (let i = 0; i < value.length; i++) {
     const weight = value[i];
-    // Positive-integer constraint (TMUX-064): the resize hook interpolates
+    // Positive-integer constraint (tmux-play-64): the resize hook interpolates
     // each weight verbatim into POSIX shell arithmetic (`$((W * w / sum -
     // 1))`), which is integer-only. A decimal like `0.5` would emit a
     // malformed `$((…))` and silently break the post-creation resize
@@ -889,7 +889,7 @@ function defaultHomeConfigValue(
   // The generated YAML documents the non-off defaults requested for first-run
   // users while omission of `turn_aborted` still normalizes to `off`.
   delete (config.notifications as Partial<NotificationConfig>).turn_aborted;
-  // TMUX-011: the authored default YAML surfaces only the canonical
+  // tmux-play-11: the authored default YAML surfaces only the canonical
   // `multiPlayerColumnWeights`; the resolved single-player array and the
   // active `columnWeights` are filled back in on load, not written to disk.
   const layout = config.layout as Partial<LayoutConfig>;
@@ -944,7 +944,7 @@ function migrateHomeConfigSafeDefaults(
       }
     }
 
-    // TMUX-010: rewrite a legacy `columnWeights` to its canonical shape field,
+    // tmux-play-10: rewrite a legacy `columnWeights` to its canonical shape field,
     // writing one final form that never holds both. Skip the rewrite when the
     // matching canonical field already exists (a conflict the loader rejects)
     // or the length is not 2/3 (also rejected on load); leave those for the

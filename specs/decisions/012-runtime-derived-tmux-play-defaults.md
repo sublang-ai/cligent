@@ -23,9 +23,9 @@ Promoting the SDKs to installed dependencies would push two vendor runtimes and 
 
 Optional peers stay optional; cligent checks for agent runtimes and never installs them.
 
-- A first run generates its default roster from the adapters whose runtimes are installed, in the canonical adapter order, capped at two ([TMUX-011](../user/tmux-play.md#tmux-011)).
-  With none installed it writes no file and fails with the install command for every supported adapter, because a config naming absent runtimes is the defect being removed ([TMUX-010](../user/tmux-play.md#tmux-010)).
-- Launcher mode verifies every configured role's adapter runtime after resolving the config and before creating anything, and fails naming each unmet adapter, its roles, its install commands, and the config path ([TMUX-089](../user/tmux-play.md#tmux-089)).
+- A first run generates its default roster from the adapters whose runtimes are installed, in the canonical adapter order, capped at two ([[tmux-play-11](../packages/tmux-play.md#tmux-play-11)]).
+  With none installed it writes no file and fails with the install command for every supported adapter, because a config naming absent runtimes is the defect being removed ([[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]).
+- Launcher mode verifies every configured role's adapter runtime after resolving the config and before creating anything, and fails naming each unmet adapter, its roles, its install commands, and the config path ([[tmux-play-89](../packages/tmux-play.md#tmux-play-89)]).
   This covers hand-written configs, `--config` files, copied configs, and a host that drifts after generation, which roster generation alone cannot.
 - Readiness is each adapter's own `isAvailable()`, so the gate and the load it protects can never disagree.
 - Repair commands are scoped to the tree the running package resolves from: a peer SDK follows cligent's own install scope, an external CLI is always global, and the reported tree is the `node_modules` root itself so a layout no canned command repairs stays diagnosable ([[package-15](../packages/package.md#package-15)]).
@@ -42,7 +42,7 @@ This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s 
 
 A user with credentials for one provider reaches a working session after installing one runtime, instead of being told to install two.
 The same command can now produce different configs on different hosts; the generated file is user-owned afterward, and the first-run notice names the adapters the roster was built from so the roster is never a silent function of host state.
-A host that gains a provider later keeps its original roster: re-deriving a user-owned file would be destructive, and [TMUX-010](../user/tmux-play.md#tmux-010)'s migration deliberately adds no roles.
+A host that gains a provider later keeps its original roster: re-deriving a user-owned file would be destructive, and [[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]'s migration deliberately adds no roles.
 
 The gate is fatal rather than advisory.
 A warning would be written immediately before tmux takes the terminal, so it would be invisible for the whole session — reporting in name only.

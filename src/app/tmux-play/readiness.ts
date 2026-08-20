@@ -238,7 +238,7 @@ export function cligentPackageRoot(
 export interface AdapterRoleUse {
   readonly adapter: PlayerAdapterName;
   /**
-   * Why the adapter is unusable, when known. TMUX-089 requires a runtime
+   * Why the adapter is unusable, when known. tmux-play-89 requires a runtime
    * installed below its supported version to be reported as such rather than
    * as absent: the repair differs, and "not installed" sends a user looking
    * for something that is already there.
@@ -414,7 +414,7 @@ function unusableRuntimeDetail(
 ): string | undefined {
   // Every runtime the adapter needs, peer and CLI alike: skipping CLI
   // targets reported an installed-but-stale gemini, kimi, or opencode as
-  // absent, which TMUX-089 forbids and which sends the user to install
+  // absent, which tmux-play-89 forbids and which sends the user to install
   // something already present.
   for (const target of AGENT_RUNTIME_TARGETS[adapter] ?? []) {
     const installed = readRuntimeVersion(target);
@@ -442,7 +442,7 @@ export async function assertConfiguredAdaptersReady(
   const missing: AdapterRoleUse[] = uses
     .filter((use) => ready.get(use.adapter) !== true)
     .map((use) => {
-      // TMUX-089: an installed-but-unsupported runtime reports its versions,
+      // tmux-play-89: an installed-but-unsupported runtime reports its versions,
       // so the user is not sent looking for something already present.
       const detail = unusableRuntimeDetail(use.adapter);
       return detail ? { ...use, detail } : use;

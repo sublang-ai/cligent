@@ -1525,7 +1525,7 @@ describe('TmuxPlayRuntime', () => {
     try {
       const captain: Captain = {
         async handleBossTurn(_turn, context) {
-          // Never awaited, and its dispatch fails: TMUX-022 supports this
+          // Never awaited, and its dispatch fails: tmux-play-22 supports this
           // style, so the rejection must not take the host down.
           void context.callPlayer('coder', 'go');
         },
@@ -1786,9 +1786,9 @@ describe('TmuxPlayRuntime', () => {
             records.push(record as TmuxPlayRecord);
             if (record.type === 'turn_finished') {
               // A session emission fired while the terminal record dispatches
-              // lands after the turn: TMUX-017 permits it at any point during
-              // the session, and per TMUX-021 it is outside an active turn,
-              // so it stamps turnId null — the session lane, which TMUX-024
+              // lands after the turn: tmux-play-17 permits it at any point during
+              // the session, and per tmux-play-21 it is outside an active turn,
+              // so it stamps turnId null — the session lane, which tmux-play-24
               // dispatches in emission order without a turn boundary. It must
               // not carry the closed turn's id past its terminal record.
               lateStatus = session.emitStatus('late status');
@@ -1839,8 +1839,8 @@ describe('TmuxPlayRuntime', () => {
             records.push(record as TmuxPlayRecord);
             if (record.type === 'turn_finished') {
               // The session-scoped surface stays usable between turns per
-              // TMUX-017 / TMUX-081; once the turn is fenced the call is a
-              // between-turns call and stamps turnId null per TMUX-021.
+              // tmux-play-17 / tmux-play-81; once the turn is fenced the call is a
+              // between-turns call and stamps turnId null per tmux-play-21.
               lateView = session.setVisiblePlayers(['coder']);
               lateView.catch(() => {});
             }
@@ -2725,7 +2725,7 @@ describe('TmuxPlayRuntime', () => {
     expect(order).toEqual(['session-aborted', 'dispose']);
   });
 
-  it('runs prepareDispose once inside the live emission window (TTMUX-086)', async () => {
+  it('runs prepareDispose once inside the live emission window (tmux-play-186)', async () => {
     const order: string[] = [];
     const turnStarted = deferred();
     let session!: CaptainSession;
@@ -2809,7 +2809,7 @@ describe('TmuxPlayRuntime', () => {
     expect(disposeCount).toBe(1);
   });
 
-  it('surfaces every hook failure after completing cleanup (TTMUX-086)', async () => {
+  it('surfaces every hook failure after completing cleanup (tmux-play-186)', async () => {
     const prepareError = new Error('prepare failed');
     const disposeError = new Error('dispose failed');
     const records: TmuxPlayRecord[] = [];
@@ -2873,7 +2873,7 @@ describe('TmuxPlayRuntime', () => {
     expect(disposeCount).toBe(1);
   });
 
-  it('finishes cleanup when a prepareDispose emission loses an observer (TTMUX-086)', async () => {
+  it('finishes cleanup when a prepareDispose emission loses an observer (tmux-play-186)', async () => {
     const remainingRecords: TmuxPlayRecord[] = [];
     const order: string[] = [];
     let session!: CaptainSession;
@@ -2947,7 +2947,7 @@ describe('TmuxPlayRuntime', () => {
     expect(disposeCount).toBe(1);
   });
 
-  it('runs live pre-close cleanup after partial initialization fails (TTMUX-086)', async () => {
+  it('runs live pre-close cleanup after partial initialization fails (tmux-play-186)', async () => {
     const initError = new Error('init failed after acquiring resources');
     const records: TmuxPlayRecord[] = [];
     const order: string[] = [];
@@ -3029,7 +3029,7 @@ describe('TmuxPlayRuntime', () => {
     expect(disposeCount).toBe(1);
   });
 
-  it('emits one player_view_changed with the active turn id for a CaptainContext call (TTMUX-083)', async () => {
+  it('emits one player_view_changed with the active turn id for a CaptainContext call (tmux-play-183)', async () => {
     const records: TmuxPlayRecord[] = [];
     let manifest: readonly { id: string }[] = [];
     const captain: Captain = {
@@ -3062,7 +3062,7 @@ describe('TmuxPlayRuntime', () => {
     expect(manifest).toEqual([{ id: 'coder' }, { id: 'reviewer' }]);
   });
 
-  it('carries the active turn id or null for a CaptainSession call by turn state (TTMUX-083)', async () => {
+  it('carries the active turn id or null for a CaptainSession call by turn state (tmux-play-183)', async () => {
     const records: TmuxPlayRecord[] = [];
     let session: CaptainSession | undefined;
     const captain: Captain = {
@@ -3100,7 +3100,7 @@ describe('TmuxPlayRuntime', () => {
     expect(views[1]?.visiblePlayerIds).toEqual(['coder', 'reviewer']);
   });
 
-  it('runs a Captain-only session with empty manifests and accepted empty visibility records (TMUX-029, TTMUX-083)', async () => {
+  it('runs a Captain-only session with empty manifests and accepted empty visibility records (tmux-play-29, tmux-play-183)', async () => {
     const records: TmuxPlayRecord[] = [];
     let sessionPlayers: readonly { id: string }[] | undefined;
     let contextPlayers: readonly { id: string }[] | undefined;
@@ -3169,7 +3169,7 @@ describe('TmuxPlayRuntime', () => {
     ).toBe(false);
   });
 
-  it('rejects an invalid setVisiblePlayers without emitting a record and lets the Captain continue (TTMUX-083)', async () => {
+  it('rejects an invalid setVisiblePlayers without emitting a record and lets the Captain continue (tmux-play-183)', async () => {
     const records: TmuxPlayRecord[] = [];
     const errors: string[] = [];
     const badInputs: string[][] = [[], ['coder', 'coder'], ['ghost']];
@@ -3215,7 +3215,7 @@ describe('TmuxPlayRuntime', () => {
     expect(views[0]?.visiblePlayerIds).toEqual(['coder']);
   });
 
-  it('awaits player_view_changed observers before later player records are emitted (TTMUX-085)', async () => {
+  it('awaits player_view_changed observers before later player records are emitted (tmux-play-185)', async () => {
     const order: string[] = [];
     const viewStarted = deferred();
     const rebuildFinished = deferred();
@@ -3270,7 +3270,7 @@ describe('TmuxPlayRuntime', () => {
     ]);
   });
 
-  it('the presenter, follow, timing, and notification observers ignore player_view_changed (TTMUX-084)', () => {
+  it('the presenter, follow, timing, and notification observers ignore player_view_changed (tmux-play-184)', () => {
     const record = (turnId: number | null): PlayerViewChangedRecord => ({
       type: 'player_view_changed',
       turnId,

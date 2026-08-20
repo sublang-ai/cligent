@@ -8,7 +8,7 @@ import type { PlayerConfig } from './players.js';
 import type { CatppuccinFlavor } from './player-colors.js';
 import type { RecordObserver, TmuxPlayRecord } from './records.js';
 
-// TMUX-083 / TMUX-084: a re-shown hidden player's pane replays a bounded recent
+// tmux-play-83 / tmux-play-84: a re-shown hidden player's pane replays a bounded recent
 // view of its log; the full backlog stays in the log file, not pane scrollback.
 // The replay count is fixed by DR-007 (not a YAML or Captain-API option).
 const REBUILD_REPLAY_LINES = 200;
@@ -22,20 +22,20 @@ export interface LayoutObserverOptions {
   readonly captainAdapter: string;
   readonly themeFlavor: CatppuccinFlavor;
   /**
-   * The launcher's startup-visible set (TMUX-080). The observer's tracked
+   * The launcher's startup-visible set (tmux-play-80). The observer's tracked
    * visible list starts here so a `player_view_changed` repeating it is a
    * no-op.
    */
   readonly initialVisible: readonly string[];
   /**
    * Best-effort failure surfacing. The observer never throws into record
-   * dispatch (display-only, TMUX-083); a tmux failure is reported here instead.
+   * dispatch (display-only, tmux-play-83); a tmux failure is reported here instead.
    */
   readonly onError?: (error: unknown) => void;
 }
 
 /**
- * TMUX-083: session-mode observer that reconciles the visible player panes on
+ * tmux-play-83: session-mode observer that reconciles the visible player panes on
  * each accepted `player_view_changed` record via a full player-area rebuild,
  * reusing the launcher's `buildPlayerArea` routine from the single-Boss-pane
  * condition. Display-only: it owns the tmux pane operations but never aborts a
@@ -56,7 +56,7 @@ export class LayoutObserver implements RecordObserver {
       return;
     }
     const next = record.visiblePlayerIds;
-    // TMUX-083: a record repeating the tracked list in the same order is a
+    // tmux-play-83: a record repeating the tracked list in the same order is a
     // no-op — issue no tmux commands.
     if (sameOrder(this.visible, next)) {
       return;
@@ -66,10 +66,10 @@ export class LayoutObserver implements RecordObserver {
       // Advance the tracked list only after a fully successful reconciliation.
       this.visible = [...next];
     } catch (error) {
-      // Display-only (TMUX-083): swallow tmux failures so a Boss turn is never
+      // Display-only (tmux-play-83): swallow tmux failures so a Boss turn is never
       // aborted, and leave the tracked list unchanged so a later successful
       // visibility change recovers. The per-player logs remain the durable
-      // output record (TMUX-084).
+      // output record (tmux-play-84).
       try {
         this.options.onError?.(error);
       } catch {

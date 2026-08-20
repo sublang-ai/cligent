@@ -7,7 +7,7 @@
 
 This package lets a developer or agent cut a published release of this project from a git tag, with a changelog a reader can trust and provenance a consumer can verify.
 It owns versioning, changelog form, and the tag-triggered publish, not what any release contains.
-It is project-local.
+It is project-local: the scoped distributable it publishes is `@sublang/cligent`.
 
 ## External Behavior
 

@@ -7,7 +7,7 @@
 
 This package lets contributors and maintainers create auditable project commits with consistent messages and AI attribution.
 It owns commit preparation and message conventions, not branching, review, or release policy.
-It is project-local.
+It is project-local: its AI-attribution trailer names this project's `cligent@sublang.ai` co-authorship address.
 
 ## External Behavior
 

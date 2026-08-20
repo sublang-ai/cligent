@@ -65,7 +65,7 @@ describe('tmux-play public types', () => {
           },
         };
         await context.callCaptain('summarize', captainControl);
-        // TMUX-092: turn-scoped conversational reply — text only, no options.
+        // tmux-play-92: turn-scoped conversational reply — text only, no options.
         await context.emitReply('All players have reported in.');
       },
       async prepareDispose() {
@@ -149,7 +149,7 @@ describe('tmux-play public types', () => {
 
   it('types turn-bound records with non-null turn ids', () => {
     expectTypeOf<TurnStartedRecord['turnId']>().toEqualTypeOf<number>();
-    // TMUX-092: a conversational reply is turn-bound, unlike captain_status.
+    // tmux-play-92: a conversational reply is turn-bound, unlike captain_status.
     expectTypeOf<CaptainReplyRecord['turnId']>().toEqualTypeOf<number>();
     expectTypeOf<CaptainStatusRecord['turnId']>().toEqualTypeOf<
       number | null

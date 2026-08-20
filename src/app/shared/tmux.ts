@@ -6,7 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// TMUX-074: the tmux-play orchestrator runs inside pane 0 of the session it drives, so
+// tmux-play-74: the tmux-play orchestrator runs inside pane 0 of the session it drives, so
 // its process.env carries live TMUX / TMUX_PANE handles to that session.
 // Player adapters spawn their agent CLIs from this same process.env, so a
 // player that runs `tmux` (e.g. while debugging tmux itself) would inherit
@@ -75,7 +75,7 @@ export function isTmuxAvailable(): boolean {
 
 /**
  * Whether the installed tmux exposes the post-negotiation `window-resized`
- * hook used by tmux-play's weighted layout reconciler (TMUX-044).
+ * hook used by tmux-play's weighted layout reconciler (tmux-play-44).
  */
 export function isTmuxPlayVersionSupported(): boolean {
   const probe = spawnSync('tmux', ['-V'], { stdio: 'pipe' });

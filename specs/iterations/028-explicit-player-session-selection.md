@@ -15,7 +15,7 @@ Complete
 
 ## Deliverables
 
-- [x] Amend [DR-004](../decisions/004-tmux-play-captain-architecture.md), [TMUX-016](../user/tmux-play.md#tmux-016), [TMUX-041](../user/tmux-play.md#tmux-041), and [TTMUX-028](../test/tmux-play.md#ttmux-028) with the optional per-call player session selector.
+- [x] Amend [DR-004](../decisions/004-tmux-play-captain-architecture.md), [[tmux-play-16](../packages/tmux-play.md#tmux-play-16)], [[tmux-play-41](../packages/tmux-play.md#tmux-play-41)], and [[tmux-play-128](../packages/tmux-play.md#tmux-play-128)] with the optional per-call player session selector.
 - [x] Export `CallPlayerOptions` from `@sublang/cligent/tmux-play` and forward its `resume?: string | false` value through the runtime to `Cligent.run()`.
 - [x] Cover explicit-token override and forced-fresh behavior with runtime integration tests and pin the public type surface.
 - [x] Forward `AgentOptions.resume` as Gemini CLI `--resume` and cover the command mapping with a focused unit test.

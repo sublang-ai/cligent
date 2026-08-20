@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEvent } from '../../events.js';
 import type { CligentEvent } from '../../types.js';
 
-// TMUX-050: text bodies flow through glow before reaching the writer. Mock
+// tmux-play-50: text bodies flow through glow before reaching the writer. Mock
 // the render module at the import boundary so presenter tests stay
 // hermetic — none of them need a real glow binary. Default behavior is
 // identity (return the text unchanged) so post-indent/prefix assertions
@@ -26,7 +26,7 @@ vi.mock('../shared/glow.js', () => ({
 import { createTmuxPresenter } from './presenter-tmux.js';
 import type { CaptainEventRecord, TmuxPlayRecord } from './records.js';
 
-// Per TMUX-038/039 the presenter emits SGR escapes around speaker prefixes
+// Per tmux-play-38/039 the presenter emits SGR escapes around speaker prefixes
 // and status bodies. Tests that assert visible content call `text()`
 // (ANSI-stripped); the color-aware tests query `raw()` for byte-exact
 // comparison.
@@ -118,7 +118,7 @@ describe('TmuxPresenter', () => {
     renderMarkdownMock.mockImplementation((text: string) => text);
   });
 
-  // Buffer-then-render core (TMUX-050).
+  // Buffer-then-render core (tmux-play-50).
 
   it('routes player records to the matching player log and renders each block', () => {
     const boss = new MemoryWriter();
@@ -136,7 +136,7 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(playerEvent('coder', textEvent('done\nagain')));
     presenter.onRecord(playerFinishedOk('coder'));
 
-    // Identity-mocked glow plus the TMUX-038 prefix/indent grammar yields the
+    // Identity-mocked glow plus the tmux-play-38 prefix/indent grammar yields the
     // same shape as the pre-IR-013 character-wrap path for short prose.
     expect(coder.text()).toBe(
       'captain> implement\n' +
@@ -391,7 +391,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  // Render-width budgeting (TMUX-050).
+  // Render-width budgeting (tmux-play-50).
 
   it('renders text blocks at paneWidth so glow margin plus continuation indent fill the row', () => {
     const coder = new MemoryWriter();
@@ -468,7 +468,7 @@ describe('TmuxPresenter', () => {
     expect(renderMarkdownMock).toHaveBeenCalledWith('hi\n', 80, 'mocha');
   });
 
-  // Prefix grammar (TMUX-038).
+  // Prefix grammar (tmux-play-38).
 
   it('applies the colored speaker prefix to glow output without wrapping it in another span', () => {
     const coder = new MemoryWriter();
@@ -653,7 +653,7 @@ describe('TmuxPresenter', () => {
     expect(coder.text()).toBe('');
   });
 
-  // Conversational Captain replies (TMUX-092).
+  // Conversational Captain replies (tmux-play-92).
 
   it('renders captain_reply as ordinary Captain prose through the Markdown pipeline', () => {
     const boss = new MemoryWriter();
@@ -747,7 +747,7 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('');
   });
 
-  // Hidden Captain calls (TMUX-072).
+  // Hidden Captain calls (tmux-play-72).
 
   it('writes nothing to the Boss pane for a hidden Captain call', () => {
     const boss = new MemoryWriter();
@@ -867,7 +867,7 @@ describe('TmuxPresenter', () => {
     ).toThrow('Missing tmux presenter writer for player: coder');
   });
 
-  // Status line coloring (TMUX-038/039).
+  // Status line coloring (tmux-play-38/039).
 
   it('renders final failures once with speaker prefixes and status SGRs', () => {
     const boss = new MemoryWriter();
@@ -919,7 +919,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('keys the player prefix color off the adapter map per TMUX-048', () => {
+  it('keys the player prefix color off the adapter map per tmux-play-48', () => {
     const coder = new MemoryWriter();
     const reviewer = new MemoryWriter();
     const presenter = createTmuxPresenter({
@@ -967,7 +967,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerFinished('coder', 'error', 'player failed'));
 
-    // Per TMUX-039 the SGR span now wraps only the bracketed tag `[error]`;
+    // Per tmux-play-39 the SGR span now wraps only the bracketed tag `[error]`;
     // the body sits outside the brackets, unstyled.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0m' +
@@ -985,7 +985,7 @@ describe('TmuxPresenter', () => {
 
     presenter.onRecord(playerFinished('coder', 'aborted'));
 
-    // No body for `[aborted]` per TMUX-039 — the bracketed tag stands alone.
+    // No body for `[aborted]` per tmux-play-39 — the bracketed tag stands alone.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;148;226;213mcoder> \x1b[0m' +
         '\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n',
@@ -1006,7 +1006,7 @@ describe('TmuxPresenter', () => {
       reason: 'sigint',
     });
 
-    // Per TMUX-039 only the bracketed tag carries the yellow outcome SGR
+    // Per tmux-play-39 only the bracketed tag carries the yellow outcome SGR
     // span; the reason `sigint` sits outside the brackets, unstyled.
     expect(boss.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
@@ -1015,7 +1015,7 @@ describe('TmuxPresenter', () => {
   });
 
   it('omits the body when a turn_aborted record carries no reason', () => {
-    // TMUX-039 kind table: `[turn aborted]` body is the abort reason "when
+    // tmux-play-39 kind table: `[turn aborted]` body is the abort reason "when
     // present". TurnAbortedRecord.reason is optional, so a record without
     // it must render as the bracketed tag alone — no synthesized fallback
     // word (under the outside-brackets grammar a placeholder like
@@ -1052,7 +1052,7 @@ describe('TmuxPresenter', () => {
       message: 'boom',
     });
 
-    // TMUX-039 body-attachment normalization: message sits outside the
+    // tmux-play-39 body-attachment normalization: message sits outside the
     // brackets unstyled; the colored span covers `[runtime error]` only.
     expect(boss.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m' +
@@ -1060,7 +1060,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  // Tool lifecycle (TMUX-049 under the unified TMUX-039 bracketed-tag grammar).
+  // Tool lifecycle (tmux-play-49 under the unified tmux-play-39 bracketed-tag grammar).
 
   it('colors the player speaker prefix by the caller\'s adapter accent for tool_use', () => {
     const coder = new MemoryWriter();
@@ -1075,7 +1075,7 @@ describe('TmuxPresenter', () => {
     );
 
     // claude → green #a6e3a1 → fg 166;227;161 on the `coder> ` speaker prefix
-    // span. The `[tool ↪]` tag is uncolored per TMUX-039 — speaker identity is
+    // span. The `[tool ↪]` tag is uncolored per tmux-play-39 — speaker identity is
     // already carried by the prefix, so the tag carries no color span.
     expect(coder.raw()).toBe(
       '\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ↪] Bash npm test\n',
@@ -1087,7 +1087,7 @@ describe('TmuxPresenter', () => {
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),
       players: new Map([['coder', coder]]),
-      // No playerAdapters entry — matches the TMUX-038 prefix fallback.
+      // No playerAdapters entry — matches the tmux-play-38 prefix fallback.
     });
 
     presenter.onRecord(
@@ -1095,7 +1095,7 @@ describe('TmuxPresenter', () => {
     );
 
     // No SGR anywhere: the prefix has no adapter color and the `[tool ↪]`
-    // bracketed tag is always uncolored per TMUX-039.
+    // bracketed tag is always uncolored per tmux-play-39.
     expect(coder.raw()).toBe('coder> [tool ↪] Bash npm test\n');
   });
 
@@ -1111,7 +1111,7 @@ describe('TmuxPresenter', () => {
     );
 
     // captain → mauve #cba6f7 → fg 203;166;247 on the `captain> ` prefix.
-    // The `[tool ↪]` tag stays uncolored per TMUX-039.
+    // The `[tool ↪]` tag stays uncolored per tmux-play-39.
     expect(boss.raw()).toBe(
       '\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ↪] Read src/main.ts\n',
     );
@@ -1212,7 +1212,7 @@ describe('TmuxPresenter', () => {
     presenter.onRecord(playerEvent('coder', toolUseEvent('Status', {})));
 
     // No usable input summary → line ends at `<toolName>` with no trailing
-    // space per TMUX-049.
+    // space per tmux-play-49.
     expect(coder.text()).toBe('coder> [tool ↪] Status\n');
   });
 
@@ -1235,7 +1235,7 @@ describe('TmuxPresenter', () => {
       ),
     );
 
-    // Under TMUX-039 the colored SGR span covers only the bracketed tag
+    // Under tmux-play-39 the colored SGR span covers only the bracketed tag
     // `[tool ✓]`; the body `Bash 1.2s` sits outside the brackets unstyled.
     // The speaker prefix `coder> ` is uncolored here (no playerAdapters
     // mapping for `coder`). The body block is wrapped in a triple-backtick
@@ -1289,7 +1289,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('routes captain-emitted tool events to the Boss/Captain pane per TMUX-040', () => {
+  it('routes captain-emitted tool events to the Boss/Captain pane per tmux-play-40', () => {
     const boss = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss,
@@ -1312,7 +1312,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  // Tool-body fencing (TMUX-049 / TMUX-050).
+  // Tool-body fencing (tmux-play-49 / tmux-play-50).
 
   it('does not call renderMarkdown when the tool_result body is empty', () => {
     const coder = new MemoryWriter();
@@ -1507,7 +1507,7 @@ describe('TmuxPresenter', () => {
     // the body stripped both the terminator and the trailing blank before
     // anything reached the fence; the new strip-one-trailing-newline rule
     // drops only the terminator so the blank survives the outer-margin
-    // trim, matching TMUX-049's promise that payload blank rows survive.
+    // trim, matching tmux-play-49's promise that payload blank rows survive.
     const coder = new MemoryWriter();
     const presenter = createTmuxPresenter({
       boss: new MemoryWriter(),

@@ -100,7 +100,7 @@ checks green at its boundary.
        conditions under which a floor moves, and package-12 for the
        tested-versus-supported distinction; add package-16 for the shipped
        descriptor; add engine-25 for the load-time gate and engine-26 for the
-       structured verdict; add engine-118; amend TMUX-089 so an incompatible
+       structured verdict; add engine-118; amend tmux-play-89 so an incompatible
        runtime is reported distinctly from an absent one; add the DR-013 row
        and refresh the PKG and ENG summaries in the spec map.
 2. [x] **Ship the runtime descriptor.**
@@ -131,12 +131,12 @@ checks green at its boundary.
        Record the consent decision as a decision record of its own and amend
        DR-012's Context premise, Decision opener,
        no-runtime bullet, and fatal-gate consequences, adding a
-       superseded-in-part note; amend TMUX-010 and TMUX-089 so today's text
+       superseded-in-part note; amend tmux-play-10 and tmux-play-89 so today's text
        becomes the no-consent branch, splitting the print-nothing-on-stdout
        clause away from the declined-at-a-terminal case, and settle whether
-       TMUX-002's launcher-mode step sequence gains the branch or inherits it
-       through its TMUX-089 citation; add an item for the offer and another
-       for the npm-exec cache tree; amend TTMUX-092 and TTMUX-093 with the
+       tmux-play-2's launcher-mode step sequence gains the branch or inherits it
+       through its tmux-play-89 citation; add an item for the offer and another
+       for the npm-exec cache tree; amend tmux-play-192 and tmux-play-193 with the
        same preconditions and add their integration counterparts; add that
        record's row to the spec map and
        refresh the DR-012 and TMUX summaries there.
@@ -144,7 +144,7 @@ checks green at its boundary.
        Amend package-15 to scope its prohibition to the distributable's own
        installation and to grant the consented install; add an external-behavior
        item for the top-level-root placement outcome; amend package-103 for the absent
-       install lifecycle script, which nothing verifies today, and TPKG-006
+       install lifecycle script, which nothing verifies today, and tmux-play-201
        for the unattached-terminal contract its harness currently satisfies
        only by accident of piping; add a verification item for it; refresh the
        package summaries in the spec map.
@@ -266,8 +266,8 @@ any of them lands.
 
 1. **The consent line's text, its affirmative tokens, its default, and its
    stream.** The remedy goes to stderr and the first-run notice to stdout, so
-   the prompt has no home today. TMUX-010's `print nothing on stdout` clause
-   binds the first-run branch only; TMUX-089's gate imposes no such
+   the prompt has no home today. tmux-play-10's `print nothing on stdout` clause
+   binds the first-run branch only; tmux-play-89's gate imposes no such
    prohibition, so the two offer sites may or may not share a stream.
 2. **Where the exported surface lives.** The existing `./tmux-play` subpath
    needs no manifest change but names package-level facts after an app; the
@@ -279,7 +279,7 @@ any of them lands.
    cligent derives its own from the terminal, or a real `--json` is added as
    its own item and task pair.
 4. **Whether continuous integration alone suffices to refuse.** The
-   stdin-and-stdout half already has a launcher-mode precedent in TMUX-047's
+   stdin-and-stdout half already has a launcher-mode precedent in tmux-play-47's
    flavor probe, which the new predicate can reuse or restate; `CI` has none
    in production code. A `--yes` flag would reintroduce the unattended
    acquisition package-15 forbids.

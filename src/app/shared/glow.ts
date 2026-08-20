@@ -7,7 +7,7 @@ export const GLOW_INSTALL_URL =
   'https://github.com/charmbracelet/glow#installation';
 
 // Probes `glow --version` to confirm the binary is on PATH and actually
-// runs. The TMUX-051 gate exists to fail fast — checking spawn-success
+// runs. The tmux-play-51 gate exists to fail fast — checking spawn-success
 // alone would let a broken or incompatible `glow` (one that spawns but
 // exits nonzero on `--version`) pass the gate and surface later inside
 // the presenter's render call. Status check is required.

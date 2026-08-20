@@ -494,6 +494,10 @@ Given canned native OpenCode SSE events, when the adapter runs, the yielded `Age
 
 Where the OpenCode SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[opencode-2](#opencode-2)], and in managed mode `isAvailable()` shall return `true` only once the `opencode` CLI probe also passes [[opencode-3](#opencode-3)].
 
+### opencode-203
+
+Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, known-provider prompt variants shall be selected, while a representative unmatched model shall create no effort override and preserve ordinary model forwarding [[opencode-12](#opencode-12)].
+
 ### opencode-204
 
 Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[opencode-7](#opencode-7)].
