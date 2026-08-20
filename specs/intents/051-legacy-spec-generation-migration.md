@@ -35,6 +35,7 @@ These invariants govern every task:
 - Every citation the tree carries is rewritten as it moves: 1249 item citations still use the legacy unbracketed `[ID](path#anchor)` form rather than the outer-bracketed form the current law requires [[meta-16](../meta.md#meta-16)].
 - A task that restates a shared criterion into a package checks that restatement in both directions before it commits, clause by clause: no clause of the legacy criterion naming that package is left without a destination, and no clause of the destination is without a legacy source.
   The behavior sections move whole and a normalized diff proves them, but a restatement is not a move and no diff can check it, so this is the only guard the verification slice has.
+  The commit states the pairing the task made and whatever it found unmatched in each direction, because this check is not recomputable the way the diff is: which clauses name the package is the very judgment it exists to make, so an unreported run leaves a claim no reviewer can tell apart from a mis-scoped one.
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
 
