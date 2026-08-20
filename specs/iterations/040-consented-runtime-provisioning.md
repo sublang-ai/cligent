@@ -96,17 +96,19 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke
 checks green at its boundary.
 
 1. [x] **Record the compatibility decision and its canonical items.**
-       Record DR-013; amend package-9 for the no-upper-bound rule and the
-       conditions under which a floor moves, and package-12 for the
-       tested-versus-supported distinction; add package-16 for the shipped
+       Record DR-013; amend package-9 for the no-upper-bound rule and add
+       package-17 for the conditions under which a floor moves, and add
+       package-25 for the tested-versus-supported distinction; add package-16
+       for the shipped
        descriptor; add engine-25 for the load-time gate and engine-26 for the
        structured verdict; add engine-118; amend tmux-play-89 so an incompatible
        runtime is reported distinctly from an absent one; add the DR-013 row
        and refresh the PKG and ENG summaries in the spec map.
 2. [x] **Ship the runtime descriptor.**
-       Add the descriptor module and its exports-map subpath; invert
-       ownership of the conformance literals so the repository verifier
-       imports them instead of declaring its own; add the assertion that each
+       Add the descriptor module and its package-29 exports-map subpath; invert
+       ownership of the conformance literals per package-26 so the repository
+       verifier imports them instead of declaring its own; add package-27's
+       assertion that each
        descriptor version equals the manifest's peer range and development
        pin; raise the peer floors the descriptor now declares.
 3. [x] **Gate the runtime at load.**
@@ -143,7 +145,7 @@ checks green at its boundary.
 7. [ ] **Specify the install-placement contract.**
        Amend package-15 to scope its prohibition to the distributable's own
        installation and to grant the consented install; add an external-behavior
-       item for the top-level-root placement outcome; amend package-103 for the absent
+       item package-32 for the top-level-root placement outcome; amend package-103 for the absent
        install lifecycle script, which nothing verifies today, and tmux-play-201
        for the unattached-terminal contract its harness currently satisfies
        only by accident of piping; add a verification item for it; refresh the

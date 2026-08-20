@@ -36,7 +36,7 @@ describe('agent runtime targets (package-16)', () => {
   });
 
   it('keeps the paired OpenCode SDK and CLI targets equal', () => {
-    // package-12 requires the SDK client and its CLI server to share a target.
+    // package-23 requires the SDK client and its CLI server to share a target.
     const [sdk, cli] = AGENT_RUNTIME_TARGETS.opencode;
     expect(sdk?.tested).toBe(cli?.tested);
     expect(sdk?.supportedFrom).toBe(cli?.supportedFrom);

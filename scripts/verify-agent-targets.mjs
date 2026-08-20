@@ -19,8 +19,8 @@ const targetsFor = (name) => AGENT_RUNTIME_TARGETS[name];
 const peerOf = (name) => targetsFor(name).find((t) => t.kind === 'peer');
 const cliOf = (name) => targetsFor(name).find((t) => t.kind === 'cli');
 
-// package-16: every literal below comes from the shipped descriptor, so this
-// verifier can no longer disagree with what the package declares at runtime.
+// package-26: runtime compatibility expectations come from the shipped
+// descriptor, so this verifier cannot independently restate them.
 export const EXPECTED_SDK_VERSIONS = Object.freeze({
   '@anthropic-ai/claude-agent-sdk': peerOf('claude').tested,
   '@openai/codex-sdk': peerOf('codex').tested,
@@ -59,9 +59,9 @@ function assertEqual(actual, expected, label) {
 
 export function verifySdkTargets() {
   const manifest = readJson(join(repoRoot, 'package.json'));
-  // package-16: the descriptor is the declaration; the manifest must agree with
-  // it. Two sources of truth for a version is the exact drift this exists to
-  // prevent, so a divergence fails here rather than at a user's first turn.
+  // package-26 / package-27: expected values come from the descriptor; the
+  // manifest must agree. A divergence fails here rather than at a user's
+  // first turn.
   for (const [adapter, targets] of Object.entries(AGENT_RUNTIME_TARGETS)) {
     for (const target of targets) {
       if (target.kind !== 'peer') continue;

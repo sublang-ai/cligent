@@ -27,9 +27,11 @@ The package shall require Node >= 18.3.0 via
 
 ### package-3
 
-The package's runtime `dependencies` shall be limited to single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation.
-An official generic protocol SDK and its zero-transitive-dependency schema peer may be runtime dependencies when a built-in adapter imports them directly.
-Build-time and test-time packages shall be `devDependencies`.
+The package manifest shall place dependencies according to their role:
+
+- runtime `dependencies` contain only single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation;
+- an official generic protocol SDK and its zero-transitive-dependency schema peer may be runtime dependencies where a built-in adapter imports them directly; and
+- build-time and test-time packages are `devDependencies`.
 
 ### package-4
 
@@ -37,67 +39,109 @@ Agent SDKs (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai
 
 ### package-9
 
-The agent SDK optional-peer-dependency ranges shall declare the lowest SDK version the adapter supports at runtime, and shall declare no upper bound.
-This floor may be lower than the exact `devDependencies` version pinned for local development and CI.
-The floor shall be raised when adapter code begins to depend on a newer SDK surface, and may be raised when a version below the new floor can no longer serve the adapter's users — including a vendor runtime that the SDK bundles and that the adapter therefore selects.
-A floor shall be raised only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because a raised floor refuses a version that previously loaded.
+Each agent SDK optional-peer-dependency range shall have this shape:
 
-The upper bound of the supported range shall live in the runtime descriptor of [[package-16](#package-16)] and shall be enforced when the runtime loads, never in `peerDependencies`.
-A published upper bound on an optional peer is intersected into version selection by npm and silently resolves an older SDK without an error, which defeats the floor it accompanies.
+- its floor is the lowest SDK version the adapter supports at runtime;
+- every higher version is admitted without an upper bound; and
+- the floor may be lower than the exact `devDependencies` version pinned for local development and CI.
+
+### package-17
+
+When an agent SDK optional-peer floor in [[package-9](#package-9)] is reviewed, maintainers shall apply this change policy:
+
+- dependence on a newer SDK surface raises the floor to the first version carrying that surface;
+- a version that can no longer serve the adapter's users, including a vendor runtime the SDK bundles and selects, permits the floor to rise past that version; and
+- every rise ships only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because the new floor refuses a version that previously loaded.
 
 ### package-10
 
-The repository `build` script shall remove `dist/` before TypeScript emits,
-and package creation shall run that clean build.
-The repository-local
-`tmux-play-dev` launcher shall likewise build from clean output before its
-outer invocation starts the CLI.
-A package tarball shall therefore contain
-only artifacts produced from the current source tree, never orphaned output
-from deleted or renamed source files.
+When the repository `build` script runs, it shall remove `dist/` before TypeScript emits.
+
+### package-18
+
+When package creation runs, it shall invoke the clean repository build in [[package-10](#package-10)].
+
+### package-19
+
+When the repository-local `tmux-play-dev` launcher's outer invocation runs, it shall invoke the clean repository build in [[package-10](#package-10)] before starting the CLI.
+
+### package-20
+
+A package tarball shall contain only artifacts produced from the current source tree, never orphaned output from deleted or renamed source files.
 
 ### package-11
 
-The emitted declaration files shall support TypeScript >= 5.4 because the
-public generic effort API uses the `NoInfer` utility type introduced in that
-release [[2]].
-User-facing package documentation shall state this
-declaration-consumer floor.
+The emitted declaration files shall support TypeScript >= 5.4 because the public generic effort API uses the `NoInfer` utility type introduced in that release [[2]].
+
+### package-21
+
+User-facing package documentation shall state the TypeScript 5.4 declaration-consumer floor in [[package-11](#package-11)].
 
 ### package-12
 
-The agent SDK versions used for local and CI conformance shall be exact `devDependencies`, without range operators.
-An imported production protocol SDK shall likewise use an exact runtime dependency when its wire schema must match an external CLI target.
-CI-installed Gemini, OpenCode, and Kimi CLIs shall use exact versions and shall have their reported versions checked before acceptance runs.
-Repository verification shall compile the adapter's consumed SDK or protocol surfaces against the installed declarations.
-Where an adapter's conformance target consists of both an SDK client and a CLI server, their exact target versions shall match.
-The Kimi conformance target shall pair `@agentclientprotocol/sdk` `1.3.0` with the `@moonshot-ai/kimi-code` CLI `0.31.1` and verify the `kimi acp` command surface.
+The repository shall pin every conformance target at an exact version in the dependency location matching its role:
 
-The exact conformance target is the tested version and the optional peer floor is the lowest supported version; the two are distinct and neither shall be derived from the other automatically.
-Per [[package-9](#package-9)], a floor names the lowest version the adapter supports, which may sit below the tested version and moves only for the reasons that item states.
-Both versions shall be declared once, in the runtime descriptor of [[package-16](#package-16)], which repository verification asserts equal to the manifest.
+- an agent SDK used for local and CI conformance is an exact `devDependencies` entry without a range operator;
+- an imported production protocol SDK whose wire schema must match an external CLI target is an exact runtime dependency; and
+- a Gemini, OpenCode, or Kimi CLI installed by CI uses an exact install version.
+
+### package-22
+
+When repository conformance prepares an acceptance run, it shall check the installed target surfaces:
+
+- every installed Gemini, OpenCode, and Kimi CLI reports its exact target version; and
+- every SDK or protocol surface consumed by an adapter compiles against the installed declarations.
+
+### package-23
+
+Where an adapter's conformance target consists of an SDK client and a CLI server, the repository shall keep their exact target versions paired:
+
+- the OpenCode SDK and CLI versions match; and
+- `@agentclientprotocol/sdk` `1.3.0` pairs with the `@moonshot-ai/kimi-code` CLI `0.31.1` for Kimi.
+
+### package-24
+
+When the Kimi conformance target in [[package-23](#package-23)] is checked, repository verification shall confirm that the installed Kimi CLI exposes and initializes the `kimi acp` command surface.
+
+### package-25
+
+The exact conformance target and the optional-peer floor in [[package-9](#package-9)] shall remain independently declared compatibility values, with the target naming the tested version and the floor naming the lowest supported version, neither derived from the other automatically.
+
+### package-26
+
+Repository verification shall obtain each agent runtime's expected exact tested version and supported floor from the runtime descriptor in [[package-16](#package-16)] rather than declaring either expected value independently.
+
+### package-27
+
+Where the runtime descriptor and repository manifest declare the same agent runtime, when repository verification compares them, it shall enforce descriptor-to-manifest alignment:
+
+- the descriptor's supported floor equals the optional `peerDependencies` lower bound;
+- the descriptor's tested version equals the exact `devDependencies` pin; and
+- any divergence fails verification.
 
 ### package-13
 
-Where a release candidate is evaluated for readiness, both the production
-dependency graph and the complete development dependency graph shall report no
-known vulnerabilities.
-Remediation shall retain the runtime floor in
-[[package-2](#package-2)] and shall not rely on an ignored audit finding or an
-unsupported dependency override.
+Where a release candidate is evaluated for readiness, its dependency audit shall report no known vulnerabilities in both the production dependency graph and the complete development dependency graph.
+
+### package-28
+
+When a known vulnerability is remediated, the remediation shall retain the Node runtime floor in [[package-2](#package-2)] and use neither an ignored audit finding nor an unsupported dependency override.
 
 ### package-16
 
-The distributable shall publish a runtime descriptor declaring, for each built-in adapter, the identity of every runtime it requires — an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or both — together with that runtime's exact tested version, its supported version range, and the repair that installs it.
-Where a runtime is a package the adapter resolves and a vendor executable that package selects, the descriptor shall name the version the adapter's own resolution reaches, so the declared version is the one that runs.
-The descriptor shall be reachable through the exports map as a documented module, because the package manifest is not.
-Repository verification shall assert that every descriptor version equals the corresponding `peerDependencies` range and exact `devDependencies` pin, and shall fail when they diverge.
+The distributable shall publish a runtime descriptor containing one complete target record for every runtime each built-in adapter requires:
 
-### TypeScript
+- the record identifies an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or both;
+- the record declares the runtime's exact tested version, supported version range, and installation repair; and
+- where a resolved package selects a vendor executable, the record names the vendor version read through the same runtime resolution the adapter uses [[engine-25](engine.md#engine-25)], so the declared version is the one that runs.
 
-### package-8
+### package-29
 
-The project shall include type-level tests verifying discriminated union narrowing and interface assignability for [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) types.
+The runtime descriptor in [[package-16](#package-16)] shall be reachable through the package exports map at the documented `@sublang/cligent/runtime-targets` module.
+
+### package-30
+
+User-facing package documentation shall identify the runtime-descriptor module in [[package-29](#package-29)] and explain its supported and tested version fields.
 
 ### package-5
 
@@ -115,49 +159,100 @@ Each adapter shall have a sub-path export in the `"exports"` map (e.g., `"./adap
 
 ### package-14
 
-The package shall expose its documented `./tmux-play` and
-`./captains/fanout` subpaths and the `tmux-play` executable.
-Where the packed
-tarball is installed in an isolated consumer, the root and every documented
-subpath shall load and the executable's `--help` command shall exit
-successfully.
+The package manifest shall expose the documented `./tmux-play` and `./captains/fanout` subpaths and the `tmux-play` executable.
+
+### package-31
+
+Where the packed tarball is installed in an isolated consumer, its installed surfaces shall remain usable:
+
+- the root and every documented subpath load; and
+- the `tmux-play` executable's `--help` command exits successfully.
 
 ### package-15
 
-The distributable shall neither install nor bundle the optional agent SDKs of [[package-4](#package-4)], and shall not acquire them through a lifecycle script.
-It shall resolve them from the tree the package itself is installed in, which for a global installation is the prefix `node_modules` root `npm install -g` writes to.
-Where a documented executable would need an agent runtime that does not resolve from that tree, it shall report the commands that install that runtime, scoped to that tree, before performing any side effect, rather than proceeding to a failure at first use.
-User-facing package documentation shall state this dependency contract, naming what a documented first run requires beyond the package itself.
+The distributable shall not acquire the optional agent SDKs in [[package-4](#package-4)] through any package-delivery path:
+
+- they are not installed as runtime or optional dependencies;
+- they are not bundled; and
+- no lifecycle script acquires them.
+
+### package-32
+
+The distributable shall resolve an optional agent SDK from the dependency tree in which `@sublang/cligent` itself is installed, which for a global installation is the prefix `node_modules` root written by `npm install -g`.
+
+### package-33
+
+User-facing package documentation shall state the optional-agent-runtime dependency contract, naming what each documented first run requires beyond the package itself.
+
+## Internal Behavior
+
+### TypeScript Contract Tests
+
+### package-8
+
+The project shall include type-level tests verifying discriminated-union narrowing and interface assignability for [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) types.
 
 ## Verification
 
 ### package-101
 
-Where stale and current files exist under `dist/`, when the repository build, the repository-local development launcher, and package creation run, the verification shall assert that only outputs emitted from the current source tree remain [[package-10](#package-10)] and that the package declares the required Node floor [[package-2](#package-2)].
+Where stale and current files exist under `dist/` and the package documentation is available, when the repository package-output verification runs the direct build, repository-local development launcher, and package-creation paths, the verification shall assert the package-output contract:
+
+- the direct build removes stale output before emitting current output [[package-10](#package-10)];
+- package creation invokes that clean build [[package-18](#package-18)] and its tarball contains only current output [[package-20](#package-20)];
+- the development launcher invokes that clean build before starting the CLI [[package-19](#package-19)];
+- the manifest declares the Node floor [[package-2](#package-2)]; and
+- the documentation states the declaration-consumer floor [[package-21](#package-21)], identifies the runtime descriptor and its version fields [[package-30](#package-30)], and states the optional-agent-runtime dependency contract [[package-33](#package-33)].
 
 ### package-102
 
-Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when the runtime consumer imports the root, every adapter export, and the tmux-play and captain subpaths before running the installed launcher's help, and the type consumer exercises adapter-scoped effort declarations, the verification shall assert that the root entry point loads [[package-6](#package-6)], that every adapter sub-path export loads [[package-7](#package-7)], that the documented tmux-play and captain subpaths load and the executable's help exits successfully [[package-14](#package-14)], that the declared Node floor admits the 18.3.0 runtime [[package-2](#package-2)], and that strict compilation passes against the emitted declarations on TypeScript 5.4 [[package-11](#package-11)].
+Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when runtime consumers import every documented surface and run the installed launcher's help and a type consumer exercises adapter-scoped effort declarations, the verification shall assert the installed-package contract:
+
+- the root entry point loads [[package-6](#package-6)];
+- every adapter subpath loads [[package-7](#package-7)];
+- the tmux-play and captain subpaths and executable declared in [[package-14](#package-14)] load or report help successfully [[package-31](#package-31)];
+- the runtime descriptor loads through its documented export [[package-29](#package-29)], completing the documented-subpath assertion in [[package-31](#package-31)];
+- the Node 18.3.0 runtime is admitted [[package-2](#package-2)]; and
+- strict compilation passes against the emitted declarations on TypeScript 5.4 [[package-11](#package-11)].
 
 ### package-103
 
-Where the release dependency graph and optional agent peers are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert that both audits report no known vulnerabilities [[package-13](#package-13)], that the ACP protocol SDK and its schema peer are production dependencies [[package-3](#package-3)], and that agent-SDK placement and optional-peer declarations match the package requirements [[package-4](#package-4)].
+Where the release dependency graph and optional agent peers are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
+
+- both audits report no known vulnerabilities [[package-13](#package-13)];
+- dependency placement follows the runtime, protocol, and development-role matrix [[package-3](#package-3)];
+- agent SDKs are optional peers [[package-4](#package-4)] whose ranges declare a floor without an upper bound [[package-9](#package-9)];
+- the tarball neither installs nor bundles an optional agent SDK and declares no lifecycle acquisition path [[package-15](#package-15)]; and
+- the Node floor and audit configuration satisfy the remediation safeguards [[package-28](#package-28)].
 
 ### package-104
 
-Where repository conformance runs with installed SDK, protocol, and CLI dependencies, when installed package metadata, CLI-reported versions, declarations, and command help are checked, the verification shall assert that the resolved SDK and reported CLI versions equal the exact repository and CI targets, that consumed type surfaces remain available, that the OpenCode SDK and CLI versions match, and that the ACP SDK `1.3.0` pairs with the Kimi Code CLI `0.31.1` whose `kimi acp` command initializes successfully [[package-12](#package-12)].
+Where repository conformance runs with installed SDK, protocol, and CLI dependencies, when package metadata, CLI-reported versions, declarations, command help, runtime descriptors, the manifest, and floor-change history are checked, the verification shall assert the conformance-target contract:
+
+- resolved SDK and protocol versions and reported CLI versions equal their exact targets in the required dependency locations [[package-12](#package-12)];
+- CLI versions are checked before acceptance and consumed type surfaces compile against the installed declarations [[package-22](#package-22)];
+- the OpenCode targets match and the exact Kimi SDK and CLI targets are paired [[package-23](#package-23)];
+- the `kimi acp` command initializes successfully [[package-24](#package-24)];
+- every floor change follows the reasons and release level in [[package-17](#package-17)], and tested versions remain independent of supported floors [[package-25](#package-25)];
+- the descriptor carries every required runtime identity, version, range, and repair [[package-16](#package-16)] and supplies repository verification's expected tested versions and floors [[package-26](#package-26)]; and
+- every descriptor version agrees with the corresponding peer range and exact development pin, with a forced divergence failing verification [[package-27](#package-27)].
 
 ### package-105
 
-Where the packed tarball and the exact Codex SDK target are installed into a global-style prefix whose package trees are independent and into a nested-strategy consumer, neither leaving `@openai/codex` at the install root, when the installed adapter is loaded and resolves that optional peer, the verification shall assert that the nested consumer loads the adapter through its sub-path export [[package-7](#package-7)], that both layouts resolve the optional peer from the tree the package itself is installed in [[package-15](#package-15)], and that the nested consumer does so on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
+Where the packed tarball and each exact optional agent SDK target are installed in turn into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with no copy of the tested SDK at either install root, when each installed adapter loads and resolves its optional peer, the verification shall assert this own-tree-resolution matrix [[package-32](#package-32)]:
 
-### package-106
+| Adapter | Optional peer resolved in both layouts |
+| --- | --- |
+| Claude Code | `@anthropic-ai/claude-agent-sdk` |
+| Codex | `@openai/codex-sdk` |
+| OpenCode | `@opencode-ai/sdk` |
 
-Where the packed tarball alone is installed into a global-style prefix holding no agent SDK peer, supplied out of band, and the search path reaches no agent CLI, when the installed `tmux-play` executable runs its documented launcher command, the verification shall assert that the invocation fails before any side effect, naming the install command for every supported adapter, and that executing that printed command verbatim as argv lands the SDK in the `node_modules` root the failure reported and lets the same launcher command succeed [[package-15](#package-15)].
+- in every nested case, the adapter loads through its subpath export [[package-7](#package-7)]; and
+- every nested case runs on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
 
 ### package-201
 
-Where an adapter's runtime is installed at a version the shipped descriptor classifies, when the adapter loads it and the readiness verdict is computed, the verdict shall follow the descriptor's declared range and tested version [[package-16](#package-16)]:
+Where an adapter's runtime is installed at a version the shipped descriptor classifies, when the adapter loads it and the readiness verdict is computed, the verification shall assert that the verdict follows the descriptor's declared range [[package-16](#package-16)] and the distinction between supported floors and tested versions [[package-25](#package-25)]:
 
 - at or above the floor and at or below the tested version, the load shall succeed and the verdict shall report `'satisfied'`;
 - above the tested version, the load shall succeed and the verdict shall report `'untested'`;
@@ -165,7 +260,7 @@ Where an adapter's runtime is installed at a version the shipped descriptor clas
 
 ### package-228
 
-Where the exact OpenCode CLI conformance target is installed, when its reported version is inspected, the verification shall assert that the version equals the exact CI target [[package-12](#package-12)].
+Where the exact OpenCode CLI conformance target is installed, when its reported version is inspected before acceptance, the verification shall assert that the version equals the exact CI target [[package-12](#package-12)], [[package-22](#package-22)].
 
 ## References
 

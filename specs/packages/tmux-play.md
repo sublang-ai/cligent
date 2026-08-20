@@ -381,6 +381,10 @@ A `PlayerHandle` shall expose the player `id`, the `adapter`, and an optional `m
 When an aborted player call's terminal `done` carries a `resumeToken`, `PlayerRunResult.resumeToken` shall expose it; when the terminal `done` omits `resumeToken`, `PlayerRunResult` shall omit it so captains can detect interrupted, not-resumable calls.
 When a `callCaptain` call's terminal `done` carries a `resumeToken`, `CaptainRunResult.resumeToken` shall expose that token; when the terminal `done` omits it, `CaptainRunResult` shall omit it — the same pass-through as `PlayerRunResult`, so captains can capture a call's backend session (e.g., for a later `CallCaptainOptions.resume` per [[tmux-play-88](#tmux-play-88)]).
 
+### tmux-play-59
+
+Where a player or Captain call emits two or more complete `text` events before a terminal `done` whose `result` is absent, the programmatic runtime shall preserve each complete message on its own line in `finalText`, inserting one newline before a later message only where the preceding captured content does not already end with one.
+
 ### Launcher → Session Protocol
 
 ### tmux-play-34
@@ -980,6 +984,17 @@ Pane-addressed operations — pane-width soft-wrap, the per-pane border timers p
 Where the tmux server normalizes non-ASCII display text — a non-UTF-8 server locale rewrites the title's ` · ` separator — pane-addressed operations shall be unaffected; when the composed title fails to round-trip through the server, reading back different from what was set, the launcher shall print a one-line warning naming the display limitation and shall not refuse the launch; where the round-trip succeeds, no warning shall be printed, the server's observed behavior rather than the launcher process's locale variables being the deciding signal.
 
 ## Verification
+
+### tmux-play-73
+
+Where scripted adapters emit two complete `text` messages before a terminal `done` with no `result`, when the programmatic runtime executes player and Captain calls across both preceding-message endings, the verification shall assert this `finalText` matrix [[tmux-play-59](#tmux-play-59)]:
+
+| Call | First `text` content | Second `text` content | Exact `finalText` | Lines beginning `Commit: ` |
+| --- | --- | --- | --- | --- |
+| player | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| player | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `Reworked the small packages.` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
+| Captain | `Reworked the small packages.\n` | `Commit: abc123` | `Reworked the small packages.\nCommit: abc123` | one |
 
 ### tmux-play-101
 

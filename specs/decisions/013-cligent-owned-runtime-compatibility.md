@@ -10,7 +10,7 @@ Accepted
 ## Context
 
 Each adapter runs against a vendor runtime cligent does not ship: an optional peer SDK resolved from cligent's own tree, an external CLI found through `PATH`, or both.
-Which versions of those runtimes work is knowledge cligent holds and verifies — [[package-12](../packages/package.md#package-12)] already pins an exact conformance target per runtime and CI proves each one — but nothing carries that knowledge to the consumers who must act on it.
+Which versions of those runtimes work is knowledge cligent holds and verifies — [[package-12](../packages/package.md#package-12)] pins an exact conformance target per runtime and [[package-22](../packages/package.md#package-22)] requires each installed target to be checked before acceptance — but nothing carries that knowledge to the consumers who must act on it.
 
 Consumers therefore rediscover it, badly, and independently:
 
@@ -35,7 +35,7 @@ It is a module rather than data read from `package.json`, which the exports map 
 Repository verification asserts the descriptor equals the manifest's declared peer range and exact development pin, so the two cannot drift.
 
 **Tested and supported stay distinct.**
-[[package-9](../packages/package.md#package-9)] already separates the lowest supported version from the exact development pin, and that separation is kept: a runtime older than the tested version but inside the supported range is supported, not merely tolerated.
+[[package-25](../packages/package.md#package-25)] separates the lowest supported version from the exact development pin: a runtime older than the tested version but inside the supported range is supported, not merely tolerated.
 A version above the supported range is *untested*, which is a different verdict from *too old* and shall not be reported as the same thing.
 
 **The published peer range stays open at the top.**
