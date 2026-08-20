@@ -350,7 +350,7 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
         OPENCODE_MODEL,
       );
       expectAutoMode('opencode', outcome);
-      // TADAPT-040: the resumed update run must still prove its own causal
+      // opencode-240: the resumed update run must still prove its own causal
       // boundary against the live server, which is what the dictated message
       // id destroyed. Termination and file state alone would not show it.
       expectOpenCodeUsage('opencode create', outcome.create.events);

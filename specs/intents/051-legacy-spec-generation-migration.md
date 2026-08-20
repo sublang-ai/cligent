@@ -41,6 +41,8 @@ These invariants govern every task:
   Moving whole is otherwise the safer transformation, because a diff proves it and no restatement can be proved that way, and this is the cost it carries: it inherits the source file's line discipline along with its prose.
   A pass that skips a line opening with a citation, or that runs over the behavior sections alone, misses exactly the lines the legacy verification files are densest in, and `spex lint` has no rule that would catch what it left.
   Moved text is resolved against the destination's structure as well as its line breaks, because a cross-reference shaped as an ID travels while one shaped as prose does not: a phrase naming the source file's own structure — a gating preamble, a rule stated above — keeps pointing at what stayed behind, and no ID sweep, diff, or lint rule sees it.
+- A check this plan requires is scoped by the concept it hunts, never by an enumeration of the literals already seen, that enumeration being what three of these checks each had to be rewritten past: a supersession scope reading the literal `Superseded by` missed the notes worded `is superseded by`, a fidelity pass comparing backticked tokens missed the plain word `different`, and a sweep for a dangling structural reference listed known phrasings and missed `as the existing OpenCode real-run acceptance`.
+  Each was found by a reader, not by the check, and each cost a round, so a check whose scope is a list of examples has not yet been written.
 
 The destination packages, the `+100` and `+200` ID blocks, the dropped zero padding, and the scope boundary are recorded as the migration contract in [DR-017](../decisions/017-spec-generation-migration.md).
 

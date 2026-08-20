@@ -531,7 +531,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - each stream shall terminate with successful `done`;
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- the leg shall self-skip when the `opencode` CLI the adapter spawns for its managed server is absent from `PATH` or the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
+- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip when the `opencode` CLI the adapter spawns for its managed server is absent from `PATH` or the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
 - where the host cannot initialize the adapter's OS-level sandbox, the leg shall self-skip with a logged reason, including under `CI`.
 
 ### opencode-220
@@ -803,9 +803,9 @@ absolute `/tmp` file by requesting an exact shell command under an explicit
 `shellExecute: 'ask'` rule, the run shall emit a `bash` `tool_use` and at least
 one successful automated `once` audit event for the `bash` permission,
 complete without an outer timeout, `permission_request`, denied `tool_result`,
-or `error`, and emit exactly one success-status `done`; the leg shall use the
-same missing-dependency and transient-upstream gating as the existing OpenCode
-real-run acceptance [[opencode-5](#opencode-5)].
+or `error`, and emit exactly one success-status `done` [[opencode-5](#opencode-5)];
+the leg shall use the same missing-dependency and transient-upstream gating as
+[[opencode-219](#opencode-219)].
 
 ### opencode-238
 

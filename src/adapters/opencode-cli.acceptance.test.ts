@@ -10,7 +10,7 @@ import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 const available = isExecutableAvailable();
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 
-describe('OpenCode CLI contract (opencode-228)', () => {
+describe('OpenCode CLI contract (opencode-228 / package-228)', () => {
   acceptanceIt('exposes the managed-server target used by the adapter', () => {
     const version = commandOutput(['--version']);
     const help = commandOutput(['serve', '--help']);

@@ -49,10 +49,7 @@ Where `allowedTools` is an explicit empty list, when the built-in adapters run, 
 
 Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024)
 
-Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match this table and the cited adapter item:
-
-| Adapter     | Observable mapping                                                                                                                       |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match the cited adapter item.
 
 When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
 Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [ENG-024](../user/engine.md#eng-024).

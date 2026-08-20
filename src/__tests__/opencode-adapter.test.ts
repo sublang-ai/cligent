@@ -7852,7 +7852,7 @@ describe('OpenCode SSE event structure', () => {
     expect(payload.usage).toEqual({ toolUses: 0 });
   });
 
-  // TADAPT-039
+  // opencode-240
   it('records each step as its own billable request', async () => {
     const firstStep = {
       id: 'step-1',
