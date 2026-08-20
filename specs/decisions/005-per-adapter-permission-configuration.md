@@ -70,9 +70,16 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 | --- | --- | --- |
 | `claude` | `permissionMode: 'auto'` (after adding `'auto'` to `ClaudePermissionMode`) | `permissionMode: 'bypassPermissions'` |
 | `codex` | `ThreadOptions: { approvalPolicy: 'on-request' }` plus `CodexOptions.config: { approvals_reviewer: 'auto_review', default_permissions: <profile> }` — see *Codex — modern permission-profile model* below | `ThreadOptions: { approvalPolicy: 'never' }` plus `CodexOptions.config: { default_permissions: ':danger-full-access' }` |
-| `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | — |
+| `gemini` | `--approval-mode yolo` (after adding a yolo / approval-mode option to the adapter) | `--approval-mode yolo` (the same vendor control as auto; Gemini exposes no distinct bypass tier) |
 | `kimi` | ACP `session/set_config_option` with `mode = 'auto'` | Reject: ACP `yolo` is not unchecked bypass |
 | `opencode` | Preserve configured rules and answer surviving permission asks `once`, matching native `--auto` response behavior | Reject: the SDK/server session has no unchecked-bypass route |
+
+### Exhaustive mode-mapping contract
+
+The permission-mapping requirement in each built-in adapter package shall exhaust the closed `PermissionPolicy.mode` set from [[engine-21](../packages/engine.md#engine-21)].
+For each of `'auto'` and `'bypass'`, it shall name the exact vendor control, native-equivalent permission-response behavior, or mapping-time rejection.
+For `undefined`, it shall name the capability-derived controls or rejection and shall separately state both a missing `permissions` policy and a supplied policy whose `mode` is omitted, including an empty policy; those two inputs shall not be presumed equivalent.
+Where a case preserves vendor defaults by emitting no adapter-generated permission control, the requirement shall state that omission explicitly.
 
 ### Headless auto-mode posture
 
@@ -160,6 +167,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 
 - DR-002's `run(prompt, options)` boundary is preserved; DR-003's "adapter constructor = DI deps only" and generic `Cligent` merge are preserved; DR-004's `captain.options` semantics are preserved. tmux-play keeps YAML values as runtime-held call defaults so a complete per-call replacement can omit them without reconstructing the role's `Cligent`.
 - `PermissionPolicy` gains vocabulary for auto-mode; existing callers without the new field map as before.
+- Every built-in adapter package exhausts the closed mode set and distinguishes a missing policy from a supplied policy with omitted mode.
 - Claude, Codex, and Gemini retain their established mappings; OpenCode's corrected native-auto mapping preserves configured rules, answers surviving asks `once`, and rejects explicit tool lists before SDK loading; Kimi adds only its reachable native `auto` posture and rejects unsupported no-mode and bypass requests before invocation.
 - A YAML-only user cannot reach adapter-private knobs; consistency wins over expressivity. Programmatic API users can still pass `AgentOptions.permissions` directly with the same vocabulary.
 - Cligent ships no default permission posture; user choice is explicit per config.

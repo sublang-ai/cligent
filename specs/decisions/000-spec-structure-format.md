@@ -62,6 +62,8 @@ A package's user may be a human or a system component.
 - `Verification` for test items that check the package's own claims.
 - `References` (optional) for external sources.
 
+A condition shared by several test items is stated in one behavior-verifying owner item, and every other dependent item names and cites that condition at its relying phrase [[meta-37](../meta.md#meta-37)].
+
 An installed package can be customized in place by adding, changing, or deleting spec items in its file; this changes only the installed copy and creates no peer package relationship.
 
 ### Package relationships
@@ -89,6 +91,7 @@ IRs may cite DRs and items, but no other spec may cite or name an IR.
 - One package kind supports in-place customization; one binding-citation form expresses every peer package relationship
 - Every peer package relationship is visible as a citation at the phrase that relies on it
 - A package stands alone once its citations are stripped
+- A shared test condition has one behavior-verifying owner and remains visible in every dependent item
 - Flexible expression of external, internal, and composed behavior
 
 ## References

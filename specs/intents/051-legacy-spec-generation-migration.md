@@ -6,22 +6,22 @@
 ## Status
 
 In progress.
-Tasks 1 through 14 are done; tasks 15 through 31 remain.
+Tasks 1 through 15 are done; tasks 16 through 34 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
-Task 6 found the parser conflict that task 29 now carries, and the superseded-item cluster task 30 now carries, and completion waits on both.
-Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 28's table.
+Task 6 found the parser conflict that task 32 now carries, and the superseded-item cluster task 33 now carries, and completion waits on both.
+Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 31's table.
 Task 8 landed `claude-code` the same way, with `claude-code-1`, `claude-code-6`, and `claude-code-10` reaching no verification item, and left the cross-adapter file's engine halves for task 13.
 Task 9 landed `codex` with `codex-1` and `codex-9` reaching none, emptied `specs/dev/`, and left the two remaining Codex-bodied criteria in `test/adapters.md` for the engine halves they still verify.
 Task 10 landed `gemini` with `gemini-1` and `gemini-2` reaching none, consuming the whole `Gemini` section of `test/adapters.md` along with its three Gemini-only criteria elsewhere.
-Task 11 landed `kimi` as the first adapter package whose every behavior a verification item reaches, so it hands task 28 no row, as `ndjson` already did at task 6.
+Task 11 landed `kimi` as the first adapter package whose every behavior a verification item reaches, so it hands task 31 no row, as `ndjson` already did at task 6.
 Task 12 landed `opencode` with `opencode-1` and `opencode-4` reaching none, moving ten of its twenty-three criteria whole rather than restating them, and left `test/adapters.md` holding engine-verifying items alone.
 Task 13 landed `engine` with `engine-7` and `engine-29` reaching none, deleted `test/adapters.md` and `test/engine.md`, moved the peer-SDK-floor clause to `package-201`, and restored `engine-219`, whose engine half task 12 had consumed because it lived in a body citation rather than a `Verifies:` line.
 Its review found `engine-221` restating `codex-221` in Codex-internal vocabulary, and scoping that by concept rather than by the instance named found `engine-222` and `engine-223` doing the same to `opencode-222` and `codex-223`: task 13 had moved each dissolved criterion's adapter body into the engine package instead of writing the engine copy [DR-017](../decisions/017-spec-generation-migration.md) requires, so task 14's commit consolidates all three into one adapter-neutral `engine-221` covering [[meta-34](../meta.md#meta-34)] the `writablePaths` contract alone and retargets the two map rows.
 The same review found `engine-219` reconstructed without the retry bound and sandbox self-skip its source carried, and without the gating its deleted section preamble supplied, leaving a five-adapter live-API item no reader could implement without hard-failing every credential-less host; task 14's commit states that gating inline [[meta-15](../meta.md#meta-15)].
-Task 14 landed `tmux-play` as 184 items matching the map exactly, emptied `specs/user/` and `specs/test/`, and handed task 28 ten uncovered behaviors; two defects its move carried out of the legacy generation were resolved against the destination's law in the same commit, `tmux-play-152` citing peer behavior a verification item may not reach [[meta-20](../meta.md#meta-20)] and `tmux-play-116` deferring its Kimi harness discipline to a citation instead of stating it [[meta-15](../meta.md#meta-15)].
+Task 14 landed `tmux-play` as 184 items matching the map exactly, emptied `specs/user/` and `specs/test/`, and handed task 31 ten uncovered behaviors; two defects its move carried out of the legacy generation were resolved against the destination's law in the same commit, `tmux-play-152` citing peer behavior a verification item may not reach [[meta-20](../meta.md#meta-20)] and `tmux-play-116` deferring its Kimi harness discipline to a citation instead of stating it [[meta-15](../meta.md#meta-15)].
 Task 14's own review then found `.github/workflows/ci.yml` still naming `TMUX-051` and `TTMUX-050`, the last legacy IDs quoted outside the records: the retarget sweep had asked only whether every current-form ID resolved, a question no legacy-form token can fail, so the invariant above now states the check in both directions.
 The same both-directions sweep found [DR-004](../decisions/004-tmux-play-captain-architecture.md) pointing at the deleted `user/` directory in a link whose href task 14 had already retargeted, the stale name surviving in the visible text alone.
-Only the six `META-*` citations task 25 carries, the two the `DR-017` index row names as history, and the legacy paths in the `specs/iterations/` records remain, each owned.
+Only the six `META-*` citations task 28 carries, the two the `DR-017` index row names as history, and the legacy paths in the `specs/iterations/` records remain, each owned.
 A further round found the residue that survives both directions until they expand shorthand: task 14 had rewritten only the leading element of eleven slash-separated ID lists, leaving continuations such as `/039` naming nothing, now expanded to whole IDs at every site.
 It also found the deleted `Real-tmux` and `Real-glow` preambles had carried the self-skip discipline for eighteen acceptance items that stated none of their own, the same loss `engine-219` suffered, so each now states it inline [[meta-8](../meta.md#meta-8)], and `engine-219` regained the *external*-CLI wording whose absence let it contradict `codex-219` on whether an absent SDK may skip a leg.
 That expansion then got seven IDs wrong by dropping the `+100` offset on continuations of a `TTMUX-` list, every one resolving to a live behavior item where a test item was meant, which is why the invariant above now checks a retargeted ID against the rename map rather than against the tree.
@@ -29,9 +29,12 @@ Restating those preambles had also kept only their harness half, leaving eightee
 A fourth round then found the same expansion had never covered `..` ranges at all: eight survived half-converted, two of them descending and so impossible on their face, one in `src/` and therefore leaving this plan's own retarget invariant unmet rather than merely unverified.
 Each round's instrument had improved while its scope stayed pinned to the separator its worked example named, so the invariant now states the property — no item ID adjacent to a bare number — instead of a pattern.
 The same round found `IR-011`'s goal line had dropped eight of the ten items it claimed, a legacy citation whose text named `TMUX-027/028` and `TMUX-035..042` while its href named one anchor, the lawful conversion keeping the href and silently discarding the rest.
-That resize then over-reached: it made the package the atomic unit where only the item is one, which would have forced `tmux-play`'s hundred and fifty-two splits into a single commit — more than half the workload the resize had just rejected — so the invariant now binds the split of one item and lets a package come into item law across commits.
+That resize then over-reached: it made the package the atomic unit where only the item is one, which would have forced `tmux-play`'s entire 152-item top-level split workload into a single commit — more than half the workload the resize had just rejected — so the invariant now binds the split of one item and lets a package come into item law across commits.
 The same round found task 15's whole output, two standing rules, resting in this plan alone, which [[meta-28](../meta.md#meta-28)] does not allow of a record whose deletion must lose nothing, so both now land in decision records.
-A last round settled three findings against the item-law task and resized it: it had grown to every package at once, 278 of 478 items carrying more than one `shall`, which meta-5 does not admit and which no staging rule bounded, so it is now the rule-settling task 15 and one commit per package across tasks 16 through 24, and the tasks after it are renumbered.
+A last round settled three findings against the item-law task and resized it: it had grown to every package at once, 278 of 478 items carrying more than one top-level `shall`, which meta-5 does not admit and which no staging rule bounded, so it is now the rule-settling task 15, eight one-commit package tasks 16 through 23, and bounded `tmux-play` slices in tasks 24 through 27.
+Reviewing that plan-only commit found its one `tmux-play` task still spanning several commits, its package-wide staging sentence calling unsplit multi-requirement items lawful, and its section boundary able to separate a behavior branch from the assertion reaching it, so tasks 24 through 27 now own baseline item slices and retain per-item behavior-to-verification atomicity.
+The same review found task 15 leaving framework law conditional despite both `DR-000` and `meta.md` being owner-gated, and found the retained map sections naming eighteen item IDs rather than sixteen once the two legacy `META-*` tokens are counted.
+Task 15 landed the owner's approved shared-test-precondition law as [[meta-37](../meta.md#meta-37)] with its rationale in [DR-000](../decisions/000-spec-structure-format.md), made [DR-005](../decisions/005-per-adapter-permission-configuration.md) require every built-in adapter to exhaust the closed mode set, distinguished both policy-presence cases under `undefined`, and corrected Gemini's same-control auto and bypass rows; no package item changed.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -54,8 +57,10 @@ These invariants govern every task:
   A legacy citation whose text named more IDs than its anchor keeps every one of them, because converting it to the lawful form preserves the href and silently drops whatever the text carried beyond it, and every link check then reports clean.
 - Each task's citation figure counts inbound citations from other files, a package's own internal citations moving with it.
 - A destination package lands complete in one commit — `Intent`, `External Behavior`, optional `Internal Behavior`, `Verification`, in that order [[meta-30](../meta.md#meta-30)] — because a package without `Verification` is unlawful and cannot be staged across commits.
-- One item's split lands whole in one commit — every branch, the assertion reaching each [[meta-33](../meta.md#meta-33)], the citation naming it [[meta-20](../meta.md#meta-20)], and the rename-map rows it changes — because a branch that arrives without its assertion is unlawful at the commit boundary, while an item not yet split is only in the state the port left it.
-  A package therefore comes into item law across as many commits as its size needs, each leaving every item in it lawful, and the move invariant above does not generalize to it: [[meta-30](../meta.md#meta-30)] makes a package with no `Verification` section unlawful, and there is no half of a section, but there is no whole-file fact item law answers to.
+- One item's split lands whole in one commit — every branch, the assertion reaching each [[meta-33](../meta.md#meta-33)], the citation naming it [[meta-20](../meta.md#meta-20)], and the rename-map rows it changes — because a branch that arrives without its assertion is unlawful at the commit boundary.
+  An unsplit multi-requirement item remains explicit migration debt under the tasks below rather than becoming lawful merely because the port left it that way.
+  A package therefore comes into item law across as many commits as its size needs, each leaving every item it splits lawful and every new behavior branch verified; the move invariant above does not generalize because [[meta-30](../meta.md#meta-30)] makes a package with no `Verification` section unlawful while item law answers to no whole-file fact.
+  The item ranges below are ownership slices over the 184-item task-14 baseline: every new branch belongs to its originating baseline item's task, and where splitting a behavior makes a reaching verification item's own split necessary, that verifier lands whole with the behavior while its later range task skips the already-lawful result.
 - A legacy test file survives until its last item reaches a lawful home: a test item's behavior citations stay inside its own package [[meta-20](../meta.md#meta-20)], so a clause verifying a peer's behavior waits for that peer's task.
 - A task that changes where a released concern lives — splitting an item [[meta-29](../meta.md#meta-29)], dropping a restatement another package already owns [[meta-34](../meta.md#meta-34)], or moving a clause — records the added, removed, or retargeted row in the same commit, so the map never lags the tree.
 - A released item found false of the artifact it describes moves unchanged, because a move settles where a requirement lives and never what it says; its contradiction becomes a task of its own ahead of the handover, closed by conforming the artifact to the item or by a decision record [[meta-24](../meta.md#meta-24)] carrying the decision that amends the item, and this plan stays incomplete until every such task closes.
@@ -81,7 +86,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 31, every classification and split judgment, and every open question reach a human diff review.
+- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 34, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**
@@ -112,7 +117,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 6. **Migrate `ndjson` and `release`.**
    Create `packages/ndjson.md` and `packages/release.md`, moving the parser's verification out of `test/adapters.md` and deleting `user/ndjson.md` and `dev/release.md`.
-   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and leave the residual coverage gap [[meta-33](../meta.md#meta-33)] to task 28 instead of inventing tests here.
+   The release behaviors carry no legacy verification at all, so add verification items only where a real check exists today and leave the residual coverage gap [[meta-33](../meta.md#meta-33)] to task 31 instead of inventing tests here.
    Retarget the 5 inbound citations the parser package carries.
 
 7. **Migrate `package`.**
@@ -145,71 +150,85 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Move the clauses verifying adapter and engine behavior into those packages, absorb the last clauses parked in `test/package-parked.md`, delete both tmux-play files, the emptied `test/package-parked.md`, and the three emptied legacy directories, and retarget the 472 spec citations and 458 code references.
 
 15. **Settle the item-law rules every package split applies.**
-    Two decisions constrain how every later split is written, so they land before any of them, and this task changes no item.
-    Neither may rest in this plan: its whole output is the two rules, and an intent record is disposable [[meta-28](../meta.md#meta-28)], so a rule the next author needs after this one is deleted belongs in a decision record [[meta-24](../meta.md#meta-24)].
-    This task carries the first to [DR-005](../decisions/005-per-adapter-permission-configuration.md), whose subject it is, and the second to [DR-000](../decisions/000-spec-structure-format.md), an authoring convention outliving this migration; where the second amounts to framework law it goes to the owner first, `meta.md` being owner-gated.
-    The nine tasks below then cite those records rather than this one.
-    Each adapter permission-mapping item shall state, for every `PermissionPolicy.mode` value in [[engine-21](../packages/engine.md#engine-21)]'s closed set, the vendor control it produces or the rejection it raises.
+    Two decisions and one framework item constrain how every later split is written, so they land before any of them, and this task changes no package item.
+    Neither rule may rest in this plan: its whole output is the two rules, and an intent record is disposable [[meta-28](../meta.md#meta-28)], so a rule the next author needs after this one is deleted belongs in a decision record [[meta-24](../meta.md#meta-24)].
+    This task carries the first to the exhaustive mode-mapping contract in [DR-005](../decisions/005-per-adapter-permission-configuration.md), whose subject it is, and the second to the package-structure decision in [DR-000](../decisions/000-spec-structure-format.md) with its framework law in [[meta-37](../meta.md#meta-37)], both owner-gated files having the owner's approval for this phase.
+    The twelve tasks below apply those durable sources directly rather than taking either rule from this plan.
+    The adapter decision covers [[engine-21](../packages/engine.md#engine-21)]'s three mode rows and distinguishes a missing policy from a supplied policy whose mode is omitted in its `undefined` row.
     That rule finds each instance by construction, where every enumeration this plan attempted was wrong within a round: `claude-code-4` states no `mode` row at all, no `gemini` item states what `'auto'` and `'bypass'` map to though `gemini-6` states that they take precedence, and no `opencode` item states the `'bypass'` rejection its adapter raises before the run.
-    That set has three members, `'auto' | 'bypass' | undefined`, and the omitted-`mode` row is the one most likely to be skipped while carrying the worst failure: an adapter that synthesizes a posture the caller never asked for.
-    `claude-code-4` states a missing `permissions` field maps to `permissionMode: 'default'` with no `canUseTool` callback, `gemini-12` and `codex-4` state their own absent-policy rules, and task 28's table already records that `codex-224` asserts none of `codex-4`'s three unset controls.
-    So the audit is five packages against three values, and the count is not a licence to check fewer.
-    Where an item being split carries a precondition all its branches share — the real-artifact and harness sentence the eighteen acceptance items now carry among them — this task shall settle whether every branch restates it or the package states it once and each branch cites it, and shall record that convention where the paragraph above sends it.
-    Eighteen identical copies are already a rule with eighteen places to stay consistent, splitting multiplies them, and a copy that drifts is invisible to every check this plan runs.
-    Applying item law to a package, in each of the nine tasks below, means splitting its multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classifying behavior hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], dropping restatements another package already owns [[meta-34](../meta.md#meta-34)], binding every remaining uncited peer-package dependency at the phrase it makes specific [[meta-14](../meta.md#meta-14)], and applying the two rules this task settled.
+    `claude-code-4` states a missing `permissions` field maps to `permissionMode: 'default'` with no `canUseTool` callback, `gemini-12` and `codex-4` state their own absent-policy rules, and task 31's table already records that `codex-224` asserts none of `codex-4`'s three unset controls.
+    The resulting audit is five packages against that decision's complete matrix, and the count is not a licence to check fewer.
+    The shared-condition decision and [[meta-37](../meta.md#meta-37)] govern the real-artifact and harness conditions the eighteen acceptance items now carry among them.
+    Eighteen copies across the real-`tmux` and real-`glow` conditions are already two rules with eighteen places to stay consistent, splitting multiplies them, and a copy that drifts is invisible to every check this plan runs.
+    Applying item law to a package, in each of the twelve tasks below, means splitting its multi-requirement items into one requirement each [[meta-29](../meta.md#meta-29)], classifying behavior hidden from the package's users as `Internal Behavior` [[meta-30](../meta.md#meta-30)], dropping restatements another package already owns [[meta-34](../meta.md#meta-34)], binding every remaining uncited peer-package dependency at the phrase it makes specific [[meta-14](../meta.md#meta-14)], applying the exhaustive mode-mapping contract in [DR-005](../decisions/005-per-adapter-permission-configuration.md) to every built-in adapter permission mapper, and applying [[meta-37](../meta.md#meta-37)] to every shared test precondition.
     Where an item states a narrower outcome set than the artifact demonstrably produces, the task states the missing outcomes rather than records them, the package otherwise failing to be sufficient to reimplement its behavior [[meta-34](../meta.md#meta-34)]: that documents behavior another spec already mandates and the concern the released ID names is preserved [[meta-12](../meta.md#meta-12)], so it is not the invention the migration tasks forbid.
-    Each split carries its verification with it: every branch takes the assertion reaching it and the citation naming it [[meta-20](../meta.md#meta-20)], [[meta-33](../meta.md#meta-33)], and a branch no check reaches becomes a row of task 28's table in the same commit.
+    Each split carries its verification with it: every branch takes the assertion reaching it and the citation naming it [[meta-20](../meta.md#meta-20)], [[meta-33](../meta.md#meta-33)], and a branch no check reaches becomes a row of task 31's table in the same commit.
     That row is the whole handoff: an assertion no check executes fails no suite and satisfies this plan's coverage criterion, so nothing but the row keeps it visible.
-    None of the nine moves a file, so each can be reviewed as pure item law.
+    None of the twelve moves a file, so each can be reviewed as pure item law.
     The counts below are the multi-`shall` items measured when this list was written, a sizing signal rather than a target: not every one splits.
 
-16. **Apply item law to the four packages carrying no split.**
-    `git`, `licensing`, `ndjson`, and `release` already state one requirement per item, so their work is classification, restatement, and citation alone, and one commit holds all four.
+16. **Apply item law to the four smallest packages.**
+    `git`, `licensing`, and `ndjson` already state one requirement per item, so their work is classification, restatement, and citation; `release` joins them because its only split is `release-8`, and one commit holds all four.
     `release-8` is here, mandating its provenance attestation and its OIDC authentication independently, either able to fail while the other holds, and it would otherwise reach the handover unlawful because no other task applies item law.
 
 17. **Apply item law to `package`.**
     Nine of its twenty-four items carry more than one `shall`.
 
 18. **Apply item law to `claude-code`.**
-    Ten of its twenty-six items carry more than one `shall`, and `claude-code-4` is where the permission-mapping rule bites hardest, stating no `mode` row at all.
+    Ten of its twenty-six items carry more than one `shall`, and `claude-code-4` is where the exhaustive mode-mapping contract in [DR-005](../decisions/005-per-adapter-permission-configuration.md) bites hardest, stating no `mode` row at all.
 
 19. **Apply item law to `codex`.**
-    Fourteen of its thirty-seven items carry more than one `shall`, and `codex-4`'s absent-policy rule is one of the three `mode` rows the rule audits.
+    Fourteen of its thirty-seven items carry more than one `shall`, and `codex-4`'s absent-policy rule is part of the complete matrix [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
 
 20. **Apply item law to `gemini`.**
-    Fourteen of its thirty-four items carry more than one `shall`, and no `gemini` item yet states what `'auto'` and `'bypass'` map to.
+    Fourteen of its thirty-four items carry more than one `shall`, and no `gemini` item yet states the `'auto'` and `'bypass'` rows [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires.
 
 21. **Apply item law to `kimi`.**
-    Twelve of its twenty-seven items carry more than one `shall`.
+    Twelve of its twenty-seven items carry more than one `shall`, including the permission mapper to which [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s exhaustive contract applies.
 
 22. **Apply item law to `opencode`.**
-    Twenty-seven of its forty-five items carry more than one `shall`, and no `opencode` item states the `'bypass'` rejection its adapter raises before the run.
+    Twenty-seven of its forty-five items carry more than one `shall`, and no `opencode` item states the `'bypass'` rejection [DR-005](../decisions/005-per-adapter-permission-configuration.md) requires before the run.
 
 23. **Apply item law to `engine`.**
     Forty of its sixty-eight items carry more than one `shall`.
 
-24. **Apply item law to `tmux-play`.**
-    A hundred and fifty-two of its hundred and eighty-four items carry more than one `shall`, more than half the tree's total, so it lands last and may stage across commits at a stated section boundary, each commit leaving every item in the package lawful.
-    Where the legacy verification never reached a branch — [[tmux-play-61](../packages/tmux-play.md#tmux-play-61)]'s create-no-config case, which [[tmux-play-161](../packages/tmux-play.md#tmux-play-161)] omits and no test covers — this task writes the assertion and, in the same commit, adds the branch to task 28's table as an audit stated but unrun.
+24. **Apply item law to the first half of `tmux-play` External Behavior.**
+    Split the first forty-five task-14 baseline behavior items in current document order, beginning with [[tmux-play-1](../packages/tmux-play.md#tmux-play-1)] and ending with [[tmux-play-29](../packages/tmux-play.md#tmux-play-29)], thirty-five of which carry more than one top-level `shall`.
+    Every reaching verification assertion and citation and every changed rename-map row lands with its behavior branch; where carrying an assertion requires splitting its verifier, that verifier's whole split lands here.
+    Where the legacy verification never reached a branch — [[tmux-play-61](../packages/tmux-play.md#tmux-play-61)]'s create-no-config case, which [[tmux-play-161](../packages/tmux-play.md#tmux-play-161)] omits and no test covers — this task writes the assertion and, in the same commit, adds the branch to task 31's table as an audit stated but unrun.
 
+25. **Apply item law to the second half of `tmux-play` External Behavior.**
+    Split the remaining forty-five task-14 baseline behavior items in current document order, beginning with [[tmux-play-30](../packages/tmux-play.md#tmux-play-30)] and ending with [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)], thirty-five of which carry more than one top-level `shall`.
+    Every reaching verification assertion and citation and every changed rename-map row lands with its behavior branch; where carrying an assertion requires splitting its verifier, that verifier's whole split lands here.
 
-25. **Move the records.**
+26. **Apply item law to baseline `tmux-play` verification items 101 through 150.**
+    Split each of those fifty task-14 baseline items that a behavior task has not already made lawful, forty-two carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
+    Keep the real-`tmux` condition in the behavior-verifying owner derived from [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)] and add that owner as a destination of the eleven other source rows carried by [[tmux-play-131](../packages/tmux-play.md#tmux-play-131)] through [[tmux-play-137](../packages/tmux-play.md#tmux-play-137)] and [[tmux-play-146](../packages/tmux-play.md#tmux-play-146)] through [[tmux-play-149](../packages/tmux-play.md#tmux-play-149)].
+    Keep the real-`glow` condition in the behavior-verifying owner derived from [[tmux-play-150](../packages/tmux-play.md#tmux-play-150)] and add that owner as a destination of the five other source rows carried by [[tmux-play-151](../packages/tmux-play.md#tmux-play-151)], [[tmux-play-192](../packages/tmux-play.md#tmux-play-192)], [[tmux-play-193](../packages/tmux-play.md#tmux-play-193)], [[tmux-play-196](../packages/tmux-play.md#tmux-play-196)], and [[tmux-play-197](../packages/tmux-play.md#tmux-play-197)].
+    Every dependent item cites its corresponding owner per [[meta-37](../meta.md#meta-37)]; the source items above 150 take that citation now, keep their substantive destinations, and remain otherwise in their baseline state for task 27.
+    IDs allocated by earlier item-law tasks are outside this baseline range and do not enlarge this task.
+
+27. **Apply item law to baseline `tmux-play` verification items 151 through 201.**
+    Split each of the forty-four extant task-14 baseline items in that range that a behavior task has not already made lawful, forty carrying more than one top-level `shall`, with every branch retaining the behavior citation at its assertion and every changed rename-map row landing in the same commit.
+    IDs allocated by earlier item-law tasks are outside this baseline range and do not enlarge this task.
+
+28. **Move the records.**
     Move the 50 records left in `specs/iterations/` to `specs/intents/`, task 2 having retired the duplicate, rename `Goal` to `Intent` and both `Acceptance criteria` and `Acceptance` to `Verification`, supply the `Status` the two remaining records without one are missing, and order the sections per [[meta-5](../meta.md#meta-5)].
     Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the six legacy `META-*` citations left on what the task-4 map settled for each concern.
     A concern with a carrier takes a citation pointing at it, while a concern whose retirement the owner approved keeps its still-true prose and loses the link, a claim the current law no longer makes being rewritten or removed — the `META-20` sentence about `Verifies:` lines among them.
     This task waits on that map rather than leaving a citation unresolved.
 
-26. **Empty the records of design.**
+29. **Empty the records of design.**
     Move the design content the legacy records hold — their `Mechanism notes`, `Design decision`, and `Open questions` sections — into the decision records that own it, so deleting an intent record loses nothing [[meta-28](../meta.md#meta-28)].
     Remove every mention of an intent record from the other specs — the index, the one decision record that names one, and the intent records that cite each other [[meta-18](../meta.md#meta-18)].
     While the decision records are open, convert the two that carry `[^n]` footnotes to the numbered external-reference markers the current law requires [[meta-19](../meta.md#meta-19)].
 
-27. **Rewrite the index and the guidance.**
+30. **Rewrite the index and the guidance.**
     Rebuild `specs/map.md` in the current shape — layout block, decisions table, packages table — with no intent-record index [[meta-18](../meta.md#meta-18)], and refresh whatever repo guidance still describes the legacy layout.
     Each summary shall carry only what locates a file [[meta-23](../meta.md#meta-23)], the `tmux-play` cell being 691 words of a 3,147-word index against 88 for the next largest, a lossy copy of the package competing with the package for authority.
-    The rebuilt index shall cite no item ID: fourteen sit in that one cell and sixteen across the two sections the rebuild keeps, several naming items the item-law tasks split, after which the parenthetical describes a branch that no longer carries it while the ID still resolves and every check still passes.
+    The rebuilt index shall name no item ID: fourteen sit in that one cell and eighteen across the two sections the rebuild keeps — sixteen current-form IDs and the two legacy `META-*` tokens in the migration-decision summary — several naming items the item-law tasks split, after which the parenthetical describes a branch that no longer carries it while the ID still resolves and every check still passes.
 
-28. **Close or record the verification gaps.**
+31. **Close or record the verification gaps.**
     Give every behavior in the table below an integration or system check [[meta-21](../meta.md#meta-21)] that prefers real behavior to a substitute [[meta-32](../meta.md#meta-32)], implementing the audits these three state and nothing runs, and writing the verification items they still lack [[meta-33](../meta.md#meta-33)]:
 
     | Package     | Audit stated but unrun                                                                               | Behavior no assertion reaches                                                                                                                                                                                                                           |
@@ -220,27 +239,27 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
     | `claude-code` | none                                                                                               | `claude-code-1`, which no verification item cites and no check reaches; `claude-code-6` and `claude-code-10`, which no verification item cites while `claude-code-adapter.test.ts` does exercise the option pass-through and every branch of the resume-repair skip; and, within cited items, `claude-code-3`'s `init`-exactly-once and unlabelled-`system` handshake rules, `claude-code-5`'s deny-message and category cases, and `claude-code-12`'s record-sum identity, `web_search_request` unit, and tokens-absent cost exposure |
     | `codex`     | none                                                                                                 | `codex-1`, which no verification item cites, its `agent: 'codex'` identity reaching only the engine's role-attribution checks; `codex-9`, which no verification item cites while `codex-adapter.test.ts` does assert the `skipGitRepoCheck` thread option; and, within cited items, `codex-3`'s legacy alias tool shapes and its unique-`toolUseId` tool count, which `codex-201`'s canonical-shape assertion excludes, and `codex-4`'s absent-policy knob rule, whose three unset controls `codex-224` does not assert while proving the no-policy run's outcome, though `codex-adapter.test.ts` does assert them |
-    | `engine`    | none                                                                                                 | `engine-7`, whose exported `createEvent()`, `generateSessionId()`, and `isAgentEvent()` helpers no verification item cites; and `engine-29`, superseded by `engine-31` and cited by no verification item, which task 30 settles rather than task 28 |
+    | `engine`    | none                                                                                                 | `engine-7`, whose exported `createEvent()`, `generateSessionId()`, and `isAgentEvent()` helpers no verification item cites; and `engine-29`, superseded by `engine-31` and cited by no verification item, which task 33 settles rather than task 31 |
     | `opencode`  | none                                                                                                 | `opencode-1`, which no verification item cites, its `agent: 'opencode'` identity reaching no check; and `opencode-4`, whose managed-versus-external mode selection no verification item cites, though `opencode-208`, `opencode-228`, and `opencode-235` each exercise a managed-mode run |
     | `gemini`    | none                                                                                                 | `gemini-1`, which no verification item cites, its `agent: 'gemini'` identity and absent SDK dependency reaching no check; `gemini-2`, which no verification item cites while `gemini-adapter.test.ts` does exercise both outcomes of the spawn-based probe but not its timeout; and, within cited items, `gemini-6`'s capability-tool list and its rule that capability-level allows shall not widen an explicit allowlist, which `gemini-204` and `gemini-229` state no case for |
-    | `tmux-play` | none                                                                                                 | `tmux-play-4`, `tmux-play-14`, `tmux-play-15`, `tmux-play-20`, `tmux-play-31`, `tmux-play-32`, and `tmux-play-60`, which no verification item cites and no check reaches; `tmux-play-33`, whose `PlayerRunResult` shape only `presenter-tmux.ts` reads and no check asserts; and `tmux-play-92`, whose turn-scoped `emitReply` surface `follow-observer.test.ts` and `presenter-tmux.test.ts` do exercise while no verification item claims it; `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, is task 30's rather than this task's |
+    | `tmux-play` | none                                                                                                 | `tmux-play-4`, `tmux-play-14`, `tmux-play-15`, `tmux-play-20`, `tmux-play-31`, `tmux-play-32`, and `tmux-play-60`, which no verification item cites and no check reaches; `tmux-play-33`, whose `PlayerRunResult` shape only `presenter-tmux.ts` reads and no check asserts; and `tmux-play-92`, whose turn-scoped `emitReply` surface `follow-observer.test.ts` and `presenter-tmux.test.ts` do exercise while no verification item claims it; `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, is task 33's rather than this task's |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
     Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
-    The branches tasks 16 through 24 split arrive as further rows of that table, as does any gap a migration task hands over, and this task closes only once none is left.
+    The branches tasks 16 through 27 split arrive as further rows of that table, as does any gap a migration task hands over, and this task closes only once none is left.
 
     Where a behavior admits no check at all, `git-3`'s bullets-if-clearer clause the candidate, a decision record [[meta-24](../meta.md#meta-24)] amends it into a checkable form with its concern preserved [[meta-12](../meta.md#meta-12)], the package then verifying everything it states.
     Where a gap is neither closed nor so amended, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
 
-29. **Settle the parser's unterminated-tail conflict.**
+32. **Settle the parser's unterminated-tail conflict.**
     `ndjson-2` carries `NDJSON-002`'s rule that a result follows only a complete newline-delimited line, while `parseNDJSON()` has read an unterminated final line since it was written, a passing test pins that flush, and the Gemini adapter is its only consumer.
     Put the contradiction to the owner, who either conforms the parser and its test to the rule, the package's `External Behavior` then standing as written, or writes the decision record adopting the flush, which amends `ndjson-2` to stop excluding the end of the stream, gains the package an item for the tail, and gains the map its row.
     Either branch ends the silence this question bought: `ndjson-207` gains the assertion of what a stream ending without a newline yields, and the trigger that carries it.
     Task 6 found this and left it open rather than settling a behavior question inside a move.
     Leave this plan incomplete until it closes.
 
-30. **Settle the superseded items.**
+33. **Settle the superseded items.**
     Every item the tree marks superseded when this task runs is in scope, wherever it then lives and however the marker is worded: an item-level note retiring the whole item, and an embedded note retiring one passage of an otherwise live item alike, but not an ordinary sentence that merely uses the word.
     What each marker admits is that the artifact stopped following the passage it covers, while the rest of a partly superseded item stays authoritative.
     Whatever still cites retired content shall be reconciled with the outcome in the same commit, because a live item may draw its own scope from one — `kimi-6` excludes `kimi-5`'s failure-isolated usage and `claude-code-10` reads the main-loop counters `claude-code-11` reports — and retiring it unreconciled would leave a live requirement no reader can bound.
@@ -251,7 +270,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Neither `spex lint` nor the coverage criterion sees this, a superseded item stating a requirement its package never meets [[meta-34](../meta.md#meta-34)], so nothing but this task keeps it visible.
     Leave this plan incomplete until it closes.
 
-31. **Verify and hand over.**
+34. **Verify and hand over.**
     Drive `spex lint` to zero errors and zero warnings, reconcile the task-4 rename map against the tree, run typecheck, lint, unit tests, and build, and hand that map, the classifications, the split judgments, the open questions, and any coverage left open to human diff review.
 
 ## Verification
@@ -267,6 +286,6 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - Every package file carries the required sections in order and cites no peer behavior from its `Verification` section.
 - Every package's `Verification` covers every behavior in that package [[meta-33](../meta.md#meta-33)], which `spex lint` does not check; any gap that stays open leaves this plan incomplete.
 - Every item citation uses the outer-bracketed inline form, and the two `src/` comments that link into the legacy layout point at their packages.
-- `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 28 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
+- `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` stay green, as does every check task 31 adds or cites, including the smoke and acceptance suites `npm run test` excludes.
 - A human settles whether the two released `CHANGELOG.md` hyperlinks into the deleted `specs/user/adapters/kimi.md` stay as they are and 404 on `main`, or are repointed at the tag whose release the entry records so the entry stays historically exact, the byte-for-byte rule admitting no third option and this plan not completing until one is chosen.
 - A human settles each of the decision record's five approval gates, every loss its map has recorded, `META-15` and `META-26` among them, and every contradiction a move recorded between an item and the artifact it describes, then reviews the full diff before it merges.

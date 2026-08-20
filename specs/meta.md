@@ -186,6 +186,10 @@ A test shall prefer executing the real behaviors bound by the behaviors it verif
 
 Each package's `Verification` section shall verify every behavior in that package, white-box or black-box.
 
+### meta-37
+
+Where two or more test items in one package require the same precondition, the package shall state that precondition in one behavior-verifying test item and cite that item at the precondition phrase of every other dependent test item [[meta-8](#meta-8)], [[meta-16](#meta-16)], [[meta-20](#meta-20)], [[meta-21](#meta-21)].
+
 ## Citation
 
 ### meta-16
