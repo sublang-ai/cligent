@@ -16,11 +16,11 @@ Complete
 
 ## Deliverables
 
-- [x] [OPENCODE-007](../user/adapters/opencode.md#opencode-007) specifies
+- [x] [[opencode-7](../packages/adapters/opencode.md#opencode-7)] specifies
       native auto replies without a session wildcard on the active v1 and v2
       SDK paths.
-- [x] [OPENCODE-008](../user/adapters/opencode.md#opencode-008) and
-      [OPENCODE-020](../user/adapters/opencode.md#opencode-020) specify
+- [x] [[opencode-8](../packages/adapters/opencode.md#opencode-8)] and
+      [[opencode-20](../packages/adapters/opencode.md#opencode-20)] specify
       session-correlated, fail-closed permission replies, bounded reply
       failure, transport-level abort cleanup, event-count-independent control
       waits, bounded SDK teardown, and `SIGTERM`-to-`SIGKILL` escalation for
@@ -30,7 +30,7 @@ Complete
       `permission.asked` requests `once`, and rejects non-auto residual
       requests through their version-correct SDK routes, with session and
       request identifiers preserved in calls and failures.
-- [x] [TADAPT-037](../test/adapters.md#tadapt-037) covers both SDK paths,
+- [x] [[opencode-237](../packages/adapters/opencode.md#opencode-237)] covers both SDK paths,
       unknown permissions, concurrency, bounded failures, underlying I/O
       cancellation, ordered and bounded abort cleanup, and a real
       `mode: 'auto'` write outside the working directory that proves an
@@ -40,7 +40,7 @@ Complete
       reflect the resolved hazard.
 - [x] Review follow-up closes the adjacent prompt-tool hazard: OpenCode 1.18.13
       rewrites prompt `tools` into persistent permission rules, so
-      [OPENCODE-015](../user/adapters/opencode.md#opencode-015) rejects every
+      [[opencode-15](../packages/adapters/opencode.md#opencode-15)] rejects every
       explicitly present tool-list option before SDK loading instead of
       letting an enabled tool override a native or portable deny.
 - [x] Review follow-up separates root-only output from run-owned descendant

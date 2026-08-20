@@ -35,7 +35,7 @@ Done
    Implement [[gemini-17](../packages/adapters/gemini.md#gemini-17)] with one run-owned local telemetry file,
    per-response records, stream cross-validation, and cleanup.
 4. [x] **Make OpenCode accounting causal and idempotent.**
-   Implement [OPENCODE-021](../user/adapters/opencode.md#opencode-021) across the root/task tree without
+   Implement [[opencode-21](../packages/adapters/opencode.md#opencode-21)] across the root/task tree without
    widening conversational output or charging unrelated background sessions.
 5. [x] **Keep Kimi honest.**
    Implement [[kimi-13](../packages/adapters/kimi.md#kimi-13)]: omit accounting the pinned ACP runtime does not

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// TADAPT-019: real-run verification that `permissions: { mode: 'auto' }`
+// claude-code-219 / codex-219 / gemini-219 / kimi-219 / opencode-219: real-run verification that `permissions: { mode: 'auto' }`
 // reaches each adapter's SDK and actually suppresses approval prompts for a
-// file create + update. The mapping-only tests (TADAPT-004/005) prove the knob
+// file create + update. The mapping-only tests (each adapter's -204 item) prove the knob
 // values; they never spawn the SDK, so they cannot catch an auto-mode knob
 // that the SDK silently rejects or that still gates either write behind a
 // prompt. Filesystem state is the ground-truth check: adapters normalize file
@@ -107,14 +107,14 @@ const SANDBOX_INIT_MARKERS = [
 // invoking that launcher's credential-free `sandbox` subcommand preflights
 // the exact same sandbox the SDK will use, rather than a different bwrap from
 // the parent process's PATH. Only failures whose output matches
-// SANDBOX_INIT_MARKERS classify as `sandbox-init` (skip per the TADAPT-019
+// SANDBOX_INIT_MARKERS classify as `sandbox-init` (skip per the codex-219
 // spec exception); any other preflight failure classifies as `unknown` and
 // fails the codex test, so a broken codex install or drifted CLI surface
-// cannot silently hide TADAPT-019.
+// cannot silently hide codex-219.
 const codexCliPath = resolveCodexCliPath();
 const codexSandboxPreflight = preflightCodexSandbox();
 
-describe('adapter auto-mode real-run acceptance (TADAPT-019)', () => {
+describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / gemini-219 / kimi-219 / opencode-219)', () => {
   const claudeMissing = missingDeps(['ANTHROPIC_API_KEY']);
   gatedIt(claudeMissing)(
     'claude auto mode auto-approves a temp-file create + update',
@@ -377,7 +377,7 @@ function expectOpenCodeUsage(
   // cannot prove which prompt was its own omits the report entirely rather
   // than bill work it did not do.
   expect(report, `${label}: authentic token report`).toBeDefined();
-  // Coverage is deliberately not pinned to 'complete'. OPENCODE-021 degrades
+  // Coverage is deliberately not pinned to 'complete'. opencode-21 degrades
   // it to 'partial' for conditions no adapter change can prevent — a provider
   // retry above all, which upstream capacity errors produce routinely, and a
   // timed-out health query. Pinning it asserted the provider's weather rather
@@ -412,7 +412,7 @@ function expectOpenCodeUsage(
   // never fail. The unit suite covers that invariant where it can be violated.
 }
 
-describe('auto-mode transient retry policy (TADAPT-019)', () => {
+describe('auto-mode transient retry policy (claude-code-219 / codex-219 / gemini-219 / kimi-219 / opencode-219)', () => {
   it.each([
     ['capacity status code', 'claude', { code: '429', text: '' }, '429'],
     [

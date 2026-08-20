@@ -29,8 +29,8 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green
 at its boundary.
 
 1. [x] **Specify message-role normalization.** Add
-   [OPENCODE-017](../user/adapters/opencode.md#opencode-017) and
-   [TADAPT-034](../test/adapters.md#tadapt-034), and refine the normalization
+   [[opencode-17](../packages/adapters/opencode.md#opencode-17)] and
+   [[opencode-234](../packages/adapters/opencode.md#opencode-234)], and refine the normalization
    table to identify assistant content.
 2. [x] **Correlate message roles.** Retain role metadata by message id, hold
    early parts until their role resolves, and suppress user-owned content.

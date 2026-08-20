@@ -60,7 +60,7 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
    to promote per-model attribution off its deferral list; publish Claude's per-model records.
 5. [x] **Record OpenCode per request.**
    One record per step-finish part with `requests: 1`, its own cost, and the model and provider of the
-   owning assistant message; amend [OPENCODE-005](../user/adapters/opencode.md#opencode-005).
+   owning assistant message; amend [[opencode-5](../packages/adapters/opencode.md#opencode-5)].
 6. [x] **Record the Codex turn.**
    One record for the turn with the pinned model and no request count; add
    [[codex-14](../packages/adapters/codex.md#codex-14)].

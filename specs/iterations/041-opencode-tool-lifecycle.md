@@ -35,14 +35,14 @@ Each task is one commit and keeps build, typecheck, lint, unit, and smoke
 checks green at its boundary.
 
 1. [x] **Specify the OpenCode tool lifecycle contract.**
-   Add [OPENCODE-016](../user/adapters/opencode.md#opencode-016), amend the
-   [OPENCODE-005](../user/adapters/opencode.md#opencode-005) normalization
-   table, and add [TADAPT-031](../test/adapters.md#tadapt-031).
+   Add [[opencode-16](../packages/adapters/opencode.md#opencode-16)], amend the
+   [[opencode-5](../packages/adapters/opencode.md#opencode-5)] normalization
+   table, and add [[opencode-231](../packages/adapters/opencode.md#opencode-231)].
 2. [x] **Correlate tool lifecycle snapshots by `callID`.**
    Rework the adapter's tool-part and permission-reply normalization with
    per-call tracking, and add the lifecycle tests.
 3. [x] **Add the live lifecycle acceptance leg.**
-   Add [TADAPT-032](../test/adapters.md#tadapt-032) and the real-run probe
+   Add [[opencode-232](../packages/adapters/opencode.md#opencode-232)] and the real-run probe
    asserting per-`callID` pairing, non-empty input, and usage parity, gated
    and retried like the existing acceptance items.
 

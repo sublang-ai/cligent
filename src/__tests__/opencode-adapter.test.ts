@@ -669,7 +669,7 @@ describe('OpenCodeAdapter', () => {
     ['google/gemini-3-pro', 'xhigh', 'high'],
     ['google/gemini-3-pro', 'max', 'high'],
   ] satisfies Array<[string, OpenCodeEffort, string]>)(
-    'maps OpenCode %s effort %s to variant %s per OPENCODE-012',
+    'maps OpenCode %s effort %s to variant %s per opencode-12',
     (model, effort, variant) => {
       expect(mapEffortToOpenCodeVariant(model, effort)).toBe(variant);
     },
@@ -763,7 +763,7 @@ describe('OpenCodeAdapter', () => {
     expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
-  it('forwards effort to the OpenCode prompt variant per OPENCODE-012', async () => {
+  it('forwards effort to the OpenCode prompt variant per opencode-12', async () => {
     let capturedRunOptions: Record<string, unknown> | undefined;
 
     const adapter = new OpenCodeAdapter(
@@ -2507,7 +2507,7 @@ describe('OpenCodeAdapter', () => {
     });
   });
 
-  describe('event inactivity liveness (TADAPT-035)', () => {
+  describe('event inactivity liveness (opencode-235)', () => {
     it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
       'rejects non-finite or non-positive inactivity deadline %s',
       (eventInactivityTimeoutMs) => {
@@ -10598,7 +10598,7 @@ describe('OpenCode SSE event structure', () => {
   });
 });
 
-describe('OpenCode tool lifecycle (TADAPT-031)', () => {
+describe('OpenCode tool lifecycle (opencode-231)', () => {
   interface ToolUseLike {
     payload: {
       toolName: string;

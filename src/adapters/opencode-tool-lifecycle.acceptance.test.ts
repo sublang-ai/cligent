@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// TADAPT-032: real-run verification of the OpenCode tool lifecycle
-// (OPENCODE-016). The canned-event lifecycle tests encode the ToolPart wire
+// opencode-232: real-run verification of the OpenCode tool lifecycle
+// (opencode-16). The canned-event lifecycle tests encode the ToolPart wire
 // schema this release was written against; only a live run can catch a later
 // OpenCode release changing that shape the way the pre-1.18 normalization
 // drifted (issue #33: per-snapshot duplicate empty tool_use events and no
 // terminal tool_result). Filesystem state is the ground truth that a tool
 // actually ran; the stream assertions are invariants, not exact sequences,
 // because model behavior varies between runs.
-// TADAPT-037 reuses that real managed-mode harness to pin permission liveness
+// opencode-237 reuses that real managed-mode harness to pin permission liveness
 // for an explicit bash ask and absolute /tmp write under native auto replies.
 
 import { execFileSync } from 'node:child_process';
@@ -32,7 +32,7 @@ const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
 const PROBE_TIMEOUT_MS = 300_000;
 const MAX_PROBE_ATTEMPTS = 3;
 
-// Same explicit provider capacity/status language as the TADAPT-019 harness;
+// Same explicit provider capacity/status language as the opencode-219 harness;
 // anything else is a real failure and must not retry.
 const TRANSIENT_UPSTREAM_MARKERS = [
   /\b(?:API Error:\s*Repeated|HTTP(?:[ _-]+status)?|status[ _-]+code)[ :=_-]*(?:429|503|529)\b/i,
@@ -57,7 +57,7 @@ interface OpenCodePermissionDecisionPayload {
   readonly automated: true;
 }
 
-describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
+describe('OpenCode tool lifecycle real-run acceptance (opencode-232)', () => {
   acceptanceIt(
     'correlates one tool_use/tool_result pair per real tool call',
     async () => {
@@ -119,7 +119,7 @@ describe('OpenCode tool lifecycle real-run acceptance (TADAPT-032)', () => {
   );
 
   acceptanceIt(
-    'resolves an absolute /tmp write without a permission wait (TADAPT-037)',
+    'resolves an absolute /tmp write without a permission wait (opencode-237)',
     async () => {
       if (missing.length > 0) {
         throw new Error(
@@ -294,7 +294,7 @@ function permissionPrompt(filePath: string): string {
   ].join('\n');
 }
 
-// Mirrors the TADAPT-019 classifier: only a failed attempt can be
+// Mirrors the opencode-219 classifier: only a failed attempt can be
 // transient — a successful done's `result` is model-authored text, where
 // capacity language would be a false positive that loops a passing run
 // into the attempt bound — and every failure must match a marker, so a
@@ -328,7 +328,7 @@ function transientFailure(
   return summary;
 }
 
-// TADAPT-019-style fatal precheck: an attempt that witnessed a lifecycle
+// opencode-219-style fatal precheck: an attempt that witnessed a lifecycle
 // invariant violation never classifies as transient, because a 429/503
 // does not cause permission asks, denials, duplicate tool_use or
 // tool_result ids, or results for unannounced calls — retrying such an
@@ -336,7 +336,7 @@ function transientFailure(
 // regressions this gate exists to catch. In particular a call can strand
 // its tool_use on a truncated attempt but can never double-terminate: a
 // second terminal result for one id means the per-call tracking broke.
-// Errored tool_results stay retryable, unlike in TADAPT-019: the
+// Errored tool_results stay retryable, unlike in opencode-219: the
 // invariants deliberately tolerate model-level command failures, and a
 // truncated transient attempt may legitimately strand a tool_use without
 // its result, so neither condition may be fatal here.

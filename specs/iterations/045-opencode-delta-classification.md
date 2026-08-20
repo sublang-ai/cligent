@@ -31,8 +31,8 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green
 at its boundary.
 
 1. [x] **Specify delta classification.** Add
-   [OPENCODE-019](../user/adapters/opencode.md#opencode-019) and
-   [TADAPT-036](../test/adapters.md#tadapt-036) for every supported wire shape.
+   [[opencode-19](../packages/adapters/opencode.md#opencode-19)] and
+   [[opencode-236](../packages/adapters/opencode.md#opencode-236)] for every supported wire shape.
 2. [x] **Classify and correlate deltas.** Track part types, hold unknown generic
    deltas, suppress reasoning, map text, handle v1 sibling deltas, and
    deduplicate settled snapshots and delta-equivalent final snapshots.

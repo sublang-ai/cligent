@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 11 are done; tasks 12 through 22 remain.
+Tasks 1 through 12 are done; tasks 13 through 22 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and the superseded-item cluster task 21 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 19's table.
@@ -14,6 +14,7 @@ Task 8 landed `claude-code` the same way, with `claude-code-1`, `claude-code-6`,
 Task 9 landed `codex` with `codex-1` and `codex-9` reaching none, emptied `specs/dev/`, and left the two remaining Codex-bodied criteria in `test/adapters.md` for the engine halves they still verify.
 Task 10 landed `gemini` with `gemini-1` and `gemini-2` reaching none, consuming the whole `Gemini` section of `test/adapters.md` along with its three Gemini-only criteria elsewhere.
 Task 11 landed `kimi` as the first adapter package whose every behavior a verification item reaches, so it hands task 19 no row, as `ndjson` already did at task 6.
+Task 12 landed `opencode` with `opencode-1` and `opencode-4` reaching none, moving ten of its twenty-three criteria whole rather than restating them, and left `test/adapters.md` holding engine-verifying items alone.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -146,6 +147,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
     | `claude-code` | none                                                                                               | `claude-code-1`, which no verification item cites and no check reaches; `claude-code-6` and `claude-code-10`, which no verification item cites while `claude-code-adapter.test.ts` does exercise the option pass-through and every branch of the resume-repair skip; and, within cited items, `claude-code-3`'s `init`-exactly-once and unlabelled-`system` handshake rules, `claude-code-5`'s deny-message and category cases, and `claude-code-12`'s record-sum identity, `web_search_request` unit, and tokens-absent cost exposure |
     | `codex`     | none                                                                                                 | `codex-1`, which no verification item cites, its `agent: 'codex'` identity reaching only the engine's role-attribution checks; `codex-9`, which no verification item cites while `codex-adapter.test.ts` does assert the `skipGitRepoCheck` thread option; and, within cited items, `codex-3`'s legacy alias tool shapes and its unique-`toolUseId` tool count, which `codex-201`'s canonical-shape assertion excludes, and `codex-4`'s absent-policy knob rule, whose three unset controls `codex-224` does not assert while proving the no-policy run's outcome, though `codex-adapter.test.ts` does assert them |
+    | `opencode`  | none                                                                                                 | `opencode-1`, which no verification item cites, its `agent: 'opencode'` identity reaching no check; and `opencode-4`, whose managed-versus-external mode selection no verification item cites, though `opencode-208`, `opencode-228`, and `opencode-235` each exercise a managed-mode run |
     | `gemini`    | none                                                                                                 | `gemini-1`, which no verification item cites, its `agent: 'gemini'` identity and absent SDK dependency reaching no check; `gemini-2`, which no verification item cites while `gemini-adapter.test.ts` does exercise both outcomes of the spawn-based probe but not its timeout; and, within cited items, `gemini-6`'s capability-tool list and its rule that capability-level allows shall not widen an explicit allowlist, which `gemini-204` and `gemini-229` state no case for |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].

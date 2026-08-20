@@ -13,7 +13,7 @@ Complete
 
 The OpenCode-specific enforcement claims below record the original delivery
 and are superseded by the current
-[OPENCODE-015](../user/adapters/opencode.md#opencode-015) contract.
+[[opencode-15](../packages/adapters/opencode.md#opencode-15)] contract.
 OpenCode 1.18.13 merges prompt `tools` into persistent permission rules instead
 of exposing an independent exact tool registry, so the current adapter rejects
 every explicitly present tool-list option before SDK loading.

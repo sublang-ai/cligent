@@ -15,7 +15,7 @@ Complete
 
 ## Deliverables
 
-- [x] [OPENCODE-018](../user/adapters/opencode.md#opencode-018) defines the
+- [x] [[opencode-18](../packages/adapters/opencode.md#opencode-18)] defines the
       configurable inactivity deadline, current-session reset rule, status
       outcomes, diagnostics, abort precedence, and cleanup contract.
 - [x] The adapter races pending SSE reads against relevant-event inactivity,
@@ -36,8 +36,8 @@ Complete
 ## Tasks
 
 1. [x] **Specify finite OpenCode liveness.**
-       Add [OPENCODE-018](../user/adapters/opencode.md#opencode-018) and
-       [TADAPT-035](../test/adapters.md#tadapt-035).
+       Add [[opencode-18](../packages/adapters/opencode.md#opencode-18)] and
+       [[opencode-235](../packages/adapters/opencode.md#opencode-235)].
 2. [x] **Implement inactivity recovery and cleanup.**
        Add the finite deadline, relevant-session activity tracking, bounded status
        and abort operations, deterministic terminal selection, and iterator,
@@ -64,7 +64,7 @@ Complete
   provider-wait budget.
 - Idle recovery, busy/retry abort, and status-query failure each emit the
   diagnostics and single terminal outcome required by
-  [OPENCODE-018](../user/adapters/opencode.md#opencode-018).
+  [[opencode-18](../packages/adapters/opencode.md#opencode-18)].
 - Timeout diagnostics identify the session, last relevant event, elapsed
   inactivity, deadline, server mode/state, and queried state or failure.
 - Pending SSE iteration, active session work, SDK client resources, and the

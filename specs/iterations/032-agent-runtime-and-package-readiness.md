@@ -22,7 +22,7 @@ package output, live acceptance, Codex trust isolation, and installed-tarball
 verification are complete.
 
 The OpenCode tool-list claims below record the original delivery.
-The current [OPENCODE-015](../user/adapters/opencode.md#opencode-015) contract
+The current [[opencode-15](../packages/adapters/opencode.md#opencode-15)] contract
 supersedes them: OpenCode rejects either explicitly present tool-list option
 before SDK loading because its supported provider surface exposes no
 independent exact tool registry.

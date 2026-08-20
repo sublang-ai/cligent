@@ -4371,7 +4371,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             const state = asRecord(part.state);
             const stateStatus = asString(state.status)?.toLowerCase();
 
-            // OPENCODE-016: correlation uses callID — the provider's
+            // opencode-16: correlation uses callID — the provider's
             // invocation id, which permission.asked also references —
             // not part.id, which names the enclosing message part.
             const toolUseId =
@@ -4894,7 +4894,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               asString(event.toolUseId) ??
               generateSessionId();
 
-            // OPENCODE-016: the denial is the call's terminal result; the
+            // opencode-16: the denial is the call's terminal result; the
             // tool part will still transition to an error state afterwards
             // and must not produce a second one — and a call that already
             // terminated gets no denied result behind its terminal one.
