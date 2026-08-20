@@ -6,10 +6,11 @@
 ## Status
 
 In progress.
-Tasks 1 through 7 are done; tasks 8 through 21 remain.
+Tasks 1 through 8 are done; tasks 9 through 21 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 20 now carries, and completion waits on it.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, `package-9`, and `package-16` unverified, a gap it inherited and handed to task 19's table.
+Task 8 landed `claude-code` the same way, with `claude-code-1`, `claude-code-6`, and `claude-code-10` reaching no verification item, and left the cross-adapter file's engine halves for task 13.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -135,6 +136,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `release`   | `release-11`'s workflow audit and `release-12`'s smoke composition                                   | `release-1`, `release-3`, `release-4`, and `release-5`, which no item cites; `release-7`'s build, notes-extraction, and GitHub-release steps, which `release-11` cites without asserting; and every `release-10` checklist line outside `smoke:release` |
     | `package`   | none                                                                                                 | `package-1`, `package-5`, and `package-8`, which no item cites and no check reaches; `package-9` and `package-16`, which `sdk-peer-floors.test.ts`, `runtime-version.test.ts`, and `verify-agent-targets.mjs` do execute while no item claims them |
     | `git`       | `git-6`, nothing auditing a commit message                                                           | both halves of `git-1`, its reporting duty and its refusal to commit until both values are configured, `git-6` reading a commit already made                                                                                                            |
+    | `claude-code` | none                                                                                               | `claude-code-1`, which no item cites and no check reaches; `claude-code-6` and `claude-code-10`, which no item cites while `claude-code-adapter.test.ts` does exercise the option pass-through and every branch of the resume-repair skip; and, within cited items, `claude-code-3`'s `init`-exactly-once and unlabelled-`system` handshake rules, `claude-code-5`'s deny-message and category cases, and `claude-code-12`'s record-sum identity, `web_search_request` unit, and tokens-absent cost exposure |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.

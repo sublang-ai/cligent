@@ -55,8 +55,8 @@ precede every code change.
    [OPENCODE-005](../user/adapters/opencode.md#opencode-005).
 5. [x] **Publish the Claude Code input side.**
    Publish `input` / `cacheRead` / `cacheWrite` and withhold the output side; amend
-   [CLAUDE-003](../user/adapters/claude-code.md#claude-003) and add
-   [CLAUDE-011](../user/adapters/claude-code.md#claude-011) for the cost-versus-token scope mismatch.
+   [[claude-code-3](../packages/adapters/claude-code.md#claude-code-3)] and add
+   [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)] for the cost-versus-token scope mismatch.
 6. [x] **Correct Codex per-turn accounting.**
    Subtract a per-thread baseline from the cumulative snapshot, guard non-monotonic snapshots, and fail
    closed with no baseline; add [CODEX-015](../user/adapters/codex.md#codex-015) and amend ENG-018 with the

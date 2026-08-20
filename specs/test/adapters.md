@@ -11,16 +11,16 @@ Verification criteria for all adapters. Shared patterns apply to each adapter; p
 
 ### TADAPT-001
 
-Verifies: [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-003](../user/adapters/codex.md#codex-003), [GEMINI-004](../user/adapters/gemini.md#gemini-004), [GEMINI-005](../user/adapters/gemini.md#gemini-005), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
+Verifies: [CODEX-003](../user/adapters/codex.md#codex-003), [GEMINI-004](../user/adapters/gemini.md#gemini-004), [GEMINI-005](../user/adapters/gemini.md#gemini-005), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005), [KIMI-006](../user/adapters/kimi.md#kimi-006)
 
 Given canned native events for each adapter, when running the adapter, the yielded `AgentEvent` types shall match the normalization table for that adapter.
 For the Codex adapter, the canned events shall be shaped as the SDK's canonical exported event types — including the multi-phase `command_execution` and `mcp_tool_call` item lifecycles of [CODEX-003](../user/adapters/codex.md#codex-003) — rather than invented aliases.
 
 ### TADAPT-002
 
-Verifies: [CLAUDE-002](../user/adapters/claude-code.md#claude-002), [CODEX-002](../user/adapters/codex.md#codex-002), [OPENCODE-002](../user/adapters/opencode.md#opencode-002), [OPENCODE-003](../user/adapters/opencode.md#opencode-003)
+Verifies: [CODEX-002](../user/adapters/codex.md#codex-002), [OPENCODE-002](../user/adapters/opencode.md#opencode-002), [OPENCODE-003](../user/adapters/opencode.md#opencode-003)
 
-Where the adapter uses an SDK (Claude Code, Codex, OpenCode), when the SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw.
+Where the adapter uses an SDK (Codex, OpenCode), when the SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw.
 
 ### TADAPT-003
 
@@ -30,15 +30,15 @@ When `AbortSignal` fires during an adapter's `run()`, the adapter shall yield `d
 
 ### TADAPT-004
 
-Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [CLAUDE-005](../user/adapters/claude-code.md#claude-005), [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
 
 Given all `PermissionLevel` combinations, each adapter shall map `PermissionPolicy` to the correct vendor-specific controls.
 
 ### TADAPT-022
 
-Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
+Verifies: [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-008](../user/adapters/kimi.md#kimi-008), [ENG-022](../user/engine.md#eng-022), [ENG-023](../user/engine.md#eng-023)
 
-Given a Claude Code, Gemini, OpenCode, or supported `mode: 'auto'` Kimi `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
+Given a Gemini, OpenCode, or supported `mode: 'auto'` Kimi `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing adapter-specific permission/tool mapping. Given invalid `writablePaths`, the mapping shall reject the policy.
 
 ## Codex
 
@@ -284,10 +284,10 @@ Given `allowedTools` and `disallowedTools` options, each adapter shall enforce w
 
 ### TADAPT-029
 
-Verifies: [ENG-017](../user/engine.md#eng-017), [CLAUDE-009](../user/adapters/claude-code.md#claude-009), [CODEX-011](../user/adapters/codex.md#codex-011), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-016](../user/adapters/gemini.md#gemini-016), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
+Verifies: [ENG-017](../user/engine.md#eng-017), [CODEX-011](../user/adapters/codex.md#codex-011), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [GEMINI-016](../user/adapters/gemini.md#gemini-016), [OPENCODE-015](../user/adapters/opencode.md#opencode-015), [KIMI-010](../user/adapters/kimi.md#kimi-010)
 
-Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported: Claude Code receives SDK `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true`; and Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set.
-Where a non-empty allowlist and disallowed identifiers are provided, when Claude Code and Gemini run, each adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence, while Claude Code shall also reject ambient MCP additions.
+Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported: Gemini emits only its applicable deny rules including the catch-all deny and reports a configured known empty set.
+Where a non-empty allowlist and disallowed identifiers are provided, when Gemini runs, the adapter shall close its provider tool registry to the effective allowlist and preserve deny precedence.
 Where either tool-list field is explicitly provided to OpenCode, including an empty array and including alongside a portable permission rule such as `shellExecute: 'deny'`, when the adapter runs, it shall reject before its SDK loader, compatibility wrapper, session creation, subscription, or backend prompt is invoked. Direct permission-mapper calls with either field present shall reject by the same contract. The diagnostic shall explain that OpenCode 1.18.13 merges prompt `tools` into persistent session permission rules, which can override native or explicit denies and cannot provide exact per-call tool availability.
 Where either tool-list field is explicitly provided to Codex, including an empty array, when the adapter runs, it shall reject before its SDK loader or client is invoked.
 Where either tool-list field is explicitly provided to Kimi, including an empty array, when the adapter runs, it shall reject before spawning `kimi acp`.
@@ -296,35 +296,28 @@ Where either tool-list field is explicitly provided to Kimi, including an empty 
 
 ### TADAPT-018
 
-Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-020](../user/engine.md#eng-020), [ENG-024](../user/engine.md#eng-024), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
 
 Where each adapter-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall match this table and the cited adapter item:
 
 | Adapter     | Observable mapping                                                                                                                       |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | SDK `effort` plus explicit `settings.ultracode`; `ultracode` maps to `xhigh` and `true`                                                  |
 | Codex       | `minimal` through `xhigh` use thread `modelReasoningEffort`; `max` and `ultra` use constructor `config.model_reasoning_effort` unchanged |
 | Gemini      | portable values create documented aliases only for matching concrete model IDs                                                           |
 | OpenCode    | portable values select the documented top-level prompt `variant` by provider                                                             |
 | Kimi        | `off` and `on` select the ACP `thinking` option exactly; `on` uses the chosen model's native default effort                              |
 
 When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
-Where Claude `ultracode` or Codex `ultra` is supplied alongside permission options, when the adapter maps the run, its permission-related provider controls shall equal the controls derived from the same permission input without the provider-native effort value.
+Where Codex `ultra` is supplied alongside permission options, when the adapter maps the run, its permission-related provider controls shall equal the controls derived from the same permission input without the provider-native effort value.
 Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [ENG-024](../user/engine.md#eng-024).
 
 ### TADAPT-026
 
-Verifies: [ENG-024](../user/engine.md#eng-024), [CLAUDE-008](../user/adapters/claude-code.md#claude-008), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
+Verifies: [ENG-024](../user/engine.md#eng-024), [CODEX-007](../user/adapters/codex.md#codex-007), [GEMINI-011](../user/adapters/gemini.md#gemini-011), [OPENCODE-012](../user/adapters/opencode.md#opencode-012), [KIMI-009](../user/adapters/kimi.md#kimi-009)
 
 Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort.
 
 ## Resume Token
-
-### TADAPT-010
-
-Verifies: [CLAUDE-007](../user/adapters/claude-code.md#claude-007)
-
-The Claude Code adapter shall set `DonePayload.resumeToken` to the session identifier from the SDK result per [CLAUDE-007](../user/adapters/claude-code.md#claude-007).
 
 ### TADAPT-011
 
@@ -350,12 +343,10 @@ Given a Gemini stream that provides a session identifier, the adapter shall set 
 
 ### TADAPT-020
 
-Verifies: [CLAUDE-007](../user/adapters/claude-code.md#claude-007), [CODEX-006](../user/adapters/codex.md#codex-006), [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
+Verifies: [CODEX-006](../user/adapters/codex.md#codex-006), [GEMINI-009](../user/adapters/gemini.md#gemini-009), [OPENCODE-011](../user/adapters/opencode.md#opencode-011), [KIMI-012](../user/adapters/kimi.md#kimi-012)
 
 Given each adapter has observed a backend session or thread identifier during a run, when that run is aborted and yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the observed backend identifier.
 Given each adapter is run with a non-empty `AgentOptions.resume` value and no backend session or thread identifier is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the inbound `resume` value.
-Given the Claude Code adapter starts a run without `AgentOptions.resume` and no SDK activity beyond the initial `system` message is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall have passed a generated SDK `sessionId` and shall omit `DonePayload.resumeToken`.
-Given the Claude Code adapter starts a run without `AgentOptions.resume` and SDK activity beyond the initial `system` message is observed before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall set `DonePayload.resumeToken` to the SDK-provided or generated SDK `sessionId`.
 Given a Codex, Gemini, OpenCode, or Kimi adapter observes no backend session or thread identifier and has no non-empty inbound `resume` value before abort, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall omit `resumeToken`.
 
 ### TADAPT-016
@@ -408,32 +399,31 @@ Where tool calls were observed or validly provider-reported on either path, `usa
 
 ### TADAPT-038
 
-Verifies: [ENG-028](../user/engine.md#eng-028), [CLAUDE-003](../user/adapters/claude-code.md#claude-003), [CODEX-015](../user/adapters/codex.md#codex-015), [CODEX-016](../user/adapters/codex.md#codex-016), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
+Verifies: [ENG-028](../user/engine.md#eng-028), [CODEX-015](../user/adapters/codex.md#codex-015), [CODEX-016](../user/adapters/codex.md#codex-016), [OPENCODE-005](../user/adapters/opencode.md#opencode-005), [KIMI-005](../user/adapters/kimi.md#kimi-005)
 
 _Superseded by [TADAPT-040](#tadapt-040)._
 
-Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters, Claude Code shall publish the input side alone, Codex shall publish both sides derived by subtraction from its inclusive counters, and Kimi shall publish none.
+Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, OpenCode shall publish both sides from its five step counters, Codex shall publish both sides derived by subtraction from its inclusive counters, and Kimi shall publish none.
 Given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent.
 Given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
 Given Codex reports its thread-cumulative snapshot on successive turns of one thread, the second turn's `done` shall report that turn's difference rather than the thread total; given a resumed thread for which the adapter holds no baseline, the `done` shall report `'unavailable'`; and given a snapshot smaller than the retained baseline, the `done` shall report `'unavailable'` while the following turn recovers.
 
 ### TADAPT-039
 
-Verifies: [ENG-030](../user/engine.md#eng-030), [CLAUDE-011](../user/adapters/claude-code.md#claude-011), [CODEX-014](../user/adapters/codex.md#codex-014), [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
+Verifies: [ENG-030](../user/engine.md#eng-030), [CODEX-014](../user/adapters/codex.md#codex-014), [OPENCODE-005](../user/adapters/opencode.md#opencode-005)
 
 _Superseded by [TADAPT-040](#tadapt-040)._
 
-Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, Claude Code shall publish one record per model in its per-model accounting keyed by the canonical model identifier, OpenCode shall publish one record per step part carrying `requests: 1`, and Codex shall publish one record covering the turn with no request count.
+Given each built-in adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, OpenCode shall publish one record per step part carrying `requests: 1`, and Codex shall publish one record covering the turn with no request count.
 Given a run pinned no model and its runtime named none, Codex shall publish no records, and an OpenCode step whose message named no model shall yield a record without one; in neither case shall a placeholder identifier appear.
 Given a runtime reports a group's own cost, its record shall carry that cost, and the costs of a run's records shall not exceed the run's reported total.
 Given upstream accounting is incomplete, absent, or fails the partition identities, the adapter shall publish no records on that terminal.
 
 ### TADAPT-040
 
-Verifies: [ENG-031](../user/engine.md#eng-031), [CLAUDE-012](../user/adapters/claude-code.md#claude-012), [CODEX-017](../user/adapters/codex.md#codex-017), [GEMINI-017](../user/adapters/gemini.md#gemini-017), [KIMI-013](../user/adapters/kimi.md#kimi-013), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
+Verifies: [ENG-031](../user/engine.md#eng-031), [CODEX-017](../user/adapters/codex.md#codex-017), [GEMINI-017](../user/adapters/gemini.md#gemini-017), [KIMI-013](../user/adapters/kimi.md#kimi-013), [OPENCODE-021](../user/adapters/opencode.md#opencode-021)
 
 Given authentic zero or nonzero accounting from a built-in adapter, terminal `usage.tokens` shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder; malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses`.
-Claude Code shall publish complete whole-agent-tree totals and one record per model from `modelUsage`, including inclusive output, and shall preserve valid whole-run and per-model cost as `agent-estimate`; malformed or absent `modelUsage` shall not promote main-loop usage.
 Codex shall publish a partial root-thread report from the exact non-negative delta of its cumulative snapshot, omit an unseen resumed or decreasing delta, discard a stale baseline after a malformed snapshot, omit a transition where optional-counter presence changes, recover only after a new baseline or shape stabilizes, and shall not label a record with a merely requested model.
 Concurrent Codex runs carrying the same resume identifier shall start their backend prompts serially and attribute each cumulative delta exactly once, while different resumed sessions and fresh runs remain concurrent.
 Gemini shall publish a complete per-response report only from a prompt-free run-owned telemetry file whose root and descendant records carry a non-empty authentication rate-card identity, reconcile to terminal StreamStats, and contain neither an API-error event nor an unmatched zero-token routed model; exact duplicate exporter records shall be deduplicated, while a missing, malformed, unidentifiable duplicate, conflicting duplicate, contaminated, or mismatched file shall yield no token report. Tool-use-prompt tokens shall contribute to inclusive input and its uncached subset while StreamStats reconciliation shall preserve its raw prompt and candidate counters. A run with either failed-request signal shall retain exact reconciled successful-response records as partial, and run-owned telemetry cleanup shall run after success, error, and abort.
@@ -447,7 +437,7 @@ Command continuations shall accept the canonical task-only assistant without inv
 Task parts that reuse an existing `task_id` shall retain exact parent records as partial and shall exclude ambiguous child-session prompts and steps.
 Repeated task-part snapshots shall enrich a missing child identity at most once, while a conflicting non-empty parent or child identity shall preserve only the first exact subset and force partial coverage.
 Malformed task identity and descendant idle observed before later causal child accounting shall never support complete coverage.
-Where Claude Code or OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent.
+Where OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent.
 OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, which an assistant repeating that text verbatim shall not displace.
 Before prompt dispatch, the OpenCode adapter shall subscribe to the live event stream; no event published after subscription, including the first, shall be lost, and absence of a streamed connection event shall not defer prompt dispatch indefinitely.
 A background task's injected result, and a concurrent caller's prompt that streams first, shall neither resolve the boundary nor bill their work to the run.
@@ -459,7 +449,7 @@ Items in this section verify behavior end-to-end against the real coding-agent S
 
 ### TADAPT-019
 
-Verifies: [CLAUDE-004](../user/adapters/claude-code.md#claude-004), [CLAUDE-005](../user/adapters/claude-code.md#claude-005), [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
+Verifies: [CODEX-004](../user/adapters/codex.md#codex-004), [GEMINI-006](../user/adapters/gemini.md#gemini-006), [OPENCODE-007](../user/adapters/opencode.md#opencode-007), [KIMI-007](../user/adapters/kimi.md#kimi-007)
 
 Where a `Cligent` is constructed on each adapter with
 `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first

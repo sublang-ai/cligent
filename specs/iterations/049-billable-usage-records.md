@@ -37,7 +37,7 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
 
 1. [x] **Emit `init` once per run, from the handshake.**
    Identify the handshake by `subtype: 'init'` and emit nothing for any other `system` notice; amend
-   [CLAUDE-003](../user/adapters/claude-code.md#claude-003).
+   [[claude-code-3](../packages/adapters/claude-code.md#claude-code-3)].
    Measured 36 `init` events on one live run before the fix, each after the first carrying an empty tool
    list that replaced the real capabilities.
    The first attempt guarded on a first-message flag instead, which a review then showed to be wrong in the
@@ -47,9 +47,9 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
 2. [x] **Account for the whole run.**
    Derive Claude aggregates from `result.modelUsage` rather than `result.usage`, falling back to the
    main-loop counters when the per-model map is absent or malformed; rewrite
-   [CLAUDE-011](../user/adapters/claude-code.md#claude-011), which previously asserted — falsely — that no
+   [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)], which previously asserted — falsely — that no
    runtime surface partitions the additional spend.
-   Keep the [CLAUDE-010](../user/adapters/claude-code.md#claude-010) no-op signature on the main-loop
+   Keep the [[claude-code-10](../packages/adapters/claude-code.md#claude-code-10)] no-op signature on the main-loop
    counters, since the repair turn reports zero there while the run may already have spent tokens.
    Measured under-reporting on one subagent run: input 50%, output 63%.
 3. [x] **Pass the runtime's cost through.**

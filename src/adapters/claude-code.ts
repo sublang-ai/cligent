@@ -44,7 +44,7 @@ interface ClaudeSettings {
 // The SDK's permission-callback contract, mirrored locally. It is deliberately
 // NOT imported from `@anthropic-ai/claude-agent-sdk`: that package is an
 // optional peer, and importing its types here would leak an unresolvable
-// import into the published `claude-code.d.ts`, breaking CLAUDE-002 (the
+// import into the published `claude-code.d.ts`, breaking claude-code-2 (the
 // adapter module must typecheck for consumers without the SDK installed).
 // Typing the adapter's `canUseTool` against this local mirror still makes
 // `npm run typecheck` and `npm run build` reject a `boolean`/`undefined`
@@ -158,7 +158,7 @@ interface ClaudeResultMessage {
   durationMs?: unknown;
   duration_ms?: unknown;
   sessionId?: unknown;
-  /** Per-model accounting covering every request the run made (CLAUDE-011). */
+  /** Per-model accounting covering every request the run made (claude-code-11). */
   modelUsage?: unknown;
   /** Runtime-computed cost, a sibling of `usage` rather than a member. */
   total_cost_usd?: unknown;
@@ -455,7 +455,7 @@ const MODEL_USAGE_ALIASES = [
 ] as const;
 
 /**
- * CLAUDE-011: `result.usage` counts the main conversation loop only, while
+ * claude-code-11: `result.usage` counts the main conversation loop only, while
  * `result.modelUsage` counts every request the run made, including subagents.
  * Fold the per-model entries into one usage-shaped record so the aggregates
  * describe the whole run. Returns undefined when the map is absent or any
@@ -542,7 +542,7 @@ function readToolUses(rawUsage: unknown, observedToolUses: number): number {
   return Math.max(reported.valid ? reported.value : 0, observedToolUses);
 }
 
-/** CLAUDE-010 uses only the main-loop counters to identify a repair no-op. */
+/** claude-code-10 uses only the main-loop counters to identify a repair no-op. */
 function isZeroMainLoopUsage(
   rawUsage: unknown,
   observedToolUses: number,
@@ -1058,7 +1058,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           const resultText = asString(result.result);
           // Only modelUsage covers every request caused by the invocation,
           // including subagents and internal inference. Main-loop `usage`
-          // remains useful for the CLAUDE-010 no-op signature below, but must
+          // remains useful for the claude-code-10 no-op signature below, but must
           // never be presented as whole-run accounting.
           const cost = buildUsageCost(
             asNumber(result.total_cost_usd) ?? asNumber(result.totalCostUsd),
@@ -1073,7 +1073,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             ...(tokens ? { tokens } : {}),
             ...(cost ? { cost } : {}),
           };
-          // CLAUDE-010's no-op signature is a property of the main-loop
+          // claude-code-10's no-op signature is a property of the main-loop
           // result message, not of the run's total accounting: the repair
           // turn reports zero main-loop tokens while the run as a whole may
           // already have spent some. Detect it on the narrow counters so the

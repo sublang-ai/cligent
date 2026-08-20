@@ -108,11 +108,11 @@ meta.md     The spec of specs
 
 ## Packages
 
-### CLAUDE
+### claude-code
 
-| Group | File                                                    | Summary                                                                                                                                                                                                                                                                       |
-| ----- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| user  | [adapters/claude-code.md](user/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake subtype, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token |
+| Group | File                                                       | Summary                                                                                                                                                                                                                                                                                       |
+| ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pkg   | [claude-code.md](packages/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake subtype, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token, and their checks |
 
 ### CODEX
 
@@ -181,7 +181,7 @@ meta.md     The spec of specs
 
 | Group | File                            | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| test  | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including authentic nested usage, causal coverage, rate-card records, direct-cost provenance, Codex per-turn differencing, effort mappings, interrupted resume tokens, Claude early-abort continuity, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
+| test  | [adapters.md](test/adapters.md) | Adapter verification criteria (shared + per-adapter), including authentic nested usage, causal coverage, rate-card records, direct-cost provenance, Codex per-turn differencing, effort mappings, interrupted resume tokens, writablePaths enforcement/reporting, Codex user-config isolation, and OpenCode tool-list rejection, message-role, delta-type, `callID`-correlated tool-lifecycle, permission-liveness, finite-inactivity, and live-run handling |
 
 ### TMUX
 
