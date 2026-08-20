@@ -14,10 +14,10 @@ import {
   zAcpSetSessionConfigOptionResponse,
 } from '../adapters/acp-schema.js';
 
-// kimi-5 / kimi-6 / DR-011: the adapter owns these schemas because the
+// kimi-6 / kimi-13 / DR-011: the adapter owns these schemas because the
 // protocol SDK publishes its generated ones only inside `dist/`. Control
 // fields stay strict, while malformed optional usage is failure-isolated.
-describe('owned ACP wire schemas (kimi-5 / kimi-6)', () => {
+describe('owned ACP wire schemas (kimi-6 / kimi-13)', () => {
   it.each([
     [
       'non-numeric input',

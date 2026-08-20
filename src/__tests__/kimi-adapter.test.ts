@@ -664,7 +664,7 @@ describe('KimiAdapter', () => {
       output: { stderr: 'boom' },
     });
     expect(events.filter((event) => event.type === 'tool_use')).toHaveLength(1);
-    // kimi-5: ACP supplies no authentic accounting in the pinned runtime;
+    // kimi-13: ACP supplies no authentic accounting in the pinned runtime;
     // toolUses remains independently observed.
     expect(eventOf(events, 'done').payload.usage).toEqual({
       toolUses: 1,

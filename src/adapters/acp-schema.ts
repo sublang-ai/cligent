@@ -14,7 +14,7 @@ import { z } from 'zod';
  * protocol, while the adapter reads a small, stable subset of it, and their
  * newer generation deliberately salvages malformed payloads. This adapter
  * keeps control fields strict per kimi-6, while failure-isolating optional
- * accounting per kimi-5 so bad telemetry cannot change a completed turn's
+ * accounting per kimi-13 so bad telemetry cannot change a completed turn's
  * terminal status.
  *
  * These schemas therefore encode one rule: protocol structure the adapter

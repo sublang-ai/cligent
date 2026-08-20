@@ -181,7 +181,8 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 Given a fake ACP subprocess with protocol traffic split across arbitrary stdio chunks, when the adapter runs fresh and resumed prompts, every stage of its ACP lifecycle shall behave as its items require [[kimi-3](#kimi-3)], [[kimi-4](#kimi-4)]:
 
 - initialization shall advertise empty client capabilities, and the run shall select `session/new` or `session/resume` and apply model before thinking and mode configuration [[kimi-9](#kimi-9)];
-- `init` shall be emitted before normalized text, tool, plan, and permission events, raw thought chunks shall be suppressed, and no duplicate `tool_use` or terminal `tool_result` shall be emitted for one call [[kimi-5](#kimi-5)];
+- `init` shall be emitted before normalized text, tool, plan, and permission events, and raw thought chunks shall be suppressed [[kimi-5](#kimi-5)];
+- reverse permission requests shall be rejected [[kimi-7](#kimi-7)];
 - every prompt stop reason shall map to its terminal status [[kimi-6](#kimi-6)];
 - the correct resume token shall be preserved [[kimi-12](#kimi-12)], and the per-run child shall terminate exactly once [[kimi-11](#kimi-11)];
 - the adapter identity shall be `kimi`, and availability probing shall invoke `kimi --version` without starting ACP or authentication [[kimi-1](#kimi-1)], [[kimi-2](#kimi-2)];
