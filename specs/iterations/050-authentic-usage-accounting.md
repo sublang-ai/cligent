@@ -32,8 +32,11 @@ Done
    Implement [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)] and
    [[codex-17](../packages/adapters/codex.md#codex-17)], including estimate provenance and exact omission.
 3. [x] **Collect Gemini response telemetry.**
-   Implement [[gemini-17](../packages/adapters/gemini.md#gemini-17)] with one run-owned local telemetry file,
-   per-response records, stream cross-validation, and cleanup.
+   Implement [[gemini-17](../packages/adapters/gemini.md#gemini-17)] with one run-owned local telemetry file
+   [[gemini-42](../packages/adapters/gemini.md#gemini-42)], per-response records
+   [[gemini-38](../packages/adapters/gemini.md#gemini-38)], stream cross-validation
+   [[gemini-39](../packages/adapters/gemini.md#gemini-39)], and cleanup
+   [[gemini-35](../packages/adapters/gemini.md#gemini-35)].
 4. [x] **Make OpenCode accounting causal and idempotent.**
    Implement [[opencode-21](../packages/adapters/opencode.md#opencode-21)] across the root/task tree without
    widening conversational output or charging unrelated background sessions.

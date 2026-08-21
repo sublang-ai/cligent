@@ -69,7 +69,7 @@ precede every code change.
 8. [ ] **Supplement Gemini accounting from its transcript.** *Deferred.*
    Read the run's own transcript after the terminal result, reconcile it against the streamed statistics,
    correct `outputTokens`, publish both sides, and fall back to today's behavior on any mismatch; amend
-   [[gemini-4](../packages/adapters/gemini.md#gemini-4)] and add
+   [[gemini-28](../packages/adapters/gemini.md#gemini-28)] and add
    [[gemini-17](../packages/adapters/gemini.md#gemini-17)].
    Blocked on evidence, not design: the streamed statistics provably cannot partition the residual, because
    `convertToStreamStats` forwards only five of the seven per-model counters and drops `thoughts` and `tool`,
