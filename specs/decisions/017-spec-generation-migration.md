@@ -135,6 +135,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `CODEX-003` | `codex-29` |
 | `CODEX-003` | `codex-30` |
 | `CODEX-003` | `codex-53` |
+| `CODEX-003` | `codex-54` |
 | `CODEX-004` | `codex-4` |
 | `CODEX-004` | `codex-31` |
 | `CODEX-004` | `codex-32` |
@@ -612,6 +613,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TADAPT-030` | `kimi-230` |
 | `TADAPT-031` | `opencode-231` |
 | `TADAPT-032` | `opencode-232` |
+| `TADAPT-033` | `codex-233` |
 | `TADAPT-033` | `engine-233` |
 | `TADAPT-033` | `gemini-233` |
 | `TADAPT-033` | `kimi-233` |

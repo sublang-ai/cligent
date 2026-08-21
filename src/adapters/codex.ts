@@ -789,7 +789,7 @@ type NormalizedItemEvent =
 
 // The SDK's canonical tool items: shell commands and MCP tool invocations
 // evolve across item.started / item.updated / item.completed and correlate
-// by item id (codex-19).
+// by item id (codex-54).
 type CodexToolLifecycleType = 'command_execution' | 'mcp_tool_call';
 
 function codexToolLifecycleType(

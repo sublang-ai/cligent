@@ -41,7 +41,7 @@ When the adapter normalizes a Codex stream, it shall dispatch native events acco
 | Native event | Unified outcome |
 | --- | --- |
 | first event observed, or a stream ending or failing before any event | one `init` selected by [[codex-22](#codex-22)] before any other emitted event |
-| `item.started`, `item.updated`, or `item.completed` carrying `command_execution` or `mcp_tool_call` | the lifecycle selected by [[codex-19](#codex-19)] with payloads from [[codex-20](#codex-20)] |
+| `item.started`, `item.updated`, or `item.completed` carrying `command_execution` or `mcp_tool_call` | the lifecycle selected by [[codex-19](#codex-19)] with identity from [[codex-54](#codex-54)] and payloads from [[codex-20](#codex-20)] |
 | other `item.completed` | each non-empty text block and compatibility event selected below, in source order |
 | `file_change`, `file.changed`, or `item.file_change` | `codex:file_change` carrying the first available `file`, `change`, `item`, or whole event |
 | `error` | `error` carrying the payload selected by [[codex-28](#codex-28)] |
@@ -57,7 +57,7 @@ When the adapter normalizes a Codex stream, it shall dispatch native events acco
 
 ### codex-19
 
-When the adapter normalizes a canonical `command_execution` or `mcp_tool_call` item lifecycle, it shall emit events according to this per-item state matrix:
+When the adapter normalizes a canonical `command_execution` or `mcp_tool_call` item lifecycle using [[codex-54](#codex-54)]'s common identity, it shall emit events according to this per-item state matrix:
 
 | First or later observation | Outcome |
 | --- | --- |
@@ -67,7 +67,16 @@ When the adapter normalizes a canonical `command_execution` or `mcp_tool_call` i
 | `item.completed` for an unannounced `id` | synthesize the missing `tool_use` immediately before one terminal `tool_result` |
 | repeated `item.completed` for a completed `id` | no event |
 | `item.started` or `item.updated` without a non-empty `id` | no event |
-| `item.completed` without a non-empty `id` | one `tool_use` and one `tool_result` correlated by one identifier generated through [[engine-7](../engine.md#engine-7)] |
+| `item.completed` without a non-empty `id` | one `tool_use` and one `tool_result` correlated by [[codex-54](#codex-54)]'s generated identifier |
+
+### codex-54
+
+When the adapter selects correlation for a canonical `command_execution` or `mcp_tool_call` item lifecycle, it shall choose the common `toolUseId` according to this matrix:
+
+| Item identity | Common `toolUseId` |
+| --- | --- |
+| non-empty native item `id` | that value unchanged for every emitted `tool_use` and `tool_result` |
+| `item.completed` without a non-empty native item `id` | one identifier generated through [[engine-7](../engine.md#engine-7)] and shared by the synthesized `tool_use` and `tool_result` |
 
 ### codex-20
 
@@ -75,8 +84,8 @@ When the adapter normalizes a canonical tool lifecycle event, it shall select it
 
 | Item and event | Payload |
 | --- | --- |
-| command `tool_use` | `toolName: 'command_execution'`, the identifier selected by [[codex-19](#codex-19)], and input `{ command }`, using an empty command where the native value is not a non-empty string |
-| MCP `tool_use` | the identifier selected by [[codex-19](#codex-19)], `toolName: '<server>.<tool>'` when both names are non-empty and otherwise the non-empty tool or `mcp_tool_call`, and absent arguments as `{}`, non-array objects preserved, JSON strings parsed only when they name such objects, and every other value preserved under `raw` |
+| command `tool_use` | `toolName: 'command_execution'`, the `toolUseId` selected by [[codex-54](#codex-54)], and input `{ command }`, using an empty command where the native value is not a non-empty string |
+| MCP `tool_use` | the `toolUseId` selected by [[codex-54](#codex-54)], `toolName: '<server>.<tool>'` when both names are non-empty and otherwise the non-empty tool or `mcp_tool_call`, and absent arguments as `{}`, non-array objects preserved, JSON strings parsed only when they name such objects, and every other value preserved under `raw` |
 | command `tool_result` | the same tool name and identifier, `status: 'error'` for case-insensitive native `failed` and otherwise `success`, and output containing the native `aggregated_output` or an empty string plus a finite native `exit_code` when present |
 | MCP `tool_result` | the same tool name and identifier, the same status mapping, and output preferring native `error` then `result` for failure or `result` then `error` otherwise, with `null` as the final fallback |
 
@@ -266,15 +275,15 @@ When the adapter maps `AgentOptions.allowedTools` and `AgentOptions.disallowedTo
 
 ### codex-15
 
-Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and same-resume serialization contract, when the adapter maps a cumulative `turn.completed` usage snapshot admitted by [[codex-53](#codex-53)] to one turn, it shall produce this provenance matrix:
+Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and same-resume serialization contract, when the adapter maps a cumulative `turn.completed` usage value classified by [[codex-53](#codex-53)] to one turn, it shall produce this provenance matrix:
 
 | State | Outcome |
 | --- | --- |
-| fresh thread with no baseline | treat the absent baseline as zero and report the current snapshot |
-| resumed thread with no retained baseline | omit tokens and retain the current snapshot as the new baseline |
+| fresh thread with a valid snapshot and no baseline | treat the absent baseline as zero, report the current snapshot, and retain it as the new baseline when a backend thread identifier is known |
+| resumed thread with a valid snapshot and no retained baseline | omit tokens and retain the current snapshot as the new baseline |
 | valid snapshot with the same optional-counter presence shape and no decreased counter | report the exact difference from the preceding snapshot and retain the current snapshot |
 | any decreased counter | omit tokens and retain the current snapshot so the next stable turn can recover |
-| malformed snapshot for a known thread | omit tokens and discard the old baseline |
+| usage value yielding no valid snapshot | omit tokens and, when a backend thread identifier is known, discard its old baseline |
 | first valid resumed snapshot after a discarded baseline | omit tokens and establish the new baseline |
 | optional cache or reasoning counter presence changes | omit tokens and retain the new shape |
 | next valid same-shape, non-decreasing snapshot after a retained decrease or shape-transition baseline, or after the re-established post-malformed baseline | recover exact differencing |
@@ -435,18 +444,18 @@ Where executable resolution or wrapper setup fails while starting a run, the ada
 
 ### codex-201
 
-Given canned native Codex events typed against the SDK's canonical exported event and item shapes, together with deliberately degraded-member variants, when the adapter runs, it shall satisfy this canonical lifecycle matrix [[codex-3](#codex-3)], [[codex-19](#codex-19)], [[codex-20](#codex-20)]:
+Given canned native Codex events typed against the SDK's canonical exported event and item shapes, together with deliberately degraded-member variants, when the adapter runs, it shall satisfy this canonical lifecycle matrix [[codex-3](#codex-3)], [[codex-19](#codex-19)], [[codex-20](#codex-20)], [[codex-54](#codex-54)]:
 
 | Case | Assertion |
 | --- | --- |
-| full interleaved command and MCP turn | ordered `init`, two correlated `tool_use`, two correlated `tool_result`, `text`, `codex:file_change`, and terminal `done`, with native payloads and one common backend session identifier |
+| full interleaved command and MCP turn | ordered `init`, two correlated `tool_use`, two correlated `tool_result`, `text`, `codex:file_change`, and terminal `done`, with each pair's `toolUseId` equal to its native item `id`, native payloads, and one common backend session identifier |
 | repeated updates | one `tool_use`, no event for later updates, and one terminal `tool_result` |
 | first observation at `item.updated` | announce the call there and correlate its later result |
 | completion without an earlier observation | synthesize the correlated `tool_use` immediately before the result |
 | repeated completion | emit only one terminal result |
 | interleaved distinct IDs | preserve each correlation despite reverse completion order |
 | failed command and MCP completion | preserve command output and exit code or MCP error details with `status: 'error'` |
-| missing canonical item ID or payload member | apply [[codex-19](#codex-19)] and [[codex-20](#codex-20)]'s generated-ID and fallback rows |
+| missing canonical item ID or payload member | apply [[codex-19](#codex-19)]'s lifecycle, [[codex-54](#codex-54)]'s generated-ID, and [[codex-20](#codex-20)]'s payload fallback rows |
 
 ### codex-41
 
@@ -561,17 +570,33 @@ Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants 
 
 Given either tool-list field is present or both are omitted, when the adapter runs, it shall produce the pre-load rejection or native-tool preservation selected by [[codex-11](#codex-11)].
 
+### codex-233
+
+_Superseded for usage shape by [[codex-240](#codex-240)]._
+
+Given complete, incomplete, invalid, absent, or synthetic Codex accounting, when a caller reads the superseded terminal usage, the adapter shall select this obsolete availability matrix:
+
+| Accounting state | Superseded assertion |
+| --- | --- |
+| complete finite non-negative integer token counters, including explicit zeroes | `tokenAvailability: 'reported'` and the provider-inclusive input base preserved [[codex-30](#codex-30)] |
+| a required token or cache counter absent, or any present mapped counter negative, fractional, non-finite, or non-numeric | `tokenAvailability: 'unavailable'`; an absent optional cache counter alone retains zero contribution without invalidating otherwise complete accounting [[codex-53](#codex-53)] |
+| complete token accounting omitted, or an errored, interrupted, exhausted, or other terminal path synthesized | `tokenAvailability: 'unavailable'` and no token estimate introduced [[codex-17](#codex-17)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], [[codex-27](#codex-27)] |
+| tool calls observed or validly provider-reported in any row | `toolUses` preserves the greatest independently known count even when token accounting is unavailable [[codex-29](#codex-29)] |
+
 ### codex-238
 
 _Superseded by [[codex-240](#codex-240)]._
 
-Given thread-cumulative Codex snapshots under [[codex-15](#codex-15)]'s baseline states, when a caller reads the superseded `usage.breakdown`, the adapter shall select this obsolete availability matrix:
+Given complete or incomplete upstream accounting and thread-cumulative Codex snapshots, when a caller reads the superseded `usage.breakdown`, the adapter shall select this obsolete breakdown matrix:
 
-| Snapshot state | Superseded outcome |
+| Accounting or snapshot state | Superseded outcome |
 | --- | --- |
-| successive snapshots for one thread | the second turn's difference rather than the thread total |
-| resumed thread with no retained baseline | `tokenAvailability: 'unavailable'` |
-| snapshot smaller than the retained baseline | `tokenAvailability: 'unavailable'` and retain the smaller snapshot so the following stable turn recovers |
+| complete inclusive counters and their subsets | publish both sides derived by subtraction [[codex-16](#codex-16)] |
+| cache or reasoning counter omitted | omit the corresponding component while the remaining published side still sums to its aggregate, and omit the whole output side when reasoning is omitted [[codex-16](#codex-16)] |
+| component subtraction would be negative | omit the affected side while publishing the unaffected side [[codex-16](#codex-16)] |
+| successive snapshots for one thread | publish the second turn's difference rather than the thread total [[codex-15](#codex-15)] |
+| resumed thread with no retained baseline | publish `tokenAvailability: 'unavailable'` [[codex-15](#codex-15)] |
+| snapshot smaller than the retained baseline | publish `tokenAvailability: 'unavailable'` and retain the smaller snapshot so the following stable turn recovers [[codex-15](#codex-15)] |
 
 ### codex-239
 
