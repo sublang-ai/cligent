@@ -9,7 +9,7 @@
 // terminal tool_result). Filesystem state is the ground truth that a tool
 // actually ran; the stream assertions are invariants, not exact sequences,
 // because model behavior varies between runs.
-// opencode-237 reuses that real managed-mode harness to pin permission liveness
+// opencode-55 reuses that real managed-mode harness to pin permission liveness
 // for an explicit bash ask and absolute /tmp write under native auto replies.
 
 import { execFileSync } from 'node:child_process';
@@ -119,7 +119,7 @@ describe('OpenCode tool lifecycle real-run acceptance (opencode-232)', () => {
   );
 
   acceptanceIt(
-    'resolves an absolute /tmp write without a permission wait (opencode-237)',
+    'resolves an absolute /tmp write without a permission wait (opencode-55)',
     async () => {
       if (missing.length > 0) {
         throw new Error(

@@ -38,8 +38,7 @@ Done
    [[gemini-39](../packages/adapters/gemini.md#gemini-39)], and cleanup
    [[gemini-35](../packages/adapters/gemini.md#gemini-35)].
 4. [x] **Make OpenCode accounting causal and idempotent.**
-   Implement [[opencode-21](../packages/adapters/opencode.md#opencode-21)] across the root/task tree without
-   widening conversational output or charging unrelated background sessions.
+   Implement [[opencode-21](../packages/adapters/opencode.md#opencode-21)], [[opencode-44](../packages/adapters/opencode.md#opencode-44)], [[opencode-45](../packages/adapters/opencode.md#opencode-45)], [[opencode-46](../packages/adapters/opencode.md#opencode-46)], [[opencode-47](../packages/adapters/opencode.md#opencode-47)], [[opencode-48](../packages/adapters/opencode.md#opencode-48)], [[opencode-49](../packages/adapters/opencode.md#opencode-49)], [[opencode-50](../packages/adapters/opencode.md#opencode-50)], and [[opencode-51](../packages/adapters/opencode.md#opencode-51)] across the root/task tree without widening conversational output or charging unrelated background sessions.
 5. [x] **Keep Kimi honest.**
    Implement [[kimi-13](../packages/adapters/kimi.md#kimi-13)]: omit accounting the pinned ACP runtime does not
    expose while preserving stop status, result, and tool count.

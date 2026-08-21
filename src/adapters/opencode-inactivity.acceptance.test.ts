@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// opencode-235: a real managed OpenCode server supplies the session.status
+// opencode-54: a real managed OpenCode server supplies the session.status
 // recovery seam while the adapter deliberately receives no terminal SSE
 // event. This keeps the regression probe short and credential-free while
 // exercising the vendor status endpoint, SDK disposal, iterator cancellation,
@@ -21,7 +21,7 @@ import { OpenCodeAdapter, wrapOpencodeClient } from './opencode.js';
 const available = isExecutableAvailable();
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 
-describe('OpenCode inactivity real-server acceptance (opencode-235)', () => {
+describe('OpenCode inactivity real-server acceptance (opencode-54)', () => {
   acceptanceIt(
     'recovers a real idle status and releases the stream, client, and server',
     async () => {

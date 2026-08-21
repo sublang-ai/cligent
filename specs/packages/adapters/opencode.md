@@ -21,13 +21,35 @@ The adapter shall implement `AgentAdapter` with `agent: 'opencode'`.
 
 ### opencode-2
 
-The adapter module shall be importable without the SDK installed so consumers can register the adapter unconditionally.
-The SDK shall only be required at call time: `isAvailable()` shall return `false` and `run()` shall throw when the SDK is absent.
+Where the OpenCode SDK is not installed, the adapter module shall remain
+importable so consumers can register it unconditionally.
 
 ### opencode-3
 
-`isAvailable()` shall check SDK presence and, in managed mode, also check that the `opencode` CLI is on PATH via a spawn-based probe.
-It shall return `true` only if all checks pass.
+When `isAvailable()` uses the adapter's default probes, it shall classify the
+configured server mode through this matrix:
+
+| Mode and probe outcome | Result |
+| --- | --- |
+| external mode and the OpenCode SDK is loadable under [[engine-26](../engine.md#engine-26)] runtime readiness | `true` |
+| external mode and the SDK is not loadable | `false` |
+| managed mode, the SDK is loadable, and `opencode --version` succeeds within 5,000 ms with a version that [[engine-25](../engine.md#engine-25)] does not find below the supported floor | `true` |
+| managed mode, the SDK is loadable, the CLI command succeeds, and its installed version is unreadable | `true` under [[engine-26](../engine.md#engine-26)]'s fail-open unreadable-version rule |
+| managed mode and either runtime is missing, the CLI exits nonzero or times out, or a readable CLI version is below that floor | `false` |
+
+### opencode-22
+
+Where the OpenCode SDK is not installed and neither tool-list field is
+present, when `run()` is called, the adapter shall throw
+`OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.`,
+appending the loader's `Error` message when one exists.
+
+### opencode-23
+
+Where managed `run()` can load the SDK but the paired OpenCode CLI version is
+below [[engine-25](../engine.md#engine-25)]'s supported floor, the adapter shall
+refuse before spawning the server with that runtime gate's installed-version,
+required-version, resolution, and repair diagnostic.
 
 ### Two Modes
 
@@ -39,7 +61,8 @@ The adapter shall support two modes, selectable via constructor options: managed
 
 ### opencode-5
 
-The adapter shall normalize SSE events to `AgentEvent` types:
+When the adapter receives a current-run OpenCode SSE event after `init`, it
+shall dispatch the event according to this table:
 
 | SSE Event                                                                       | AgentEvent                                                                                                                                                                  |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,364 +70,326 @@ The adapter shall normalize SSE events to `AgentEvent` types:
 | assistant `message.part.updated` (text, canonical sibling or legacy part delta) | `text_delta`                                                                                                                                                                |
 | assistant text `message.part.delta` / `session.next.text.delta`                 | `text_delta`                                                                                                                                                                |
 | reasoning `message.part.delta` / `session.next.reasoning.delta`                 | suppressed in favor of `thinking` snapshots                                                                                                                                 |
-| `message.part.updated` (tool part, per [[opencode-16](#opencode-16)])           | `tool_use` / `tool_result`                                                                                                                                                  |
+| `message.part.updated` (tool part)                                             | the lifecycle selected by [[opencode-16](#opencode-16)]                                                                                                                     |
 | assistant `message.part.updated` (thinking)                                     | `thinking`                                                                                                                                                                  |
 | `message.part.updated` (file part)                                              | `opencode:file_part` (extension)                                                                                                                                            |
 | `message.part.updated` (image part)                                             | `opencode:image_part` (extension)                                                                                                                                           |
-| `permission.updated` / `permission.asked`                                       | Headless reply behavior in [[opencode-20](#opencode-20)], including `opencode:permission_decision` after successful auto replies and `permission_request` outside auto mode |
-| `permission.replied` (rejected)                                                 | `tool_result` (`status: 'denied'`)                                                                                                                                          |
-| `session.idle`                                                                  | `done` (usage)                                                                                                                                                              |
-| Errors                                                                          | `error`                                                                                                                                                                     |
+| `permission.updated` / `permission.asked`                                       | the headless outcome selected by [[opencode-20](#opencode-20)]                                                                                                              |
+| `permission.replied`                                                            | the reply outcome selected by [[opencode-16](#opencode-16)]                                                                                                                 |
+| `session.idle` or idle `session.status`                                          | the terminal selected by [[opencode-26](#opencode-26)]                                                                                                                      |
+| `error` or `session.error`                                                       | the payload and state effect selected by [[opencode-27](#opencode-27)]                                                                                                      |
+| absent or any other event type                                                   | no event                                                                                                                                                                    |
 
-_The following root-stream accounting behavior is superseded by [[opencode-21](#opencode-21)]._
+### opencode-24
 
-Where OpenCode supplies a canonical `StepFinishPart`, the adapter shall require finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`, shall add both cache counters to the cache-exclusive input counter exactly once, shall add the disjoint reasoning counter to the visible-output counter exactly once, and shall accumulate the resulting input and output totals across steps [[3]][[4]].
-Those five counters are already the disjoint partition of [[engine-28](../engine.md#engine-28)], so where step accounting is complete the adapter shall publish both breakdown sides from their step-wise sums, mapping `tokens.input` to `input`, `tokens.cache.read` to `cacheRead`, `tokens.cache.write` to `cacheWrite`, `tokens.output` to `output`, and `tokens.reasoning` to `reasoning`.
-The adapter shall not consume `tokens.total`, which OpenCode passes through from the provider and which is therefore not guaranteed to equal the sum of the five counters.
-A component OpenCode reports as a constant zero for a given provider, such as reasoning on providers that do not separate it, is indistinguishable from a measured zero: knowing which provider ran a step does not say which components that provider separates, so the adapter shall publish the zero as measured rather than infer absence.
-Each step part is one model request, so the adapter shall publish one [[engine-30](../engine.md#engine-30)] billable record per step part, carrying `requests: 1`, that step's five counters as its tokens, and its own `cost` where present.
-The rate-card identity of a step is the `modelID` and `providerID` of the assistant message that owns the part, correlated per [[opencode-17](#opencode-17)]; where the run supplied no such identity for a step's message, its record shall omit both fields.
+When a run emits its first unified event, the adapter shall emit exactly one
+`init` whose session identity comes from [[opencode-25](#opencode-25)] and whose
+payload is selected by this matrix:
+
+| Available state | `InitPayload` |
+| --- | --- |
+| normal setup reaches a usable SSE iterator | `model`: non-nullish requested model, otherwise non-empty wrapper model, otherwise `unknown`; `cwd`: non-nullish requested cwd, otherwise non-empty wrapper cwd, otherwise `process.cwd()`; `tools`: the wrapper's array entries that are non-empty strings or objects with non-empty string `name`; `capabilities.mode`: configured server mode; `capabilities.toolsKnown`: whether that tool list is non-empty; `capabilities.toolsSource`: `sdk` when known and `unavailable` otherwise |
+| setup fails before normal init, including after a wrapper result with no usable stream | `model`: non-nullish requested model or `unknown`; `cwd`: non-nullish requested cwd or `process.cwd()`; `tools: []`; configured `capabilities.mode`; `capabilities.toolsKnown: false`; `capabilities.toolsSource: 'unavailable'` |
+
+### opencode-25
+
+When the adapter selects a run or event session identity, it shall use the first
+non-empty value in the applicable row and ignore generic stream-event `id`
+fields:
+
+| Selection | Priority |
+| --- | --- |
+| provisional run identity | inbound `AgentOptions.resume`, otherwise an identifier generated through [[engine-7](../engine.md#engine-7)] |
+| wrapper result | `sessionId`, `session_id`, `threadId`, `thread_id`, top-level `id`, `session.id`, `thread.id` |
+| stream envelope or its `data`, `info`, `message`, then `part` | `sessionID`, `sessionId`, `session_id`, `threadId`, `thread_id`, `session.id`, `thread.id`; for `session.created`, `session.updated`, or `session.deleted` only, fall back to `info.id` |
+| unified event identity before a backend result is known | the provisional run identity |
+| unified event identity after the wrapper identifies the backend session | that backend identity |
+
+### opencode-26
+
+While no terminal has been emitted, when a current-session `session.idle` or a
+`session.status` whose nested `status.type` is `idle` arrives, the adapter shall
+emit exactly one `done` selected by this matrix after flushing resolvable queued
+content:
+
+| State | Terminal payload |
+| --- | --- |
+| caller abort already observed | `status: 'interrupted'`, continuity from [[opencode-11](#opencode-11)], usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
+| an earlier `session.error` was observed | `status: 'error'` regardless of the idle event's status, continuity from [[opencode-11](#opencode-11)], its non-empty string `result`, exact usage from [[opencode-21](#opencode-21)], and first finite `durationMs`, `duration_ms`, or elapsed duration |
+| no earlier session error | case-insensitive status `success` / `completed` / `ok` / absent / unrecognized → `success`; `interrupted` / `cancelled` / `aborted` → `interrupted`; `max_turns` / `maxturns` → `max_turns`; `max_budget` / `maxbudget` / `budget_exceeded` → `max_budget`; `error` / `failed` → `error`, with the same result, resume, usage, and duration selection as above |
+
+### opencode-27
+
+When a current-session `error` or `session.error` event arrives, the adapter
+shall emit one `error` and update terminal state according to this matrix:
+
+| Input | Normalized outcome |
+| --- | --- |
+| generic `error` | normalize the whole event and apply no terminal-status override |
+| `session.error` | normalize `event.error` when non-nullish, otherwise the whole event, and remember an error-status override for the later idle terminal |
+| code within the selected normalization source | first non-empty top-level `code`, nested `error.code`, or nested `error.type`; omit when none exists |
+| message within the selected normalization source | first non-empty top-level `message`, nested `error.message`, `data.message`, or `error.data.message`; otherwise `OpenCode SDK error` |
+| recoverability within the selected normalization source | `true` when its top-level or nested `error` has `recoverable: true` or `retryable: true`; otherwise `false` |
+
+### opencode-28
+
+While no terminal has been emitted, when setup or stream processing throws,
+the adapter shall first emit [[opencode-24](#opencode-24)]'s `init` if needed,
+flush resolvable queued content, and select this terminal sequence:
+
+| State | Sequence |
+| --- | --- |
+| caller abort observed | one interrupted `done` with [[opencode-11](#opencode-11)] continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration; no adapter error |
+| other thrown `Error` | non-recoverable `OPENCODE_STREAM_ERROR` carrying its message, then one error `done` with ordinary failure continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
+| other thrown value | the same error sequence with message `OpenCode adapter failed during stream` |
+
+### opencode-29
+
+While no terminal has been emitted, when the SSE iterator ends, the adapter
+shall flush resolvable queued content and select this terminal sequence:
+
+| State | Sequence |
+| --- | --- |
+| caller abort observed | one interrupted `done` with [[opencode-11](#opencode-11)] continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
+| no caller abort | non-recoverable `MISSING_SESSION_IDLE` error with message `Protocol violation: OpenCode stream ended without session.idle`, then one error `done` with ordinary failure continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
+
+### opencode-30
+
+_Superseded by [[opencode-21](#opencode-21)]; retained for the released
+root-stream accounting design._
+
+Where OpenCode supplies root-stream step accounting, the adapter shall select
+the legacy report through this matrix [[3]][[4]]:
+
+| Input | Legacy outcome |
+| --- | --- |
+| canonical `StepFinishPart` with finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write` | add both cache counters to cache-exclusive input exactly once, add reasoning to visible output exactly once, and accumulate those totals across steps |
+| valid step with complete accounting | both [[engine-28](../engine.md#engine-28)] breakdown sides from step-wise sums: input → `input`, cache read → `cacheRead`, cache write → `cacheWrite`, output → `output`, reasoning → `reasoning` |
+| `tokens.total` | ignore because the provider-passed value need not equal the five-counter sum |
+| a valid component reported as zero | preserve measured zero rather than infer absence from provider identity |
+| each valid step | one [[engine-30](../engine.md#engine-30)] record with `requests: 1`, its five counters, its cost when present, and the owning assistant message's `modelID` / `providerID` when known, omitting both identities otherwise [[opencode-17](#opencode-17)] |
 
 ### opencode-16
 
-The adapter shall correlate tool-part snapshots by OpenCode's `part.callID`, using legacy identifier aliases (including `part.id`) only when `callID` is absent.
-For each correlated tool call, the adapter shall emit at most one `tool_use`, carrying the tool name from `part.tool` and the input from `state.input`, and shall defer that emission past `pending` snapshots so streamed partial input is not captured.
-When a correlated tool call not already denied first reaches a `completed` or `error` state — with or without earlier snapshots — the adapter shall have emitted exactly one `tool_use`/`tool_result` pair whose `tool_result` carries `status: 'success'` with `state.output` or `status: 'error'` with `state.error`, plus the duration when `state.time` supplies start and end.
-Repeated running or terminal snapshots for one correlated call shall add no further `tool_use` or `tool_result` events, and `done.usage.toolUses` shall count each correlated call at most once.
-Where a rejected permission reply per [[opencode-5](#opencode-5)] resolves — via the permission request's tool reference — to a correlated call, its denied `tool_result` shall carry that call's `callID` and tracked tool name rather than the permission name from the request, and afterwards tool-state updates for that call shall add neither a second terminal `tool_result` nor a `tool_use` behind the terminal result.
-Where the rejected reply resolves to a call whose terminal `tool_result` was already emitted, the adapter shall emit no denied `tool_result`.
-Tool-part snapshots without lifecycle state shall keep their pre-lifecycle normalization: one immediate `tool_use` per correlated identifier from top-level fields.
+When the adapter receives a tool-part snapshot or correlated rejected permission
+reply, it shall evolve that call through this matrix:
+
+| Input or state | Unified outcome |
+| --- | --- |
+| call identity | first non-empty `part.callID`, `part.callId`, `part.toolUseId`, or `part.id`; otherwise an identifier generated through [[engine-7](../engine.md#engine-7)] |
+| tool name | first non-empty `part.toolName`, `part.name`, string `part.tool`, or `part.tool.name`; otherwise `unknown_tool`, with every later non-fallback name replacing the retained name |
+| input | first non-nullish `state.input`, `part.input`, `part.arguments`, `part.args`, or `part.tool.input`; any object, including an array, is preserved, any JSON object or array string is parsed, an invalid string becomes `{ raw: <string> }`, and null, a primitive, or a string decoding to one becomes `{}` |
+| description | first non-empty `part.description` or `state.title`; omit when neither exists |
+| `pending` | retain correlation without emitting a use |
+| first non-pending snapshot before a result | one `tool_use` with the selected identity, name, input, and optional description; increment observed tool use once |
+| first `completed` snapshot | ensure that use exists, then one success `tool_result` whose output is `state.output` or `null` |
+| first `error` snapshot | ensure that use exists, then one error `tool_result` whose output is `state.error` or `null` |
+| terminal snapshot with finite `state.time.start` and `.end` | `durationMs` is `end - start`; otherwise omit duration |
+| repeated running or terminal snapshot | no duplicate use, result, or tool count |
+| tool part without lifecycle state | one immediate use per selected identifier from the same selectors |
+| rejected permission reply before a terminal result | one denied result with the call identity and tracked tool name, output from the first defined permission reason, event reason, permission output, event output, or `null`; suppress any later result and any use that would follow the denial |
+| rejected permission reply after a terminal result | no denied result |
 
 ### opencode-17
 
-The adapter shall correlate conversational part events to their OpenCode
-message by message identifier and use the message role from `message.updated`
-or equivalent inline metadata before normalizing `text`, `text_delta`, or
-`thinking` output.
-Only content belonging to an `assistant` message shall be
-emitted; content belonging to a `user` message shall be discarded, without
-comparing its bytes to the submitted prompt.
+When conversational part and message-role events interleave, the adapter shall
+apply this ordered correlation matrix after [[opencode-6](#opencode-6)] session
+filtering:
 
-Where a part event carrying a message identifier arrives before its role, the
-adapter shall hold that event until the matching message role arrives.
-It shall
-then release held assistant events in their original order or discard held
-user events.
-This ordering shall hold across interleaved message identifiers:
-a later message whose role resolves first shall not overtake earlier pending
-content.
-At terminal completion, unresolved content shall be discarded and
-later role-resolved assistant content shall then be emitted in its original
-order.
-Legacy content events carrying no message identifier shall retain their
-existing normalization because no role can be correlated, while respecting
-the same ordering gate.
-
-When `message.removed` identifies a message with held content, the adapter
-shall discard that content and release any now-unblocked later events.
-Removed
-content shall neither remain resident nor hold the global ordering gate open.
-
-Session filtering per [[opencode-6](#opencode-6)] shall precede role
-correlation, so metadata from another session cannot release or discard the
-current session's pending content.
+| Event state | Outcome |
+| --- | --- |
+| role from top-level `role`, `info.role`, or `message.role`, case-insensitively `assistant` | emit that message's `text`, `text_delta`, and `thinking` content without comparing its bytes to the prompt |
+| corresponding role is `user` | discard its content |
+| identified part arrives before role | hold it until the role resolves |
+| later message resolves while earlier content is held | keep global stream order until the earlier entry resolves or is removed |
+| terminal completion with unresolved roles | discard unresolved entries and release later known assistant content in original order |
+| legacy content with no message identifier | preserve ordinary normalization while respecting the same ordering gate |
+| `message.removed` identifies held content | discard it, release any newly unblocked events, and release its retained payload |
+| metadata from another session | neither release nor discard current-session content |
 
 ### opencode-19
 
-The adapter shall classify every OpenCode content delta before normalization.
-For canonical v1 `message.part.updated`, it shall read the optional `delta`
-beside `part` and classify it from `part.type`, while retaining the legacy
-`part.delta` alias.
-For v2 `session.next.text.delta` and
-`session.next.reasoning.delta`, the event type shall be authoritative.
-For the
-generic v2 `message.part.delta`, the adapter shall correlate `partID` with the
-type observed on `message.part.updated`; `field` alone shall not classify a
-delta because both text and reasoning use text fields.
-Explicit v2 deltas
-shall correlate their `textID` or `reasoningID` with the same part identifier
-carried by the settled snapshot.
+When OpenCode content deltas and settled snapshots interleave, the adapter shall
+normalize them through this correlation matrix:
 
-Assistant text deltas shall normalize to `text_delta`.
-Reasoning deltas shall
-not normalize to `text_delta` or a second `thinking` event; settled reasoning
-snapshots shall remain the single `thinking` representation.
-Deltas belonging
-to user messages shall remain suppressed per
-[[opencode-17](#opencode-17)].
-Generic deltas received before their part
-metadata shall remain pending by `partID` and be released or suppressed once
-the type resolves.
-A generic delta whose type never resolves, or that carries
-no correlatable `partID` or inline part type, shall not default to output.
-An uncorrelatable generic delta shall be discarded immediately rather than
-holding later classifiable content behind the ordering gate.
-
-Repeated settled snapshots with the same part identifier, content kind, and
-content shall emit at most once.
-When emitted text deltas for a part exactly
-reconstruct its later settled text snapshot, that snapshot shall be suppressed
-so concatenating normalized `text` and `text_delta` yields the semantic output
-once.
-Interleaved parts shall keep independent type state and original stream
-order even when later metadata resolves first.
-Removing a part shall release
-its queued payloads and discard its pending deltas, emitted-delta history,
-settled-snapshot history, and classification state.
-Removing its owning
-message shall clear the same per-part state even when no individual
-`message.part.removed` event follows.
+| Input or state | Outcome |
+| --- | --- |
+| v1 `message.part.updated` | classify the sibling `delta`, otherwise legacy `part.delta`, from `part.type` |
+| v2 `session.next.text.delta` / `session.next.reasoning.delta` | classify from the event type and correlate `textID` / `reasoningID` with the settled part identifier |
+| generic v2 `message.part.delta` with known inline or correlated part type | classify by that type, never by `field` alone |
+| assistant text delta | `text_delta` |
+| reasoning delta | no delta event; retain the settled snapshot as the single `thinking` representation |
+| user delta | suppress per [[opencode-17](#opencode-17)] |
+| generic delta preceding its part metadata | hold by part identifier, then release or suppress when type resolves |
+| generic delta with no correlatable identifier or type | discard immediately without blocking later content |
+| generic delta whose type never resolves | discard at terminal rather than defaulting to output |
+| repeated settled snapshot with the same part identifier, kind, and content | emit at most once |
+| settled text exactly reconstructed by emitted deltas for its part | suppress the snapshot so semantic output appears once |
+| interleaved part identifiers | preserve independent state and original stream order even when later metadata resolves first |
+| part removal | release queued payloads and clear pending deltas, emitted-delta history, settled history, and classification state |
+| owning-message removal | clear the same state for all of its parts without requiring individual removals |
 
 ### Session Filtering
 
 ### opencode-6
 
-While the SSE stream carries events for all sessions [[2]], the adapter shall
-emit ordinary output only for the current `sessionId`.
-Events that carry no
-session or thread identifier shall pass through unfiltered, since many event
-types in a multiplexed stream lack explicit session tags.
-Permission-control
-events for a descendant session owned by the current run are the narrow
-exception defined by [[opencode-20](#opencode-20)]; they shall not widen
-ordinary child-session output.
-Where another invocation or client drives the same OpenCode session
-concurrently, or delayed background work from an earlier invocation later
-writes to it [[16]], the adapter shall make no event-isolation guarantee
-because the stream carries session identity but no turn identity; this is an
-environmental constraint per [[engine-18](../engine.md#engine-18)], and callers
-requiring concurrency shall use distinct sessions.
+While OpenCode's global SSE stream multiplexes sessions [[2]], the adapter shall
+select event visibility through this matrix:
+
+| Event scope | Visibility |
+| --- | --- |
+| current root session | ordinary output and control processing |
+| no explicit session or thread identity | pass through because many global event kinds are untagged |
+| run-owned descendant | permission control and lifecycle ownership only through [[opencode-20](#opencode-20)]; no ordinary child conversation |
+| unrelated identified session | no output or control processing |
+| same OpenCode session concurrently driven by another invocation/client, or receiving delayed background work from an earlier invocation [[16]] | no turn-level isolation guarantee because the stream exposes no turn identity; callers needing [[engine-18](../engine.md#engine-18)] concurrency use distinct sessions |
 
 ### Permission Mapping
 
 ### opencode-7
 
-Where a `PermissionPolicy` is provided, the adapter shall map it to OpenCode permission controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md): `fileWrite` → `edit`, `shellExecute` → `bash`, `networkAccess` → `webfetch`.
-Where `PermissionPolicy.mode` is `auto`, the adapter shall reproduce
-OpenCode's native auto posture: it shall append no wildcard permission rule
-and shall answer only permission asks that survive OpenCode's configured rules
-with `once` per [[opencode-20](#opencode-20)].
-This preserves native and user-configured explicit denies, which OpenCode
-resolves before emitting an ask.
-OpenCode models that automation posture independently from its permission
-rules.
-This independence covers explicitly supplied portable capability levels, not
-`AgentOptions` tool lists, which are unsupported per
-[[opencode-15](#opencode-15)].
-When `mode: 'auto'` accompanies explicitly supplied portable capability levels,
-the adapter shall map only those present fields; omitted fields shall remain
-absent so OpenCode's native and user rules retain authority.
-Where the OpenCode v2 SDK path is active, the adapter shall apply the
-equivalent `PermissionRuleset` at `session.create` for fresh sessions and at
-`session.update` before prompting resumed sessions, because the v2 prompt body
-no longer accepts the legacy `permission` map.
-A provided empty `PermissionPolicy` shall remain distinct from absence and map
-the three omitted capabilities to `ask`.
-Where `PermissionPolicy.writablePaths` is non-empty per
-[[engine-22](../engine.md#engine-22)], the adapter shall accept valid entries, expose
-`WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with
-`enforcement: 'ambient'` and canonical `paths`, and keep the existing OpenCode
-permission mapping unchanged.
-`writablePaths` is reporting, not confinement: the OpenCode process retains
-ambient host filesystem authority, while `external_directory` is a
-tool-approval rule rather than an OS sandbox.
-Native auto may answer a surviving `external_directory` ask `once` without a
-human.
+When the exported permission mapper receives the closed
+[[engine-21](../engine.md#engine-21)] policy-mode set, it shall select OpenCode
+permission controls through this exhaustive [DR-005](../../decisions/005-per-adapter-permission-configuration.md)
+matrix, mapping `fileWrite` → `edit`, `shellExecute` → `bash`, and
+`networkAccess` → `webfetch`:
+
+| Policy | Mapping and headless posture |
+| --- | --- |
+| missing | no adapter-generated permission control; preserve OpenCode defaults |
+| supplied with omitted mode, including `{}` | normalize every omitted capability to `ask`, retaining the distinction from a missing policy |
+| supplied with omitted mode and capability values | map every present value and normalize every omitted capability to `ask` |
+| `mode: 'auto'` without capability values | no wildcard or capability rule; preserve native and user-configured rules and answer only surviving asks `once` through [[opencode-20](#opencode-20)] |
+| `mode: 'auto'` with capability values | map only present values, leave omitted values absent, append no wildcard, and apply the same surviving-ask response posture |
+| `mode: 'bypass'` with absent or valid `writablePaths` | reject with the SDK/server-architecture diagnostic because no unchecked-bypass route exists; a direct mapper call rejects immediately, while `run()` rejects after SDK loading but before managed spawn, client creation, session work, subscription, or prompt |
+| any mode with invalid `writablePaths` | [[opencode-31](#opencode-31)] validation rejects before mode-specific mapping |
+
+### opencode-31
+
+When a `PermissionPolicy` carries `writablePaths`, the adapter shall select its
+independent reporting surface through this matrix:
+
+| Input | `WritablePathsPermissionMapping` |
+| --- | --- |
+| absent or empty | omitted per [[engine-23](../engine.md#engine-23)] |
+| valid non-empty entries | canonical [[engine-22](../engine.md#engine-22)] paths with `enforcement: 'ambient'`, leaving the OpenCode permission rules unchanged |
+| invalid entry | reject under [[engine-22](../engine.md#engine-22)] validation |
+
+`ambient` records that this is not confinement: OpenCode retains host
+filesystem authority, `external_directory` remains a tool-approval rule, and
+native auto can answer a surviving ask `once`.
 
 ### opencode-20
 
-While an OpenCode run is headless, when a `permission.updated` or
-`permission.asked` event belonging to its root session or a descendant session
-owned by that run reaches the adapter, the adapter shall resolve it exactly
-once through the applicable SDK
-permission-response route, including for permission names unknown to cligent.
-Under `mode: 'auto'`, it shall answer `once` and shall not emit a normalized
-`permission_request`, preserving the headless auto-mode contract.
-After the applicable SDK route confirms a successful auto `once` reply, the
-adapter shall emit exactly one `opencode:permission_decision` extension event
-with the native request and session identifiers, permission name, patterns,
-correlated tool use identifier, `decision: 'once'`, `automated: true`,
-normalized input, and optional reason.
-The extension event shall record a completed automated decision and shall not
-be substituted for the interactive `permission_request` event.
-Outside auto mode, it shall emit `permission_request` for observability and
-answer `reject` fail-closed without emitting an automated-decision extension.
-The response and correlation key shall preserve the native request and
-originating session identifiers.
-The adapter shall discover pre-existing
-descendants recursively before prompting a resumed root session and shall
-extend that owned control scope from ordered session lifecycle events, while
-permission events belonging to an unrelated session tree receive no response
-per [[opencode-6](#opencode-6)].
-Descendant discovery shall be bounded and a
-failure shall terminate before the resumed prompt is dispatched.
-Where the event has no request identifier, or the applicable response route is
-unavailable, rejects, returns an SDK error, or does not settle within five
-seconds, the adapter shall emit a non-recoverable permission error whose
-message names the session identifier, request identifier (or its absence), and
-permission name, then emit `done` with `status: 'error'` rather than continue
-waiting on the SSE stream.
-Missing, failed, timed-out, or aborted replies shall emit no
-`opencode:permission_decision` event.
-The adapter shall drive the active SSE subscription and permission response
-with a run-owned abort signal.
-On the five-second response timeout, it shall
-abort that signal and close the SSE iterator so the underlying response and
-stream I/O are cancelled before run cleanup completes.
-When `AbortSignal` fires while the adapter awaits either the next SSE event or
-a permission response, the adapter shall propagate it through the run-owned
-signal to cancel active transport I/O, preempt that wait, and emit one `done`
-with `status: 'interrupted'`.
-The ensuing teardown shall release the abort
-listener, terminate the managed server per [[opencode-9](#opencode-9)], and
-perform bounded iterator and SDK client cleanup per
-[[opencode-8](#opencode-8)].
-Retained wait-control state shall remain bounded independently of the number of
-completed SSE events and permission responses.
+While a headless run receives `permission.updated` or `permission.asked` for
+its root or a descendant owned through [[opencode-34](#opencode-34)], the
+adapter shall resolve each native request once through this outcome matrix,
+including unknown permission names:
+
+| State | Observable outcome |
+| --- | --- |
+| `mode: 'auto'` and the `once` reply succeeds | no `permission_request`; after confirmation, exactly one `opencode:permission_decision` with native request and session identifiers, permission name, patterns, correlated tool-use identifier, `decision: 'once'`, `automated: true`, normalized input, and optional reason |
+| outside auto mode before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
+| outside auto mode and the `reject` reply succeeds | no automated-decision extension after that request |
+| request already resolved | no second reply or event |
+| unrelated session tree | no response or event per [[opencode-6](#opencode-6)] |
+| missing request identifier | non-recoverable `OPENCODE_PERMISSION_REQUEST_INVALID` naming session, missing request, and permission, then error `done` |
+| unavailable route, rejected operation, SDK-result error, or no settlement within five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done` |
+| caller abort before or during response | one interrupted `done` with no automated-decision extension |
+
+Failed, timed-out, and aborted paths use [[opencode-35](#opencode-35)] transport
+cancellation before cleanup.
 
 ### opencode-13
 
 Where `PermissionPolicy` is absent, the adapter shall omit adapter-generated
 permission data from fresh-session creation, resumed-session updates, and
-prompt requests on every supported SDK path.
-OpenCode's native permission
-defaults shall remain in effect.
-If either tool-list option is explicitly
-present, [[opencode-15](#opencode-15)] shall reject the run before SDK loading.
+prompt requests on every supported SDK path so OpenCode's native defaults
+remain in effect.
 
 ### Server Lifecycle
 
 ### opencode-8
 
-Where managed mode is configured, the adapter shall spawn `opencode serve`
-with the configured `--hostname` and `--port`, wait for ready, then connect the
-SDK client per [[2]].
-When the run completes or aborts, the adapter shall
-gracefully shut down the managed server.
-Run teardown shall request managed server termination before invoking or
-awaiting SDK iterator and client cleanup.
-Waits for iterator return, client
-close, and client shutdown shall be bounded, so a non-settling SDK cleanup
-hook cannot keep the managed server alive or prevent generator completion.
-If the server remains alive after a bounded `SIGTERM` grace, teardown shall
-send `SIGKILL` and bound the final close wait.
+Where managed mode is configured, when a mapped run reaches server startup, the
+adapter shall spawn `opencode serve` with the configured URL's `--hostname` and
+`--port`, the requested working directory, and piped stdio, wait within the
+configured readiness timeout for either output stream to announce an HTTP(S)
+URL, then connect the SDK client to that URL [[2]].
 
 ### opencode-9
 
-When `AbortSignal` fires, the adapter shall preempt its active wait, yield
-`done` (`status: 'interrupted'`), then send `SIGTERM` to the managed server;
-the signal shall not be sent before the interrupted terminal event is yielded.
+When `AbortSignal` fires during a managed run, the adapter shall preempt its
+active wait, yield `done` with `status: 'interrupted'`, and only afterwards send
+`SIGTERM` to the managed server.
 
 ### opencode-10
 
-When the managed server crashes, the adapter shall yield an `error` event (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) and clean up resources.
+When the managed server exits unexpectedly before readiness or while the
+adapter awaits its SSE stream, the adapter shall select this outcome: absent a
+concurrent caller abort, a non-recoverable `OPENCODE_SERVER_EXIT` error naming
+code and signal followed by one error `done`; after caller abort is observed,
+only [[opencode-39](#opencode-39)]'s interrupted terminal; then
+[[opencode-36](#opencode-36)] cleanup in either case.
 
 ### opencode-18
 
-Where `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is omitted, the adapter
-shall use a finite 300,000 ms relevant-event inactivity deadline; where it is
-provided, the adapter shall require a finite number greater than zero and use
-that value.
-The deadline shall use monotonic elapsed time and split waits above
-the host timer's maximum delay into safe chunks rather than expiring early.
-The deadline shall measure only time actively awaiting OpenCode's global SSE
-stream.
-Time spent normalizing an event or suspended while a downstream
-consumer processes a yielded event shall not consume the silence budget.
-An event explicitly tagged for the current root session or any run-owned
-descendant established per [[opencode-20](#opencode-20)] shall restart the
-deadline.
-Descendant activity is liveness evidence only: ordinary child
-conversation remains filtered under [[opencode-6](#opencode-6)].
-Tagged
-events from an unrelated session and untagged global pass-through events shall
-not restart it; pass-through eligibility is not proof of active-session
-progress.
-A buffered relevant event already available when
-the consumer resumes shall be processed before timeout recovery, while an
-always-ready stream of non-relevant events shall still exhaust the carried
-active-wait budget.
-When the deadline expires, the adapter shall cancel the pending SSE read and
-query the active session's current status through the SDK, bounding that query
-to the lesser of 10,000 ms and the configured inactivity deadline.
-Where the query reports `idle`, including the OpenCode status map omitting the
-session because idle entries are not retained, the adapter shall emit one
-recoverable `error`
-with code `OPENCODE_INACTIVITY_IDLE_RECOVERED` followed by exactly one terminal
-`done`, using `success` unless an earlier session error requires `error`,
-without waiting for another SSE event.
-Where the query reports `busy`, `retry`, or another non-idle state, the adapter
-shall abort that session and emit one non-recoverable `error` with code
-`OPENCODE_INACTIVITY_TIMEOUT` followed by exactly one error `done`.
-Where the status request fails or times out, the adapter shall make a bounded
-best-effort session abort and emit one
-non-recoverable `error` with code
-`OPENCODE_INACTIVITY_STATUS_QUERY_FAILED` followed by exactly one error
-`done`.
-Each inactivity diagnostic shall identify the session, last relevant event,
-elapsed inactivity, configured deadline, server mode and state, queried state
-or query failure, and session-abort outcome where attempted.
-When caller abort races a pending SSE read, status query, or inactivity
-recovery in either server mode, the adapter shall give the caller abort
-terminal precedence once observed, including when a terminal SSE event is
-already ready in the same race turn, and emit exactly one interrupted `done`.
-When caller abort arrives during SDK session creation or prompt dispatch, the
-adapter shall propagate cancellation into supported SDK request surfaces,
-abort any session whose identifier has already been created, and bound how
-long it waits for the raced dispatch to settle.
-Where that dispatch concurrently
-settles with a session and event iterator, the adapter shall capture their
-cleanup ownership, abort the known session, and return the iterator before
-emitting interrupted `done`.
-Any eager event iterator opened before prompt
-dispatch shall be returned on dispatch abort or failure, and the dispatch-scoped
-abort listener shall be removed on every exit.
-A backend session identifier
-created before dispatch abort shall remain the interrupted resume token per
-[[opencode-11](#opencode-11)], including when the wrapper reports the abort as a
-failed run result.
-On the legacy SDK path, the adapter shall scope session creation, prompt, status,
-and abort requests to the same working directory through each generated
-method's top-level `query.directory` field rather than placing the directory in
-a request body.
-After any terminal path, the adapter shall cancel and return the pending event
-iterator, make independent bounded SDK-client close and shutdown attempts even
-when an earlier cleanup rejects, and terminate its managed server, escalating
-its owned child from `SIGTERM` to `SIGKILL` after a bounded grace when necessary.
-Instance disposal shall carry the run working directory as `directory` on the
-v2 SDK path or `query.directory` on the legacy path.
-On caller interruption,
-the adapter shall initiate any known active-session abort before promptly
-emitting the interrupted `done`, without waiting for that control request to
-settle beyond the engine's bounded abort-drain window.
-It shall retain and
-bound the cancellation attempt during post-terminal cleanup.
-Managed process
-termination shall begin only after that terminal event;
-external mode shall leave the caller-owned server running while still aborting
-active session work on interruption or non-idle inactivity.
+When `OpenCodeAdapterConfig.eventInactivityTimeoutMs` is constructed, the
+adapter shall select its relevant-event deadline through this matrix:
+
+| Configuration | Outcome |
+| --- | --- |
+| omitted | 300,000 ms |
+| finite number greater than zero | that value |
+| zero, negative, non-finite, or non-numeric | reject configuration |
+
+### opencode-38
+
+When [[opencode-37](#opencode-37)]'s relevant-event deadline expires, the
+adapter shall cancel the pending SSE read, bound a current-session status query
+to the lesser of 10,000 ms and the configured deadline, and select this recovery
+outcome:
+
+| Status outcome | Terminal sequence |
+| --- | --- |
+| `idle`, including omission from OpenCode's status map | one recoverable `OPENCODE_INACTIVITY_IDLE_RECOVERED` diagnostic, then one success `done`, or error `done` when an earlier session error requires it |
+| `busy`, `retry`, or another non-idle state | bounded session abort, one non-recoverable `OPENCODE_INACTIVITY_TIMEOUT` diagnostic, then one error `done` |
+| status request fails or times out | bounded best-effort session abort, one non-recoverable `OPENCODE_INACTIVITY_STATUS_QUERY_FAILED` diagnostic, then one error `done` |
+
+Each diagnostic identifies the session, last relevant event, elapsed
+inactivity, configured deadline, server mode and state, queried state or query
+failure, and attempted session-abort outcome.
+
+### opencode-39
+
+When caller abort races a pending SSE read, status query, inactivity recovery,
+or ready terminal event in either server mode, the adapter shall give the
+observed caller abort precedence and emit exactly one interrupted `done`.
 
 ### Resume Token
 
 ### opencode-11
 
-When OpenCode provides a session identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
-When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: the OpenCode-provided session identifier observed before the abort; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
-A caller-supplied `AgentOptions.resume` value alone shall not count as an
-OpenCode-provided identifier on a non-interrupted failure.
-When OpenCode
-rejects that resumed session before prompt dispatch, the adapter shall omit
-`resumeToken` so `Cligent` clears the stale value per
-[[engine-6](../engine.md#engine-6)].
+When the adapter emits terminal `done`, it shall select
+`DonePayload.resumeToken` through this [DR-003](../../decisions/003-role-scoped-session-management.md)
+matrix:
+
+| Terminal state | Resume token |
+| --- | --- |
+| backend session identifier observed | the latest observed backend identifier |
+| interrupted before a backend identifier and inbound `AgentOptions.resume` is non-empty | the inbound value |
+| interrupted before a backend identifier and no non-empty inbound value | omitted |
+| successful, max-turn, or max-budget terminal before a backend identifier | omitted |
+| non-interrupted failure before a backend identifier, including rejected stale resume | omitted so [[engine-6](../engine.md#engine-6)] clears the stale value |
 
 ### Options Mapping
 
 ### opencode-12
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall map portable `AgentOptions.effort` values from [[engine-20](../engine.md#engine-20)] to the top-level `variant` field on the OpenCode v2 session prompt body per [[1]].
-The prompt-body surface, rather than session creation, shall be used so the value applies to both fresh and resumed sessions.
-Provider dispatch shall use the `provider/model` prefix in `AgentOptions.model`.
-When the provider has no documented built-in variant set, the adapter shall leave `variant` unset and defer to the user's `opencode.jsonc`.
+Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), when a
+portable `AgentOptions.effort` from [[engine-20](../engine.md#engine-20)] is
+provided with a `provider/model` selection, the adapter shall put this provider
+variant on the prompt body for both fresh and resumed sessions [[1]]:
 
 | `AgentOptions.effort` | Anthropic | OpenAI    | Google | Other |
 | --------------------- | --------- | --------- | ------ | ----- |
@@ -415,22 +400,34 @@ When the provider has no documented built-in variant set, the adapter shall leav
 | `xhigh`               | `max`     | `xhigh`   | `high` | unset |
 | `max`                 | `max`     | `xhigh`   | `high` | unset |
 
-Where a provider lacks a 1:1 variant for the requested effort, the adapter shall use the nearest documented variant for that provider per [[engine-20](../engine.md#engine-20)].
+The nearest documented provider variant satisfies lossy rows under
+[[engine-20](../engine.md#engine-20)], while an unmatched provider leaves the
+field unset for `opencode.jsonc`.
 
 ### opencode-14
 
-When effort is omitted, the adapter shall not set a prompt-body `variant` and shall preserve OpenCode and user-configuration defaults.
-Where effort is outside the OpenCode portable vocabulary, including `ultracode` or `ultra`, the adapter shall reject it before prompting the session with the metadata-backed allowed-values error from [[engine-24](../engine.md#engine-24)].
+When effort selection does not use [[opencode-12](#opencode-12)]'s mapping, the
+adapter shall apply this matrix:
+
+| Input | Outcome |
+| --- | --- |
+| effort omitted | no prompt-body `variant`, preserving OpenCode and user defaults |
+| valid effort with absent model or a model lacking a provider prefix | no prompt-body `variant` |
+| value outside the OpenCode vocabulary, including `ultracode` or `ultra` | reject before prompting with [[engine-24](../engine.md#engine-24)]'s metadata-backed adapter and allowed-values error |
 
 ### opencode-15
 
-Where either `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is
-explicitly present, including as an empty array, the adapter shall reject
-before loading the SDK or invoking the backend.
-The exported permission mapper shall reject either option before returning a
-provider mapping, and the exported compatibility wrapper shall reject any
-direct prompt `tools` value before session creation, update, subscription, or
-prompt invocation.
+When tool-list input reaches an OpenCode surface, the adapter shall enforce
+[[engine-17](../engine.md#engine-17)]'s exact-identifier boundary through this
+matrix:
+
+| Input | Outcome |
+| --- | --- |
+| `AgentOptions.allowedTools` or `disallowedTools` explicitly present, including `[]` | reject before SDK loading or backend work |
+| either field passed to the exported permission mapper | reject before returning a provider mapping |
+| direct compatibility-wrapper prompt `tools` value | reject before session creation, update, subscription, or prompt |
+| both option fields omitted and no direct wrapper value | send no prompt `tools` data, preserving OpenCode's native available-tool surface |
+
 OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
 control: the provider converts its booleans into persistent session permission
 rules, replacing prior session rules [[5]].
@@ -439,104 +436,364 @@ rules, an enabled tool can override a native or explicitly supplied deny, and a
 prompt-scoped request can change a resumed session after that cligent call ends
 [[6]][[7]].
 The provider also canonicalizes some tool identifiers to shared permission
-names, so this surface cannot guarantee
-[[engine-17](../engine.md#engine-17)]'s exact identifier semantics [[6]].
-When both options are omitted, the adapter shall send no prompt `tools` data
-and preserve OpenCode's native available-tool surface.
+names, so this surface cannot guarantee exact per-call identifiers [[6]].
+
+### opencode-44
+
+When `run()` prepares the compatibility-wrapper request and native prompt, the
+adapter shall map ordinary options through this matrix:
+
+| Portable input | OpenCode request |
+| --- | --- |
+| prompt | one native text part with the exact string and no caller-supplied message identifier, because OpenCode mints the identifier and a foreign one leaves the session busy without a terminal [[14]] |
+| non-empty `cwd` | wrapper `cwd` and the version-specific request placement in [[opencode-41](#opencode-41)]; omit provider directory data for absent or empty `cwd` |
+| any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
+| non-empty model without `/` | pass through unchanged |
+| absent or empty model | omit the native model |
+| `maxTurns`, including zero | prompt `steps` with the exact value |
+| omitted `maxTurns` | omit `steps` |
+| any `maxBudgetUsd` | no OpenCode request member because this runtime has no corresponding control |
+| non-empty resume | select the existing session rather than create one |
+| permission, effort, or tool-list input | the outcomes in [[opencode-7](#opencode-7)], [[opencode-12](#opencode-12)], [[opencode-14](#opencode-14)], and [[opencode-15](#opencode-15)] |
 
 ### Token Accounting
 
 ### opencode-21
 
-The adapter shall submit the prompt without a message identifier, because OpenCode mints them itself [[14]] and a supplied foreign identifier leaves the session busy with no terminal event.
-It shall instead resolve the invocation's canonical prompt identifier from its own event stream, and shall construct the current invocation's causal task tree from assistant `parentID` links [[15]] and task-part child-session metadata.
-A resumed root session is not exclusively the invocation's: another caller may drive it concurrently, and a background task started earlier injects its result as a fresh prompt into that same session [[16]].
-Stream position therefore cannot identify this invocation's prompt.
-The adapter shall establish the event stream before dispatching the prompt, because the stream carries no replay and an event published before it is live is lost, including the invocation's own prompt.
-Waiting for the stream shall be bounded, so a server that announces no connection cannot stall the dispatch that would provoke its first event.
-No event published after that subscription, including the first event received while establishing it, shall be dropped from the run's normal processing.
-The adapter shall resolve the boundary from the root-session message carrying the prompt text it submitted.
-A message observed to be an assistant's shall not resolve the boundary however exactly its text repeats the prompt, while a message whose role was never observed shall remain eligible.
-Where the submitted text still identifies more than one root-session message, the boundary shall be unproven, because guessing between them is what proving it is for.
-Within [[opencode-6](#opencode-6)]'s single-writer constraint, ordering may stand in for that proof only where the invocation created the root session.
-Such a run, including one whose resume value is absent or empty, may fall back to the first root-session sighting — a user message, or the identifier a root assistant names as its `parentID` — that it does not recognize as a background result.
-A run carrying a non-empty resume value shall not fall back.
-Where no boundary is resolved, no step is causal, so the adapter shall omit the token report per [[engine-31](../engine.md#engine-31)] rather than attribute across an unproven boundary or publish fabricated totals.
-It shall collect canonical step-finish accounting for the root and those causal descendants before applying [[opencode-6](#opencode-6)]'s root-only conversation filter; foreign, merely pre-existing, and unscoped session activity shall not enter the ledger.
-Each step shall be keyed by native session and part identifier, an identical repeat shall count once, and a changed snapshot shall replace the earlier value rather than add to it.
-Removing a completed part shall not erase its billed request from the invocation ledger.
+When terminal `done` reports authentic OpenCode usage, the adapter shall build
+the public [[engine-31](../engine.md#engine-31)] shape from
+[[opencode-45](#opencode-45)] through [[opencode-51](#opencode-51)] through this
+matrix:
 
-For a fresh root session, the adapter shall set and verify a static, non-sensitive, non-default title so OpenCode skips its otherwise unobservable title-model request.
-For a resumed root, it shall preserve a meaningful title and shall retitle and verify only a default title; inability to prove that title inference is suppressed shall make exact observed accounting partial [[9]].
-Before prompt dispatch, the compatibility wrapper shall query the live server's canonical global-health endpoint and shall permit complete accounting only when it reports healthy at the exact `1.18.13` conformance version.
-A missing route, failed or timed-out query, malformed response, unhealthy server, or different version shall not block the run, but shall make exact observed accounting partial because the hidden-request boundaries were verified only for that server version [[13]].
-Canonical automatic compaction, its summary, and a synthetic continuation carrying `metadata.compaction_continue: true` may extend the causal ledger only from their immediate causal message boundary.
-Repeated internal-prompt snapshots shall preserve their first canonical kind, message, and child identity and every observed overflow or error signal; conflicting identity evidence shall retain only the original exact subset and shall make coverage partial.
-An overflow replay, an unmarked or unlinked internal prompt, a post-activation assistant step with an unproved parent, and a causal prompt without a linked assistant shall remain excluded and shall make exact observed accounting partial [[10]].
-The exact command-task continuation may extend causality from its immediately preceding causal task part even though that programmatic assistant has no model step.
-A task that names an existing `task_id` shall make coverage partial and its child records shall remain excluded because the reused session's subsequent user messages carry no native link back to that task invocation.
-A repeated task-part snapshot shall preserve its first canonical parent identity and may enrich a missing child identity once; a conflicting non-empty parent or child identity shall retain only the original exact subset and shall make coverage partial.
-A synthetic background-result prompt may extend causality only once for the matching causal background child; a missing child identity, unmatched or error result, or child idle preceding its latest causal observation shall make coverage partial [[11]].
-A retry status whose immediately preceding assistant is causal, or whose request cannot be correlated, shall make coverage partial because OpenCode exposes no accounting for the failed model attempt; a retry tied to an explicit foreign assistant shall remain excluded [[12]].
+| Ledger state | Report |
+| --- | --- |
+| no proven prompt boundary or no authentic valid step | omit `tokens` rather than attribute across an unproved boundary or publish placeholders |
+| at least one exact valid causal step, but any causal step is malformed or ambiguous, hidden-request suppression is unproved, or a causal descendant remains active | `tokens.coverage: 'partial'` with the exact valid subset |
+| every causal step is canonical and valid, hidden-request boundaries are proved, and every causal descendant is settled | `tokens.coverage: 'complete'` |
+| each valid canonical step | one record with `requests: 1`, inclusive input and output totals, `uncached`, `cacheRead`, `cacheWrite`, `visible`, and `reasoning` details, owning-message provider/model when known, and its finite non-negative cost as USD `agent-estimate` when present [[8]] |
+| generic idle usage aliases | ignore because the idle event is not an authenticated accounting source |
+| complete coverage and every causal step has a valid cost, including measured zero | whole-run USD `agent-estimate` cost equal to the step sum |
+| incomplete coverage or any causal step lacks a valid cost | omit whole-run cost independently of exact token records |
 
-Each valid step shall yield one `requests: 1` record carrying inclusive input and output totals, uncached, cache-read, cache-write, visible-output, and reasoning details, the owning message's provider and model where known, and the step's non-negative cost as `agent-estimate` where present.
-The report shall have complete coverage only when every causal step is canonical and valid and no causal descendant remains active at root completion; otherwise exact observed steps may be reported with partial coverage, while malformed or ambiguous accounting shall never be promoted to complete.
-OpenCode's generic idle event supplies no authoritative usage object, so the adapter shall not substitute alias-shaped idle counters for the step ledger.
-The whole-run cost shall be present only when coverage is complete and every causal step reports a valid cost, including measured zero, and shall be labeled `agent-estimate` rather than billed cost [[8]].
+### Permission Transport
+
+### opencode-32
+
+When the private provider-default permission-reset sentinel reaches the
+compatibility wrapper, it shall clear prior session controls through this
+matrix without exposing the sentinel to the SDK:
+
+| SDK path | Reset placement |
+| --- | --- |
+| legacy fresh or resumed session | an empty `permission` object on the prompt |
+| v2 fresh session | an empty `PermissionRuleset` on `session.create` |
+| v2 resumed session | an empty `PermissionRuleset` on `session.update` before the prompt |
+
+## Internal Behavior
+
+### opencode-33
+
+When the compatibility wrapper delivers the mapping from
+[[opencode-7](#opencode-7)], it shall select this version-specific SDK surface:
+
+| Mapping and SDK path | Delivery |
+| --- | --- |
+| absent policy | no creation, update, or prompt permission member per [[opencode-13](#opencode-13)] |
+| legacy path with a supplied policy | permission object on the prompt, not session creation |
+| v2 fresh session with a supplied policy | equivalent wildcard-pattern `PermissionRuleset` entries on `session.create`, not the prompt |
+| v2 resumed session with a supplied policy | equivalent entries on `session.update` before prompting, not the prompt |
+| private reset sentinel | the empty surfaces in [[opencode-32](#opencode-32)] |
+
+### opencode-34
+
+Before prompting a resumed root, the wrapper shall recursively discover the
+pre-existing descendant session tree through the version-correct
+`session.children` route under one whole-traversal deadline, extend ownership
+from ordered create/update lifecycle events, remove deleted descendants, and
+fail before prompt dispatch when discovery is unavailable, returns a non-array,
+fails, is aborted, or runs out of time, while silently ignoring array entries
+without a non-empty child `id`.
+
+### opencode-35
+
+While the adapter awaits SSE or a permission response, it shall use one
+run-owned abort signal and bounded correlation state so a missing, failed,
+five-second timed-out, or caller-aborted reply cancels response and stream I/O,
+closes the iterator during bounded terminal cleanup, releases the caller listener,
+and leaves retained wait-control and correlation state bounded independently of
+the number of completed events and permission responses.
+
+### Managed Resource Ownership
+
+### opencode-36
+
+After any managed terminal path, the adapter shall perform teardown in this
+order: request child `SIGTERM`; independently bound iterator return, client
+close, and client shutdown even when an earlier phase rejects; after a bounded
+grace send `SIGKILL` if the child remains alive; and bound the final close wait.
+
+### opencode-37
+
+While awaiting OpenCode's global SSE stream, the adapter shall carry
+[[opencode-18](#opencode-18)]'s deadline as a monotonic active-wait budget
+through this matrix:
+
+| Activity | Budget effect |
+| --- | --- |
+| current root or run-owned descendant event | reset to the configured deadline, even though ordinary descendant conversation remains filtered by [[opencode-6](#opencode-6)] |
+| unrelated tagged event or untagged global pass-through event | no reset |
+| event normalization or downstream suspension at a yield | no consumption |
+| buffered relevant event ready when the consumer resumes | process before recovery |
+| always-ready non-relevant backlog | continue consuming the carried active-wait budget |
+| delay above the host timer maximum | split into safe chunks without early expiry |
+
+### opencode-40
+
+When caller abort occurs during SDK session creation or prompt dispatch, the
+adapter shall propagate cancellation through supported request surfaces, bound
+the race wait, capture any concurrently returned session and iterator, abort
+the known session, return every eager iterator opened before dispatch, remove
+the dispatch listener on every exit, and preserve a backend identifier created
+before the abort as [[opencode-11](#opencode-11)]'s interrupted resume token.
+
+### opencode-41
+
+When a compatibility-wrapper operation carries a non-empty run working
+directory, it shall place that directory through this SDK-version matrix:
+
+| Operation | Legacy SDK | v2 SDK |
+| --- | --- | --- |
+| session create, get, update, children, prompt, status, or abort | top-level `query.directory`, never the request body | top-level `directory` |
+| event subscription | top-level `query.directory` | top-level `directory` |
+| instance disposal | `query.directory` | `directory` |
+
+### opencode-42
+
+After every terminal or failed-dispatch path, the adapter shall abort and
+return the active iterator, make independently bounded client close, shutdown,
+and instance-disposal attempts despite earlier rejection, remove run and
+dispatch abort listeners, release content and permission correlation state,
+and then complete [[opencode-36](#opencode-36)] for an owned managed child.
+
+### opencode-43
+
+When caller interruption or non-idle inactivity occurs after a backend session
+is known, the adapter shall start one bounded session-abort attempt, retain it
+through post-terminal cleanup without delaying interrupted `done` beyond the
+engine abort-drain window, begin managed process termination only after that
+terminal, and leave an external caller-owned server running.
+
+### Causal Accounting
+
+### opencode-45
+
+Before dispatching the prompt, the compatibility wrapper shall subscribe to
+the live non-replaying event stream, eagerly request its first event, wait only
+within a bounded connection grace, and transfer that first result plus the
+remaining iterator without dropping any event published after subscription.
+
+### opencode-46
+
+When selecting the invocation's causal prompt boundary, the adapter shall apply
+this matrix under [[opencode-6](#opencode-6)]'s single-writer constraint [[14]][[15]][[16]]:
+
+| Evidence | Boundary outcome |
+| --- | --- |
+| unique root-session user message carrying the exact submitted text | its native message identifier |
+| message known to be assistant, even with identical text | ineligible |
+| message whose role was never observed | eligible |
+| multiple matching eligible root messages | unproved rather than guessed |
+| invocation created the root session, including absent or empty resume | if text proof is unavailable, first non-background root user sighting or identifier named as a root assistant's `parentID` |
+| non-empty inbound resume | no ordering fallback |
+| synthetic background result | never the invocation boundary |
+
+### opencode-47
+
+After [[opencode-46](#opencode-46)] proves a boundary, the adapter shall build
+the invocation ledger through this matrix before applying
+[[opencode-6](#opencode-6)]'s root-only conversation filter:
+
+| Step state | Ledger effect |
+| --- | --- |
+| canonical step-finish in the root or causally linked owned descendant | key by native session and part identifier |
+| identical keyed repeat | count once |
+| changed keyed snapshot | replace rather than add |
+| removal after completion | retain the billed request |
+| foreign, merely pre-existing, unscoped, or not causally linked activity | exclude |
+| tagged owned step missing canonical session, part, or owning-message identity, or whose owning message belongs to another session | exclude and make exact coverage partial |
+| wholly untagged step | exclude as unscoped without itself making coverage partial |
+
+### opencode-48
+
+Before prompt dispatch, the wrapper shall suppress OpenCode's hidden title-model
+request through this matrix, making exact observed accounting partial whenever
+suppression cannot be proved [[9]]:
+
+| Root state | Action |
+| --- | --- |
+| fresh | create with a static non-sensitive non-default title and verify the returned title |
+| resumed with a non-default title, including empty, or a parent session | preserve it |
+| resumed with a recognized default title | retitle to the static value and verify the returned title |
+| missing required get route, missing update route for a default title, failed or malformed required operation, or unverified changed title | continue the run with partial accounting |
+
+### opencode-49
+
+Before prompt dispatch, the wrapper shall query the canonical global-health
+route and permit complete accounting only for a healthy response naming exact
+OpenCode version `1.18.13`, while a missing route, failure, timeout, malformed or
+unhealthy response, or other version leaves the run unblocked with partial
+accounting [[13]].
+
+### opencode-50
+
+When compaction or retry evidence enters the causal ledger, the adapter shall
+classify it through this matrix [[10]][[12]]:
+
+| Evidence | Accounting effect |
+| --- | --- |
+| canonical automatic compaction, summary, and `metadata.compaction_continue: true` continuation | extend only from the immediate causal message boundary |
+| repeated internal-prompt snapshot | preserve first canonical kind, message, and child identity plus every overflow or error signal |
+| conflicting identity or evidence that later appears less severe | retain the original exact subset and make coverage partial |
+| overflow replay, unmarked or unlinked internal prompt, post-activation assistant with unproved parent, or causal prompt without a linked assistant | exclude and make coverage partial |
+| retry after a causal assistant or with uncorrelatable request | make coverage partial because the failed model attempt has no accounting |
+| retry tied to an explicit foreign assistant | exclude without attributing it to the run |
+
+### opencode-51
+
+When task and background continuation evidence enters the causal ledger, the
+adapter shall classify it through this matrix [[11]]:
+
+| Evidence | Accounting effect |
+| --- | --- |
+| exact command-task continuation immediately after a causal task part | extend causality without inventing a model step for its programmatic assistant |
+| task naming an existing `task_id` | retain exact parent records as partial and exclude later ambiguous child prompts and steps |
+| repeated task-part snapshot | preserve first parent identity, enrich a missing child identity once, and treat conflicting non-empty parent or child identity as partial with only the original exact subset |
+| synthetic successful background-result prompt matched to one causal child | extend causality once |
+| missing child identity, unmatched or error background result, or child idle before its latest causal observation | retain exact subset as partial |
+| causal descendant still active at root completion | retain exact subset as partial |
 
 ## Verification
 
 ### opencode-201
 
-Given canned native OpenCode SSE events, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[opencode-5](#opencode-5)].
+Given a canned wrapper result and native OpenCode SSE sequence, when the adapter
+runs, the yielded stream shall match this integration matrix:
+
+| Fixture | Assertion |
+| --- | --- |
+| wrapper model, cwd, and string/object-name tools | first event is [[opencode-24](#opencode-24)] `init` with requested model priority, wrapper cwd, normalized tools, configured mode, and known SDK tool capabilities |
+| foreign identified event followed by local and untagged events | [[opencode-6](#opencode-6)] filtering and pass-through |
+| text, delta, thinking, file, and image parts | exact [[opencode-5](#opencode-5)] event types and payloads |
+| stateless tool part | [[opencode-16](#opencode-16)] selected identity, name, and input |
+| permission ask and rejected reply | [[opencode-20](#opencode-20)] request followed by [[opencode-16](#opencode-16)] denied result with correlation intact |
+| generic recoverable error | [[opencode-27](#opencode-27)] code, message, and recoverability |
+| idle with `max_turns`, generic usage aliases, and `duration_ms` | [[opencode-26](#opencode-26)] max-turn terminal and duration, ignoring unauthenticated usage aliases while preserving observed tool count [[opencode-21](#opencode-21)] |
+| setup or stream throws an `Error`, a non-`Error`, or after caller abort | [[opencode-24](#opencode-24)] init-first fallback and every [[opencode-28](#opencode-28)] error/interrupted terminal row |
+| iterator exhausts before idle, with and without caller abort | both [[opencode-29](#opencode-29)] terminal rows |
 
 ### opencode-202
 
-Where the OpenCode SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[opencode-2](#opencode-2)], and in managed mode `isAvailable()` shall return `true` only once the `opencode` CLI probe also passes [[opencode-3](#opencode-3)].
+Given injected and physical runtime layouts, when availability or `run()` is
+entered, the adapter shall satisfy this runtime matrix:
+
+| Case | Assertion |
+| --- | --- |
+| physically absent SDK | module import succeeds [[opencode-2](#opencode-2)], `isAvailable()` is false [[opencode-3](#opencode-3)], and `run()` throws [[opencode-22](#opencode-22)] |
+| external mode with loadable SDK | availability is true without a CLI probe |
+| managed mode with loadable SDK | availability is true only after `opencode --version` succeeds within 5,000 ms at or above the [[opencode-3](#opencode-3)] floor |
+| managed mode with unreadable CLI version | availability is true under the fail-open runtime rule |
+| managed mode with missing, nonzero, timed-out, or readable below-floor CLI | availability is false |
+| managed `run()` with below-floor CLI after SDK load | refusal occurs before server spawn with [[opencode-23](#opencode-23)] diagnostic |
 
 ### opencode-203
 
-Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, known-provider prompt variants shall be selected, while a representative unmatched model shall create no effort override and preserve ordinary model forwarding [[opencode-12](#opencode-12)].
+Where application configurations select representative efforts for this
+adapter, when the runtime constructs and invokes each corresponding `Cligent`,
+the integration check shall assert [[opencode-12](#opencode-12)]'s known-provider
+prompt variants and an unmatched provider's absent effort override with
+ordinary model forwarding.
+
+### opencode-52
+
+Given fresh and resumed wrapper calls over every supported SDK path, when
+ordinary `AgentOptions` are mapped, the captured native requests shall assert
+[[opencode-44](#opencode-44)]'s exact prompt without a caller-supplied message
+identifier, model, cwd, zero and nonzero `maxTurns`, omitted `maxTurns`, ignored
+`maxBudgetUsd`, and session-selection rows, including `steps` on both legacy and
+v2 prompt bodies.
 
 ### opencode-204
 
-Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[opencode-7](#opencode-7)].
+Given the complete [DR-005](../../decisions/005-per-adapter-permission-configuration.md)
+input space, when permission mapping runs directly and through the adapter, the
+checks shall assert every [[opencode-7](#opencode-7)] row: missing policy,
+supplied empty and partial no-mode policies, all capability-level combinations,
+capability-empty and capability-populated auto without a wildcard, bypass
+rejection directly plus after SDK load but before any managed spawn or SDK
+client/session/prompt work, and invalid writable-path validation before bypass
+mapping.
 
 ### opencode-208
 
-The OpenCode adapter shall filter events by `sessionId`, pass through events with no session or thread identifier per [[opencode-6](#opencode-6)], emit `opencode:file_part` and `opencode:image_part` extension events [[opencode-5](#opencode-5)], manage the server lifecycle in managed mode [[opencode-8](#opencode-8)], and yield `error` (`code: 'OPENCODE_SERVER_EXIT'`) followed by `done` (`status: 'error'`) on server crash [[opencode-10](#opencode-10)].
-Where the managed server remains running, teardown shall send `SIGTERM` before
-invoking SDK disposal and shall complete within a bounded interval when
-iterator return, client close, and client shutdown all remain pending [[opencode-9](#opencode-9)].
-If the server ignores `SIGTERM`, teardown shall send `SIGKILL` after a bounded
-grace and shall bound the final close wait.
+Given local, foreign, descendant, and untagged canonical events, when the
+adapter consumes the multiplexed stream, it shall assert [[opencode-6](#opencode-6)]
+visibility and the `opencode:file_part` / `opencode:image_part` extension rows
+of [[opencode-5](#opencode-5)].
+
+### opencode-53
+
+Given injected managed and external server seams, when runs start, terminate,
+abort, crash, or encounter stuck cleanup, the checks shall cover this lifecycle
+matrix:
+
+| Case | Assertion |
+| --- | --- |
+| managed startup | exact `opencode serve --hostname <host> --port <port>`, cwd, readiness wait, and discovered URL before client creation [[opencode-4](#opencode-4)], [[opencode-8](#opencode-8)] |
+| external startup | no child spawn and caller URL used [[opencode-4](#opencode-4)] |
+| ordinary managed teardown | `SIGTERM` before bounded SDK cleanup [[opencode-36](#opencode-36)] |
+| caller abort | interrupted `done` before managed `SIGTERM` [[opencode-9](#opencode-9)] |
+| caller abort during SDK loading, managed readiness, or a stream wait | preempt the active wait and preserve [[opencode-9](#opencode-9)] terminal-before-signal order |
+| managed child crash before or after readiness | `OPENCODE_SERVER_EXIT`, then error `done`, then cleanup [[opencode-10](#opencode-10)] |
+| non-settling iterator/client cleanup | generator and managed termination remain bounded [[opencode-36](#opencode-36)] |
+| child ignores `SIGTERM` | `SIGKILL` after bounded grace and bounded final close [[opencode-36](#opencode-36)] |
 
 ### opencode-212
 
-The OpenCode adapter shall set `DonePayload.resumeToken` to the session identifier per [[opencode-11](#opencode-11)].
-Given a caller-supplied resume identifier that OpenCode rejects during
-pre-prompt lineage discovery, the error `done` shall omit `resumeToken`, and a
-subsequent `Cligent.run()` shall create a fresh session rather than retrying the
-stale identifier.
+Given backend identity aliases, inbound resumes, and terminal paths, when the
+adapter emits unified events and `done`, the checks shall cover this matrix:
+
+| Case | Assertion |
+| --- | --- |
+| wrapper result alias in [[opencode-25](#opencode-25)] | selected backend identifier becomes event identity and normal resume token [[opencode-11](#opencode-11)] |
+| stream explicit alias | filtering uses it without treating generic message `id` as a session |
+| interrupted before backend identity | non-empty inbound resume or omission according to [[opencode-11](#opencode-11)] |
+| rejected resumed lineage before prompt | error `done` omits resume; a following `Cligent.run()` creates fresh rather than retrying stale state |
 
 ### opencode-218
 
-Where each portable effort value is supplied, when the adapter maps a run, the observable provider control shall be the documented top-level prompt `variant` selected by provider [[opencode-12](#opencode-12)]:
-
-- when effort is omitted, the adapter shall set no variant override [[opencode-14](#opencode-14)];
-- where the supplied value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before prompting the session with an error naming the adapter and its allowed values [[opencode-14](#opencode-14)].
+Given every portable effort, omission, another adapter's native value, and an
+arbitrary unknown string, when the adapter maps a run, the checks shall assert
+[[opencode-12](#opencode-12)]'s provider variant matrix, unmatched-provider and
+model-less omission, and [[opencode-14](#opencode-14)]'s default-preserving and
+metadata-backed rejection rows before prompt dispatch.
 
 ### opencode-219
 
 Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the adapter's auto-mode permission knobs per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) shall let both non-destructive writes proceed without interactive approval [[opencode-7](#opencode-7)]:
 
-- the file shall exist with the expected contents after each phase;
-- neither stream shall contain `permission_request`, a denied tool result, or an error;
-- each stream shall terminate with successful `done`;
-- filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
-- the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip when the `opencode` CLI the adapter spawns for its managed server is absent from `PATH` or the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- where the host cannot initialize the adapter's OS-level sandbox, the leg shall self-skip with a logged reason, including under `CI`.
+- expected file contents after both phases;
+- no `permission_request`, denied result, or error, and one successful `done`
+  per stream;
+- filesystem state as ground truth because adapters normalize file edits
+  differently;
+- at most two complete fresh retries, only after explicit upstream overload,
+  rate-limit, or service-unavailable failure, with every other failure and the
+  third consecutive named transient fatal;
+- the real installed dev-dependency SDK, never an SDK-absence skip;
+- a logged self-skip outside CI, and a hard failure in CI, for missing PATH CLI
+  or credentials, without one adapter's missing dependency skipping another;
+- a logged self-skip, including in CI, when the host cannot initialize the
+  adapter's OS sandbox.
 
 ### opencode-220
 
@@ -550,22 +807,22 @@ Given the adapter has been aborted, when the run yields terminal `done` with `st
 
 ### opencode-222
 
-Given a `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing OpenCode permission mapping [[opencode-7](#opencode-7)].
-
-### opencode-226
-
-Where an effort value is valid for the adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort [[opencode-12](#opencode-12)].
+Given absent, empty, valid, and invalid `PermissionPolicy.writablePaths`, when
+permission mapping runs without another filesystem grant surface, the checks
+shall assert [[opencode-31](#opencode-31)]'s omission, canonical ambient report,
+unchanged OpenCode rules, and validation-rejection rows.
 
 ### opencode-227
 
-Where no `PermissionPolicy` is supplied, when OpenCode starts fresh and resumed
-runs through each supported SDK path, fresh-session creation and prompt calls
-shall omit permission data and a resumed run shall issue no permission-bearing
-session update [[opencode-13](#opencode-13)].
-Prompt calls shall also omit tool-list data when both tool-list
-options are absent [[opencode-15](#opencode-15)].
-Where an empty policy is supplied instead, fresh and
-resumed runs shall carry `ask` rules for `edit`, `bash`, and `webfetch` [[opencode-7](#opencode-7)].
+Given fresh and resumed calls over every supported SDK path, when permission
+and tool controls vary, the checks shall assert this delivery matrix:
+
+| Input | Assertion |
+| --- | --- |
+| absent policy | no permission data in create, update, or prompt [[opencode-13](#opencode-13)], [[opencode-33](#opencode-33)] |
+| explicit empty policy | `ask` controls for edit, bash, and webfetch, routed through [[opencode-33](#opencode-33)] |
+| private reset sentinel | the empty legacy and v2 reset surfaces in [[opencode-32](#opencode-32)] |
+| both tool-list fields absent | no prompt tool data [[opencode-15](#opencode-15)] |
 
 ### opencode-228
 
@@ -575,279 +832,179 @@ Where the exact OpenCode CLI conformance target is installed, when its
 
 ### opencode-229
 
-Where either tool-list field is explicitly provided, including an empty array and including alongside a portable permission rule such as `shellExecute: 'deny'`, when the adapter runs, it shall reject before its SDK loader, compatibility wrapper, session creation, subscription, or backend prompt is invoked [[opencode-15](#opencode-15)]:
-
-- direct permission-mapper calls with either field present shall reject by the same contract;
-- the diagnostic shall explain that OpenCode 1.18.13 merges prompt `tools` into persistent session permission rules, which can override native or explicit denies and cannot provide exact per-call tool availability.
+Given each explicitly present tool-list field, including empty arrays and a list
+beside a portable deny, when every public mapping surface is invoked, the
+checks shall assert [[opencode-15](#opencode-15)]'s adapter pre-loader, direct
+mapper, and wrapper pre-operation rejection rows plus a diagnostic explaining
+OpenCode 1.18.13's persistent permission-rule replacement and lack of exact
+per-call tool availability.
 
 ### opencode-231
 
-Given canonical OpenCode tool-part snapshot sequences whose `part.id` differs
-from `part.callID` — pending through repeated running to `completed`, and
-pending through running to `error` — the adapter shall emit exactly one
-`tool_use`/`tool_result` pair per `callID`, correlated by `callID`, preserving
-`state.input`, the terminal `state.output` or `state.error`, and the
-state-supplied duration, and shall count each call once in
-`done.usage.toolUses` [[opencode-16](#opencode-16)].
-Given a terminal snapshot with no earlier snapshots for
-its `callID`, the adapter shall still emit the correlated pair.
-Given
-interleaved snapshots for distinct `callID`s, each pair shall stay isolated per
-call.
-Given a rejected permission reply that resolves to a `callID` followed by
-terminal tool-state updates for that call, the adapter shall emit exactly one
-terminal `tool_result`, carrying the call's tool name where the permission
-request named only the permission it gates.
-Given a rejected reply that
-resolves to a call whose terminal result was already emitted, no denied
-`tool_result` shall follow.
-Given repeated terminal snapshots, no event or
-usage count shall duplicate [[opencode-5](#opencode-5)].
+Given canonical, compatibility, malformed, repeated, interleaved, and
+permission-denied tool inputs, when the adapter normalizes them, the checks
+shall exhaust [[opencode-16](#opencode-16)]'s identifier, name, input,
+description, lifecycle, output, duration, de-duplication, count,
+pre-terminal-denial, and post-terminal-denial matrix, including distinct `part.id` and
+`part.callID` plus terminal snapshots with no predecessor.
 
 ### opencode-232
 
 Where OpenCode acceptance dependencies are present per [[opencode-219](#opencode-219)]'s gating,
 when a real managed-mode OpenCode run with auto-approved permissions is
 prompted to create a file through its tools and the file exists with the
-expected content afterwards, the collected stream shall contain no two
-`tool_use` events sharing a `toolUseId`, at least one `tool_use` carrying
-non-empty `input`, exactly one terminal `tool_result` for each emitted
-`tool_use` `toolUseId` and none for any other id, no `permission_request` or
-denied `tool_result`, and a successful `done` whose `usage.toolUses` equals
-the `tool_use` count [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)].
-The probe shall retry only on the explicit transient
-upstream failures named in [[opencode-219](#opencode-219)], with the same attempt
-bound.
-A failed attempt whose failures all match those markers shall retry
-into a fresh throwaway directory even when the file was already created,
-because the failure can arrive after the tool ran; an attempt reaching a
-successful `done` shall never classify as transient, because its `result`
-text is model-authored and capacity language there is not a failure.
-An attempt that witnessed an invariant violation — a `permission_request`,
-a denied `tool_result`, a duplicated `tool_use` or `tool_result` id, or a
-`tool_result` whose id no `tool_use` announced — shall never classify as
-transient even
-alongside matching failure text, so a retried clean attempt cannot mask the
-violation; an errored `tool_result` and a `tool_use` stranded without its
-result shall not preclude retry, because a model-level command failure and
-a transiently truncated attempt each produce them without any adapter
-defect.
-This item is the real-run counterpart to [[opencode-231](#opencode-231)]'s
-canned-event lifecycle check: the canned fixtures encode the wire schema this
-release was written against, so only a live run can catch a later OpenCode
-release changing the `ToolPart` lifecycle shape the way the pre-1.18
-normalization drifted.
+expected content afterwards, the collected stream shall satisfy this real-wire
+contract [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)]:
+
+- unique `tool_use.toolUseId` values, at least one non-empty use input, exactly
+  one terminal result per announced identifier, and no result for any other
+  identifier;
+- no permission request or denied result, and one successful `done` whose tool
+  count equals the use count;
+- the retry markers and attempt bound from [[opencode-219](#opencode-219)], with
+  every retry using a fresh directory even if an earlier failed attempt wrote
+  the file;
+- no transient classification after successful `done` or after an invariant
+  violation, even beside matching capacity text;
+- an errored result or a use stranded by a truncated attempt remains eligible
+  for a named transient retry.
+
+This is [[opencode-231](#opencode-231)]'s real-release counterpart because only
+the live SDK can expose a changed `ToolPart` wire shape.
 
 ### opencode-233
 
 _Superseded for usage shape by [[opencode-240](#opencode-240)]._
 
-Given the adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'` and its canonical step-finish visible output and disjoint reasoning counters shall be summed exactly once [[opencode-5](#opencode-5)]:
+Given complete, incomplete, malformed, absent, and synthetic terminal
+accounting, when the adapter emits the superseded usage shape, it shall select
+this legacy matrix [[opencode-30](#opencode-30)]:
 
-- its input count shall fold cache-read and cache-write counters into a cache-exclusive base exactly once;
-- given a required token or cache counter is absent, or any present mapped counter is negative, fractional, non-finite, or non-numeric, `usage.tokenAvailability` shall be `'unavailable'`, an absent optional cache counter alone retaining zero contribution without invalidating otherwise complete accounting;
-- given upstream omits complete token accounting, or the adapter synthesizes an errored, interrupted, exhausted, or other terminal path, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced;
-- where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
+| Input | Legacy assertion |
+| --- | --- |
+| complete finite non-negative integer counters, including zero | `'reported'`; input folds cache read/write into the cache-exclusive base once and output adds disjoint reasoning once |
+| absent required counter or negative, fractional, non-finite, or non-numeric present mapped counter | `'unavailable'`, while an absent optional cache counter contributes zero without invalidation |
+| absent complete accounting or synthesized error, interruption, exhaustion, or other terminal | `'unavailable'` without an estimate |
+| independently observed or valid provider-reported tool calls on any row | preserve the greatest known count |
 
 ### opencode-234
 
-Given canonical user and assistant message envelopes and conversational part
-events, when role metadata arrives both before and after its parts, the adapter
-shall emit only assistant `text`, `text_delta`, and `thinking` events [[opencode-5](#opencode-5)], [[opencode-17](#opencode-17)], preserve
-their stream order across interleaved message identifiers even where a later
-role resolves first, and emit no user content.
-An assistant reply byte-equal
-to the submitted prompt shall still be emitted.
-Content with a message
-identifier whose role never resolves shall not be emitted, shall not prevent
-later known assistant content from flushing before terminal `done`, and legacy
-content without a message identifier shall preserve its prior normalization.
-Removing a message with held content shall discard that content and unblock
-later events without waiting for terminal completion.
-Role metadata from a
-foreign session shall not resolve current-session content [[opencode-6](#opencode-6)].
+Given canonical and legacy content whose role metadata precedes, follows, never
+reaches, or is removed from interleaved parts, when normalization runs, the
+checks shall exhaust [[opencode-17](#opencode-17)]'s assistant/user selection,
+byte-equal assistant reply, ordering gate, unresolved-terminal flush, legacy
+unidentified content, removal release, retained-payload cleanup, and
+foreign-session isolation rows, with event types from [[opencode-5](#opencode-5)]
+and filtering from [[opencode-6](#opencode-6)].
 
 ### opencode-235
 
-Given short injected inactivity deadlines and canned OpenCode streams, when a
-current session becomes permanently silent, the adapter shall query its status
-and terminate within a bounded interval: idle shall produce one recoverable
-idle-recovery diagnostic and one successful `done`; busy and retry shall each
-abort the session and produce one non-recoverable timeout diagnostic plus one
-error `done`; an omitted status-map entry shall exercise OpenCode's idle
-representation; and a rejected or non-settling status query
-shall make a bounded abort attempt and produce one status-query diagnostic plus
-one error `done` [[opencode-18](#opencode-18)].
-Given root-session or run-owned descendant progress events whose spacing stays
-below the deadline, the adapter shall not query status.
-Descendant lifecycle,
-conversation, and permission events shall each restart the deadline while
-ordinary descendant output remains filtered and permission control retains its
-native descendant-session routing [[opencode-6](#opencode-6)].
-Repeated events explicitly tagged for
-another session and repeated untagged workspace-global events shall not
-postpone the current session's deadline.
-When a consumer pauses after a
-normalized event for longer than the configured deadline, that downstream
-backpressure shall not consume the provider-silence budget, and a buffered
-current-session terminal event shall complete without status recovery.
-An
-always-ready non-relevant backlog shall still expire.
-Given pending iterators that do and do not honor `AbortSignal`, external and
-managed runs shall return the iterator, close the client, initiate active
-session cancellation where required, terminate only the managed server [[opencode-8](#opencode-8)], [[opencode-9](#opencode-9)], and
-emit exactly one
-terminal event when caller abort and inactivity race.
-Deterministic race probes
-shall cover an already-ready terminal event and abort during prompt dispatch;
-the latter shall abort the already-created external session.
-The legacy SDK
-probe shall put the same working directory in the top-level `query.directory`
-of create and prompt calls and omit it from the prompt body.
-A caller abort
-shall start active-session cancellation before delivering an adapter-emitted
-interrupted `done` within the engine drain window, retain the backend resume
-token, and complete bounded cancellation cleanup afterwards; managed
-`SIGTERM` shall still follow `done`.
-A deadline above the host timer maximum shall
-remain pending until real relevant activity, and an owned managed child that
-ignores `SIGTERM` shall receive `SIGKILL` after its grace.
-Prompt-dispatch abort and failure probes shall stop any event stream opened
-before dispatch settles, and a fresh backend session created before abort
-shall remain the interrupted resume token [[opencode-11](#opencode-11)].
-A run
-result settling concurrently with caller abort shall preserve its session
-identity, cancel its active work, and release its event stream before
-interrupted `done`.
-A rejected SDK cleanup operation shall not prevent the
-remaining cleanup operations or managed process termination.
-Legacy and v2
-instance-disposal requests shall carry the run directory through
-`query.directory` and `directory`, respectively.
+Given valid and invalid deadlines, canned streams, controllable clocks,
+pending operations, and injected managed/external resources, when liveness or
+caller abort is exercised, the checks shall exhaust this matrix:
+
+| Concern | Assertions |
+| --- | --- |
+| timeout configuration | [[opencode-18](#opencode-18)] default, positive override, and invalid values |
+| active-wait clock | every reset, no-reset, pause, buffered-event, backlog, monotonic, and host-delay-chunk row in [[opencode-37](#opencode-37)] |
+| status recovery | idle, omitted-map idle, busy, retry, other non-idle, failed query, non-settling query, bounded abort, diagnostic members, and terminal counts in [[opencode-38](#opencode-38)] |
+| race precedence | pending read, query, recovery, ready idle, and ready rejection races each produce only [[opencode-39](#opencode-39)]'s interrupted terminal |
+| dispatch abort/failure | cancellation, known-session abort, raced-result ownership, iterator return, listener cleanup, and resume continuity from [[opencode-40](#opencode-40)] |
+| directory scoping | every legacy and v2 request row of [[opencode-41](#opencode-41)] |
+| post-terminal cleanup | signal-honoring and ignoring iterators, independently failed phases, bounded client/disposal waits, and managed escalation in [[opencode-42](#opencode-42)] |
+| active-session interruption | pre-terminal abort start, bounded retained attempt, backend resume, managed-after-terminal ordering, and external-server preservation in [[opencode-43](#opencode-43)] |
+
+### opencode-54
+
 Where the OpenCode CLI and SDK are available, when a credential-free real
 managed server creates an idle session whose terminal SSE event is withheld,
 the short-deadline acceptance probe shall recover through the real
-`session.status` endpoint, dispose the SDK client, and observe the managed
-server process exit without a multi-minute wait.
+`session.status` endpoint, emit [[opencode-38](#opencode-38)]'s idle diagnostic
+and terminal, dispose the SDK client, and observe the managed server process
+exit without a multi-minute wait.
 
 ### opencode-236
 
-Given canonical v1 sibling-delta, v2 explicitly typed delta, and v2 generic
-delta events interleaving assistant text, assistant reasoning, and user text,
-the adapter shall reconstruct assistant output through `text_delta` without
-reasoning or user contamination [[opencode-5](#opencode-5)], [[opencode-19](#opencode-19)].
-Generic deltas shall classify correctly when
-part metadata arrives before or after them, while unresolved types shall not
-default to output or block later known content.
-Interleaved part identifiers
-shall preserve stream order when later metadata resolves first, and removing a
-part shall discard content still pending on either kind or role.
-Reasoning
-shall appear only through settled `thinking` snapshots, nonconsecutive
-duplicate settled snapshots shall emit once, and an exact settled replay of a
-part's `textID`-correlated deltas shall not duplicate the combined `text` plus
-`text_delta` reconstruction.
-An incident-scale interleaved delta stream shall
-preserve order and terminate within the test bound; after removing a message,
-none of its parts shall emit later content and later messages shall continue [[opencode-17](#opencode-17)].
+Given canonical v1 sibling, v2 typed, v2 generic, malformed, repeated,
+interleaved, removed, and incident-scale delta streams across assistant text,
+assistant reasoning, and user text, when normalization runs, the checks shall
+exhaust [[opencode-19](#opencode-19)]'s classifier, correlation, pending,
+suppression, de-duplication, order, removal, state-release, and bounded-drain
+rows together with [[opencode-17](#opencode-17)] role gating and
+[[opencode-5](#opencode-5)] event types.
 
 ### opencode-237
 
-Where `PermissionPolicy.mode` is `auto`, when fresh and resumed OpenCode runs
-use each supported SDK path, neither the observable v1 prompt nor the v2
-session ruleset shall contain an adapter-generated wildcard [[opencode-7](#opencode-7)].
-Explicitly
-supplied capability levels shall still map, including denies, while omitted
-capabilities preserve native rules.
-Where canonical v1 `permission.updated` and v2 `permission.asked` events are
-supplied, including an unknown permission name, when the adapter handles
-requests for its root session or a run-owned descendant under auto, it shall
-emit no normalized
-`permission_request` and answer each native request `once` through the matching
-SDK route with request and session correlation intact, then emit exactly one
-`opencode:permission_decision` extension carrying the request identifier,
-native session identifier, permission, patterns, tool-use correlation,
-completed `once` decision,
-automated marker, normalized input, and optional reason [[opencode-20](#opencode-20)].
-Outside auto it shall
-emit the normalized request and answer `reject` without the extension.
-Where a resumed root already owns child or grandchild sessions, the wrapper
-shall recursively discover them through version-correct `session.children`
-routes under one whole-traversal deadline before prompt dispatch.
-Ordered
-lifecycle events shall add fresh descendants.
-Child permission asks shall use
-the child identifier on session-scoped reply routes, while child conversational
-output remains filtered [[opencode-6](#opencode-6)].
-Where interleaved unrelated-session events and repeated owned events occur, the
-adapter shall respond only to owned requests and shall not respond twice.
-Where a request has a missing identifier, unavailable or failed reply route,
-SDK result error, or reply that stays pending for five seconds, the adapter
-shall terminate with the permission error and one error-status `done`, with
-the session, request (or missing marker), and permission named in the error.
-Failed, timed-out, and aborted replies shall emit no
-`opencode:permission_decision` extension.
-For a pending response in external mode, the five-second timeout shall abort
-the SDK request's run-owned signal and cancel the underlying response I/O.
-While a permission response is pending in managed mode, when `AbortSignal`
-fires, the adapter shall terminate with one interrupted `done`, abort the
-run-owned signal observed by both the SSE subscription and permission
-response, close the underlying SSE iterator and SDK client, and send `SIGTERM`
-to the managed server without waiting for that response [[opencode-8](#opencode-8)], [[opencode-9](#opencode-9)].
-The interrupted
-`done` shall be yielded before `SIGTERM`, and managed termination shall begin
-before the bounded SDK cleanup waits.
-Canonical wrapper fixtures shall prove that aborting a pending v1 and v2 SSE
-request rejects the underlying subscription operation on the run-owned signal,
-and that aborting pending v1 and v2 permission-response HTTP calls rejects each
-native SDK operation on that same signal.
-Where the exact OpenCode conformance target and credentials are available,
-when a real managed-mode `mode: 'auto'` run writes and verifies a unique
-absolute `/tmp` file by requesting an exact shell command under an explicit
-`shellExecute: 'ask'` rule, the run shall emit a `bash` `tool_use` and at least
-one successful automated `once` audit event for the `bash` permission,
-complete without an outer timeout, `permission_request`, denied `tool_result`,
-or `error`, and emit exactly one success-status `done` [[opencode-5](#opencode-5)];
-the leg shall use the same missing-dependency and transient-upstream gating as
-[[opencode-219](#opencode-219)].
+Given fresh, resumed, root, descendant, unrelated, repeated, malformed,
+failed, timed-out, and aborted permission fixtures over both SDK paths and
+server modes, when the adapter maps and resolves them, the checks shall exhaust
+this matrix:
+
+| Concern | Assertions |
+| --- | --- |
+| auto mapping and delivery | no wildcard, present capabilities including denies, omitted capabilities preserved, and version-correct create/update/prompt placement [[opencode-7](#opencode-7)], [[opencode-33](#opencode-33)] |
+| successful root/descendant v1 and v2 asks, including unknown names | once-only native correlation and exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)] |
+| resumed lineage and lifecycle | recursive whole-deadline discovery, new descendants, deletion, failure-before-prompt, child-route identity, and filtered child conversation [[opencode-34](#opencode-34)], [[opencode-6](#opencode-6)] |
+| unrelated or repeated events | no foreign response and no duplicate response |
+| missing identifier or unavailable, failed, SDK-error, or timed-out route | exact permission error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
+| pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, bounds retained state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
+
+### opencode-55
+
+Where [[opencode-219](#opencode-219)]'s real OpenCode condition holds, when a
+managed auto-mode run writes and verifies a unique absolute `/tmp` file through
+an exact shell command under `shellExecute: 'ask'`, the acceptance leg shall
+observe a `bash` use and at least one successful automated `once` audit event,
+no outer timeout, permission request, denied result, or error, and exactly one
+success `done` [[opencode-5](#opencode-5)], [[opencode-20](#opencode-20)].
 
 ### opencode-238
 
 _Superseded by [[opencode-240](#opencode-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish both sides from its five step counters [[opencode-5](#opencode-5)]:
+Given complete, omitted-component, and inconsistent legacy step counters, when
+a caller reads the superseded `usage.breakdown`, it shall match this matrix
+[[opencode-30](#opencode-30)]:
 
-- given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent;
-- given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
+| Input | Legacy assertion |
+| --- | --- |
+| complete five-counter accounting | both partition sides from the step sums |
+| omitted cache or reasoning counter | omit that component while remaining published members reconcile, except omitted reasoning removes the whole output side |
+| a component subtraction would be negative | omit the affected side and retain the unaffected side |
 
 ### opencode-239
 
 _Superseded by [[opencode-240](#opencode-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, the adapter shall publish one record per step part carrying `requests: 1` [[opencode-5](#opencode-5)]:
+Given complete, identity-free, cost-bearing, incomplete, absent, and
+inconsistent legacy step accounting, when a caller reads superseded
+`usage.records`, it shall match this matrix [[opencode-30](#opencode-30)]:
 
-- given a run pinned no model and its runtime named none, a step whose message named no model shall yield a record without one, and no placeholder identifier shall appear;
-- given a runtime reports a group's own cost, its record shall carry that cost, and the costs of a run's records shall not exceed the run's reported total;
-- given upstream accounting is incomplete, absent, or fails the partition identities, the adapter shall publish no records on that terminal.
+| Input | Legacy assertion |
+| --- | --- |
+| each complete step part | one record with `requests: 1` |
+| no pinned or runtime model | no model and no placeholder |
+| runtime-reported step cost | that cost, with record costs not exceeding the run total |
+| incomplete, absent, or partition-inconsistent accounting | no records |
 
 ### opencode-240
 
-Given authentic zero or nonzero accounting from the adapter, when a caller reads terminal `usage.tokens`, the report shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder, while malformed or absent accounting shall omit `tokens` and preserve independently observed `toolUses` [[opencode-21](#opencode-21)]:
+Given authentic zero, nonzero, partial, malformed, ambiguous, and absent OpenCode
+accounting, when a caller reads terminal usage, the checks shall exhaust this
+causal report matrix while preserving independently observed `toolUses`
+[[opencode-21](#opencode-21)]:
 
-- OpenCode shall include canonical causal child and grandchild steps without emitting child conversation, exclude foreign or pre-existing background work, deduplicate and replace repeated part snapshots by session and part identifier, preserve billed completed steps across removal, and publish complete coverage only when its causal ledger is valid and settled;
-- fresh and default-title root sessions shall suppress and verify OpenCode's hidden title request, while a meaningful resumed title shall remain unchanged; inability to prove suppression shall retain exact records as partial;
-- the wrapper shall query the live server's global health before dispatch and shall permit complete accounting only for a healthy response naming the exact tested OpenCode version; a missing, failed, timed-out, unhealthy, malformed, or different-version response shall preserve exact records as partial without blocking the run;
-- canonical compaction summaries and marked continuations shall extend the ledger only from their immediate causal boundary; overflow replay, unmarked or unlinked internal prompts, a causal or uncorrelatable retry, an accepted prompt without an assistant, or an unknown post-activation assistant step shall keep only the exact subset as partial, while an explicit foreign-assistant retry shall remain excluded;
-- repeated internal-prompt snapshots shall preserve their first identity and every overflow or error signal; conflicting identities or evidence that becomes less severe shall retain only the original exact subset as partial;
-- command continuations shall accept the canonical task-only assistant without inventing a model step, while background continuations shall correlate one-to-one with a causal child and shall remain partial when the child identity, result, or post-work settlement is unproved;
-- task parts that reuse an existing `task_id` shall retain exact parent records as partial and shall exclude ambiguous child-session prompts and steps;
-- repeated task-part snapshots shall enrich a missing child identity at most once, while a conflicting non-empty parent or child identity shall preserve only the first exact subset and force partial coverage;
-- malformed task identity and descendant idle observed before later causal child accounting shall never support complete coverage;
-- where OpenCode supplies cost, the emitted whole-run and record values shall be finite, non-negative, USD `agent-estimate` objects; measured zero shall remain present and a missing cost shall remain absent;
-- OpenCode shall submit its prompt with no message identifier and shall resolve the causal boundary from the prompt text it submitted, which an assistant repeating that text verbatim shall not displace;
-- before prompt dispatch, the adapter shall subscribe to the live event stream; no event published after subscription, including the first, shall be lost, and absence of a streamed connection event shall not defer prompt dispatch indefinitely;
-- a background task's injected result, and a concurrent caller's prompt that streams first, shall neither resolve the boundary nor bill their work to the run;
-- a run that created its root session, including a call whose resume value is absent or empty, may fall back to the first sighting it does not recognize as a background result; a run carrying a non-empty resume value shall not, and where no boundary resolves the terminal `usage.tokens` shall be absent rather than carry totals the run cannot attribute.
+| Concern | Assertions |
+| --- | --- |
+| stream establishment | before-prompt subscription, bounded handshake wait, first-event preservation, and cleanup transfer [[opencode-45](#opencode-45)] |
+| prompt boundary | no caller-supplied message identifier plus every proof, exclusion, ambiguity, fresh fallback, resumed no-fallback, background, and concurrent-prompt row in [[opencode-44](#opencode-44)] and [[opencode-46](#opencode-46)] |
+| step ledger | causal descendant inclusion without child conversation, foreign/pre-existing/unscoped exclusion, key de-duplication/replacement, removal retention, identity failure, and settled coverage [[opencode-47](#opencode-47)] |
+| title suppression | fresh, default resumed, meaningful resumed, parent, and every unproved-suppression row in [[opencode-48](#opencode-48)] |
+| health gate | healthy exact version plus every partial-without-blocking row in [[opencode-49](#opencode-49)] |
+| compaction and retry | canonical continuation, overflow, unlinked/unknown prompt, repeated/conflicting identity, missing assistant, causal/uncorrelated retry, and foreign retry rows in [[opencode-50](#opencode-50)] |
+| task/background continuation | command continuation, reused task, repeated/conflicting task identity, one-to-one background success, missing/unmatched/error result, idle ordering, malformed identity, and active-child rows in [[opencode-51](#opencode-51)] |
+| public token report | inclusive totals, exact cache/reasoning subsets, complete/partial/omitted coverage, exact records, no removed flat or availability fields, and generic-idle alias rejection [[opencode-21](#opencode-21)] |
+| cost | finite non-negative USD `agent-estimate` records, measured-zero retention, missing-cost omission, and whole-run cost only for complete all-cost coverage |
 
 ## References
 

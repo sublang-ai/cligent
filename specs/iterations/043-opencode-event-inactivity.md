@@ -15,9 +15,7 @@ Complete
 
 ## Deliverables
 
-- [x] [[opencode-18](../packages/adapters/opencode.md#opencode-18)] defines the
-      configurable inactivity deadline, current-session reset rule, status
-      outcomes, diagnostics, abort precedence, and cleanup contract.
+- [x] [[opencode-18](../packages/adapters/opencode.md#opencode-18)], [[opencode-36](../packages/adapters/opencode.md#opencode-36)], [[opencode-37](../packages/adapters/opencode.md#opencode-37)], [[opencode-38](../packages/adapters/opencode.md#opencode-38)], [[opencode-39](../packages/adapters/opencode.md#opencode-39)], [[opencode-40](../packages/adapters/opencode.md#opencode-40)], [[opencode-41](../packages/adapters/opencode.md#opencode-41)], [[opencode-42](../packages/adapters/opencode.md#opencode-42)], and [[opencode-43](../packages/adapters/opencode.md#opencode-43)] define the configurable inactivity deadline, current-session reset rule, status outcomes, diagnostics, abort precedence, and cleanup contract.
 - [x] The adapter races pending SSE reads against relevant-event inactivity,
       caller abort, and managed-server exit; it queries and aborts sessions
       through supported SDK surfaces and emits one terminal event.
@@ -36,8 +34,7 @@ Complete
 ## Tasks
 
 1. [x] **Specify finite OpenCode liveness.**
-       Add [[opencode-18](../packages/adapters/opencode.md#opencode-18)] and
-       [[opencode-235](../packages/adapters/opencode.md#opencode-235)].
+       Add [[opencode-18](../packages/adapters/opencode.md#opencode-18)], [[opencode-36](../packages/adapters/opencode.md#opencode-36)], [[opencode-37](../packages/adapters/opencode.md#opencode-37)], [[opencode-38](../packages/adapters/opencode.md#opencode-38)], [[opencode-39](../packages/adapters/opencode.md#opencode-39)], [[opencode-40](../packages/adapters/opencode.md#opencode-40)], [[opencode-41](../packages/adapters/opencode.md#opencode-41)], [[opencode-42](../packages/adapters/opencode.md#opencode-42)], [[opencode-43](../packages/adapters/opencode.md#opencode-43)], [[opencode-235](../packages/adapters/opencode.md#opencode-235)], and [[opencode-54](../packages/adapters/opencode.md#opencode-54)].
 2. [x] **Implement inactivity recovery and cleanup.**
        Add the finite deadline, relevant-session activity tracking, bounded status
        and abort operations, deterministic terminal selection, and iterator,
@@ -62,9 +59,7 @@ Complete
   deadline without widening root-only output; explicitly foreign and untagged
   global traffic does not, and downstream backpressure consumes none of the
   provider-wait budget.
-- Idle recovery, busy/retry abort, and status-query failure each emit the
-  diagnostics and single terminal outcome required by
-  [[opencode-18](../packages/adapters/opencode.md#opencode-18)].
+- Idle recovery, busy/retry abort, and status-query failure each emit the diagnostics and single terminal outcome required by [[opencode-38](../packages/adapters/opencode.md#opencode-38)].
 - Timeout diagnostics identify the session, last relevant event, elapsed
   inactivity, deadline, server mode/state, and queried state or failure.
 - Pending SSE iteration, active session work, SDK client resources, and the

@@ -52,7 +52,7 @@ precede every code change.
    declaration test. No adapter behavior changes.
 4. [x] **Publish the OpenCode breakdown.**
    Accumulate the five step-finish counters separately and publish both sides; amend
-   [[opencode-5](../packages/adapters/opencode.md#opencode-5)].
+   [[opencode-30](../packages/adapters/opencode.md#opencode-30)].
 5. [x] **Publish the Claude Code input side.**
    Publish `input` / `cacheRead` / `cacheWrite` and withhold the output side; amend
    [[claude-code-16](../packages/adapters/claude-code.md#claude-code-16)] and [[claude-code-17](../packages/adapters/claude-code.md#claude-code-17)], and add
