@@ -282,7 +282,7 @@ native auto can answer a surviving ask `once`.
 ### opencode-20
 
 While a headless run receives `permission.updated` or `permission.asked` for
-its root or a descendant owned through [[opencode-34](#opencode-34)], the
+its root or a descendant owned through [[opencode-56](#opencode-56)], the
 adapter shall resolve each native request once through this outcome matrix,
 including unknown permission names:
 
@@ -342,6 +342,21 @@ adapter shall select its relevant-event deadline through this matrix:
 | omitted | 300,000 ms |
 | finite number greater than zero | that value |
 | zero, negative, non-finite, or non-numeric | reject configuration |
+
+### opencode-37
+
+While awaiting OpenCode's global SSE stream, the adapter shall carry
+[[opencode-18](#opencode-18)]'s deadline as a monotonic active-wait budget
+through this matrix:
+
+| Activity | Budget effect |
+| --- | --- |
+| current root or run-owned descendant event | reset to the configured deadline, even though ordinary descendant conversation remains filtered by [[opencode-6](#opencode-6)] |
+| unrelated tagged event or untagged global pass-through event | no reset |
+| event normalization or downstream suspension at a yield | no consumption |
+| buffered relevant event ready when the consumer resumes | process before recovery |
+| always-ready non-relevant backlog | continue consuming the carried active-wait budget |
+| delay above the host timer maximum | split into safe chunks without early expiry |
 
 ### opencode-38
 
@@ -506,13 +521,29 @@ When the compatibility wrapper delivers the mapping from
 
 ### opencode-34
 
-Before prompting a resumed root, the wrapper shall recursively discover the
-pre-existing descendant session tree through the version-correct
-`session.children` route under one whole-traversal deadline, extend ownership
-from ordered create/update lifecycle events, remove deleted descendants, and
-fail before prompt dispatch when discovery is unavailable, returns a non-array,
-fails, is aborted, or runs out of time, while silently ignoring array entries
-without a non-empty child `id`.
+Before prompting a resumed root, the compatibility wrapper shall discover its
+pre-existing session tree through the version-correct `session.children` route
+under one whole-traversal deadline through this matrix:
+
+| Discovery result | Outcome |
+| --- | --- |
+| resumed root | include as owned and inspect its children |
+| child array entry with a non-empty `id` | include as owned and recursively inspect its children |
+| child array entry without a non-empty `id` | ignore |
+| unavailable route, non-array result, failure, abort, or deadline expiry | fail before prompt dispatch |
+
+### opencode-56
+
+When session-ownership evidence reaches an active run, the adapter shall evolve
+its run-owned control scope through this matrix:
+
+| Evidence | Ownership effect |
+| --- | --- |
+| wrapper result | include the selected root and every non-empty identifier discovered through [[opencode-34](#opencode-34)] |
+| valid task part in an owned session naming a distinct child session | include that child, even when it resumes an older session outside the root ancestry |
+| ordered `session.created` or `session.updated` with a non-empty identifier and an already-owned parent | include the identified child on fresh and resumed runs |
+| `session.deleted` for an owned non-root session | remove that descendant |
+| unrelated or malformed ownership evidence | leave the scope unchanged |
 
 ### opencode-35
 
@@ -531,21 +562,6 @@ After any managed terminal path, the adapter shall perform teardown in this
 order: request child `SIGTERM`; independently bound iterator return, client
 close, and client shutdown even when an earlier phase rejects; after a bounded
 grace send `SIGKILL` if the child remains alive; and bound the final close wait.
-
-### opencode-37
-
-While awaiting OpenCode's global SSE stream, the adapter shall carry
-[[opencode-18](#opencode-18)]'s deadline as a monotonic active-wait budget
-through this matrix:
-
-| Activity | Budget effect |
-| --- | --- |
-| current root or run-owned descendant event | reset to the configured deadline, even though ordinary descendant conversation remains filtered by [[opencode-6](#opencode-6)] |
-| unrelated tagged event or untagged global pass-through event | no reset |
-| event normalization or downstream suspension at a yield | no consumption |
-| buffered relevant event ready when the consumer resumes | process before recovery |
-| always-ready non-relevant backlog | continue consuming the carried active-wait budget |
-| delay above the host timer maximum | split into safe chunks without early expiry |
 
 ### opencode-40
 
@@ -613,8 +629,10 @@ After [[opencode-46](#opencode-46)] proves a boundary, the adapter shall build
 the invocation ledger through this matrix before applying
 [[opencode-6](#opencode-6)]'s root-only conversation filter:
 
-| Step state | Ledger effect |
+| Causal or step state | Ledger effect |
 | --- | --- |
+| same-session assistant whose `parentID` names a causal prompt | mark that assistant message causal [[15]] |
+| valid non-reused task part on a causal assistant naming a distinct child session | mark the next ordered non-internal user prompt in that child after the task causal and repeat the parent/task propagation through descendants |
 | canonical step-finish in the root or causally linked owned descendant | key by native session and part identifier |
 | identical keyed repeat | count once |
 | changed keyed snapshot | replace rather than add |
@@ -944,7 +962,8 @@ this matrix:
 | --- | --- |
 | auto mapping and delivery | no wildcard, present capabilities including denies, omitted capabilities preserved, and version-correct create/update/prompt placement [[opencode-7](#opencode-7)], [[opencode-33](#opencode-33)] |
 | successful root/descendant v1 and v2 asks, including unknown names | once-only native correlation and exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)] |
-| resumed lineage and lifecycle | recursive whole-deadline discovery, new descendants, deletion, failure-before-prompt, child-route identity, and filtered child conversation [[opencode-34](#opencode-34)], [[opencode-6](#opencode-6)] |
+| resumed lineage discovery | recursive whole-deadline traversal, invalid-entry tolerance, and failure-before-prompt [[opencode-34](#opencode-34)] |
+| run ownership evolution | wrapper seeding, task-part child adoption, fresh and resumed lifecycle addition, owned-descendant deletion, unrelated/malformed preservation, child-route identity, and filtered child conversation [[opencode-56](#opencode-56)], [[opencode-6](#opencode-6)] |
 | unrelated or repeated events | no foreign response and no duplicate response |
 | missing identifier or unavailable, failed, SDK-error, or timed-out route | exact permission error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
 | pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, bounds retained state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
@@ -998,7 +1017,7 @@ causal report matrix while preserving independently observed `toolUses`
 | --- | --- |
 | stream establishment | before-prompt subscription, bounded handshake wait, first-event preservation, and cleanup transfer [[opencode-45](#opencode-45)] |
 | prompt boundary | no caller-supplied message identifier plus every proof, exclusion, ambiguity, fresh fallback, resumed no-fallback, background, and concurrent-prompt row in [[opencode-44](#opencode-44)] and [[opencode-46](#opencode-46)] |
-| step ledger | causal descendant inclusion without child conversation, foreign/pre-existing/unscoped exclusion, key de-duplication/replacement, removal retention, identity failure, and settled coverage [[opencode-47](#opencode-47)] |
+| step ledger | assistant-`parentID` and task-child causal propagation, causal descendant inclusion without child conversation, foreign/pre-existing/unscoped exclusion, key de-duplication/replacement, removal retention, identity failure, and settled coverage [[opencode-47](#opencode-47)] |
 | title suppression | fresh, default resumed, meaningful resumed, parent, and every unproved-suppression row in [[opencode-48](#opencode-48)] |
 | health gate | healthy exact version plus every partial-without-blocking row in [[opencode-49](#opencode-49)] |
 | compaction and retry | canonical continuation, overflow, unlinked/unknown prompt, repeated/conflicting identity, missing assistant, causal/uncorrelated retry, and foreign retry rows in [[opencode-50](#opencode-50)] |
