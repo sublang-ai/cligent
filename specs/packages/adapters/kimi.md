@@ -15,149 +15,345 @@ Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `Age
 
 ### kimi-1
 
-The adapter shall expose `KimiAdapter`, implement `AgentAdapter<KimiEffort>`, and use `agent: 'kimi'` for the maintained Kimi Code product [[1]].
+The public adapter module shall expose `KimiAdapter` implementing `AgentAdapter<KimiEffort>` with `agent: 'kimi'` for the maintained Kimi Code product [[1]].
 
 ### Availability
 
 ### kimi-2
 
-`isAvailable()` shall probe the documented `kimi --version` command on PATH with a timeout [[3]].
-It shall not start ACP, authenticate, or mutate Kimi configuration.
-A successful zero exit shall return `true`; a missing executable, nonzero exit, or timeout shall return `false`.
+When `isAvailable()` uses the adapter's default probe, it shall run the documented `kimi --version` command on `PATH` with a 5,000 ms timeout, without starting ACP, authenticating, or mutating Kimi configuration, and classify the result through this matrix [[3]]:
+
+| Probe outcome | Result |
+| --- | --- |
+| the command succeeds within the timeout and [[engine-25](../engine.md#engine-25)] does not find its version below the supported floor | `true` |
+| the executable is missing, exits nonzero, times out, or reports a version below that floor | `false` |
 
 ### ACP Lifecycle
 
 ### kimi-3
 
-Each `run()` call shall create fresh local state and spawn exactly one `kimi acp` child with `shell: false`, the effective working directory, inherited environment, piped stdin/stdout, and drained stderr.
-The adapter shall initialize ACP protocol version 1 with empty client capabilities and shall not advertise filesystem or terminal reverse-RPC support per [[2]][[6]].
-The adapter shall use the official `@agentclientprotocol/sdk` version compatible with the exact Kimi Code conformance target.
+When a mapped, non-pre-aborted `run()` reaches process invocation, the adapter shall spawn exactly one `kimi acp` child with `shell: false`, the absolute effective working directory, the inherited environment, piped stdin and stdout, and stderr drained into a bounded diagnostic tail.
+
+### kimi-14
+
+When the child starts ACP, the adapter shall initialize protocol version 1 with empty client capabilities and reject any other negotiated version, advertising neither filesystem nor terminal reverse-RPC support [[2]][[6]].
 
 ### kimi-4
 
-After initialization, a fresh run shall call `session/new` with the absolute effective cwd and no client-supplied MCP servers.
-A run with a non-empty `AgentOptions.resume` shall call `session/resume` with that token and cwd; it shall not call `session/load` or replay prior history.
-After session setup and supported configuration overrides, the adapter shall emit `init` first and call `session/prompt` with one text content block.
-The `init` event shall carry the Kimi session identifier, effective cwd, requested or ACP-reported model, an unknown tool surface represented by `tools: []`, and capabilities that distinguish unknown tools from a configured empty set.
+After initialization, the adapter shall select session setup through this matrix, always sending the absolute effective cwd and `mcpServers: []`:
+
+| `AgentOptions.resume` | Session operation and identity |
+| --- | --- |
+| absent or empty | call `session/new`; reject an empty returned session identifier |
+| non-empty | call `session/resume` with that identifier; call neither `session/load` nor history replay |
+
+### kimi-16
+
+While no caller abort or setup or configuration failure intervenes after session setup, the adapter shall perform the run sequence in this order: apply a provided model through `session/set_config_option`, apply a provided thinking value, apply a mapped permission mode, emit `init` as the run's first unified event, then call `session/prompt` with exactly one text content block, with omitted controls causing no corresponding configuration call.
+
+### kimi-17
+
+When the adapter emits `init`, it shall select the payload through this matrix:
+
+| Member | Selection |
+| --- | --- |
+| `sessionId` | the active backend session identifier |
+| `cwd` | the absolute effective working directory |
+| `model`, no requested model | the initial session configuration's selected model, otherwise `unknown` |
+| `model`, requested model | the post-update selected model, otherwise the requested value |
+| tools | `tools: []`, `toolsKnown: false`, and `toolsSource: 'unavailable'`, distinguishing an unknown surface from a configured empty set |
+| capabilities | negotiated ACP protocol version and any writable-path report from [[kimi-8](#kimi-8)] |
 
 ### Event Normalization
 
 ### kimi-5
 
-The adapter shall normalize ACP traffic to `AgentEvent` values:
+After `init` and while no terminal has been selected, the adapter shall dispatch validated ACP traffic through this matrix:
 
-| ACP traffic | AgentEvent |
+| ACP traffic | Outcome |
 | --- | --- |
-| `session/update` `agent_message_chunk` text | `text_delta` |
-| `session/update` `agent_thought_chunk` | ignored; raw thought is not a safe summary |
-| `session/update` `tool_call` plus non-terminal updates | one correlated `tool_use` once canonical input is available |
-| terminal `tool_call_update` | one correlated `tool_result` with `success` or `error` |
-| `session/update` `plan` | `kimi:plan` extension |
-| `session/request_permission` | `permission_request`, followed by a reject response |
-| prompt response / ACP failure / child exit | exactly one terminal `done`, with a preceding `error` where applicable |
+| `session/update` `agent_message_chunk` | text handling in [[kimi-19](#kimi-19)] |
+| `session/update` `agent_thought_chunk` or `user_message_chunk` | no unified event |
+| `session/update` `tool_call` or `tool_call_update` | the correlated lifecycle in [[kimi-18](#kimi-18)] |
+| `session/update` `plan`, `plan_update`, or `plan_removed` | one `kimi:plan` extension carrying the validated update |
+| another `session/update` case | no unified event |
+| `session/request_permission` | the request and reply selected by [[kimi-22](#kimi-22)] |
+| prompt response, ACP failure, or child exit | the terminal selected by [[kimi-6](#kimi-6)], [[kimi-29](#kimi-29)], and [[kimi-28](#kimi-28)] |
 
-Tool state shall be keyed by ACP `toolCallId` and shall tolerate a pending lazy-create notification whose parsed `rawInput` arrives in a later update.
-The adapter shall use the best structured `rawInput` available and shall not emit duplicate `tool_use` or terminal `tool_result` events for one call.
-Assistant text deltas shall be accumulated in order for `DonePayload.result`.
+### kimi-30
+
+For a run that reaches `init`, a validated same-session update arriving after session setup but before that event shall be retained in arrival order and dispatched immediately afterward.
+
+### kimi-18
+
+For each native `toolCallId`, the adapter shall emit at most one correlated `tool_use` followed by at most one terminal `tool_result`, selecting their payloads through these matrices:
+
+| `tool_use` member | Selection |
+| --- | --- |
+| state | merge later non-null title and kind plus later defined status, content, `rawInput`, and `rawOutput` values, including null, under the native identifier |
+| emission point | as soon as `rawInput` is an object or parses to a JSON object; otherwise when a terminal update forces the fallback |
+| `toolName` | latest title, then kind, otherwise `unknown_tool` |
+| `toolUseId` | native `toolCallId` |
+| `input`, object | that object |
+| `input`, string containing a JSON object | the parsed object |
+| `input`, another non-empty string | `{ raw: <string> }` at terminal |
+| `input`, absent, null, or empty string | `{}` at terminal |
+| `input`, another value including an array | `{ value: <value> }` at terminal |
+| `description` | title when non-empty, otherwise omitted |
+
+| `tool_result` member | Selection |
+| --- | --- |
+| terminal trigger | first `completed` or `failed` state on either tool update form, after its `tool_use` |
+| `toolName` / `toolUseId` | the correlated selections above |
+| status | `completed` to `success`; `failed` to `error` |
+| output | defined `rawOutput`, including null; otherwise newline-joined text content; otherwise the content array or null |
+| duration | elapsed time since the call's first observed update |
+
+### kimi-19
+
+For each validated `agent_message_chunk`, the adapter shall emit `text_delta` with the exact text, including an empty string, append those deltas in order for `DonePayload.result`, and omit that result only when no assistant text accumulated; non-text message content and thought or user-message chunks shall contribute neither text nor result.
+
+### kimi-20
 
 _The following hypothetical ACP-usage behavior is superseded by [[kimi-13](#kimi-13)]._
 
-When the ACP prompt response supplies schema-valid unsigned-integer usage, including explicit zeroes for required `totalTokens`, `inputTokens`, and `outputTokens` and for any present optional cache counter, the adapter shall mark token accounting as `'reported'`, shall fold `cachedReadTokens` and `cachedWriteTokens` into `inputTokens`, and shall preserve `outputTokens`.
-Where required usage structure or any consumed token or cache counter is negative, fractional, non-finite, or non-numeric, the adapter shall isolate the optional accounting failure: the prompt's schema-valid `stopReason` shall still determine terminal status, token accounting shall be `'unavailable'`, and accumulated result text and tool use shall remain intact.
-Unconsumed usage extension details such as `thoughtTokens` shall not affect availability, and a null optional cache counter shall be treated as absent.
-When ACP omits usage, the adapter shall mark token accounting as `'unavailable'` and retain zero-valued compatibility placeholders rather than reporting measured zero or estimating tokens.
-In either state, `toolUses` shall equal the emitted tool calls independently of token accounting.
-The adapter shall publish no `DoneUsage.breakdown` partition per [[engine-28](../engine.md#engine-28)], because ACP's `Usage` structure is an unstable protocol extension that the conformance-target Kimi Code release does not populate, leaving nothing measured to decompose.
-The fold of `cachedReadTokens` and `cachedWriteTokens` into `inputTokens` reflects the agent's own cache-exclusive convention rather than a guarantee ACP makes about the field, so the adapter shall confine that fold to this ACP agent and shall not treat it as a portable ACP rule.
+When a prompt response carries the unstable ACP usage extension, the adapter shall apply the historical accounting matrix:
+
+| Usage state | Historical outcome |
+| --- | --- |
+| complete unsigned-integer `totalTokens`, `inputTokens`, and `outputTokens`, with every present cache counter also valid, including explicit zeroes | accounting `'reported'`; cache reads and writes folded into input exactly once; output preserved; no breakdown per [[engine-28](../engine.md#engine-28)] |
+| any required structure or consumed token or cache counter absent, negative, fractional, non-finite, or non-numeric | accounting `'unavailable'`; valid stop status, accumulated result, and tool uses preserved |
+| unconsumed extension detail malformed, or optional cache counter null | ignore that detail; treat the null cache counter as absent |
+| usage absent | accounting `'unavailable'` with zero-valued compatibility placeholders rather than measured zero or an estimate |
+
+In every row, `toolUses` shall equal the emitted tool calls independently of token accounting; the cache fold shall remain Kimi-specific rather than become a portable ACP rule.
+
+### Terminal Outcomes
 
 ### kimi-6
 
-ACP stop reason `end_turn` shall map to `done.status: 'success'`; `cancelled` shall map to `'interrupted'`; `max_tokens` and `max_turn_requests` shall map to `'max_turns'`; and `refusal` shall emit a non-recoverable error followed by `done.status: 'error'`.
-Structured JSON-RPC errors, malformed control protocol traffic outside [[kimi-5](#kimi-5)]'s failure-isolated optional usage, premature or nonzero child exits, and missing authentication shall emit an actionable non-recoverable error followed by `done.status: 'error'`.
-Kimi Code `0.31.1` gates ACP session creation on any of three routes: the OAuth credential written by `kimi login`; a configured default model whose alias resolves to a provider holding non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[8]].
-A bare provider key such as `MOONSHOT_API_KEY` or `KIMI_API_KEY` satisfies none of them, because it establishes no default model alias.
-Authentication guidance shall name `kimi login`; the adapter shall never launch login itself.
+When a valid ACP prompt response selects its stop reason, the adapter shall map it through this matrix:
+
+| ACP `stopReason` | Outcome |
+| --- | --- |
+| `end_turn` | `done.status: 'success'` |
+| `cancelled` | `done.status: 'interrupted'` |
+| `max_tokens` or `max_turn_requests` | `done.status: 'max_turns'` |
+| `refusal` | non-recoverable `KIMI_REFUSAL` error with `Kimi refused the prompt`, followed by `done.status: 'error'` |
+
+### kimi-21
+
+When ACP reports missing authentication by JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.31.1` admits exactly these authentication routes [[8]]:
+
+| Runtime state | Session gate |
+| --- | --- |
+| OAuth credential written by `kimi login` | admitted |
+| configured default-model alias resolving to a provider with non-OAuth credentials | admitted |
+| both `KIMI_MODEL_NAME` and `KIMI_MODEL_API_KEY` environment values | admitted through a runtime-only synthesized provider and default alias |
+| bare `MOONSHOT_API_KEY` or `KIMI_API_KEY` | not admitted because no default-model alias exists |
+
+### kimi-29
+
+When a non-authentication child spawn or ACP operation throws, the child reports a synchronous or asynchronous process error, or the child closes prematurely, nonzero, or on an unexpected signal, the adapter shall emit non-recoverable `KIMI_ACP_ERROR` followed by `done.status: 'error'`; the error message shall preserve the thrown diagnostic, any structured `data.details`, `data.detail`, or `data.message`, and the bounded stderr tail without duplicating text.
+
+### kimi-28
+
+For every terminal path, the adapter shall emit exactly one `done` carrying elapsed duration, [[kimi-12](#kimi-12)]'s resume selection, [[kimi-13](#kimi-13)]'s usage, and [[kimi-19](#kimi-19)]'s accumulated result when non-empty; an applicable non-recoverable error shall precede that terminal.
 
 ### Permission Mapping
 
 ### kimi-7
 
-Where `PermissionPolicy` is absent, the adapter shall set no ACP mode and preserve Kimi's native permission configuration.
-Where `PermissionPolicy.mode` is `'auto'`, the adapter shall set ACP config option `mode` to `auto`; per-capability fields in the same policy are superseded by the whole-mode selection per [[engine-21](../engine.md#engine-21)].
-Where mode is `'bypass'`, the adapter shall reject before spawn because Kimi's `yolo` mode is not an unchecked bypass per [DR-011](../../decisions/011-kimi-code-acp-integration.md).
-Where a policy is provided with mode omitted, including an empty policy, the adapter shall reject before spawn because ACP cannot deterministically impose Cligent's default-ask capability policy over Kimi's earlier native rule decisions.
-This limitation follows Kimi's configured permission-rule evaluation, which may decide operations before an ACP permission request is exposed [[4]].
-Any permission request that still reaches the headless ACP client shall emit `permission_request` and select a reject option; if no reject option exists or the run is aborted, it shall return a cancelled outcome.
-Where Kimi plan review exposes both `Revise` and `Reject and Exit` as reject-once choices, the adapter shall select the terminal `Reject and Exit` choice [[7]].
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select this exhaustive matrix:
+
+| Policy input | Outcome |
+| --- | --- |
+| `permissions` absent | set no ACP mode and preserve Kimi's native permission configuration |
+| supplied policy with mode omitted, including `{}` and every capability-level combination | reject before spawn because ACP cannot deterministically impose Cligent's default-ask policy over Kimi's earlier native decisions [[4]] |
+| `mode: 'auto'`, with any capability levels | set ACP mode `auto`; ignore the capability levels because the whole-mode selection takes precedence |
+| `mode: 'bypass'`, with any capability levels | reject before spawn because Kimi `yolo` is not an unchecked bypass |
+
+### kimi-22
+
+When an active prompt receives `session/request_permission` for its session, the adapter shall emit `permission_request` with the native tool identifier, title then kind then `unknown_tool` name, a headless-run reason, and input selected immediately through this matrix, then select its reply through the option matrix [[7]]:
+
+| Native input | Unified input |
+| --- | --- |
+| object | that object |
+| string containing a JSON object | the parsed object |
+| another non-empty string | `{ raw: <string> }` |
+| absent, null, or empty string | `{}` |
+| another value including an array | `{ value: <value> }` |
+
+| State or offered options | Reply |
+| --- | --- |
+| caller abort requested | cancelled |
+| reject-kind option whose id is `plan_reject_and_exit` or whose trimmed case-insensitive name is `Reject and Exit` | that option, before every other reject |
+| otherwise, one or more `reject_once` options | first such option |
+| otherwise, one or more `reject_always` options | first such option |
+| no reject option | cancelled rather than any allow option |
 
 ### kimi-8
 
-Where a supported `mode: 'auto'` policy contains non-empty `writablePaths`, the adapter shall validate and canonicalize them per [[engine-22](../engine.md#engine-22)], report `WritablePathsPermissionMapping` with `enforcement: 'ambient'`, and shall not advertise a filesystem sandbox or ACP filesystem capabilities.
-Invalid paths shall fail before spawn.
+Where Kimi exposes no independently active filesystem sandbox or ACP filesystem capability, when the adapter maps `PermissionPolicy.writablePaths` per [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)], it shall select this matrix without changing [[kimi-7](#kimi-7)]'s mode outcome:
+
+| Input | Outcome |
+| --- | --- |
+| absent or empty | omit `WritablePathsPermissionMapping` |
+| valid non-empty entries under `mode: 'auto'` | canonical paths with `enforcement: 'ambient'` |
+| any invalid entry | reject before spawn |
 
 ### Options Mapping
 
 ### kimi-9
 
-The adapter shall apply a provided `AgentOptions.model` through ACP config option `model` after session setup and before the thinking option.
-`KimiEffort` shall be the provider-native union `'off' | 'on'` per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md).
-The adapter shall map it exactly through ACP config option `thinking`; `on` selects the chosen model's native default thinking effort rather than a Cligent portable tier per [[5]].
-When effort is omitted, the adapter shall set no thinking override.
-Where a dynamic caller supplies any other effort value, the adapter shall reject it before spawn with the metadata-backed allowed-values error from [[engine-24](../engine.md#engine-24)].
+When the adapter maps the Kimi values in [[engine-20](../engine.md#engine-20)], it shall select this matrix per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), [[engine-24](../engine.md#engine-24)], and [[5]]:
+
+| `AgentOptions.effort` | Outcome |
+| --- | --- |
+| omitted | set no ACP `thinking` override |
+| `'off'` | set ACP `thinking` to `off` |
+| `'on'` | set ACP `thinking` to `on`, selecting the chosen model's native default rather than a portable tier |
+| any other dynamic value | reject before spawn with the metadata-backed error naming Kimi and the allowed values |
+
+### kimi-23
+
+When `AgentOptions.model` is provided, including an empty string, the adapter shall apply that exact value through ACP config option `model` after session setup; when it is omitted, the adapter shall apply no model override and retain the session's selected model, which is the provider default only for a fresh session that has no prior override.
 
 ### kimi-10
 
-Where `allowedTools` or `disallowedTools` is explicitly provided, including an empty array, the adapter shall reject before spawn because the ACP surface exposes no exact tool-registry restriction.
-Where `maxTurns` or `maxBudgetUsd` is explicitly provided, the adapter shall reject before spawn because Kimi ACP exposes no compatible per-run control.
+When the adapter maps tool-list options per [[engine-17](../engine.md#engine-17)], it shall select this matrix:
 
-### Abort and Cleanup
+| Input | Outcome |
+| --- | --- |
+| both `allowedTools` and `disallowedTools` absent | preserve Kimi's native tool registry |
+| either field explicitly provided, including an empty array | reject before spawn because ACP exposes no exact tool-registry restriction |
+
+### kimi-24
+
+Where `maxTurns` or `maxBudgetUsd` is explicitly provided, including zero, the adapter shall reject before spawn because Kimi ACP exposes no compatible per-run control.
+
+### Abort Handling
 
 ### kimi-11
 
-When `AbortSignal` fires after session setup, the adapter shall send `session/cancel`, continue draining the prompt response and queued updates when possible, and yield exactly one `done` with `status: 'interrupted'` before terminating the child.
-When abort occurs before session setup completes, the adapter shall terminate the child and still yield exactly one interrupted `done`.
-Cleanup shall remove abort listeners, close protocol resources, drain or terminate the per-run process, and shall not retain mutable session state on the adapter instance.
-After a terminal prompt response, adapter-initiated `SIGTERM` following a bounded stdin-close grace shall not change an otherwise successful run to an error; cleanup that requires `SIGKILL` shall remain an error.
+When caller abort is requested, the adapter shall select the lifecycle through this matrix:
+
+| Abort phase | Outcome |
+| --- | --- |
+| signal already aborted before `run()` | spawn no child; yield exactly one interrupted `done` |
+| child spawned but session setup incomplete | terminate the child and yield exactly one interrupted `done` |
+| backend session known | send `session/cancel` exactly once, suppress any later configuration or prompt stage, continue draining an active prompt response and queued updates when possible, yield exactly one interrupted `done` before terminating the child |
 
 ### Resume Token
 
 ### kimi-12
 
-The adapter shall use the backend session identifier returned by `session/new` or the resumed identifier as every event's `sessionId` once known and as `DonePayload.resumeToken`.
-When abort or failure occurs before a backend identifier is observed, it shall preserve a non-empty inbound `AgentOptions.resume` token and shall otherwise omit `resumeToken`; a locally generated correlation identifier shall never be exposed as resumable.
+When the adapter emits terminal `done`, it shall select `resumeToken` through this matrix:
+
+| Terminal state | Selection |
+| --- | --- |
+| any status after a backend session identifier is known | backend identifier |
+| `error` or `interrupted`, no backend identifier, non-empty inbound `AgentOptions.resume` | inbound resume value |
+| every other no-backend state | omitted |
+
+A locally generated correlation identifier shall never be exposed as resumable.
 
 ### Token Accounting
 
 ### kimi-13
 
-The adapter shall publish no [[engine-31](../engine.md#engine-31)] token or cost report for the pinned Kimi Code runtime, because its supported ACP prompt response supplies neither [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
-An absent report shall replace the former zero-valued availability placeholder and shall not change the prompt stop status, accumulated result, or independently observed `toolUses`.
-The adapter may retain schema validation for a future ACP usage extension, but shall not promote that unstable shape to cost-grade public accounting until a supported runtime emits it and its turn/session and cache/reasoning semantics are verified.
+For the pinned Kimi Code runtime, every terminal `done` shall omit token and cost reports under [[engine-31](../engine.md#engine-31)], count `usage.toolUses` from distinct emitted native tool calls, and preserve prompt status and accumulated result independently, because its supported ACP prompt response supplies no authentic accounting [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
+
+### kimi-31
+
+Until a supported runtime emits the optional ACP usage extension and its turn/session and cache/reasoning semantics are verified, the adapter shall treat a schema-valid instance as isolated future data rather than promote its counters to public token or cost accounting.
+
+## Internal Behavior
+
+### Protocol Dependency
+
+### kimi-15
+
+The adapter shall consume the official generic `@agentclientprotocol/sdk` public surface at the exact version paired with the Kimi Code conformance target by [[package-23](../package.md#package-23)], without importing a legacy or unpublished Kimi-specific SDK or that generic SDK's private build output.
+
+### Wire Validation
+
+### kimi-27
+
+When ACP bytes and messages cross the adapter-owned wire boundary, it shall validate only structure and fields the adapter consumes, admit unknown fields, drop unhandled update cases, failure-isolate the optional unstable usage extension, and select every boundary case through this matrix:
+
+| Boundary state | Outcome |
+| --- | --- |
+| inbound UTF-8 JSON lines split or coalesced across arbitrary chunks, including one unterminated final line | reconstruct and forward each complete non-empty message in order |
+| invalid UTF-8 or JSON, or the accumulated decoded buffer exceeding 16 MiB in JavaScript code units immediately after one input chunk is appended | protocol failure |
+| inbound value not a JSON-RPC 2.0 object; invalid request, notification, response, error, or id shape; response id not pending | protocol failure |
+| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field | protocol failure |
+| valid object with unknown fields, or `session/update` with an unhandled non-empty case | admit the unknown fields without treating them as malformed; drop an unhandled update before the SDK |
+| malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
+| handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
+
+Every protocol failure shall terminate the child and flow through [[kimi-29](#kimi-29)] and [[kimi-28](#kimi-28)].
+
+### Session Identity
+
+### kimi-26
+
+When the adapter assigns `AgentEvent.sessionId`, it shall use one generated non-empty identifier from [[engine-7](../engine.md#engine-7)] before a backend identifier exists, except that a non-empty inbound resume value is the pre-backend identifier; after `session/new` or `session/resume` succeeds, every later event shall use that backend identifier.
+
+### Process Containment
+
+### kimi-25
+
+After a run has spawned a child, cleanup shall remove its abort listener, close protocol resources, end stdin and await close for a bounded grace, send `SIGTERM` and await another bounded grace when needed, then send `SIGKILL` and await one final grace; cleanup `SIGTERM` after a terminal prompt response shall not change the selected outcome, while a process requiring `SIGKILL` or remaining alive afterward shall produce an error.
 
 ## Verification
 
 ### kimi-201
 
-Given canned native ACP traffic, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[kimi-5](#kimi-5)], its one terminal `done` carrying the status its stop reason maps to [[kimi-6](#kimi-6)].
+Given canned valid ACP traffic, when the adapter normalizes one prompt, the resulting unified stream shall satisfy this matrix:
+
+| Native traffic | Assertions |
+| --- | --- |
+| text, non-text message, thought, and user chunks, including empty text and a no-text run | exact ordered `text_delta` values only for text, with exact concatenation or omitted terminal result as [[kimi-5](#kimi-5)] and [[kimi-19](#kimi-19)] select |
+| distinct and duplicate tool-call lifecycles spanning every update form and fallback | one correlated `tool_use` and at most one terminal `tool_result` per native identifier, with every state-merge, emission, name, identifier, input, description, trigger, status, output, duration, and ordering selection in [[kimi-18](#kimi-18)] |
+| plan, plan update, and plan removal | one exact `kimi:plan` event and payload for each [[kimi-5](#kimi-5)] |
+| permission requests spanning every payload fallback and option order | exact observable payload followed by every reply priority in [[kimi-22](#kimi-22)] |
+| every valid stop reason | exactly one terminal with [[kimi-6](#kimi-6)]'s exact status and refusal error, [[kimi-12](#kimi-12)]'s resume selection, [[kimi-13](#kimi-13)]'s accounting, and [[kimi-28](#kimi-28)]'s result and elapsed duration |
+| ACP or child failure | non-recoverable error before exactly one error terminal [[kimi-29](#kimi-29)] [[kimi-28](#kimi-28)] |
 
 ### kimi-202
 
-Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, the binary ACP thinking setting shall be selected exactly, `on` preserving model forwarding and selecting that model's default thinking effort [[kimi-9](#kimi-9)].
+Where application configuration selects a representative model and `effort: 'on'` for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, the model shall be forwarded unchanged, ACP thinking shall select that model's native default, and the configuration order shall match [[kimi-16](#kimi-16)], [[kimi-23](#kimi-23)], and [[kimi-9](#kimi-9)].
 
 ### kimi-203
 
-When `AbortSignal` fires during the adapter's `run()`, the adapter shall yield `done` with `status: 'interrupted'` [[kimi-11](#kimi-11)].
+Given caller abort at each lifecycle phase, when the adapter runs, it shall satisfy this matrix:
+
+| Phase | Assertions |
+| --- | --- |
+| already aborted | no spawn and one interrupted terminal |
+| before backend session | one cleanup sequence, no later configuration or prompt, one interrupted terminal |
+| during configuration | one cancel after backend identity, no later stage, and one interrupted terminal |
+| active prompt | one cancel, queued response and updates drained when possible, one interrupted terminal emitted before final child termination |
+
+Every row shall use [[kimi-12](#kimi-12)]'s resume selection, remove the caller listener, close protocol resources, and initiate no cleanup sequence more than once [[kimi-11](#kimi-11)] [[kimi-25](#kimi-25)] [[kimi-28](#kimi-28)].
 
 ### kimi-204
 
-Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[kimi-7](#kimi-7)].
+Given the complete `PermissionPolicy` mode and capability matrix plus every headless permission-option shape, when the adapter maps a run, it shall satisfy these assertions:
+
+- absent policy preserves native configuration; every supplied no-mode capability combination rejects; capability-populated `auto` selects only auto plus [[kimi-8](#kimi-8)]'s independent writable report; and capability-populated `bypass` rejects [[kimi-7](#kimi-7)];
+- an active request emits the exact unified payload and selects `Reject and Exit`, first reject-once, first reject-always, or cancellation in [[kimi-22](#kimi-22)]'s priority, including caller abort; and
+- no rejected or invalid mapping reaches the spawn seam [[kimi-7](#kimi-7)] [[kimi-8](#kimi-8)].
+
+### kimi-205
+
+Given a schema-valid optional ACP usage extension before [[kimi-31](#kimi-31)]'s evidence gate is met, when repository integration verification runs a prompt carrying its counters, it shall assert that the prompt completes while terminal usage contains only independently observed tool calls and no token or cost report.
 
 ### kimi-218
 
-Where each Kimi-specific effort value is supplied, when the adapter maps a run, the observable provider control shall be the ACP `thinking` option selected exactly, `on` taking the chosen model's native default effort [[kimi-9](#kimi-9)]:
-
-- when effort is omitted, the adapter shall set no thinking override;
-- where the supplied value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before spawn with an error naming the adapter and its allowed values.
+Where effort is omitted, `off`, `on`, another adapter's value, or an arbitrary unknown string, when the adapter maps a run, it shall select [[kimi-9](#kimi-9)]'s exact outcome; accepted model and effort values shall reach ACP in [[kimi-16](#kimi-16)]'s order, with the model behavior in [[kimi-23](#kimi-23)], while rejection shall name Kimi and exactly its allowed values before spawn.
 
 ### kimi-219
 
@@ -169,7 +365,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
 - the leg shall self-skip when the `kimi` CLI the adapter spawns is absent from `PATH` or its credential is absent, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- Kimi Code `0.31.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them;
+- Kimi Code `0.31.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
 - the harness exercises the OAuth route exclusively, so its credential probe shall run with the `KIMI_MODEL_*` overlay removed exactly as the live legs do, inheriting it being what would let an environment-configured model report a spent OAuth credential as usable and make those legs fail instead of self-skipping;
 - because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use;
 - the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in the behavior under test;
@@ -177,68 +373,69 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - locally, the Kimi source home shall resolve in order from `CLIGENT_KIMI_ACCEPTANCE_HOME`, an absolute `KIMI_CODE_HOME`, or the documented `~/.kimi-code` default, and the Kimi CLI shall resolve from `PATH` or that source home's managed `bin` directory;
 - under `CI`, `CLIGENT_KIMI_ACCEPTANCE_HOME` shall name an absolute, dedicated source home containing regular files at `config.toml` and `credentials/kimi-code.json`, missing or invalid Kimi credentials or CLI failing like every other adapter dependency;
 - the harness shall dereference and copy only the source config and credentials into one temporary `KIMI_CODE_HOME`, harden the copied config, credential files, and directories to owner-only permissions, share that clone across the complete acceptance suite including bounded retries and fanout, restore the caller's environment and PATH around each consumer, and remove the temporary home after the suite, without mutating the source;
-- acceptance files shall run serially so the shared clone has one writer, and an absent or invalid automatically discovered local source shall self-skip with a precise reason;
+- acceptance files shall run serially so the shared clone has one writer, and an absent or invalid automatically discovered local source shall self-skip with a precise reason; and
 - a dedicated CI source is disposable, and a local source may require `kimi login` again, because an OAuth refresh against the clone may leave its prior token stale.
 
 ### kimi-230
 
-Given a fake ACP subprocess with protocol traffic split across arbitrary stdio chunks, when the adapter runs fresh and resumed prompts, every stage of its ACP lifecycle shall behave as its items require [[kimi-3](#kimi-3)], [[kimi-4](#kimi-4)]:
+Given the installed Kimi target and fake ACP subprocesses whose protocol traffic crosses real stdio, when repository system verification runs fresh, resumed, successful, aborted, and failing prompts, it shall assert this matrix:
 
-- initialization shall advertise empty client capabilities, and the run shall select `session/new` or `session/resume` and apply model before thinking and mode configuration [[kimi-9](#kimi-9)];
-- `init` shall be emitted before normalized text, tool, plan, and permission events, and raw thought chunks shall be suppressed [[kimi-5](#kimi-5)];
-- reverse permission requests shall be rejected [[kimi-7](#kimi-7)];
-- every prompt stop reason shall map to its terminal status [[kimi-6](#kimi-6)];
-- the correct resume token shall be preserved [[kimi-12](#kimi-12)], and the per-run child shall terminate exactly once [[kimi-11](#kimi-11)];
-- the adapter identity shall be `kimi`, and availability probing shall invoke `kimi --version` without starting ACP or authentication [[kimi-1](#kimi-1)], [[kimi-2](#kimi-2)];
-- where abort occurs before and after session setup, the adapter shall cancel or terminate as appropriate and emit exactly one interrupted `done` without state leakage [[kimi-11](#kimi-11)];
-- where authentication, protocol, or child-process failure occurs, the stream shall emit an actionable error and error `done` without starting login [[kimi-6](#kimi-6)];
-- where permissions, tool lists, turn or budget limits, or effort values are unsupported, validation shall fail before the spawn seam is invoked [[kimi-7](#kimi-7)], [[kimi-10](#kimi-10)].
+| Surface | Assertions |
+| --- | --- |
+| package and target | `KimiAdapter` loads with its typed identity, the official SDK public surface compiles at [[kimi-15](#kimi-15)]'s paired target, and no private SDK build path is consumed [[kimi-1](#kimi-1)] |
+| availability | the real default probe invokes only `kimi --version`, respects its timeout and version floor, selects every result in [[kimi-2](#kimi-2)], and starts neither ACP nor authentication |
+| process | one child for every run reaching invocation, with [[kimi-3](#kimi-3)]'s cwd, environment, pipes, and drained bounded stderr; one [[kimi-25](#kimi-25)] cleanup sequence shall either observe its close or report that it remained alive after final grace |
+| wire | split, coalesced, and unterminated-final-line framing; oversized decoded buffers; every invalid JSON-RPC object, envelope, id, pending response, error, and consumed payload; unknown fields and update cases; optional usage; and handled pre-session or cross-session traffic select [[kimi-27](#kimi-27)]'s exact outcome, with each protocol failure terminating without exposing private traffic |
+| setup | protocol version 1 and empty capabilities succeed while another negotiated version rejects; fresh and resumed session selection and ordered configuration satisfy [[kimi-14](#kimi-14)], [[kimi-4](#kimi-4)], and [[kimi-16](#kimi-16)] |
+| prompt | `init` has every [[kimi-17](#kimi-17)] fallback and, per [[kimi-16](#kimi-16)], [[kimi-30](#kimi-30)], and [[kimi-5](#kimi-5)], precedes one-text-block prompting and every normalized event |
+| permissions and options | reverse requests reject per [[kimi-22](#kimi-22)]; unsupported policy, including writable-path failures, rejects per [[kimi-7](#kimi-7)] and [[kimi-8](#kimi-8)]; empty and non-empty tool lists reject per [[kimi-10](#kimi-10)]; invalid effort rejects per [[kimi-9](#kimi-9)]; and zero and nonzero limits reject per [[kimi-24](#kimi-24)], all before spawn |
+| failures | structured authentication and bare-key cases select [[kimi-21](#kimi-21)]; protocol and arbitrary process-close failures preserve diagnostics and select [[kimi-27](#kimi-27)], [[kimi-29](#kimi-29)], and [[kimi-28](#kimi-28)] |
+| isolation | an aborted run retains no [[kimi-25](#kimi-25)] caller listener, and event identity changes only through [[kimi-26](#kimi-26)] |
 
 ### kimi-220
 
-Given the adapter has been aborted, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall report the resume token each observed state requires [[kimi-12](#kimi-12)]:
+Given normal, failed, and aborted runs before or after backend identity, when the adapter emits events and terminal `done`, it shall select their identity and continuity through this matrix [[kimi-26](#kimi-26)] [[kimi-12](#kimi-12)] [[kimi-28](#kimi-28)]:
 
-| Observed before abort | `DonePayload.resumeToken` |
-| --- | --- |
-| a backend session identifier observed during the run | the observed backend identifier |
-| no backend identifier and a non-empty `AgentOptions.resume` value | the inbound `resume` value |
-| no backend identifier and no non-empty inbound `resume` value | omitted |
+| Observed state | Event `sessionId` | `DonePayload.resumeToken` |
+| --- | --- | --- |
+| backend session identifier observed | backend identifier | backend identifier |
+| no backend identifier and non-empty inbound resume | inbound resume | inbound resume only for error or interruption; otherwise omitted |
+| no backend identifier and no non-empty inbound resume | one generated correlation identifier | omitted |
 
 ### kimi-222
 
-Given a supported `mode: 'auto'` `PermissionPolicy` whose `writablePaths` contains valid entries and no independently active filesystem-sandbox write-grant surface, the adapter's permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'ambient'` and shall preserve the existing permission and tool mapping [[kimi-8](#kimi-8)].
+Given `PermissionPolicy.writablePaths`, when the adapter maps permissions, it shall select this complete matrix without changing the permission or tool outcome [[kimi-8](#kimi-8)]:
 
-### kimi-226
-
-Where an effort value is valid for the adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort [[kimi-9](#kimi-9)].
+| Input | Assertion |
+| --- | --- |
+| absent or empty | no writable-path report |
+| valid non-empty entries with `mode: 'auto'` | canonical paths and `enforcement: 'ambient'` |
+| any invalid entry | rejection before spawn |
 
 ### kimi-229
 
-Where either tool-list field is explicitly provided, including an empty array, when the adapter runs, it shall reject before spawning `kimi acp` [[kimi-10](#kimi-10)].
+Where either tool-list field is omitted, empty, or non-empty, when the adapter maps a run, omission shall preserve the native tool registry while every explicitly provided list shall reject before spawning `kimi acp` [[kimi-10](#kimi-10)].
 
 ### kimi-233
 
 _Superseded for usage shape by [[kimi-240](#kimi-240)]._
 
-Given a prompt with a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status while token accounting is `'unavailable'` [[kimi-5](#kimi-5)]:
+Given a prompt with a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status while the historical token accounting is `'unavailable'` [[kimi-20](#kimi-20)]:
 
 - accumulated result text and tool use shall remain intact, and an unconsumed malformed thought detail or null optional cache detail shall not poison otherwise complete accounting;
 - given a required token or cache counter is absent, or any present mapped counter is negative, fractional, non-finite, or non-numeric, accounting shall be `'unavailable'`, an absent optional cache counter alone retaining zero contribution;
-- given upstream omits complete accounting, or the adapter synthesizes an errored, interrupted, exhausted, or other terminal path, accounting shall be `'unavailable'` and no token estimate shall be introduced;
+- given upstream omits complete accounting, or the adapter synthesizes an errored, interrupted, exhausted, or other terminal path, accounting shall be `'unavailable'` and no token estimate shall be introduced; and
 - `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
 
 ### kimi-238
 
 _Superseded by [[kimi-240](#kimi-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish none [[kimi-5](#kimi-5)].
+Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish none [[kimi-20](#kimi-20)].
 
 ### kimi-240
 
-Given authentic accounting is sought from the adapter, when a caller reads terminal `usage.tokens`, the adapter shall publish no token or cost report for the pinned ACP runtime [[kimi-13](#kimi-13)]:
-
-- a synthetic unstable usage extension appearing in the prompt response shall not promote that shape to a report;
-- tool calls and the prompt stop status shall be retained regardless.
+Given authentic accounting is sought across successful, interrupted, max-turn, refusal, errored, and synthetic terminal paths, when a caller reads terminal usage, the adapter shall publish no token or cost report for the pinned ACP runtime while preserving prompt status, accumulated result, and the distinct observed tool-call count [[kimi-13](#kimi-13)].
 
 ## References
 

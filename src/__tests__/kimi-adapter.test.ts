@@ -697,7 +697,7 @@ describe('KimiAdapter', () => {
       }),
     );
 
-    // kimi-7: a headless run must never auto-approve. With no reject
+    // kimi-22: a headless run must never auto-approve. With no reject
     // option available the adapter returns a cancelled outcome rather than
     // selecting one of the allow options.
     expect(fake.permissionOutcome).toEqual({
@@ -1095,7 +1095,7 @@ describe('KimiAdapter', () => {
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });
 
-  // IR-039 / kimi-6: the owned pre-filter is the only layer that can raise
+  // IR-039 / kimi-27: the owned pre-filter is the only layer that can raise
   // malformed traffic. The SDK's own parser sits behind it and, since 1.3.0,
   // salvages rather than rejects — a malformed update it drops would otherwise
   // let the turn finish `success` with the defect invisible. These drive real

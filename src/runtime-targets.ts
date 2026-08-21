@@ -132,7 +132,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: '@moonshot-ai/kimi-code',
       repairSpec: '@moonshot-ai/kimi-code@0.31.1',
       command: 'kimi',
-      // The release that added the non-OAuth ACP route kimi-6 documents:
+      // The release that added the non-OAuth ACP route kimi-21 documents:
       // `hasUsableConfiguredDefaultModel` is present in 0.28.1 and absent
       // in 0.28.0. A floor at the tested version would refuse 0.28.1
       // through 0.30.x, which serve every route this adapter uses.

@@ -16,9 +16,9 @@ Done
 
 The malformed-usage rejection below records the behavior when this iteration
 completed.
-[[kimi-5](../packages/adapters/kimi.md#kimi-5)] later supersedes it by
+[[kimi-20](../packages/adapters/kimi.md#kimi-20)] later supersedes it by
 failure-isolating optional prompt usage as unavailable accounting, while
-[[kimi-6](../packages/adapters/kimi.md#kimi-6)] keeps control traffic strict.
+[[kimi-27](../packages/adapters/kimi.md#kimi-27)] keeps control traffic strict.
 
 ## Deliverables
 

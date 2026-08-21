@@ -69,7 +69,7 @@ expose it as public accounting per
 [[kimi-13](../packages/adapters/kimi.md#kimi-13)], and a malformed unstable
 extension is ignored instead of changing an otherwise completed turn into the
 malformed-control error required by
-[[kimi-6](../packages/adapters/kimi.md#kimi-6)].
+[[kimi-27](../packages/adapters/kimi.md#kimi-27)].
 Credential-free CI shall always exercise the exact ACP initialization handshake.
 This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].

@@ -39,7 +39,7 @@ them with optional authentic nested usage reports.
    Amend DR-002, [[engine-13](../packages/engine.md#engine-13)],
    [[engine-19](../packages/engine.md#engine-19)],
    [[engine-27](../packages/engine.md#engine-27)], and
-   [[kimi-5](../packages/adapters/kimi.md#kimi-5)]; add
+   [[kimi-20](../packages/adapters/kimi.md#kimi-20)]; add
    [[engine-119](../packages/engine.md#engine-119)] and
    [[engine-233](../packages/engine.md#engine-233)].
 2. [x] **Normalize every terminal producer.**
