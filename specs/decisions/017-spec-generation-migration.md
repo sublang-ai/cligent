@@ -542,7 +542,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-094` | `tmux-play-94` |
 | `TMUX-094` | `tmux-play-29` |
 | `TMUX-096` | `tmux-play-96` |
-| `TMUX-096` | `tmux-play-200` |
+| `TMUX-096` | `tmux-play-189` |
 | `TTMUX-001` | `tmux-play-101` |
 | `TTMUX-002` | `tmux-play-102` |
 | `TTMUX-003` | `tmux-play-103` |

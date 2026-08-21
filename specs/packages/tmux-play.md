@@ -1294,7 +1294,7 @@ When launcher or layout code creates a Boss/Captain or player pane, it shall mai
 | machine-readable pane query | separate fields with a character no logical key can contain |
 | server normalizes non-ASCII display text | leave every pane-addressed operation unchanged |
 
-### tmux-play-200
+### tmux-play-189
 
 When the launcher verifies a composed pane title against the tmux server, it shall select diagnostics through this matrix:
 
@@ -2026,8 +2026,8 @@ The probe shall exercise a real `glow` binary rather than a mock, shall run unde
 Given a real tmux server with a Boss/Captain pane and player panes of deliberately unequal widths, when the session is created, every pane shall carry its logical key in pane-scoped tmux state alongside a unique stable pane id, and the probe shall capture the key-to-pane-id mapping [[tmux-play-96](#tmux-play-96)].
 When the layout observer rebuilds the player area, every recreated pane shall carry its key the same way, and the probe shall capture the mapping again [[tmux-play-96](#tmux-play-96)].
 Given the displayed pane titles are then replaced with unrelated text and the panes are reordered by id-preserving swaps, a per-pane timer update per [[tmux-play-54](#tmux-play-54)] shall set its option on the captured pane id for the intended logical key, copy-mode live-follow per [[tmux-play-69](#tmux-play-69)] shall return the captured scrolled pane to its live tail, and prose rendered to the narrower player pane shall produce no visible row wider than that pane's own width even where the wider pane's width would have allowed one — so an implementation that routes by displayed title, pane position, or config order fails against the captured ids regardless of host locale behavior [[tmux-play-96](#tmux-play-96)].
-Given a tmux server started under a non-UTF-8 locale (e.g., `LC_ALL=C`), the launcher shall print the one-line warning exactly when the composed title fails to round-trip on that server, and the launch shall proceed; given a UTF-8 server whose composed-title round-trip succeeds, the same operations shall behave identically and no warning shall be printed [[tmux-play-200](#tmux-play-200)].
-The probe shall self-skip when either `tmux -V` or `glow -v` fails per [[tmux-play-51](#tmux-play-51)], [[tmux-play-96](#tmux-play-96)], and [[tmux-play-200](#tmux-play-200)].
+Given a tmux server started under a non-UTF-8 locale (e.g., `LC_ALL=C`), the launcher shall print the one-line warning exactly when the composed title fails to round-trip on that server, and the launch shall proceed; given a UTF-8 server whose composed-title round-trip succeeds, the same operations shall behave identically and no warning shall be printed [[tmux-play-189](#tmux-play-189)].
+The probe shall self-skip when either `tmux -V` or `glow -v` fails per [[tmux-play-51](#tmux-play-51)], [[tmux-play-96](#tmux-play-96)], and [[tmux-play-189](#tmux-play-189)].
 
 ### tmux-play-201
 
