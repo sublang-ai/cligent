@@ -52,7 +52,7 @@ While no native `result` has selected a terminal, when the child closes normally
 
 | Close state | Terminal outcome |
 | --- | --- |
-| the run requested abort, or signal is `SIGTERM` | `done.status: 'interrupted'`; trimmed stderr, when non-empty, is the result |
+| the run requested abort, or signal is `SIGTERM` | `done.status: 'interrupted'`; omit the result even when trimmed stderr is non-empty [[gemini-8](#gemini-8)] |
 | code `0` | `done.status: 'success'`; trimmed stderr, when non-empty, is the result |
 | code `53` | `done.status: 'max_turns'`; trimmed stderr, when non-empty, is the result |
 | code `1`, code `42`, another nonzero or null code, or any other signal | a non-recoverable `GEMINI_EXIT_ERROR` followed by `done.status: 'error'`, both carrying trimmed stderr or `Gemini CLI exited with code <code-or-null> without a result event` |
@@ -344,7 +344,7 @@ When the adapter publishes an authentic token report, it shall include one [[eng
 
 ### gemini-40
 
-When valid successful-response records reconcile to StreamStats, the adapter shall classify request coverage from this matrix:
+When valid successful-response records reconcile to StreamStats, the adapter shall classify request coverage per [[engine-31](../engine.md#engine-31)] from this matrix:
 
 | Run-owned evidence | Token outcome |
 | --- | --- |
@@ -354,7 +354,7 @@ When valid successful-response records reconcile to StreamStats, the adapter sha
 
 ### gemini-41
 
-When the adapter publishes terminal usage, it shall omit direct dollar cost because Gemini CLI reports none on this surface; the provider field in [[gemini-38](#gemini-38)] preserves the API-key, Vertex, account/subscription, or gateway rate-card domain instead.
+When the adapter publishes terminal usage, it shall omit direct dollar cost per [[engine-31](../engine.md#engine-31)] because Gemini CLI reports none on this surface; the provider field in [[gemini-38](#gemini-38)] preserves the API-key, Vertex, account/subscription, or gateway rate-card domain instead.
 
 ### Abort Handling
 
@@ -533,7 +533,8 @@ Given setup and child-process terminal conditions with no native result, when th
 
 Each synthetic-error row asserts init first if needed, a non-recoverable `GEMINI_STREAM_ERROR` with the exact thrown-`Error` message or fallback diagnostic, then error `done` with elapsed duration, normal-terminal resume selection, only the observed tool count, and no tokens or result [[gemini-9](#gemini-9)], [[gemini-19](#gemini-19)], [[gemini-27](#gemini-27)].
 The missing-stdout row additionally asserts child termination and close before temporary-resource cleanup [[gemini-35](#gemini-35)], [[gemini-44](#gemini-44)].
-Each close row asserts the selected status and error-before-done ordering, exact fallback message, trimmed-stderr result, elapsed duration, normal resume selection, and usage containing only the observed tool count that its state requires [[gemini-5](#gemini-5)], [[gemini-9](#gemini-9)], [[gemini-27](#gemini-27)].
+The interrupted-close row supplies non-empty stderr and asserts result omission [[gemini-5](#gemini-5)], [[gemini-8](#gemini-8)].
+Each non-interrupted close row asserts the selected status and error-before-done ordering, exact fallback message, trimmed-stderr result, elapsed duration, normal resume selection, and usage containing only the observed tool count that its state requires [[gemini-5](#gemini-5)], [[gemini-9](#gemini-9)], [[gemini-27](#gemini-27)].
 
 ### gemini-213
 
