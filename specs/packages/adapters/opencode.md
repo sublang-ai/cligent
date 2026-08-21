@@ -240,7 +240,7 @@ select event visibility through this matrix:
 | --- | --- |
 | current root session | ordinary output and control processing |
 | no explicit session or thread identity | pass through because many global event kinds are untagged |
-| run-owned descendant | permission control and lifecycle ownership only through [[opencode-20](#opencode-20)]; no ordinary child conversation |
+| run-owned descendant | permission control only through [[opencode-20](#opencode-20)] and lifecycle ownership only through [[opencode-56](#opencode-56)]; no ordinary child conversation |
 | unrelated identified session | no output or control processing |
 | same OpenCode session concurrently driven by another invocation/client, or receiving delayed background work from an earlier invocation [[16]] | no turn-level isolation guarantee because the stream exposes no turn identity; callers needing [[engine-18](../engine.md#engine-18)] concurrency use distinct sessions |
 
