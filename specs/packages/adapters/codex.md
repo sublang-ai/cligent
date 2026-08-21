@@ -283,7 +283,7 @@ Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and
 | resumed thread with a valid snapshot and no retained baseline | omit tokens and retain the current snapshot as the new baseline |
 | valid snapshot with the same optional-counter presence shape and no decreased counter | report the exact difference from the preceding snapshot and retain the current snapshot |
 | any decreased counter | omit tokens and retain the current snapshot so the next stable turn can recover |
-| usage value yielding no valid snapshot | omit tokens and, when a backend thread identifier is known, discard its old baseline |
+| usage value yielding no valid snapshot | omit tokens and discard any old baseline keyed by the latest backend thread identifier or, before one is observed on a resumed run, the non-empty inbound resume value |
 | first valid resumed snapshot after a discarded baseline | omit tokens and establish the new baseline |
 | optional cache or reasoning counter presence changes | omit tokens and retain the new shape |
 | next valid same-shape, non-decreasing snapshot after a retained decrease or shape-transition baseline, or after the re-established post-malformed baseline | recover exact differencing |
