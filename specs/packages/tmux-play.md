@@ -422,6 +422,7 @@ When the dispatcher publishes a record, it shall apply this observer-delivery co
 | --- | --- |
 | observer order | invoke in registration order |
 | asynchronous observer | await its returned Promise before dispatching the record to the next observer |
+| record sequencing | await the current record's observer-dispatch operation before beginning dispatch of the next record |
 | record cardinality | drop and coalesce no record |
 
 ### tmux-play-24
