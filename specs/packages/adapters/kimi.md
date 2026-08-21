@@ -61,8 +61,11 @@ When the adapter emits `init`, it shall select the payload through this matrix:
 | `cwd` | the absolute effective working directory |
 | `model`, no requested model | the initial session configuration's selected model, otherwise `unknown` |
 | `model`, requested model | the post-update selected model, otherwise the requested value |
-| tools | `tools: []`, `toolsKnown: false`, and `toolsSource: 'unavailable'`, distinguishing an unknown surface from a configured empty set |
-| capabilities | negotiated ACP protocol version and any writable-path report from [[kimi-8](#kimi-8)] |
+| `tools` | `[]` |
+| `capabilities.toolsKnown` | `false` |
+| `capabilities.toolsSource` | `'unavailable'`, distinguishing an unknown surface from a configured empty set |
+| `capabilities.acpProtocolVersion` | negotiated ACP protocol version |
+| `capabilities.writablePaths` | the report from [[kimi-8](#kimi-8)] when present, otherwise omitted |
 
 ### Event Normalization
 
@@ -111,7 +114,12 @@ For each native `toolCallId`, the adapter shall emit at most one correlated `too
 
 ### kimi-19
 
-For each validated `agent_message_chunk`, the adapter shall emit `text_delta` with the exact text, including an empty string, append those deltas in order for `DonePayload.result`, and omit that result only when no assistant text accumulated; non-text message content and thought or user-message chunks shall contribute neither text nor result.
+When the adapter normalizes a validated `agent_message_chunk`, `agent_thought_chunk`, or `user_message_chunk`, it shall select this matrix:
+
+| Content | Outcome |
+| --- | --- |
+| `agent_message_chunk` text, including an empty string | emit `text_delta` with the exact text; append the deltas in order for `DonePayload.result`; omit that result only when no assistant text accumulated |
+| non-text agent-message content, `agent_thought_chunk`, or `user_message_chunk` | emit no `text_delta` and contribute neither text nor terminal result |
 
 ### kimi-20
 
@@ -154,11 +162,11 @@ When ACP reports missing authentication by JSON-RPC code `-32000` or an authenti
 
 ### kimi-29
 
-When a non-authentication child spawn or ACP operation throws, the child reports a synchronous or asynchronous process error, or the child closes prematurely, nonzero, or on an unexpected signal, the adapter shall emit non-recoverable `KIMI_ACP_ERROR` followed by `done.status: 'error'`; the error message shall preserve the thrown diagnostic, any structured `data.details`, `data.detail`, or `data.message`, and the bounded stderr tail without duplicating text.
+When a non-authentication child spawn or ACP operation throws, the child reports a synchronous or asynchronous process error, or the child closes prematurely, nonzero, or on an unexpected signal, the adapter shall emit non-recoverable `KIMI_ACP_ERROR` whose message preserves the thrown diagnostic, any structured `data.details`, `data.detail`, or `data.message`, and the bounded stderr tail without duplicating text, followed by `done.status: 'error'`.
 
 ### kimi-28
 
-For every terminal path, the adapter shall emit exactly one `done` carrying elapsed duration, [[kimi-12](#kimi-12)]'s resume selection, [[kimi-13](#kimi-13)]'s usage, and [[kimi-19](#kimi-19)]'s accumulated result when non-empty; an applicable non-recoverable error shall precede that terminal.
+For every terminal path, the adapter shall emit any applicable non-recoverable error followed by exactly one `done` carrying elapsed duration, [[kimi-12](#kimi-12)]'s resume selection, [[kimi-13](#kimi-13)]'s usage, and [[kimi-19](#kimi-19)]'s accumulated result when non-empty.
 
 ### Permission Mapping
 
@@ -218,7 +226,12 @@ When the adapter maps the Kimi values in [[engine-20](../engine.md#engine-20)], 
 
 ### kimi-23
 
-When `AgentOptions.model` is provided, including an empty string, the adapter shall apply that exact value through ACP config option `model` after session setup; when it is omitted, the adapter shall apply no model override and retain the session's selected model, which is the provider default only for a fresh session that has no prior override.
+When the adapter maps `AgentOptions.model` after session setup, it shall select this matrix:
+
+| Model input | Outcome |
+| --- | --- |
+| provided, including an empty string | apply that exact value through ACP config option `model` |
+| omitted | apply no model override and retain the session's selected model, which is the provider default only for a fresh session with no prior override |
 
 ### kimi-10
 
@@ -255,9 +268,7 @@ When the adapter emits terminal `done`, it shall select `resumeToken` through th
 | --- | --- |
 | any status after a backend session identifier is known | backend identifier |
 | `error` or `interrupted`, no backend identifier, non-empty inbound `AgentOptions.resume` | inbound resume value |
-| every other no-backend state | omitted |
-
-A locally generated correlation identifier shall never be exposed as resumable.
+| every other no-backend state | omitted; any locally generated correlation identifier remains non-resumable |
 
 ### Token Accounting
 
@@ -281,7 +292,7 @@ The adapter shall consume the official generic `@agentclientprotocol/sdk` public
 
 ### kimi-27
 
-When ACP bytes and messages cross the adapter-owned wire boundary, it shall validate only structure and fields the adapter consumes, admit unknown fields, drop unhandled update cases, failure-isolate the optional unstable usage extension, and select every boundary case through this matrix:
+When ACP bytes and messages cross the adapter-owned wire boundary, it shall validate only structure and fields the adapter consumes, admit unknown fields, drop unhandled update cases, failure-isolate the optional unstable usage extension, and select every boundary case through this matrix, with every `protocol failure` terminating the child and flowing through [[kimi-29](#kimi-29)] and [[kimi-28](#kimi-28)]:
 
 | Boundary state | Outcome |
 | --- | --- |
@@ -293,19 +304,31 @@ When ACP bytes and messages cross the adapter-owned wire boundary, it shall vali
 | malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
 | handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
 
-Every protocol failure shall terminate the child and flow through [[kimi-29](#kimi-29)] and [[kimi-28](#kimi-28)].
-
 ### Session Identity
 
 ### kimi-26
 
-When the adapter assigns `AgentEvent.sessionId`, it shall use one generated non-empty identifier from [[engine-7](../engine.md#engine-7)] before a backend identifier exists, except that a non-empty inbound resume value is the pre-backend identifier; after `session/new` or `session/resume` succeeds, every later event shall use that backend identifier.
+When the adapter assigns `AgentEvent.sessionId`, it shall select the identifier through this matrix:
+
+| Identity state | Selection |
+| --- | --- |
+| before a backend identifier, no non-empty inbound resume | one generated non-empty identifier from [[engine-7](../engine.md#engine-7)] |
+| before a backend identifier, non-empty inbound resume | inbound resume value |
+| after `session/new` or `session/resume` succeeds | backend identifier for every later event |
 
 ### Process Containment
 
 ### kimi-25
 
-After a run has spawned a child, cleanup shall remove its abort listener, close protocol resources, end stdin and await close for a bounded grace, send `SIGTERM` and await another bounded grace when needed, then send `SIGKILL` and await one final grace; cleanup `SIGTERM` after a terminal prompt response shall not change the selected outcome, while a process requiring `SIGKILL` or remaining alive afterward shall produce an error.
+After a run has spawned a child, cleanup shall perform this containment sequence and apply its outcome cases:
+
+| Stage or outcome case | Required behavior |
+| --- | --- |
+| cleanup begins | remove the abort listener, close protocol resources, end stdin, and await close for a bounded grace |
+| child still open after the first grace | send `SIGTERM` and await another bounded grace |
+| child still open after the second grace | send `SIGKILL` and await one final grace |
+| terminal prompt response already selected when cleanup sends `SIGTERM` | preserve the selected outcome |
+| process requires `SIGKILL` or remains alive after final grace | produce an error |
 
 ## Verification
 
@@ -328,7 +351,7 @@ Where application configuration selects a representative model and `effort: 'on'
 
 ### kimi-203
 
-Given caller abort at each lifecycle phase, when the adapter runs, it shall satisfy this matrix:
+Given caller abort at each lifecycle phase, when the adapter runs, it shall satisfy this matrix, every row using [[kimi-12](#kimi-12)]'s resume selection, removing the caller listener, closing protocol resources, and initiating no cleanup sequence more than once under [[kimi-11](#kimi-11)], [[kimi-25](#kimi-25)], and [[kimi-28](#kimi-28)]:
 
 | Phase | Assertions |
 | --- | --- |
@@ -336,8 +359,6 @@ Given caller abort at each lifecycle phase, when the adapter runs, it shall sati
 | before backend session | one cleanup sequence, no later configuration or prompt, one interrupted terminal |
 | during configuration | one cancel after backend identity, no later stage, and one interrupted terminal |
 | active prompt | one cancel, queued response and updates drained when possible, one interrupted terminal emitted before final child termination |
-
-Every row shall use [[kimi-12](#kimi-12)]'s resume selection, remove the caller listener, close protocol resources, and initiate no cleanup sequence more than once [[kimi-11](#kimi-11)] [[kimi-25](#kimi-25)] [[kimi-28](#kimi-28)].
 
 ### kimi-204
 
@@ -347,13 +368,19 @@ Given the complete `PermissionPolicy` mode and capability matrix plus every head
 - an active request emits the exact unified payload and selects `Reject and Exit`, first reject-once, first reject-always, or cancellation in [[kimi-22](#kimi-22)]'s priority, including caller abort; and
 - no rejected or invalid mapping reaches the spawn seam [[kimi-7](#kimi-7)] [[kimi-8](#kimi-8)].
 
-### kimi-205
+### kimi-32
 
 Given a schema-valid optional ACP usage extension before [[kimi-31](#kimi-31)]'s evidence gate is met, when repository integration verification runs a prompt carrying its counters, it shall assert that the prompt completes while terminal usage contains only independently observed tool calls and no token or cost report.
 
 ### kimi-218
 
-Where effort is omitted, `off`, `on`, another adapter's value, or an arbitrary unknown string, when the adapter maps a run, it shall select [[kimi-9](#kimi-9)]'s exact outcome; accepted model and effort values shall reach ACP in [[kimi-16](#kimi-16)]'s order, with the model behavior in [[kimi-23](#kimi-23)], while rejection shall name Kimi and exactly its allowed values before spawn.
+Given an `AgentOptions.effort` value that is omitted, `off`, `on`, another adapter's value, or an arbitrary unknown string, and an `AgentOptions.model` value that is omitted or provided, when the adapter maps a run, it shall satisfy this matrix:
+
+| Inputs | Assertions |
+| --- | --- |
+| effort omitted, `off`, or `on`; model omitted | exact [[kimi-9](#kimi-9)] outcome, no model override, and the ACP call order and omissions in [[kimi-16](#kimi-16)] and [[kimi-23](#kimi-23)] |
+| effort omitted, `off`, or `on`; model provided, including empty | exact [[kimi-9](#kimi-9)] outcome and [[kimi-23](#kimi-23)] model behavior in [[kimi-16](#kimi-16)]'s ACP call order |
+| another adapter's effort or an arbitrary unknown string; any model | rejection before spawn naming Kimi and exactly its allowed values |
 
 ### kimi-219
 

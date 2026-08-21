@@ -691,7 +691,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TADAPT-040` | `engine-32` |
 | `TADAPT-040` | `engine-240` |
 | `TADAPT-040` | `gemini-240` |
-| `TADAPT-040` | `kimi-205` |
+| `TADAPT-040` | `kimi-32` |
 | `TADAPT-040` | `kimi-240` |
 | `TADAPT-040` | `opencode-240` |
 | `TADAPT-041` | `gemini-241` |
