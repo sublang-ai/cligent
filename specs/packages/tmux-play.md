@@ -1439,7 +1439,7 @@ When the launcher constructs or resizes the main tmux window, the check shall as
 | N = 0 title and timer | exact Captain title from [[tmux-play-36](#tmux-play-36)] and [[tmux-play-48](#tmux-play-48)]; initialized frozen-zero Captain timer from [[tmux-play-53](#tmux-play-53)], [[tmux-play-54](#tmux-play-54)], and [[tmux-play-195](#tmux-play-195)] |
 | N = 0 input setup | session mouse enabled and every pointer, navigation, `C-c`, and ESC binding installed without a missing-player target [[tmux-play-62](#tmux-play-62)], [[tmux-play-63](#tmux-play-63)], [[tmux-play-65](#tmux-play-65)], [[tmux-play-68](#tmux-play-68)], [[tmux-play-70](#tmux-play-70)] |
 | N = 0 resize setup | install every resize hook without a missing-player target [[tmux-play-44](#tmux-play-44)] |
-| N = 0; real window resized | sole pane remains full-width [[tmux-play-44](#tmux-play-44)] |
+| N = 0; real window resized under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness | sole pane remains full-width [[tmux-play-44](#tmux-play-44)] |
 | `layout.singlePlayerColumnWeights` and its `layout.columnWeights` alias omitted; N = 1 | visible columns use `[1, 1]`, one half each [[tmux-play-64](#tmux-play-64)], [[tmux-play-44](#tmux-play-44)] |
 | `layout.multiPlayerColumnWeights` and its `layout.columnWeights` alias omitted; N ≥ 2 | visible columns use `[1, 1, 1]`, one third each with the rightmost absorbing the remainder [[tmux-play-64](#tmux-play-64)], [[tmux-play-44](#tmux-play-44)] |
 | explicit `layout.columnWeights` | resolved regions follow that ratio at the resolved `layout.window.columns` [[tmux-play-28](#tmux-play-28)], [[tmux-play-44](#tmux-play-44)] |
