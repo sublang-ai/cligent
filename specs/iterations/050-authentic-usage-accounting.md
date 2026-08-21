@@ -26,8 +26,8 @@ Done
 
 1. [x] **Replace the public contract.**
    Amend [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md),
-   [DR-014](../decisions/014-unified-token-usage-breakdown.md), [[engine-31](../packages/engine.md#engine-31)], and
-   [[engine-122](../packages/engine.md#engine-122)]; replace the declarations and shared validators.
+   [DR-014](../decisions/014-unified-token-usage-breakdown.md), [[engine-31](../packages/engine.md#engine-31)] and its [[engine-55](../packages/engine.md#engine-55)] through [[engine-65](../packages/engine.md#engine-65)] accounting rules, and
+   [[engine-122](../packages/engine.md#engine-122)] with [[engine-69](../packages/engine.md#engine-69)] through [[engine-72](../packages/engine.md#engine-72)]; replace the declarations and shared validators.
 2. [x] **Publish whole-tree Claude accounting and scoped Codex deltas.**
    Implement [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)] and
    [[codex-17](../packages/adapters/codex.md#codex-17)], including estimate provenance and exact omission.

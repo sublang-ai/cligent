@@ -265,7 +265,7 @@ export function mapPermissionsToClaudeOptions(
 ): ClaudePermissionOptions {
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
 
-  // engine-21: session-wide auto-mode posture takes precedence over the
+  // engine-52: session-wide auto-mode posture takes precedence over the
   // per-capability levels. 'auto' maps to claude's classifier-backed
   // auto-mode (still blocks high-risk actions, falls back to prompts
   // after consecutive/total denies); 'bypass' maps to the unchecked
@@ -457,7 +457,7 @@ const MODEL_USAGE_ALIASES = [
 /**
  * claude-code-12 and claude-code-29: `result.modelUsage` counts every request
  * the run made, including subagents. Fold its per-model entries into authentic
- * records and matching engine-31 totals. Return undefined when the map is
+ * records and matching engine-59 totals. Return undefined when the map is
  * absent or malformed rather than publishing a partial table.
  */
 function foldModelUsage(

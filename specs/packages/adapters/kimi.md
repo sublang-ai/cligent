@@ -171,7 +171,7 @@ For every terminal path, the adapter shall emit any applicable non-recoverable e
 
 ### kimi-7
 
-When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select this exhaustive matrix:
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select this exhaustive matrix:
 
 | Policy input | Outcome |
 | --- | --- |
@@ -202,7 +202,7 @@ When an active prompt receives `session/request_permission` for its session, the
 
 ### kimi-8
 
-Where Kimi exposes no independently active filesystem sandbox or ACP filesystem capability, when the adapter maps `PermissionPolicy.writablePaths` per [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)], it shall select this matrix without changing [[kimi-7](#kimi-7)]'s mode outcome:
+Where Kimi exposes no independently active filesystem sandbox or ACP filesystem capability, when the adapter maps `PermissionPolicy.writablePaths` per [[engine-53](../engine.md#engine-53)] and [[engine-54](../engine.md#engine-54)], it shall select this matrix without changing [[kimi-7](#kimi-7)]'s mode outcome:
 
 | Input | Outcome |
 | --- | --- |
@@ -214,7 +214,7 @@ Where Kimi exposes no independently active filesystem sandbox or ACP filesystem 
 
 ### kimi-9
 
-When the adapter maps the Kimi values in [[engine-20](../engine.md#engine-20)], it shall select this matrix per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), [[engine-24](../engine.md#engine-24)], and [[5]]:
+When the adapter maps the Kimi values in [[engine-40](../engine.md#engine-40)], it shall select this matrix per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), [[engine-50](../engine.md#engine-50)], and [[5]]:
 
 | `AgentOptions.effort` | Outcome |
 | --- | --- |
@@ -255,7 +255,7 @@ When caller abort is requested, the adapter shall select the lifecycle through t
 | --- | --- |
 | signal already aborted before `run()` | spawn no child; yield exactly one interrupted `done` |
 | child spawned but session setup incomplete | terminate the child and yield exactly one interrupted `done` |
-| backend session known | send `session/cancel` exactly once, suppress any later configuration or prompt stage, continue draining an active prompt response and queued updates when possible, yield exactly one interrupted `done` before terminating the child |
+| backend session known | send `session/cancel` exactly once, suppress any later configuration or prompt stage, continue draining an active prompt response and queued updates when possible, yield exactly one [[engine-73](../engine.md#engine-73)] interrupted `done` before terminating the child |
 
 ### Resume Token
 
@@ -273,7 +273,7 @@ When the adapter emits terminal `done`, it shall select `resumeToken` through th
 
 ### kimi-13
 
-For the pinned Kimi Code runtime, every terminal `done` shall omit token and cost reports under [[engine-31](../engine.md#engine-31)], count `usage.toolUses` from distinct emitted native tool calls, and preserve prompt status and accumulated result independently, because its supported ACP prompt response supplies no authentic accounting [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
+For the pinned Kimi Code runtime, every terminal `done` shall omit token and cost reports under [[engine-31](../engine.md#engine-31)], count `usage.toolUses` from distinct emitted native tool calls per [[engine-65](../engine.md#engine-65)], and preserve prompt status and accumulated result independently, because its supported ACP prompt response supplies no authentic accounting [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
 
 ### kimi-31
 

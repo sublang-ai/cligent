@@ -205,7 +205,7 @@ Where a supplied `PermissionPolicy` has `mode` omitted, the adapter shall map it
 
 ### gemini-12
 
-When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select the provider controls from this exhaustive matrix:
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select the provider controls from this exhaustive matrix:
 
 | Policy input | Approval and capability outcome |
 | --- | --- |
@@ -228,7 +228,7 @@ Where either tool-list option is supplied, the adapter shall map the effective l
 
 ### gemini-30
 
-Where Gemini exposes no independently active supported filesystem-sandbox write-grant surface, when the adapter maps `PermissionPolicy.writablePaths` per [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)], it shall produce this matrix without changing the tool-list, capability, or approval-mode outcome:
+Where Gemini exposes no independently active supported filesystem-sandbox write-grant surface, when the adapter maps `PermissionPolicy.writablePaths` per [[engine-53](../engine.md#engine-53)] and [[engine-54](../engine.md#engine-54)], it shall produce this matrix without changing the tool-list, capability, or approval-mode outcome:
 
 | Input | Outcome |
 | --- | --- |
@@ -283,7 +283,7 @@ Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), where a
 | `minimal` | `MINIMAL` |
 | `low` | `LOW` |
 | `medium` | `MEDIUM` |
-| `high`, `xhigh`, or `max` | `HIGH`, the nearest supported ceiling per [[engine-20](../engine.md#engine-20)] |
+| `high`, `xhigh`, or `max` | `HIGH`, the nearest supported ceiling per [[engine-42](../engine.md#engine-42)] |
 
 | Gemini 2.5 effort | `thinkingBudget` |
 | --- | --- |
@@ -294,7 +294,7 @@ Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), where a
 | `xhigh` | `24576` |
 | `max` | `32768` for `gemini-2.5-pro*`; `24576` for every other matching Gemini 2.5 ID, including `gemini-2.5-flash*` and `gemini-2.5-flash-lite*` |
 
-The Gemini 2.5 values stay within the documented Pro `128..32768`, Flash `0..24576`, and Flash Lite `512..24576` bounds, and `max` uses the family ceiling rather than the dynamic-thinking sentinel because [[engine-20](../engine.md#engine-20)] defines the greatest reasoning depth.
+The Gemini 2.5 values stay within the documented Pro `128..32768`, Flash `0..24576`, and Flash Lite `512..24576` bounds, and `max` uses the family ceiling rather than the dynamic-thinking sentinel because [[engine-39](../engine.md#engine-39)] defines the greatest reasoning depth.
 
 ### gemini-15
 
@@ -304,7 +304,7 @@ When the adapter validates `AgentOptions.effort`, it shall select this matrix:
 | --- | --- |
 | omitted | no effort-specific alias; preserve Gemini CLI and user-configuration defaults |
 | a value in the Gemini portable vocabulary | mapping through [[gemini-11](#gemini-11)] |
-| another built-in adapter's value, including `ultracode` or `ultra`, or any unknown string | reject before spawn with [[engine-24](../engine.md#engine-24)]'s metadata-backed error naming this adapter and its allowed values |
+| another built-in adapter's value, including `ultracode` or `ultra`, or any unknown string | reject before spawn with [[engine-50](../engine.md#engine-50)]'s metadata-backed error naming this adapter and its allowed values |
 
 ### gemini-16
 
@@ -340,11 +340,11 @@ When a valid telemetry response contributes tokens, the adapter shall normalize 
 
 ### gemini-38
 
-When the adapter publishes an authentic token report, it shall include one [[engine-31](../engine.md#engine-31)] record per distinct successful response, including root and descendant-agent responses without exposing hidden conversation, with actual model, non-empty telemetry `auth_type` as provider, `requests: 1`, the tokens from [[gemini-37](#gemini-37)], and totals equal to the safe member-wise sum of those records [[8]].
+When the adapter publishes an authentic token report, it shall include one [[engine-59](../engine.md#engine-59)] record per distinct successful response, including root and descendant-agent responses without exposing hidden conversation, with actual model, non-empty telemetry `auth_type` as provider, `requests: 1` per [[engine-60](../engine.md#engine-60)], the tokens from [[gemini-37](#gemini-37)], and totals equal to the safe member-wise sum of those records [[8]].
 
 ### gemini-40
 
-When valid successful-response records reconcile to StreamStats, the adapter shall classify request coverage per [[engine-31](../engine.md#engine-31)] from this matrix:
+When valid successful-response records reconcile to StreamStats, the adapter shall classify request coverage per [[engine-58](../engine.md#engine-58)] from this matrix:
 
 | Run-owned evidence | Token outcome |
 | --- | --- |
@@ -360,7 +360,7 @@ When the adapter publishes terminal usage, it shall omit direct dollar cost per 
 
 ### gemini-8
 
-While a run has not emitted terminal `done`, when its caller signal is already aborted or fires, the adapter shall request `SIGTERM` from an active child, give cancellation precedence over any pending native result, and yield terminal `done` with `status: 'interrupted'`, the resume token in [[gemini-9](#gemini-9)], elapsed duration, usage containing only [[gemini-27](#gemini-27)]'s tool count, and no result.
+While a run has not emitted terminal `done`, when its caller signal is already aborted or fires, the adapter shall request `SIGTERM` from an active child, give cancellation precedence over any pending native result, and yield terminal `done` with [[engine-73](../engine.md#engine-73)] status `'interrupted'`, the resume token in [[gemini-9](#gemini-9)], elapsed duration, usage containing only [[gemini-27](#gemini-27)]'s tool count, and no result.
 
 ### Resume Token
 

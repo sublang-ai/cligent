@@ -59,7 +59,7 @@ precede every code change.
    [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)] for the cost-versus-token scope mismatch.
 6. [x] **Correct Codex per-turn accounting.**
    Subtract a per-thread baseline from the cumulative snapshot, guard non-monotonic snapshots, and fail
-   closed with no baseline; add [[codex-15](../packages/adapters/codex.md#codex-15)] and amend engine-18 with the
+   closed with no baseline; add [[codex-15](../packages/adapters/codex.md#codex-15)] and amend [[engine-37](../packages/engine.md#engine-37)] and [[engine-38](../packages/engine.md#engine-38)] with the
    baseline carve-out.
 7. [x] **Publish the Codex breakdown.**
    Derive both sides by guarded subtraction from the per-turn delta; add

@@ -114,7 +114,7 @@ No capability flag is needed. The presence or absence of `resumeToken` in `done`
 
 ### Adapter Thread Safety
 
-Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: each call shall create fresh local state, except for the cumulative-accounting baseline and ordering queue narrowly permitted by [[engine-18](../packages/engine.md#engine-18)].
+Adapters shared across `Cligent` instances must be safe for concurrent `run()` calls: each call shall create fresh local state per [[engine-18](../packages/engine.md#engine-18)], except for the cumulative-accounting baseline in [[engine-37](../packages/engine.md#engine-37)] and ordering queue in [[engine-38](../packages/engine.md#engine-38)].
 Adapters that manage external resources (e.g., an adapter spawning a managed server on a fixed port) may have environmental constraints that prevent true concurrent execution; such adapters shall document this limitation.
 Callers needing concurrent sessions on constrained adapters should instantiate separate adapter instances with distinct resource configurations.
 

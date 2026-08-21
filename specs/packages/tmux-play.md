@@ -103,13 +103,13 @@ Multiple players may share an adapter and model.
 ### tmux-play-52
 
 The `captain` object and each `players` entry may include a `permissions` object whose typed shape is [[engine-21](engine.md#engine-21)]'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`, and `writablePaths` is an optional array of workspace-relative path strings per [[engine-22](engine.md#engine-22)].
-The loader shall validate and canonicalize `permissions.writablePaths` per [[engine-22](engine.md#engine-22)], then retain the accepted `permissions` value as that captain's or player's runtime-held call default per [DR-005](../decisions/005-per-adapter-permission-configuration.md); when complete `settings` is omitted, tmux-play shall supply that default at the `Cligent.run()` boundary per [[tmux-play-93](#tmux-play-93)], where the adapter performs the SDK-knob mapping per [[engine-21](engine.md#engine-21)].
+The loader shall validate and canonicalize `permissions.writablePaths` per [[engine-53](engine.md#engine-53)], then retain the accepted `permissions` value as that captain's or player's runtime-held call default per [DR-005](../decisions/005-per-adapter-permission-configuration.md); when complete `settings` is omitted, tmux-play shall supply that default at the `Cligent.run()` boundary per [[tmux-play-93](#tmux-play-93)], where the adapter performs the SDK-knob mapping per [[engine-52](engine.md#engine-52)].
 The loader shall reject unknown sub-fields under `permissions`, values outside the closed sets above, or invalid `writablePaths` entries with an error that names the offending path per [[tmux-play-8](#tmux-play-8)].
 A missing `permissions` field shall be treated as no policy override; the adapter retains its SDK default.
 
 ### tmux-play-56
 
-Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter`: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, `gemini` and `opencode` accept only [[engine-20](engine.md#engine-20)]'s portable set, and `kimi` accepts only the provider-native binary values `off` and `on`.
+Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter` per [[engine-40](engine.md#engine-40)]: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, `gemini` and `opencode` accept only [[engine-39](engine.md#engine-39)]'s portable set, and `kimi` accepts only the provider-native binary values `off` and `on`.
 The loader shall retain an accepted value as that captain's or player's runtime-held call default, supply it at the `Cligent.run()` boundary when complete `settings` is omitted per [[tmux-play-93](#tmux-play-93)], and preserve the adapter/value correlation in the exported captain, player, and runtime configuration types.
 The loader shall reject an unsupported value with an error naming the offending path, adapter, and allowed values before the runtime starts.
 A missing `effort` field shall be treated as no override; the adapter retains its defaults for that player or captain.
@@ -889,12 +889,12 @@ The duration text shall always carry exactly two digits per component while `h <
 ### tmux-play-41
 
 Within a single tmux-play session, each player's `Cligent` instance shall be created once and reused across every Boss turn.
-Per [[engine-5](engine.md#engine-5)], the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
+Per [[engine-33](engine.md#engine-33)], the engine shall auto-inject `resume` on subsequent runs when the underlying adapter emits a `resumeToken`, so player responses on later turns may build on prior context for adapters that support session continuity.
 When `callPlayer` receives `CallPlayerOptions.resume` as a string, tmux-play shall pass that string through to `Cligent.run()` for the call, overriding any resume token stored on the player's persistent `Cligent`.
 When `CallPlayerOptions.resume` is `false`, tmux-play shall pass `false` through to `Cligent.run()` so the call starts fresh even when the player's persistent `Cligent` stores a prior token.
 When `CallPlayerOptions.resume` is omitted, tmux-play shall preserve the existing automatic continuity behavior above.
 Where complete settings per [[tmux-play-93](#tmux-play-93)] are accepted for a resumed call, tmux-play shall apply them without changing the selected token; where settings are rejected before provider work, the stored token shall remain available to a later call.
-This continuity shall include an ESC-aborted Boss turn when a player's interrupted adapter `done` carries a `resumeToken` per [[engine-9](engine.md#engine-9)]: the next Boss turn that calls the same player shall pass that token as `resume`.
+This continuity shall include an ESC-aborted Boss turn when a player's interrupted adapter `done` carries a `resumeToken` through [[engine-35](engine.md#engine-35)]'s drain: the next Boss turn that calls the same player shall pass that token as `resume` per [[engine-33](engine.md#engine-33)].
 When the interrupted `done` carries no `resumeToken`, tmux-play shall expose the aborted, not-resumable result through [[tmux-play-33](#tmux-play-33)] and keep the player callable normally after the aborted round without rewriting prompts at the runtime or engine layer.
 
 ### tmux-play-42
@@ -925,7 +925,7 @@ Because a `'hidden'` call writes no bytes to the Boss/Captain pane, it shall not
 
 ### tmux-play-88
 
-When `CallCaptainOptions.resume` is a string, tmux-play shall pass that string to the Captain `Cligent.run()` call and override its stored automatic resume token; when it is `false`, tmux-play shall pass `false` so the call starts a fresh backend session; when it is omitted, tmux-play shall preserve automatic Captain continuity per [[engine-5](engine.md#engine-5)].
+When `CallCaptainOptions.resume` is a string, tmux-play shall pass that string to the Captain `Cligent.run()` call and override its stored automatic resume token; when it is `false`, tmux-play shall pass `false` so the call starts a fresh backend session; when it is omitted, tmux-play shall preserve automatic Captain continuity per [[engine-33](engine.md#engine-33)].
 When `CallCaptainOptions.allowedTools` is provided, tmux-play shall copy and pass the exact list to the Captain `Cligent.run()` call; an empty list shall retain its explicit no-tools meaning per [[engine-17](engine.md#engine-17)], while omission shall preserve the Captain's configured or adapter-native tool surface.
 The session and tool controls shall not change [[tmux-play-72](#tmux-play-72)]'s record visibility, result, or presentation semantics.
 

@@ -15,9 +15,13 @@ Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentE
 
 ### engine-1
 
-The `Cligent` constructor shall accept an `AgentAdapter` and optional `CligentOptions` per [DR-003](../decisions/003-role-scoped-session-management.md).
-`CligentOptions` contains instance-level defaults (`role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `allowedTools`, `disallowedTools`).
-Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
+Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` constructor shall accept this input shape:
+
+| Input | Contract |
+| --- | --- |
+| `AgentAdapter` | required adapter |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `allowedTools`, and `disallowedTools` |
+| `abortSignal` and `resume` | excluded from instance defaults and available only in `RunOptions` |
 
 ### engine-2
 
@@ -25,26 +29,45 @@ Call-scoped fields (`abortSignal`, `resume`) exist only in `RunOptions`.
 
 ### engine-3
 
-`Cligent.run()` shall merge `CligentOptions` instance defaults with per-call `RunOptions` overrides per [DR-003](../decisions/003-role-scoped-session-management.md): deep merge for `permissions`, replace for `allowedTools`/`disallowedTools` arrays, per-call wins for other scalars.
-`abortSignal` and `resume` exist only in `RunOptions` (per-call), not in instance defaults.
-Within `permissions`, `writablePaths` is an array grant field: when a per-call `permissions.writablePaths` array is provided, it shall replace the instance default array rather than merging element-wise.
+When `Cligent.run()` resolves instance defaults and per-call overrides, it shall select the effective `RunOptions` per [DR-003](../decisions/003-role-scoped-session-management.md) through this matrix:
+
+| Field | Selection |
+| --- | --- |
+| `permissions` object | merge by member, with a provided per-call member taking precedence |
+| `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
+| `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
+| another scalar shared by both option types | use the per-call value when provided, otherwise the instance default |
+| `abortSignal` or `resume` | accept only the per-call value because neither field exists in instance defaults |
 
 ### engine-4
 
-When `CligentOptions.role` is set, every event yielded by `run()` shall carry a `role` field matching that value.
-When `role` is not set, events shall not include a `role` field.
+When `Cligent.run()` yields an event, it shall select the `role` member through this matrix:
+
+| `CligentOptions.role` | Event `role` |
+| --- | --- |
+| set | the configured value |
+| omitted | omitted |
 
 ### Session Continuity
 
 ### engine-5
 
-When the adapter emits a `done` event with a `resumeToken`, `Cligent` shall store it.
-On subsequent `run()` calls, `Cligent` shall inject `resume: resumeToken` into adapter options — unless the caller explicitly sets `resume` in per-call overrides.
+When the adapter emits a `done` event with a `resumeToken`, `Cligent` shall store that token for session continuity.
+
+### engine-33
+
+When a subsequent `Cligent.run()` selects the adapter's `resume` option, it shall use this precedence matrix:
+
+| Per-call `resume` | Stored token from [[engine-5](#engine-5)] | Adapter option |
+| --- | --- | --- |
+| string, including empty | any | the exact per-call string |
+| `false` | any | omitted, forcing a fresh session |
+| omitted | stored string, including empty | the exact stored token |
+| omitted | absent | omitted |
 
 ### engine-6
 
-When the adapter emits a `done` event without a `resumeToken`, `Cligent` shall not inject `resume` on subsequent calls.
-Auto-resume is a no-op for adapters that do not support resumption.
+When the adapter emits `done` without a `resumeToken`, `Cligent` shall leave subsequent calls without an injected `resume`, making auto-resume a no-op for adapters that do not support it.
 
 ### Event Helpers
 
@@ -56,22 +79,38 @@ The engine shall export `createEvent()`, `generateSessionId()`, and `isAgentEven
 
 ### engine-8
 
-When the adapter's generator throws and no `done` event has been yielded, `run()` shall yield an `error` event (`code: 'ADAPTER_ERROR'`, `recoverable: false`) followed by a `done` event (`status: 'error'`).
-When the throw occurs after `done`, the exception shall be swallowed.
+When the adapter's generator throws, `run()` shall select this outcome:
+
+| Stream state | Outcome |
+| --- | --- |
+| no `done` yielded | `error` with `code: 'ADAPTER_ERROR'` and `recoverable: false`, then `done` with `status: 'error'` |
+| `done` already yielded | suppress the exception |
 
 ### engine-9
 
-When the `AbortSignal` fires and no `done` event has been yielded, `run()` shall call `.return()` on the adapter generator and yield a `done` event (`status: 'interrupted'`).
-When the signal is already aborted before `.run()` is called, `run()` shall yield `done` (`status: 'interrupted'`) without calling the adapter.
-When the signal fires while an adapter `.next()` read is already pending, `run()` shall give the adapter a short bounded drain window before synthesis.
-During that drain, post-abort non-terminal events shall be suppressed; if the drain reaches an adapter-emitted `done`, that adapter event shall be yielded and processed normally before generator cleanup.
-For stateful `Cligent.run()`, processing that adapter `done` includes [[engine-5](#engine-5)] resume-token capture.
-If the drain does not reach `done`, the synthesized interrupted `done` may include the inbound `resume` token when one was passed into the run, but shall not fabricate a token from a non-terminal event `sessionId`.
+When an `AbortSignal` is already aborted before `run()` invokes the adapter, `run()` shall yield `done` with `status: 'interrupted'` without calling the adapter.
+
+### engine-34
+
+When an `AbortSignal` fires after adapter invocation and before terminal `done`, `run()` shall call `.return()` on the adapter generator after applying [[engine-35](#engine-35)]'s bounded drain outcome.
+
+### engine-35
+
+When an abort interrupts a pending adapter read, `run()` shall drain for at most 500 milliseconds and select this outcome:
+
+| Drain result | Outcome |
+| --- | --- |
+| non-terminal event | suppress it and continue draining within the same deadline |
+| adapter-emitted `done` | yield and process that event normally, including [[engine-5](#engine-5)] resume-token capture, before generator cleanup |
+| no `done` before the deadline | synthesize `done` with `status: 'interrupted'`, preserving a non-empty inbound `resume` token when present and never fabricating one from a non-terminal event `sessionId` |
+
+### engine-73
+
+While a built-in `AgentAdapter.run()` is active and has emitted no terminal `done`, when its caller `AbortSignal` fires, the adapter shall yield exactly one `done` with `status: 'interrupted'`.
 
 ### engine-10
 
-Once a `done` event is yielded (whether from the adapter or synthesized), the engine shall call `.return()` on the generator and suppress all subsequent events.
-No event of any type shall follow `done`.
+When a `done` event is yielded from the adapter or synthesized, the engine shall call `.return()` on the generator and suppress every subsequent event so nothing follows that terminal.
 
 ### engine-11
 
@@ -83,47 +122,77 @@ When the adapter's generator exhausts without yielding a `done` event, `run()` s
 
 ### engine-13
 
-Synthesized `done` payloads shall require only `usage.toolUses`, shall preserve any independently known tool-use count, shall omit `usage.tokens` and `usage.cost` rather than fabricate accounting, and shall use `durationMs` measured from when the adapter's `.run()` was called.
-An adapter-emitted `done` shall take precedence over synthesis.
-This precedence includes an adapter-emitted interrupted `done` observed during the abort-drain path of [[engine-9](#engine-9)].
+When the engine synthesizes terminal `done`, it shall select this payload shape:
+
+| Member | Value |
+| --- | --- |
+| `usage.toolUses` | the independently observed distinct tool-use count, or zero |
+| `usage.tokens` and `usage.cost` | omitted rather than fabricated |
+| `durationMs` | elapsed time measured from adapter invocation |
+
+### engine-36
+
+When an adapter-emitted `done` is available before terminal synthesis, the engine shall yield that event instead of a synthesized one, including when [[engine-35](#engine-35)] observes an interrupted terminal during abort drain.
 
 ### Cligent.parallel()
 
 ### engine-14
 
-`Cligent.parallel()` shall merge multiple `Cligent` streams, yielding `CligentEvent` values from each instance as they become available.
-Each event carries both `agent` (backend identity) and `role` (task identity).
+`Cligent.parallel()` shall merge multiple `Cligent` streams as they become available while yielding each `CligentEvent` with both `agent` backend identity and `role` task identity.
 
 ### engine-15
 
-When one instance's adapter throws and no `done` has been yielded for that instance, `parallel()` shall yield an `error` event and `done` event for that instance and remove it from the pool.
-Remaining instances shall continue.
+When one instance's adapter throws before terminal `done`, `parallel()` shall isolate the failure by yielding `error` and `done` for that instance, removing it from the pool, and continuing every remaining instance.
 
 ### engine-16
 
-Each task's `overrides.abortSignal` controls only that task.
-When a task's signal fires, `parallel()` shall yield `done` (`status: 'interrupted'`) for that task and remove it from the pool; remaining tasks continue.
-To abort all tasks, the caller shall share one `AbortController` across all task overrides.
+When one or more `Cligent.parallel()` task signals fire, `parallel()` shall select this interruption scope:
+
+| Signal ownership | Outcome |
+| --- | --- |
+| signal used by one active task | yield interrupted `done` for that task, remove it, and continue the others |
+| one controller's signal shared by several active tasks | yield interrupted `done` for every task sharing it and remove each while unrelated tasks continue |
 
 ### Tool Filtering
 
 ### engine-17
 
-When `allowedTools` is set, adapters shall restrict available tools to that list.
-An explicit empty `allowedTools` list shall make no tools available and shall remain distinct from omission, which preserves the adapter's native tool surface.
-When `disallowedTools` is also set, adapters shall further exclude those tools from the allowed set.
-Tool names shall be matched as exact identifiers unless the adapter explicitly documents pattern support per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md).
-Where an adapter has no compatible surface for an explicit tool restriction, it shall reject before invoking the backend rather than silently ignore or weaken the restriction.
+When an adapter maps portable tool restrictions, it shall select this outcome per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md):
+
+| Input and adapter surface | Outcome |
+| --- | --- |
+| both lists omitted | preserve the adapter's native tool surface |
+| non-empty `allowedTools` | restrict available tools to those exact identifiers |
+| empty `allowedTools` | make no tools available |
+| `disallowedTools` also present | remove its exact identifiers from the allowed set |
+| adapter explicitly documents pattern support | apply that documented matching behavior instead of exact matching |
+| an explicit restriction has no compatible surface | reject before backend invocation rather than ignore or weaken it |
 
 ### Adapter Thread Safety
 
 ### engine-18
 
-`AgentAdapter.run()` shall be safe for concurrent calls on the same adapter instance unless the adapter explicitly documents an environmental constraint.
-Each call shall create fresh local state and `run()` shall not mutate adapter instance state per [DR-003](../decisions/003-role-scoped-session-management.md).
-Where a backend reports token accounting cumulatively per session rather than per turn, the adapter shall be permitted to retain one usage baseline per backend session identifier and a per-resume-session serialization queue across calls, as the sole exception, because the turn's own usage is otherwise unrecoverable.
-That baseline shall be keyed by backend session identity so concurrent runs on different sessions cannot observe each other's counters, and an adapter holding no baseline for a session it did not observe shall omit token accounting per [[engine-31](#engine-31)] rather than attribute the session's accumulated total to one turn.
-Where an adapter retains that cumulative baseline, runs carrying the same non-empty resume identifier shall enter the backend serially through terminal cleanup so their snapshots have one causal order; fresh runs and runs carrying different resume identifiers shall remain concurrent, and normal completion, error, interruption, or setup failure after acquisition shall release the queue for its successor.
+Where an adapter documents no environmental constraint, concurrent calls on one `AgentAdapter` instance shall keep streams and options isolated through fresh call-local state without mutable cross-run instance state per [DR-003](../decisions/003-role-scoped-session-management.md), except for [[engine-37](#engine-37)] and [[engine-38](#engine-38)].
+
+### engine-37
+
+Where a backend reports cumulative per-session rather than per-turn token accounting, the adapter shall manage its permitted baseline through this attribution matrix:
+
+| Session state | Outcome |
+| --- | --- |
+| backend session identifier known | retain at most one newest baseline under that identifier |
+| different session identifier | never observe another session's counters |
+| resumed session whose baseline the adapter did not observe | omit tokens under [[engine-58](#engine-58)] rather than attribute the accumulated total to one turn |
+
+### engine-38
+
+Where an adapter retains [[engine-37](#engine-37)]'s cumulative baseline, it shall order concurrent calls through this matrix:
+
+| Calls or exit | Outcome |
+| --- | --- |
+| same non-empty resume identifier | enter the backend serially through terminal cleanup so snapshots have one causal order |
+| fresh calls or different resume identifiers | remain concurrent |
+| normal, error, interrupted, or setup-failure exit after acquisition | release the queue for its successor |
 
 ### Usage Reporting
 
@@ -145,69 +214,173 @@ Where such a subtraction is negative, the producer shall omit that side rather t
 
 ### engine-20
 
-Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), `AgentOptions<E>.effort` shall accept the selected adapter's effort vocabulary `E`, with `undefined` reserved to defer to applicable adapter, model, account, and user-configuration defaults and configuration-isolation rules.
-`PortableEffort` shall be the six-value ladder `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, ordered from least to greatest reasoning depth.
-`ClaudeEffort` shall be `PortableEffort | 'ultracode'`; `CodexEffort` shall be `PortableEffort | 'ultra'`; `GeminiEffort` and `OpenCodeEffort` shall each be `PortableEffort`; `KimiEffort` shall be the provider-native binary union `'off' | 'on'`; and the adapter-neutral built-in `Effort` union shall cover every value in those aliases.
-Those public aliases shall be derived from the literal values in [[engine-24](#engine-24)]'s runtime support table rather than maintained as a second vocabulary definition.
-Where a built-in provider lacks a one-to-one portable value, its adapter item shall map to the nearest supported neighbour in the portable ordering; where mapping depends on a concrete model or provider that is absent or unrecognised, the adapter item may leave the provider override unset and shall document that behavior.
-`AgentAdapter<E>`, `CligentOptions<E>`, `RunOptions<E>`, and `Cligent<E>` shall carry the same vocabulary through constructor defaults, run overrides, direct adapter calls, `Cligent.parallel()`, and `runParallel()` without widening one adapter's values to another adapter's values.
-A custom adapter may bind an arbitrary string-literal vocabulary with any names or number of levels and shall retain that vocabulary through direct and heterogeneous parallel calls.
-On the legacy name-based mutable-registry path, `runAgent()` shall accept `AgentOptions<string>` and forward the exact effort string unchanged; because registrations may be removed and rebound dynamically, that path shall not claim compile-time agent-name-to-vocabulary correlation.
-Built-in adapters shall perform their specified runtime validation on the dynamic path, while custom adapters remain responsible for validating their own dynamic inputs; callers requiring compile-time correlation shall use a statically adapter-bound surface such as direct `AgentAdapter<E>` calls, `Cligent`, `Cligent.parallel()`, or `runParallel()`.
+Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), `AgentOptions<E>.effort` shall accept the selected adapter's effort vocabulary `E`, with `undefined` deferring to applicable adapter, model, account, user-configuration, and configuration-isolation defaults.
 
-The built-in vocabularies and provider mappings are defined by [[claude-code-8](adapters/claude-code.md#claude-code-8)], [[codex-7](adapters/codex.md#codex-7)], [[gemini-11](adapters/gemini.md#gemini-11)], [[opencode-12](adapters/opencode.md#opencode-12)], and [[kimi-9](adapters/kimi.md#kimi-9)].
+### engine-39
+
+The public `PortableEffort` type shall define the ordered least-to-greatest ladder `'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'`.
+
+### engine-40
+
+The public built-in effort aliases shall select their values through this matrix:
+
+| Alias | Values |
+| --- | --- |
+| `ClaudeEffort` | [[engine-39](#engine-39)] plus `ultracode`, whose provider mapping is defined by [[claude-code-8](adapters/claude-code.md#claude-code-8)] |
+| `CodexEffort` | [[engine-39](#engine-39)] plus `ultra`, whose provider mapping is defined by [[codex-7](adapters/codex.md#codex-7)] |
+| `GeminiEffort` | [[engine-39](#engine-39)], whose provider mapping is defined by [[gemini-11](adapters/gemini.md#gemini-11)] |
+| `OpenCodeEffort` | [[engine-39](#engine-39)], whose provider mapping is defined by [[opencode-12](adapters/opencode.md#opencode-12)] |
+| `KimiEffort` | provider-native binary union `'off' | 'on'`, whose provider mapping is defined by [[kimi-9](adapters/kimi.md#kimi-9)] |
+| adapter-neutral `Effort` | every value present in the five aliases |
+
+### engine-41
+
+The public built-in effort aliases shall derive from the literal `values` arrays in [[engine-24](#engine-24)] rather than maintain a second vocabulary definition.
+
+### engine-42
+
+Where a built-in provider lacks a one-to-one portable value, its adapter shall select the portable fallback through this matrix:
+
+| Mapping state | Outcome |
+| --- | --- |
+| provider has neighbouring supported values | select the nearest neighbour in [[engine-39](#engine-39)]'s order |
+| mapping depends on an absent or unrecognised concrete model or provider | leave the provider override unset and document that behavior in the adapter item |
+
+### engine-43
+
+The statically adapter-bound `AgentAdapter<E>`, `CligentOptions<E>`, `RunOptions<E>`, and `Cligent<E>` surfaces shall preserve one adapter's vocabulary through constructor defaults, run overrides, direct calls, `Cligent.parallel()`, and `runParallel()` without widening it to another adapter's values.
+
+### engine-44
+
+Where a custom adapter binds an arbitrary string-literal effort vocabulary, direct and heterogeneous parallel calls shall preserve its names and number of levels.
+
+### engine-45
+
+On the legacy name-based mutable-registry path, `runAgent()` shall accept `AgentOptions<string>` and forward the exact effort string without claiming compile-time name-to-vocabulary correlation across registrations that may be removed or rebound.
+
+### engine-46
+
+When an effort reaches a dynamic input path, validation responsibility shall follow this matrix:
+
+| Adapter path | Responsibility |
+| --- | --- |
+| built-in adapter | perform its specified runtime validation |
+| custom adapter | validate its own dynamic input |
+| caller requiring compile-time correlation | use direct `AgentAdapter<E>`, `Cligent`, `Cligent.parallel()`, or `runParallel()` |
 
 ### engine-24
 
-The exported `EFFORT_SUPPORT` object shall be deeply frozen at runtime and define each built-in adapter's accepted `values`, provider-native `orchestrationValues`, `modelDependent` flag, and user-facing `notes` without promising model, account, or installed-runtime availability.
-Each `values` array shall define its adapter's public effort alias in the [[engine-20](#engine-20)] order; Claude and Codex `orchestrationValues` shall be exactly `['ultracode']` and `['ultra']`, respectively, while Gemini, OpenCode, and Kimi shall expose empty orchestration arrays; and `modelDependent` shall be `true` for all five built-ins.
-Where a mapping is lossy or ignored without a concrete model or provider, `notes` shall state that condition.
-Kimi's notes shall state that `on` selects the chosen model's native default thinking effort rather than a portable reasoning-depth tier.
-`getEffortSupport`, `supportedEffortValues`, `isEffortSupported`, and `assertSupportedEffort` shall expose and validate the same values in `EFFORT_SUPPORT`; the alias `claude` shall resolve to `claude-code`; and the predicate and assertion shall narrow known adapter values to that adapter's public effort alias.
-For an unknown adapter, the lookup functions shall return `undefined`, the predicate shall return `false`, and the assertion shall throw an error naming the adapter and validation path.
-For a known adapter and unsupported value, the assertion shall throw an error naming the adapter, validation path, and allowed values.
-Where a metadata-accepted value is unavailable to the selected model, account, or installed runtime and the backend rejects it, the adapter shall expose that upstream failure through its normal error path without substituting another effort.
+The exported `EFFORT_SUPPORT` object shall be deeply frozen at runtime and give each built-in adapter immutable `values`, `orchestrationValues`, `modelDependent`, and `notes` members without promising model, account, or installed-runtime availability.
+
+### engine-47
+
+Each `EFFORT_SUPPORT` entry shall select its machine-readable members through this matrix:
+
+| Member | Required value |
+| --- | --- |
+| `values` | the adapter's [[engine-40](#engine-40)] alias in declared order |
+| Claude `orchestrationValues` | `['ultracode']` |
+| Codex `orchestrationValues` | `['ultra']` |
+| Gemini, OpenCode, or Kimi `orchestrationValues` | `[]` |
+| `modelDependent` | `true` for every built-in adapter |
+
+### engine-48
+
+Each `EFFORT_SUPPORT.notes` value shall disclose any lossy mapping or omitted override caused by an absent concrete model or provider, with Kimi stating that `on` selects the chosen model's native default thinking effort rather than a portable reasoning-depth tier under [[kimi-9](adapters/kimi.md#kimi-9)].
+
+### engine-49
+
+The public effort lookup, predicate, and assertion helpers shall expose and validate the same `EFFORT_SUPPORT` values, resolve `claude` to `claude-code`, and narrow a known adapter's accepted values to its [[engine-40](#engine-40)] alias.
+
+### engine-50
+
+When an effort helper receives an unknown adapter or unsupported value, it shall select this result:
+
+| Input and helper kind | Result |
+| --- | --- |
+| unknown adapter; lookup | `undefined` |
+| unknown adapter; predicate | `false` |
+| unknown adapter; assertion | error naming the adapter and validation path |
+| known adapter and unsupported value; assertion | error naming the adapter, validation path, and allowed values |
+
+### engine-51
+
+Where a metadata-accepted effort is unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter shall expose that upstream failure through its normal error path without substituting another effort.
 
 ### Permission Policy Mode
 
 ### engine-21
 
 `PermissionPolicy.mode` shall accept the closed set `'auto' | 'bypass' | undefined` per [DR-005](../decisions/005-per-adapter-permission-configuration.md).
-When `mode` is set, adapters shall use it as the session-wide automation posture at their SDK-knob selection step: `'auto'` shall map to each provider's native auto posture, whose protection and approval semantics are adapter-specific, and `'bypass'` shall map to the unchecked-bypass mode where the SDK supports one.
-Where an SDK models the automation posture and the local-access surface (filesystem, command, network) as independent axes, the adapter's mapping item may additionally derive the local-access surface from `fileWrite` / `shellExecute` / `networkAccess` while `mode` governs the automation posture; where it does not, `mode` shall take precedence over those per-capability levels.
-Where an SDK exposes an automatic reviewer for otherwise interactive approval prompts, the `'auto'` mapping shall select it when that reviewer is part of the SDK's protected auto posture; this shall not expand filesystem, network, or sandbox permissions.
-Adapters whose architecture cannot reach a given mode shall reject it at mapping time with an error naming the constraint; the rejection surfaces per [DR-005](../decisions/005-per-adapter-permission-configuration.md)'s failure-surfacing rule.
-When `mode` is `undefined`, adapters shall continue to derive their SDK options from `fileWrite` / `shellExecute` / `networkAccess` as before.
+
+### engine-52
+
+When a built-in adapter maps `PermissionPolicy.mode` at its SDK-knob selection step, it shall apply this exhaustive matrix per [DR-005](../decisions/005-per-adapter-permission-configuration.md):
+
+| Mode and SDK surface | Outcome |
+| --- | --- |
+| `permissions` policy absent | preserve the adapter's native SDK posture |
+| policy present with `mode: undefined`, including an empty policy | derive SDK options from `fileWrite`, `shellExecute`, and `networkAccess`, with the empty-policy result stated by the adapter |
+| `auto` | select the provider's native auto posture, including its protected automatic reviewer when applicable, without expanding filesystem, network, or sandbox permissions |
+| `bypass` with native unchecked bypass | select it |
+| posture and local-access axes are independent | let mode govern posture while capabilities may additionally derive local access |
+| posture and local-access axes are not independent | let mode take precedence over capability levels |
+| architecture cannot reach the selected mode | reject at mapping time with an error naming the constraint, surfaced through the decision's failure rule |
 
 ### Workspace Writable Paths
 
 ### engine-22
 
 `PermissionPolicy.writablePaths` shall accept an optional array of workspace-relative path strings per [DR-006](../decisions/006-workspace-writable-paths.md).
-Adapters shall emit only canonical workspace-relative entries: separators use `/`, leading `./` components and trailing slashes are absent, and `.` components do not appear.
-Adapters shall reject empty entries, root-equivalent entries such as `.` or `./`, absolute paths, paths containing `..`, empty path segments, glob metacharacters, shell expansion characters, or control characters.
+
+### engine-53
+
+When an adapter normalizes a `writablePaths` entry, it shall select this result:
+
+| Input | Result |
+| --- | --- |
+| accepted workspace-relative path | canonical `/` separators with leading `./`, trailing slashes, and `.` components removed |
+| empty or root-equivalent path | reject |
+| absolute path, `..`, empty segment, glob metacharacter, shell expansion character, or control character | reject |
 
 ### engine-23
 
 `WritablePathsEnforcement` shall accept the closed set `'profile' | 'sandbox' | 'ambient'` per [DR-006](../decisions/006-workspace-writable-paths.md).
-`WritablePathsPermissionMapping` shall report canonical `paths` and the field-local `enforcement` class for accepted non-empty `writablePaths` policies.
-When `writablePaths` is absent or empty, permission mapping shall not emit a `WritablePathsPermissionMapping` payload.
+
+### engine-54
+
+When an adapter produces `WritablePathsPermissionMapping`, it shall select this output:
+
+| `writablePaths` policy | Output |
+| --- | --- |
+| accepted non-empty array | [[engine-53](#engine-53)] canonical `paths` and the field-local [[engine-23](#engine-23)] enforcement class |
+| absent or empty | no mapping payload |
 
 ### Runtime Compatibility
 
 ### engine-25
 
-Where an adapter's runtime is a package resolved from the installed `@sublang/cligent` tree, the adapter shall read that package's declared version through the same resolution it uses to load the runtime, and shall refuse to load a version below the supported floor declared for it by [[package-16](package.md#package-16)].
-The refusal shall be an error naming the package, the version that is installed, the version that is required, the `node_modules` tree it resolved from, and the command that repairs it.
-Where the version cannot be read, the runtime shall load unchanged, because a vendored, bundled, or archived layout is a supported installation and an unreadable version is not evidence of an unsupported one.
-Where an adapter's runtime is an executable found through `PATH`, the adapter shall read the version that executable reports and apply the same rules.
+When an adapter evaluates runtime compatibility, it shall select the load outcome through this matrix against [[package-16](package.md#package-16)]:
+
+| Runtime source and observed version | Outcome |
+| --- | --- |
+| package in the installed `@sublang/cligent` tree | read its declared version through the same resolution used to load it |
+| executable found through `PATH` | read the version reported by that executable and apply the same version rules |
+| readable version below the supported floor | refuse with an error naming the package or executable, installed and required versions, resolved `node_modules` tree or executable path, and repair command |
+| readable version at or above the supported floor | load unchanged, including when the version is above the tested ceiling |
+| unreadable version | load unchanged because vendored, bundled, or archived layouts remain supported and unreadability is not evidence of incompatibility |
 
 ### engine-26
 
-`Cligent` shall expose a runtime-readiness verdict for an adapter reporting one of the closed set `'satisfied' | 'missing' | 'unsupported' | 'untested' | 'unknown'`, carrying the installed version where one was read, the supported range and tested version from [[package-16](package.md#package-16)], the resolved `node_modules` tree or executable path, and the repair commands.
-`'unsupported'` shall name a runtime below the supported floor and `'untested'` a runtime above the tested version, and the two shall not be reported as the same verdict.
-`'unknown'` shall report a runtime whose version could not be read and shall not be treated as a failure by any caller-facing behavior this package defines.
-`adapter.isAvailable()` shall remain a boolean and shall report `false` for exactly `'missing'` and `'unsupported'`, so a caller that has not adopted the verdict keeps its current contract while a caller that has can distinguish an absent runtime from an incompatible one.
+The public engine API shall expose a runtime-readiness classification carrying the installed version when read, the supported range and tested version from [[package-16](package.md#package-16)], the resolved `node_modules` tree or executable path, and repair commands through this matrix:
+
+| Runtime state | Verdict | `adapter.isAvailable()` compatibility |
+| --- | --- | --- |
+| available within the supported floor and tested ceiling | `satisfied` | `true` |
+| absent | `missing` | `false` |
+| below the supported floor | `unsupported` | `false` |
+| above the tested version | `untested` | `true` |
+| available but version unreadable | `unknown`, never a failure in this package's caller-facing behavior | `true` |
 
 ### Token Usage Availability
 
@@ -258,34 +431,102 @@ Where token accounting is `'unavailable'`, the producer shall omit `records`, on
 
 ### engine-31
 
-`DonePayload.usage` shall require only the independently observed finite non-negative integer `toolUses` count and shall optionally carry `tokens` and `cost` per [DR-014](../decisions/014-unified-token-usage-breakdown.md).
-The public `DoneUsage` declaration shall not expose `tokenAvailability`, `inputTokens`, `outputTokens`, `totalCostUsd`, or `breakdown`; a synthesized terminal or a runtime with no authentic token source shall omit `tokens` rather than publish numeric placeholders.
+Per [DR-014](../decisions/014-unified-token-usage-breakdown.md), `DonePayload.usage` shall expose this public shape:
 
-Where `tokens` is present, `totals.input.total` shall include cache reads and cache writes, and `totals.output.total` shall include reasoning or thinking.
-Every present total, detail, request count, priced-unit quantity, and cost amount shall be finite and non-negative; token and count fields shall additionally be safe integers.
-An absent detail shall mean unreported and a present zero shall mean measured.
-Input `uncached`, `cacheRead`, and `cacheWrite` details and output `visible` and `reasoning` details shall be exact subsets of their inclusive total; where a producer publishes every detail on a side, those details shall sum exactly to the total, and no producer shall clamp, estimate, or allocate an unexplained residual.
+| Member | Contract |
+| --- | --- |
+| `toolUses` | required finite non-negative safe integer under [[engine-56](#engine-56)] |
+| `tokens` | optional authentic token report |
+| `cost` | optional provenance-bearing cost report |
+| `tokenAvailability`, `inputTokens`, `outputTokens`, `totalCostUsd`, or `breakdown` | absent from `DoneUsage` |
 
-`tokens.coverage` shall be `'complete'` only where every model request causally owned by the current `run()` invocation, including descendant-agent work and excluding resumed history, is represented.
-Where every published number is authentic but the runtime surface may omit invocation work, the producer shall use `'partial'`; where even that exact scope cannot be established, it shall omit `tokens`.
+### engine-55
 
-Where `tokens.records` is present, each record shall carry authentic inclusive input and output totals for one rate-card group, the records shall sum exactly to `tokens.totals` and every aggregate detail it publishes, and a missing model or provider shall remain absent rather than become a placeholder.
-A present `requests` shall be a positive safe integer; `1` shall mean the record describes one model request, while a greater value shall mean per-request context tiers cannot be recovered from the aggregate.
+Where `usage.tokens` is present, its totals shall include cache and reasoning quantities through this matrix:
 
-Where a runtime reports cost, the producer shall preserve it as `{ amount, currency: 'USD', source }` without applying a Cligent price table.
-`source` shall distinguish an `agent-estimate`, `provider-reported` value, or `account-estimate`, and no source shall be described as billed cost without such authority.
-Cost and token accounting shall remain independent so a valid runtime cost may survive absent tokens and vice versa.
-Separately priced non-token quantities shall be emitted as named `pricedUnits`, never folded into token totals.
+| Total | Inclusive quantities |
+| --- | --- |
+| `totals.input.total` | uncached input, cache reads, and cache writes |
+| `totals.output.total` | visible output and reasoning or thinking |
 
-Where an adapter reads a run-owned supplementary source, it shall cross-validate that source against the runtime's ordinary terminal counters, omit the supplementary token report on absence, read or parse failure, duplication, or mismatch, and remain inside every applicable protocol boundary.
-The engine and built-in adapters shall preserve `toolUses` independently on all terminal statuses whether `tokens` and `cost` are present or absent.
+### engine-56
+
+Every numeric member of an authentic usage report shall satisfy this validity matrix:
+
+| Member kind | Required form |
+| --- | --- |
+| total, detail, priced-unit quantity, or cost amount | finite and non-negative |
+| token, request, tool-use, or other count | finite, non-negative safe integer |
+
+### engine-57
+
+When a producer publishes token details, it shall preserve their measurement and reconciliation semantics through this matrix:
+
+| Detail state | Meaning or constraint |
+| --- | --- |
+| absent | unreported |
+| present zero | measured zero |
+| input `uncached`, `cacheRead`, or `cacheWrite` | exact subset of [[engine-55](#engine-55)]'s inclusive input total |
+| output `visible` or `reasoning` | exact subset of [[engine-55](#engine-55)]'s inclusive output total |
+| every detail on one side present | details sum exactly to that side's total |
+| unexplained residual or invalid subtraction | never clamp, estimate, or allocate it |
+
+### engine-58
+
+When a producer selects token-report coverage, it shall use this authenticity matrix:
+
+| Established scope | Outcome |
+| --- | --- |
+| every model request causally owned by the current invocation, including descendant work and excluding resumed history | `coverage: 'complete'` |
+| every published number authentic but the runtime surface may omit invocation work | `coverage: 'partial'` |
+| no exact owned scope, including a synthesized terminal or runtime with no authentic token source | omit `tokens` rather than publish a placeholder |
+
+### engine-59
+
+When `tokens.records` is present, the producer shall select each record and the aggregate through this matrix:
+
+| Record concern | Required outcome |
+| --- | --- |
+| scope | one authentic rate-card group with inclusive input and output totals |
+| reconciliation | records sum exactly to `tokens.totals` and every aggregate detail published |
+| model or provider unknown | omit that identity rather than substitute a placeholder |
+
+### engine-60
+
+When a producer constructs a usage record, it shall select the optional `requests` member through this context-tier matrix:
+
+| Value | Meaning |
+| --- | --- |
+| absent | request count unreported |
+| `1` | the record describes one model request |
+| greater positive safe integer | counts aggregate several requests whose per-request context tiers cannot be recovered |
+| any other value | invalid under [[engine-56](#engine-56)] |
+
+### engine-61
+
+Where a runtime reports cost, the producer shall preserve `{ amount, currency: 'USD', source }` without applying a Cligent price table, with `source` distinguishing `agent-estimate`, `provider-reported`, and `account-estimate` and never claiming billed cost without that authority.
+
+### engine-62
+
+When token and cost accounting are independently available, the producer shall preserve either valid report when the other is absent.
+
+### engine-63
+
+When a runtime reports a separately priced non-token quantity, the producer shall emit it as a named `pricedUnits` member rather than fold it into token totals.
+
+### engine-64
+
+Where an adapter reads a run-owned supplementary accounting source, it shall publish that source only after cross-validating it against ordinary terminal counters, omitting it on absence, read or parse failure, duplication, or mismatch and remaining inside every applicable protocol boundary.
+
+### engine-65
+
+When the engine or a built-in adapter emits any terminal status, it shall preserve the independently known `toolUses` count whether `tokens` and `cost` are present or absent.
 
 ## Verification
 
 ### engine-101
 
-Given a mock adapter and `CligentOptions` with `role`, when calling `run()`, every yielded event shall include the `role` field.
-When `role` is omitted, events shall not include a `role` field [[engine-4](#engine-4)].
+Given a mock adapter, when `Cligent.run()` is exercised with configured and omitted roles, the check shall assert [[engine-4](#engine-4)]'s exact event-member matrix.
 
 ### engine-102
 
@@ -293,13 +534,11 @@ When `run()` is called while a previous `run()` generator is still active on the
 
 ### engine-103
 
-Given instance defaults and per-call overrides, `run()` shall deep-merge `permissions` (per-call fields override; unset fields inherit), replace `allowedTools`/`disallowedTools` arrays entirely, and use per-call values for other scalars when set [[engine-3](#engine-3)].
-When both instance defaults and per-call overrides contain `permissions.writablePaths`, the per-call array shall replace the instance default array rather than merging element-wise.
+Given instance defaults and per-call overrides, when `run()` invokes the adapter, the check shall assert every [[engine-3](#engine-3)] field-selection row, including per-call replacement of `permissions.writablePaths`, `allowedTools`, and `disallowedTools` arrays.
 
 ### engine-104
 
-When the adapter emits `done` with `resumeToken`, the next `run()` call shall pass `resume: resumeToken` to the adapter.
-When the caller explicitly sets `resume` in overrides, the explicit value shall take precedence [[engine-5](#engine-5)].
+Given an adapter terminal carrying a resume token, when later calls omit, explicitly replace, or set `resume: false`, the check shall assert token capture under [[engine-5](#engine-5)] and every [[engine-33](#engine-33)] selection outcome.
 
 ### engine-105
 
@@ -307,18 +546,23 @@ When the adapter emits `done` without `resumeToken`, the next `run()` call shall
 
 ### engine-106
 
-Given a mock adapter that yields canned events, when calling `run()`, the consumer shall receive all expected `CligentEvent` values in order [[engine-1](#engine-1)].
+Given a mock [[engine-1](#engine-1)] `AgentAdapter` that yields canned events, when the consumer constructs `Cligent` and calls `run()`, the check shall assert those `CligentEvent` values remain in order and exactly one is terminal under [[engine-11](#engine-11)].
 
 ### engine-107
 
-When `AbortSignal` fires during `run()`, the engine shall yield `done` (`status: 'interrupted'`) and no further events [[engine-9](#engine-9)], [[engine-10](#engine-10)].
-When the adapter responds to that abort by yielding non-terminal flush events followed by its own terminal `done` with `status: 'interrupted'` and `resumeToken` during the bounded abort drain, the engine shall suppress the non-terminal events, yield that adapter `done` rather than a synthesized one [[engine-13](#engine-13)], capture the token, and pass it as `resume` on the next `Cligent.run()` call [[engine-5](#engine-5)].
-When the adapter does not settle to terminal `done` during the abort drain, the engine shall synthesize `done` (`status: 'interrupted'`) [[engine-13](#engine-13)] without clearing the previously stored resume token [[engine-5](#engine-5)].
+When `AbortSignal` fires during `run()`, the check shall assert [[engine-34](#engine-34)] `.return()` invocation, [[engine-35](#engine-35)] interrupted terminal output, and post-terminal suppression under [[engine-10](#engine-10)].
+
+### engine-66
+
+Given an adapter that yields post-abort non-terminal events then interrupted `done` with a resume token within 500 milliseconds, when abort interrupts a pending read, the check shall assert [[engine-35](#engine-35)] suppression of those non-terminals, native-terminal precedence under [[engine-36](#engine-36)], [[engine-5](#engine-5)] token capture, and injection on the next call through [[engine-33](#engine-33)].
+
+### engine-67
+
+Given an adapter that reaches no terminal within 500 milliseconds and a `Cligent` holding a prior resume token, when abort interrupts a pending read, the check shall assert [[engine-35](#engine-35)]'s synthesized interrupted terminal without clearing the stored token selected by [[engine-33](#engine-33)] on the next call.
 
 ### engine-108
 
-When the adapter's generator throws before `done`, the engine shall yield `error` (`code: 'ADAPTER_ERROR'`) then `done` (`status: 'error'`).
-When the throw occurs after `done`, the engine shall suppress the exception and yield no additional events [[engine-8](#engine-8)].
+When the adapter generator throws before and after terminal output, the check shall assert both rows of [[engine-8](#engine-8)]'s timing matrix.
 
 ### engine-109
 
@@ -326,42 +570,43 @@ When the adapter's generator exhausts without yielding `done`, the engine shall 
 
 ### engine-110
 
-When `AbortSignal` fires concurrently with the adapter emitting its own `done`, the engine shall yield exactly one `done` event per session (done-cardinality race) [[engine-9](#engine-9)], [[engine-11](#engine-11)].
+When `AbortSignal` fires concurrently with the adapter emitting its own `done`, the engine shall yield exactly one `done` event per session under [[engine-36](#engine-36)] and [[engine-11](#engine-11)].
 
 ### engine-111
 
-Given multiple `Cligent` instances with mock adapters, when calling `Cligent.parallel()`, the consumer shall receive interleaved events with per-instance `done` events, each carrying the correct `role` [[engine-14](#engine-14)].
+Given multiple `Cligent` instances with mock adapters, when calling `Cligent.parallel()`, the check shall assert [[engine-14](#engine-14)] interleaving and per-instance agent and role attribution plus exactly one [[engine-11](#engine-11)] terminal per instance.
 
 ### engine-112
 
-When one instance's adapter throws in `parallel()`, the engine shall yield `error` + `done` for that instance; remaining instances shall continue unaffected [[engine-15](#engine-15)].
+Given one failing and one healthy parallel instance, when the first adapter throws, the check shall assert [[engine-15](#engine-15)]'s failing-stream terminal sequence and continued healthy stream.
 
 ### engine-113
 
-When an adapter's generator exhausts without yielding `done` inside `parallel()`, the engine shall yield `error` (`code: 'MISSING_DONE'`) then `done` (`status: 'error'`) for that instance; remaining instances shall continue unaffected [[engine-12](#engine-12)], [[engine-15](#engine-15)].
+Given one exhausting and one healthy parallel instance, when the first generator ends without `done`, the check shall assert [[engine-12](#engine-12)]'s missing-terminal sequence and [[engine-15](#engine-15)]'s continued healthy stream.
 
 ### engine-114
 
-When one task's `AbortSignal` fires in `parallel()`, only that task shall yield `done` (`status: 'interrupted'`); remaining tasks shall continue.
-When all active tasks share one `AbortController` and it fires, all active tasks (those that have not yet emitted `done`) shall yield `done` (`status: 'interrupted'`) [[engine-16](#engine-16)].
+When task-local and shared abort signals fire during parallel runs, the check shall assert every interruption-scope row of [[engine-16](#engine-16)].
 
 ### engine-115
 
-Where a TypeScript consumer uses the public API, the consumer shall be able to import `PortableEffort`, `ClaudeEffort`, `CodexEffort`, `GeminiEffort`, `OpenCodeEffort`, `KimiEffort`, and `Effort`; construct and run every built-in adapter with its own vocabulary; use heterogeneous `Cligent.parallel()` and `runParallel()` tasks without cross-widening; and bind an arbitrary custom adapter vocabulary through direct and parallel calls.
-On those statically adapter-bound paths, cross-adapter and out-of-vocabulary values shall fail compilation [[engine-20](#engine-20)].
+Where a TypeScript consumer uses the public effort API, the type-level check shall assert [[engine-39](#engine-39)] and [[engine-40](#engine-40)] alias imports derived under [[engine-41](#engine-41)], [[engine-43](#engine-43)] built-in and heterogeneous correlation, [[engine-44](#engine-44)] custom vocabularies, and compile-time rejection of cross-adapter and out-of-vocabulary values.
 
 ### engine-116
 
-Where a consumer imports the effort metadata and helpers from the public package entry point, `EFFORT_SUPPORT`, each adapter entry, and each nested array shall reject runtime mutation; every values array shall match its public alias and order; orchestration arrays and all five `modelDependent` flags shall match [[engine-24](#engine-24)]; Claude and `claude-code` lookups shall agree; predicates and assertions shall narrow and match the exposed values; notes shall name lossy, no-op, and provider-default conditions; and unknown-adapter behavior shall match the cited item [[engine-24](#engine-24)].
+Where a consumer imports effort metadata and helpers from the public entry point, the check shall assert [[engine-24](#engine-24)] immutability, [[engine-47](#engine-47)] entry values, [[engine-48](#engine-48)] notes, [[engine-49](#engine-49)] helper consistency and narrowing, and every [[engine-50](#engine-50)] invalid-input outcome.
 
 ### engine-117
 
-Where a custom adapter is registered through the legacy mutable registry, `runAgent()` shall accept `AgentOptions<string>` and forward an adapter-valid custom effort unchanged; its declarations shall not claim name-to-vocabulary narrowing [[engine-20](#engine-20)].
+Where a custom adapter is registered through the legacy mutable registry, when `runAgent()` receives a custom effort, the runtime check shall assert exact forwarding under [[engine-45](#engine-45)].
+
+### engine-68
+
+Where a TypeScript consumer uses the legacy mutable-registry declarations, the type-level check shall assert [[engine-45](#engine-45)]'s `AgentOptions<string>` acceptance without name-to-vocabulary narrowing.
 
 ### engine-118
 
-Where an adapter's peer SDK is installed at a version below its declared floor, when the adapter loads its runtime, the load shall fail with an error naming the package, the installed version, the required version, the resolved tree, and the repair command; `isAvailable()` shall report `false`; and the readiness verdict shall report `'unsupported'` with those same versions, distinctly from the `'missing'` verdict an absent runtime produces [[engine-25](#engine-25)], [[engine-26](#engine-26)].
-Where the installed version is at or above the floor and at or below the tested version, the load shall succeed and the verdict shall report `'satisfied'`; where it is above the tested version, the load shall succeed and the verdict shall report `'untested'`; and where the version cannot be read, the load shall succeed and the verdict shall report `'unknown'`.
+Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, location, repair, and boolean compatibility rows.
 
 ### engine-119
 
@@ -388,27 +633,39 @@ Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including ev
 
 ### engine-122
 
-Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `toolUses`, shall accept optional nested `tokens` and provenance-bearing `cost`, and shall reject the removed flat token, availability, cost, and breakdown fields [[engine-13](#engine-13)], [[engine-31](#engine-31)].
-Where the engine synthesizes any terminal `done`, `usage` shall contain the unique observed tool count and no token or cost placeholder.
-Where a producer publishes a token report, all numeric fields shall satisfy [[engine-31](#engine-31)], a complete detail side shall reconcile to its inclusive total, records shall sum exactly to report totals and published details, and measured zero shall remain distinguishable from omission.
-Where request coverage is incomplete but exact counters exist, the report shall say `'partial'`; where no authentic counters exist, `tokens` shall be absent.
-Where a cost is present without tokens or tokens without cost, both shapes shall remain valid, and every cost shall carry USD currency and an allowed provenance source.
+Where a TypeScript consumer constructs `DoneUsage`, the type-level check shall assert [[engine-31](#engine-31)]'s required, optional, and removed members.
+
+### engine-69
+
+When the engine synthesizes terminal `done` across its terminal paths, the check shall assert [[engine-13](#engine-13)]'s unique observed tool count with no token or cost placeholder.
+
+### engine-70
+
+Where a producer publishes token totals, details, requests, records, and priced units, the check shall assert [[engine-55](#engine-55)], [[engine-56](#engine-56)], [[engine-57](#engine-57)], [[engine-59](#engine-59)], [[engine-60](#engine-60)], and [[engine-63](#engine-63)] across valid, invalid, zero, and omitted members.
+
+### engine-71
+
+Where exact token counters cover complete, partial, or unestablished invocation scope, the check shall assert every [[engine-58](#engine-58)] classification and omission outcome.
+
+### engine-72
+
+Where cost and token reports are present together or independently, the check shall assert [[engine-61](#engine-61)] provenance and currency plus [[engine-62](#engine-62)]'s valid independent shapes.
 
 ### engine-201
 
-Given an application configuration that supplies a permission policy for an agent role, when the configuration loader returns, the loaded value shall be a typed `PermissionPolicy` whose `writablePaths` entries are validated and canonicalized [[engine-21](#engine-21)], [[engine-22](#engine-22)].
+Given an application configuration that supplies a permission policy for an agent role, when the configuration loader returns, the loaded value shall be a typed [[engine-21](#engine-21)] `PermissionPolicy` whose [[engine-22](#engine-22)] `writablePaths` entries satisfy [[engine-53](#engine-53)].
 
 ### engine-202
 
-Given a `PermissionPolicy` accepted by a caller, when the runtime constructs the corresponding `Cligent`, the value shall reach the adapter as `AgentOptions.permissions` at the next `run()` call, its `mode` and any canonicalized `writablePaths` surviving unchanged for the adapter to map [[engine-21](#engine-21)], [[engine-22](#engine-22)], [[engine-23](#engine-23)].
+Given a `PermissionPolicy` accepted by a caller, when the runtime constructs the corresponding `Cligent` and calls `run()`, the check shall assert the exact value reaches `AgentOptions.permissions` unchanged under [[engine-3](#engine-3)], including its [[engine-21](#engine-21)] mode and any [[engine-53](#engine-53)] canonical `writablePaths`.
 
 ### engine-203
 
-When `AbortSignal` fires during an adapter's `run()`, the adapter shall yield `done` (`status: 'interrupted'`) [[engine-9](#engine-9)].
+Given each built-in adapter with an active `run()` and no terminal `done`, when its caller `AbortSignal` fires, the check shall assert exactly one interrupted terminal under [[engine-73](#engine-73)].
 
 ### engine-204
 
-Where a caller selects representative effort values covering each distinct adapter transport class, when the runtime constructs and invokes the corresponding `Cligent`, each value shall reach that adapter's own effort surface without cross-aliasing into another adapter's vocabulary [[engine-20](#engine-20)].
+Where a caller selects representative effort values covering each distinct adapter transport class, when the runtime constructs and invokes the corresponding `Cligent`, each value shall reach that adapter's own effort surface without cross-aliasing under [[engine-43](#engine-43)].
 
 ### engine-209
 
@@ -416,40 +673,37 @@ Given `allowedTools` and `disallowedTools` options, each adapter shall enforce w
 
 ### engine-214
 
-Where an adapter does not document an environmental constraint, concurrent `run()` calls on the same adapter instance shall emit no cross-stream event leakage (events from one call shall not appear in another), maintain per-call options isolation, and retain no cross-run state except the cumulative-accounting baseline and ordering queue permitted by [[engine-18](#engine-18)].
+Where an adapter documents no environmental constraint, when concurrent calls use one adapter instance, the check shall assert [[engine-18](#engine-18)] stream and option isolation with no cross-run state beyond [[engine-37](#engine-37)]'s baseline and [[engine-38](#engine-38)]'s ordering queue.
 
 ### engine-218
 
-Where each value in an adapter's exposed effort vocabulary is supplied, when the adapter maps a run, that adapter shall set an observable provider control for that value and shall set no control belonging to another adapter's vocabulary [[engine-20](#engine-20)], [[engine-24](#engine-24)].
+Where built-in adapters receive every accepted, omitted, other-adapter, and arbitrary effort input, when each maps a run, the check shall assert this matrix:
 
-When effort is omitted, no adapter shall set an effort, orchestration, settings-alias, or variant override.
-Where a provider-specific value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and the same allowed values exposed by [[engine-24](#engine-24)].
+| Input | Assertion |
+| --- | --- |
+| each [[engine-40](#engine-40)] value | observable control for that value, including [[engine-42](#engine-42)]'s lossy mappings, and none belonging to another adapter's vocabulary |
+| omitted | no effort, orchestration, settings-alias, or variant override |
+| other adapter's provider-specific value or arbitrary unknown string | rejection before backend invocation with [[engine-50](#engine-50)]'s adapter and allowed-values error |
 
 ### engine-219
 
-Where a `Cligent` is constructed on each built-in adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the session-wide auto posture shall reach every adapter's own knobs per [DR-005](../decisions/005-per-adapter-permission-configuration.md) and let both non-destructive writes proceed without interactive approval [[engine-21](#engine-21)]:
+Where each built-in adapter receives `CligentOptions.permissions = { mode: 'auto' }`, when `run()` first creates and then updates a temporary file in a throwaway working directory, the acceptance check shall exercise [[engine-52](#engine-52)] and assert one complete fresh probe with these conditions:
 
-- the file shall exist with the expected contents after each phase;
-- neither stream shall contain `permission_request`, a denied tool result, or an error;
-- each stream shall terminate with successful `done`;
-- filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
-- the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- each adapter's leg shall self-skip with a logged reason when an *external* CLI that adapter spawns — the `gemini`, `opencode`, or `kimi` CLI — is absent from `PATH`, or when that adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- the SDK packages the adapters load are installed by any checkout able to run this suite, so SDK absence shall not be a skip condition;
-- where the host cannot initialize an adapter's OS-level sandbox, that adapter's leg shall self-skip with a logged reason, including under `CI`.
+- expected filesystem contents after each phase as the ground truth;
+- no `permission_request`, denied tool result, or error in either stream;
+- successful terminal `done` in each stream;
+- retry only after explicit upstream overload, rate limit, or service unavailability, with at most two retries and every other failure or third consecutive named transient fatal;
+- per-adapter self-skip with a logged reason when its spawned external `gemini`, `opencode`, or `kimi` CLI is absent from `PATH` or its credential is absent from the environment, hard failure instead under `CI`, and no skip of another adapter's leg;
+- no SDK-absence skip because a checkout capable of the suite has installed the loaded packages;
+- per-adapter self-skip with a logged reason, including under `CI`, where the host cannot initialize that adapter's OS-level sandbox.
 
 ### engine-221
 
-Given each built-in adapter's permission mapping and a `PermissionPolicy` carrying `writablePaths`, when the mapping is exercised over valid and invalid entries, the reported `WritablePathsPermissionMapping` shall satisfy the portable contract every adapter implements [[engine-22](#engine-22)], [[engine-23](#engine-23)]:
-
-- an accepted entry shall be reported canonically — `/` separators, no leading `./` component, no trailing slash, and no `.` component — whatever spelling the caller supplied;
-- the reported `enforcement` shall be a member of the closed set `'profile' | 'sandbox' | 'ambient'`;
-- an empty entry, a root-equivalent entry such as `.` or `./`, an absolute path, a path containing `..`, an empty segment, a glob metacharacter, a shell expansion character, or a control character shall cause the mapping to reject the policy;
-- where `writablePaths` is absent or empty, the mapping shall emit no `WritablePathsPermissionMapping` payload.
+Given each built-in adapter's permission mapping, when `writablePaths` is exercised over accepted, invalid, absent, and empty inputs, the check shall assert every canonicalization and rejection row in [[engine-53](#engine-53)] plus the [[engine-23](#engine-23)] enforcement set and every output row in [[engine-54](#engine-54)].
 
 ### engine-226
 
-Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort [[engine-24](#engine-24)].
+Where an effort value is valid for a built-in adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the check shall assert [[engine-51](#engine-51)]'s ordinary upstream error path without substitution.
 
 ### engine-229
 
@@ -481,8 +735,8 @@ Given upstream accounting is incomplete, absent, or fails the partition identiti
 
 ### engine-240
 
-Given authentic zero or nonzero accounting from a built-in adapter, terminal `usage.tokens` shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder; malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses` [[engine-31](#engine-31)].
+Given authentic zero, authentic nonzero, malformed, and absent accounting from every built-in adapter, when terminal usage is emitted, the check shall assert [[engine-31](#engine-31)]'s public shape, [[engine-55](#engine-55)] inclusive totals, [[engine-56](#engine-56)] numeric validity, [[engine-57](#engine-57)] detail reconciliation, [[engine-58](#engine-58)] coverage, [[engine-59](#engine-59)] records, and [[engine-65](#engine-65)] independent tool count.
 
 ### engine-32
 
-Given an adapter retains the cumulative-accounting queue permitted by [[engine-18](#engine-18)], concurrent equal-resume, different-resume, and fresh runs plus normal, error, interrupted, and setup-failure exits after acquisition shall preserve that item's serialization, concurrency, and queue-release outcomes.
+Given an adapter retains [[engine-38](#engine-38)]'s cumulative-accounting queue, when concurrent equal-resume, different-resume, and fresh runs exit normally or through error, interruption, and setup failure after acquisition, the check shall assert every serialization, concurrency, and queue-release outcome.

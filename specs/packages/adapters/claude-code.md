@@ -119,13 +119,13 @@ While a run is not aborted, when the SDK query fails before terminal `done`, the
 
 ### claude-code-48
 
-While the mapped SDK abort controller is aborted and no terminal `done` has been emitted, when the SDK query exits, the adapter shall yield for the bounded abort drain in [[engine-9](../engine.md#engine-9)] only terminal `done` with `status: 'interrupted'`, the resume token selected by [[claude-code-26](#claude-code-26)], elapsed duration, usage containing only the tool-use count in [[claude-code-50](#claude-code-50)], and no result, whether the iterator ends or query invocation or iterator consumption throws.
+While the mapped SDK abort controller is aborted and no terminal `done` has been emitted, when the SDK query exits, the adapter shall yield for the bounded abort drain in [[engine-35](../engine.md#engine-35)] only terminal `done` with [[engine-73](../engine.md#engine-73)] status `'interrupted'`, the resume token selected by [[claude-code-26](#claude-code-26)], elapsed duration, usage containing only the tool-use count in [[claude-code-50](#claude-code-50)], and no result, whether the iterator ends or query invocation or iterator consumption throws.
 
 ### Permission Mapping
 
 ### claude-code-4
 
-When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Claude Code controls per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall produce exactly this matrix, with an explicit mode taking precedence over every capability level:
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Claude Code controls under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall produce exactly this matrix, with an explicit mode taking precedence over every capability level:
 
 | Policy input | `permissionMode` | `allowDangerouslySkipPermissions` | `canUseTool` |
 | --- | --- | --- | --- |
@@ -139,7 +139,7 @@ When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../
 
 ### claude-code-19
 
-Where Claude Code has no independently active supported filesystem-sandbox write-grant surface, when the adapter maps `PermissionPolicy.writablePaths`, it shall apply the [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)] contract according to this matrix without changing the permission controls selected by [[claude-code-4](#claude-code-4)]:
+Where Claude Code has no independently active supported filesystem-sandbox write-grant surface, when the adapter maps `PermissionPolicy.writablePaths`, it shall apply [[engine-53](../engine.md#engine-53)] validation and [[engine-54](../engine.md#engine-54)] reporting according to this matrix without changing the permission controls selected by [[claude-code-4](#claude-code-4)]:
 
 | `writablePaths` input | Outcome |
 | --- | --- |
@@ -211,7 +211,7 @@ When the adapter maps `AgentOptions.disallowedTools`, it shall pass the raw list
 
 ### claude-code-8
 
-When the adapter maps the Claude-specific `AgentOptions.effort` vocabulary in [[engine-20](../engine.md#engine-20)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this SDK-option matrix per [[1]] and [[2]]:
+When the adapter maps the Claude-specific `AgentOptions.effort` vocabulary in [[engine-40](../engine.md#engine-40)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this SDK-option matrix per [[1]] and [[2]]:
 
 | `AgentOptions.effort` | SDK `effort` | SDK `settings.ultracode` |
 | --- | --- | --- |
@@ -305,7 +305,7 @@ When the adapter publishes the superseded [[engine-30](../engine.md#engine-30)] 
 
 ### claude-code-12
 
-When the adapter selects the terminal token source, it shall publish [[engine-31](../engine.md#engine-31)] accounting according to this authenticity matrix:
+When the adapter selects the terminal token source, it shall publish numerically valid [[engine-56](../engine.md#engine-56)] accounting with [[engine-58](../engine.md#engine-58)] coverage according to this authenticity matrix:
 
 | `modelUsage` input | Token outcome |
 | --- | --- |
@@ -314,7 +314,7 @@ When the adapter selects the terminal token source, it shall publish [[engine-31
 
 ### claude-code-29
 
-When the adapter publishes a per-model record from valid `modelUsage`, it shall carry this authentic [[engine-31](../engine.md#engine-31)] record shape:
+When the adapter publishes a per-model record from valid `modelUsage`, it shall carry this authentic [[engine-59](../engine.md#engine-59)] record shape:
 
 - camel-case or snake-case SDK token counters map to the same fields;
 - inclusive input and output totals;
@@ -326,11 +326,11 @@ When the adapter publishes a per-model record from valid `modelUsage`, it shall 
 
 ### claude-code-30
 
-Where Claude Code includes reasoning tokens in its inclusive output total without exposing the subset, when the adapter publishes token accounting, it shall omit output reasoning detail per [[engine-31](../engine.md#engine-31)].
+Where Claude Code includes reasoning tokens in its inclusive output total without exposing the subset, when the adapter publishes token accounting, it shall omit output reasoning detail per [[engine-57](../engine.md#engine-57)].
 
 ### claude-code-31
 
-When the adapter selects terminal whole-run cost, it shall prefer a finite numeric `total_cost_usd`, then `totalCostUsd`, expose the selected value independently as a whole-invocation [[engine-31](../engine.md#engine-31)] `agent-estimate` when it is non-negative even if tokens are absent, and otherwise omit whole-run cost.
+When the adapter selects terminal whole-run cost, it shall prefer a finite numeric `total_cost_usd`, then `totalCostUsd`, expose the selected value with [[engine-61](../engine.md#engine-61)] provenance independently under [[engine-62](../engine.md#engine-62)] when it is non-negative even if tokens are absent, and otherwise omit whole-run cost.
 
 ## Internal Behavior
 

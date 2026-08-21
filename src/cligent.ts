@@ -202,7 +202,7 @@ export class Cligent<E extends string = Effort> {
             return;
           }
 
-          // Abort after awaiting (engine-9)
+          // Active abort after bounded drain (engine-34, engine-35)
           if (aborted) {
             if (!doneYielded) {
               if (abortDone) {

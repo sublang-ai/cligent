@@ -2689,7 +2689,7 @@ describe('GeminiAdapter', () => {
     });
   });
 
-  it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per engine-21', () => {
+  it('maps both PermissionPolicy.mode = "auto" and "bypass" to --approval-mode yolo per engine-52', () => {
     const auto = mapPermissionsToGeminiToolConfig({ mode: 'auto' });
     expect(auto.approvalMode).toBe('yolo');
     expect(auto.policyRules).toEqual([]);
@@ -2710,7 +2710,7 @@ describe('GeminiAdapter', () => {
     }
   });
 
-  it('mode overrides per-capability levels in gemini per engine-21', () => {
+  it('mode overrides per-capability levels in gemini per engine-52', () => {
     // mode set together with explicit per-capability denies: the per-
     // capability path is short-circuited so the deny levels do not push
     // tools into disallowedTools / settings. Only the session-wide

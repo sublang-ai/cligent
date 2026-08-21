@@ -249,7 +249,7 @@ select event visibility through this matrix:
 ### opencode-7
 
 When the exported permission mapper receives the closed
-[[engine-21](../engine.md#engine-21)] policy-mode set, it shall select OpenCode
+[[engine-21](../engine.md#engine-21)] policy-mode set under [[engine-52](../engine.md#engine-52)], it shall select OpenCode
 permission controls through this exhaustive [DR-005](../../decisions/005-per-adapter-permission-configuration.md)
 matrix, mapping `fileWrite` → `edit`, `shellExecute` → `bash`, and
 `networkAccess` → `webfetch`:
@@ -271,9 +271,9 @@ independent reporting surface through this matrix:
 
 | Input | `WritablePathsPermissionMapping` |
 | --- | --- |
-| absent or empty | omitted per [[engine-23](../engine.md#engine-23)] |
-| valid non-empty entries | canonical [[engine-22](../engine.md#engine-22)] paths with `enforcement: 'ambient'`, leaving the OpenCode permission rules unchanged |
-| invalid entry | reject under [[engine-22](../engine.md#engine-22)] validation |
+| absent or empty | omitted per [[engine-54](../engine.md#engine-54)] |
+| valid non-empty entries | canonical [[engine-53](../engine.md#engine-53)] paths with `enforcement: 'ambient'` per [[engine-54](../engine.md#engine-54)], leaving the OpenCode permission rules unchanged |
+| invalid entry | reject under [[engine-53](../engine.md#engine-53)] validation |
 
 `ambient` records that this is not confinement: OpenCode retains host
 filesystem authority, `external_directory` remains a tool-approval rule, and
@@ -320,7 +320,7 @@ URL, then connect the SDK client to that URL [[2]].
 ### opencode-9
 
 When `AbortSignal` fires during a managed run, the adapter shall preempt its
-active wait, yield `done` with `status: 'interrupted'`, and only afterwards send
+active wait, yield [[engine-73](../engine.md#engine-73)] `done` with `status: 'interrupted'`, and only afterwards send
 `SIGTERM` to the managed server.
 
 ### opencode-10
@@ -402,7 +402,7 @@ matrix:
 ### opencode-12
 
 Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), when a
-portable `AgentOptions.effort` from [[engine-20](../engine.md#engine-20)] is
+portable `AgentOptions.effort` from [[engine-39](../engine.md#engine-39)] is
 provided with a `provider/model` selection, the adapter shall put this provider
 variant on the prompt body for both fresh and resumed sessions [[1]]:
 
@@ -416,7 +416,7 @@ variant on the prompt body for both fresh and resumed sessions [[1]]:
 | `max`                 | `max`     | `xhigh`   | `high` | unset |
 
 The nearest documented provider variant satisfies lossy rows under
-[[engine-20](../engine.md#engine-20)], while an unmatched provider leaves the
+[[engine-42](../engine.md#engine-42)], while an unmatched provider leaves the
 field unset for `opencode.jsonc`.
 
 ### opencode-14
@@ -428,7 +428,7 @@ adapter shall apply this matrix:
 | --- | --- |
 | effort omitted | no prompt-body `variant`, preserving OpenCode and user defaults |
 | valid effort with absent model or a model lacking a provider prefix | no prompt-body `variant` |
-| value outside the OpenCode vocabulary, including `ultracode` or `ultra` | reject before prompting with [[engine-24](../engine.md#engine-24)]'s metadata-backed adapter and allowed-values error |
+| value outside the OpenCode vocabulary, including `ultracode` or `ultra` | reject before prompting with [[engine-50](../engine.md#engine-50)]'s metadata-backed adapter and allowed-values error |
 
 ### opencode-15
 
@@ -483,12 +483,12 @@ matrix:
 | Ledger state | Report |
 | --- | --- |
 | no proven prompt boundary or no authentic valid step | omit `tokens` rather than attribute across an unproved boundary or publish placeholders |
-| at least one exact valid causal step, but any causal step is malformed or ambiguous, hidden-request suppression is unproved, or a causal descendant remains active | `tokens.coverage: 'partial'` with the exact valid subset |
-| every causal step is canonical and valid, hidden-request boundaries are proved, and every causal descendant is settled | `tokens.coverage: 'complete'` |
-| each valid canonical step | one record with `requests: 1`, inclusive input and output totals, `uncached`, `cacheRead`, `cacheWrite`, `visible`, and `reasoning` details, owning-message provider/model when known, and its finite non-negative cost as USD `agent-estimate` when present [[8]] |
+| at least one exact valid causal step, but any causal step is malformed or ambiguous, hidden-request suppression is unproved, or a causal descendant remains active | [[engine-58](../engine.md#engine-58)] `tokens.coverage: 'partial'` with the exact valid subset |
+| every causal step is canonical and valid, hidden-request boundaries are proved, and every causal descendant is settled | [[engine-58](../engine.md#engine-58)] `tokens.coverage: 'complete'` |
+| each valid canonical step | one [[engine-59](../engine.md#engine-59)] record with `requests: 1` per [[engine-60](../engine.md#engine-60)], inclusive input and output totals, exact details per [[engine-57](../engine.md#engine-57)], owning-message provider/model when known, and its finite non-negative cost as USD `agent-estimate` under [[engine-61](../engine.md#engine-61)] when present [[8]] |
 | generic idle usage aliases | ignore because the idle event is not an authenticated accounting source |
-| complete coverage and every causal step has a valid cost, including measured zero | whole-run USD `agent-estimate` cost equal to the step sum |
-| incomplete coverage or any causal step lacks a valid cost | omit whole-run cost independently of exact token records |
+| complete coverage and every causal step has a valid cost, including measured zero | whole-run [[engine-61](../engine.md#engine-61)] USD `agent-estimate` cost equal to the step sum |
+| incomplete coverage or any causal step lacks a valid cost | omit whole-run cost independently of exact token records per [[engine-62](../engine.md#engine-62)] |
 
 ### Permission Transport
 

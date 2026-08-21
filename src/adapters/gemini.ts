@@ -592,7 +592,7 @@ async function defaultProbeAvailability(): Promise<boolean> {
 
 /**
  * Gemini CLI `--approval-mode` value. `'yolo'` auto-approves all operations
- * — used as the target for engine-21 `mode: 'auto'` since gemini exposes no
+ * — used as the target for engine-52 `mode: 'auto'` since gemini exposes no
  * distinct "auto with safety" tier (its `auto_edit` only covers edits, not
  * the full automation intent).
  */

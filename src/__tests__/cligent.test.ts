@@ -426,7 +426,7 @@ describe('Cligent protocol hardening', () => {
     expect(events[2].type).toBe('done');
   });
 
-  // engine-107: abort
+  // engine-107 / engine-66 / engine-67: abort
   it('yields done(interrupted) on abort', async () => {
     const controller = new AbortController();
     const adapter: AgentAdapter = {

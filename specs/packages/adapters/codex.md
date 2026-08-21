@@ -148,7 +148,7 @@ While the run is not aborted and has emitted no terminal event, when iteration o
 
 ### codex-27
 
-While the mapped SDK signal is aborted and no terminal event has been emitted, when the SDK stream exhausts or throws, the adapter shall emit `init` first if needed and then only terminal `done` with `status: 'interrupted'`, the resume token selected by [[codex-33](#codex-33)], elapsed duration, usage containing only [[codex-29](#codex-29)]'s tool count, and no result.
+While the mapped SDK signal is aborted and no terminal event has been emitted, when the SDK stream exhausts or throws, the adapter shall emit `init` first if needed and then only terminal `done` with [[engine-73](../engine.md#engine-73)] status `'interrupted'`, the resume token selected by [[codex-33](#codex-33)], elapsed duration, usage containing only [[codex-29](#codex-29)]'s tool count, and no result.
 
 ### codex-28
 
@@ -174,7 +174,7 @@ Where the SDK supplies canonical flat `Usage`, when the adapter publishes termin
 
 ### codex-4
 
-When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Codex's modern permission controls per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select both axes from these matrices and omit `ThreadOptions.sandboxMode` and `ThreadOptions.networkAccessEnabled` in every row [[3]][[4]]:
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Codex's modern permission controls under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select both axes from these matrices and omit `ThreadOptions.sandboxMode` and `ThreadOptions.networkAccessEnabled` in every row [[3]][[4]]:
 
 | Policy input | `ThreadOptions.approvalPolicy` | `CodexOptions.config.approvals_reviewer` |
 | --- | --- | --- |
@@ -204,7 +204,7 @@ When a run has no permission policy or a supplied policy whose mapping succeeds,
 
 ### codex-32
 
-When the adapter maps `PermissionPolicy.writablePaths` per [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)], it shall produce this matrix without changing the approval axis selected by [[codex-4](#codex-4)]:
+When the adapter maps `PermissionPolicy.writablePaths` per [[engine-53](../engine.md#engine-53)] and [[engine-54](../engine.md#engine-54)], it shall produce this matrix without changing the approval axis selected by [[codex-4](#codex-4)]:
 
 | Input and resolved profile | Outcome |
 | --- | --- |
@@ -228,7 +228,7 @@ When the adapter selects a Codex thread, it shall produce this matrix:
 
 ### codex-6
 
-When a non-interrupted terminal `done` is emitted, the adapter shall set `DonePayload.resumeToken` to the latest backend thread identifier observed during the run and otherwise omit it, rather than echoing an inbound resume value, enabling [[engine-5](../engine.md#engine-5)] auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
+When a non-interrupted terminal `done` is emitted, the adapter shall set `DonePayload.resumeToken` to the latest backend thread identifier observed during the run and otherwise omit it, rather than echoing an inbound resume value, enabling [[engine-5](../engine.md#engine-5)] storage and [[engine-33](../engine.md#engine-33)] selection across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
 
 ### codex-33
 
@@ -244,7 +244,7 @@ When terminal `done` has `status: 'interrupted'`, whether selected from a native
 
 ### codex-7
 
-When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this matrix per [[1]], [[3]], and [[5]]:
+When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [[engine-40](../engine.md#engine-40)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this matrix per [[1]], [[3]], and [[5]]:
 
 | `AgentOptions.effort` | SDK `ThreadOptions.modelReasoningEffort` | Codex constructor `config.model_reasoning_effort` | Outcome |
 | --- | --- | --- | --- |
@@ -275,7 +275,7 @@ When the adapter maps `AgentOptions.allowedTools` and `AgentOptions.disallowedTo
 
 ### codex-15
 
-Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and same-resume serialization contract, when the adapter maps a cumulative `turn.completed` usage value classified by [[codex-53](#codex-53)] to one turn, it shall produce this provenance matrix:
+Under [[engine-37](../engine.md#engine-37)]'s permitted per-session baseline and [[engine-38](../engine.md#engine-38)]'s same-resume serialization contract, when the adapter maps a cumulative `turn.completed` usage value classified by [[codex-53](#codex-53)] to one turn, it shall produce this provenance matrix:
 
 | State | Outcome |
 | --- | --- |
@@ -290,7 +290,7 @@ Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and
 
 ### codex-16
 
-When the adapter maps a valid per-turn delta from [[codex-15](#codex-15)] into exact token details, it shall produce this subset matrix under [[engine-31](../engine.md#engine-31)]:
+When the adapter maps a valid per-turn delta from [[codex-15](#codex-15)] into exact token details, it shall produce this subset matrix under [[engine-57](../engine.md#engine-57)]:
 
 | Reported counters | Output |
 | --- | --- |
@@ -315,7 +315,7 @@ Where one Codex turn supplied a complete flat breakdown, when the adapter publis
 
 ### codex-17
 
-When the adapter publishes current Codex token accounting, it shall produce this authentic report matrix under [[engine-31](../engine.md#engine-31)]:
+When the adapter publishes current Codex token accounting, it shall produce this authentic report matrix under [[engine-58](../engine.md#engine-58)] and [[engine-59](../engine.md#engine-59)]:
 
 | Source state | Report outcome |
 | --- | --- |

@@ -76,7 +76,7 @@ Each adapter's mapping function shall translate the new vocabulary to its SDK's 
 
 ### Exhaustive mode-mapping contract
 
-The permission-mapping requirement in each built-in adapter package shall exhaust the closed `PermissionPolicy.mode` set from [[engine-21](../packages/engine.md#engine-21)].
+The permission-mapping requirement in each built-in adapter package shall exhaust the closed `PermissionPolicy.mode` set from [[engine-21](../packages/engine.md#engine-21)] according to [[engine-52](../packages/engine.md#engine-52)].
 For each of `'auto'` and `'bypass'`, it shall name the exact vendor control, native-equivalent permission-response behavior, or mapping-time rejection.
 For `undefined`, it shall name the capability-derived controls or rejection and shall separately state both a missing `permissions` policy and a supplied policy whose `mode` is omitted, including an empty policy; those two inputs shall not be presumed equivalent.
 Where a case preserves vendor defaults by emitting no adapter-generated permission control, the requirement shall state that omission explicitly.
@@ -128,7 +128,7 @@ The approval/reviewer posture and the local-access surface are independent Codex
 - **Approval/reviewer axis** — `ThreadOptions.approvalPolicy` plus `CodexOptions.config.approvals_reviewer`. `mode: 'auto'` selects `approvalPolicy: 'on-request'` + `approvals_reviewer: 'auto_review'` (auto-review applies only under interactive approvals [[6]]); `mode: 'bypass'` selects `approvalPolicy: 'never'` and no reviewer.
 - **Local-access axis** — `CodexOptions.config.default_permissions`, a built-in profile (`:read-only` / `:workspace` / `:danger-full-access`).
 
-`mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [[engine-21](../packages/engine.md#engine-21)] orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
+`mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [[engine-52](../packages/engine.md#engine-52)] orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
 The exact per-capability → profile mapping is [[codex-4](../packages/adapters/codex.md#codex-4)].
 Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
 

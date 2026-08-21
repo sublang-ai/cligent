@@ -50,7 +50,7 @@ describe('readUsageCounter', () => {
   });
 });
 
-describe('authentic usage builders (engine-31)', () => {
+describe('authentic usage builders (engine-55 through engine-63)', () => {
   const complete = buildTokenUsage(
     { total: 100, uncached: 30, cacheRead: 60, cacheWrite: 10 },
     { total: 50, visible: 45, reasoning: 5 },

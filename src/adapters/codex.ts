@@ -455,9 +455,9 @@ const CODEX_USAGE_ALIASES: ReadonlyArray<
 
 /**
  * Read the cumulative snapshot Codex attaches to `turn.completed`. Returns
- * undefined when any consumed counter is missing or malformed, which keeps
- * the caller on engine-31's omitted-token path instead of differencing against
- * a partial snapshot.
+ * undefined when a required counter is missing under codex-53 or a consumed
+ * counter violates engine-56, which keeps the caller on engine-58's
+ * omitted-token path instead of differencing against a partial snapshot.
  */
 function readCodexUsageSnapshot(
   rawUsage: unknown,
@@ -1292,12 +1292,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
    * codex-15: `turn.completed.usage` reports the thread's cumulative total,
    * so the turn's own usage is the delta against the previous snapshot. The
    * baseline is keyed by backend thread identity, not by run, because a
-   * later run resumes the same thread. engine-18 permits exactly this state.
+   * later run resumes the same thread. engine-37 permits exactly this state.
    */
   private readonly threadUsageBaselines = new Map<string, CodexUsageReading>();
 
   /**
-   * engine-18: two concurrent turns on one resumed thread would race its one
+   * engine-38: two concurrent turns on one resumed thread would race its one
    * cumulative counter and make either delta depend on event arrival order.
    * Queue only equal inbound resume identities; fresh and unrelated sessions
    * retain the adapter's normal concurrency.

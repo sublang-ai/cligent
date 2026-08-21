@@ -214,7 +214,7 @@ export interface WritablePathsPermissionMapping {
 
 export interface PermissionPolicy {
   /**
-   * Session-wide automation posture per engine-21. When set, it selects the
+   * Session-wide automation posture per engine-52. When set, it selects the
    * adapter's automation-posture knob: `'auto'` maps to the adapter/provider's
    * native automation, whose protection and approval semantics are
    * adapter-specific, and `'bypass'` maps to unchecked bypass where supported

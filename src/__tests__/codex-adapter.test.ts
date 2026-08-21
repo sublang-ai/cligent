@@ -2664,7 +2664,7 @@ describe('CodexAdapter', () => {
     expect(donePayload(events.at(-1)!).usage.tokens).toBeUndefined();
   });
 
-  it('maps PermissionPolicy.mode to Codex approval axis and default_permissions per engine-21', () => {
+  it('maps PermissionPolicy.mode to Codex approval axis and default_permissions per engine-52', () => {
     const auto = mapPermissionsToCodexOptions({ mode: 'auto' });
     expect(auto.approvalPolicy).toBe('on-request');
     expect(auto.codexOptions).toEqual({
