@@ -944,7 +944,7 @@ function migrateHomeConfigSafeDefaults(
       }
     }
 
-    // tmux-play-10: rewrite a legacy `columnWeights` to its canonical shape field,
+    // tmux-play-90: rewrite a legacy `columnWeights` to its canonical shape field,
     // writing one final form that never holds both. Skip the rewrite when the
     // matching canonical field already exists (a conflict the loader rejects)
     // or the length is not 2/3 (also rejected on load); leave those for the

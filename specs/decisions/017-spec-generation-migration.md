@@ -439,12 +439,14 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-008` | `tmux-play-8` |
 | `TMUX-009` | `tmux-play-9` |
 | `TMUX-010` | `tmux-play-10` |
+| `TMUX-010` | `tmux-play-90` |
 | `TMUX-011` | `tmux-play-11` |
 | `TMUX-012` | `tmux-play-12` |
 | `TMUX-013` | `tmux-play-13` |
 | `TMUX-014` | `tmux-play-14` |
 | `TMUX-015` | `tmux-play-15` |
 | `TMUX-016` | `tmux-play-16` |
+| `TMUX-016` | `tmux-play-91` |
 | `TMUX-017` | `tmux-play-17` |
 | `TMUX-018` | `tmux-play-18` |
 | `TMUX-019` | `tmux-play-19` |
@@ -481,10 +483,13 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-050` | `tmux-play-50` |
 | `TMUX-051` | `tmux-play-51` |
 | `TMUX-052` | `tmux-play-52` |
+| `TMUX-052` | `tmux-play-93` |
 | `TMUX-053` | `tmux-play-53` |
 | `TMUX-054` | `tmux-play-54` |
 | `TMUX-055` | `tmux-play-55` |
 | `TMUX-056` | `tmux-play-56` |
+| `TMUX-056` | `tmux-play-95` |
+| `TMUX-056` | `tmux-play-93` |
 | `TMUX-057` | `tmux-play-57` |
 | `TMUX-058` | `tmux-play-58` |
 | `TMUX-060` | `tmux-play-60` |
@@ -508,6 +513,8 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-080` | `tmux-play-80` |
 | `TMUX-081` | `tmux-play-81` |
 | `TMUX-082` | `tmux-play-82` |
+| `TMUX-082` | `tmux-play-29` |
+| `TMUX-082` | `tmux-play-98` |
 | `TMUX-083` | `tmux-play-83` |
 | `TMUX-084` | `tmux-play-84` |
 | `TMUX-085` | `tmux-play-85` |
@@ -516,6 +523,9 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-088` | `tmux-play-88` |
 | `TMUX-089` | `tmux-play-89` |
 | `TMUX-092` | `tmux-play-92` |
+| `TMUX-092` | `tmux-play-16` |
+| `TMUX-092` | `tmux-play-29` |
+| `TMUX-092` | `tmux-play-97` |
 | `TMUX-093` | `tmux-play-93` |
 | `TMUX-094` | `tmux-play-94` |
 | `TMUX-096` | `tmux-play-96` |

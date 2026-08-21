@@ -173,9 +173,9 @@ It does not relax weight validation to arbitrary arrays whose meaning changes at
 
 Legacy configs that contain only `layout.columnWeights` remain valid through the compatibility alias above.
 The alias preserves behavior; the home-config migration keeps the user-editable fallback file on the canonical shape-specific vocabulary so later edits are less ambiguous.
-This decision amends [[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]'s home-config migration rule.
-tmux-play-10 currently describes fallback home migration as adding only missing safe defaults and preserving existing values; dynamic visibility permits this narrow key rewrite because the weight array value is preserved under its canonical field.
-Future TMUX item updates must also replace tmux-play-10's stale reference to "resolved `layout` defaults from tmux-play-64" with the dynamic-visibility layout fields from this decision.
+This decision amends [[tmux-play-90](../packages/tmux-play.md#tmux-play-90)]'s home-config migration rule.
+tmux-play-90 describes fallback home migration as adding only missing safe defaults and preserving existing values; dynamic visibility permits this narrow key rewrite because the weight array value is preserved under its canonical field.
+Future TMUX item updates must also replace tmux-play-90's stale reference to "resolved `layout` defaults from tmux-play-64" with the dynamic-visibility layout fields from this decision.
 When tmux-play loads an existing home config through fallback discovery, it updates the home YAML to the canonical shape-specific field when that rewrite is unambiguous:
 
 - a two-element `layout.columnWeights` becomes `layout.singlePlayerColumnWeights`
@@ -219,4 +219,4 @@ The API and record shape leave room for a later presentation-only upgrade.
 If hidden-pane view continuity becomes important, the `LayoutObserver` can replace full rebuild with incremental pane preservation or a bench-window `break-pane` / `join-pane` strategy behind the same `setVisiblePlayers` API and `player_view_changed` record.
 Such an upgrade should introduce stable pane-ID bookkeeping then, not as a prerequisite for this simpler design.
 
-Future implementation work must update the TMUX user and test items to specify `layout.initialVisible`, the `setVisiblePlayers` contract, the `player_view_changed` record, full-rebuild pane semantics, strict per-visible-count weight validation, the home-config migration and tmux-play-10 amendment, the tmux-play-11 default-config canonical layout field, and the hidden-pane scrollback limitation.
+Future implementation work must update the TMUX user and test items to specify `layout.initialVisible`, the `setVisiblePlayers` contract, the `player_view_changed` record, full-rebuild pane semantics, strict per-visible-count weight validation, the home-config migration and tmux-play-90 amendment, the tmux-play-11 default-config canonical layout field, and the hidden-pane scrollback limitation.

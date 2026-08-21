@@ -31,16 +31,28 @@ When `--config <path>` is supplied, the launcher shall load that file and skip d
 
 ### tmux-play-61
 
-When `--theme-diagnostics` is supplied, the CLI shall run theme-diagnostics mode: load the same config the launcher would load, resolve the Catppuccin flavor per [[tmux-play-47](#tmux-play-47)], print `selected: <flavor>` and `reason: <explicit|yaml|osc11|fallback>` to stdout, include the raw OSC 11 reply when one was received, and exit without checking for `tmux` or `glow`, creating a tmux session, or attaching.
-Theme-diagnostics mode shall additionally create no config: where discovery per [[tmux-play-9](#tmux-play-9)] finds none and `--config` is not supplied, it shall resolve the flavor as it would for `theme: auto` rather than running the first-run creation of [[tmux-play-10](#tmux-play-10)], so reporting the terminal's background never depends on an installed adapter runtime.
-`--theme-diagnostics` is launcher-mode only; when combined with `--session`, the CLI shall reject the invocation before dispatching session mode.
+When `--theme-diagnostics` is supplied, the CLI shall select the diagnostic flow through this matrix and, for every accepted flow, exit without checking for `tmux` or `glow`, creating a tmux session, or attaching:
+
+| Invocation and config state | Outcome |
+| --- | --- |
+| launcher mode with a discoverable or explicit config | load that config, resolve the Catppuccin flavor per [[tmux-play-47](#tmux-play-47)], and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received |
+| launcher mode, discovery per [[tmux-play-9](#tmux-play-9)] finds no config, and `--config` is absent | create no config, skip [[tmux-play-10](#tmux-play-10)]'s first-run creation, resolve the flavor as for `theme: auto`, and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received, without requiring an installed adapter runtime |
+| combined with `--session` | reject before dispatching session mode |
 
 ### Configuration
 
 ### tmux-play-5
 
-A `tmux-play` config shall be YAML with a `captain` object and a `players` array, which may be empty for a Boss/Captain-only session.
-The top-level config may also include an optional `theme` field per [[tmux-play-60](#tmux-play-60)], an optional `layout` field per [[tmux-play-64](#tmux-play-64)], and an optional `notifications` field per [[tmux-play-76](#tmux-play-76)].
+When the loader resolves the top-level configuration, it shall admit this surface:
+
+| Member or form | Contract |
+| --- | --- |
+| document | YAML |
+| `captain` | required object |
+| `players` | required array, which may be empty for a Boss/Captain-only session |
+| `theme` | optional field per [[tmux-play-60](#tmux-play-60)] |
+| `layout` | optional field per [[tmux-play-64](#tmux-play-64)] |
+| `notifications` | optional field per [[tmux-play-76](#tmux-play-76)] |
 
 ### tmux-play-6
 
@@ -48,83 +60,123 @@ The `captain` object shall require `from` (local path or package specifier), `ad
 
 ### tmux-play-60
 
-The top-level `theme` field shall be one of the closed set `'mocha' | 'latte' | 'auto'` and selects the Catppuccin flavor per [[tmux-play-47](#tmux-play-47)].
-A missing `theme` field is equivalent to `'auto'`.
-The loader shall reject values outside the closed set with an error that names the offending path (`theme`) per [[tmux-play-8](#tmux-play-8)].
-The default home config shall include `theme: auto` so first-run users see the option exists.
+When the configuration system resolves the top-level `theme` field, it shall apply this matrix:
+
+| Input or output context | Outcome |
+| --- | --- |
+| `'mocha'`, `'latte'`, or `'auto'` | accept the value and select the Catppuccin flavor per [[tmux-play-47](#tmux-play-47)] |
+| field missing | treat it as `'auto'` |
+| another value | reject with an error naming `theme` per [[tmux-play-8](#tmux-play-8)] |
+| default home config | include `theme: auto` so first-run users can see the option |
 
 ### tmux-play-64
 
-The top-level `layout` field shall be an optional object with the optional sub-fields `window`, `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, `columnWeights`, and `initialVisible` (defined in [[tmux-play-80](#tmux-play-80)]).
-`layout.window` shall be an optional object with two optional positive-integer fields `columns` and `rows`, supplying the initial cell grid for [[tmux-play-35](#tmux-play-35)] (`new-session -x/-y`) and the pre-attach CSI 8 sequence for [[tmux-play-43](#tmux-play-43)].
-When `layout.window` is missing entirely, the loader shall default it to `{ columns: 174, rows: 49 }`.
-When `layout.window` is present but partial — only `columns` or only `rows` supplied — each missing sub-field shall default independently to its full-default value (`174` for `columns`, `49` for `rows`) and each supplied sub-field shall be preserved verbatim; a partial `layout.window` shall not fall back wholesale to the full default (e.g., `{ columns: 200 }` shall resolve to `{ columns: 200, rows: 49 }`, not to `{ columns: 174, rows: 49 }`).
-`layout.singlePlayerColumnWeights` and `layout.multiPlayerColumnWeights` are the canonical column-weight fields, selected by the visible-column shape per [[tmux-play-28](#tmux-play-28)]: the two-column shape (one visible player — the Boss/Captain column plus one player column) uses `layout.singlePlayerColumnWeights`, and the three-column shape (two or more visible players — the Boss/Captain column plus two player columns) uses `layout.multiPlayerColumnWeights`.
-The zero-player shape per [[tmux-play-28](#tmux-play-28)] shall have only the full-width Boss/Captain column and resolved active weights `[1]`; it has no authored weight field, and the two- and three-element canonical fields and aliases remain the only configurable shapes.
-Each canonical field, when present, shall be an array of positive integers whose length is fixed by its shape — `2` for `singlePlayerColumnWeights`, `3` for `multiPlayerColumnWeights` — independent of the configured player count.
-An omitted canonical field shall not be materialized as present; its default — `[1, 1]` for `singlePlayerColumnWeights`, `[1, 1, 1]` for `multiPlayerColumnWeights` — shall be used only after explicit values and the `columnWeights` alias have been considered.
-`layout.columnWeights` shall be a backward-compatible alias: a two-element `layout.columnWeights` aliases `layout.singlePlayerColumnWeights` and a three-element `layout.columnWeights` aliases `layout.multiPlayerColumnWeights`; any other `layout.columnWeights` length is invalid.
-When `layout.columnWeights` and the canonical field for the same shape are both present, the loader shall reject the config per [[tmux-play-8](#tmux-play-8)] rather than silently choosing one; a `layout.columnWeights` of one shape may coexist with the canonical field of the other shape.
-For a given visible-column shape, weight resolution shall be (1) the matching canonical field when explicitly present, (2) otherwise the matching `layout.columnWeights` alias when present, (3) otherwise the shape default.
-The resolved weights govern column region widths per [[tmux-play-44](#tmux-play-44)]: each non-rightmost column `i` receives `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column absorbs the remainder; the shipped defaults are 50/50 for the single-player layout and even thirds for the multi-player layout.
-To express a fractional ratio, the config author shall scale it to positive integers before writing it (e.g., write `[0.5, 1.5]` as `[1, 3]`), which preserves the `floor(W * w_i / sum(w))` region widths exactly; the loader shall not rescale and shall reject non-integer weights per the constraints below.
-The loader shall reject values outside these constraints with an error that names the offending path per [[tmux-play-8](#tmux-play-8)]: non-integer or non-positive `layout.window.columns` / `layout.window.rows`; a `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, or `columnWeights` that is not an array; any weight that is not a positive integer (rejects NaN, Infinity, decimals like `0.5`, zero, negatives, and non-number types); a `singlePlayerColumnWeights` whose length is not `2` or a `multiPlayerColumnWeights` whose length is not `3`; a `layout.columnWeights` length other than `2` or `3`; and a `layout.columnWeights` present alongside the canonical field for the same shape.
-The snapshot per [[tmux-play-34](#tmux-play-34)] shall carry the resolved `layout.window.columns`, `layout.window.rows`, `layout.singlePlayerColumnWeights`, and `layout.multiPlayerColumnWeights` values verbatim, so session mode never re-resolves defaults and can render either visible-column shape after a runtime visibility change.
+When the configuration system resolves the optional top-level `layout` object, it shall apply this matrix, with `initialVisible` governed by [[tmux-play-80](#tmux-play-80)]:
+
+| Input or derived value | Outcome |
+| --- | --- |
+| object surface | admit only the optional `window`, `singlePlayerColumnWeights`, `multiPlayerColumnWeights`, `columnWeights`, and `initialVisible` fields |
+| `window` | admit optional positive-integer `columns` and `rows`; they supply the initial cell grid to [[tmux-play-35](#tmux-play-35)]'s `new-session -x/-y` and the pre-attach CSI 8 sequence to [[tmux-play-43](#tmux-play-43)] |
+| `window` missing | resolve `{ columns: 174, rows: 49 }` |
+| partial `window` | preserve each supplied member and independently default missing `columns` to `174` or `rows` to `49`, never replacing the whole object |
+| zero visible players | select the full-width Boss/Captain column with active weights `[1]`; expose no authored one-element weight field |
+| one visible player | select `singlePlayerColumnWeights`, whose explicit value is a two-positive-integer array and whose deferred default is `[1, 1]`, independent of the configured-player count |
+| two or more visible players | select `multiPlayerColumnWeights`, whose explicit value is a three-positive-integer array and whose deferred default is `[1, 1, 1]`, independent of the configured-player count |
+| omitted canonical field | leave the field absent until explicit values and the alias have been considered |
+| two-element `columnWeights` | alias `singlePlayerColumnWeights` |
+| three-element `columnWeights` | alias `multiPlayerColumnWeights` |
+| alias and matching canonical field both present | reject per [[tmux-play-8](#tmux-play-8)]; an alias of one shape may coexist with the other shape's canonical field |
+| weight source for a visible-column shape | choose its explicit canonical field, otherwise its matching alias, otherwise its shape default |
+| resolved weights `[w_0, ..., w_{N-1}]` at width `W` | give each non-rightmost column `i` `floor(W * w_i / sum(w))` cells and the rightmost column the remainder per [[tmux-play-44](#tmux-play-44)]; the defaults yield 50/50 or even thirds |
+| authored fractional ratio | require equivalent positive integers such as `[1, 3]` for `[0.5, 1.5]`; do not rescale it |
+| invalid value | reject with an error naming the path per [[tmux-play-8](#tmux-play-8)]: non-integer or non-positive window dimensions; a weight field that is not an array; a NaN, infinite, fractional, zero, negative, or non-number weight; a canonical array of the wrong fixed length; an alias length other than two or three; or an alias colliding with its canonical field |
+| snapshot per [[tmux-play-34](#tmux-play-34)] | preserve the resolved window dimensions and both canonical weight arrays verbatim so session mode can render either visible-column shape without re-resolving defaults |
 
 ### tmux-play-80
 
-`layout.initialVisible` shall be an optional array of player IDs drawn from the configured `players` roster per [[tmux-play-7](#tmux-play-7)], naming the players whose panes the launcher creates at session startup.
-When present, `layout.initialVisible` shall be duplicate-free and shall name only configured player IDs.
-It may be empty if and only if the configured `players` roster is empty; with a non-empty roster, the loader shall reject an empty array.
-The loader shall reject that invalid empty array, a duplicate, or an unknown ID with an error that names the offending path per [[tmux-play-8](#tmux-play-8)].
-When `layout.initialVisible` is omitted, the startup-visible set shall be every configured player in `players` order, preserving the prior all-players-visible behavior.
-When `layout.initialVisible` is present, its array order shall be the startup player-pane order; when it is omitted, configured `players` order shall be the startup player-pane order.
-The startup visible-column shape per [[tmux-play-28](#tmux-play-28)], and thus the weight preset selected per [[tmux-play-64](#tmux-play-64)], shall derive from the size of the startup-visible set rather than the configured roster size.
-An empty roster shall resolve to an empty startup-visible set and the full-width Boss/Captain-only shape, whether `layout.initialVisible` is omitted or explicitly `[]`.
-A non-empty roster shall never resolve to an empty visible set.
-The snapshot per [[tmux-play-34](#tmux-play-34)] shall carry the resolved startup-visible player ID list so session mode and the [[tmux-play-83](#tmux-play-83)] layout observer share the launcher's startup visible set.
+When the configuration system resolves optional `layout.initialVisible` against [[tmux-play-7](#tmux-play-7)]'s configured roster, it shall apply this matrix:
+
+| Input or derived value | Outcome |
+| --- | --- |
+| non-empty duplicate-free array of configured player IDs | preserve the array as the startup-visible set and pane order |
+| field omitted | use every configured player in roster order, preserving prior all-visible behavior |
+| empty array with empty roster | accept it as the empty startup-visible set |
+| field omitted with empty roster | resolve the same empty startup-visible set |
+| empty array with non-empty roster, duplicate, or unknown ID | reject with an error naming the offending path per [[tmux-play-8](#tmux-play-8)] |
+| any resolved non-empty roster | never produce an empty visible set |
+| visible-column shape and [[tmux-play-64](#tmux-play-64)] weight preset | derive both from startup-visible-set size rather than configured-roster size |
+| snapshot per [[tmux-play-34](#tmux-play-34)] | preserve the resolved startup-visible IDs so session mode and [[tmux-play-83](#tmux-play-83)] share the launcher's set |
 
 ### tmux-play-76
 
-The top-level `notifications` field shall be a map from tmux-play record notification events to sinks.
-The event keys shall be the closed set `player_finished`, `turn_finished`, and `turn_aborted`; `runtime_error` shall not be accepted as a notification event.
-The sink values shall be the closed set `off`, `bell`, and `desktop`; the `bell` sink shall mean a best-effort native sound cue rather than terminal BEL output.
-When the `notifications` block is missing, the loader shall resolve all notification events to `off`.
-When an event key is missing inside a present `notifications` block, the loader shall resolve that event to `off`.
-When the loader accepts a config, the snapshot per [[tmux-play-34](#tmux-play-34)] shall carry a resolved notification map with all three event keys.
-When the loader rejects an unknown notification key or invalid sink, the error shall name the offending path per [[tmux-play-8](#tmux-play-8)].
+When the configuration system resolves the optional top-level `notifications` map, it shall apply this matrix:
+
+| Input or output | Outcome |
+| --- | --- |
+| event key | accept only `player_finished`, `turn_finished`, and `turn_aborted`; reject `runtime_error` |
+| sink | accept only `off`, `bell`, and `desktop`, with `bell` meaning a best-effort native sound rather than terminal BEL |
+| block missing | resolve every event to `off` |
+| event missing from a present block | resolve that event to `off` |
+| accepted config | give [[tmux-play-34](#tmux-play-34)]'s snapshot all three resolved event keys |
+| unknown key or invalid sink | reject with an error naming the offending path per [[tmux-play-8](#tmux-play-8)] |
 
 ### tmux-play-7
 
-Each entry in `players` shall require `id` and `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], and `effort` per [[tmux-play-56](#tmux-play-56)].
-Player `id` shall match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$` (one or more dot-delimited segments, each beginning with a lowercase ASCII letter and continuing with lowercase ASCII letters, digits, underscores, or hyphens), be unique within the config, and shall not equal `captain`.
-Multiple players may share an adapter and model.
+When the loader resolves an entry in `players`, it shall apply this matrix:
+
+| Field or roster condition | Outcome |
+| --- | --- |
+| `id` and `adapter` | require both; accept only adapters `claude`, `codex`, `gemini`, `opencode`, and `kimi` |
+| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], and `effort` per [[tmux-play-56](#tmux-play-56)] |
+| `id` | require a unique non-`captain` value matching `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$` |
+| adapter and model reused by several players | accept the entries |
 
 ### tmux-play-52
 
-The `captain` object and each `players` entry may include a `permissions` object whose typed shape is [[engine-21](engine.md#engine-21)]'s `PermissionPolicy`: `mode` is `'auto' | 'bypass'`, `fileWrite` / `shellExecute` / `networkAccess` are each `'allow' | 'ask' | 'deny'`, and `writablePaths` is an optional array of workspace-relative path strings per [[engine-22](engine.md#engine-22)].
-The loader shall validate and canonicalize `permissions.writablePaths` per [[engine-53](engine.md#engine-53)], then retain the accepted `permissions` value as that captain's or player's runtime-held call default per [DR-005](../decisions/005-per-adapter-permission-configuration.md); when complete `settings` is omitted, tmux-play shall supply that default at the `Cligent.run()` boundary per [[tmux-play-93](#tmux-play-93)], where the adapter performs the SDK-knob mapping per [[engine-52](engine.md#engine-52)].
-The loader shall reject unknown sub-fields under `permissions`, values outside the closed sets above, or invalid `writablePaths` entries with an error that names the offending path per [[tmux-play-8](#tmux-play-8)].
-A missing `permissions` field shall be treated as no policy override; the adapter retains its SDK default.
+When the loader resolves optional `permissions` on the `captain` or a player, it shall apply this matrix per [DR-005](../decisions/005-per-adapter-permission-configuration.md):
+
+| Input | Outcome |
+| --- | --- |
+| field absent | retain the adapter's SDK default with no policy override |
+| accepted object | admit optional [[engine-21](engine.md#engine-21)] `mode` values `'auto'` and `'bypass'`; optional `fileWrite`, `shellExecute`, and `networkAccess` values from the closed set `'allow' \| 'ask' \| 'deny'`; and [[engine-22](engine.md#engine-22)]'s optional workspace-relative `writablePaths`; validate and canonicalize paths per [[engine-53](engine.md#engine-53)]; retain the policy as the role's call default |
+| non-object field, unknown member, value outside a closed set, or invalid path | reject with an error naming the offending path per [[tmux-play-8](#tmux-play-8)] |
 
 ### tmux-play-56
 
-Per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md), the `captain` object and each `players` entry may include `effort`, whose accepted values shall be scoped by that entry's `adapter` per [[engine-40](engine.md#engine-40)]: `claude` accepts the portable set plus `ultracode`, `codex` accepts the portable set plus `ultra`, `gemini` and `opencode` accept only [[engine-39](engine.md#engine-39)]'s portable set, and `kimi` accepts only the provider-native binary values `off` and `on`.
-The loader shall retain an accepted value as that captain's or player's runtime-held call default, supply it at the `Cligent.run()` boundary when complete `settings` is omitted per [[tmux-play-93](#tmux-play-93)], and preserve the adapter/value correlation in the exported captain, player, and runtime configuration types.
-The loader shall reject an unsupported value with an error naming the offending path, adapter, and allowed values before the runtime starts.
-A missing `effort` field shall be treated as no override; the adapter retains its defaults for that player or captain.
+When the loader resolves optional `effort` on the `captain` or a player, it shall apply this matrix per [DR-009](../decisions/009-adapter-scoped-effort-vocabularies.md):
+
+| Input | Outcome |
+| --- | --- |
+| adapter-scoped value | accept `claude`'s portable values plus `ultracode`, `codex`'s portable values plus `ultra`, `gemini` and `opencode`'s [[engine-39](engine.md#engine-39)] portable values, and `kimi`'s provider-native `off` and `on`, per [[engine-40](engine.md#engine-40)] |
+| accepted value | retain it as the role's call default |
+| unsupported value | reject before runtime start with an error naming the path, adapter, and allowed values |
+| field absent | retain the adapter's defaults with no override |
+
+### tmux-play-95
+
+Where tmux-play exports captain, player, and runtime configuration types, those types shall preserve [[tmux-play-56](#tmux-play-56)]'s correlation between each adapter and its effort vocabulary.
 
 ### tmux-play-86
 
-Where any loaded YAML source contains direct `captain.reasoningEffort` or `players[N].reasoningEffort` keys without canonical `effort` in the same object, the loader shall validate and use each legacy value as that object's in-memory `effort` for the first release carrying the canonical key.
-After the complete configuration validates, the loader shall locate only those parsed key tokens in the source text, replace them with `effort`, re-read the source, and make a best-effort same-directory atomic update only when the re-read bytes still match.
-The loader shall report the config path, accepted field paths, and whether the update succeeded through an optional deprecation callback.
-Where the source changed or the update fails, the loader shall continue with the validated in-memory values and leave an actionable manual rename to the caller; comments, instructions, and opaque `captain.options.reasoningEffort` values are outside this compatibility path.
+Where the first release carrying canonical `effort` loads direct `captain.reasoningEffort` or `players[N].reasoningEffort` keys without same-object `effort`, the loader shall perform this compatibility flow:
+
+| Stage or condition | Outcome |
+| --- | --- |
+| value validation | validate and use each legacy value as that object's in-memory `effort` |
+| complete config valid and source bytes unchanged | locate only the parsed legacy key tokens, replace them with `effort`, re-read the source, and make a best-effort same-directory atomic update |
+| reporting | invoke the optional deprecation callback with the config path, accepted field paths, and update outcome |
+| source changed or update failed | continue with the validated in-memory values, preserve the source, and report an actionable manual rename |
+| comments, instructions, or opaque `captain.options.reasoningEffort` | leave outside this compatibility path |
 
 ### tmux-play-87
 
-Where one captain or player object contains both `effort` and deprecated `reasoningEffort`, or where a legacy value is invalid for that object's adapter, the loader shall reject with an error naming the offending path and shall not invoke the deprecation callback or attempt a write.
-The compatibility update shall promise no preservation beyond changing only the identified key tokens in the generated contents; independent home safe-default and layout migrations remain governed by [[tmux-play-10](#tmux-play-10)].
+When effort-key compatibility examines a loaded captain or player object, it shall apply this matrix:
+
+| State | Outcome |
+| --- | --- |
+| both `effort` and deprecated `reasoningEffort` present | reject with an error naming the path, without a callback or write |
+| legacy value invalid for the object's adapter | reject with an error naming the path, without a callback or write |
+| compatible update | promise preservation only of changing the identified key tokens; keep independent home safe-default and layout migrations under [[tmux-play-90](#tmux-play-90)] |
 
 ### tmux-play-8
 
@@ -134,34 +186,54 @@ When loading a config, the loader shall reject malformed YAML and unknown fields
 
 ### tmux-play-9
 
-When `--config` is not supplied, the launcher shall search for `tmux-play.config.yaml` in the current directory first, then `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml`.
-The first match shall be used.
-`XDG_CONFIG_HOME` shall be treated as unset when empty.
+When `--config` is absent, the launcher shall select the configuration source through this matrix:
+
+| Environment and files | Outcome |
+| --- | --- |
+| cwd contains `tmux-play.config.yaml` | use that file |
+| cwd lacks it and `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` exists | use the home file |
+| `XDG_CONFIG_HOME` is empty or unset | treat it as unset and use `~/.config` for the home candidate |
+| neither file exists | report no discovered config to the first-run flow |
 
 ### tmux-play-10
 
-Where at least one supported adapter's runtime is installed, when neither location holds a config and `--config` is not supplied, the launcher shall create the home location with a default config per [[tmux-play-11](#tmux-play-11)], print a one-line notice on stdout naming the path and the installed adapters the roster was built from, and continue.
-Where no supported adapter's runtime is installed, the launcher shall create no file, print nothing on stdout, and fail with an error naming every supported adapter and the commands that install what it requires, so a first run never leaves behind a config whose roles cannot run.
-When the launcher loads an existing home config through fallback discovery, it shall add only missing safe defaults to that home YAML: `theme: auto`, a `layout` block carrying the default `window` and the shipped `multiPlayerColumnWeights` per [[tmux-play-11](#tmux-play-11)], `captain.options: {}`, and the default `notifications` entries from [[tmux-play-11](#tmux-play-11)].
-The safe-default migration shall preserve existing values and shall not add `model`, `instruction`, `permissions`, or `effort` defaults to old home configs.
-Where the existing home YAML carries a legacy `layout.columnWeights`, the migration shall rewrite it in place to its canonical shape-specific field — a two-element `layout.columnWeights` to `layout.singlePlayerColumnWeights`, a three-element `layout.columnWeights` to `layout.multiPlayerColumnWeights` — and write one final YAML form that contains the canonical field and not `layout.columnWeights`, so the file never holds both (a state [[tmux-play-64](#tmux-play-64)] rejects).
-When the home YAML already contains both `layout.columnWeights` and the matching canonical field, the migration shall not attempt to resolve the conflict; the config is rejected by [[tmux-play-64](#tmux-play-64)].
-The safe-default and `layout.columnWeights` migrations shall not rewrite `--config` files or cwd project configs; those remain valid through the [[tmux-play-64](#tmux-play-64)] alias.
-Legacy effort-key compatibility for every loaded YAML source is governed separately by [[tmux-play-86](#tmux-play-86)].
+Where neither discovery location holds a config and `--config` is absent, the launcher shall select the first-run outcome through this matrix:
+
+| Runtime availability | Outcome |
+| --- | --- |
+| at least one supported adapter runtime installed | create the home file from [[tmux-play-11](#tmux-play-11)]'s default, print one stdout line naming the path and the installed adapters used for its roster, and continue |
+| no supported adapter runtime installed | create no file, print nothing to stdout, and fail with every supported adapter plus the commands that install what it requires, leaving no config whose roles cannot run |
+
+### tmux-play-90
+
+When fallback discovery loads an existing home YAML, the launcher shall apply this migration matrix:
+
+| Existing state or source | Outcome |
+| --- | --- |
+| safe default missing | add only `theme: auto`, a `layout` block carrying the default `window` and shipped `multiPlayerColumnWeights` per [[tmux-play-11](#tmux-play-11)], `captain.options: {}`, and [[tmux-play-11](#tmux-play-11)]'s notification defaults |
+| existing user values | preserve them; add no `model`, `instruction`, `permissions`, or `effort` defaults |
+| two-element legacy `layout.columnWeights` | rewrite it as `layout.singlePlayerColumnWeights` and write one final YAML form without the alias |
+| three-element legacy `layout.columnWeights` | rewrite it as `layout.multiPlayerColumnWeights` and write one final YAML form without the alias |
+| alias and matching canonical field both present | do not resolve the conflict; reject per [[tmux-play-64](#tmux-play-64)] |
+| explicit `--config` file or cwd project config | perform none of these safe-default or alias rewrites; retain [[tmux-play-64](#tmux-play-64)]'s alias support |
+| legacy effort key | defer to [[tmux-play-86](#tmux-play-86)] for every loaded YAML source |
 
 ### tmux-play-11
 
-The default home config shall wire the built-in `fanout` Captain and one player per adapter over a roster of the adapters whose runtimes are installed, taken in the canonical adapter order `claude`, `codex`, `gemini`, `kimi`, `opencode` and limited to the first two so the roster fills the shipped three-column layout.
-The Captain shall use the roster's first adapter, and each player's ID shall match its adapter.
-Where an adapter is one this project pins a model for, its generated roles shall carry that pin — `claude` with `model: claude-opus-4-8` and `codex` with `model: gpt-5.5`, both at `effort: xhigh`; every other adapter's generated roles shall omit `model` and `effort` and run that adapter's own defaults, because a portable `effort` is not valid for every adapter (`kimi` accepts only `off` and `on` per [[tmux-play-56](#tmux-play-56)]).
-With the `claude` and `codex` runtimes both installed the roster is therefore `claude` then `codex`.
-Each default player shall include an `instruction` that identifies that player for the runtime-created `Cligent` instance.
-The default Captain and default players shall include `permissions: { mode: 'auto' }` per [[tmux-play-52](#tmux-play-52)]; for Codex this resolves to `on-request + auto_review` with the `:workspace` permission profile because [[codex-4](adapters/codex.md#codex-4)] maps `mode: 'auto'` with unset capability fields to `:workspace`.
-These defaults select each adapter/provider's native auto posture per [DR-005](../decisions/005-per-adapter-permission-configuration.md), whose protection and approval semantics are adapter-specific, reducing routine in-session permission prompts.
-Claude's `auto` still blocks high-risk actions and falls back to prompts after consecutive/total denies, Codex's `on-request + auto_review` with the `:workspace` permission profile routes eligible approval requests to a reviewer agent without broadening that profile's filesystem or network limits, and OpenCode retains configured rules but may answer permission asks that survive rule evaluation `once` without a human, which OpenCode labels dangerous.
-This default lives in the example YAML only; per [DR-005](../decisions/005-per-adapter-permission-configuration.md) cligent imposes no project-wide permission posture for configs that omit `permissions`.
-The default home config shall also include an explicit `layout` block per [[tmux-play-64](#tmux-play-64)] — `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` — so first-run users see the new knobs and the shipped multi-player layout default surfaces in the YAML under its canonical field rather than being implicit in the code.
-The default home config shall also include `notifications: { player_finished: bell, turn_finished: desktop }` per [[tmux-play-76](#tmux-play-76)], with omitted `turn_aborted` resolving to `off`.
+When the launcher authors the default home config from the installed-runtime set, it shall select its contents through this matrix:
+
+| Member or runtime state | Selection |
+| --- | --- |
+| Captain and roster | built-in `fanout` Captain plus one player per installed adapter, in canonical order `claude`, `codex`, `gemini`, `kimi`, `opencode`, limited to the first two players |
+| Captain adapter and player IDs | Captain uses the first roster adapter; each player ID equals its adapter |
+| pinned roles | `claude` gets `model: claude-opus-4-8` and `effort: xhigh`; `codex` gets `model: gpt-5.5` and `effort: xhigh` |
+| every other adapter | omit `model` and `effort` so provider defaults apply, including Kimi's non-portable `off` / `on` vocabulary per [[tmux-play-56](#tmux-play-56)] |
+| both Claude and Codex installed | roster is Claude then Codex |
+| each player | include an `instruction` identifying it for the runtime-created `Cligent` |
+| Captain and each player | include `permissions: { mode: 'auto' }` per [[tmux-play-52](#tmux-play-52)], selecting each adapter's native protected-auto posture under [DR-005](../decisions/005-per-adapter-permission-configuration.md): Claude still blocks high-risk actions and falls back to prompts after deny thresholds; Codex maps unset capabilities to `on-request + auto_review` with `:workspace` per [[codex-4](adapters/codex.md#codex-4)] without broadening its filesystem or network profile; OpenCode retains configured rules but may answer a surviving permission ask `once` without a human, which it labels dangerous |
+| configs omitting `permissions` | impose no project-wide posture; this authored default changes only the example YAML |
+| `layout` | include `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` per [[tmux-play-64](#tmux-play-64)] |
+| `notifications` | include `{ player_finished: bell, turn_finished: desktop }` per [[tmux-play-76](#tmux-play-76)], leaving omitted `turn_aborted` to resolve to `off` |
 
 ### tmux-play-12
 
@@ -169,65 +241,109 @@ When the cwd contains a legacy `tmux-play.config.mjs`, `tmux-play.config.js`, or
 
 ### tmux-play-13
 
-Local `captain.from` paths shall resolve against the directory of the originating config file.
-Package specifiers shall pass through to Node's module resolver.
+When session mode resolves `captain.from`, it shall select the module through this matrix:
+
+| Specifier | Resolution |
+| --- | --- |
+| local path | anchor it at the originating config file's directory |
+| package specifier | pass it unchanged to Node's module resolver |
 
 ### Captain Extension Contract
 
 ### tmux-play-14
 
-A Captain module shall default-export a factory `(options: unknown) => Captain | Promise<Captain>`.
-The returned `Captain` shall implement `handleBossTurn(turn, context): Promise<void>` and may implement `init(session): Promise<void>`, `prepareDispose(): Promise<void>`, and `dispose(): Promise<void>` lifecycle hooks.
+When session mode loads a Captain module, the module shall expose this contract:
+
+| Surface | Shape |
+| --- | --- |
+| default export | factory `(options: unknown) => Captain \| Promise<Captain>` |
+| required Captain method | `handleBossTurn(turn, context): Promise<void>` |
+| optional lifecycle methods | `init(session): Promise<void>`, `prepareDispose(): Promise<void>`, and `dispose(): Promise<void>` |
 
 ### tmux-play-15
 
-The runtime shall own every player and Captain `Cligent` instance.
-Captains shall reach players only through the `context` passed to `handleBossTurn` and shall not construct adapters or `Cligent` directly.
+While a tmux-play runtime is active, the runtime and Captain shall observe this ownership boundary:
+
+| Subject | Boundary |
+| --- | --- |
+| runtime | owns every player and Captain `Cligent` instance |
+| Captain | reaches players only through the `CaptainContext` passed to `handleBossTurn`; constructs neither adapters nor `Cligent` directly |
 
 ### tmux-play-16
 
-`CaptainContext` shall expose a turn-scoped `signal: AbortSignal`, a readonly `players` manifest, and `callPlayer(playerId, prompt, options?)` and `callCaptain(prompt, options?)` methods.
-The methods shall return `PlayerRunResult` and `CaptainRunResult` respectively per [[tmux-play-33](#tmux-play-33)].
-`callPlayer`'s optional `options` shall be a `CallPlayerOptions` whose `resume?: string | false` selects the player's backend session for that call: a string explicitly resumes that opaque token and overrides the player's stored auto-resume token, `false` forces a fresh backend session, and omission preserves automatic continuity per [[tmux-play-41](#tmux-play-41)].
-`callCaptain`'s optional `options` shall be a `CallCaptainOptions` whose `visibility: 'visible' | 'hidden'` (default `'visible'`) controls Boss-pane presentation per [[tmux-play-72](#tmux-play-72)], whose `resume?: string | false` selects the Captain backend session for the call, and whose `allowedTools?: readonly string[]` restricts the call's tools per [[tmux-play-88](#tmux-play-88)].
-`callPlayer` and `callCaptain` shall be turn-scoped: when either is called after its originating turn has ended, or after session shutdown per [[tmux-play-19](#tmux-play-19)], the returned Promise shall reject before any record is emitted and the rejected call shall not run its player or Captain `Cligent` call.
-The originating turn shall count as ended no later than the dispatch of its terminal record (`turn_finished` or `turn_aborted`), as for `emitReply` per [[tmux-play-92](#tmux-play-92)]: a call made during or after that dispatch — including from an observer handling the terminal record — shall reject, so a stashed `CaptainContext` cannot start a call whose records would follow its turn's terminal record.
-Every turn-scoped `CaptainContext` surface — `callPlayer` and `callCaptain` here, `setVisiblePlayers` per [[tmux-play-81](#tmux-play-81)], and `emitReply` per [[tmux-play-92](#tmux-play-92)] — shall stop being admitted when the runtime resumes from the Captain's `handleBossTurn`, which is earlier than that bound: the Captain run is the turn's scope, so anything presented on those surfaces after that resumption — from an admitted call's own continuation, or from an observer handling a record that drains afterwards — shall reject before any record is emitted, and a rejected `callPlayer` / `callCaptain` shall not run its `Cligent` call.
-One boundary governs all four, so a Captain need not reason about which surface outlives its turn.
-Closing admission there is what bounds the join of [[tmux-play-22](#tmux-play-22)] to a set that cannot grow while it is awaited.
-The boundary is the runtime's resumption rather than `handleBossTurn`'s settlement because a continuation the Captain scheduled on that promise runs before the runtime regains control; such work is still admitted, and settlement is therefore not a boundary any implementation could enforce.
-Closing admission shall not end the turn: through the join and drain of [[tmux-play-22](#tmux-play-22)], and until the pre-terminal fence, the turn shall remain abortable per the preceding paragraph, so ESC, an external signal, and disposal still unwind the calls it admitted, and session-scoped emissions shall keep carrying its id per [[tmux-play-21](#tmux-play-21)].
-`CaptainContext` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [[tmux-play-81](#tmux-play-81)], a turn-scoped control for changing which configured players have panes in the main tmux window during a turn.
-`CaptainContext` shall additionally expose `emitReply(text: string): Promise<void>` per [[tmux-play-92](#tmux-play-92)], a turn-scoped, text-only surface for conversational Captain replies rendered in the Boss/Captain pane as ordinary Captain prose.
+When the runtime creates a `CaptainContext`, it shall expose this turn-scoped surface:
+
+| Member | Contract |
+| --- | --- |
+| `readonly signal: AbortSignal` | the turn's abort signal |
+| `readonly players: readonly PlayerHandle[]` | configured-player manifest |
+| `callPlayer(playerId: string, prompt: string, options?: CallPlayerOptions): Promise<PlayerRunResult>` | return [[tmux-play-33](#tmux-play-33)]'s `PlayerRunResult` |
+| `CallPlayerOptions.resume`, string | explicitly resume that opaque backend token instead of the player's stored automatic token |
+| `CallPlayerOptions.resume`, `false` | force a fresh backend session |
+| `CallPlayerOptions.resume`, omitted | preserve automatic continuity per [[tmux-play-41](#tmux-play-41)] |
+| `CallPlayerOptions.settings` | optional complete per-call replacement per [[tmux-play-93](#tmux-play-93)] |
+| `callCaptain(prompt: string, options?: CallCaptainOptions): Promise<CaptainRunResult>` | return [[tmux-play-33](#tmux-play-33)]'s `CaptainRunResult` |
+| `CallCaptainOptions.visibility` | `'visible' \| 'hidden'`, defaulting to `'visible'`, per [[tmux-play-72](#tmux-play-72)] |
+| `CallCaptainOptions.resume` | select the Captain backend session with the same string / `false` / omitted meanings |
+| `CallCaptainOptions.allowedTools?: readonly string[]` | optional tool-name restriction per [[tmux-play-88](#tmux-play-88)] |
+| `CallCaptainOptions.settings` | optional complete per-call replacement per [[tmux-play-93](#tmux-play-93)] |
+| `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` | [[tmux-play-81](#tmux-play-81)]'s turn-scoped visibility control |
+| `emitReply(text: string): Promise<void>` | [[tmux-play-97](#tmux-play-97)]'s turn-scoped conversational reply, presented per [[tmux-play-92](#tmux-play-92)] |
+
+### tmux-play-91
+
+When a Captain invokes a turn-scoped `CaptainContext` surface from [[tmux-play-16](#tmux-play-16)], the runtime shall apply this admission matrix:
+
+| Invocation state | Outcome |
+| --- | --- |
+| covered surface | `callPlayer`, `callCaptain`, `setVisiblePlayers`, and `emitReply` |
+| before the runtime resumes from `handleBossTurn` | admit the call |
+| continuation scheduled on the `handleBossTurn` promise that runs before the runtime regains control | admit the call; promise settlement alone is not an enforceable boundary |
+| after the runtime resumes, including an admitted call's continuation or an observer handling a draining record | reject before any record or player/Captain `Cligent` run |
+| during or after dispatch of `turn_finished` / `turn_aborted`, or after [[tmux-play-19](#tmux-play-19)] shutdown | reject before any record or player/Captain `Cligent` run |
+| admitted call outlives `handleBossTurn` | keep the turn open through [[tmux-play-22](#tmux-play-22)]'s join and drain; retain turn abortability until the pre-terminal fence and keep session-scoped emissions on that turn ID per [[tmux-play-21](#tmux-play-21)] |
 
 ### tmux-play-17
 
-`CaptainSession` shall expose a session-scoped `signal: AbortSignal`, a readonly `players` manifest, and `emitStatus(message, data?)` and `emitTelemetry({ topic, payload })` methods.
-Captains may retain the session reference from `init` and emit at any point during the session — within `init`, during turns, or between turns.
-`CaptainSession` shall additionally expose `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` per [[tmux-play-81](#tmux-play-81)] for visibility phase setup in `init()` or between Boss turns.
+When the runtime creates a `CaptainSession`, it shall expose this session-scoped surface:
+
+| Member or use | Contract |
+| --- | --- |
+| `readonly signal: AbortSignal` | session-scoped abort signal |
+| `readonly players: readonly PlayerHandle[]` | configured-player manifest |
+| `emitStatus(message: string, data?: Record<string, unknown>): Promise<void>` | emit Captain status, with optional object data |
+| `emitTelemetry(event: CaptainTelemetry): Promise<void>` | emit Captain telemetry whose event carries a string `topic` and an unknown `payload` |
+| retained session reference | usable from `init`, during turns, and between turns |
+| `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` | [[tmux-play-81](#tmux-play-81)]'s visibility control for `init()` or between Boss turns |
 
 ### tmux-play-81
 
-When a Captain calls `setVisiblePlayers(playerIds)` on [[tmux-play-16](#tmux-play-16)]'s `CaptainContext` or [[tmux-play-17](#tmux-play-17)]'s `CaptainSession`, the runtime shall validate that `playerIds` is a duplicate-free subset of the configured player IDs.
-The empty set shall be accepted if and only if the configured roster is empty; a non-empty roster shall reject it and shall never transition to a zero-player visible layout.
-When validation fails, the returned Promise shall reject before any record is emitted, and the visible set shall remain unchanged; a Captain may catch the rejection and continue, and an uncaught rejection shall follow the normal Captain failure path per [[tmux-play-25](#tmux-play-25)].
-When validation succeeds, the runtime shall emit exactly one `player_view_changed` record per [[tmux-play-82](#tmux-play-82)] carrying the requested visible player IDs in order.
-A call from `CaptainContext` shall carry the active turn ID; a call from `CaptainSession` shall carry the active turn ID when a turn is active and `null` otherwise, matching [[tmux-play-21](#tmux-play-21)]'s convention for `captain_status` and `captain_telemetry`.
-A `CaptainContext` call shall additionally be turn-scoped: when it is made after its originating turn has ended — counting the turn as ended no later than the dispatch of its terminal record (`turn_finished` or `turn_aborted`), as for `emitReply` per [[tmux-play-92](#tmux-play-92)], and including a call from an observer handling that terminal record — the returned Promise shall reject before any record is emitted and the visible set shall remain unchanged, so the record stream shall never carry a `player_view_changed` stamped with a turn ID after that turn's terminal record.
-Admission for this surface closes at [[tmux-play-16](#tmux-play-16)]'s earlier boundary, when the runtime resumes from `handleBossTurn`: the terminal-record bound above is the outer limit, not the moment the surface stops being admitted.
-A `CaptainSession` call made after a turn has ended is not turn-scoped: it is a between-turns call carrying `turnId: null` per the preceding convention.
-`setVisiblePlayers` shall change only which configured players have panes in the main tmux window; it shall not alter the configured `players` roster, the runtime player map, per-player log streams, the `players` manifest exposed through `CaptainContext` / `CaptainSession`, or any player's `Cligent` continuity.
+When a Captain calls `setVisiblePlayers(playerIds)` through [[tmux-play-16](#tmux-play-16)]'s `CaptainContext` or [[tmux-play-17](#tmux-play-17)]'s `CaptainSession`, the runtime shall apply this matrix:
+
+| Input or call state | Outcome |
+| --- | --- |
+| duplicate-free non-empty subset of configured player IDs | emit exactly one [[tmux-play-82](#tmux-play-82)] `player_view_changed` carrying that order |
+| empty set with empty configured roster | accept and emit the corresponding record |
+| empty set with non-empty roster, duplicate, or unknown ID | reject before a record; preserve the visible set; permit the Captain to catch the rejection, otherwise follow [[tmux-play-25](#tmux-play-25)] |
+| `CaptainContext` during its admitted turn scope | carry the active turn ID |
+| `CaptainContext` after [[tmux-play-91](#tmux-play-91)] closes admission | reject before a record and preserve the visible set |
+| `CaptainSession` while a turn is active | carry that active turn ID |
+| `CaptainSession` between turns | carry `turnId: null`, including after a prior turn ended |
+| every accepted call | change only main-window pane visibility; preserve the configured roster, runtime player map, per-player log streams, exposed manifests, and every player's `Cligent` continuity |
 
 ### tmux-play-92
 
-`CaptainContext` shall expose `emitReply(text: string): Promise<void>`, a turn-scoped, text-only surface for conversational Captain replies with no options and no visibility parameter.
-While the originating turn is active, when a Captain calls `emitReply(text)`, the runtime shall emit exactly one `captain_reply` record carrying `type: 'captain_reply'`, that turn's `turnId: number`, a `timestamp`, and the `text`, on the same ordered, awaited dispatch path as other records per [[tmux-play-23](#tmux-play-23)].
-When `emitReply` is called after its originating turn has ended, or after session shutdown per [[tmux-play-19](#tmux-play-19)], the returned Promise shall reject and no `captain_reply` record shall be emitted.
-Admission closes at [[tmux-play-16](#tmux-play-16)]'s earlier boundary, when the runtime resumes from `handleBossTurn`, so "active" above means the Captain run itself rather than everything preceding the terminal record.
-The originating turn shall count as ended no later than the dispatch of its terminal record (`turn_finished` or `turn_aborted`): an `emitReply` call made during or after that dispatch — including from an observer handling the terminal record — shall reject per the preceding clause, so the record stream shall never carry a `captain_reply` after its turn's terminal record.
-A reply Promise obtained while the originating turn was active shall keep its place on the ordered dispatch path: its `captain_reply` shall dispatch before the turn's terminal record.
-The tmux presenter shall render a `captain_reply` in the Boss/Captain pane as ordinary Captain prose: the text shall pass through the [[tmux-play-50](#tmux-play-50)] Markdown pipeline as its own complete block under [[tmux-play-38](#tmux-play-38)]'s `captain> ` speaker prefix — the same rendering path as visible Captain reply text — and shall not use [[tmux-play-39](#tmux-play-39)]'s bracketed operational-line grammar.
-`captain_reply` shall export from the `@sublang/cligent/tmux-play` record types per [[tmux-play-29](#tmux-play-29)].
+When the tmux presenter receives a `captain_reply`, it shall render the text through [[tmux-play-50](#tmux-play-50)] as its own complete ordinary-prose block under [[tmux-play-38](#tmux-play-38)]'s `captain> ` prefix, not [[tmux-play-39](#tmux-play-39)]'s operational-line grammar.
+
+### tmux-play-97
+
+When a Captain invokes `CaptainContext.emitReply(text)`, the runtime shall apply this matrix:
+
+| Call state | Outcome |
+| --- | --- |
+| call admitted by [[tmux-play-91](#tmux-play-91)] | emit exactly one `captain_reply` carrying `type: 'captain_reply'`, that turn's numeric ID, a timestamp, and the text on [[tmux-play-23](#tmux-play-23)]'s ordered awaited dispatch path |
+| call after turn admission closes or after [[tmux-play-19](#tmux-play-19)] shutdown | reject and emit no `captain_reply`, including calls during or after terminal-record dispatch |
+| reply Promise admitted while active | preserve its dispatch place before the terminal record |
 
 ### tmux-play-18
 
@@ -235,96 +351,174 @@ The runtime shall serialize Boss turns: at most one `handleBossTurn` invocation 
 
 ### tmux-play-19
 
-On session shutdown the runtime shall (1) unwind the active turn, (2) call `Captain.prepareDispose()` exactly once when implemented, (3) abort `CaptainSession.signal`, (4) drain accepted session emissions, (5) call `Captain.dispose()` exactly once, and (6) detach observers.
-Post-shutdown `emitStatus`/`emitTelemetry` calls shall reject.
+When session shutdown begins, the runtime shall perform this lifecycle:
+
+| Stage | Outcome |
+| --- | --- |
+| 1 | unwind the active turn |
+| 2 | call `Captain.prepareDispose()` exactly once when implemented |
+| 3 | abort `CaptainSession.signal` |
+| 4 | drain accepted session emissions |
+| 5 | call `Captain.dispose()` exactly once |
+| 6 | detach observers |
+| after closure | reject `emitStatus` and `emitTelemetry` |
 
 ### tmux-play-85
 
-When a tmux-play runtime shuts down, after its active Boss turn unwinds and before `CaptainSession.signal` aborts or session emissions close, the runtime shall invoke the optional `Captain.prepareDispose()` hook exactly once.
-Session emissions accepted during `prepareDispose()` shall drain in order before `Captain.dispose()`, and `Captain.dispose()` shall retain [[tmux-play-19](#tmux-play-19)]'s post-close emission-rejection semantics.
-When `prepareDispose()` rejects, the runtime shall still abort the session signal, drain accepted emissions, invoke `Captain.dispose()` exactly once, and detach observers, then reject disposal with that failure; when independent cleanup steps fail, the rejection shall preserve all failures in an `AggregateError`.
-When `Captain.init()` rejects after partial initialization, the runtime shall run the same pre-close and post-close hooks and cleanup ordering before surfacing the initialization failure.
-Repeated or concurrent disposal calls shall share the same cleanup operation and shall not repeat either Captain hook.
+When the Captain cleanup lifecycle runs, the runtime shall apply this matrix:
+
+| State | Outcome |
+| --- | --- |
+| ordinary shutdown | after the active turn unwinds and before session-signal abort or emission close, invoke optional `prepareDispose()` exactly once; drain its accepted emissions in order before `dispose()`; preserve [[tmux-play-19](#tmux-play-19)]'s post-close rejection |
+| `prepareDispose()` rejects | still abort the session signal, drain accepted emissions in order, invoke `dispose()` exactly once, and detach observers, then reject disposal with that failure |
+| independent cleanup steps fail | preserve every failure in an `AggregateError` |
+| `Captain.init()` rejects after partial initialization | run the same pre-close and post-close hooks and cleanup order before surfacing initialization failure |
+| disposal repeated or concurrent | share one cleanup operation and repeat neither hook |
 
 ### Record Types and Observer Dispatch
 
 ### tmux-play-20
 
-The runtime shall emit records of these types: `turn_started`, `turn_finished`, `turn_aborted`, `player_prompt`, `player_event`, `player_finished`, `captain_prompt`, `captain_event`, `captain_finished`, `captain_reply`, `captain_status`, `captain_telemetry`, `player_view_changed`, `runtime_error`.
-Each record shall carry a stable player ID where applicable.
+When the runtime emits a record, it shall select its public type and stable identity through this matrix:
+
+| Record family | Types and identity |
+| --- | --- |
+| turn | `turn_started`, `turn_finished`, `turn_aborted` |
+| player call | `player_prompt`, `player_event`, `player_finished`, each with the stable player ID |
+| Captain call or reply | `captain_prompt`, `captain_event`, `captain_finished`, `captain_reply` |
+| Captain session | `captain_status`, `captain_telemetry` |
+| visibility | `player_view_changed` |
+| control plane | `runtime_error` |
 
 ### tmux-play-21
 
-Turn-bound records shall carry `turnId: number`.
-`captain_status`, `captain_telemetry`, and `player_view_changed` emitted outside an active turn shall carry `turnId: null`, and shall carry `turnId: number` when emitted during an active turn.
+When the runtime assigns a record's `turnId`, it shall apply this matrix:
+
+| Record state | Value |
+| --- | --- |
+| turn-bound record | numeric active-turn ID |
+| `captain_status`, `captain_telemetry`, or `player_view_changed` during a turn | numeric active-turn ID |
+| one of those three session emissions outside a turn | `null` |
 
 ### tmux-play-22
 
-Within a turn the runtime shall emit `turn_started` first; for each player `player_prompt` → `player_event*` → `player_finished`; for each `callCaptain()` `captain_prompt` → `captain_event*` → `captain_finished`; and `turn_finished` (or `turn_aborted` on abort) last.
-This ordering shall not depend on how the Captain consumed a call: a `callPlayer` / `callCaptain` call the Captain started without awaiting shall emit its whole sequence before the turn's terminal record, on the failure path as on the completed one.
-The turn shall join every call it admitted before dispatching that record, so no record carrying a turn's ID follows that turn's terminal record.
-A call that outlives its turn's `handleBossTurn` therefore keeps the turn open until it settles, bounded by the turn's abort per [[tmux-play-16](#tmux-play-16)].
+While a Boss turn is open, the runtime shall enforce this record-ordering flow:
+
+| Stage or call state | Outcome |
+| --- | --- |
+| turn start | `turn_started` first |
+| each player call | `player_prompt` → `player_event*` → `player_finished` |
+| each Captain call | `captain_prompt` → `captain_event*` → `captain_finished` |
+| turn end | `turn_finished`, or `turn_aborted` on abort, last |
+| admitted `callPlayer` / `callCaptain` not awaited by the Captain | join and emit its whole sequence before the terminal record on completed and failed paths |
+| admitted call outlives `handleBossTurn` | keep the turn open until it settles, bounded by [[tmux-play-91](#tmux-play-91)]'s turn abortability |
+| terminal dispatch | admit no turn-ID record afterward |
 
 ### tmux-play-23
 
-Observers shall be invoked in registration order.
-The dispatcher shall await each observer's returned Promise before dispatching the next record.
-Records shall not be dropped or coalesced.
+When the dispatcher publishes a record, it shall apply this observer-delivery contract:
+
+| Delivery property | Outcome |
+| --- | --- |
+| observer order | invoke in registration order |
+| asynchronous observer | await its returned Promise before dispatching the record to the next observer |
+| record cardinality | drop and coalesce no record |
 
 ### tmux-play-24
 
-Turn-bound emissions shall drain before `turn_finished`/`turn_aborted`.
-`turnId: null` emissions shall dispatch in emission order without a turn boundary.
-Multiple observers may register against one runtime; each shall receive every record.
+When the dispatcher publishes runtime emissions, it shall apply this matrix:
+
+| Emission or observer state | Outcome |
+| --- | --- |
+| turn-bound emission | drain before `turn_finished` / `turn_aborted` |
+| `turnId: null` emission | dispatch in emission order without a turn boundary |
+| multiple observers registered | deliver every record to each observer |
 
 ### tmux-play-25
 
-The runtime shall emit a `runtime_error` record when a control-plane failure prevents normal record emission — startup, `Captain.init`, a `handleBossTurn` exception, or observer dispatch.
-The record shall carry `turnId: number` when an active turn exists at the moment of failure, else `turnId: null`.
-After emission, the runtime shall abort the active turn if any and run shutdown per [[tmux-play-19](#tmux-play-19)].
-When the failure originates in an observer, the record shall additionally be delivered to the remaining observers in registration order before shutdown begins.
-Individual player or Captain run failures shall surface in the corresponding `player_finished` / `captain_finished` record with `status: 'error'`, not as `runtime_error`.
+When a control-plane failure prevents normal record emission, the runtime shall apply this matrix:
+
+| Failure or state | Outcome |
+| --- | --- |
+| startup, `Captain.init`, `handleBossTurn`, or observer dispatch | emit `runtime_error` |
+| active turn exists at failure | carry its numeric `turnId` |
+| no active turn at failure | carry `turnId: null` |
+| after error emission | abort any active turn and run [[tmux-play-19](#tmux-play-19)] shutdown |
+| observer caused failure | deliver `runtime_error` additionally to remaining observers in registration order before shutdown |
+| individual player or Captain run fails | use its `player_finished` / `captain_finished` with `status: 'error'`, not `runtime_error` |
 
 ### tmux-play-77
 
-Where session mode is running, the session shall register a notification observer with the existing record observers.
-The notification observer shall be registered before any caller-supplied observers.
-When that observer handles `player_finished` with sink `bell`, it shall play one best-effort native sound cue regardless of the player result status.
-When that observer handles `player_finished` with sink `bell`, it shall not write terminal BEL (`\x07`) to orchestrator stdout and shall not launch a desktop notification command, so player completion does not request terminal or desktop badging.
-When that observer handles `turn_finished` with sink `desktop`, it shall send one best-effort desktop notification after the full Boss turn completes.
-When that observer handles `turn_finished` with sink `desktop` on macOS, it shall write exactly one terminal BEL (`\x07`) to orchestrator stdout so tmux can forward the turn-completion bell to the outer terminal.
-When that observer handles `player_finished` or `turn_aborted` with sink `desktop`, or handles `turn_finished` with sink `desktop` on a non-macOS platform, it shall not write terminal BEL (`\x07`) or terminal notification escape bytes to orchestrator stdout.
-When that observer handles `turn_aborted`, it shall notify only when `turn_aborted` is configured to a non-`off` sink and the abort reason is not one of the user-cancellation reasons `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed`.
-The sound-cue backend shall launch detached best-effort `afplay /System/Library/Sounds/Hero.aiff` on macOS, a detached best-effort freedesktop `complete` sound cue on Linux, a detached best-effort Windows generic notification sound on Windows, and no operation on other platforms.
-The desktop backend shall launch a detached best-effort `osascript` notification on macOS, a detached best-effort `notify-send` notification on Linux, and no operation on other platforms.
-Every desktop notification shall use the lowercase title `spex`, distinct from the status-left `Spex` heading of [[tmux-play-55](#tmux-play-55)], and shall not use `Spex`.
-The notification observer shall swallow all notification failures and shall never cause record dispatch, turn execution, or shutdown to throw.
-The notification observer shall not notify for `runtime_error` records.
+Where session mode is running, the session shall establish and operate its notification observer through this matrix:
+
+| Registration, record, sink, or platform | Outcome |
+| --- | --- |
+| observer registration | register with existing observers before caller-supplied observers |
+| `player_finished` with `bell` | play one best-effort native sound regardless of result status; write no terminal BEL and launch no desktop notification |
+| `turn_finished` with `desktop` | send one best-effort desktop notification after the full Boss turn |
+| that row on macOS | additionally write exactly one terminal BEL to orchestrator stdout for tmux to forward |
+| `player_finished` or `turn_aborted` with `desktop`, or `turn_finished` with `desktop` off macOS | write no terminal BEL or terminal-notification escape bytes |
+| `turn_aborted` with `off`, or reason `ESC`, `SIGINT`, `SIGTERM`, `EOF`, or `runtime disposed` | send no notification |
+| `turn_aborted` with another reason and non-`off` sink | notify through that sink |
+| sound on macOS | detached best-effort `afplay /System/Library/Sounds/Hero.aiff` |
+| sound on Linux | detached best-effort freedesktop `complete` cue |
+| sound on Windows | detached best-effort generic notification sound |
+| sound on another platform | no operation |
+| desktop on macOS | detached best-effort `osascript` notification |
+| desktop on Linux | detached best-effort `notify-send` notification |
+| desktop on another platform | no operation |
+| every desktop notification | lowercase title `spex`, not [[tmux-play-55](#tmux-play-55)]'s status-left `Spex` |
+| backend failure | swallow it without failing record dispatch, turn execution, or shutdown |
+| `runtime_error` | send no notification |
 
 ### tmux-play-82
 
-A `player_view_changed` record shall carry `type: 'player_view_changed'`, a `turnId: number | null` per [[tmux-play-21](#tmux-play-21)], a `timestamp`, and a `visiblePlayerIds: readonly string[]` listing the requested visible players in order.
-The runtime shall emit exactly one `player_view_changed` record for each accepted `setVisiblePlayers` call per [[tmux-play-81](#tmux-play-81)] and shall emit none for a rejected call.
-The runtime shall validate and emit only; it shall not inspect or mutate tmux panes, which is the [[tmux-play-83](#tmux-play-83)] layout observer's responsibility.
-Observers that do not participate in layout reconciliation shall ignore `player_view_changed`: the tmux presenter shall write no Boss/Captain-pane content for it per [[tmux-play-40](#tmux-play-40)], the follow observer shall return no pane to its live tail for it per [[tmux-play-69](#tmux-play-69)], the timing observer shall not alter any timer for it per [[tmux-play-71](#tmux-play-71)], and the notification observer shall not notify for it per [[tmux-play-77](#tmux-play-77)].
-`player_view_changed` shall export from the `@sublang/cligent/tmux-play` record types per [[tmux-play-29](#tmux-play-29)].
+When the runtime processes a `setVisiblePlayers` result, it shall integrate `player_view_changed` through this matrix:
+
+| Runtime state or surface | Outcome |
+| --- | --- |
+| record payload | `type: 'player_view_changed'`, [[tmux-play-21](#tmux-play-21)]'s numeric-or-null `turnId`, a timestamp, and ordered readonly `visiblePlayerIds` |
+| accepted call per [[tmux-play-81](#tmux-play-81)] | emit exactly one record |
+| rejected call | emit none |
+| runtime core | validate and emit without inspecting or mutating tmux panes; leave reconciliation to [[tmux-play-83](#tmux-play-83)] |
+
+### tmux-play-98
+
+When a non-layout observer receives `player_view_changed`, it shall apply this matrix:
+
+| Observer | Outcome |
+| --- | --- |
+| tmux presenter | write no Boss/Captain-pane content per [[tmux-play-40](#tmux-play-40)] |
+| follow observer | return no pane to its live tail per [[tmux-play-69](#tmux-play-69)] |
+| timing observer | alter no timer per [[tmux-play-71](#tmux-play-71)] |
+| notification observer | send no notification per [[tmux-play-77](#tmux-play-77)] |
 
 ### tmux-play-83
 
-Where session mode is running, the session shall register a layout observer with the other record observers per [[tmux-play-23](#tmux-play-23)]; the layout observer shall consume `player_view_changed` records per [[tmux-play-82](#tmux-play-82)] and own every tmux operation that reconciles the visible player panes.
-The layout observer shall be display-only: it shall swallow or surface tmux failures as best-effort status, and a tmux failure shall not abort a Boss turn.
-On each accepted visibility change the observer shall perform a full player-area rebuild: enumerate the panes in the main tmux window and kill every pane except the Boss/Captain pane; recreate panes for the record's `visiblePlayerIds` in order using the same split sequence as launcher startup per [[tmux-play-28](#tmux-play-28)]; run each recreated pane as a bounded recent-log view `tail -n 200 -f <player>.log`; and reapply player pane titles, timer options, read-only input, mouse-selection bindings, layout hooks, and Boss-pane focus.
-The observer shall track the current visible player ID list, initialized from the launcher's startup-visible set per [[tmux-play-80](#tmux-play-80)], and shall advance that list only after a reconciliation in which every requested player pane was recreated and configured; an incomplete best-effort reconciliation shall not advance the tracked list even when the handler returns without throwing.
-When a `player_view_changed` record repeats the tracked list in the same order, the observer shall treat it as a no-op and issue no tmux commands.
-For an empty roster, the tracked list shall start empty and every accepted empty visibility record shall therefore be a no-op that leaves the sole Boss/Captain pane intact.
-Because observer dispatch is ordered and awaited per [[tmux-play-23](#tmux-play-23)], when a Captain awaits `setVisiblePlayers(next)` and then calls `callPlayer()` for a newly visible player, a successful rebuild shall complete before that player's later `player_prompt` / `player_event` records are presented; when the rebuild fails, later player output shall still reach the player's log stream and a later successful visibility change shall be the recovery path.
-The `200`-line replay count shall be fixed and shall not be a YAML or Captain-API option.
+Where session mode is running, the session shall establish and operate its layout observer through this matrix:
+
+| State or stage | Outcome |
+| --- | --- |
+| registration and responsibility | register the layout observer with [[tmux-play-23](#tmux-play-23)]'s other observers, consume [[tmux-play-82](#tmux-play-82)]'s `player_view_changed` records, and own every tmux operation for visible-player reconciliation |
+| tmux failure | swallow or surface as best-effort status without aborting the Boss turn |
+| changed requested list | enumerate the main-window panes; kill every pane except Boss/Captain; recreate requested player panes in order using [[tmux-play-28](#tmux-play-28)]'s startup split; run each as `tail -n 200 -f <player>.log`; reapply titles, timer options, read-only input, mouse bindings, layout hooks, and Boss focus |
+| tracked list initialization | use [[tmux-play-80](#tmux-play-80)]'s startup-visible set |
+| complete successful reconciliation | advance the tracked list |
+| incomplete best-effort reconciliation | leave the tracked list unchanged even when the handler returns |
+| requested list equals tracked list | issue no tmux commands |
+| empty roster and accepted empty list | leave the initially empty tracked list and sole Boss/Captain pane unchanged |
+| Captain awaits visibility change then calls a newly visible player | ordered awaited dispatch completes a successful rebuild before later player records; after a failed rebuild, keep logging hidden output and permit a later visibility change to recover |
+| replay count | fix it at `200` lines with no YAML or Captain-API option |
 
 ### tmux-play-84
 
-While a configured player is hidden — not in the startup-visible set per [[tmux-play-80](#tmux-play-80)], or dropped from a later `visiblePlayerIds` per [[tmux-play-82](#tmux-play-82)] — the player shall remain a live runtime entity and its output shall continue to accumulate in its per-player log stream when it is called, but its tmux pane shall not remain live.
-When a hidden player becomes visible again, the [[tmux-play-83](#tmux-play-83)] layout observer shall reconstruct a new read-only pane from the recent `tail -n 200` log view, and the player's full backlog shall remain available in its log file rather than in tmux pane scrollback.
-`tmux-play` shall not preserve a hidden pane's tmux scrollback, copy-mode state, active selection, or exact viewport across a hide/show cycle.
+While a configured player is hidden by [[tmux-play-80](#tmux-play-80)]'s startup set or [[tmux-play-82](#tmux-play-82)]'s later visibility, when its visibility or output changes, tmux-play shall apply this matrix:
+
+| State or transition | Outcome |
+| --- | --- |
+| hidden player called | keep the runtime entity and accumulate output in its per-player log, without a live tmux pane |
+| hidden player becomes visible | let [[tmux-play-83](#tmux-play-83)] create a new read-only `tail -n 200` pane while retaining the full backlog in the log file |
+| hide/show cycle | preserve no pane scrollback, copy-mode state, active selection, or exact viewport |
 
 ### tmux-play-26
 
@@ -334,27 +528,41 @@ When SIGHUP, SIGINT, SIGTERM, or stdin EOF reaches the session, the runtime shal
 
 ### tmux-play-27
 
-The Boss/Captain pane shall occupy the left column.
-Player panes shall fill the right side in config order, read-only.
-With an empty roster, the Boss/Captain pane shall be the only pane and shall occupy the full window.
+When the launcher arranges the main tmux window, it shall apply this topology matrix:
+
+| Roster or pane | Placement |
+| --- | --- |
+| Boss/Captain | left column |
+| configured player | right side in config order, read-only |
+| empty roster | Boss/Captain only, occupying the full window |
 
 ### tmux-play-28
 
-With two or more visible players, `tmux-play` shall use two player columns.
-With a single visible player, `tmux-play` shall use one player column.
-With an empty configured roster, `tmux-play` shall use no player columns and shall keep the Boss/Captain pane full-width.
-The visible columns from left to right shall be the Boss/Captain pane followed by each player column, and the first player column shall hold `ceil(visiblePlayerCount / 2)` visible players from top to bottom.
-The visible player set is the startup-visible subset per [[tmux-play-80](#tmux-play-80)] — defaulting to all configured players — and may change during the session via `player_view_changed` per [[tmux-play-82](#tmux-play-82)]; the configured `players` roster does not by itself fix the visible-column count.
-Each visible column's share of the window width shall derive from [[tmux-play-64](#tmux-play-64)]'s resolved column weights for the current visible-column shape (the one-column zero-player shape uses implicit `[1]`, the two-column shape uses `singlePlayerColumnWeights`, and the three-column shape uses `multiPlayerColumnWeights`), applied left-to-right: with N visible columns and weights `[w_0, w_1, ..., w_{N-1}]` (where `w_0` is the Boss/Captain column), each non-rightmost column `i < N-1` shall occupy `floor(W * w_i / sum(w))` cells at window width `W`, and the rightmost column shall absorb the remainder.
-The defaults are `[1, 1]` for one visible player (Boss/Captain and the player each occupy 1/2 of the window width, matching the prior behavior) and `[1, 1, 1]` for two or more visible players (Boss/Captain and each player column each occupy 1/3 of the window width, rightmost absorbing the remainder).
+When tmux-play arranges the currently visible player set, it shall select its topology through this matrix:
+
+| Visible state or geometry | Outcome |
+| --- | --- |
+| empty configured roster | no player columns; full-width Boss/Captain pane |
+| one visible player | one player column |
+| two or more visible players | two player columns |
+| column order and population | Boss/Captain first, then player columns; first player column holds `ceil(visiblePlayerCount / 2)` players top-to-bottom |
+| source of visible set | [[tmux-play-80](#tmux-play-80)]'s startup subset, defaulting to the roster, as changed by [[tmux-play-82](#tmux-play-82)] rather than fixed by roster size |
+| column weights | use [[tmux-play-64](#tmux-play-64)]'s active shape: implicit `[1]` for zero players, `singlePlayerColumnWeights` for one, and `multiPlayerColumnWeights` for two or more |
+| weighted width `W` | each non-rightmost column `i` gets `floor(W * w_i / sum(w))`; the rightmost gets the remainder |
+| defaults | `[1, 1]` gives prior 50/50 single-player geometry; `[1, 1, 1]` gives even thirds for two or more players, with the rightmost absorbing the remainder |
 
 ### Programmatic Runtime API
 
 ### tmux-play-29
 
-The `@sublang/cligent/tmux-play` sub-export shall expose a runtime factory accepting an instantiated `captain`, an adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, and `effort` per [[tmux-play-56](#tmux-play-56)], an adapter-discriminated `players` array conforming to [[tmux-play-7](#tmux-play-7)] that may be empty, zero or more `observers`, an optional `cwd`, and an optional session-scoped `signal`.
-The factory shall return a runtime that drives Boss turns without tmux.
-Record types and the observer-registration contract shall export from the same sub-export.
+When a consumer imports `@sublang/cligent/tmux-play`, the sub-export shall expose this programmatic contract:
+
+| Surface | Contract |
+| --- | --- |
+| runtime factory input | instantiated `captain`; adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, and [[tmux-play-56](#tmux-play-56)] `effort`; an adapter-discriminated possibly-empty `players` array per [[tmux-play-7](#tmux-play-7)]; zero or more `observers`; optional `cwd`; optional session-scoped `signal` |
+| runtime factory output | runtime that drives Boss turns without tmux |
+| record exports | the public record union and constituent record types for every type named by [[tmux-play-20](#tmux-play-20)], including `captain_reply` and `player_view_changed` |
+| observer export | observer-registration contract |
 
 ### Built-in Fanout Captain
 
@@ -931,7 +1139,7 @@ The session and tool controls shall not change [[tmux-play-72](#tmux-play-72)]'s
 
 ### tmux-play-93
 
-Where `CallPlayerOptions.settings` or `CallCaptainOptions.settings` is omitted, when tmux-play invokes that agent, it shall supply the configured model, effort, instruction, and permissions as the complete runtime-held call defaults, omitting each unconfigured field so its provider default remains in control; this tmux-play layer shall not change generic `Cligent` option merging outside the runtime per [[engine-3](engine.md#engine-3)].
+Where `CallPlayerOptions.settings` or `CallCaptainOptions.settings` is omitted, when tmux-play invokes that agent, it shall supply the configured model, effort, instruction, and permissions as the complete runtime-held call defaults, with each supplied permission policy mapped by the adapter per [[engine-52](engine.md#engine-52)], omitting each unconfigured field so its provider default remains in control; this tmux-play layer shall not change generic `Cligent` option merging outside the runtime per [[engine-3](engine.md#engine-3)].
 Where `settings` is supplied, when tmux-play admits the call, it shall require one closed `AgentCallSettings` object whose `model` and `effort` each select either `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, and whose optional `instruction` and `permissions` per [[engine-21](engine.md#engine-21)] are the complete effective values for that call; omitted instruction or permissions shall mean none, and no member shall merge with configured call settings.
 The runtime shall capture the complete object, its selections, and permission data as a detached frozen snapshot before asynchronous work, and shall reject accessors, unknown fields, incomplete selections, invalid effort vocabularies, or settings an adapter cannot enforce before emitting `player_prompt` or `captain_prompt` and before calling the adapter.
 At call admission, tmux-play shall resolve the effective session selection exactly once from the explicit token, forced-fresh selection, or stored automatic token per [[tmux-play-41](#tmux-play-41)] and [[tmux-play-88](#tmux-play-88)]; reset preflight and the eventual `Cligent.run()` invocation shall use that same detached selection.
@@ -1004,7 +1212,7 @@ Where scripted adapters emit a complete `text` message after captured `text` or 
 
 Where the home and cwd are empty and the `claude` and `codex` adapter runtimes are installed, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `effort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `effort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [[tmux-play-11](#tmux-play-11)].
 The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` (and no `columnWeights` key) per [[tmux-play-11](#tmux-play-11)], plus `notifications: { player_finished: bell, turn_finished: desktop }` per [[tmux-play-76](#tmux-play-76)].
-A one-line notice naming the path and the installed adapters the roster was built from shall be printed to stdout, and a second invocation against that freshly-created home YAML shall leave the file unchanged [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)].
+A one-line notice naming the path and the installed adapters the roster was built from shall be printed to stdout, and a second invocation against that freshly-created home YAML shall leave the file unchanged [[tmux-play-10](#tmux-play-10)], [[tmux-play-90](#tmux-play-90)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)].
 
 ### tmux-play-102
 
@@ -1031,7 +1239,7 @@ Given a cwd config whose `captain.from` is a relative local path, when session m
 ### tmux-play-107
 
 Given a Captain that calls one player then `callCaptain`, when handling a Boss turn, observers shall receive records in this order: `turn_started`, `player_prompt`, `player_event`*, `player_finished`, `captain_prompt`, `captain_event`*, `captain_finished`, `turn_finished`.
-All shall carry the same `turnId` [[tmux-play-22](#tmux-play-22)].
+All shall carry the same `turnId` [[tmux-play-22](#tmux-play-22)], [[tmux-play-21](#tmux-play-21)].
 
 ### tmux-play-108
 
@@ -1137,11 +1345,11 @@ Synthesized references to player content within the Captain's reply shall be per
 
 ### tmux-play-128
 
-Given a tmux-play session and a player whose adapter supports `resumeToken`, when the runtime handles two Boss turns in sequence, the player's `Cligent` instance on the second turn shall be the same instance as on the first turn, and the second `run()` call shall pass `resume: <resumeToken>` to the adapter where the token came from the prior `done` event [[tmux-play-41](#tmux-play-41)].
-Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: <explicitToken> })`, the adapter shall receive `resume: <explicitToken>` rather than the stored automatic token.
-Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: false })`, the adapter shall receive no resume token and the call shall start a fresh backend session.
-Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries `resumeToken: <resumeToken>`, when a later Boss turn calls the same player, the same `Cligent` instance shall pass `resume: <resumeToken>`, the `PlayerRunResult` for the aborted call shall expose `resumeToken: <resumeToken>`, and the runtime shall finish the later turn normally.
-Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries no `resumeToken`, when a later Boss turn calls the same player with no explicit resume override, the aborted `PlayerRunResult` shall omit `resumeToken`, the same `Cligent` instance shall pass no `resume` option, and the runtime/engine shall pass through the prompt supplied by the Captain rather than doing its own replay rewrite.
+Given a tmux-play session and a player whose adapter supports `resumeToken`, when the runtime handles two Boss turns in sequence, the player's `Cligent` instance on the second turn shall be the same instance as on the first turn, and the second `run()` call shall pass `resume: <resumeToken>` to the adapter where the token came from the prior `done` event [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
+Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: <explicitToken> })`, the adapter shall receive `resume: <explicitToken>` rather than the stored automatic token [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
+Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: false })`, the adapter shall receive no resume token and the call shall start a fresh backend session [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
+Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries `resumeToken: <resumeToken>`, when a later Boss turn calls the same player, the same `Cligent` instance shall pass `resume: <resumeToken>`, the `PlayerRunResult` for the aborted call shall expose `resumeToken: <resumeToken>`, and the runtime shall finish the later turn normally [[tmux-play-16](#tmux-play-16)], [[tmux-play-33](#tmux-play-33)], [[tmux-play-41](#tmux-play-41)].
+Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries no `resumeToken`, when a later Boss turn calls the same player with no explicit resume override, the aborted `PlayerRunResult` shall omit `resumeToken`, the same `Cligent` instance shall pass no `resume` option, and the runtime/engine shall pass through the prompt supplied by the Captain rather than doing its own replay rewrite [[tmux-play-16](#tmux-play-16)], [[tmux-play-33](#tmux-play-33)], [[tmux-play-41](#tmux-play-41)].
 
 ### tmux-play-129
 
@@ -1403,10 +1611,15 @@ Given non-TTY output, neither bracketed-paste control sequence shall be written 
 
 ### tmux-play-161
 
-Given `tmux-play --theme-diagnostics` is invoked with a YAML config, the CLI shall load the config, resolve the theme using the same explicit / YAML / OSC 11 / fallback rule as launcher mode, print `selected: <flavor>` and `reason: <reason>`, and exit 0 without invoking `tmux` or requiring `glow`.
-Given the OSC 11 probe receives a parseable light-background reply such as `rgb:eeee/eeee/eeee`, diagnostics shall report `selected: latte` and `reason: osc11`.
-Given no parseable OSC 11 reply is available and no explicit or YAML concrete flavor is set, diagnostics shall report `selected: mocha` and `reason: fallback`.
-Given `--theme-diagnostics` is combined with `--session`, the CLI shall reject the invocation before dispatching session mode [[tmux-play-61](#tmux-play-61)], [[tmux-play-47](#tmux-play-47)].
+When the CLI's theme-diagnostics paths are exercised, verification shall assert this matrix [[tmux-play-61](#tmux-play-61)], [[tmux-play-47](#tmux-play-47)]:
+
+| Invocation or probe state | Assertion |
+| --- | --- |
+| YAML config supplied | load it, apply the launcher flavor rule, print `selected: <flavor>` and `reason: <reason>` plus the raw OSC 11 reply when received, and exit zero without tmux or Glow |
+| parseable light OSC 11 reply such as `rgb:eeee/eeee/eeee` | report `selected: latte` and `reason: osc11` |
+| no parseable reply and no concrete explicit or YAML flavor | report `selected: mocha` and `reason: fallback` |
+| discovery finds no config and `--config` is absent | create no config and report the same auto-theme outcome without requiring an installed adapter runtime |
+| combined with `--session` | reject before session-mode dispatch |
 
 ### tmux-play-162
 
@@ -1515,9 +1728,9 @@ The acceptance probe shall run under `*.acceptance.test.ts`, shall not require a
 
 ### tmux-play-171
 
-Given a Captain that issues one `callCaptain(prompt)` and one `callCaptain(prompt, { visibility: 'hidden' })` within a turn, both calls shall return a `CaptainRunResult` with the run's `status` and `finalText`, and observers shall receive both calls' `captain_prompt` / `captain_event` / `captain_finished` records — the first call's tagged `visibility: 'visible'`, the second's tagged `visibility: 'hidden'` [[tmux-play-72](#tmux-play-72)], [[tmux-play-69](#tmux-play-69)].
+Given a Captain that issues one `callCaptain(prompt)` and one `callCaptain(prompt, { visibility: 'hidden' })` within a turn, both calls shall return a `CaptainRunResult` with the run's `status` and `finalText`, and observers shall receive both calls' `captain_prompt` / `captain_event` / `captain_finished` records — the first call's tagged `visibility: 'visible'`, the second's tagged `visibility: 'hidden'` [[tmux-play-16](#tmux-play-16)], [[tmux-play-33](#tmux-play-33)], [[tmux-play-69](#tmux-play-69)], [[tmux-play-72](#tmux-play-72)].
 
-Given a hidden call whose underlying run reports an error `status`, it shall still return the full `CaptainRunResult` — `status: 'error'` with the propagated `error` — and the observers' `captain_finished` record, tagged `visibility: 'hidden'`, shall carry that error `status`.
+Given a hidden call whose underlying run reports an error `status`, it shall still return the full `CaptainRunResult` — `status: 'error'` with the propagated `error` — and the observers' `captain_finished` record, tagged `visibility: 'hidden'`, shall carry that error `status` [[tmux-play-16](#tmux-play-16)], [[tmux-play-33](#tmux-play-33)], [[tmux-play-72](#tmux-play-72)].
 
 Given the tmux presenter receives a hidden call's records (`captain_event` carrying streamed text or an `error` event, then a `captain_finished` of any `status`), the Boss/Captain pane writer shall capture zero bytes — no rendered reply block, and no `[error]`, `[aborted]`, or status line.
 Given the same records tagged `visibility: 'visible'` (or with `visibility` omitted), the captured Boss/Captain-pane bytes shall be identical to the presenter's behavior before the option existed.
@@ -1544,10 +1757,10 @@ Given a real tmux server with an attached client and a Boss turn in flight, pane
 
 ### tmux-play-175
 
-Given a YAML config with `notifications: { player_finished: bell, turn_finished: desktop }`, when `loadTmuxPlayConfig` returns, the loaded config shall carry `notifications: { player_finished: bell, turn_finished: desktop, turn_aborted: off }` [[tmux-play-76](#tmux-play-76)], [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-34](#tmux-play-34)].
+Given a YAML config with `notifications: { player_finished: bell, turn_finished: desktop }`, when `loadTmuxPlayConfig` returns, the loaded config shall carry `notifications: { player_finished: bell, turn_finished: desktop, turn_aborted: off }` [[tmux-play-76](#tmux-play-76)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-34](#tmux-play-34)].
 Given a YAML config that omits `notifications`, when `loadTmuxPlayConfig` returns and the launcher writes a snapshot, both the loaded config and snapshot shall carry `off` for all three notification events.
 Given a YAML config with an unknown notification key such as `runtime_error` or a sink outside `off | bell | desktop`, the loader shall reject with an error that names the offending `notifications.<key>` path.
-Where an old home YAML loaded through fallback discovery lacks safe defaults, the loader shall update that home YAML with only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; it shall preserve existing values and shall not synthesize `model`, `instruction`, `permissions`, or an effort default when neither effort key exists.
+Where an old home YAML loaded through fallback discovery lacks safe defaults, the loader shall update that home YAML with only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; it shall preserve existing values and shall not synthesize `model`, `instruction`, `permissions`, or an effort default when neither effort key exists [[tmux-play-90](#tmux-play-90)].
 
 ### tmux-play-176
 
@@ -1586,10 +1799,10 @@ Given a `layout.initialVisible` that selects a single player from a multi-player
 ### tmux-play-181
 
 Given no config in either discovery location and no `--config`, when the launcher creates the default home config, the written YAML shall carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]`, and shall not carry a `layout.columnWeights` key [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-64](#tmux-play-64)].
-Given an existing home config loaded through fallback discovery that carries a legacy two-element `layout.columnWeights`, when migration runs the rewritten home YAML on disk shall carry `layout.singlePlayerColumnWeights` with that array and shall not carry `layout.columnWeights`; given a three-element `layout.columnWeights`, the rewritten YAML shall carry `layout.multiPlayerColumnWeights` with that array and shall not carry `layout.columnWeights`.
-The migration shall write exactly one final YAML form; at no point shall the on-disk file contain both `layout.columnWeights` and the matching canonical field.
-Given an existing home config that already carries both `layout.columnWeights` and the matching canonical field, the launcher shall not rewrite it to resolve the conflict and the load shall be rejected per [[tmux-play-64](#tmux-play-64)] with an error naming the conflicting `layout` paths.
-Given an explicit `--config` file or a cwd project config that carries a legacy `layout.columnWeights`, the launcher shall not mutate that file; the config shall remain valid through the [[tmux-play-64](#tmux-play-64)] alias.
+Given an existing home config loaded through fallback discovery that carries a legacy two-element `layout.columnWeights`, when migration runs the rewritten home YAML on disk shall carry `layout.singlePlayerColumnWeights` with that array and shall not carry `layout.columnWeights`; given a three-element `layout.columnWeights`, the rewritten YAML shall carry `layout.multiPlayerColumnWeights` with that array and shall not carry `layout.columnWeights` [[tmux-play-90](#tmux-play-90)].
+The migration shall write exactly one final YAML form; at no point shall the on-disk file contain both `layout.columnWeights` and the matching canonical field [[tmux-play-90](#tmux-play-90)].
+Given an existing home config that already carries both `layout.columnWeights` and the matching canonical field, the launcher shall not rewrite it to resolve the conflict and the load shall be rejected per [[tmux-play-64](#tmux-play-64)] with an error naming the conflicting `layout` paths [[tmux-play-90](#tmux-play-90)].
+Given an explicit `--config` file or a cwd project config that carries a legacy `layout.columnWeights`, the launcher shall not mutate that file; the config shall remain valid through the [[tmux-play-64](#tmux-play-64)] alias [[tmux-play-90](#tmux-play-90)].
 
 ### tmux-play-182
 
@@ -1600,16 +1813,22 @@ Given an empty configured roster with omitted or explicit `layout.initialVisible
 
 ### tmux-play-183
 
-Given a running runtime driven headlessly per [[tmux-play-29](#tmux-play-29)] and a Captain that calls `setVisiblePlayers` with a non-empty, duplicate-free subset of configured player IDs, the call shall resolve and the runtime shall emit exactly one `player_view_changed` record whose `visiblePlayerIds` equals the requested list in order [[tmux-play-81](#tmux-play-81)], [[tmux-play-82](#tmux-play-82)].
-A call from `CaptainContext` during a turn shall carry that turn's `turnId: number`; a call from `CaptainSession` shall carry the active turn's `turnId: number` when a turn is in flight and `turnId: null` when no turn is active.
-Given an empty configured roster, empty calls through `CaptainSession` and `CaptainContext` shall both resolve, expose empty `players` manifests, and emit the corresponding null-turn and active-turn `player_view_changed` records before ordinary Captain call and terminal records continue.
-Given a non-empty roster and an empty argument, or any roster with a duplicate or unknown player ID, the returned Promise shall reject, no `player_view_changed` record shall be emitted, and the tracked visible set shall be unchanged; a Captain that catches the rejection shall be able to continue the turn.
-Across an accepted call, the runtime shall not alter the configured `players` roster, the `players` manifest exposed to the Captain, or any player's `Cligent` continuity.
+Given a running runtime driven headlessly per [[tmux-play-29](#tmux-play-29)] and a Captain that calls `CaptainContext.setVisiblePlayers` with a non-empty, duplicate-free subset of configured player IDs, the call shall resolve and the runtime shall emit exactly one `player_view_changed` record whose `visiblePlayerIds` equals the requested list in order [[tmux-play-16](#tmux-play-16)], [[tmux-play-81](#tmux-play-81)], [[tmux-play-82](#tmux-play-82)].
+A call from `CaptainContext` during a turn shall carry that turn's `turnId: number`; a call from `CaptainSession` shall carry the active turn's `turnId: number` when a turn is in flight and `turnId: null` when no turn is active [[tmux-play-16](#tmux-play-16)], [[tmux-play-17](#tmux-play-17)], [[tmux-play-21](#tmux-play-21)].
+Given an empty configured roster, empty calls through `CaptainSession` and `CaptainContext` shall both resolve, expose empty `players` manifests, and emit the corresponding null-turn and active-turn `player_view_changed` records before ordinary Captain call and terminal records continue [[tmux-play-16](#tmux-play-16)], [[tmux-play-17](#tmux-play-17)], [[tmux-play-21](#tmux-play-21)].
+Given a non-empty roster and an empty argument, or any roster with a duplicate or unknown player ID, the returned Promise shall reject, no `player_view_changed` record shall be emitted, and the tracked visible set shall be unchanged; a Captain that catches the rejection shall be able to continue the turn [[tmux-play-81](#tmux-play-81)].
+Across an accepted call, the runtime shall not alter the configured `players` roster, the `players` manifest exposed to the Captain, or any player's `Cligent` continuity [[tmux-play-16](#tmux-play-16)].
 
 ### tmux-play-184
 
-Given the presenter, follow, timing, and notification observers registered in session mode, when a `player_view_changed` record is dispatched the presenter shall write no bytes to the Boss/Captain-pane writer, the follow observer shall issue no copy-mode-exit / live-tail command, the timing observer shall not change any pane or status timer option, and the notification observer shall emit no sound, desktop notification, or terminal BEL [[tmux-play-82](#tmux-play-82)].
-This shall hold whether the record carries a `turnId: number` or `turnId: null`.
+Given the presenter, follow, timing, and notification observers registered in session mode, when a `player_view_changed` record is dispatched, verification shall assert this matrix for both `turnId: number` and `turnId: null` [[tmux-play-98](#tmux-play-98)]:
+
+| Observer | Assertion |
+| --- | --- |
+| presenter | write no bytes to the Boss/Captain-pane writer |
+| follow | issue no copy-mode-exit or live-tail command |
+| timing | change no pane or status timer option |
+| notification | emit no sound, desktop notification, or terminal BEL |
 
 ### tmux-play-185
 
@@ -1622,8 +1841,8 @@ Given an awaited `setVisiblePlayers(next)` followed by a `callPlayer()` for a ne
 
 ### tmux-play-186
 
-When a runtime is disposed repeatedly or concurrently, an implemented `Captain.prepareDispose()` shall run exactly once after the active turn unwinds while `CaptainSession.signal` remains live, its accepted status/telemetry emissions shall reach observers before the signal aborts, and `Captain.dispose()` shall run exactly once afterward with session emissions rejecting [[tmux-play-85](#tmux-play-85)].
-When pre-close, its emission observer dispatch, initialization, or final-disposal steps reject, the runtime shall still abort the session signal, drain accepted emissions, invoke the remaining cleanup hook once, and detach observers; the returned rejection shall preserve the originating failure and every independent cleanup failure from those steps, without changing the legacy handling of an earlier dispatcher failure already surfaced by its originating runtime call.
+When a runtime is disposed repeatedly or concurrently, an implemented `Captain.prepareDispose()` shall run exactly once after the active turn unwinds while `CaptainSession.signal` remains live, its accepted status/telemetry emissions shall reach observers in their original order before the signal aborts, and `Captain.dispose()` shall run exactly once afterward with session emissions rejecting [[tmux-play-17](#tmux-play-17)], [[tmux-play-85](#tmux-play-85)].
+When pre-close, its emission observer dispatch, initialization, or final-disposal steps reject, the runtime shall still abort the session signal, drain every accepted emission in its original order, invoke the remaining cleanup hook once, and detach observers; the returned rejection shall preserve the originating failure and every independent cleanup failure from those steps, without changing the legacy handling of an earlier dispatcher failure already surfaced by its originating runtime call [[tmux-play-17](#tmux-play-17)], [[tmux-play-85](#tmux-play-85)].
 
 ### tmux-play-187
 
@@ -1637,13 +1856,13 @@ Text named `reasoningEffort` outside a direct captain/player key shall remain or
 
 ### tmux-play-190
 
-Where a TypeScript consumer uses the public tmux-play declarations, the captain and player config types shall accept each adapter's own effort vocabulary and reject another adapter's provider-native value while retaining all non-effort runtime fields [[tmux-play-29](#tmux-play-29)], [[tmux-play-56](#tmux-play-56)].
+Where a TypeScript consumer uses the public tmux-play declarations, the captain and player config types shall accept each adapter's own effort vocabulary and reject another adapter's provider-native value while retaining all non-effort runtime fields [[tmux-play-29](#tmux-play-29)], [[tmux-play-95](#tmux-play-95)].
 
 ### tmux-play-191
 
 Where a Captain's runtime-owned `Cligent` stores an automatic resume token, when it calls `callCaptain(prompt, { resume: false, allowedTools: [] })`, the Captain adapter shall receive no resume token and an explicit empty allowlist while the call retains its normal records, result, and resolved visibility [[tmux-play-16](#tmux-play-16)], [[tmux-play-72](#tmux-play-72)], [[tmux-play-88](#tmux-play-88)].
-Where `callCaptain` omits the session and tool fields, when the Captain calls it, the Captain adapter shall receive its stored automatic resume token and no per-call allowlist override.
-Where `callCaptain` receives a readonly non-empty allowlist, when the Captain calls it, tmux-play shall pass an equal mutable copy to `Cligent.run()` so caller-owned option data cannot be mutated at the adapter boundary.
+Where `callCaptain` omits the session and tool fields, when the Captain calls it, the Captain adapter shall receive its stored automatic resume token and no per-call allowlist override [[tmux-play-16](#tmux-play-16)], [[tmux-play-88](#tmux-play-88)].
+Where `callCaptain` receives a readonly non-empty allowlist, when the Captain calls it, tmux-play shall pass an equal mutable copy to `Cligent.run()` so caller-owned option data cannot be mutated at the adapter boundary [[tmux-play-16](#tmux-play-16)], [[tmux-play-88](#tmux-play-88)].
 
 ### tmux-play-192
 

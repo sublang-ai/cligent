@@ -42,7 +42,7 @@ This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s 
 
 A user with credentials for one provider reaches a working session after installing one runtime, instead of being told to install two.
 The same command can now produce different configs on different hosts; the generated file is user-owned afterward, and the first-run notice names the adapters the roster was built from so the roster is never a silent function of host state.
-A host that gains a provider later keeps its original roster: re-deriving a user-owned file would be destructive, and [[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]'s migration deliberately adds no roles.
+A host that gains a provider later keeps its original roster: re-deriving a user-owned file would be destructive, and [[tmux-play-90](../packages/tmux-play.md#tmux-play-90)]'s migration deliberately adds no roles.
 
 The gate is fatal rather than advisory.
 A warning would be written immediately before tmux takes the terminal, so it would be invisible for the whole session — reporting in name only.

@@ -148,10 +148,11 @@ export interface CallPlayerOptions {
 }
 
 /**
- * tmux-play-16: the turn-scoped surface passed to each `handleBossTurn`. Every
- * turn-scoped member — `callPlayer`, `callCaptain`, `setVisiblePlayers`,
- * `emitReply` — shares one admission boundary: once the runtime resumes from
- * `handleBossTurn`, a new call rejects before emitting any record. Calls
+ * tmux-play-16 / tmux-play-91: the turn-scoped surface passed to each
+ * `handleBossTurn`. Every turn-scoped member — `callPlayer`,
+ * `callCaptain`, `setVisiblePlayers`, `emitReply` — shares one admission
+ * boundary: once the runtime resumes from `handleBossTurn`, a new call
+ * rejects before emitting any record. Calls
  * admitted earlier may continue while the turn remains abortable; the runtime
  * joins and drains them before its pre-terminal fence, so no turn-bound record
  * can trail `turn_finished` / `turn_aborted`.
@@ -169,12 +170,13 @@ export interface CaptainContext {
     options?: CallCaptainOptions,
   ): Promise<CaptainRunResult>;
   /**
-   * tmux-play-92: emit one turn-scoped conversational Captain reply. The text is
-   * rendered in the Boss/Captain pane as ordinary Captain prose — the same
-   * Markdown pipeline and `captain> ` prefix as visible Captain speech — not
-   * as a bracketed `[status]` operational line. The emitted `captain_reply`
-   * record carries this turn's id; a call after the turn has ended (or after
-   * session shutdown) rejects and emits nothing.
+   * tmux-play-16 / tmux-play-92 / tmux-play-97: emit one turn-scoped
+   * conversational Captain reply. The text is rendered in the Boss/Captain
+   * pane as ordinary Captain prose — the same Markdown pipeline and
+   * `captain> ` prefix as visible Captain speech — not as a bracketed
+   * `[status]` operational line. The emitted `captain_reply` record carries
+   * this turn's id; a call after the turn has ended (or after session shutdown)
+   * rejects and emits nothing.
    */
   emitReply(text: string): Promise<void>;
   /**

@@ -63,11 +63,12 @@ export interface CaptainFinishedRecord extends BaseRecord<'captain_finished'> {
 }
 
 /**
- * tmux-play-92: emitted once per {@link CaptainContext.emitReply} call. Carries a
- * conversational Captain reply the tmux presenter renders as ordinary Captain
- * prose (glow Markdown under the `captain> ` prefix), unlike the bracketed
- * `[status]` operational line of `captain_status`. Turn-bound: it always
- * carries the emitting context's turn id.
+ * tmux-play-92 / tmux-play-97: emitted once per
+ * {@link CaptainContext.emitReply} call. Carries a conversational Captain reply
+ * the tmux presenter renders as ordinary Captain prose (glow Markdown under the
+ * `captain> ` prefix), unlike the bracketed `[status]` operational line of
+ * `captain_status`. Turn-bound: it always carries the emitting context's turn
+ * id.
  */
 export interface CaptainReplyRecord extends BaseRecord<'captain_reply'> {
   readonly text: string;
