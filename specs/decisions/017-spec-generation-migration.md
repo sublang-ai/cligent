@@ -221,6 +221,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `KIMI-004` | `kimi-4` |
 | `KIMI-004` | `kimi-16` |
 | `KIMI-004` | `kimi-17` |
+| `KIMI-004` | `kimi-26` |
 | `KIMI-004` | `kimi-30` |
 | `KIMI-005` | `kimi-5` |
 | `KIMI-005` | `kimi-18` |

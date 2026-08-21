@@ -57,7 +57,6 @@ When the adapter emits `init`, it shall select the payload through this matrix:
 
 | Member | Selection |
 | --- | --- |
-| `sessionId` | the active backend session identifier |
 | `cwd` | the absolute effective working directory |
 | `model`, no requested model | the initial session configuration's selected model, otherwise `unknown` |
 | `model`, requested model | the post-update selected model, otherwise the requested value |
@@ -414,7 +413,7 @@ Given the installed Kimi target and fake ACP subprocesses whose protocol traffic
 | process | one child for every run reaching invocation, with [[kimi-3](#kimi-3)]'s cwd, environment, pipes, and drained bounded stderr; one [[kimi-25](#kimi-25)] cleanup sequence shall either observe its close or report that it remained alive after final grace |
 | wire | split, coalesced, and unterminated-final-line framing; oversized decoded buffers; every invalid JSON-RPC object, envelope, id, pending response, error, and consumed payload; unknown fields and update cases; optional usage; and handled pre-session or cross-session traffic select [[kimi-27](#kimi-27)]'s exact outcome, with each protocol failure terminating without exposing private traffic |
 | setup | protocol version 1 and empty capabilities succeed while another negotiated version rejects; fresh and resumed session selection and ordered configuration satisfy [[kimi-14](#kimi-14)], [[kimi-4](#kimi-4)], and [[kimi-16](#kimi-16)] |
-| prompt | `init` has every [[kimi-17](#kimi-17)] fallback and, per [[kimi-16](#kimi-16)], [[kimi-30](#kimi-30)], and [[kimi-5](#kimi-5)], precedes one-text-block prompting and every normalized event |
+| prompt | `init` carries [[kimi-26](#kimi-26)]'s backend session identity, has every [[kimi-17](#kimi-17)] fallback and, per [[kimi-16](#kimi-16)], [[kimi-30](#kimi-30)], and [[kimi-5](#kimi-5)], precedes one-text-block prompting and every normalized event |
 | permissions and options | reverse requests reject per [[kimi-22](#kimi-22)]; unsupported policy, including writable-path failures, rejects per [[kimi-7](#kimi-7)] and [[kimi-8](#kimi-8)]; empty and non-empty tool lists reject per [[kimi-10](#kimi-10)]; invalid effort rejects per [[kimi-9](#kimi-9)]; and zero and nonzero limits reject per [[kimi-24](#kimi-24)], all before spawn |
 | failures | structured authentication and bare-key cases select [[kimi-21](#kimi-21)]; protocol and arbitrary process-close failures preserve diagnostics and select [[kimi-27](#kimi-27)], [[kimi-29](#kimi-29)], and [[kimi-28](#kimi-28)] |
 | isolation | an aborted run retains no [[kimi-25](#kimi-25)] caller listener, and event identity changes only through [[kimi-26](#kimi-26)] |
