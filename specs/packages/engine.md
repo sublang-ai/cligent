@@ -482,3 +482,7 @@ Given upstream accounting is incomplete, absent, or fails the partition identiti
 ### engine-240
 
 Given authentic zero or nonzero accounting from a built-in adapter, terminal `usage.tokens` shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder; malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses` [[engine-31](#engine-31)].
+
+### engine-32
+
+Given an adapter retains the cumulative-accounting queue permitted by [[engine-18](#engine-18)], concurrent equal-resume, different-resume, and fresh runs plus normal, error, interrupted, and setup-failure exits after acquisition shall preserve that item's serialization, concurrency, and queue-release outcomes.

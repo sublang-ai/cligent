@@ -8,7 +8,7 @@
 This package lets a consumer of the agent-adapter contract run Codex through the `@openai/codex-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
 It owns how a portable request becomes a Codex thread, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
-Further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the generated extra-writes profile this adapter names and delivers, and the launcher whose snapshotted work directory motivates the git-repo gate.
+Further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the generated extra-writes profile this adapter names and delivers, and the programmatic working directory that motivates bypassing the interactive git-repository gate.
 
 ## External Behavior
 
@@ -22,291 +22,507 @@ The adapter shall implement `AgentAdapter` with `agent: 'codex'`.
 
 ### codex-2
 
-The adapter module shall be importable without the SDK installed so consumers can register the adapter unconditionally.
-The SDK shall only be required at call time: `isAvailable()` shall return `false` and `run()` shall throw when the SDK is absent.
+Where the Codex SDK is not installed, the adapter module shall remain importable so consumers can register it unconditionally.
+
+### codex-8
+
+Where the Codex SDK is missing under [[engine-26](../engine.md#engine-26)] runtime readiness, when `isAvailable()` is called, the adapter shall return `false`.
+
+### codex-18
+
+Where the Codex SDK is not installed and both tool-list fields are omitted, when `run()` is called, the adapter shall throw `CodexAdapter requires @openai/codex-sdk. Install it to use this adapter.`.
 
 ### Event Normalization
 
 ### codex-3
 
-The adapter shall normalize Codex events to `AgentEvent` types:
+When the adapter normalizes a Codex stream, it shall dispatch native events according to this matrix:
 
-| Codex Event                                                                     | AgentEvent                                     |
-| ------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `item.completed` (text content)                                                 | `text`                                         |
-| First observed lifecycle event of a `command_execution` or `mcp_tool_call` item | `tool_use`                                     |
-| `item.completed` of a `command_execution` or `mcp_tool_call` item               | `tool_result`                                  |
-| File change events                                                              | `codex:file_change` (extension)                |
-| `turn.completed`                                                                | `done` (usage)                                 |
-| `turn.failed`                                                                   | `error` followed by `done` (`status: 'error'`) |
-| Errors                                                                          | `error`                                        |
+| Native event | Unified outcome |
+| --- | --- |
+| first event observed, or a stream ending or failing before any event | one `init` selected by [[codex-22](#codex-22)] before any other emitted event |
+| `item.started`, `item.updated`, or `item.completed` carrying `command_execution` or `mcp_tool_call` | the lifecycle selected by [[codex-19](#codex-19)] with payloads from [[codex-20](#codex-20)] |
+| other `item.completed` | each non-empty text block and compatibility event selected below, in source order |
+| `file_change`, `file.changed`, or `item.file_change` | `codex:file_change` carrying the first available `file`, `change`, `item`, or whole event |
+| `error` | `error` carrying the payload selected by [[codex-28](#codex-28)] |
+| `turn.completed` | terminal `done` selected by [[codex-23](#codex-23)] |
+| `turn.failed` | the terminal sequence selected by [[codex-24](#codex-24)] |
+| absent or any other event type | no event beyond the first-event `init` |
+| non-aborted stream exhaustion or failure | the terminal sequence selected by [[codex-25](#codex-25)] or [[codex-26](#codex-26)] |
+| aborted stream exhaustion or failure | the terminal outcome selected by [[codex-27](#codex-27)] |
 
-The SDK represents shell commands and MCP tool invocations as `command_execution` and `mcp_tool_call` thread items that evolve across `item.started`, `item.updated`, and `item.completed` events and correlate by item `id` [[1]].
-For each such item `id`, the adapter shall emit exactly one `tool_use`, on the first lifecycle event observed for the `id`, and at most one terminal `tool_result`, on the item's `item.completed` event, whether the item completed or failed.
-When `item.completed` arrives for an `id` whose earlier lifecycle events were not observed, the adapter shall synthesize the missing `tool_use` immediately before the `tool_result`.
-An `item.updated` event for an already-announced `id` shall produce no additional unified lifecycle event.
-Both unified events shall carry the native item `id` as `toolUseId` so concurrent items remain correlated.
+- An `item.completed` content array contributes non-empty `text`, `output_text`, and `message_text` blocks as `text` events in block order, together with the compatibility tool events in [[codex-21](#codex-21)] and `file_change` or `file.changed` blocks as `codex:file_change` carrying their `file` value when present and otherwise the whole block.
+- A non-empty top-level item `text` contributes one `text` before those content events only where the content contains no non-empty text block, and otherwise is suppressed so mirrored text is not duplicated.
+- With no content blocks, non-empty top-level item text and top-level compatibility tool or file shapes produce the corresponding event, a top-level `file_change` or `file.changed` item carrying its `file` value when present and otherwise the whole item, while empty text and every unrecognized shape produce none.
 
-The `tool_use` payload shall name the tool `command_execution` with the native command string as input for command items, and the MCP server-qualified tool name (`<server>.<tool>`) with the native arguments as input for MCP items.
-The `tool_result` payload shall map native status `failed` to `status: 'error'` and any other terminal status to `status: 'success'`, and shall preserve the native `aggregated_output` and, when present, `exit_code` for command items, and the native result or error details for MCP items.
+### codex-19
 
-Where an `item.completed` item instead carries legacy alias tool shapes — `tool_call`, `function_call`, or `tool_use` calls and `tool_result`, `function_call_result`, or `tool_output` results, at item top level or among content blocks — the adapter shall normalize them to the same `tool_use` and `tool_result` events as a compatibility fallback, preserving their native status (including `denied`) and duration detail, with their identifiers counted through the same unique-`toolUseId` rule below.
+When the adapter normalizes a canonical `command_execution` or `mcp_tool_call` item lifecycle, it shall emit events according to this per-item state matrix:
 
-Because the SDK usage object carries token counts but no tool-count metric, the adapter shall report `DonePayload.usage.toolUses` on every terminal `done` event as the number of unique `toolUseId` values observed during the run — for canonical SDK streams, the unique `command_execution` and `mcp_tool_call` item `id`s — independent of token-usage fields.
+| First or later observation | Outcome |
+| --- | --- |
+| first `item.started` or `item.updated` carrying a non-empty item `id` | one `tool_use` |
+| later `item.started` or `item.updated` for an announced `id` | no event |
+| `item.completed` for an announced, not-yet-completed `id` | one terminal `tool_result` |
+| `item.completed` for an unannounced `id` | synthesize the missing `tool_use` immediately before one terminal `tool_result` |
+| repeated `item.completed` for a completed `id` | no event |
+| `item.started` or `item.updated` without a non-empty `id` | no event |
+| `item.completed` without a non-empty `id` | one `tool_use` and one `tool_result` correlated by one identifier generated through [[engine-7](../engine.md#engine-7)] |
 
-_The following released flat-accounting behavior is superseded by [[codex-17](#codex-17)]._
+### codex-20
 
-Where the SDK supplies canonical `Usage`, the adapter shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, shall recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and shall not add those detail counters to the inclusive input or output total a second time [[6]][[7]].
+When the adapter normalizes a canonical tool lifecycle event, it shall select its payload according to this matrix:
 
-When Codex emits `turn.failed`, the adapter shall yield a structured `error` event carrying the failure's `message` and `code`, then yield a terminal `done` event with `status: 'error'`, and stop iterating the SDK stream.
-This ensures the actual failure reason (e.g., model rejection, server-side error) reaches the caller before the SDK's exec wrapper otherwise raises a generic non-zero-exit exception.
+| Item and event | Payload |
+| --- | --- |
+| command `tool_use` | `toolName: 'command_execution'`, the identifier selected by [[codex-19](#codex-19)], and input `{ command }`, using an empty command where the native value is not a non-empty string |
+| MCP `tool_use` | the identifier selected by [[codex-19](#codex-19)], `toolName: '<server>.<tool>'` when both names are non-empty and otherwise the non-empty tool or `mcp_tool_call`, and absent arguments as `{}`, non-array objects preserved, JSON strings parsed only when they name such objects, and every other value preserved under `raw` |
+| command `tool_result` | the same tool name and identifier, `status: 'error'` for case-insensitive native `failed` and otherwise `success`, and output containing the native `aggregated_output` or an empty string plus a finite native `exit_code` when present |
+| MCP `tool_result` | the same tool name and identifier, the same status mapping, and output preferring native `error` then `result` for failure or `result` then `error` otherwise, with `null` as the final fallback |
 
-When Codex supplies an error message as a JSON-encoded object string, the adapter shall present the human-readable `detail`, `message`, or `error_description` content as the `error.message` while preserving a structured `code` when available.
-The adapter may further unwrap nested `error` envelopes to reach those human-readable fields.
+### codex-21
+
+Where a non-canonical `item.completed` shape carries a compatibility tool alias at top level or in content, the adapter shall normalize it according to this matrix:
+
+| Source | Accepted aliases or selection |
+| --- | --- |
+| tool-use type | `tool_call`, `function_call`, or `tool_use` |
+| tool-result type | `tool_result`, `function_call_result`, or `tool_output` |
+| `toolName` | first non-empty `toolName`, then `name`, otherwise `unknown_tool` |
+| `toolUseId` | first non-empty `toolUseId`, `callId`, `tool_call_id`, or `id`, otherwise an identifier generated through [[engine-7](../engine.md#engine-7)] |
+| tool input | first non-nullish `input`, `arguments`, or `args`; a non-array object is preserved, a JSON string is parsed only when it names such an object, an absent value becomes `{}`, and every other value is preserved under `raw` |
+| result status | case-insensitive `denied` becomes `denied` and takes priority over either error flag; case-insensitive `failed` or `error`, `isError: true`, or `is_error: true` becomes `error`; every other value becomes `success` |
+| result output | first non-nullish `output`, `result`, or `content`, otherwise `null` |
+| result duration | first finite `durationMs`, then `duration_ms`, otherwise omitted |
+
+### codex-22
+
+When a run emits its exactly one `init`, the adapter shall select its payload according to this matrix:
+
+| Payload member | First available value |
+| --- | --- |
+| `model` | requested model when supplied, including an empty string, then non-empty first-event model, otherwise `unknown` |
+| `cwd` | requested cwd when supplied, including an empty string, then non-empty first-event cwd, otherwise the process cwd |
+| `tools` | first non-empty string list from first-event `tools`, `session.tools`, or `turn.tools`, otherwise `[]`; object entries contribute their non-empty `name` |
+| `capabilities.toolsKnown` | `true` when a non-empty native tool list was selected, otherwise `false` |
+| `capabilities.toolsSource` | `sdk` when native tools were selected, otherwise `unavailable` |
+
+### codex-23
+
+When Codex emits `turn.completed`, the adapter shall emit one terminal `done`, stop consuming the stream, and select its payload according to this matrix:
+
+| Payload member | Selection |
+| --- | --- |
+| `status` source | first non-empty `turn.status`, then event `status`, compared case-insensitively |
+| `status: 'success'` | source absent, `success`, `completed`, `ok`, or any unrecognized value |
+| `status: 'interrupted'` | `interrupted`, `cancelled`, or `aborted` |
+| `status: 'max_turns'` | `max_turns` or `maxturns` |
+| `status: 'max_budget'` | `max_budget`, `maxbudget`, or `budget_exceeded` |
+| `status: 'error'` | `error` or `failed` |
+| `result` | first non-empty `turn.result`, then event `result`, otherwise omitted |
+| `durationMs` | first finite `turn.durationMs`, `turn.duration_ms`, event `durationMs`, or event `duration_ms`, otherwise elapsed run time |
+| `resumeToken` with `status: 'interrupted'` | the interrupted-terminal selection in [[codex-33](#codex-33)] |
+| `resumeToken` with any other status | the normal-terminal selection in [[codex-6](#codex-6)] |
+| `usage` | first non-nullish `turn.usage`, then event `usage`, mapped through [[codex-53](#codex-53)], [[codex-15](#codex-15)], [[codex-16](#codex-16)], [[codex-17](#codex-17)], and [[codex-29](#codex-29)] |
+
+### codex-24
+
+When Codex emits `turn.failed`, the adapter shall yield an `error` selected by [[codex-28](#codex-28)], then terminal `done` with `status: 'error'`, the normal-terminal resume token in [[codex-6](#codex-6)], event usage mapped through [[codex-53](#codex-53)], [[codex-15](#codex-15)], [[codex-16](#codex-16)], [[codex-17](#codex-17)], and [[codex-29](#codex-29)], elapsed duration, and no result, stopping consumption before the SDK can replace that failure with a generic non-zero-exit error.
+
+### codex-25
+
+While the run is not aborted and has emitted no terminal event, when the SDK stream exhausts, the adapter shall emit `init` first if needed, then a non-recoverable `error` with code `MISSING_TURN_DONE` and message `Protocol violation: Codex stream ended without turn.completed`, followed by terminal `done` with `status: 'error'`, the normal-terminal resume token in [[codex-6](#codex-6)], elapsed duration, usage containing only [[codex-29](#codex-29)]'s tool count, and no result.
+
+### codex-26
+
+While the run is not aborted and has emitted no terminal event, when iteration of the SDK stream throws, the adapter shall emit `init` first if needed, then a non-recoverable `error` with code `SDK_STREAM_ERROR` and the bounded JSON/error-envelope decoding used by [[codex-28](#codex-28)] on a thrown `Error` message or `Codex adapter failed during stream` for a non-`Error`, followed by terminal `done` with `status: 'error'`, the normal-terminal resume token in [[codex-6](#codex-6)], elapsed duration, usage containing only [[codex-29](#codex-29)]'s tool count, and no result.
+
+### codex-27
+
+While the mapped SDK signal is aborted and no terminal event has been emitted, when the SDK stream exhausts or throws, the adapter shall emit `init` first if needed and then only terminal `done` with `status: 'interrupted'`, the resume token selected by [[codex-33](#codex-33)], elapsed duration, usage containing only [[codex-29](#codex-29)]'s tool count, and no result.
+
+### codex-28
+
+When the adapter normalizes a native error, it shall select the unified payload according to this matrix:
+
+| Payload member | First available value |
+| --- | --- |
+| `code` | non-empty `code` or `error_code` from the top-level event, nested `error`, or object-valued `message`, then non-empty nested `type`, otherwise omitted |
+| `message` | non-empty top-level `message`, `detail`, or `error`, walking nested objects in `detail`, `message`, `error_description`, then `error` order and decoding JSON-object strings until the third nesting level, otherwise `Codex SDK error` |
+| `recoverable` | `true` when top-level, nested-error, or object-valued-message `recoverable` or `retryable` is `true`, otherwise `false` |
+
+### codex-29
+
+When a run emits any terminal `done`, the adapter shall report `DonePayload.usage.toolUses` as the number of distinct `toolUseId` values observed through canonical or compatibility `tool_use` and `tool_result` events, ignoring provider-reported tool counts and preserving the observed count when token accounting is absent.
+
+### codex-30
+
+_Superseded by [[codex-17](#codex-17)]._
+
+Where the SDK supplies canonical flat `Usage`, when the adapter publishes terminal usage, it shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and never add those detail counters to the inclusive input or output total a second time [[6]][[7]].
 
 ### Permission Mapping
 
 ### codex-4
 
-The adapter shall map `PermissionPolicy` to Codex controls per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) and [[engine-21](../engine.md#engine-21)], using Codex's modern permission-profile model [[3]][[4]].
-The adapter shall express the local-access surface through the `CodexOptions.config` override `default_permissions` and shall not set `ThreadOptions.sandboxMode` or `ThreadOptions.networkAccessEnabled`, because a present legacy `sandbox_mode` makes Codex ignore `default_permissions` [[4]].
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Codex's modern permission controls per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall select both axes from these matrices and omit `ThreadOptions.sandboxMode` and `ThreadOptions.networkAccessEnabled` in every row [[3]][[4]]:
 
-When the resolved `AgentOptions` carries no `permissions` policy, the adapter shall set none of `default_permissions`, `approvals_reviewer`, or `ThreadOptions.approvalPolicy`, leaving Codex's own default posture in effect per [DR-005](../../decisions/005-per-adapter-permission-configuration.md)'s no-project-wide-default rule.
-The mappings below apply only to a provided `PermissionPolicy`; within a provided policy an omitted capability field is treated as unset, which is distinct from an absent policy.
+| Policy input | `ThreadOptions.approvalPolicy` | `CodexOptions.config.approvals_reviewer` |
+| --- | --- | --- |
+| policy absent | omitted | omitted |
+| `mode: 'auto'`, with any capability levels | `on-request` | `auto_review` [[2]] |
+| `mode: 'bypass'`, with any capability levels | `never` | omitted |
+| supplied policy with mode omitted and every capability `allow` | `never` | omitted |
+| supplied policy with mode omitted and any capability `ask` | `untrusted` | omitted |
+| every other supplied policy with mode omitted, including an empty policy | `on-request` | omitted |
 
-When the resolved `AgentOptions` carries a `permissions` policy, the adapter shall invoke Codex `exec` with `--ignore-user-config` while preserving the normal `CODEX_HOME` auth and session state.
-This prevents a user-level legacy `sandbox_mode` or stale `default_permissions` entry from overriding the adapter-selected permission profile for the run.
-Runs with no `permissions` policy shall continue to inherit Codex's own config.
+| Policy input | `CodexOptions.config.default_permissions` |
+| --- | --- |
+| policy absent | omitted |
+| `mode: 'bypass'`, with any capability levels | `:danger-full-access` |
+| `mode: 'auto'` or omitted and every capability `allow` | `:danger-full-access` |
+| `mode: 'auto'` or omitted and `fileWrite` or `shellExecute` is `deny` | `:read-only` |
+| every other supplied policy, including an empty policy, network-only deny, or a network allow without both local capabilities allowed | `:workspace` |
 
-The `default_permissions` profile shall be selected as follows:
+### codex-31
 
-- `PermissionPolicy.mode: 'bypass'` → `:danger-full-access`.
-- Otherwise, derived from the per-capability levels: all of `fileWrite` / `shellExecute` / `networkAccess` set to `'allow'` → `:danger-full-access`; `fileWrite` or `shellExecute` set to `'deny'` → `:read-only`; otherwise, including all unset → `:workspace`. `networkAccess` alone shall never select `:read-only`: both `:workspace` and `:read-only` grant no network, so denying network shall not remove workspace write access. This is lossy for network: a `networkAccess: 'allow'` not accompanied by `fileWrite` and `shellExecute` both `'allow'` rounds to `:workspace`, which grants no network, because no built-in profile expresses workspace-write with network.
+When a run has no permission policy or a supplied policy whose mapping succeeds, the adapter shall select its per-run Codex configuration source from this isolation matrix:
 
-`ThreadOptions.approvalPolicy` and the reviewer shall be selected as follows:
+| Permission-policy input | Configuration source |
+| --- | --- |
+| policy absent | emit no `--ignore-user-config`, inherit Codex's native configuration, and preserve normal `CODEX_HOME` authentication and session state |
+| any supplied policy, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
 
-- `PermissionPolicy.mode: 'auto'` → `approvalPolicy: 'on-request'` and the `CodexOptions.config` override `approvals_reviewer: 'auto_review'` per Codex auto-review semantics [[2]].
-- `PermissionPolicy.mode: 'bypass'` → `approvalPolicy: 'never'` and no `approvals_reviewer`.
-- `PermissionPolicy.mode` unset → `approvalPolicy` from the per-capability levels (all `'allow'` → `'never'`; any `'ask'` → `'untrusted'`; otherwise → `'on-request'`) and no `approvals_reviewer`.
+### codex-32
 
-When `PermissionPolicy.writablePaths` is non-empty per [[engine-22](../engine.md#engine-22)] and the resolved `default_permissions` profile would otherwise be `:workspace`, the adapter shall select a generated `cligent-workspace-extra-writes` permission profile whose definition extends `:workspace` and grants `write` for each canonicalized path under `:workspace_roots`.
-The adapter shall expose `WritablePathsPermissionMapping` per [[engine-23](../engine.md#engine-23)] with `enforcement: 'profile'` and the canonical `paths`.
-The generated profile may be delivered through any Codex route that satisfies [DR-006](../../decisions/006-workspace-writable-paths.md)'s config-delivery constraints.
-When non-empty `writablePaths` resolves alongside `:read-only`, the adapter shall reject the policy before starting a Codex thread.
-When the resolved `default_permissions` profile is `:danger-full-access`, `writablePaths` shall not narrow that broader posture, no extra-writes profile shall be generated, and the adapter shall report the canonical paths with `enforcement: 'ambient'` per [[engine-23](../engine.md#engine-23)].
+When the adapter maps `PermissionPolicy.writablePaths` per [[engine-22](../engine.md#engine-22)] and [[engine-23](../engine.md#engine-23)], it shall produce this matrix without changing the approval axis selected by [[codex-4](#codex-4)]:
+
+| Input and resolved profile | Outcome |
+| --- | --- |
+| paths absent or empty | omit `WritablePathsPermissionMapping` and any generated profile |
+| any invalid path | reject the policy before starting a thread |
+| valid non-empty paths with `:workspace` | expose canonical paths with `enforcement: 'profile'` and select a generated `cligent-workspace-extra-writes` profile extending `:workspace` with one `write` grant per path under `:workspace_roots` |
+| valid non-empty paths with `:read-only` | reject the policy before starting a thread |
+| valid non-empty paths with `:danger-full-access` | expose canonical paths with `enforcement: 'ambient'`, generate no extra-writes profile, and leave the broader posture unchanged |
 
 ### Thread Resumption
 
 ### codex-5
 
-When `resume` is a non-empty string, the adapter shall continue the previous thread identified by the token.
-When `resume` is absent or empty, the adapter shall start a fresh thread with a non-empty correlation identifier.
+When the adapter selects a Codex thread, it shall produce this matrix:
+
+| `AgentOptions.resume` and SDK surface | Outcome |
+| --- | --- |
+| non-empty and `resumeThread()` available | continue the named thread |
+| non-empty and `resumeThread()` unavailable | throw `Codex SDK does not support resumeThread() in this version` |
+| absent or empty | start a fresh thread whose pre-backend events carry the non-empty identifier selected by [[codex-34](#codex-34)] |
 
 ### codex-6
 
-When Codex provides a thread identifier before terminal `done`, the adapter shall set `DonePayload.resumeToken` to that identifier, enabling `Cligent` auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
-When an abort causes terminal `done` with `status: 'interrupted'`, the adapter shall preserve continuity by setting `DonePayload.resumeToken` to the first available value in this order: the Codex-provided thread identifier observed before the abort; otherwise the non-empty `AgentOptions.resume` value passed into the run; otherwise no `resumeToken`.
+When a non-interrupted terminal `done` is emitted, the adapter shall set `DonePayload.resumeToken` to the latest backend thread identifier observed during the run and otherwise omit it, rather than echoing an inbound resume value, enabling [[engine-5](../engine.md#engine-5)] auto-resume across steps per [DR-003](../../decisions/003-role-scoped-session-management.md).
 
-### Working Directory
+### codex-33
 
-### codex-9
+When terminal `done` has `status: 'interrupted'`, whether selected from a native status or caused by abort, the adapter shall select `DonePayload.resumeToken` from this ordered matrix:
 
-The adapter shall set `skipGitRepoCheck: true` on the Codex SDK `ThreadOptions` so the CLI's interactive-user git-repo gate does not refuse programmatic invocations.
-The `workingDirectory` is selected deliberately by the caller (per [[[tmux-play-34](../tmux-play.md#tmux-play-34)]] the tmux-play launcher targets a snapshotted work dir, and library consumers pass `AgentOptions.cwd` explicitly); the gate was designed to catch surprise CLI use, not these paths.
+| Identifier state before terminal | `resumeToken` |
+| --- | --- |
+| a backend thread identifier | the latest observed backend identifier |
+| no backend identifier and a non-empty inbound `resume` | the inbound value |
+| no backend identifier and no non-empty inbound `resume` | omitted |
 
 ### Options Mapping
 
 ### codex-7
 
-Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), the adapter shall accept the Codex-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] and preserve the following native values through the documented effort and configuration surfaces per [[1]], [[3]], and [[5]]:
+When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [[engine-20](../engine.md#engine-20)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this matrix per [[1]], [[3]], and [[5]]:
 
-| `AgentOptions.effort` | Transport                                         | Native value |
-| --------------------- | ------------------------------------------------- | ------------ |
-| `minimal`             | SDK `ThreadOptions.modelReasoningEffort`          | `minimal`    |
-| `low`                 | SDK `ThreadOptions.modelReasoningEffort`          | `low`        |
-| `medium`              | SDK `ThreadOptions.modelReasoningEffort`          | `medium`     |
-| `high`                | SDK `ThreadOptions.modelReasoningEffort`          | `high`       |
-| `xhigh`               | SDK `ThreadOptions.modelReasoningEffort`          | `xhigh`      |
-| `max`                 | Codex constructor `config.model_reasoning_effort` | `max`        |
-| `ultra`               | Codex constructor `config.model_reasoning_effort` | `ultra`      |
+| `AgentOptions.effort` | SDK `ThreadOptions.modelReasoningEffort` | Codex constructor `config.model_reasoning_effort` | Outcome |
+| --- | --- | --- | --- |
+| omitted | omitted | omitted | preserve independently selected configuration, including [[codex-31](#codex-31)] |
+| `minimal` | `minimal` | omitted | accepted |
+| `low` | `low` | omitted | accepted |
+| `medium` | `medium` | omitted | accepted |
+| `high` | `high` | omitted | accepted |
+| `xhigh` | `xhigh` | omitted | accepted |
+| `max` | omitted | `max` | accepted through constructor pass-through |
+| `ultra` | omitted | `ultra` | accepted through constructor pass-through |
+| `ultracode` or any other unsupported value | not invoked | not invoked | reject before starting a thread with an error naming Codex and its allowed values |
 
-The minimum compatible Codex SDK thread option supports `minimal` through `xhigh`; for `max` and `ultra`, the adapter shall use the constructor configuration pass-through so the installed SDK spawns Codex with `--config model_reasoning_effort="<value>"`, and shall leave the thread `modelReasoningEffort` field unset per [[3]] and [[5]].
-When effort is omitted, the adapter shall set neither effort transport and shall leave [[codex-4](#codex-4)]'s independently selected configuration-isolation behavior unchanged, preserving only defaults applicable to that run.
-Where effort is outside the Codex-specific accepted vocabulary, including the Claude-specific value `ultracode`, the adapter shall reject it before starting a thread with an error naming the Codex adapter and allowed values.
-Mapping `ultra` shall leave independently mapped permission-profile, approval, sandbox, writable-path, and network controls unchanged, although provider delegation may increase token use, latency, cost, concurrency, and tool activity per [[5]].
+### codex-35
+
+Where `AgentOptions.effort` is `ultra`, when the adapter maps the same permission input with and without that effort, it shall leave every permission profile, approval, reviewer, legacy-control omission, writable-path mapping, and configuration-isolation control unchanged.
 
 ### codex-11
 
-Where `AgentOptions.allowedTools` or `AgentOptions.disallowedTools` is provided, including an empty array, the adapter shall reject before loading or invoking the Codex SDK with an error that states the installed Codex integration cannot enforce explicit tool restrictions.
-Where both fields are omitted, the adapter shall preserve Codex's native available-tool set.
+When the adapter maps `AgentOptions.allowedTools` and `AgentOptions.disallowedTools`, it shall produce this matrix:
+
+| Tool-list input | Outcome |
+| --- | --- |
+| either field present, including an empty array | reject before loading or invoking the Codex SDK with an error explaining that this integration cannot enforce explicit tool restrictions |
+| both fields omitted | preserve Codex's native available-tool set |
 
 ### Token Accounting
 
 ### codex-15
 
-The usage attached to `turn.completed` is the thread's cumulative total rather than the completed turn's, so the adapter shall report the difference between that snapshot and the snapshot it last observed for the same thread.
-Where the adapter has observed no earlier snapshot for a thread that this run resumed, it shall omit token accounting per [[engine-31](../engine.md#engine-31)], because the thread's accumulated total includes turns this run did not perform.
-Where the run created the thread, the absent baseline shall be treated as zero, since the thread's first snapshot is that turn's usage.
-Where any counter in the new snapshot is smaller than the corresponding baseline counter, the thread's accounting has restarted and the adapter shall omit token accounting rather than attribute an unexplained decrease to the turn.
-For every valid snapshot the adapter shall retain the newest value as the baseline, so a thread whose turn could not be attributed recovers on its next turn.
-Where a known thread's cumulative snapshot is malformed, the adapter shall discard its prior baseline; the next valid resumed snapshot shall establish a new baseline without reporting a delta, and only a later stable snapshot may recover attribution.
-The retained snapshot shall preserve which optional cache and reasoning counters were present; where that presence shape changes from the preceding snapshot, the adapter shall omit the transition's tokens because a newly appearing cumulative counter may include older turns and a disappearing counter cannot be differenced, then retain the new shape so the next stable turn can recover.
-The baseline shall be retained per backend thread identifier under [[engine-18](../engine.md#engine-18)], and concurrent runs carrying the same resume identifier shall be serialized for the full backend turn so their snapshots cannot race; different sessions and fresh runs shall remain concurrent.
+Under [[engine-18](../engine.md#engine-18)]'s permitted per-session baseline and same-resume serialization contract, when the adapter maps a cumulative `turn.completed` usage snapshot admitted by [[codex-53](#codex-53)] to one turn, it shall produce this provenance matrix:
+
+| State | Outcome |
+| --- | --- |
+| fresh thread with no baseline | treat the absent baseline as zero and report the current snapshot |
+| resumed thread with no retained baseline | omit tokens and retain the current snapshot as the new baseline |
+| valid snapshot with the same optional-counter presence shape and no decreased counter | report the exact difference from the preceding snapshot and retain the current snapshot |
+| any decreased counter | omit tokens and retain the current snapshot so the next stable turn can recover |
+| malformed snapshot for a known thread | omit tokens and discard the old baseline |
+| first valid resumed snapshot after a discarded baseline | omit tokens and establish the new baseline |
+| optional cache or reasoning counter presence changes | omit tokens and retain the new shape |
+| next valid same-shape, non-decreasing snapshot after a retained decrease or shape-transition baseline, or after the re-established post-malformed baseline | recover exact differencing |
 
 ### codex-16
 
-Codex reports `cached_input_tokens` and `cache_write_input_tokens` as subsets of `input_tokens`, and `reasoning_output_tokens` as a subset of `output_tokens`, so the adapter shall obtain each exclusive detail of [[engine-31](../engine.md#engine-31)] by subtracting the reported subsets from their inclusive base rather than by adding them.
-Where a cache counter is absent, the adapter shall omit that detail and shall omit `uncached` unless every cache subset needed for exact subtraction is present, while preserving the authentic inclusive input total.
-Where the reasoning counter is absent, the adapter shall preserve the authentic inclusive output total while omitting both `visible` and `reasoning` details.
-Where a reported subset exceeds its inclusive total or an exact subtraction would be negative, the adapter shall omit token accounting per [[engine-31](../engine.md#engine-31)] rather than clamp it.
-Both sides shall be derived from the per-turn delta of [[codex-15](#codex-15)], never from the thread's cumulative snapshot.
+When the adapter maps a valid per-turn delta from [[codex-15](#codex-15)] into exact token details, it shall produce this subset matrix under [[engine-31](../engine.md#engine-31)]:
+
+| Reported counters | Output |
+| --- | --- |
+| both cache subsets present | inclusive input total plus `cacheRead`, `cacheWrite`, and exact non-negative `uncached` subtraction |
+| either cache subset absent | preserve the inclusive input total and each present cache detail, but omit `uncached` |
+| reasoning subset present | inclusive output total plus `reasoning` and exact non-negative `visible` subtraction |
+| reasoning subset absent | preserve the inclusive output total but omit `reasoning` and `visible` |
+| any mapped counter malformed, any subset greater than its inclusive total, or combined cache subsets greater than inclusive input | omit tokens rather than clamp or estimate |
 
 ### codex-14
 
 _Superseded by [[codex-17](#codex-17)]; retained for the unreleased first billable-record design._
 
-Codex reports usage once per turn rather than once per request, so the turn is a single billable group: the adapter shall publish one [[engine-30](../engine.md#engine-30)] record covering the turn's whole breakdown, omitting the request count because the turn covers an unreported number of requests, and omitting cost because Codex reports none.
-The record's rate-card key shall be `AgentOptions.model` where the run pinned one, and otherwise a model reported by the run's own events; where neither names a model, the adapter shall publish no records, a single unidentified group being the breakdown restated.
+Where one Codex turn supplied a complete flat breakdown, when the adapter published the superseded [[engine-30](../engine.md#engine-30)] record shape, it shall produce this matrix:
+
+| Input | Record outcome |
+| --- | --- |
+| turn breakdown | one record covering the whole turn, with request count and cost omitted |
+| pinned `AgentOptions.model` | use the requested model as rate-card key |
+| no pinned model but a model reported by the run | use that reported model |
+| neither model source present | publish no records rather than restating the unidentified breakdown |
 
 ### codex-17
 
-The adapter shall expose an exact [[engine-31](../engine.md#engine-31)] token report only after differencing the current root thread's cumulative snapshot per [[codex-15](#codex-15)].
-The report shall use partial coverage because the pinned exec surface does not aggregate descendant Codex threads.
-Where the stream reports the effective model, one record shall carry the report's inclusive input and output totals plus any reported cache-read, cache-write, and reasoning subsets; visible output and uncached input shall be obtained by exact non-negative subtraction where their subsets are present.
-Where the stream reports no effective model, `records` shall be absent because an unidentified record would merely restate the totals without selecting a rate card.
-The adapter shall never label a record with `AgentOptions.model`, because a requested model is not evidence of the effective model or a reroute.
-Where a resumed thread has no retained baseline, a snapshot decreases, a mapped counter is malformed, or an exact subset exceeds its inclusive total, the adapter shall omit tokens rather than emit a cumulative total, placeholder, or estimate.
-Where optional counter presence changes or another run on the same resumed session is active, the adapter shall apply [[codex-15](#codex-15)]'s provenance and serialization rules before publishing a delta.
-Codex exec reports no cost, so the adapter shall publish none.
+When the adapter publishes current Codex token accounting, it shall produce this authentic report matrix under [[engine-31](../engine.md#engine-31)]:
+
+| Source state | Report outcome |
+| --- | --- |
+| exact valid per-turn delta from [[codex-15](#codex-15)] | `coverage: 'partial'`, because the pinned exec surface does not aggregate descendant Codex threads, with inclusive totals and the exact details selected by [[codex-16](#codex-16)] |
+| first runtime-reported model selected by [[codex-36](#codex-36)] | one record carrying that report's totals and details |
+| no runtime-reported model | omit `records` |
+| requested model only | never use it as a record label, because it is not evidence of the effective model or a reroute |
+| any input, provenance, or validity failure named by [[codex-53](#codex-53)], [[codex-15](#codex-15)], or [[codex-16](#codex-16)] | omit `tokens` rather than publish a cumulative total, placeholder, or estimate |
+| any run | publish no cost because Codex exec reports none |
 
 ## Internal Behavior
+
+### Session Identity
+
+### codex-34
+
+When the adapter selects the event `sessionId` and records whether a backend identifier is known, it shall use this matrix:
+
+| Source state | Selection |
+| --- | --- |
+| fresh run before a backend identifier | one identifier generated through [[engine-7](../engine.md#engine-7)] |
+| resumed run before a backend identifier | the non-empty inbound `resume` value |
+| native event supplies identifiers | first non-empty `sessionId`, `session_id`, `threadId`, `thread_id`, `session.id`, or `thread.id` |
+| native event supplies only absent, empty, or non-string identifier aliases | retain the current identifier and whether a backend identifier was already known |
+| later native event supplies another identifier | replace the prior value and retain the latest as backend-provided |
+
+### Runtime Model Identity
+
+### codex-36
+
+When the adapter selects the effective model for a usage record, it shall retain the first non-empty `model` reported by this run's native event stream and never substitute the requested model.
+
+### Usage Snapshot Validity
+
+### codex-53
+
+When the adapter reads a cumulative Codex usage value, it shall admit and normalize it according to this counter matrix [[6]][[7]]:
+
+| Input state | Snapshot outcome |
+| --- | --- |
+| non-array object | inspect its counter aliases |
+| absent, `null`, array, or primitive | no valid snapshot |
+| `inputTokens` / `input_tokens` and `outputTokens` / `output_tokens` | each counter is required |
+| `cachedInputTokens` / `cached_input_tokens`, `cacheWriteInputTokens` / `cache_write_input_tokens`, and `reasoningOutputTokens` / `reasoning_output_tokens` | each counter is optional |
+| one alias present | use its value |
+| both aliases present with equal values | use their common value |
+| both aliases present with different values | no valid snapshot |
+| present finite, non-negative safe integer, including zero | valid counter |
+| present non-numeric, non-finite, negative, fractional, or unsafe value | no valid snapshot |
+| optional counter absent | retain zero internally while recording that its presence shape is absent |
+| required counter absent or any counter invalid | no valid snapshot |
+
+### Working Directory
+
+### codex-9
+
+When the adapter maps a run to Codex thread options, it shall produce this matrix so the CLI's interactive-user git-repository gate does not refuse a programmatic invocation:
+
+| Caller `cwd` | `workingDirectory` | `skipGitRepoCheck` |
+| --- | --- | --- |
+| absent | `undefined` | `true` |
+| empty string | empty string | `true` |
+| non-empty string | the supplied string | `true` |
+
+The programmatic tmux-play runtime accepts and forwards an optional caller-selected cwd [[tmux-play-29](../tmux-play.md#tmux-play-29)], while library consumers select `AgentOptions.cwd` directly.
 
 ### Workspace Writable Paths
 
 ### codex-10
 
-Where a non-empty `PermissionPolicy.writablePaths` policy resolves to Codex profile enforcement per [[codex-4](#codex-4)], when the adapter starts a run, the adapter shall make the generated permission profile definition available to that run through Codex's normal configuration loading without writing repository `.codex/config.toml`, without writing user-level Codex config, and without replacing the user's Codex home, authentication, or session configuration.
-Where a run carries a `PermissionPolicy` whose mapped permission profile can
-cause Codex to auto-persist project trust, when the adapter starts the run, the
-adapter shall resolve the caller-selected workspace to the project root used by
-Codex and supply its trust decision as a per-run CLI configuration override so
-Codex does not persist a `projects.<path>.trust_level` entry.
-The resolver shall preserve Codex's lexical absolute-path identity after its
-native Windows device-prefix simplification instead of independently
-realpath-canonicalizing symlink aliases.
-For a linked worktree, this shall be the main repository root resolved from the
-worktree's `.git` file, matching Codex's active-project trust lookup.
-The trust override shall encode the complete top-level `projects` inline table,
-not a dotted key containing a quoted path segment, so Codex's CLI override
-parser materializes the absolute path as the project-table key.
-The override shall not create a project or user configuration file.
-When the caller omits `cwd` or supplies an empty value that the SDK does not
-forward as `--cd`, the adapter shall not inject project trust because Codex's
-project auto-trust path is not active for that run.
-Mappings that resolve to `:read-only` shall not inject project trust because
-Codex does not auto-persist trust for those mappings, and trusting them would
-unnecessarily enable project-local configuration and executable policy.
+Where [[codex-32](#codex-32)] selects profile enforcement for non-empty `writablePaths`, when the adapter starts a run, it shall make the generated permission-profile definition available through Codex's normal configuration loading without writing repository `.codex/config.toml`, writing user-level Codex configuration, or replacing the user's Codex home, authentication, or session configuration.
+
+### codex-37
+
+When a supplied permission policy can activate Codex project trust, the adapter shall inject a per-run trusted-project override only for a non-empty caller `cwd` whose local-access profile is not `:read-only`, and omit it for an absent or empty cwd, an absent policy, or `:read-only`.
+
+### codex-38
+
+When the adapter resolves the project key for [[codex-37](#codex-37)]'s trust override, it shall produce this matrix:
+
+| Workspace state | Project key |
+| --- | --- |
+| ordinary repository with a `.git` directory at or above cwd | that repository root |
+| linked worktree whose `.git` file names a valid `.../worktrees/<name>` directory | the main repository root |
+| malformed, unreadable, or non-worktree `.git` file | the lexical absolute caller workspace |
+| no repository marker | the lexical absolute caller workspace |
+| Windows device-prefixed path | the same selection after Codex-compatible device-prefix simplification |
+| non-Windows symlink alias | preserve the lexical absolute alias rather than independently realpath-canonicalizing it |
+
+### codex-39
+
+When the adapter serializes [[codex-37](#codex-37)]'s trust override, it shall encode the complete top-level `projects={<path>={trust_level="trusted"}}` inline table rather than a dotted key with a quoted path segment, without creating a project or user configuration file.
 
 ### Codex Executable Resolution
 
 ### codex-12
 
-`@openai/codex` is a dependency of the optional `@openai/codex-sdk` peer
-([[package-4](../package.md#package-4)]), not of the Cligent package, so install
-layouts that do not hoist it — npm global prefixes and nested-strategy
-consumers — place it only inside the SDK's own tree.
-When a run requires the Codex CLI entry `@openai/codex/bin/codex.js` for the
-per-run configuration wrapper of [[codex-10](#codex-10)] and
-[[codex-4](#codex-4)], the adapter shall resolve
-the entry anchored inside the installed `@openai/codex-sdk` package tree,
-attempting first the ESM loader's own SDK resolution (`import.meta.resolve`)
-[[8]] where the runtime provides it, then the first `@openai/codex-sdk`
-package manifest found on the adapter's module search paths, and shall fall
-back to the adapter's own module resolution context only when no SDK-anchored
-resolution succeeds.
-Where an earlier anchor is unavailable or yields no entry — the loader
-surface absent, its result not a file location, or its anchored tree missing
-the entry — resolution shall continue with the remaining anchors rather than
-fail.
-Where the install layout reaches `@openai/codex-sdk` through symbolic links,
-each anchor shall be canonicalized to the SDK's physical location so
-resolution returns the entry nested in that physical tree.
-Where the install layout nests `@openai/codex` inside `@openai/codex-sdk`
-without a copy visible from the adapter's own resolution context, resolution
-shall return the SDK-owned entry.
-Where both an SDK-owned copy and an independently installed `@openai/codex`
-are visible, resolution shall return the SDK-owned copy so the wrapped
-executable matches the SDK's exactly pinned dependency.
-Where the Node runtime provides no ESM loader resolution surface, as on the
-[[package-2](../package.md#package-2)] runtime floor, the search-path anchor shall
-produce the same SDK-owned result.
+When a run requires the Codex CLI entry `@openai/codex/bin/codex.js` for [[codex-10](#codex-10)] and [[codex-31](#codex-31)], the adapter shall resolve it through this ordered anchor matrix, because `@openai/codex` belongs to the optional `@openai/codex-sdk` peer's tree rather than Cligent's [[package-4](../package.md#package-4)]:
+
+| Resolution state | Outcome |
+| --- | --- |
+| ESM loader can resolve the SDK to a file URL | search the canonical physical SDK tree for its Codex entry first [[8]] |
+| loader unavailable, throws, returns a non-file URL, or its SDK tree has no entry | continue through SDK manifests on the adapter's module search paths |
+| a search-path SDK manifest is found | search that canonical physical SDK tree, including on the [[package-2](../package.md#package-2)] runtime floor |
+| no SDK-anchored route succeeds | fall back to the adapter's own module-resolution context |
+| SDK is reached through a symbolic link | canonicalize the anchor to the SDK's physical location |
+| caller injects a module-resolution scope without an explicit loader resolver | suppress ambient loader lookup and use only the injected scope's search paths and fallback |
+| SDK-owned and independently installed Codex copies are both visible | return the SDK-owned entry matching the SDK's pinned dependency |
+| Codex is nested only inside the SDK | return that SDK-owned entry |
+| an earlier route yields no entry | continue rather than fail until all ordered routes are exhausted |
 
 ### codex-13
 
-When every resolution route for `@openai/codex/bin/codex.js` fails, the
-adapter shall raise an error that names the attempted entry specifier,
-identifies each attempted resolution anchor, states that `@openai/codex` is
-provided by `@openai/codex-sdk`, and directs the caller to install
-`@openai/codex-sdk` where the Cligent package can resolve it as the repair.
-The raised error shall carry the `MODULE_NOT_FOUND` code so callers that
-degrade on a missing optional CLI by inspecting the error code keep matching.
-Where the failure occurs while starting a run, the adapter shall release that
-run's abort registration before the error propagates, so a caller repeating
-failed runs against one long-lived `AgentOptions.abortSignal` accumulates no
-listeners on it.
+When every route in [[codex-12](#codex-12)] fails, the adapter shall raise an error with this shape:
+
+| Error member | Required content |
+| --- | --- |
+| message | the attempted `@openai/codex/bin/codex.js` specifier, every attempted resolution anchor, the fact that `@openai/codex-sdk` provides the entry, and the instruction to install that SDK where Cligent can resolve it |
+| `code` | `MODULE_NOT_FOUND` |
+
+### codex-40
+
+Where executable resolution or wrapper setup fails while starting a run, the adapter shall release that run's abort registration before propagating the error so repeated failures on one long-lived caller signal accumulate no listeners.
 
 ## Verification
 
 ### codex-201
 
-Given canned native Codex events shaped as the SDK's canonical exported event types rather than invented aliases, including the multi-phase `command_execution` and `mcp_tool_call` item lifecycles, when the adapter runs, the yielded `AgentEvent` types shall match its normalization table [[codex-3](#codex-3)].
+Given canned native Codex events typed against the SDK's canonical exported event and item shapes, together with deliberately degraded-member variants, when the adapter runs, it shall satisfy this canonical lifecycle matrix [[codex-3](#codex-3)], [[codex-19](#codex-19)], [[codex-20](#codex-20)]:
+
+| Case | Assertion |
+| --- | --- |
+| full interleaved command and MCP turn | ordered `init`, two correlated `tool_use`, two correlated `tool_result`, `text`, `codex:file_change`, and terminal `done`, with native payloads and one common backend session identifier |
+| repeated updates | one `tool_use`, no event for later updates, and one terminal `tool_result` |
+| first observation at `item.updated` | announce the call there and correlate its later result |
+| completion without an earlier observation | synthesize the correlated `tool_use` immediately before the result |
+| repeated completion | emit only one terminal result |
+| interleaved distinct IDs | preserve each correlation despite reverse completion order |
+| failed command and MCP completion | preserve command output and exit code or MCP error details with `status: 'error'` |
+| missing canonical item ID or payload member | apply [[codex-19](#codex-19)] and [[codex-20](#codex-20)]'s generated-ID and fallback rows |
+
+### codex-41
+
+Given the SDK stream supplies events, no events, or throws before its first event, when the adapter runs, it shall emit exactly one `init` before every other output with the model, cwd, tool, and capability selections in [[codex-22](#codex-22)].
+
+### codex-42
+
+Given each status, source position, result, duration, usage, and normal-or-interrupted resume case in [[codex-23](#codex-23)], when Codex emits `turn.completed`, the adapter shall emit exactly one selected `done` under [[codex-6](#codex-6)] or [[codex-33](#codex-33)] and stop consuming.
+
+### codex-43
+
+Given Codex emits `turn.failed` with trailing native events, when the adapter runs, it shall expose the selected native failure as `error`, then one error-status `done` with its usage, duration, and resume selection, and consume none of the trailing events [[codex-24](#codex-24)].
+
+### codex-44
+
+Given every top-level and content-block compatibility text or tool type, field alias, priority, default, input shape, status, output, and duration case in [[codex-3](#codex-3)] and [[codex-21](#codex-21)], when the adapter runs, it shall preserve content order, suppress mirrored text, and emit the selected legacy `text`, `tool_use`, and `tool_result` events.
+
+### codex-45
+
+Given non-aborted exhaustion, non-aborted iterator failure, and aborted exhaustion or iterator failure after zero or more tool events, when the adapter runs, it shall emit the exact `init`, error, `done`, ordering, omission, duration, resume, and tool-count outcome in [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)], including [[codex-6](#codex-6)]'s normal-terminal and [[codex-33](#codex-33)]'s interrupted-terminal resume selection.
+
+### codex-46
+
+Given duplicate and distinct canonical identifiers on normal completion, compatibility use-only and result-only identifiers plus a provider count, and representative failed, exhausted, iterator-failure, and aborted terminal paths, when the adapter runs, `DonePayload.usage.toolUses` shall equal the distinct observed identifier count, ignore the provider count, and survive absent token accounting [[codex-29](#codex-29)].
+
+### codex-47
+
+Where the packed package is installed without the Codex SDK peer, when a consumer imports the Codex adapter subpath, the import shall succeed [[codex-2](#codex-2)].
 
 ### codex-202
 
-Where the Codex SDK is not installed, `isAvailable()` shall return `false` and `run()` shall throw [[codex-2](#codex-2)].
+Where the Codex SDK is not installed, `isAvailable()` shall return `false` [[codex-8](#codex-8)].
+
+### codex-48
+
+Where the Codex SDK is not installed and both tool-list fields are omitted, when `run()` starts, it shall throw the install diagnostic in [[codex-18](#codex-18)].
 
 ### codex-203
 
-Where an application configuration selects a representative effort value for this adapter, when the runtime constructs and invokes the corresponding `Cligent`, thread effort and constructor effort shall each reach their own native transport [[codex-7](#codex-7)].
+Where an application configuration selects representative thread and constructor effort values for Codex, when the runtime constructs and invokes the corresponding `Cligent`, each value shall reach its own native transport [[codex-7](#codex-7)].
 
 ### codex-204
 
-Given all `PermissionLevel` combinations, the adapter shall map `PermissionPolicy` to the correct vendor-specific controls [[codex-4](#codex-4)].
+Given a missing policy and the complete supplied-policy mode and capability matrix, when the adapter maps permissions, it shall produce every approval, reviewer, modern local-profile, user-config-isolation, and legacy-control-omission outcome in [[codex-4](#codex-4)] and [[codex-31](#codex-31)].
 
 ### codex-205
 
-Where the packed tarball and the exact Codex SDK target are installed both into a global-style prefix whose package trees are independent and into a nested-strategy consumer, each leaving no `@openai/codex` at the install root, when the installed adapter resolves the executable entry, generates a per-run configuration wrapper, and runs a real permission-managed aborted invocation, resolution shall return the SDK-owned executable in both layouts [[codex-12](#codex-12)]:
+Where the packed tarball and exact Codex SDK target are installed in turn into a global-style prefix and a nested-strategy consumer, with neither layout leaving `@openai/codex` at its install root, when the installed adapter resolves the executable, creates a permission-managed wrapper, and runs until a scheduled abort, it shall return the SDK-owned executable in both layouts, embed that path in the wrapper, terminate the invocation without a module-resolution failure, and exercise the nested-strategy case on the Node 18.3.0 floor without an ESM loader resolution surface [[codex-10](#codex-10)], [[codex-12](#codex-12)], [[codex-31](#codex-31)].
 
-- the nested consumer shall resolve it on the Node 18.3.0 runtime floor without an ESM loader resolution surface;
-- the wrapper shall embed that executable path, and the aborted invocation shall terminate without a module resolution failure;
-- where the installed consumer resolves no `@openai/codex` from any route, the raised error shall name the attempted entry and anchors and direct installing `@openai/codex-sdk` as the repair [[codex-13](#codex-13)].
+### codex-51
+
+Where an installed consumer resolves `@openai/codex` from no route, when the adapter resolves the executable, it shall raise [[codex-13](#codex-13)]'s ownership diagnostic.
+
+### codex-52
+
+Given loader, search-path, nested, hoisted, independently installed, scoped, fallback, non-file, throwing, missing-entry, and symbolic-link resolution states, when the adapter resolves the Codex executable, it shall select or continue through every ordered route in [[codex-12](#codex-12)] and return the SDK-owned physical entry whenever that tree supplies one.
 
 ### codex-206
 
-When Codex reports file changes, the adapter shall emit `codex:file_change` extension events [[codex-3](#codex-3)].
+Given each top-level and item-contained native file-change alias, when the adapter runs, it shall emit `codex:file_change` with the selected native payload [[codex-3](#codex-3)].
 
 ### codex-211
 
-When Codex provides a thread identifier, the adapter shall set `DonePayload.resumeToken` to that identifier [[codex-6](#codex-6)].
+Given normal completion with each backend-identifier alias and priority, later replacement, or no backend identifier, when the adapter emits events and terminal `done`, it shall use [[codex-34](#codex-34)]'s session identity and expose the latest backend identifier as `resumeToken` or omit it as required by [[codex-6](#codex-6)].
 
 ### codex-215
 
-Given a run whose `AgentOptions.resume` selects its thread, when the adapter starts that run, it shall reach the thread its resume value names [[codex-5](#codex-5)]:
-
-- a non-empty `resume` string shall continue the previous thread it identifies;
-- an absent or empty `resume` shall start a fresh thread whose events carry a non-empty correlation identifier and whose first cumulative usage snapshot is treated as fresh-turn accounting [[codex-15](#codex-15)].
+Given each thread-selection row in [[codex-5](#codex-5)], when the adapter starts a run, it shall resume the named thread, create a fresh thread whose pre-backend events use [[codex-34](#codex-34)]'s selected identifier, or raise the missing-surface diagnostic selected by that row.
 
 ### codex-217
 
-Given Codex emits an error whose message is a JSON-encoded object string, the adapter shall expose the human-readable detail or message content in the normalized `error.message`, may unwrap nested error envelopes to reach that content, and shall not pass the raw JSON string through to pane-facing consumers [[codex-3](#codex-3)].
+Given every top-level, nested, object-valued, JSON-encoded, absent, and priority case for native error code, message, and recoverability, when the adapter normalizes an error, it shall expose exactly [[codex-28](#codex-28)]'s payload rather than a raw JSON string.
 
 ### codex-218
 
-Where each Codex-specific effort value is supplied, when the adapter maps a run, the observable provider controls shall be thread `modelReasoningEffort` for `minimal` through `xhigh` and an unchanged constructor `config.model_reasoning_effort` for `max` and `ultra` [[codex-7](#codex-7)]:
-
-- when effort is omitted, the adapter shall set neither effort transport;
-- where `ultra` is supplied alongside permission options, the adapter's permission-related provider controls shall equal the controls derived from the same permission input without the provider-native effort value;
-- where the supplied value belongs to another built-in adapter or is an arbitrary unknown string, the adapter shall reject it before invoking the backend with an error naming the adapter and its allowed values.
+Given every Codex effort value, omission, foreign value, and unknown value, when the adapter maps a run, it shall produce [[codex-7](#codex-7)]'s exact transport or pre-backend rejection with `ultra` leaving every permission control unchanged per [[codex-35](#codex-35)].
 
 ### codex-219
 
@@ -322,87 +538,64 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 
 ### codex-220
 
-Given the adapter has been aborted, when the run yields terminal `done` with `status: 'interrupted'`, the adapter shall report the resume token each observed state requires [[codex-6](#codex-6)]:
-
-| Observed before abort | `DonePayload.resumeToken` |
-| --- | --- |
-| a backend thread identifier observed during the run | the observed backend identifier |
-| no backend identifier and a non-empty `AgentOptions.resume` value | the inbound `resume` value |
-| no backend identifier and no non-empty inbound `resume` value | omitted |
+Given each backend-identifier alias and priority, later replacement, inbound-resume state, or absent identifier in [[codex-34](#codex-34)] and [[codex-33](#codex-33)], when an aborted run emits events and interrupted `done`, the adapter shall expose those rows' exact session and resume-token outcomes.
 
 ### codex-221
 
-Given a `PermissionPolicy` whose local access resolves to `:workspace` and whose `writablePaths` contains valid entries, the permission mapping shall expose canonical `WritablePathsPermissionMapping` paths with `enforcement: 'profile'` [[codex-4](#codex-4)]:
-
-- the mapping shall select a generated extra-writes permission profile that extends `:workspace` and represent `write` grants under `:workspace_roots` for each canonical path;
-- given non-empty `writablePaths` with local access resolved to `:read-only`, the mapping shall reject the policy;
-- given non-empty `writablePaths` with local access resolved to `:danger-full-access`, the mapping shall report the canonical paths with `enforcement: 'ambient'`, shall not generate an extra-writes profile, and shall not narrow the broader posture.
+Given absent, empty, invalid, profile-enforced, read-only, and ambient `writablePaths` inputs, when the adapter maps permissions, it shall produce every outcome in [[codex-32](#codex-32)].
 
 ### codex-223
 
-Given the Codex CLI can initialize its native sandbox, when a credential-free sandbox probe, the permission mapping, and a real `CligentOptions.permissions = { mode: 'auto', writablePaths: ['.git'] }` run in a throwaway git repository are exercised, the generated extra-writes profile shall reach Codex without mutating repository or user-level Codex configuration [[codex-10](#codex-10)]:
+Given the Codex CLI can initialize its native sandbox, when a credential-free sandbox probe, every trust mapping row, and a real `CligentOptions.permissions = { mode: 'auto', writablePaths: ['.git'] }` run in a throwaway git repository are exercised, the adapter shall satisfy this delivery matrix [[codex-10](#codex-10)], [[codex-32](#codex-32)], [[codex-37](#codex-37)], [[codex-38](#codex-38)], [[codex-39](#codex-39)]:
 
-- the built-in `:workspace` profile shall not write inside `.git`, while the generated extra-writes profile delivery shall grant `write` for `.git` [[codex-4](#codex-4)];
-- managed writable mappings shall encode active-project trust as a top-level `projects={<path>={trust_level="trusted"}}` inline table rather than a quoted dotted path, shall perform Codex-compatible Windows device-prefix simplification, and shall resolve linked worktrees to Codex's main-repository trust root;
-- read-only mappings and mappings without a non-empty caller `cwd` shall not inject project trust;
-- the real run shall complete a git metadata write without `permission_request`, denied tool results, or error events, and without creating or modifying repository or user-level Codex config files, including persisted `projects.<path>.trust_level` entries for the throwaway workspace;
-- the leg shall self-skip with a logged reason when the host cannot initialize Codex's native sandbox and shall hard-fail under `CI` for missing Codex dependencies or credentials, as in [[codex-219](#codex-219)].
+- the built-in `:workspace` profile cannot write inside `.git`, while the generated profile grants `write` there;
+- each project-root and trust-injection input selects the exact inline-table override or omission required by the cited behaviors;
+- the real run completes a git metadata write without `permission_request`, denied tool results, or error events and without creating or modifying repository or user-level Codex configuration;
+- the leg uses [[codex-219](#codex-219)]'s sandbox-initialization skip and `CI` dependency and credential conditions.
 
 ### codex-224
 
-Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access with legacy `sandbox_mode = "danger-full-access"` and `approval_policy = "never"`, when a no-policy `Cligent` and then a `mode: 'auto'` `Cligent` is each invoked to write a different file outside its throwaway working directory, `exec --ignore-user-config` shall isolate the permission-managed run alone [[codex-4](#codex-4)]:
-
-- the no-policy run's file shall exist on disk afterwards, its stream shall contain no `permission_request`, no `tool_result` with `status: 'denied'`, and no `error`, and its terminal `done` status shall be `success`;
-- the permission-managed run's file shall not exist on disk afterwards, its stream shall contain no `error`, and its terminal `done` status shall be `success`;
-- the probe shall restore the caller's `CODEX_HOME` after the run and shall use the same sandbox-initialization skip and `CI` hard-fail rules as [[codex-219](#codex-219)].
-
-### codex-226
-
-Where an effort value is valid for the adapter but unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter stream shall expose that upstream failure through its normal error path without substituting another effort [[codex-7](#codex-7)].
+Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access, when a no-policy run and then a `mode: 'auto'` run each attempts to write outside its working directory, the probe shall prove [[codex-31](#codex-31)]'s isolation matrix: the no-policy write succeeds without permission or error events, the managed write is absent without an error, both runs end successfully, the caller's `CODEX_HOME` is restored, and [[codex-219](#codex-219)]'s sandbox and `CI` conditions apply.
 
 ### codex-229
 
-Where either tool-list field is explicitly provided, including an empty array, when the adapter runs, it shall reject before its SDK loader or client is invoked [[codex-11](#codex-11)].
-
-### codex-233
-
-_Superseded for usage shape by [[codex-240](#codex-240)]._
-
-Given the adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'` and its input count shall preserve the provider-inclusive base [[codex-3](#codex-3)]:
-
-- given a required token or cache counter is absent, or any present mapped counter is negative, fractional, non-finite, or non-numeric, `usage.tokenAvailability` shall be `'unavailable'`, while an absent optional cache counter alone retains zero contribution without invalidating otherwise complete accounting;
-- given upstream omits complete token accounting, or the adapter synthesizes an errored, interrupted, exhausted, or other terminal path, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced;
-- where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
+Given either tool-list field is present or both are omitted, when the adapter runs, it shall produce the pre-load rejection or native-tool preservation selected by [[codex-11](#codex-11)].
 
 ### codex-238
 
 _Superseded by [[codex-240](#codex-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish both sides derived by subtraction from its inclusive counters [[codex-16](#codex-16)]:
+Given thread-cumulative Codex snapshots under [[codex-15](#codex-15)]'s baseline states, when a caller reads the superseded `usage.breakdown`, the adapter shall select this obsolete availability matrix:
 
-- given the runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent;
-- given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published;
-- given the thread-cumulative snapshot is reported on successive turns of one thread, the second turn's `done` shall report that turn's difference rather than the thread total [[codex-15](#codex-15)];
-- given a resumed thread for which the adapter holds no baseline the `done` shall report `'unavailable'`, and given a snapshot smaller than the retained baseline the `done` shall report `'unavailable'` while the following turn recovers [[codex-15](#codex-15)].
+| Snapshot state | Superseded outcome |
+| --- | --- |
+| successive snapshots for one thread | the second turn's difference rather than the thread total |
+| resumed thread with no retained baseline | `tokenAvailability: 'unavailable'` |
+| snapshot smaller than the retained baseline | `tokenAvailability: 'unavailable'` and retain the smaller snapshot so the following stable turn recovers |
 
 ### codex-239
 
 _Superseded by [[codex-240](#codex-240)]._
 
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.records`, the adapter shall publish one record covering the turn with no request count [[codex-14](#codex-14)]:
-
-- given a run pinned no model and its runtime named none, the adapter shall publish no records, and no placeholder identifier shall appear;
-- given the runtime reports the group's own cost, its record shall carry that cost, and the costs of a run's records shall not exceed the run's reported total;
-- given upstream accounting is incomplete, absent, or fails the partition identities, the adapter shall publish no records on that terminal.
+Given complete upstream accounting, when a caller reads the superseded `usage.records`, the adapter shall publish one record covering the turn with no request count [[codex-14](#codex-14)].
 
 ### codex-240
 
-Given authentic zero or nonzero accounting from the adapter, when a caller reads terminal `usage.tokens`, the report shall carry inclusive input and output totals, exact reported cache/reasoning subsets, and no removed flat fields or availability placeholder [[codex-17](#codex-17)]:
+Given authentic zero, nonzero, absent, malformed, and resumed accounting, when a caller reads terminal `usage`, the adapter shall assert this current-report matrix:
 
-- the report shall be the partial root-thread report taken from the exact non-negative delta of the cumulative snapshot, and no record shall be labelled with a merely requested model;
-- an unseen resumed or decreasing delta shall be omitted, a stale baseline shall be discarded after a malformed snapshot, a transition whose optional-counter presence changes shall be omitted, and attribution shall recover only after a new baseline or shape stabilizes [[codex-15](#codex-15)];
-- concurrent runs carrying the same resume identifier shall start their backend prompts serially and attribute each cumulative delta exactly once, while different resumed sessions and fresh runs remain concurrent [[codex-15](#codex-15)];
-- malformed or absent accounting shall omit `tokens` while preserving independently observed `toolUses`.
+- exact valid per-turn deltas produce the partial inclusive token report and subset details in [[codex-53](#codex-53)], [[codex-15](#codex-15)], [[codex-16](#codex-16)], and [[codex-17](#codex-17)];
+- the first runtime model selected by [[codex-36](#codex-36)] produces one authentic record, while no runtime model produces none and a requested model is never substituted [[codex-17](#codex-17)];
+- malformed, decreasing, unseen-resumed, optional-shape-transition, or otherwise unattributable accounting omits tokens and recovers only through [[codex-15](#codex-15)]'s valid baseline states;
+- every terminal preserves [[codex-29](#codex-29)]'s independently observed tool count, including when tokens are omitted; and
+- no current report publishes removed flat fields, an availability placeholder, requested-model attribution, or cost [[codex-17](#codex-17)].
+
+### codex-49
+
+Given absent, empty, and non-empty caller working directories, when the adapter maps thread options, it shall preserve each supplied directory exactly and set `skipGitRepoCheck: true` in every row [[codex-9](#codex-9)].
+
+### codex-50
+
+Given repeated executable-resolution or wrapper-setup failures on one caller signal, when each attempted run rejects, no abort listener shall remain registered after any rejection [[codex-40](#codex-40)].
 
 ## References
 

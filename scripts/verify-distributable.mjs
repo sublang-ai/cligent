@@ -350,6 +350,7 @@ if (process.version !== expectedVersion) {
 }
 
 const nodeModulesRoot = join(process.cwd(), 'node_modules');
+// codex-47: the adapter subpath remains importable without its optional peer.
 const [root, claude, codex, gemini, kimi, opencode, tmuxPlay, fanout] =
   await Promise.all([
     import('@sublang/cligent'),

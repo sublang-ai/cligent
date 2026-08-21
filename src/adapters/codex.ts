@@ -516,7 +516,7 @@ function codexTurnDelta(
 }
 
 // The SDK usage object carries token counts only; toolUses is derived from
-// the unique tool item ids observed during the run (codex-3), so the
+// the unique tool item ids observed during the run (codex-29), so the
 // caller supplies it rather than this parser reading a usage field.
 function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
   if (!isUsageRecord(rawUsage)) {
@@ -789,7 +789,7 @@ type NormalizedItemEvent =
 
 // The SDK's canonical tool items: shell commands and MCP tool invocations
 // evolve across item.started / item.updated / item.completed and correlate
-// by item id (codex-3).
+// by item id (codex-19).
 type CodexToolLifecycleType = 'command_execution' | 'mcp_tool_call';
 
 function codexToolLifecycleType(
@@ -1297,7 +1297,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
   private readonly threadUsageBaselines = new Map<string, CodexUsageReading>();
 
   /**
-   * codex-17: two concurrent turns on one resumed thread would race its one
+   * engine-18: two concurrent turns on one resumed thread would race its one
    * cumulative counter and make either delta depend on event arrival order.
    * Queue only equal inbound resume identities; fresh and unrelated sessions
    * retain the adapter's normal concurrency.
@@ -1539,9 +1539,9 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
-    // Tool lifecycle correlation (codex-3): ids that already produced a
+    // Tool lifecycle correlation (codex-19): ids that already produced a
     // tool_use, ids that already produced their terminal tool_result, and
-    // every unique tool-call id observed — the toolUses count on done.
+    // every unique tool-call id observed for codex-29's toolUses count.
     const announcedToolUseIds = new Set<string>();
     const completedToolUseIds = new Set<string>();
     const observedToolUseIds = new Set<string>();
