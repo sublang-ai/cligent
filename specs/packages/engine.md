@@ -83,7 +83,7 @@ When the adapter's generator throws, `run()` shall select this outcome:
 
 | Stream state | Outcome |
 | --- | --- |
-| no `done` yielded | `error` with `code: 'ADAPTER_ERROR'` and `recoverable: false`, then `done` with `status: 'error'` |
+| no `done` yielded | `error` with `code: 'ADAPTER_ERROR'` and `recoverable: false`, then `done` with `status: 'error'`, clearing any stored resume token before a subsequent call |
 | `done` already yielded | suppress the exception |
 
 ### engine-9
@@ -118,7 +118,7 @@ Exactly one `done` event shall be yielded per `run()` call.
 
 ### engine-12
 
-When the adapter's generator exhausts without yielding a `done` event, `run()` shall yield an `error` event (`code: 'MISSING_DONE'`, `recoverable: false`) followed by a `done` event (`status: 'error'`).
+When the adapter's generator exhausts without yielding a `done` event, `run()` shall yield an `error` event (`code: 'MISSING_DONE'`, `recoverable: false`) followed by a `done` event (`status: 'error'`) and clear any stored resume token before a subsequent call.
 
 ### engine-13
 
@@ -230,7 +230,7 @@ The public built-in effort aliases shall select their values through this matrix
 | `CodexEffort` | [[engine-39](#engine-39)] plus `ultra`, whose provider mapping is defined by [[codex-7](adapters/codex.md#codex-7)] |
 | `GeminiEffort` | [[engine-39](#engine-39)], whose provider mapping is defined by [[gemini-11](adapters/gemini.md#gemini-11)] |
 | `OpenCodeEffort` | [[engine-39](#engine-39)], whose provider mapping is defined by [[opencode-12](adapters/opencode.md#opencode-12)] |
-| `KimiEffort` | provider-native binary union `'off' | 'on'`, whose provider mapping is defined by [[kimi-9](adapters/kimi.md#kimi-9)] |
+| `KimiEffort` | provider-native binary union of `'off'` and `'on'`, whose provider mapping is defined by [[kimi-9](adapters/kimi.md#kimi-9)] |
 | adapter-neutral `Effort` | every value present in the five aliases |
 
 ### engine-41
@@ -290,7 +290,7 @@ Each `EFFORT_SUPPORT.notes` value shall disclose any lossy mapping or omitted ov
 
 ### engine-49
 
-The public effort lookup, predicate, and assertion helpers shall expose and validate the same `EFFORT_SUPPORT` values, resolve `claude` to `claude-code`, and narrow a known adapter's accepted values to its [[engine-40](#engine-40)] alias.
+The public `getEffortSupport()`, `supportedEffortValues()`, `isEffortSupported()`, and `assertSupportedEffort()` helpers shall expose and validate the same `EFFORT_SUPPORT` values, resolve `claude` to `claude-code`, and narrow a known adapter's accepted values to its [[engine-40](#engine-40)] alias.
 
 ### engine-50
 
@@ -298,10 +298,10 @@ When an effort helper receives an unknown adapter or unsupported value, it shall
 
 | Input and helper kind | Result |
 | --- | --- |
-| unknown adapter; lookup | `undefined` |
-| unknown adapter; predicate | `false` |
-| unknown adapter; assertion | error naming the adapter and validation path |
-| known adapter and unsupported value; assertion | error naming the adapter, validation path, and allowed values |
+| unknown adapter; `getEffortSupport()` or `supportedEffortValues()` | `undefined` |
+| unknown adapter; `isEffortSupported()` | `false` |
+| unknown adapter; `assertSupportedEffort()` | error naming the adapter and validation path |
+| known adapter and unsupported value; `assertSupportedEffort()` | error naming the adapter, validation path, and allowed values |
 
 ### engine-51
 
@@ -562,11 +562,11 @@ Given an adapter that reaches no terminal within 500 milliseconds and a `Cligent
 
 ### engine-108
 
-When the adapter generator throws before and after terminal output, the check shall assert both rows of [[engine-8](#engine-8)]'s timing matrix.
+When the adapter generator throws before and after terminal output, the check shall assert both rows of [[engine-8](#engine-8)]'s timing matrix, including stored-resume clearing after a pre-terminal throw.
 
 ### engine-109
 
-When the adapter's generator exhausts without yielding `done`, the engine shall yield `error` (`code: 'MISSING_DONE'`) then `done` (`status: 'error'`) [[engine-12](#engine-12)].
+When the adapter's generator exhausts without yielding `done`, the check shall assert [[engine-12](#engine-12)]'s exact error-then-`done` sequence and stored-resume clearing before the next omitted-resume call.
 
 ### engine-110
 
