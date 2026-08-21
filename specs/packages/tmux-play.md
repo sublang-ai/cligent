@@ -935,7 +935,8 @@ When the presenter emits a pane output block, it shall apply this speaker-prefix
 | Line, speaker, or output kind | Rendering |
 | --- | --- |
 | first nonblank Captain reply in the Boss/Captain pane, or Captain prompt in a player pane | bold 24-bit `mauve` `captain> ` prefix: `#cba6f7` under Mocha or `#8839ef` under Latte |
-| first nonblank player reply | bold 24-bit `<playerId>> ` prefix using [[tmux-play-195](#tmux-play-195)]'s flavor-aware adapter accent |
+| first nonblank player reply with a presenter adapter mapping | bold 24-bit `<playerId>> ` prefix using [[tmux-play-195](#tmux-play-195)]'s flavor-aware adapter accent |
+| first nonblank player reply without a presenter adapter mapping | uncolored `<playerId>> ` prefix |
 | every prefix | wrap the bytes through the trailing space as `\x1b[1;38;2;<r>;<g>;<b>m<who>> \x1b[0m` |
 | body after a prefix | leave it unstyled by the presenter |
 | nonblank continuation | use an uncolored two-space hanging indent and do not repeat the speaker prefix |
@@ -1323,18 +1324,32 @@ Where scripted adapters emit a complete `text` message after captured `text` or 
 
 ### tmux-play-101
 
-Where the home and cwd are empty and the `claude` and `codex` adapter runtimes are installed, when launching `tmux-play` without `--config`, the home YAML shall be created with the default `fanout` Captain plus `claude` and `codex` players with identity instructions, the default Captain and `claude` player shall use `model: claude-opus-4-8` with `effort: xhigh`, the default `codex` player shall use `model: gpt-5.5` with `effort: xhigh`, and the default Captain and both default players shall carry `permissions: { mode: 'auto' }` per [[tmux-play-11](#tmux-play-11)].
-The created YAML shall also carry an explicit `layout` block with `window: { columns: 174, rows: 49 }` and `multiPlayerColumnWeights: [1, 1, 1]` (and no `columnWeights` key) per [[tmux-play-11](#tmux-play-11)], plus `notifications: { player_finished: bell, turn_finished: desktop }` per [[tmux-play-76](#tmux-play-76)].
-A one-line notice naming the path and the installed adapters the roster was built from shall be printed to stdout, and a second invocation against that freshly-created home YAML shall leave the file unchanged [[tmux-play-10](#tmux-play-10)], [[tmux-play-90](#tmux-play-90)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)].
+Where the home and cwd are empty and the `claude` and `codex` adapter runtimes are installed, when `tmux-play` launches without `--config`, the check shall assert this first-run flow:
+
+| Observation | Assertion |
+| --- | --- |
+| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-opus-4-8`, `effort: xhigh`; `codex` uses `model: gpt-5.5`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }` [[tmux-play-11](#tmux-play-11)] |
+| authored layout and notifications | `layout.window: { columns: 174, rows: 49 }`, `layout.multiPlayerColumnWeights: [1, 1, 1]`, no authored `columnWeights`, and `notifications: { player_finished: bell, turn_finished: desktop }` [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)] |
+| stdout | one line naming the created path and the installed adapters used for the roster [[tmux-play-10](#tmux-play-10)] |
+| second invocation | the freshly created home YAML remains byte-for-byte unchanged [[tmux-play-90](#tmux-play-90)] |
 
 ### tmux-play-102
 
-Given a `tmux-play.config.yaml` in cwd and a different YAML at the home location, when launching, the cwd config shall be loaded and the home file shall be left untouched [[tmux-play-9](#tmux-play-9)].
+Given a `tmux-play.config.yaml` in cwd and a different YAML at the home location, when launching, the check shall assert this discovery flow:
+
+| Surface | Assertion |
+| --- | --- |
+| selected config | load the cwd YAML [[tmux-play-9](#tmux-play-9)] |
+| home YAML | leave its bytes unchanged [[tmux-play-9](#tmux-play-9)] |
 
 ### tmux-play-103
 
-Given `XDG_CONFIG_HOME` set to a non-empty path, when launching, the home location shall be `${XDG_CONFIG_HOME}/tmux-play/config.yaml`.
-Given `XDG_CONFIG_HOME` empty or unset, the home location shall be `~/.config/tmux-play/config.yaml` [[tmux-play-9](#tmux-play-9)].
+When resolving the home configuration location, the check shall assert this environment matrix:
+
+| `XDG_CONFIG_HOME` | Expected location |
+| --- | --- |
+| non-empty path | `${XDG_CONFIG_HOME}/tmux-play/config.yaml` [[tmux-play-9](#tmux-play-9)] |
+| empty or unset | `~/.config/tmux-play/config.yaml` [[tmux-play-9](#tmux-play-9)] |
 
 ### tmux-play-104
 
@@ -1342,17 +1357,34 @@ Given a `tmux-play.config.{mjs,js,json}` in cwd and no cwd YAML, when launching,
 
 ### tmux-play-105
 
-Given malformed YAML or a config that violates the schema (unknown adapter, unknown field, invalid player id, duplicate player id, player id `captain`, or missing/non-array `players`), when launching, the launcher shall fail with an error naming the offending file or path [[tmux-play-5](#tmux-play-5)], [[tmux-play-6](#tmux-play-6)], [[tmux-play-7](#tmux-play-7)], [[tmux-play-8](#tmux-play-8)].
-Given an empty `players` array, when loading the config, the launcher shall accept it per [[tmux-play-5](#tmux-play-5)].
+When loading candidate YAML configurations, the check shall assert this validation matrix:
+
+| Input | Assertion |
+| --- | --- |
+| malformed YAML or unknown field | rejection naming the offending file or config path [[tmux-play-8](#tmux-play-8)] |
+| unknown Captain adapter | rejection naming the offending file or `captain.adapter` path [[tmux-play-6](#tmux-play-6)] |
+| unknown player adapter | rejection naming the offending file or player-adapter path [[tmux-play-7](#tmux-play-7)] |
+| invalid, duplicate, or reserved `captain` player ID | rejection naming the offending file or player-ID path [[tmux-play-7](#tmux-play-7)] |
+| missing or non-array `players` | rejection naming the offending file or `players` path [[tmux-play-5](#tmux-play-5)] |
+| empty `players` array | acceptance [[tmux-play-5](#tmux-play-5)] |
 
 ### tmux-play-106
 
-Given a cwd config whose `captain.from` is a relative local path, when session mode imports the Captain, resolution shall be anchored at the original config file's directory; package specifiers shall reach Node's resolver unchanged [[tmux-play-13](#tmux-play-13)].
+Given a cwd config whose `captain.from` selects either supported specifier kind, when session mode imports the Captain, the check shall assert this resolution matrix:
+
+| Specifier | Assertion |
+| --- | --- |
+| relative local path | resolve from the original config file's directory [[tmux-play-13](#tmux-play-13)] |
+| package specifier | pass it unchanged to Node's resolver [[tmux-play-13](#tmux-play-13)] |
 
 ### tmux-play-107
 
-Given a Captain that calls one player then `callCaptain`, when handling a Boss turn, observers shall receive records in this order: `turn_started`, `player_prompt`, `player_event`*, `player_finished`, `captain_prompt`, `captain_event`*, `captain_finished`, `turn_finished`.
-All shall carry the same `turnId` [[tmux-play-22](#tmux-play-22)], [[tmux-play-21](#tmux-play-21)].
+Given a Captain that calls one player and then `callCaptain`, when handling one Boss turn, the check shall assert this causal record flow:
+
+| Surface | Assertion |
+| --- | --- |
+| record order | `turn_started`, `player_prompt`, `player_event`*, `player_finished`, `captain_prompt`, `captain_event`*, `captain_finished`, `turn_finished` [[tmux-play-22](#tmux-play-22)] |
+| correlation | every record carries the same numeric `turnId` [[tmux-play-21](#tmux-play-21)] |
 
 ### tmux-play-108
 
@@ -1360,22 +1392,37 @@ Given two registered observers, when a record is emitted, both shall receive the
 
 ### tmux-play-109
 
-When a Captain emits `emitStatus` from `init`, the resulting `captain_status` record shall arrive at every observer with `turnId: null` before any `turn_started` [[tmux-play-17](#tmux-play-17)], [[tmux-play-21](#tmux-play-21)].
+When a Captain emits `emitStatus` from `init`, the resulting `captain_status` record shall arrive at every observer with `turnId: null` before any `turn_started` [[tmux-play-17](#tmux-play-17)], [[tmux-play-21](#tmux-play-21)], [[tmux-play-24](#tmux-play-24)].
 
 ### tmux-play-110
 
-When the abort signal fires during a turn, the runtime shall emit `turn_aborted` (not `turn_finished`); turn-bound emissions enqueued before the abort shall drain first [[tmux-play-24](#tmux-play-24)], [[tmux-play-26](#tmux-play-26)].
-Where session mode receives SIGHUP, SIGINT, SIGTERM, or stdin EOF, it shall abort active work and complete the shutdown lifecycle per [[tmux-play-26](#tmux-play-26)].
+When runtime or session cancellation occurs, the check shall assert this shutdown matrix:
+
+| Trigger | Assertion |
+| --- | --- |
+| active-turn abort signal | emit `turn_aborted`, not `turn_finished`, after every previously enqueued turn-bound emission drains [[tmux-play-22](#tmux-play-22)], [[tmux-play-24](#tmux-play-24)] |
+| session SIGHUP, SIGINT, SIGTERM, or stdin EOF | abort active work and complete the shutdown lifecycle [[tmux-play-26](#tmux-play-26)] |
 
 ### tmux-play-111
 
-When a registered observer rejects, the runtime shall emit `runtime_error` to remaining observers, abort the active turn if any, and complete normal cleanup.
-The runtime call may reject; whether it does is unconstrained by this item [[tmux-play-25](#tmux-play-25)].
+When a registered observer rejects, the runtime shall follow this failure flow:
+
+| Surface | Outcome |
+| --- | --- |
+| remaining observers | receive `runtime_error` [[tmux-play-25](#tmux-play-25)] |
+| active turn, when present | abort [[tmux-play-25](#tmux-play-25)] |
+| cleanup | complete normally [[tmux-play-25](#tmux-play-25)] |
+| runtime call settlement | may fulfill or reject; unconstrained by this item |
 
 ### tmux-play-112
 
-On session shutdown, `Captain.dispose()` shall run exactly once, after the active turn unwinds and after accepted session emissions drain.
-Post-shutdown `emitStatus`/`emitTelemetry` calls shall reject [[tmux-play-19](#tmux-play-19)].
+On session shutdown, the check shall assert this lifecycle flow:
+
+| Stage | Assertion |
+| --- | --- |
+| active turn and accepted emissions | unwind the turn and drain accepted session emissions before disposal [[tmux-play-19](#tmux-play-19)] |
+| disposal | invoke `Captain.dispose()` exactly once [[tmux-play-19](#tmux-play-19)] |
+| after shutdown | reject `emitStatus` and `emitTelemetry` [[tmux-play-19](#tmux-play-19)] |
 
 ### tmux-play-113
 
@@ -1383,55 +1430,113 @@ Given the built bin on PATH (or invoked directly with execute permission), when 
 
 ### tmux-play-114
 
-Given N configured players and `layout.initialVisible` omitted — so all N configured players are visible per [[tmux-play-80](#tmux-play-80)] — when the launcher constructs the tmux session, the layout shall be Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2 the first player column shall hold `ceil(N / 2)` players top-to-bottom. (Visible-subset startup topology is covered by [[tmux-play-182](#tmux-play-182)].)
-Given N = 0, when the launcher constructs the tmux session, it shall create exactly one full-width Boss/Captain pane, no split or player log-tail process, and shall still apply the Captain title, timer options, input and mouse bindings, and resize hooks safely [[tmux-play-44](#tmux-play-44)].
-When that real tmux window is resized, the sole pane shall remain full-width [[tmux-play-44](#tmux-play-44)].
-Given a YAML config that omits `layout.columnWeights`, each visible column shall occupy its share of the window width per the shipped defaults of [[tmux-play-64](#tmux-play-64)]: with N = 1 the weights are `[1, 1]` (Boss/Captain and player each 1/2); with N ≥ 2 the weights are `[1, 1, 1]` (Boss/Captain and each player column each 1/3, rightmost absorbing the remainder) [[tmux-play-44](#tmux-play-44)].
-Given a YAML config that supplies an explicit `layout.columnWeights`, the resolved region widths shall follow that ratio at the resolved `layout.window.columns` per [[tmux-play-28](#tmux-play-28)] and [[tmux-play-44](#tmux-play-44)].
+When the launcher constructs or resizes the main tmux window, the check shall assert this topology matrix:
+
+| Configuration or transition | Assertion |
+| --- | --- |
+| N configured players; `layout.initialVisible` omitted | Boss/Captain on the left and N player panes on the right in config order; with N ≥ 2 the first player column holds `ceil(N / 2)` players top-to-bottom [[tmux-play-27](#tmux-play-27)], [[tmux-play-28](#tmux-play-28)], [[tmux-play-80](#tmux-play-80)] |
+| N = 0 construction | exactly one full-width Boss/Captain pane; no split or player log-tail process [[tmux-play-27](#tmux-play-27)] |
+| N = 0 title and timer | exact Captain title from [[tmux-play-36](#tmux-play-36)] and [[tmux-play-48](#tmux-play-48)]; initialized frozen-zero Captain timer from [[tmux-play-53](#tmux-play-53)], [[tmux-play-54](#tmux-play-54)], and [[tmux-play-195](#tmux-play-195)] |
+| N = 0 input setup | session mouse enabled and every pointer, navigation, `C-c`, and ESC binding installed without a missing-player target [[tmux-play-62](#tmux-play-62)], [[tmux-play-63](#tmux-play-63)], [[tmux-play-65](#tmux-play-65)], [[tmux-play-68](#tmux-play-68)], [[tmux-play-70](#tmux-play-70)] |
+| N = 0 resize setup | install every resize hook without a missing-player target [[tmux-play-44](#tmux-play-44)] |
+| N = 0; real window resized | sole pane remains full-width [[tmux-play-44](#tmux-play-44)] |
+| `layout.singlePlayerColumnWeights` and its `layout.columnWeights` alias omitted; N = 1 | visible columns use `[1, 1]`, one half each [[tmux-play-64](#tmux-play-64)], [[tmux-play-44](#tmux-play-44)] |
+| `layout.multiPlayerColumnWeights` and its `layout.columnWeights` alias omitted; N ≥ 2 | visible columns use `[1, 1, 1]`, one third each with the rightmost absorbing the remainder [[tmux-play-64](#tmux-play-64)], [[tmux-play-44](#tmux-play-44)] |
+| explicit `layout.columnWeights` | resolved regions follow that ratio at the resolved `layout.window.columns` [[tmux-play-28](#tmux-play-28)], [[tmux-play-44](#tmux-play-44)] |
+
+Visible-subset startup topology remains covered by [[tmux-play-182](#tmux-play-182)].
 
 ### tmux-play-115
 
-Given a snapshot file at the work directory, when session mode runs, the Captain shall be imported once from `captain.from` (a `file://` URL for local paths or a package specifier) and Boss turns shall flow through the runtime per [[tmux-play-107](#tmux-play-107)] [[tmux-play-3](#tmux-play-3)], [[tmux-play-100](#tmux-play-100)].
+Given a snapshot file in the work directory, when session mode handles Boss input, the check shall assert this prepared-session flow:
+
+| Stage | Assertion |
+| --- | --- |
+| configuration source | read the snapshot rather than source YAML [[tmux-play-100](#tmux-play-100)] |
+| Captain setup | import `captain.from` exactly once while instantiating the Captain [[tmux-play-3](#tmux-play-3)], resolving its `file://` URL or package specifier through [[tmux-play-13](#tmux-play-13)] |
+| Boss input | route each turn through the runtime [[tmux-play-107](#tmux-play-107)], [[tmux-play-3](#tmux-play-3)] |
 
 ### tmux-play-116
 
-Given the built-in fanout Captain and the five supported adapters (`claude`, `codex`, `gemini`, `kimi`, and `opencode`) as players with valid credentials, when handling a Boss turn that requires a sentinel token in every reply, every `player_finished` shall report `status: 'ok'` with the sentinel in `finalText`, the single `captain_prompt` shall contain one delimited result section per player that names its status and includes its final text with the sentinel, and `captain_finished` shall report `status: 'ok'` with the sentinel in `finalText`.
-`runtime_error` and `turn_aborted` shall not appear.
-The Kimi leg shall share the acceptance suite's single temporary Kimi home clone without mutating the source home it was copied from, shall resolve the `kimi` CLI from `PATH` or that home's managed `bin` directory, and shall self-skip with a precise reason — under `CI` as well — when the shared credential is present but spent, no runner configuration being able to supply a fresh token.
-It shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal.
-The composite fanout item shall self-skip locally when any required player or Captain dependency is absent and shall hard-fail under `CI` [[tmux-play-30](#tmux-play-30)].
+Given the built-in fanout Captain and all five supported adapters as players, when the composite acceptance probe runs, the check shall assert this flow and harness matrix:
+
+| Case or surface | Assertion |
+| --- | --- |
+| successful Boss turn requiring a sentinel | every `player_finished` has `status: 'ok'` and the sentinel in `finalText`; one `captain_prompt` contains one delimited section per player naming status and including final text plus the sentinel; `captain_finished` has `status: 'ok'` and the sentinel in `finalText` [[tmux-play-30](#tmux-play-30)] |
+| successful record stream | neither `runtime_error` nor `turn_aborted` appears [[tmux-play-30](#tmux-play-30)] |
+| Kimi environment | use the acceptance suite's one temporary Kimi-home clone without mutating its source; resolve the CLI from `PATH` or the source home's managed `bin` directory |
+| shared Kimi credential present but spent | self-skip with a precise reason even under `CI`, no runner configuration being able to supply a fresh token |
+| explicit upstream overload, rate limit, or service unavailability | retry the complete fresh probe only for those failures, at most twice; every other failure and the third consecutive named transient is fatal |
+| required player or Captain dependency absent | self-skip locally and hard-fail under `CI` |
 
 ### tmux-play-117
 
-Given the fanout Captain and N configured players, when handling a Boss turn, all N `player_prompt` records shall be emitted before any `player_finished` record (concurrent dispatch), and the `captain_prompt` record shall be emitted only after every `player_finished` [[tmux-play-30](#tmux-play-30)].
-Given the fanout Captain and N = 0 configured players, when handling a Boss turn, the Captain shall make no player call and exactly one Captain call.
+Given the fanout Captain handling a Boss turn, the check shall assert this roster matrix:
+
+| Configured players | Assertion |
+| --- | --- |
+| N > 0 | emit all N `player_prompt` records before any `player_finished`, and emit `captain_prompt` only after every `player_finished` [[tmux-play-30](#tmux-play-30)] |
+| N = 0 | make no player call and exactly one Captain call [[tmux-play-30](#tmux-play-30)] |
 
 ### tmux-play-118
 
-When `Captain.init(session)` rejects before any turn starts, the runtime shall emit `runtime_error` with `turnId: null` to every registered observer, run shutdown, and shall not deliver any `turn_started` record [[tmux-play-25](#tmux-play-25)].
+When `Captain.init(session)` rejects before any turn starts, the check shall assert this failure flow:
+
+| Surface | Assertion |
+| --- | --- |
+| observers | every registered observer receives `runtime_error` with `turnId: null` [[tmux-play-25](#tmux-play-25)] |
+| turn records | no `turn_started` is delivered [[tmux-play-25](#tmux-play-25)] |
+| lifecycle | shutdown completes [[tmux-play-25](#tmux-play-25)] |
 
 ### tmux-play-119
 
-When `handleBossTurn` rejects mid-turn, the runtime shall emit `runtime_error` carrying the active `turnId`, then `turn_aborted`, and shall complete shutdown [[tmux-play-25](#tmux-play-25)].
+When `handleBossTurn` rejects mid-turn, the check shall assert this failure flow:
+
+| Stage | Assertion |
+| --- | --- |
+| error | emit `runtime_error` carrying the active `turnId` [[tmux-play-25](#tmux-play-25)] |
+| terminal | emit `turn_aborted` after the error [[tmux-play-25](#tmux-play-25)] |
+| lifecycle | complete shutdown [[tmux-play-25](#tmux-play-25)] |
 
 ### tmux-play-120
 
-Given a cwd YAML config whose `captain.from` is a relative local path and a separate config whose `captain.from` is a package specifier, when the launcher prepares each session, the work directory shall contain a JSON snapshot in which the local path is rewritten to an absolute `file://` URL and the package specifier is preserved verbatim [[tmux-play-34](#tmux-play-34)].
-Mutations to the YAML after launch shall not affect the running session [[tmux-play-100](#tmux-play-100)].
+Given local and package Captain configurations, when the launcher prepares and session mode consumes a snapshot, the check shall assert this snapshot matrix:
+
+| Case | Assertion |
+| --- | --- |
+| relative local `captain.from` | work-directory JSON snapshot contains an absolute `file://` URL [[tmux-play-34](#tmux-play-34)] |
+| package `captain.from` | work-directory JSON snapshot preserves the specifier verbatim [[tmux-play-34](#tmux-play-34)] |
+| source YAML mutated after launch | running session remains governed by the prepared snapshot [[tmux-play-100](#tmux-play-100)] |
 
 ### tmux-play-121
 
-Given a YAML config that omits `layout.window`, when the launcher creates the tmux session, the `new-session` invocation shall request a 174-column by 49-row grid (sized for 1920×1080 at 18pt monospace) [[tmux-play-35](#tmux-play-35)], [[tmux-play-64](#tmux-play-64)].
-Given a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the `new-session` invocation shall request `-x 200 -y 50` and shall not fall back to the default 174×49.
+When the launcher creates a tmux session, the check shall assert this window matrix:
+
+| YAML `layout.window` | `new-session` assertion |
+| --- | --- |
+| omitted | request `-x 174 -y 49`, the shipped 1920×1080-at-18pt grid [[tmux-play-35](#tmux-play-35)], [[tmux-play-64](#tmux-play-64)] |
+| explicit `{ columns: 200, rows: 50 }` | request `-x 200 -y 50` and do not request the 174×49 default [[tmux-play-35](#tmux-play-35)], [[tmux-play-64](#tmux-play-64)] |
 
 ### tmux-play-122
 
-Given two or more players, a YAML config that omits `layout.columnWeights`, and `layout.initialVisible` omitted (so all configured players are visible per [[tmux-play-80](#tmux-play-80)]), when the launcher constructs the tmux session against a 174-column-wide grid, the Boss/Captain pane shall occupy 58 columns, the first player column shall occupy 58 columns, and the second player column shall occupy 58 columns — matching the shipped `[1, 1, 1]` multi-player default, within tmux's nearest-cell rounding [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)].
+Given two or more players, omitted `layout.multiPlayerColumnWeights` and its `layout.columnWeights` alias, omitted `layout.initialVisible` so all configured players are visible per [[tmux-play-80](#tmux-play-80)], and a 174-column grid, when the launcher constructs the session, the check shall assert this region matrix:
+
+| Region | Assertion |
+| --- | --- |
+| Boss/Captain | 58 columns [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| first player column | 58 columns [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| second player column | 58 columns within tmux nearest-cell rounding [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
 
 ### tmux-play-123
 
-Given players with ids `coder` and `reviewer`, when the launcher sets pane titles, the display name carried by the Boss/Captain pane title shall be `Captain` and those carried by the player pane titles shall be `Coder` and `Reviewer` respectively, each within the full title composed per [[tmux-play-48](#tmux-play-48)].
-No pane title shall contain the substring `Player:` [[tmux-play-36](#tmux-play-36)].
+Given player IDs `coder` and `reviewer`, when the launcher sets pane titles, the check shall assert this title matrix:
+
+| Pane | Assertion |
+| --- | --- |
+| Boss/Captain | display name `Captain` inside [[tmux-play-48](#tmux-play-48)]'s full title [[tmux-play-36](#tmux-play-36)] |
+| player `coder` | display name `Coder` inside the full title [[tmux-play-48](#tmux-play-48)], [[tmux-play-36](#tmux-play-36)] |
+| player `reviewer` | display name `Reviewer` inside the full title [[tmux-play-48](#tmux-play-48)], [[tmux-play-36](#tmux-play-36)] |
+| every pane | no title contains `Player:` [[tmux-play-36](#tmux-play-36)] |
 
 ### tmux-play-124
 
@@ -1439,80 +1544,141 @@ Given session mode is running, when the user enters a Boss prompt, the captured 
 
 ### tmux-play-125
 
-Given session mode handling a Boss turn, the captured Boss/Captain pane shall contain a line beginning with `boss> ` for the Boss input [[tmux-play-37](#tmux-play-37)] and a nonblank line beginning with `captain> ` for the Captain's reply; the captured player pane shall contain a nonblank line beginning with `captain> ` for the Captain's prompt and a nonblank line beginning with `<playerId>> ` for the player's reply [[tmux-play-38](#tmux-play-38)].
-Multi-line presenter output blocks shall render continuation lines with a two-space hanging indent and no repeated speaker prefix; leading blank lines shall remain blank and shall not consume the first speaker prefix [[tmux-play-38](#tmux-play-38)].
-The strings `[from captain]` and `[captain llm prompt]` shall not appear in any pane [[tmux-play-38](#tmux-play-38)].
+Given session mode handles a Boss turn, the check shall assert this presenter flow:
+
+| Surface | Assertion |
+| --- | --- |
+| Boss input | Boss/Captain pane contains a line beginning `boss> ` [[tmux-play-37](#tmux-play-37)] |
+| Captain reply | Boss/Captain pane contains a nonblank line beginning `captain> ` [[tmux-play-38](#tmux-play-38)] |
+| Captain prompt | player pane contains a nonblank line beginning `captain> ` [[tmux-play-38](#tmux-play-38)] |
+| player reply | player pane contains a nonblank line beginning `<playerId>> ` [[tmux-play-38](#tmux-play-38)] |
+| nonblank continuation | two-space hanging indent and no repeated speaker prefix [[tmux-play-38](#tmux-play-38)] |
+| leading blank line | remains blank and does not consume the first speaker prefix [[tmux-play-38](#tmux-play-38)] |
+| legacy framing | neither `[from captain]` nor `[captain llm prompt]` appears in any pane [[tmux-play-38](#tmux-play-38)] |
 
 ### tmux-play-126
 
-Given a player and Captain that finish with `status: 'ok'`, the captured pane content shall not contain `[player <id> ok]` or `[captain ok]`.
-Given a player that finishes with `status: 'error'`, the player pane shall contain a single `<playerId>> [error] <message>` line where `<message>` matches `result.error` and sits outside the brackets; given a Captain run that finishes with `status: 'error'`, the Boss/Captain pane shall contain a single `captain> [error] <message>` line where `<message>` matches `result.error` and sits outside the brackets.
-Given a player that finishes with `status: 'aborted'`, the player pane shall contain a single `<playerId>> [aborted]` line; given a Captain run that finishes with `status: 'aborted'`, the Boss/Captain pane shall contain a single `captain> [aborted]` line.
-Given a `runtime_error` record with `message: 'boom'` on the Boss/Captain pane, the rendered line shall be `captain> [runtime error] boom` — body outside the brackets, not `[runtime error: boom]`.
-Given a `turn_aborted` record with reason `ESC`, the rendered line shall be `captain> [turn aborted] ESC` [[tmux-play-39](#tmux-play-39)].
+When terminal and control records reach the presenter, the check shall assert this operational-line matrix:
+
+| Input | Assertion |
+| --- | --- |
+| player or Captain `status: 'ok'` | no `[player <id> ok]` or `[captain ok]` line [[tmux-play-39](#tmux-play-39)] |
+| player `status: 'error'` | one `<playerId>> [error] <message>` line whose body equals `result.error` and sits outside the brackets [[tmux-play-39](#tmux-play-39)] |
+| Captain `status: 'error'` | one `captain> [error] <message>` line whose body equals `result.error` and sits outside the brackets [[tmux-play-39](#tmux-play-39)] |
+| player `status: 'aborted'` | one `<playerId>> [aborted]` line [[tmux-play-39](#tmux-play-39)] |
+| Captain `status: 'aborted'` | one `captain> [aborted]` line [[tmux-play-39](#tmux-play-39)] |
+| `runtime_error` with `message: 'boom'` | `captain> [runtime error] boom`, with the body outside the brackets rather than `[runtime error: boom]` [[tmux-play-39](#tmux-play-39)] |
+| `turn_aborted` with reason `ESC` | `captain> [turn aborted] ESC` [[tmux-play-39](#tmux-play-39)] |
 
 ### tmux-play-127
 
-Given the fanout Captain handling a Boss turn, the captured Boss/Captain pane shall not contain any line beginning with `=== player:<id>` and shall not contain a `=== /player:<id> ===` line — i.e., the open/close sentinel framing of the Captain's prompt body shall not leak through.
-Synthesized references to player content within the Captain's reply shall be permitted [[tmux-play-40](#tmux-play-40)].
+Given the fanout Captain handling a Boss turn, the check shall assert this Boss-pane filtering matrix:
+
+| Content | Assertion |
+| --- | --- |
+| Captain-prompt open and close sentinels | no line beginning `=== player:<id>` and no `=== /player:<id> ===` line reaches the pane [[tmux-play-40](#tmux-play-40)] |
+| Captain reply synthesized from player content | ordinary synthesized references remain permitted [[tmux-play-40](#tmux-play-40)] |
 
 ### tmux-play-128
 
-Given a tmux-play session and a player whose adapter supports `resumeToken`, when the runtime handles two Boss turns in sequence, the player's `Cligent` instance on the second turn shall be the same instance as on the first turn, and the second `run()` call shall pass `resume: <resumeToken>` to the adapter where the token came from the prior `done` event [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
-Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: <explicitToken> })`, the adapter shall receive `resume: <explicitToken>` rather than the stored automatic token [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
-Given that persistent player `Cligent` stores an automatic resume token, when a Captain calls `callPlayer(playerId, prompt, { resume: false })`, the adapter shall receive no resume token and the call shall start a fresh backend session [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)].
-Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries `resumeToken: <resumeToken>`, when a later Boss turn calls the same player, the same `Cligent` instance shall pass `resume: <resumeToken>`, the `PlayerRunResult` for the aborted call shall expose `resumeToken: <resumeToken>`, and the runtime shall finish the later turn normally [[tmux-play-16](#tmux-play-16)], [[tmux-play-99](#tmux-play-99)], [[tmux-play-41](#tmux-play-41)].
-Given the first Boss turn is aborted by ESC while a player call is active and that player's interrupted `done` carries no `resumeToken`, when a later Boss turn calls the same player with no explicit resume override, the aborted `PlayerRunResult` shall omit `resumeToken`, the same `Cligent` instance shall pass no `resume` option, and the runtime/engine shall pass through the prompt supplied by the Captain rather than doing its own replay rewrite [[tmux-play-16](#tmux-play-16)], [[tmux-play-99](#tmux-play-99)], [[tmux-play-41](#tmux-play-41)].
+Given a persistent player `Cligent`, when the Captain selects continuity across Boss turns, the check shall assert this matrix:
+
+| Selection or prior terminal | Assertion |
+| --- | --- |
+| omitted selector after a prior `done` supplied `resumeToken: <resumeToken>` | reuse the same `Cligent` and pass `resume: <resumeToken>` on the next run [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)] |
+| explicit `resume: <explicitToken>` with a stored automatic token | pass the explicit token instead [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)] |
+| `resume: false` with a stored automatic token | pass no resume token and start a fresh backend session [[tmux-play-16](#tmux-play-16)], [[tmux-play-41](#tmux-play-41)] |
+| ESC-aborted call whose interrupted `done` carries a token | expose it on the aborted `PlayerRunResult`, reuse the same `Cligent`, pass the token on the next call, and finish that later turn normally [[tmux-play-16](#tmux-play-16)], [[tmux-play-99](#tmux-play-99)], [[tmux-play-41](#tmux-play-41)] |
+| ESC-aborted call whose interrupted `done` carries no token | omit `resumeToken` from the result, reuse the same `Cligent`, pass no `resume` option next, and pass through the Captain's prompt without a runtime or engine replay rewrite [[tmux-play-16](#tmux-play-16)], [[tmux-play-99](#tmux-play-99)], [[tmux-play-41](#tmux-play-41)] |
 
 ### tmux-play-129
 
-Given the fanout Captain handling a Boss turn with no unresolved no-token abort for a player, the prompt string passed to that player's `callPlayer` shall equal the Boss prompt verbatim — no static framing label (`The Boss asked`), no player identity preamble (`You are the`), no player-id repetition, and no inter-player trailing instructions (`Respond independently`, `other players`) [[tmux-play-42](#tmux-play-42)].
-The player's runtime-held `instruction`, composed at the call boundary, shall be the sole source of player identity [[tmux-play-42](#tmux-play-42)].
-Given a fanout player call returns `status: 'aborted'` with no `resumeToken`, when fanout handles a later Boss turn, that player's `callPlayer` prompt shall contain the retained aborted Boss prompt and the latest Boss prompt [[tmux-play-42](#tmux-play-42)].
-Given consecutive no-token aborts, the later recovery prompt shall contain each retained base Boss prompt once and shall not nest a prior recovery prompt [[tmux-play-42](#tmux-play-42)].
-Given an aborted player call carries `resumeToken`, the next fanout prompt for that player shall remain the Boss prompt verbatim because backend resume handles continuity [[tmux-play-42](#tmux-play-42)].
+When the fanout Captain builds a player's call prompt, the check shall assert this identity-and-recovery matrix:
+
+| State | Assertion |
+| --- | --- |
+| no unresolved tokenless abort | prompt equals the Boss prompt verbatim, with no `The Boss asked`, `You are the`, player-ID repetition, `Respond independently`, or `other players` framing [[tmux-play-42](#tmux-play-42)] |
+| ordinary call boundary | runtime-held `instruction` is the sole source of player identity [[tmux-play-42](#tmux-play-42)] |
+| prior call aborted without `resumeToken` | next prompt contains the retained aborted Boss prompt and the latest Boss prompt [[tmux-play-42](#tmux-play-42)] |
+| consecutive tokenless aborts | later recovery contains each retained base Boss prompt once and does not nest a prior recovery prompt [[tmux-play-42](#tmux-play-42)] |
+| prior aborted call carried `resumeToken` | next prompt remains the Boss prompt verbatim because backend resume supplies continuity [[tmux-play-42](#tmux-play-42)] |
 
 ### tmux-play-130
 
-Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` shall report `174x49` [[tmux-play-35](#tmux-play-35)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+When the real-tmux acceptance suite runs, it shall execute and assert through this matrix:
+
+| Environment or result | Assertion |
+| --- | --- |
+| `tmux -V` or `glow -v` fails | self-skip because the launcher gates on both binaries [[tmux-play-51](#tmux-play-51)] |
+| the runner cannot create a disposable tmux server | self-skip before the acceptance behavior runs |
+| both binaries are available and a disposable tmux server can be created | run under `*.acceptance.test.ts` via `npm run test:acceptance` against a real tmux server rather than a mock or argv log, without gating on adapter API keys |
+| `launchTmuxPlay({ attach: false })` returns | real-server `tmux display-message -t <session> -p '#{window_width}x#{window_height}'` reports `174x49` [[tmux-play-35](#tmux-play-35)] |
 
 ### tmux-play-131
 
-Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights` and `layout.initialVisible` (so both configured players are visible per [[tmux-play-80](#tmux-play-80)]), when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report exactly three panes matching the shipped `[1, 1, 1]` multi-player default: a Boss/Captain pane at `pane_left=0` with effective width 58 columns (less tmux's 1-cell border), a first player column at `pane_left=58` with effective width 58 columns (less tmux's 1-cell border), and a second player column at `pane_left=116` with effective width 58 columns.
-Pane order in `list-panes` index space shall match config order [[tmux-play-27](#tmux-play-27)], [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given two configured players and omitted `layout.multiPlayerColumnWeights`, its `layout.columnWeights` alias, and `layout.initialVisible`, when `launchTmuxPlay({ attach: false })` returns, the check shall assert this pane matrix:
+
+| Pane or ordering | Assertion |
+| --- | --- |
+| Boss/Captain | `pane_left=0`, effective 58-column region less tmux's one-cell border [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| first player column | `pane_left=58`, effective 58-column region less tmux's one-cell border [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| second player column | `pane_left=116`, effective 58-column region [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| `list-panes` index order | Boss/Captain followed by players in config order [[tmux-play-27](#tmux-play-27)] |
+
+Both configured players are visible because `layout.initialVisible` is omitted per [[tmux-play-80](#tmux-play-80)].
 
 ### tmux-play-132
 
-Given a real tmux server with player ids `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, `tmux display-message -p '#{pane_title}'` against each pane shall return the title composed per [[tmux-play-48](#tmux-play-48)] from the pane's display name and its configured adapter: `Captain · <captain adapter>` for the Boss/Captain pane, `Coder · <coder adapter>` for the first player pane, and `Reviewer · <reviewer adapter>` for the second player pane [[tmux-play-36](#tmux-play-36)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given player IDs `coder` and `reviewer`, when `launchTmuxPlay({ attach: false })` returns, the check shall assert this `tmux display-message -p '#{pane_title}'` matrix:
+
+| Pane | Title |
+| --- | --- |
+| Boss/Captain | `Captain · <captain adapter>` [[tmux-play-36](#tmux-play-36)], [[tmux-play-48](#tmux-play-48)] |
+| first player | `Coder · <coder adapter>` [[tmux-play-36](#tmux-play-36)], [[tmux-play-48](#tmux-play-48)] |
+| second player | `Reviewer · <reviewer adapter>` [[tmux-play-36](#tmux-play-36)], [[tmux-play-48](#tmux-play-48)] |
 
 ### tmux-play-133
 
-Given a real tmux server, when `launchTmuxPlay({ attach: false })` returns, every player pane shall report `#{pane_input_off}=1` (input disabled) and the Boss/Captain pane shall report `#{pane_input_off}=0`.
-After `tmux send-keys -t <player-pane> '<probe>'` is invoked with a unique probe string, `tmux capture-pane -p` against that player pane shall not contain the probe [[tmux-play-27](#tmux-play-27)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, when `launchTmuxPlay({ attach: false })` returns, the check shall assert this input-isolation flow:
+
+| Stage or pane | Assertion |
+| --- | --- |
+| every player pane | `#{pane_input_off}=1` [[tmux-play-27](#tmux-play-27)] |
+| Boss/Captain pane | `#{pane_input_off}=0` [[tmux-play-27](#tmux-play-27)] |
+| after `tmux send-keys -t <player-pane> '<probe>'` | `tmux capture-pane -p` for that player omits the unique probe [[tmux-play-27](#tmux-play-27)] |
 
 ### tmux-play-134
 
-Given a launcher invocation with `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` completes against a YAML config that omits `layout.window`, the writer's content shall contain the byte sequence `\x1b[8;49;174t`, and that sequence shall have been written before the test's `attachTmuxSession` mock is invoked [[tmux-play-43](#tmux-play-43)], [[tmux-play-64](#tmux-play-64)].
-Given the same invocation against a YAML config that supplies an explicit `layout.window` (for example `columns: 200, rows: 50`), the writer's content shall contain `\x1b[8;50;200t` and shall not contain `\x1b[8;49;174t`, so the pre-attach CSI 8 payload reads from the same `layout.window` source of truth as `new-session -x/-y` per [[tmux-play-35](#tmux-play-35)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given `attach: true` and stdout routed to an in-memory writer, when `launchTmuxPlay` reaches attachment, the check shall assert this terminal-resize matrix:
+
+| YAML `layout.window` | Assertion |
+| --- | --- |
+| omitted | writer contains `\x1b[8;49;174t` before the test's `attachTmuxSession` mock is invoked [[tmux-play-43](#tmux-play-43)], [[tmux-play-64](#tmux-play-64)] |
+| `{ columns: 200, rows: 50 }` | writer contains `\x1b[8;50;200t`, omits `\x1b[8;49;174t`, and derives CSI 8 from the same source as `new-session -x/-y` [[tmux-play-35](#tmux-play-35)], [[tmux-play-43](#tmux-play-43)] |
 
 ### tmux-play-135
 
-Given a real tmux server with two configured players and a YAML config that omits `layout.columnWeights` and `layout.initialVisible` (so both configured players are visible per [[tmux-play-80](#tmux-play-80)]), when `launchTmuxPlay({ attach: false })` returns and the test forces the window to size `W × H` via `tmux resize-window` (with `window-size manual`), `tmux list-panes` shall report the Boss/Captain pane region width equal to `floor(W / 3)`, the first player column region width equal to `floor(W / 3)`, and the second player column region width equal to the remainder, where region width = `pane_width + 1` for each pane with a right-side border separator [[tmux-play-44](#tmux-play-44)], [[tmux-play-64](#tmux-play-64)].
-The invariant shall hold at multiple sample sizes (e.g., `80×24`, `160×40`, `200×50`).
-Given the same setup with an explicit non-equal `layout.columnWeights` (for example `[3, 5, 5]`), the per-column region widths shall follow the generalized formula `floor(W * w_i / sum(w))` for each non-rightmost column `i`, with the rightmost column absorbing the remainder, so an explicit override is honored distinctly from the equal-thirds default.
-Given the default three-column setup with a real attached client whose PTY is 108 columns wide, when the PTY shrinks to 61 columns and then grows through 83 to 142 columns while the client remains attached, the tmux window shall observe those widths per [[tmux-play-35](#tmux-play-35)] and, after bounded settlement at 142, the pane regions shall remain continuously `[47, 47, 48]` for the stability interval, proving an earlier background worker cannot overwrite the final negotiated width [[tmux-play-44](#tmux-play-44)].
-Given a tmux version older than 3.3, launcher preparation shall reject before config resolution or any tmux session command with a diagnostic naming the 3.3 minimum [[tmux-play-172](#tmux-play-172)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given two configured and initially visible players, when the window size or weights change, the check shall assert this resize matrix:
+
+| Configuration or transition | Assertion |
+| --- | --- |
+| omitted `layout.multiPlayerColumnWeights` and its `layout.columnWeights` alias; manual size `W × H` | Boss/Captain and first player regions each equal `floor(W / 3)`; second player region absorbs the remainder; each pane with a right-side separator has `region width = pane_width + 1` [[tmux-play-44](#tmux-play-44)], [[tmux-play-64](#tmux-play-64)], [[tmux-play-80](#tmux-play-80)] |
+| default weights at `80×24`, `160×40`, and `200×50` | the equal-thirds invariant holds at every sample [[tmux-play-44](#tmux-play-44)], [[tmux-play-64](#tmux-play-64)] |
+| explicit non-equal weights such as `[3, 5, 5]` | each non-rightmost region equals `floor(W * w_i / sum(w))`; the rightmost absorbs the remainder [[tmux-play-44](#tmux-play-44)], [[tmux-play-64](#tmux-play-64)] |
+| attached PTY changes `108 → 61 → 83 → 142` | tmux observes each width; after bounded settlement at 142, regions remain `[47, 47, 48]` for the stability interval so no earlier worker overwrites the final width [[tmux-play-35](#tmux-play-35)], [[tmux-play-44](#tmux-play-44)] |
+
+### tmux-play-200
+
+When launcher preparation observes a tmux version older than 3.3, the launcher integration check shall assert rejection before config resolution or any tmux session command with a diagnostic naming the 3.3 minimum [[tmux-play-172](#tmux-play-172)].
 
 ### tmux-play-136
 
-Given a real tmux server with configured players, when `launchTmuxPlay({ attach: false })` returns, `tmux list-panes` shall report `#{pane_active}=1` for the Boss/Captain pane and `#{pane_active}=0` for every player pane [[tmux-play-45](#tmux-play-45)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given configured players, when `launchTmuxPlay({ attach: false })` returns, the check shall assert this focus matrix:
+
+| Pane | `#{pane_active}` |
+| --- | --- |
+| Boss/Captain | `1` [[tmux-play-45](#tmux-play-45)] |
+| every player | `0` [[tmux-play-45](#tmux-play-45)] |
 
 ### tmux-play-137
 
@@ -1530,127 +1696,180 @@ Unicode combining marks and zero-width formatting codepoints shall not advance t
 ANSI escape sequences (CSI, OSC, and `ESC` + next-byte) shall be passed through verbatim without contributing to the cell count and shall never have a `\n  ` inserted in their interior, including when the sequence's bytes arrive in two or more streaming chunks: given three player `text_delta` events whose payloads are `hello`, `\x1b[31`, and `m world` with `W_r = 12`, the player writer's captured text shall be `<playerId>> hello\x1b[31m\n   world` — i.e., the CSI is reassembled into a single `\x1b[31m` token before the soft-wrap fires, and the wrap lands between the escape and the following space rather than inside the escape's parameter bytes.
 Pending escape state shall not leak across block boundaries: given a player `text_delta` `hello\x1b[31` followed by a `player_finished` with `status: 'ok'` and then a fresh player `text` event `next`, the player writer's captured text shall be `<playerId>> hello\x1b[31\n<playerId>> next\n` — i.e., the partial CSI is flushed verbatim into the previous block before its closing newline, and the next block's leading `n` is not consumed as the missing CSI terminator.
 Additionally, given a `TmuxPlaySession` whose stdout emits `'resize'`, the session's player pane width query (`queryPaneWidths`) shall be invoked again so subsequent writes use the post-resize width; after the session has shut down, further `'resize'` emissions on stdout shall not invoke the query.
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+The superseded probe's acceptance precondition is [[tmux-play-130](#tmux-play-130)]'s real-tmux harness.
 
 ### tmux-play-138
 
-Given the launcher building a tmux session with the Mocha flavor resolved per [[tmux-play-194](#tmux-play-194)] (no explicit flavor, no YAML concrete flavor, and no parseable OSC 11 answer), the `tmux set` calls issued shall include the Mocha theme entries enumerated by [[tmux-play-47](#tmux-play-47)] — anchored by `default-terminal=tmux-256color`, `terminal-overrides` appended with `,*:RGB`, `status-style=fg=#cdd6f4,bg=#181825`, `pane-active-border-style=fg=#89b4fa`, and `pane-border-style=fg=#6c7086` — and shall not include `window-style`, `window-active-style`, `window-status-style`, or `window-status-current-style` since the canonical Catppuccin tmux pattern leaves the pane content area on the user's terminal-native canvas and the window-list formats are empty strings.
-Every theme `set` shall appear before the launcher's own `pane-border-format`, `status-left`, and `status-right` option calls so the launcher's content strings remain authoritative on options the theme does not claim.
-Given the same launcher invocation with `themeFlavor: 'latte'` or a parseable light-background OSC 11 reply per [[tmux-play-194](#tmux-play-194)], the same option keys shall be set with their Latte hex values per [[tmux-play-47](#tmux-play-47)]'s palette table — e.g., `status-style=fg=#4c4f69,bg=#e6e9ef`, `pane-active-border-style=fg=#1e66f5`, `pane-border-style=fg=#9ca0b0` — proving the flavor selection reaches the tmux server.
+When the launcher applies a resolved theme, the check shall assert this option matrix:
+
+| Flavor or option group | Assertion |
+| --- | --- |
+| Mocha from no concrete override or parseable OSC 11 answer | exact [[tmux-play-47](#tmux-play-47)] Mocha entries, including `default-terminal=tmux-256color`, `terminal-overrides` appended with `,*:RGB`, `status-style=fg=#cdd6f4,bg=#181825`, `pane-active-border-style=fg=#89b4fa`, and `pane-border-style=fg=#6c7086` [[tmux-play-194](#tmux-play-194)] |
+| options excluded under Mocha | no `window-style`, `window-active-style`, `window-status-style`, or `window-status-current-style` [[tmux-play-47](#tmux-play-47)] |
+| option order | every theme `set` precedes the launcher's `pane-border-format`, `status-left`, and `status-right` calls [[tmux-play-47](#tmux-play-47)] |
+| explicit Latte or parseable light-background OSC 11 answer | same keys with exact Latte values, including `status-style=fg=#4c4f69,bg=#e6e9ef`, `pane-active-border-style=fg=#1e66f5`, and `pane-border-style=fg=#9ca0b0` [[tmux-play-194](#tmux-play-194)], [[tmux-play-47](#tmux-play-47)] |
 
 ### tmux-play-139
 
-Given a launched session, `show-options -gv` on the real tmux server shall report `default-terminal = tmux-256color` and `terminal-overrides` containing `*:RGB`, confirming the launcher's `tmux set` calls applied to a real server (a stricter check than [[tmux-play-138](#tmux-play-138)]'s argv inspection).
-The probe shall run against an actual tmux server (no mocks) and shall self-skip when either `tmux -V` or `glow -v` fails, since the launcher gates on both per [[tmux-play-51](#tmux-play-51)].
-Whether a real terminal client subsequently negotiates the `RGB` capability is tmux's own contract, beyond the launcher's control surface, and is not asserted here [[tmux-play-47](#tmux-play-47)].
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given a launched session, when the real-server color probe runs, the check shall assert this boundary matrix:
+
+| Surface | Assertion |
+| --- | --- |
+| `show-options -gv default-terminal` | reports `tmux-256color` [[tmux-play-47](#tmux-play-47)] |
+| `show-options -gv terminal-overrides` | contains `*:RGB`, a stricter application check than [[tmux-play-138](#tmux-play-138)]'s argv inspection [[tmux-play-47](#tmux-play-47)] |
+| real terminal client negotiation | outside the launcher's control surface and not asserted |
 
 ### tmux-play-140
 
-Given a config with captain adapter `claude` and players `coder` (adapter `codex`) and `reviewer` (adapter `gemini`), when the launcher sets pane titles, the captain pane title shall be `Captain · claude` and the player pane titles shall be `Coder · codex` and `Reviewer · gemini` respectively [[tmux-play-48](#tmux-play-48)].
-The separator shall be ` · ` (space, middle dot, space) [[tmux-play-48](#tmux-play-48)].
-The per-adapter accent lookup shall be flavor-aware per [[tmux-play-195](#tmux-play-195)]: with flavor `'mocha'` it returns `#a6e3a1` for `claude`, `#94e2d5` for `codex`, `#b4befe` for `gemini`, `#74c7ec` for `kimi`, and `#f5c2e7` for `opencode`; with flavor `'latte'` it returns `#40a02b`, `#179299`, `#7287fd`, `#209fb5`, and `#ea76cb` for the same adapters.
-For any other adapter name the lookup shall return a value drawn from the documented per-flavor fallback pool, identical on repeated calls with the same input and flavor [[tmux-play-195](#tmux-play-195)].
+Given Captain adapter `claude` and players `coder` on `codex` and `reviewer` on `gemini`, when the launcher sets pane titles, the check shall assert this title matrix:
+
+| Pane | Exact title |
+| --- | --- |
+| Captain | `Captain · claude` [[tmux-play-48](#tmux-play-48)] |
+| player `coder` | `Coder · codex` [[tmux-play-48](#tmux-play-48)] |
+| player `reviewer` | `Reviewer · gemini` [[tmux-play-48](#tmux-play-48)] |
+| every title | separator is exactly ` · `: space, U+00B7 middle dot, space [[tmux-play-48](#tmux-play-48)] |
+
+### tmux-play-202
+
+When the adapter-accent lookup is exercised, the integration check shall select assertions through this matrix:
+
+| Input | Assertion |
+| --- | --- |
+| each known adapter under Mocha or Latte | exact paired hex from [[tmux-play-195](#tmux-play-195)] |
+| unknown adapter under either flavor | value belongs to that flavor's documented fallback pool [[tmux-play-195](#tmux-play-195)] |
+| same unknown adapter and flavor repeated | identical value [[tmux-play-195](#tmux-play-195)] |
+| fallback-pool boundary | excludes every known-adapter accent and reserved speaker, tool, and status role [[tmux-play-195](#tmux-play-195)] |
 
 ### tmux-play-141
 
-Given the presenter receives a `captain` block, the writer shall capture bytes `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m` immediately before the body's first nonblank line.
-Given a `coder` player whose adapter is `claude`, the same writer shall capture `\x1b[1;38;2;166;227;161mcoder> \x1b[0m` before the body.
-Given an unmapped player (no `playerAdapters` entry), the prefix shall fall back to the uncolored `<playerId>> ` form.
-Continuation indents in wrapped or multi-line blocks shall NOT carry any SGR escape [[tmux-play-38](#tmux-play-38)].
+When the presenter emits a speaker-prefixed block under Mocha, the check shall assert this byte matrix:
+
+| Speaker or line | Assertion |
+| --- | --- |
+| Captain | `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m` immediately precedes the first nonblank body line [[tmux-play-38](#tmux-play-38)] |
+| `coder` player mapped to `claude` | `\x1b[1;38;2;166;227;161mcoder> \x1b[0m` immediately precedes the body [[tmux-play-38](#tmux-play-38)], [[tmux-play-195](#tmux-play-195)] |
+| player absent from `playerAdapters` | uncolored `<playerId>> ` prefix [[tmux-play-38](#tmux-play-38)] |
+| wrapped or explicit continuation | two-space indent carries no SGR escape [[tmux-play-38](#tmux-play-38)] |
 
 ### tmux-play-142
 
-Given a player error finished record on `coder` (adapter `claude`) with message `<message>`, the player pane shall capture `\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1;38;2;243;139;168m[error]\x1b[0m <message>\n` — the bracketed tag carries the red outcome SGR span, and the body sits outside the brackets unstyled.
-Given a player aborted record on the same player, the pane shall capture the player prefix span followed by `\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n` with no body.
-Given a `turn_aborted` record on the Boss/Captain pane with reason `<reason>`, the captured bytes shall include the captain mauve prefix span followed by `\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m <reason>\n`.
-Given a `turn_aborted` record on the Boss/Captain pane without a reason, the captured bytes shall include the captain mauve prefix span followed by `\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m\n` — the bracketed tag stands alone with no trailing space and no synthesized placeholder body.
-Given a `runtime_error` record on the Boss/Captain pane with message `<message>`, the captured bytes shall include the captain mauve prefix span followed by `\x1b[1;38;2;243;139;168m[runtime error]\x1b[0m <message>\n` [[tmux-play-39](#tmux-play-39)].
+When the presenter emits an operational line under Mocha, the check shall assert this byte matrix:
+
+| Record | Assertion |
+| --- | --- |
+| `coder` on `claude`, player error `<message>` | exact bytes `\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1;38;2;243;139;168m[error]\x1b[0m <message>\n` [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)] |
+| same player, aborted | player prefix followed by `\x1b[1;38;2;249;226;175m[aborted]\x1b[0m\n`, with no body [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)] |
+| `turn_aborted` with `<reason>` | Captain mauve prefix followed by `\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m <reason>\n` [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)] |
+| `turn_aborted` without reason | Captain mauve prefix followed by `\x1b[1;38;2;249;226;175m[turn aborted]\x1b[0m\n`, with no trailing space or synthesized body [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)] |
+| `runtime_error` with `<message>` | Captain mauve prefix followed by `\x1b[1;38;2;243;139;168m[runtime error]\x1b[0m <message>\n` [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)] |
 
 ### tmux-play-143
 
-Given a player `tool_use` event with `toolName: 'Bash'` and `input: { command: 'npm test' }` on a player pane writer for player `coder` (adapter `claude`), the captured bytes shall be `\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ↪] Bash npm test\n` — the speaker prefix carries the player's adapter accent per [[tmux-play-38](#tmux-play-38)] and the bracketed tag `[tool ↪]` is emitted uncolored per [[tmux-play-39](#tmux-play-39)].
-When the caller is the captain (a `captain_event` carrying a `tool_use`) with `toolName: 'Read'` and `input: { file_path: 'a.ts' }`, the captured bytes shall be `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ↪] Read a.ts\n` (captain mauve `#cba6f7` on the prefix; uncolored tag).
-The retired `tool> ` prefix replacement and its caller-accent coloring shall not appear [[tmux-play-49](#tmux-play-49)].
+When the presenter handles a tool event, the check shall assert this rendering matrix:
 
-Given a `tool_result` event with `status: 'success'`, `toolName: 'Bash'`, and `durationMs: 1234` on the `coder` player pane (adapter `claude`), the captured bytes shall begin with the colored header line `\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1;38;2;166;227;161m[tool ✓]\x1b[0m Bash 1.2s\n`.
-Given a Captain-emitted `tool_result` with `status: 'success'`, `toolName: 'Read'`, and `durationMs: 200`, the header line shall be `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m\x1b[1;38;2;166;227;161m[tool ✓]\x1b[0m Read 200ms\n` with the bracketed tag in green and the body unstyled — `200 < 1000` so the duration uses the `<n>ms` form per [[tmux-play-49](#tmux-play-49)].
-Status symbol shall be `✓` for `success`, `✗` for `error`, `·` for `denied`; the corresponding bracketed-tag SGR shall use green / red / yellow per the [[tmux-play-39](#tmux-play-39)] kind table.
-The duration segment shall be `<n>ms` for `durationMs < 1000`, `<n.n>s` otherwise, and absent when `durationMs` is undefined.
-The retired `tool< ` prefix replacement shall not appear.
-
-Given a `tool_result` event whose extracted output is non-empty, the presenter shall strip exactly one trailing line terminator from the payload before wrapping it (so a payload ending `foo\n` does not surface a phantom blank line inside the fence), while any trailing blank lines beyond that terminator shall survive into the rendered output.
-The body following the header line shall be enclosed in a fenced code block whose fence is a run of backticks one longer than the longest backtick run in the payload, with a minimum of three; the fenced payload shall be passed to `renderMarkdown` per [[tmux-play-50](#tmux-play-50)] at the width specified in [[tmux-play-49](#tmux-play-49)], the captured body output shall not retain `glow`'s trailing horizontal line padding while preserving leading whitespace, and every nonblank line of the rendered output shall be prefixed with two spaces before reaching the writer.
-Blank lines in the rendered output (the fenced-code frame, payload edge blanks) shall remain blank with no indent and no right-padding spaces so the body's structure reads as it would in a `glow` pane outside this presenter without reserving cells to the right of visible content.
-The retired `overlay0` `#6c7086` SGR pair shall not wrap any byte of the body — `glow`'s code-block rendering supersedes it per the [[tmux-play-49](#tmux-play-49)] amendment.
-
-Given a `tool_result` payload that itself contains a ```` ``` ```` line, the selected wrapper fence shall be at least four backticks long so the embedded fence remains inert as literal content of the outer fence and no part of the payload escapes into Markdown rendering at the writer.
-
-Given a `tool_result` event whose extracted output is empty or undefined, the header line shall stand alone with no body.
+| Event or payload | Assertion |
+| --- | --- |
+| player `tool_use`, `coder` on `claude`, `Bash`, command `npm test` | exact bytes `\x1b[1;38;2;166;227;161mcoder> \x1b[0m[tool ↪] Bash npm test\n`; adapter-colored speaker prefix and uncolored tag [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)], [[tmux-play-49](#tmux-play-49)] |
+| Captain `tool_use`, `Read`, `file_path: 'a.ts'` | exact bytes `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m[tool ↪] Read a.ts\n`; mauve speaker prefix and uncolored tag [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)], [[tmux-play-49](#tmux-play-49)] |
+| every `tool_use` | no retired `tool> ` replacement or caller-accent coloring on the tag [[tmux-play-49](#tmux-play-49)] |
+| player successful `tool_result`, `Bash`, `durationMs: 1234` | header begins `\x1b[1;38;2;166;227;161mcoder> \x1b[0m\x1b[1;38;2;166;227;161m[tool ✓]\x1b[0m Bash 1.2s\n` [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)], [[tmux-play-49](#tmux-play-49)] |
+| Captain successful `tool_result`, `Read`, `durationMs: 200` | exact header `\x1b[1;38;2;203;166;247mcaptain> \x1b[0m\x1b[1;38;2;166;227;161m[tool ✓]\x1b[0m Read 200ms\n`, with a green tag and unstyled body [[tmux-play-38](#tmux-play-38)], [[tmux-play-39](#tmux-play-39)], [[tmux-play-49](#tmux-play-49)] |
+| result status `success` / `error` / `denied` | symbol `✓` / `✗` / `·` and green / red / yellow tag respectively [[tmux-play-39](#tmux-play-39)], [[tmux-play-49](#tmux-play-49)] |
+| duration below 1000 ms / at least 1000 ms / absent | `<n>ms` / `<n.n>s` / no duration segment [[tmux-play-49](#tmux-play-49)] |
+| every `tool_result` | no retired `tool< ` replacement [[tmux-play-49](#tmux-play-49)] |
+| non-empty extracted output | remove exactly one trailing line terminator before wrapping; preserve any additional trailing blank lines [[tmux-play-49](#tmux-play-49)] |
+| rendered non-empty body | fence with one more backtick than the longest payload run and at least three; render at [[tmux-play-49](#tmux-play-49)]'s width through [[tmux-play-50](#tmux-play-50)]; strip trailing horizontal padding while preserving leading whitespace; prefix nonblank lines with two spaces; keep blank lines unindented and without right padding; apply no retired `overlay0` wrapper |
+| payload containing a ```` ``` ```` line | wrapper fence has at least four backticks so the embedded fence remains literal [[tmux-play-49](#tmux-play-49)] |
+| empty or undefined extracted output | header stands alone with no body [[tmux-play-49](#tmux-play-49)] |
 
 ### tmux-play-144
 
-Given a `tool_use` event whose `input` lacks the priority keys but contains `{ count: 3, flag: true }`, the input summary shall be the compact JSON `{"count":3,"flag":true}`.
-Given an `input` whose first priority-key string exceeds 60 cells, the summary shall be the value's first 59 cells followed by `…`.
-Given an empty `input` object, the rendered header shall be `<who>> [tool ↪] <toolName>` with no trailing space.
-Given an `input` whose only matching priority-key string is `query` (e.g., `{ query: 'select:WebFetch', max_results: 1 }`), the input summary shall be the `query` value — `query` sits in the priority list between `pattern` and `prompt` so search/fetch tools surface their query text rather than falling through to compact JSON [[tmux-play-49](#tmux-play-49)].
+When the presenter summarizes `tool_use.input`, the check shall assert this matrix:
+
+| Input | Assertion |
+| --- | --- |
+| no priority key; `{ count: 3, flag: true }` | compact JSON `{"count":3,"flag":true}` [[tmux-play-49](#tmux-play-49)] |
+| first priority-key string exceeds 60 cells | first 59 cells followed by `…` [[tmux-play-49](#tmux-play-49)] |
+| empty object | header `<who>> [tool ↪] <toolName>` with no trailing space [[tmux-play-49](#tmux-play-49)] |
+| only matching priority key is `query`, such as `{ query: 'select:WebFetch', max_results: 1 }` | `select:WebFetch`, proving `query` precedes `prompt` and compact JSON fallback [[tmux-play-49](#tmux-play-49)] |
 
 ### tmux-play-145
 
-Given a `captain_event` carrying a `tool_use` record, the Boss/Captain pane writer (not any player writer) shall receive the `captain> [tool ↪] …` header per [[tmux-play-49](#tmux-play-49)].
-Given a player-id `coder` `player_event` carrying the same `tool_use`, only the `coder` player pane writer shall receive the `coder> [tool ↪] …` header; the Boss/Captain pane writer shall not [[tmux-play-40](#tmux-play-40)], [[tmux-play-49](#tmux-play-49)].
+When the presenter routes a `tool_use`, the check shall assert this pane matrix:
+
+| Source | Assertion |
+| --- | --- |
+| `captain_event` | only the Boss/Captain writer receives `captain> [tool ↪] …` [[tmux-play-40](#tmux-play-40)], [[tmux-play-49](#tmux-play-49)] |
+| player `coder` event | only the `coder` writer receives `coder> [tool ↪] …`; Boss/Captain receives nothing [[tmux-play-40](#tmux-play-40)], [[tmux-play-49](#tmux-play-49)] |
 
 ### tmux-play-146
 
-Given a `TmuxPresenter` receiving one or more `text_delta` events for the same `(writer, who)` pair, the writer shall capture zero bytes until a block boundary fires.
-The block boundaries that trigger a flush are: a `player_finished` or `captain_finished` record on the writer's pane; a non-streaming `text` event on the same writer; a `captain_reply` record (itself a complete prose block) on the writer's pane; a `player_prompt` on the same writer; a `tool_use` or `tool_result` event on the same writer; and any status emission (`captain_status`, `runtime_error`, `turn_aborted`) targeting the same writer.
-On flush, the accumulated text shall be passed once to `renderMarkdown` per [[tmux-play-51](#tmux-play-51)], and the rendered output shall be emitted under the [[tmux-play-38](#tmux-play-38)] prefix grammar.
-A subsequent `text_delta` arriving after the flush shall open a fresh block whose render call is independent of the prior one [[tmux-play-50](#tmux-play-50)].
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, when a `TmuxPresenter` receives streaming text, the check shall assert this buffer flow:
 
-Given a streaming sequence interleaved with a tool event — e.g., `text_delta('partial\n')` followed by `tool_use(...)` on the same writer — the text shall flush before the `<who>> [tool ↪] …` header so the events appear in order on the pane.
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+| Input or boundary | Assertion |
+| --- | --- |
+| one or more `text_delta` events for one `(writer, who)` | capture zero bytes until a block boundary [[tmux-play-50](#tmux-play-50)] |
+| same-writer `player_finished` or `captain_finished` | flush the open block [[tmux-play-50](#tmux-play-50)] |
+| same-writer non-streaming `text` | flush the open block, then handle the complete block [[tmux-play-50](#tmux-play-50)] |
+| same-writer `captain_reply` or `player_prompt` | flush the open block before the complete prose or prompt block [[tmux-play-50](#tmux-play-50)] |
+| same-writer `tool_use` or `tool_result` | flush the open block before the tool line [[tmux-play-50](#tmux-play-50)] |
+| same-writer `captain_status`, `runtime_error`, or `turn_aborted` | flush the open block before the status line [[tmux-play-50](#tmux-play-50)] |
+| every flush | pass the accumulated text once to `renderMarkdown`, then emit through [[tmux-play-38](#tmux-play-38)]'s prefix grammar [[tmux-play-50](#tmux-play-50)] |
+| `text_delta` after a flush | open a fresh block with an independent render call [[tmux-play-50](#tmux-play-50)] |
+| `text_delta('partial\n')` followed by `tool_use(...)` | text appears before the `<who>> [tool ↪] …` header [[tmux-play-50](#tmux-play-50)] |
 
 ### tmux-play-147
 
-Given the rendered output of a text block, the captured bytes shall apply the [[tmux-play-38](#tmux-play-38)] grammar to the rendered lines: the first nonblank line shall carry the colored `<who>> ` SGR prefix; every nonblank continuation line shall carry the two-space hanging indent; blank lines in the rendered output shall remain blank without the indent [[tmux-play-50](#tmux-play-50)], [[tmux-play-38](#tmux-play-38)].
-The captured bytes shall contain no successfully rendered line that retains `glow`'s trailing horizontal line padding, including padding followed only by SGR resets, while preserving leading whitespace so existing indentation does not change.
-The indent shall be uncolored — no SGR sequence shall span the two-space prefix bytes.
-Real-glow acceptance shall assert that text-body and tool-result body lines retain no trailing horizontal whitespace after ANSI is stripped.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, when the presenter captures rendered text, the check shall assert this normalization matrix:
 
-Given leading or trailing blank lines in the rendered output (introduced by `glow`'s default paragraph-margin styling), the captured bytes shall drop at most one blank line from each edge — `glow`'s outer margin — and shall preserve every other blank line as a blank line, including any blank rows inside a fenced-code frame, around table rows, or between paragraphs, without retaining `glow`'s right-padding cells on those blank lines.
-A blanket multi-line trim is not applied because `glow`'s fenced-code rendering emits structural blank rows that match the same shape as its outer margin and would otherwise be collapsed away (e.g., a payload that itself starts with a blank line would lose that line).
-Given a rendered block whose content is entirely whitespace after the outer-margin trim, the writer shall receive zero bytes — no synthesized `<who>> ` prefix and no stranded blanks — so empty content cannot surface as a bare prefix line or as padding between turns.
-
-Given a `text_delta` sequence that ends without a trailing newline followed by a `player_prompt` or other boundary event on the same writer, the open block shall flush before the new block opens; the writer shall not interleave the two speakers' content on a single line.
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+| Rendered state | Assertion |
+| --- | --- |
+| ordinary lines | first nonblank line carries the colored `<who>> ` prefix; later nonblank lines carry the two-space hanging indent; blank lines remain blank [[tmux-play-38](#tmux-play-38)], [[tmux-play-50](#tmux-play-50)] |
+| horizontal spacing | no successful line retains trailing horizontal padding, including padding before only SGR resets; leading whitespace remains unchanged [[tmux-play-50](#tmux-play-50)] |
+| continuation indent | no SGR sequence spans its two spaces [[tmux-play-38](#tmux-play-38)], [[tmux-play-50](#tmux-play-50)] |
+| real-`glow` text and tool-result bodies | under [[tmux-play-150](#tmux-play-150)]'s real-glow acceptance harness, no trailing horizontal whitespace remains after ANSI is stripped [[tmux-play-49](#tmux-play-49)], [[tmux-play-50](#tmux-play-50)] |
+| leading or trailing paragraph-margin blanks | drop at most one blank at each edge and preserve every further structural blank, including fenced-code, table, and inter-paragraph rows, without right padding [[tmux-play-50](#tmux-play-50)] |
+| payload starts with a blank inside a fenced block | retain it rather than applying a blanket multi-line trim [[tmux-play-50](#tmux-play-50)] |
+| content wholly blank after outer-margin trim | emit zero bytes, with no bare prefix or stranded blanks [[tmux-play-50](#tmux-play-50)] |
+| unterminated `text_delta` followed by `player_prompt` or another same-writer boundary | flush before opening the new block and do not interleave speakers on one line [[tmux-play-50](#tmux-play-50)] |
 
 ### tmux-play-148
 
-Given a writer with a configured pane width source returning `W`, `renderMarkdown` shall be invoked for a text block with `width = max(1, W)`, compensating for `glow`'s built-in two-cell document margin while preserving that margin.
-Given a writer with no configured pane width source, the default render width shall be `80`.
-Given the first visible rendered row would exceed `W` after adding the speaker's `<who>> ` prefix (`6` cells for `boss`, `9` for `captain`, `playerId.length + 2` for a player pane), the presenter shall split only that first row at a cell-aware word boundary, emit no line wider than `W`, and keep later continuation rows free to reach the pane edge when real rendered content reaches that width.
-Given a `tool_result` body, the render width shall be `max(1, W - 2)`, matching the two-space continuation indent the body lines carry (not the wider tool header prefix) [[tmux-play-50](#tmux-play-50)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, when the presenter selects a render width, the check shall assert this matrix:
+
+| Width source or block | Assertion |
+| --- | --- |
+| configured pane width `W` | text calls `renderMarkdown` with `max(1, W)`, compensating for and preserving `glow`'s two-cell document margin [[tmux-play-50](#tmux-play-50)] |
+| no pane-width source | text render width is `80` [[tmux-play-50](#tmux-play-50)] |
+| first visible row plus its speaker prefix exceeds `W` (`6` cells for Boss, `9` for Captain, `playerId.length + 2` for a player) | split only that row at a cell-aware word boundary; no line exceeds `W`; later continuation rows may reach the pane edge [[tmux-play-50](#tmux-play-50)] |
+| `tool_result` body | render width is `max(1, W - 2)`, matching the body indent rather than the tool-header prefix [[tmux-play-49](#tmux-play-49)], [[tmux-play-50](#tmux-play-50)] |
 
 ### tmux-play-149
 
-Given `tmux-play` invoked in launcher mode on a host where `isGlowAvailable()` returns `false`, `launchTmuxPlay` shall reject with an error whose message names `glow` and contains the install URL `https://github.com/charmbracelet/glow#installation`.
-The launcher shall not invoke any subsequent launcher work — no config discovery, no work-directory creation, no `tmux` session construction — so the rejection surfaces before any side effects.
-The `glow` check shall run after the existing `tmux` availability check so a host missing both binaries reports `tmux` first [[tmux-play-51](#tmux-play-51)].
-The probe shall exercise a real `tmux` server rather than a mock or an argv log, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip when either `tmux -V` or `glow -v` fails since the launcher gates on both [[tmux-play-51](#tmux-play-51)], and shall not gate on adapter API keys.
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, when injected `isGlowAvailable()` returns `false`, the launcher check shall assert this failure flow:
+
+| Stage or condition | Assertion |
+| --- | --- |
+| rejection | error names `glow` and `https://github.com/charmbracelet/glow#installation` [[tmux-play-51](#tmux-play-51)] |
+| after rejection | no config discovery, work-directory creation, or tmux session construction [[tmux-play-51](#tmux-play-51)] |
+| both injected availability results are false | tmux availability check reports first [[tmux-play-51](#tmux-play-51)] |
 
 ### tmux-play-150
 
-Given a real `glow` binary on `PATH`, `renderMarkdown('hello **world** today\n', 80)` shall return non-empty output that contains at least one ANSI escape sequence (`\x1B[…`), does not contain the literal `**` marker, and contains the visible word `world` after ANSI bytes are stripped.
-This confirms `glow` rendered bold styling instead of emitting raw Markdown [[tmux-play-50](#tmux-play-50)], [[tmux-play-51](#tmux-play-51)].
+When real-`glow` acceptance runs, it shall execute and assert through this matrix:
 
-Given a fenced code block whose content is a single 200-character line rendered at width 40, the captured output shall contain the 200-character content intact after ANSI bytes are stripped — `glow` shall not insert a mid-token break inside the fenced block, matching [[tmux-play-49](#tmux-play-49)]'s "glow leaves long code lines unwrapped by design".
-
-Given a plain paragraph rendered at width 80, the captured output shall be non-empty and shall contain each source word after ANSI bytes are stripped, guarding against silent `glow` misconfiguration (for example, a `glow` build that writes nothing under `spawnSync` because it gated its output on a TTY check).
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+| Environment or input | Assertion |
+| --- | --- |
+| `glow -v` fails | self-skip only for that missing binary |
+| `glow` is available | run under `*.acceptance.test.ts` via `npm run test:acceptance` against the real binary rather than a mock, without gating on tmux or adapter API keys |
+| `renderMarkdown('hello **world** today\n', 80)` | non-empty output contains ANSI, omits literal `**`, and retains visible `world` after ANSI stripping, proving bold rendering [[tmux-play-50](#tmux-play-50)], [[tmux-play-51](#tmux-play-51)] |
+| fenced block with one 200-character line at width 40 | all 200 characters remain intact after ANSI stripping, with no mid-token break [[tmux-play-49](#tmux-play-49)] |
+| plain paragraph at width 80 | non-empty output retains every source word after ANSI stripping [[tmux-play-50](#tmux-play-50)] |
 
 ### tmux-play-151
 
-Given a real `glow` binary on `PATH` and a `TmuxPresenter` wired to in-memory writers, the integration of the presenter with `glow` shall hold the spec-promised structural invariants — not just `glow`'s isolated rendering — across these scenarios.
+Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness, given a `TmuxPresenter` wired to in-memory writers, the integration of the presenter with `glow` shall hold the spec-promised structural invariants — not just `glow`'s isolated rendering — across these scenarios.
 These probes cover bugs that live at the seam where the presenter consumes real `glow` output, which neither glow-in-isolation acceptance ([[tmux-play-150](#tmux-play-150)]) nor identity-mock unit tests can catch [[tmux-play-38](#tmux-play-38)], [[tmux-play-49](#tmux-play-49)], [[tmux-play-50](#tmux-play-50)].
 
 Given a text-body block containing a heading and a bold span, the captured writer output shall carry exactly one `<who>> ` prefix line for the block; every nonblank line shall begin with either that prefix or the two-space hanging indent; ANSI styling shall be present and the literal `**` marker shall be absent.
@@ -1665,7 +1884,6 @@ This directly pins the user-reported "excessive blank lines between player messa
 Given a text-body prose block rendered in a 40-cell pane by a real `glow` binary, at least one non-first continuation row shall be at least 39 cells wide after ANSI is stripped, and no visible row shall exceed 40 cells.
 The near-edge row shall begin with the presenter's two-space continuation indent followed by `glow`'s preserved two-space document margin.
 This pins the user-reported "empty right side of every pane" defect that remained after the trailing-padding strip: the output must compensate for `glow`'s document margin while still avoiding terminal-level rewrap.
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
 
 ### tmux-play-152
 
@@ -1988,14 +2206,14 @@ The repair commands shall follow the tree the running package occupies: an optio
 The test suite shall additionally fail unless every peer-SDK command — global and project alike — names the resolved tree with `--prefix` and pins its install scope on the command line: no observation from the launching process licenses a bare form, because that process cannot witness the environment or the working directory of the shell where the command is pasted, and an environment-supplied global mode would divert a prefix-only project command into `<prefix>/lib/node_modules`, so a project command shall carry explicit non-global `global` and `location` settings while a global command's asserted global mode alone suffices [[tmux-play-89](#tmux-play-89)].
 A `--prefix` path a shell would split shall be printed quoted and still target the reported tree [[tmux-play-89](#tmux-play-89)].
 A project install shall stay a project install wherever it is invoked from — classified by the manifest at its install root rather than by the working directory — and a resolved tree that no `npm install` invocation reaches shall carry no peer-SDK install command, naming instead the package and the tree to place it in [[tmux-play-89](#tmux-play-89)].
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall use [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness.
 
 ### tmux-play-193
 
 Where the home and cwd are empty and exactly one supported adapter runtime is installed, when the config is resolved, the created YAML shall wire the Captain and a single player on that adapter, shall carry `model` and `effort` only where that adapter is one this project pins, and the stdout notice shall name that adapter.
 Where more than two adapter runtimes are installed, the generated roster shall hold the first two in canonical adapter order.
 Where no supported adapter runtime is installed, no file shall be created, and the failure shall name every supported adapter with the commands that install what it requires [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)].
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall use [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness.
 
 ### tmux-play-196
 
@@ -2004,7 +2222,7 @@ Where settings contain accessors, unknown or incomplete values, an adapter-inval
 Each such supplied-settings rejection shall be an `AgentCallSettingsError` recognized by `isAgentCallSettingsError()`, with its prior message and original cause preserved; the predicate shall reject turn or session scope errors, unknown-player errors, provider execution failures, and observer dispatch errors [[tmux-play-93](#tmux-play-93)].
 Where one OpenCode call installs a session permission ruleset and a later resumed complete-settings call supplies a concrete model but omits permissions, tmux-play shall clear the prior Cligent-owned session permission ruleset before dispatching the resumed prompt; the concrete model with provider-default effort shall also clear a prior variant without rejecting [[tmux-play-93](#tmux-play-93)].
 Package declaration verification shall expose `TuningSelection`, `AgentCallSettings`, `AgentCallSettingsError`, `isAgentCallSettingsError`, `LaunchManagedTmuxPlayOptions`, `LaunchTmuxPlayResult`, `ManagedTmuxPlayAttachOptions`, `ManagedTmuxPlayLaunchContext`, `PreparedManagedTmuxPlayLaunch`, `ManagedTmuxPlayInitializeContext`, `ManagedTmuxPlayTurnContext`, `ManagedTmuxPlayAfterTurnContext`, `ManagedTmuxPlayTerminalRecord`, `ManagedTmuxPlayShutdownContext`, `ManagedTmuxPlayLifecycle`, `ManagedTmuxPlaySessionOptions`, and `TmuxPlayRuntimeHandle`; package runtime verification shall expose `AgentCallSettingsError`, `isAgentCallSettingsError`, `launchManagedTmuxPlay`, and `runManagedTmuxPlaySession` [[tmux-play-29](#tmux-play-29)].
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall use [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness.
 
 ### tmux-play-197
 
@@ -2019,7 +2237,7 @@ The managed runner shall also prove that it applies [[tmux-play-74](#tmux-play-7
 Where a runtime emits an aborted terminal after a buffered reply and then resolves or rejects, the after hook shall receive that exact terminal record before settlement or propagated failure and the reply shall remain hidden; where initialization or any hook fails, the returned session promise shall reject only after awaited cleanup and shall release no reply [[tmux-play-94](#tmux-play-94)].
 Where an attachment signal is already aborted, aborts while activation is pending, or aborts during detached coordination cleanup, the test suite shall prove that its exact reason stays primary, `beforeNativeAttach` and the native client do not run, graceful child shutdown acknowledgement and pane exit precede rejection, and cleanup defects follow the reason in one aggregate; where native attachment proceeds, it shall prove that resize completes first, the callback runs exactly once immediately before the native client, and an abort after that callback does not trigger managed cancellation [[tmux-play-94](#tmux-play-94)].
 Where a managed turn or runtime failure and lifecycle shutdown cleanup both fail, the test suite shall prove that shutdown still runs every ordered cleanup step and exposes the primary failure followed by every distinct cleanup failure in one aggregate while preserving single-failure identity [[tmux-play-94](#tmux-play-94)].
-The probe shall exercise a real `glow` binary rather than a mock, shall run under `*.acceptance.test.ts` via `npm run test:acceptance`, shall self-skip only when `glow -v` fails, and shall not gate on `tmux` or adapter API keys.
+The probe shall use [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness.
 
 ### tmux-play-198
 

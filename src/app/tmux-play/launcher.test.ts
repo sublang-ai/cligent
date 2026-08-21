@@ -2812,7 +2812,7 @@ describe('launchTmuxPlay', () => {
       stdout,
       stderr,
       attach: false,
-      // tmux-play-111's legacy-warning Given names only the ignored cwd config —
+      // tmux-play-104's legacy-warning Given names only the ignored cwd config —
       // never the host's adapter roster — so pin the first-run generation
       // this launch falls through to (tmux-play-11 seam) and the runtime gate
       // (tmux-play-89 seam) off the host's CLIs. The unstubbed default probed

@@ -46,7 +46,7 @@ Out of scope:
 - [x] `src/app/tmux-play/launcher.test.ts` — assertions for truecolor `set` calls and the enriched pane-border format.
 - [x] `src/app/tmux-play/presenter-tmux.test.ts` — speaker prefix ANSI, error/aborted recolor, tool lifecycle (header colors, dim body, captain-pane routing, duration formatting, input summarization).
 - [x] `specs/user/tmux-play.md` — tmux-play-47 expansion + new tmux-play-48 / tmux-play-195 / tmux-play-199; tmux-play-37, tmux-play-38, tmux-play-39 amendments; tmux-play-40 amendment + new tmux-play-49.
-- [x] `specs/test/tmux-play.md` — tmux-play-138, tmux-play-139, tmux-play-140, tmux-play-141, tmux-play-142, tmux-play-143, tmux-play-144, tmux-play-145.
+- [x] `specs/test/tmux-play.md` — tmux-play-138, tmux-play-139, tmux-play-140, tmux-play-141, tmux-play-142, tmux-play-143, tmux-play-144, tmux-play-145, tmux-play-202.
 - [x] `specs/map.md` — TMUX user-row summary mentions "speaker colors" and "tool lifecycle".
 
 ## Tasks

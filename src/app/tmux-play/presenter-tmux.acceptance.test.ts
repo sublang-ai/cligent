@@ -167,7 +167,7 @@ describe('TmuxPresenter + real glow acceptance', () => {
       // Pre-existing two-space continuation indent invariant: the body
       // line carrying `foo` sits under the header with the indent applied
       // (matching how text-body continuations look). This pins
-      // [tmux-play-149]'s indent rule through real glow output rather than
+      // tmux-play-49's indent rule through real glow output rather than
       // against an identity mock.
       const lines = visible.split('\n');
       const fooLine = lines.find((line) => /foo/.test(line));
