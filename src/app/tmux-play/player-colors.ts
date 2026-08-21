@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// tmux-play-48: stable per-adapter accent colors from the Catppuccin family.
+// tmux-play-195: stable per-adapter accent colors from the Catppuccin family.
 // Each adapter maps to the same role name (green/teal/lavender/pink) across
 // flavors, so a Latte session uses the dark-green/dark-teal/etc. variants
 // designed for light backgrounds. Used by the presenter for `<playerId>>`

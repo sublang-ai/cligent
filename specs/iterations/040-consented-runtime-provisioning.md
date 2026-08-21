@@ -281,7 +281,7 @@ any of them lands.
    cligent derives its own from the terminal, or a real `--json` is added as
    its own item and task pair.
 4. **Whether continuous integration alone suffices to refuse.** The
-   stdin-and-stdout half already has a launcher-mode precedent in tmux-play-47's
+   stdin-and-stdout half already has a launcher-mode precedent in tmux-play-194's
    flavor probe, which the new predicate can reuse or restate; `CI` has none
    in production code. A `--yes` flag would reintroduce the unattended
    acquisition package-15 forbids.

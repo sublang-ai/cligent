@@ -162,7 +162,7 @@ describe('TmuxPlaySession', () => {
 
     await session.start();
 
-    // tmux-play-38: boss> prefix wrapped in blue SGR (#89b4fa) and reset.
+    // tmux-play-37: boss> prefix wrapped in blue SGR (#89b4fa) and reset.
     expect(readline.promptValue).toBe('\x1b[1;38;2;137;180;250mboss> \x1b[0m');
     expect(readline.promptCount).toBe(1);
     expect(factory).toHaveBeenCalledTimes(1);
@@ -214,7 +214,7 @@ describe('TmuxPlaySession', () => {
   });
 
   it('colors the boss> prompt with the snapshot-resolved Latte blue', async () => {
-    // tmux-play-38 + tmux-play-47: when the snapshot's `theme` is `latte` the
+    // tmux-play-37 + tmux-play-194: when the snapshot's `theme` is `latte` the
     // readline prompt shall render in Latte `speakerBoss` (#1e66f5 / RGB
     // 30,102,245), not the Mocha default. Mirrors the Mocha assertion
     // above so a regression in either direction surfaces here.

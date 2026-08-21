@@ -75,7 +75,7 @@ export function isTmuxAvailable(): boolean {
 
 /**
  * Whether the installed tmux exposes the post-negotiation `window-resized`
- * hook used by tmux-play's weighted layout reconciler (tmux-play-44).
+ * hook used by tmux-play's weighted layout reconciler (tmux-play-172).
  */
 export function isTmuxPlayVersionSupported(): boolean {
   const probe = spawnSync('tmux', ['-V'], { stdio: 'pipe' });

@@ -747,7 +747,7 @@ describe('TmuxPresenter', () => {
     expect(boss.text()).toBe('');
   });
 
-  // Hidden Captain calls (tmux-play-72).
+  // Hidden Captain calls (tmux-play-40).
 
   it('writes nothing to the Boss pane for a hidden Captain call', () => {
     const boss = new MemoryWriter();
@@ -919,7 +919,7 @@ describe('TmuxPresenter', () => {
     );
   });
 
-  it('keys the player prefix color off the adapter map per tmux-play-48', () => {
+  it('keys the player prefix color off the adapter map per tmux-play-195', () => {
     const coder = new MemoryWriter();
     const reviewer = new MemoryWriter();
     const presenter = createTmuxPresenter({

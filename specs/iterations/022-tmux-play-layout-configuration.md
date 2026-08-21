@@ -56,7 +56,7 @@ Default rationale: keep `1 : 1` for the single-player layout — only one player
 Adopt `4 : 6 : 6` for the multi-player layout because the Boss/Captain pane is the input column and player columns are the content columns, so giving each content column 50% more cells than the input column is the user-reported preference.
 Both defaults sum to integers that divide the canonical 240-cell window cleanly enough that tmux's nearest-cell rounding lands on round multiples (`240 * 4/16 = 60`, `240 * 6/16 = 90`).
 
-Snapshot consumption: per [[tmux-play-34](../packages/tmux-play.md#tmux-play-34)] the launcher writes a resolved config snapshot the session subprocess reads.
+Snapshot consumption: per [[tmux-play-34](../packages/tmux-play.md#tmux-play-34)] the launcher writes a resolved config snapshot, and per [[tmux-play-100](../packages/tmux-play.md#tmux-play-100)] the session subprocess reads it.
 The launcher resolves any missing `layout` values to their defaults before writing the snapshot, so the snapshot always carries concrete `window.columns` / `window.rows` / `columnWeights`.
 The launcher does not consult the YAML again after session creation, so reading `layout` from `loaded.config` (post-normalization) is the single point of truth.
 

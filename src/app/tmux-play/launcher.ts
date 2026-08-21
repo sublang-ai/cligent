@@ -1088,7 +1088,7 @@ function applyCatppuccinTheme(sessionName: string, c: CatppuccinPalette): void {
     'status-style',
     `fg=${c.text},bg=${c.mantle}`,
   );
-  // tmux-play-48: dim inactive borders to overlay0 so the active blue border
+  // tmux-play-47: dim inactive borders to overlay0 so the active blue border
   // stands out more strongly. window-status-style / window-status-current-
   // style are not claimed: the window-list formats below are empty strings,
   // so those style options have nothing to color.
@@ -1114,7 +1114,7 @@ function applyCatppuccinTheme(sessionName: string, c: CatppuccinPalette): void {
 }
 
 function paneBorderFormat(c: CatppuccinPalette): string {
-  // tmux-play-48: only the Captain pane (index 0) carries the highlighted blue
+  // tmux-play-199: only the Captain pane (index 0) carries the highlighted blue
   // title block, and only while it is the active pane. Player panes — even
   // when active — render on the flavor's mantle surface with no highlight
   // block (they're read-only per tmux-play-27 and don't need a focus indicator).

@@ -38,7 +38,7 @@ Out of scope:
 
 - Intra-message token streaming or pane repaint.
 - Configurable renderer (`mdcat`, `rich-cli`, …); `glow` only.
-- Theming `glow`'s output to Catppuccin Mocha ([[tmux-play-47](../packages/tmux-play.md#tmux-play-47)]).
+- Theming `glow`'s output to the flavor selected by [[tmux-play-194](../packages/tmux-play.md#tmux-play-194)] and applied by [[tmux-play-50](../packages/tmux-play.md#tmux-play-50)].
 - Bundling or auto-installing `glow`.
 
 ## Deliverables

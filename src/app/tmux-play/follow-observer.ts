@@ -148,11 +148,10 @@ export class FollowObserver implements RecordObserver {
         };
       }
       case 'captain_finished':
-        // tmux-play-72: a hidden Captain call puts zero bytes on the pane
-        // (presenter-tmux.ts skips its captain_event / captain_finished), so it
-        // must drive no follow. Mirror the presenter's skip exactly — report no
-        // write and leave the pending-block state untouched, since a hidden
-        // event never accumulated into the presenter's open block.
+        // tmux-play-40 gives a hidden Captain call no pane bytes, so
+        // tmux-play-69 requires no follow. Mirror the presenter's skip exactly —
+        // report no write and leave the pending-block state untouched, since a
+        // hidden event never accumulated into the presenter's open block.
         if (record.visibility === 'hidden') {
           return { title: this.captainTitle, writes: false };
         }

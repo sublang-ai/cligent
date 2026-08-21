@@ -2160,7 +2160,7 @@ describe('launchTmuxPlay', () => {
       'pane-active-border-style',
       'fg=#89b4fa',
     ]);
-    // tmux-play-48: inactive pane border dimmed to overlay0 for stronger contrast
+    // tmux-play-47: inactive pane border dimmed to overlay0 for stronger contrast
     // with the active blue border.
     expect(setCalls).toContainEqual([
       'set',
@@ -2399,7 +2399,7 @@ describe('launchTmuxPlay', () => {
       'pane-border-format',
     );
     expect(paneBorderFormat).toContain('#{pane_title}');
-    // tmux-play-48: only the Captain pane (index 0) carries the blue highlight
+    // tmux-play-199: only the Captain pane (index 0) carries the blue highlight
     // block, and only while active. The else branch carries Mocha text on
     // the mantle surface — every other pane (inactive Captain, active
     // player, inactive player) reads against the theme's own surface band.

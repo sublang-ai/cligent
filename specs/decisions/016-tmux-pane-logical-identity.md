@@ -34,9 +34,9 @@ Accepted
 
 ## Consequences
 
-- [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)] specifies the observable contract and
-  [[tmux-play-198](../packages/tmux-play.md#tmux-play-198)] pins title-replacement acceptance with the round-trip
-  warning legs.
+- [[tmux-play-96](../packages/tmux-play.md#tmux-play-96)] specifies the logical-identity contract,
+  [[tmux-play-200](../packages/tmux-play.md#tmux-play-200)] specifies the title round-trip warning, and
+  [[tmux-play-198](../packages/tmux-play.md#tmux-play-198)] pins title-replacement acceptance with the warning legs.
 - The shared tmux query helpers and the width, timer, and follow consumers change in an implementing
   iteration; until then the code still parses titles.
 - A normalized displayed title remains possible under exotic locales and is acceptable, being cosmetic

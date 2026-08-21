@@ -100,10 +100,9 @@ describe('FollowObserver', () => {
   it('does not follow on hidden captain events or hidden finished records', () => {
     const { observer, followed } = makeObserver();
 
-    // A hidden Captain call (tmux-play-72) puts zero bytes on the boss pane — the
-    // presenter skips its captain_event and captain_finished records — so none
-    // of these may snap a scrolled pane to its tail, regardless of event type
-    // or finished status.
+    // A hidden Captain call puts zero bytes on the boss pane per tmux-play-40,
+    // so tmux-play-69 requires no follow for its captain_event and
+    // captain_finished records, regardless of event type or finished status.
     observer.onRecord(hiddenCaptainEvent(toolUse()));
     observer.onRecord(hiddenCaptainEvent(text('done')));
     observer.onRecord(hiddenCaptainEvent(errorEvent()));

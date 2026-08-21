@@ -283,7 +283,7 @@ export class TmuxPlaySession {
       config.players.map((player) => [player.id, player.adapter]),
     );
     // The snapshot carries the launcher-resolved Catppuccin flavor
-    // (mocha | latte) per tmux-play-47, so prefix / status / tool SGRs in
+    // (mocha | latte) per tmux-play-194, so prefix / status / tool SGRs in
     // pane content — including the readline prompt below — match the
     // flavor of the tmux chrome.
     const themeFlavor: CatppuccinFlavor =
@@ -390,7 +390,7 @@ export class TmuxPlaySession {
       output: readlineOutput,
       escapeCodeTimeout: READLINE_ESCAPE_CODE_TIMEOUT_MS,
     });
-    // tmux-play-38: color the `boss> ` prefix with the boss role color from
+    // tmux-play-37: color the `boss> ` prefix with the boss role color from
     // the resolved flavor (Mocha `#89b4fa` on dark, Latte `#1e66f5` on
     // light), so the prompt keeps contrast against the user's terminal
     // background. Node ≥18's readline strips ANSI escapes when computing

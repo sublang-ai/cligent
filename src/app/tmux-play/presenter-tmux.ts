@@ -75,7 +75,7 @@ export interface TmuxPresenterOptions {
   readonly bossWidth?: WidthSource;
   readonly playerWidths?: ReadonlyMap<string, WidthSource>;
   // player-id → adapter-name. Used to pick the player's prefix SGR color from
-  // the adapter map per tmux-play-48. When absent the player prefix stays uncolored
+  // the adapter map per tmux-play-195. When absent the player prefix stays uncolored
   // (graceful fallback for callers / older tests that don't supply it).
   readonly playerAdapters?: ReadonlyMap<string, string>;
   /**
@@ -158,14 +158,14 @@ export class TmuxPresenter implements RecordObserver {
         this.writePlayerFinished(record);
         break;
       case 'captain_event':
-        // tmux-play-72: a hidden Captain call produces zero Boss-pane output.
+        // tmux-play-40: a hidden Captain call produces zero Boss-pane output.
         // Skipping the event keeps it out of the open text block, so a
         // hidden call never accumulates content to flush.
         if (record.visibility === 'hidden') break;
         this.writeFormatted(this.boss, 'captain', record.event);
         break;
       case 'captain_finished':
-        // tmux-play-72: skip the flush + status line for a hidden call. Visible
+        // tmux-play-40: skip the flush + status line for a hidden call. Visible
         // calls flush their own block at their captain_finished, so there is
         // no stale open block to drain here.
         if (record.visibility === 'hidden') break;
@@ -242,7 +242,7 @@ export class TmuxPresenter implements RecordObserver {
         result.error ?? 'Agent run failed',
       );
     } else {
-      // Aborted: no body — tmux-play-33 says aborted results need not carry a reason.
+      // Aborted: no body, as selected by tmux-play-39.
       this.writeBracketedLine(
         writer,
         who,

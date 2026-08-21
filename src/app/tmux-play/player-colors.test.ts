@@ -19,7 +19,7 @@ import {
   playerAccent,
 } from './player-colors.js';
 
-// tmux-play-48 fallback pools; changes here are normative. Sapphire is absent
+// tmux-play-195 fallback pools; changes here are normative. Sapphire is absent
 // from both because the `kimi` adapter claims it.
 const FALLBACK_POOL_MOCHA = new Set([
   '#89dceb', // sky
@@ -39,7 +39,7 @@ const KNOWN_ADAPTERS = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
 
 describe('playerAccent', () => {
   it('returns the canonical Mocha accent for each known adapter', () => {
-    // Anchors per tmux-play-48; changes here are normative.
+    // Anchors per tmux-play-195; changes here are normative.
     expect(playerAccent('claude')).toBe('#a6e3a1');
     expect(playerAccent('codex')).toBe('#94e2d5');
     expect(playerAccent('gemini')).toBe('#b4befe');
@@ -69,7 +69,7 @@ describe('playerAccent', () => {
   });
 
   it('never hands an unknown adapter a known adapter accent', () => {
-    // tmux-play-48: neither pool may contain an accent assigned to a known
+    // tmux-play-195: neither pool may contain an accent assigned to a known
     // adapter. `kimi` claimed sapphire, so sapphire left both pools —
     // otherwise `cursor`/`qwen`/`agentx`/`cline` would render identically
     // to a `kimi` player in the same session.

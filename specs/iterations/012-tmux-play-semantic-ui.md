@@ -23,11 +23,11 @@ In scope:
 - Truecolor enablement on the launcher-created session (`default-terminal "tmux-256color"` + `terminal-overrides ",*:RGB"`).
 - Enriched `pane-border-format`: `<title> · <adapter>` with active/inactive style differentiation; inactive border dimmed to `overlay0`.
 - Stable per-adapter player color map (`claude`→green, `codex`→teal, `gemini`→lavender, `opencode`→pink) with a deterministic fallback for unknown adapters.
-- Speaker-prefix ANSI coloring on the existing `<who>>` grammar from [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)]: `boss>` blue, `captain>` mauve, `<playerId>>` adapter-keyed.
+- Speaker-prefix ANSI coloring on the existing `<who>>` grammar from [[tmux-play-37](../packages/tmux-play.md#tmux-play-37)] and [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)]: `boss>` blue, `captain>` mauve, `<playerId>>` adapter-keyed.
 - `[error: …]` and `[aborted]` status lines (from [[tmux-play-39](../packages/tmux-play.md#tmux-play-39)]) recolored: error red bold, aborted yellow bold.
 - New tool lifecycle prefix grammar `tool>` (invocation) and `tool<` (result) with peach/green/red/yellow prefix coloring per outcome and `overlay0`-dimmed body for tool stdout.
 - Tool events render in whichever pane the calling entity occupies: player-emitted tools in the player pane, captain-emitted tools in the Boss/Captain pane (a narrow amendment to [[tmux-play-40](../packages/tmux-play.md#tmux-play-40)]).
-- Spec items: [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)] amendment for optional ANSI on prefixes, [[tmux-play-40](../packages/tmux-play.md#tmux-play-40)] amendment for captain-pane tool events, [[tmux-play-47](../packages/tmux-play.md#tmux-play-47)] expansion to claim truecolor options, new tmux-play-48 for the pane-border format + player color map, new tmux-play-49 for tool lifecycle rendering.
+- Spec items: [[tmux-play-37](../packages/tmux-play.md#tmux-play-37)] and [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)] amendments for optional ANSI on prefixes, [[tmux-play-40](../packages/tmux-play.md#tmux-play-40)] amendment for captain-pane tool events, [[tmux-play-47](../packages/tmux-play.md#tmux-play-47)] expansion to claim truecolor options, new tmux-play-48 / tmux-play-195 / tmux-play-199 for the pane-title, player-color, and pane-border concerns, and new tmux-play-49 for tool lifecycle rendering.
 - Matching test-spec items under TTMUX-… and `map.md` TMUX-summary update.
 
 Out of scope:
@@ -45,7 +45,7 @@ Out of scope:
 - [x] `src/app/tmux-play/presenter-tmux.ts` — ANSI-colored speaker prefixes, error/aborted recolor, and `tool>` / `tool<` lifecycle with dim output body.
 - [x] `src/app/tmux-play/launcher.test.ts` — assertions for truecolor `set` calls and the enriched pane-border format.
 - [x] `src/app/tmux-play/presenter-tmux.test.ts` — speaker prefix ANSI, error/aborted recolor, tool lifecycle (header colors, dim body, captain-pane routing, duration formatting, input summarization).
-- [x] `specs/user/tmux-play.md` — tmux-play-47 expansion + new tmux-play-48; tmux-play-38, tmux-play-39 amendments; tmux-play-40 amendment + new tmux-play-49.
+- [x] `specs/user/tmux-play.md` — tmux-play-47 expansion + new tmux-play-48 / tmux-play-195 / tmux-play-199; tmux-play-37, tmux-play-38, tmux-play-39 amendments; tmux-play-40 amendment + new tmux-play-49.
 - [x] `specs/test/tmux-play.md` — tmux-play-138, tmux-play-139, tmux-play-140, tmux-play-141, tmux-play-142, tmux-play-143, tmux-play-144, tmux-play-145.
 - [x] `specs/map.md` — TMUX user-row summary mentions "speaker colors" and "tool lifecycle".
 
@@ -53,13 +53,13 @@ Out of scope:
 
 Each task is one commit.
 
-1. [x] **Truecolor + enriched pane border** — tmux-play-47 expansion to claim `default-terminal` and `terminal-overrides`, new tmux-play-48 for `<title> · <adapter>` format with active/inactive differentiation and the adapter color map.
+1. [x] **Truecolor + enriched pane border** — tmux-play-47 expansion to claim `default-terminal` and `terminal-overrides`, new tmux-play-48 / tmux-play-195 / tmux-play-199 for `<title> · <adapter>` composition, the adapter color map, and active/inactive pane-border differentiation.
    Add `player-colors.ts` (the map is exported and unit-tested but unused by presenter in this task).
    Launcher test asserts both new `set` calls plus the new format string.
-2. [x] **Speaker-prefix coloring** — tmux-play-38 amendment permitting ANSI on speaker prefixes; tmux-play-39 prose recolored for error/aborted.
-   Presenter writes SGR-color the prefix bytes only; body stays unstyled.
+2. [x] **Speaker-prefix coloring** — tmux-play-37 / tmux-play-38 amendments permitting ANSI on Boss readline and presenter speaker prefixes; tmux-play-39 prose recolored for error/aborted.
+   Readline and presenter write SGR-color the prefix bytes only; body stays unstyled.
    Consumes `player-colors.ts` for the per-player accent.
-   Presenter tests cover boss/captain/player prefixes and the recolored error/aborted lines.
+   Session and presenter tests cover Boss, Captain, and player prefixes and the recolored error/aborted lines.
 3. [x] **Tool lifecycle rendering** — new tmux-play-49 for `tool>` / `tool<` two-line grammar with peach/green/red/yellow prefix colors and `overlay0`-dimmed body; narrow tmux-play-40 amendment so captain-emitted tool events render in the captain pane.
    Presenter emits one `tool>` line on each `tool_use` event and one `tool<` line on each `tool_result` event, both routed to the calling entity's pane.
    Presenter tests cover the format and the destination pane for both player-emitted and captain-emitted tools.
@@ -68,6 +68,6 @@ Each task is one commit.
 
 - `npm run build`, `npm run lint`, `npm test`, and `npm run test:smoke` pass at every task boundary.
 - After Task 1, the launcher's `tmux set` calls apply to a real server: `tmux show-options -gv -t <session> default-terminal` returns `tmux-256color`, and `tmux show-options -gv -t <session> terminal-overrides` contains an entry of `*:RGB` (the modern RGB capability, not the legacy `Tc`). The assertion shall match the entry as printed — tmux normalizes a leading-comma `set-option` argument like `,*:RGB` and emits the stored value without it, so an assertion on the literal `,*:RGB` substring is wrong. Whether a real terminal client subsequently negotiates the `RGB` capability is tmux's own contract beyond the launcher's control surface and is not asserted; see [[tmux-play-139](../packages/tmux-play.md#tmux-play-139)] for the current scope.
-- After Task 2, the presenter snapshot for a Boss → Captain → Player turn shows SGR-colored prefixes per the tmux-play-38 table and uncolored body text.
+- After Task 2, the Boss readline and presenter snapshot for a Boss → Captain → Player turn show SGR-colored prefixes per tmux-play-37 / tmux-play-38 and uncolored body text.
 - After Task 3, the presenter snapshot for a tool-using player shows a `tool>` / `tool<` pair with the correct outcome color and a dim continuation body, and a tool-using captain renders the same pair in the Captain pane per the tmux-play-40 amendment.
 - `specs/map.md` TMUX user-row summary reflects the new content.
