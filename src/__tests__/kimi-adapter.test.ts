@@ -34,9 +34,12 @@ interface FakeScenario {
   failAuth?: boolean;
   sessionError?: Error;
   exitCode?: number;
+  exitSignal?: NodeJS.Signals;
   ignoreInputEnd?: boolean;
   ignoreSigterm?: boolean;
+  ignoreSigkill?: boolean;
   inputEndDelayMs?: number;
+  lifecycle?: string[];
   stopReason?: PromptResponse['stopReason'];
   initialize?: () => Promise<void>;
   setConfig?: (request: SetSessionConfigOptionRequest) => Promise<void>;
@@ -63,21 +66,26 @@ class FakeChild extends EventEmitter {
   readonly killSignals: NodeJS.Signals[] = [];
   private closed = false;
   private readonly ignoreSigterm: boolean;
+  private readonly ignoreSigkill: boolean;
+  private readonly lifecycle: string[] | undefined;
 
-  constructor(
-    exitCode = 0,
-    ignoreInputEnd = false,
-    ignoreSigterm = false,
-    inputEndDelayMs = 0,
-  ) {
+  constructor(scenario: FakeScenario = {}) {
     super();
-    this.ignoreSigterm = ignoreSigterm;
+    this.ignoreSigterm = scenario.ignoreSigterm ?? false;
+    this.ignoreSigkill = scenario.ignoreSigkill ?? false;
+    this.lifecycle = scenario.lifecycle;
     this.stdin.once('finish', () => {
-      if (ignoreInputEnd) return;
-      if (inputEndDelayMs > 0) {
-        setTimeout(() => this.close(exitCode, null), inputEndDelayMs);
+      this.lifecycle?.push('stdin:end');
+      if (scenario.ignoreInputEnd) return;
+      const close = () =>
+        this.close(
+          scenario.exitSignal ? null : (scenario.exitCode ?? 0),
+          scenario.exitSignal ?? null,
+        );
+      if ((scenario.inputEndDelayMs ?? 0) > 0) {
+        setTimeout(close, scenario.inputEndDelayMs);
       } else {
-        this.close(exitCode, null);
+        close();
       }
     });
   }
@@ -85,7 +93,9 @@ class FakeChild extends EventEmitter {
   kill(signal: NodeJS.Signals = 'SIGTERM'): boolean {
     this.killed = true;
     this.killSignals.push(signal);
+    this.lifecycle?.push(`kill:${signal}`);
     if (signal === 'SIGTERM' && this.ignoreSigterm) return true;
+    if (signal === 'SIGKILL' && this.ignoreSigkill) return true;
     this.close(null, signal);
     return true;
   }
@@ -93,6 +103,7 @@ class FakeChild extends EventEmitter {
   close(code: number | null, signal: NodeJS.Signals | null): void {
     if (this.closed) return;
     this.closed = true;
+    this.lifecycle?.push('close');
     this.exitCode = code;
     this.signalCode = signal;
     this.stdout.end();
@@ -125,12 +136,7 @@ class FakeKimi {
     options: Record<string, unknown>,
   ): ReturnType<typeof import('node:child_process').spawn> => {
     this.spawns.push({ command, args, options });
-    const child = new FakeChild(
-      this.scenario.exitCode,
-      this.scenario.ignoreInputEnd,
-      this.scenario.ignoreSigterm,
-      this.scenario.inputEndDelayMs,
-    );
+    const child = new FakeChild(this.scenario);
     this.children.push(child);
 
     const output = new WritableStream<Uint8Array>({
@@ -248,9 +254,13 @@ class FakeKimi {
 
 async function collect(
   source: AsyncIterable<AgentEvent>,
+  onEvent?: (event: AgentEvent) => void,
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  for await (const event of source) events.push(event);
+  for await (const event of source) {
+    onEvent?.(event);
+    events.push(event);
+  }
   return events;
 }
 
@@ -975,17 +985,19 @@ describe('KimiAdapter', () => {
     expect(eventOf(events, 'done').payload.status).toBe('interrupted');
   });
 
-  it('does not spawn when already aborted', async () => {
+  it('gives an already-aborted caller precedence over option validation', async () => {
     const fake = new FakeKimi();
     const controller = new AbortController();
     controller.abort();
     const events = await collect(
       new KimiAdapter({ spawnProcess: fake.spawn }).run('No work', {
         resume: 'inbound-session',
+        effort: 'ultra' as KimiEffort,
         abortSignal: controller.signal,
       }),
     );
     expect(fake.spawns).toHaveLength(0);
+    expect(events.map((event) => event.type)).toEqual(['done']);
     expect(eventOf(events, 'done').payload).toMatchObject({
       status: 'interrupted',
       resumeToken: 'inbound-session',
@@ -1397,6 +1409,296 @@ describe('KimiAdapter', () => {
 
     expect(fake.children[0]?.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(eventOf(events, 'error').payload.message).toContain('SIGKILL');
+    expect(eventOf(events, 'done').payload.status).toBe('error');
+  });
+
+  const terminalCandidates = [
+    { name: 'success', stopReason: 'end_turn', callerAbort: false },
+    { name: 'refusal', stopReason: 'refusal', callerAbort: false },
+    {
+      name: 'native cancellation',
+      stopReason: 'cancelled',
+      callerAbort: false,
+    },
+    { name: 'caller abort', stopReason: 'end_turn', callerAbort: true },
+  ] as const;
+  const closeStates = [
+    {
+      name: 'clean close',
+      scenario: { inputEndDelayMs: 1 },
+      diagnostic: undefined,
+    },
+    {
+      name: 'nonzero close',
+      scenario: { exitCode: 7, inputEndDelayMs: 1 },
+      diagnostic: 'code 7',
+    },
+    {
+      name: 'unexpected-signal close',
+      scenario: { exitSignal: 'SIGHUP' as const, inputEndDelayMs: 1 },
+      diagnostic: 'SIGHUP',
+    },
+    {
+      name: 'forced SIGKILL close',
+      scenario: { ignoreInputEnd: true, ignoreSigterm: true },
+      diagnostic: 'SIGKILL',
+    },
+  ] as const;
+
+  it.each(
+    terminalCandidates.flatMap((candidate) =>
+      closeStates.map((closeState) => ({ candidate, closeState })),
+    ),
+  )(
+    'selects $candidate.name against $closeState.name',
+    async ({ candidate, closeState }) => {
+      const lifecycle: string[] = [];
+      const cleanupFailures: Error[] = [];
+      const controller = new AbortController();
+      const fake = new FakeKimi({
+        ...closeState.scenario,
+        lifecycle,
+        prompt: async () => {
+          if (candidate.callerAbort) controller.abort();
+          return { stopReason: candidate.stopReason };
+        },
+      });
+      const events = await collect(
+        new KimiAdapter({
+          spawnProcess: fake.spawn,
+          processStdinExitGraceMs: 5,
+          processSignalExitGraceMs: 5,
+          cancelTerminationDelayMs: 5,
+          reportCleanupFailure: (error) => cleanupFailures.push(error),
+        }).run('Resolve precedence', {
+          abortSignal: controller.signal,
+        }),
+        (event) => lifecycle.push(`event:${event.type}`),
+      );
+
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+      expect(lifecycle.filter((entry) => entry === 'stdin:end')).toHaveLength(
+        1,
+      );
+      const expectedSignals =
+        closeState.name === 'forced SIGKILL close'
+          ? ['SIGTERM', 'SIGKILL']
+          : [];
+      expect(fake.children[0]?.killSignals).toEqual(expectedSignals);
+
+      if (candidate.callerAbort) {
+        expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+        expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+        expect(
+          fake.calls.filter((call) => call === 'session/cancel'),
+        ).toHaveLength(1);
+        expect(lifecycle.indexOf('event:done')).toBeLessThan(
+          lifecycle.indexOf('stdin:end'),
+        );
+        expect(lifecycle.indexOf('event:done')).toBeLessThan(
+          lifecycle.indexOf('close'),
+        );
+        if (closeState.diagnostic) {
+          expect(cleanupFailures).toHaveLength(1);
+          expect(cleanupFailures[0]?.message).toContain(closeState.diagnostic);
+        } else {
+          expect(cleanupFailures).toEqual([]);
+        }
+        return;
+      }
+
+      expect(cleanupFailures).toEqual([]);
+      expect(lifecycle.indexOf('close')).toBeLessThan(
+        lifecycle.indexOf('event:done'),
+      );
+      if (closeState.diagnostic) {
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'error',
+          'done',
+        ]);
+        expect(eventOf(events, 'error').payload).toMatchObject({
+          code: 'KIMI_ACP_ERROR',
+          recoverable: false,
+        });
+        expect(eventOf(events, 'error').payload.message).toContain(
+          closeState.diagnostic,
+        );
+        expect(eventOf(events, 'done').payload.status).toBe('error');
+        return;
+      }
+
+      if (candidate.stopReason === 'refusal') {
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'error',
+          'done',
+        ]);
+        expect(eventOf(events, 'error').payload.code).toBe('KIMI_REFUSAL');
+        expect(eventOf(events, 'done').payload.status).toBe('error');
+      } else {
+        expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+        expect(eventOf(events, 'done').payload.status).toBe(
+          candidate.stopReason === 'cancelled' ? 'interrupted' : 'success',
+        );
+      }
+    },
+  );
+
+  it('finishes one abort cleanup when the child ignores SIGKILL', async () => {
+    const lifecycle: string[] = [];
+    const cleanupFailures: Error[] = [];
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      ignoreInputEnd: true,
+      ignoreSigterm: true,
+      ignoreSigkill: true,
+      lifecycle,
+      prompt: async () => new Promise<PromptResponse>(() => {}),
+    });
+    const run = collect(
+      new KimiAdapter({
+        spawnProcess: fake.spawn,
+        processStdinExitGraceMs: 5,
+        processSignalExitGraceMs: 5,
+        cancelTerminationDelayMs: 5,
+        reportCleanupFailure: (error) => cleanupFailures.push(error),
+      }).run('Stay wedged', { abortSignal: controller.signal }),
+      (event) => lifecycle.push(`event:${event.type}`),
+    );
+    while (!fake.calls.includes('session/prompt')) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1));
+    }
+    controller.abort();
+    const events = await run;
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+    expect(fake.calls.filter((call) => call === 'session/cancel')).toHaveLength(
+      1,
+    );
+    expect(fake.children[0]?.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(lifecycle.filter((entry) => entry === 'stdin:end')).toHaveLength(1);
+    expect(lifecycle).not.toContain('close');
+    expect(lifecycle.indexOf('event:done')).toBeLessThan(
+      lifecycle.indexOf('kill:SIGTERM'),
+    );
+    expect(cleanupFailures).toHaveLength(1);
+    expect(cleanupFailures[0]?.message).toContain('did not exit');
+  });
+
+  it('keeps caller-abort priority while awaiting post-prompt close', async () => {
+    const lifecycle: string[] = [];
+    const cleanupFailures: Error[] = [];
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      ignoreInputEnd: true,
+      lifecycle,
+      stopReason: 'end_turn',
+    });
+    const run = collect(
+      new KimiAdapter({
+        spawnProcess: fake.spawn,
+        processStdinExitGraceMs: 50,
+        processSignalExitGraceMs: 5,
+        reportCleanupFailure: (error) => cleanupFailures.push(error),
+      }).run('Abort during close', { abortSignal: controller.signal }),
+      (event) => lifecycle.push(`event:${event.type}`),
+    );
+    while (!lifecycle.includes('stdin:end')) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1));
+    }
+    controller.abort();
+    const events = await run;
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+    expect(fake.children[0]?.killSignals).toEqual(['SIGTERM']);
+    expect(lifecycle.indexOf('stdin:end')).toBeLessThan(
+      lifecycle.indexOf('event:done'),
+    );
+    expect(lifecycle.indexOf('event:done')).toBeLessThan(
+      lifecycle.indexOf('kill:SIGTERM'),
+    );
+    expect(cleanupFailures).toEqual([]);
+  });
+
+  it('holds close-wait escalation until the abort terminal is delivered', async () => {
+    const lifecycle: string[] = [];
+    const controller = new AbortController();
+    const fake = new FakeKimi({ ignoreInputEnd: true, lifecycle });
+    const stream = new KimiAdapter({
+      spawnProcess: fake.spawn,
+      processStdinExitGraceMs: 10,
+      processSignalExitGraceMs: 5,
+    }).run('Hold delivery', { abortSignal: controller.signal });
+
+    const first = await stream.next();
+    expect(first.value?.type).toBe('init');
+    while (!lifecycle.includes('stdin:end')) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1));
+    }
+    controller.abort();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 30));
+    expect(fake.children[0]?.killSignals).toEqual([]);
+
+    const terminal = await stream.next();
+    expect(terminal.value?.type).toBe('done');
+    expect(terminal.value?.payload.status).toBe('interrupted');
+    expect(fake.children[0]?.killSignals).toEqual([]);
+
+    const completion = await stream.next();
+    expect(completion.done).toBe(true);
+    expect(fake.children[0]?.killSignals).toEqual(['SIGTERM']);
+  });
+
+  it('keeps a protocol cause when abort arrives after teardown starts', async () => {
+    const lifecycle: string[] = [];
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      ignoreInputEnd: true,
+      ignoreSigterm: true,
+      lifecycle,
+      prompt: async (_connection, request, state) => {
+        state.children[0]?.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              sessionId: request.sessionId,
+              update: { sessionUpdate: 'agent_message_chunk' },
+            },
+          })}\n`,
+        );
+        return new Promise<PromptResponse>(() => {});
+      },
+    });
+    const run = collect(
+      new KimiAdapter({
+        spawnProcess: fake.spawn,
+        processStdinExitGraceMs: 5,
+        processSignalExitGraceMs: 50,
+      }).run('Fail before abort', { abortSignal: controller.signal }),
+      (event) => lifecycle.push(`event:${event.type}`),
+    );
+    while (!lifecycle.includes('kill:SIGTERM')) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1));
+    }
+    controller.abort();
+    const events = await run;
+
+    expect(fake.calls).not.toContain('session/cancel');
+    expect(fake.children[0]?.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(eventOf(events, 'error').payload).toMatchObject({
+      code: 'KIMI_ACP_ERROR',
+      message: expect.stringContaining('Malformed Kimi ACP traffic'),
+      recoverable: false,
+    });
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });
 

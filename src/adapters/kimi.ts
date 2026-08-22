@@ -80,11 +80,20 @@ interface ProcessClose {
   error?: Error;
 }
 
+interface ShutdownOutcome {
+  close?: ProcessClose;
+  sentSigterm: boolean;
+  requiredSigkill: boolean;
+  survivedFinalGrace: boolean;
+}
+
 interface KimiAdapterDeps {
   spawnProcess?: SpawnProcessFn;
   probeAvailability?: () => Promise<boolean>;
   processStdinExitGraceMs?: number;
   processSignalExitGraceMs?: number;
+  cancelTerminationDelayMs?: number;
+  reportCleanupFailure?: (error: Error) => void;
 }
 
 export interface KimiPermissionOptions {
@@ -577,6 +586,24 @@ function processCloseError(
   return undefined;
 }
 
+function shutdownError(outcome: ShutdownOutcome): Error | undefined {
+  if (outcome.survivedFinalGrace) {
+    return new Error(
+      'Kimi ACP process did not exit after stdin closed, SIGTERM, and SIGKILL',
+    );
+  }
+  if (outcome.requiredSigkill) {
+    return new Error('Kimi ACP process required SIGKILL during cleanup');
+  }
+  return outcome.close
+    ? processCloseError(outcome.close, outcome.sentSigterm)
+    : new Error('Kimi ACP process close state was unavailable');
+}
+
+function defaultReportCleanupFailure(error: Error): void {
+  console.error(`Kimi ACP cleanup after caller abort failed: ${error.message}`);
+}
+
 function kimiResumeTokenPayload(
   status: DonePayload['status'],
   backendSessionKnown: boolean,
@@ -644,6 +671,8 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
   private readonly probeAvailability: () => Promise<boolean>;
   private readonly processStdinExitGraceMs: number;
   private readonly processSignalExitGraceMs: number;
+  private readonly cancelTerminationDelayMs: number;
+  private readonly reportCleanupFailure: (error: Error) => void;
 
   constructor(deps: KimiAdapterDeps = {}) {
     this.spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
@@ -652,6 +681,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       deps.processStdinExitGraceMs ?? PROCESS_STDIN_EXIT_GRACE_MS;
     this.processSignalExitGraceMs =
       deps.processSignalExitGraceMs ?? PROCESS_SIGNAL_EXIT_GRACE_MS;
+    this.cancelTerminationDelayMs =
+      deps.cancelTerminationDelayMs ?? CANCEL_TERMINATION_DELAY_MS;
+    this.reportCleanupFailure =
+      deps.reportCleanupFailure ?? defaultReportCleanupFailure;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -662,16 +695,37 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     prompt: string,
     options?: AgentOptions<KimiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    const startTime = Date.now();
+    const initialSessionId = options?.resume || generateSessionId();
+    if (options?.abortSignal?.aborted) {
+      yield createEvent(
+        'done',
+        AGENT,
+        {
+          status: 'interrupted',
+          ...kimiResumeTokenPayload(
+            'interrupted',
+            false,
+            initialSessionId,
+            options?.resume,
+          ),
+          usage: { ...DEFAULT_DONE_USAGE },
+          durationMs: Date.now() - startTime,
+        },
+        initialSessionId,
+      );
+      return;
+    }
+
     // engine-25: gate the direct run path too, not only `isAvailable()`.
     assertRuntimeSupported(
       AGENT_RUNTIME_TARGETS.kimi[0]!,
       `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0]!.repairSpec}`,
     );
     const mapped = mapAgentOptionsToKimiOptions(options);
-    const startTime = Date.now();
     const queue = new AsyncEventQueue();
 
-    let sessionId = options?.resume || generateSessionId();
+    let sessionId = initialSessionId;
     let backendSessionKnown = false;
     let child: ChildProcessWithoutNullStreams | undefined;
     let closePromise: Promise<ProcessClose> | undefined;
@@ -681,14 +735,68 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     let stderr = '';
     let abortRequested = options?.abortSignal?.aborted === true;
     let cancelSent = false;
-    let terminationScheduled = false;
+    let abortFinalizationScheduled = false;
     let terminalQueued = false;
     let protocolFailure: Error | undefined;
     let promptActive = false;
+    let stdinEnded = false;
     let cleanupSigtermSent = false;
+    let cleanupSigkillSent = false;
+    let cleanupFailureReported = false;
+    let terminalCause: 'caller-abort' | 'non-abort' | undefined;
+    let shutdownPromise: Promise<ShutdownOutcome | undefined> | undefined;
+    let abortFinalizationPromise: Promise<void> | undefined;
+    let removeAbortListener = (): void => {};
     let assistantText = '';
     let emittedToolUses = 0;
     const tools = new Map<string, ToolState>();
+
+    let terminalDelivered = false;
+    let resolveTerminalDelivered: (() => void) | undefined;
+    const terminalDelivery = new Promise<void>((resolveDelivery) => {
+      resolveTerminalDelivered = resolveDelivery;
+    });
+    const markTerminalDelivered = (): void => {
+      if (terminalDelivered) return;
+      terminalDelivered = true;
+      resolveTerminalDelivered?.();
+    };
+
+    const commitCallerAbort = (): boolean => {
+      if (terminalCause === 'non-abort') return false;
+      terminalCause = 'caller-abort';
+      abortRequested = true;
+      removeAbortListener();
+      return true;
+    };
+
+    const commitNonAbortCause = (): boolean => {
+      if (terminalCause === 'caller-abort') return false;
+      terminalCause = 'non-abort';
+      removeAbortListener();
+      return true;
+    };
+
+    let abortDeadlineReached = false;
+    let resolveAbortDeadline: (() => void) | undefined;
+    const abortDeadline = new Promise<void>((resolveDeadline) => {
+      resolveAbortDeadline = resolveDeadline;
+    });
+    const reachAbortDeadline = (): void => {
+      if (abortDeadlineReached) return;
+      abortDeadlineReached = true;
+      resolveAbortDeadline?.();
+    };
+    const awaitAcp = async <T>(operation: Promise<T>): Promise<T> => {
+      const outcome = await Promise.race([
+        operation.then((value) => ({ kind: 'value' as const, value })),
+        abortDeadline.then(() => ({ kind: 'abort' as const })),
+      ]);
+      if (outcome.kind === 'abort') {
+        throw new Error('Kimi ACP run aborted before the operation settled');
+      }
+      return outcome.value;
+    };
 
     const push = (event: AgentEvent): void => {
       if (!terminalQueued) queue.push(event);
@@ -723,29 +831,148 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         ),
       );
       queue.close();
+      removeAbortListener();
     };
 
-    const scheduleTermination = (delayMs: number): void => {
-      if (!child || processExited || terminationScheduled) return;
-      terminationScheduled = true;
-      const terminate = (): void => {
-        if (!child || processExited) return;
-        killProcess(child);
-        setTimeout(() => {
-          if (child && !processExited) killProcess(child, 'SIGKILL');
-        }, this.processSignalExitGraceMs).unref();
+    let escalationRequested = false;
+    let resolveEscalation: (() => void) | undefined;
+    const escalation = new Promise<void>((resolveRequested) => {
+      resolveEscalation = resolveRequested;
+    });
+    const requestEscalation = (): void => {
+      if (escalationRequested) return;
+      escalationRequested = true;
+      resolveEscalation?.();
+    };
+
+    const waitForCloseOrEscalation = (): Promise<
+      'closed' | 'timeout' | 'escalated'
+    > =>
+      new Promise((resolveWait) => {
+        let settled = false;
+        const settle = (outcome: 'closed' | 'timeout' | 'escalated'): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolveWait(outcome);
+        };
+        const timer = setTimeout(
+          () => settle('timeout'),
+          this.processStdinExitGraceMs,
+        );
+        void closePromise?.then(() => settle('closed'));
+        void escalation.then(() => settle('escalated'));
+      });
+
+    const sendSigterm = (): void => {
+      if (!child || processExited || cleanupSigtermSent) return;
+      if (terminalCause !== 'caller-abort') commitNonAbortCause();
+      cleanupSigtermSent = true;
+      killProcess(child);
+    };
+
+    const sendSigkill = (): void => {
+      if (!child || processExited || cleanupSigkillSent) return;
+      cleanupSigkillSent = true;
+      killProcess(child, 'SIGKILL');
+    };
+
+    const closeProtocolTransport = (): void => {
+      child?.stdout.destroy();
+      child?.stdin.destroy();
+      child?.stderr.destroy();
+    };
+
+    const shutdownProcess = (): Promise<ShutdownOutcome | undefined> => {
+      shutdownPromise ??= (async () => {
+        if (!child || !closePromise) return undefined;
+        if (!processExited && !stdinEnded) {
+          stdinEnded = true;
+          endOrKill(child);
+        }
+        if (!processExited) {
+          const firstWait = await waitForCloseOrEscalation();
+          if (firstWait !== 'closed') {
+            if (terminalCause === 'caller-abort') await terminalDelivery;
+            sendSigterm();
+            if (
+              !(await waitForClose(closePromise, this.processSignalExitGraceMs))
+            ) {
+              sendSigkill();
+              if (
+                !(await waitForClose(
+                  closePromise,
+                  this.processSignalExitGraceMs,
+                ))
+              ) {
+                closeProtocolTransport();
+                return {
+                  close: processClose,
+                  sentSigterm: cleanupSigtermSent,
+                  requiredSigkill: cleanupSigkillSent,
+                  survivedFinalGrace: true,
+                };
+              }
+            }
+          }
+        }
+        return {
+          close: processClose,
+          sentSigterm: cleanupSigtermSent,
+          requiredSigkill: cleanupSigkillSent,
+          survivedFinalGrace: false,
+        };
+      })();
+      return shutdownPromise;
+    };
+
+    const reportSecondaryCleanupFailure = (
+      outcome: ShutdownOutcome | undefined,
+    ): void => {
+      if (!outcome || cleanupFailureReported) return;
+      const failure = shutdownError(outcome);
+      if (!failure) return;
+      cleanupFailureReported = true;
+      try {
+        this.reportCleanupFailure(failure);
+      } catch {
+        // A diagnostic sink cannot restart or replace terminal cleanup.
+      }
+    };
+
+    const finalizeAbort = (forceShutdown: boolean): Promise<void> => {
+      abortFinalizationPromise ??= (async () => {
+        finish('interrupted');
+        await terminalDelivery;
+        reachAbortDeadline();
+        if (forceShutdown) requestEscalation();
+        reportSecondaryCleanupFailure(await shutdownProcess());
+      })();
+      return abortFinalizationPromise;
+    };
+
+    const scheduleAbortFinalization = (
+      delayMs: number,
+      forceShutdown: boolean,
+    ): void => {
+      if (abortFinalizationScheduled || terminalQueued) return;
+      abortFinalizationScheduled = true;
+      const finalize = (): void => {
+        void finalizeAbort(forceShutdown);
       };
       if (delayMs === 0) {
-        terminate();
+        finalize();
       } else {
-        setTimeout(terminate, delayMs).unref();
+        setTimeout(finalize, delayMs).unref();
       }
     };
 
     const recordProtocolFailure = (detail: string): void => {
       const error = malformedAcpTraffic(detail);
       protocolFailure ??= error;
-      scheduleTermination(0);
+      if (!commitNonAbortCause()) return;
+      requestEscalation();
+      void shutdownProcess();
     };
 
     const emitToolUse = (
@@ -916,43 +1143,28 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         : { outcome: { outcome: 'cancelled' } };
     };
 
-    const shutdownProcess = async (): Promise<ProcessClose | undefined> => {
-      if (!child || !closePromise) return undefined;
-      if (!processExited) endOrKill(child);
-      if (!(await waitForClose(closePromise, this.processStdinExitGraceMs))) {
-        cleanupSigtermSent = true;
-        killProcess(child);
-        if (
-          !(await waitForClose(closePromise, this.processSignalExitGraceMs))
-        ) {
-          killProcess(child, 'SIGKILL');
-          if (
-            !(await waitForClose(closePromise, this.processSignalExitGraceMs))
-          ) {
-            return {
-              code: null,
-              signal: null,
-              error: new Error(
-                'Kimi ACP process did not exit after stdin closed, SIGTERM, and SIGKILL',
-              ),
-            };
-          }
-        }
-      }
-      return processClose;
-    };
-
     const onAbort = (): void => {
-      abortRequested = true;
-      if (!child || processExited) return;
-      if (connection && backendSessionKnown) {
-        if (cancelSent) return;
+      if (terminalQueued || !commitCallerAbort()) return;
+      if (child && !processExited && connection && backendSessionKnown) {
+        if (cancelSent) {
+          if (!promptActive) scheduleAbortFinalization(0, true);
+          return;
+        }
         cancelSent = true;
-        void connection.cancel({ sessionId }).catch(() => killProcess(child!));
-        scheduleTermination(CANCEL_TERMINATION_DELAY_MS);
+        void connection
+          .cancel({ sessionId })
+          .catch(() => void finalizeAbort(true));
+        scheduleAbortFinalization(
+          promptActive ? this.cancelTerminationDelayMs : 0,
+          true,
+        );
         return;
       }
-      scheduleTermination(0);
+      scheduleAbortFinalization(0, true);
+    };
+
+    removeAbortListener = (): void => {
+      options?.abortSignal?.removeEventListener('abort', onAbort);
     };
 
     if (options?.abortSignal && !options.abortSignal.aborted) {
@@ -960,9 +1172,14 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     }
 
     if (abortRequested) {
+      commitCallerAbort();
       finish('interrupted');
-      for await (const event of queue) yield event;
-      options?.abortSignal?.removeEventListener('abort', onAbort);
+      for await (const event of queue) {
+        yield event;
+        if (event.type === 'done') markTerminalDelivered();
+      }
+      markTerminalDelivered();
+      removeAbortListener();
       return;
     }
 
@@ -989,6 +1206,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             if (processClose) return;
             processClose = outcome;
             processExited = true;
+            commitNonAbortCause();
             resolveClose(outcome);
           };
           processRef.once('close', (code, signal) => {
@@ -1012,7 +1230,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             ) as unknown as ReadableStream<Uint8Array>,
             (error) => {
               protocolFailure ??= error;
-              scheduleTermination(0);
+              if (!commitNonAbortCause()) return;
+              requestEscalation();
+              void shutdownProcess();
             },
           ),
         );
@@ -1024,10 +1244,12 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
         const initialized = parseAcpResult(
           zInitializeResponse,
-          await connection.initialize({
-            protocolVersion: PROTOCOL_VERSION,
-            clientCapabilities: {},
-          }),
+          await awaitAcp(
+            connection.initialize({
+              protocolVersion: PROTOCOL_VERSION,
+              clientCapabilities: {},
+            }),
+          ),
           'initialize',
         );
         if (initialized.protocolVersion !== PROTOCOL_VERSION) {
@@ -1040,11 +1262,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (options?.resume) {
           const resumed = parseAcpResult(
             zResumeSessionResponse,
-            await connection.resumeSession({
-              sessionId: options.resume,
-              cwd: mapped.cwd,
-              mcpServers: [],
-            }),
+            await awaitAcp(
+              connection.resumeSession({
+                sessionId: options.resume,
+                cwd: mapped.cwd,
+                mcpServers: [],
+              }),
+            ),
             'session/resume',
           );
           sessionId = options.resume;
@@ -1053,10 +1277,12 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         } else {
           const created = parseAcpResult(
             zNewSessionResponse,
-            await connection.newSession({
-              cwd: mapped.cwd,
-              mcpServers: [],
-            }),
+            await awaitAcp(
+              connection.newSession({
+                cwd: mapped.cwd,
+                mcpServers: [],
+              }),
+            ),
             'session/new',
           );
           if (created.sessionId.trim().length === 0) {
@@ -1079,11 +1305,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (mapped.model !== undefined) {
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
-            await connection.setSessionConfigOption({
-              sessionId,
-              configId: 'model',
-              value: mapped.model,
-            }),
+            await awaitAcp(
+              connection.setSessionConfigOption({
+                sessionId,
+                configId: 'model',
+                value: mapped.model,
+              }),
+            ),
             'session/set_config_option',
           );
           configOptions = response.configOptions;
@@ -1097,11 +1325,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (mapped.effort !== undefined) {
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
-            await connection.setSessionConfigOption({
-              sessionId,
-              configId: 'thinking',
-              value: mapped.effort,
-            }),
+            await awaitAcp(
+              connection.setSessionConfigOption({
+                sessionId,
+                configId: 'thinking',
+                value: mapped.effort,
+              }),
+            ),
             'session/set_config_option',
           );
           configOptions = response.configOptions;
@@ -1115,11 +1345,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (mapped.permissions.mode !== undefined) {
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
-            await connection.setSessionConfigOption({
-              sessionId,
-              configId: 'mode',
-              value: mapped.permissions.mode,
-            }),
+            await awaitAcp(
+              connection.setSessionConfigOption({
+                sessionId,
+                configId: 'mode',
+                value: mapped.permissions.mode,
+              }),
+            ),
             'session/set_config_option',
           );
           configOptions = response.configOptions;
@@ -1153,10 +1385,12 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         promptActive = true;
         let promptResponse: unknown;
         try {
-          promptResponse = await connection.prompt({
-            sessionId,
-            prompt: [{ type: 'text', text: prompt }],
-          });
+          promptResponse = await awaitAcp(
+            connection.prompt({
+              sessionId,
+              prompt: [{ type: 'text', text: prompt }],
+            }),
+          );
         } finally {
           promptActive = false;
         }
@@ -1166,18 +1400,25 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           'session/prompt',
         );
 
-        const close = await shutdownProcess();
-        if (!close) {
+        if (abortRequested) {
+          await finalizeAbort(false);
+          return;
+        }
+
+        const shutdown = await shutdownProcess();
+        if (abortRequested) {
+          await finalizeAbort(true);
+          return;
+        }
+        if (!shutdown) {
           throw new Error('Kimi ACP process close state was unavailable');
         }
         if (protocolFailure) throw protocolFailure;
-        if (!abortRequested && result.stopReason !== 'cancelled') {
-          const closeError = processCloseError(close, cleanupSigtermSent);
-          if (closeError) throw closeError;
-        }
+        const closeFailure = shutdownError(shutdown);
+        if (closeFailure) throw closeFailure;
 
         let status: DonePayload['status'];
-        if (abortRequested || result.stopReason === 'cancelled') {
+        if (result.stopReason === 'cancelled') {
           status = 'interrupted';
         } else if (
           result.stopReason === 'max_tokens' ||
@@ -1207,13 +1448,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         finish(status);
       } catch (error) {
         if (abortRequested) {
-          finish('interrupted');
+          await finalizeAbort(true);
           return;
         }
 
-        const closeFailure = processClose
-          ? processCloseError(processClose, cleanupSigtermSent)
-          : undefined;
+        commitNonAbortCause();
+        const shutdown = await shutdownProcess();
+        const closeFailure = shutdown ? shutdownError(shutdown) : undefined;
         const structuredAuthError = isAuthenticationError(error);
         const reportedError = structuredAuthError
           ? error
@@ -1245,16 +1486,18 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     try {
       for await (const event of queue) {
         yield event;
+        if (event.type === 'done') markTerminalDelivered();
       }
       await execution;
     } finally {
-      options?.abortSignal?.removeEventListener('abort', onAbort);
+      markTerminalDelivered();
+      removeAbortListener();
       if (!terminalQueued) {
-        abortRequested = true;
         onAbort();
         queue.close();
       }
       await execution;
+      await abortFinalizationPromise;
     }
   }
 }

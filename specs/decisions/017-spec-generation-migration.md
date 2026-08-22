@@ -249,6 +249,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `KIMI-006` | `kimi-27` |
 | `KIMI-006` | `kimi-28` |
 | `KIMI-006` | `kimi-29` |
+| `KIMI-006` | `kimi-33` |
 | `KIMI-007` | `kimi-7` |
 | `KIMI-007` | `kimi-22` |
 | `KIMI-008` | `kimi-8` |
@@ -262,6 +263,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `KIMI-011` | `kimi-11` |
 | `KIMI-011` | `kimi-25` |
 | `KIMI-011` | `kimi-28` |
+| `KIMI-011` | `kimi-33` |
 | `KIMI-011` | `engine-18` |
 | `KIMI-012` | `kimi-12` |
 | `KIMI-012` | `kimi-26` |

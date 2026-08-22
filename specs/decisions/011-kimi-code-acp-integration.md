@@ -18,6 +18,8 @@ Prompt mode can emit `stream-json`, ACP mode exposes JSON-RPC over stdio for ext
 Prompt mode always uses Kimi's headless `auto` policy, omits thinking content from JSONL, and publishes the resumable session identifier only after a successful prompt [[5]][[12]].
 The omission preserves thought privacy, but prompt mode cannot preserve Cligent's native-default permission posture, structured permission and cancellation flow, or early fresh-session resume continuity.
 The persistent server adds lifecycle and network state that Cligent's stateless per-run adapter does not need.
+A caller cancellation can become terminal before process cleanup later discovers a nonzero or unexpected close, required `SIGKILL`, or a child surviving final grace.
+Because terminal `done` closes the unified event stream, preserving cancellation-before-termination and replacing that terminal with a subsequently discovered cleanup error are incompatible.
 
 ## Decision
 
@@ -29,7 +31,24 @@ The client shall advertise no filesystem or terminal capabilities.
 Kimi shall therefore retain its process-local filesystem implementation rather than delegating file access back to Cligent [[8]].
 Fresh runs shall use `session/new`; resumed runs shall use `session/resume`, not `session/load`, so history is not replayed as new Cligent output.
 The session identifier returned before the prompt shall be the backend resume token.
-Abort shall send ACP `session/cancel`, drain the terminal prompt result when possible, and then terminate the child.
+Terminal selection shall use the first applicable row of this priority table:
+
+| Priority state | Selected outcome |
+| --- | --- |
+| caller signal already aborted at adapter entry | interruption before runtime and option validation, with no child spawned |
+| no entry abort; runtime or option validation fails | propagate the rejection before spawning or emitting events |
+| caller abort after spawn and before another terminal cause commits | interruption ahead of every native stop, authentication, protocol, setup, prompt, process, or cleanup outcome |
+| no caller abort; authentication-classified ACP failure | actionable authentication error |
+| no higher candidate; protocol failure | protocol error |
+| no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | process error, overriding every native stop including `cancelled` |
+| no higher candidate; another setup or prompt failure | operation error |
+| valid native stop after a clean close or adapter-owned cleanup `SIGTERM` | the native stop mapping |
+
+The first observed caller abort or non-provisional failure shall commit its terminal cause synchronously before initiating forced teardown; a native stop remains provisional until clean close or adapter-owned `SIGTERM` cleanup commits it, and a later failure may still replace a lower-priority non-abort candidate.
+After backend identity is known and caller abort commits first, abort shall send ACP `session/cancel` exactly once and drain the active prompt result and queued updates when possible.
+The interrupted `done` shall be delivered before abort-initiated final child termination begins, and a cleanup failure discovered afterward shall be reported exactly once to a replaceable secondary diagnostic sink without adding a post-terminal event or replacing the interrupted outcome.
+Containment shall retain the caller's abort listener until a terminal cause commits and remove it at that boundary.
+Every path shall share one idempotent containment sequence even when the child survives final grace.
 
 ACP assistant message chunks shall normalize to UES text deltas.
 Raw `agent_thought_chunk` content shall not be emitted because [DR-002](002-unified-event-stream-and-adapter-interface.md) permits only safe reasoning summaries, not chain-of-thought.
@@ -58,6 +77,8 @@ Cligent targets the maintained Kimi Code product without coupling to a legacy or
 The ACP session identifier is available before model work begins, so fresh aborts can preserve continuity.
 Text, tools, permissions, model selection, and cancellation remain structured, while raw Kimi thought content stays outside UES.
 One short-lived process per run preserves adapter thread safety and avoids a resident Kimi service.
+Caller cancellation remains the terminal cause of an aborted run, while abnormal or forced cleanup remains observable as secondary diagnostic detail and cannot restart containment.
+Without caller cancellation, process failure takes precedence over a provisional native outcome, including native cancellation.
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
 Wire-schema ownership sits with the adapter, not with the protocol SDK.
