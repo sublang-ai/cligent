@@ -50,6 +50,12 @@ interface MockOpenCodeClient {
     cwd?: string;
   }): Promise<unknown>;
   abortSession?(options: { sessionId: string; cwd?: string }): Promise<void>;
+  isPermissionPending(options: {
+    sessionId: string;
+    requestId: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }): Promise<boolean>;
   replyPermission(options: {
     sessionId: string;
     requestId: string;
@@ -57,7 +63,7 @@ interface MockOpenCodeClient {
     decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
-  }): Promise<void>;
+  }): Promise<boolean>;
   close(): Promise<void>;
   shutdown(): Promise<void>;
 }
@@ -143,6 +149,12 @@ function makeLoader(config: {
     sessionId: string;
     cwd?: string;
   }) => Promise<void> | void;
+  permissionPendingFactory?: (options: {
+    sessionId: string;
+    requestId: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<boolean> | boolean;
   onReplyPermission?: (options: {
     sessionId: string;
     requestId: string;
@@ -158,7 +170,7 @@ function makeLoader(config: {
     decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
-  }) => Promise<void>;
+  }) => Promise<boolean | void>;
   replyPermissionError?: unknown;
   onClose?: () => Promise<void> | void;
   onShutdown?: () => Promise<void> | void;
@@ -204,15 +216,20 @@ function makeLoader(config: {
         async abortSession(options): Promise<void> {
           await config.onAbortSession?.(options);
         },
-        async replyPermission(options): Promise<void> {
+        async isPermissionPending(options): Promise<boolean> {
+          return config.permissionPendingFactory
+            ? config.permissionPendingFactory(options)
+            : true;
+        },
+        async replyPermission(options): Promise<boolean> {
           config.onReplyPermission?.(options);
           if (config.replyPermissionFactory) {
-            await config.replyPermissionFactory(options);
-            return;
+            return (await config.replyPermissionFactory(options)) !== false;
           }
           if (config.replyPermissionError !== undefined) {
             throw config.replyPermissionError;
           }
+          return true;
         },
         async close(): Promise<void> {
           await config.onClose?.();
@@ -1306,8 +1323,10 @@ describe('OpenCodeAdapter', () => {
     const completedRequestCount = 257;
     const nativeEvents: unknown[] = [];
     const replies: string[] = [];
+    let reusedPendingChecks = 0;
     const permissionStates: Array<{
       activeRequests: number;
+      completedResponses: number;
       replyWaitActive: boolean;
     }> = [];
 
@@ -1339,6 +1358,15 @@ describe('OpenCodeAdapter', () => {
       );
     }
     const reusedRequestId = `bounded-request-${completedRequestCount - 1}`;
+    const staleReplay = {
+      type: 'permission.asked',
+      properties: {
+        id: reusedRequestId,
+        sessionID: 'correlation-cleanup-session',
+        permission: 'edit',
+        tool: { callID: 'stale-replay-call' },
+      },
+    };
     const reusedAsk = {
       type: 'permission.asked',
       properties: {
@@ -1349,6 +1377,7 @@ describe('OpenCodeAdapter', () => {
       },
     };
     nativeEvents.push(
+      staleReplay,
       reusedAsk,
       {
         ...reusedAsk,
@@ -1379,6 +1408,11 @@ describe('OpenCodeAdapter', () => {
         loadSdk: makeLoader({
           runResult: { sessionId: 'correlation-cleanup-session' },
           events: nativeEvents,
+          permissionPendingFactory(options) {
+            if (options.requestId !== reusedRequestId) return true;
+            reusedPendingChecks++;
+            return reusedPendingChecks !== 2;
+          },
           onReplyPermission(options) {
             replies.push(options.requestId);
           },
@@ -1402,6 +1436,14 @@ describe('OpenCodeAdapter', () => {
       toolUseId: 'reused-lifecycle-call',
       status: 'denied',
     });
+    expect(
+      events.some(
+        (event) =>
+          (event.payload as { toolUseId?: string }).toolUseId ===
+          'stale-replay-call',
+      ),
+    ).toBe(false);
+    expect(reusedPendingChecks).toBe(3);
     expect(replies).toEqual([
       ...Array.from(
         { length: completedRequestCount },
@@ -1419,6 +1461,9 @@ describe('OpenCodeAdapter', () => {
     expect(
       Math.max(...permissionStates.map((state) => state.activeRequests)),
     ).toBe(1);
+    expect(
+      new Set(permissionStates.map((state) => state.completedResponses)),
+    ).toEqual(new Set([0]));
     expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
     expect(
       permissionStates.some(
@@ -1427,8 +1472,44 @@ describe('OpenCodeAdapter', () => {
     ).toBe(true);
     expect(permissionStates.at(-1)).toEqual({
       activeRequests: 0,
+      completedResponses: 0,
       replyWaitActive: false,
     });
+  });
+
+  it('treats a reply-time provider disappearance as already resolved', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'reply-race-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'reply-race-request',
+                sessionID: 'reply-race-session',
+                permission: 'edit',
+                tool: { callID: 'reply-race-call' },
+              },
+            },
+            {
+              type: 'session.idle',
+              properties: { sessionID: 'reply-race-session' },
+            },
+          ],
+          async replyPermissionFactory() {
+            return false;
+          },
+        }),
+      },
+    );
+
+    const events = await collect(
+      adapter.run('reply race probe', { permissions: { mode: 'auto' } }),
+    );
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
   });
 
   it('ignores foreign-session asks and replies once to a repeated local request', async () => {
@@ -1731,6 +1812,7 @@ describe('OpenCodeAdapter', () => {
   it('terminates with request identifiers when a permission reply fails', async () => {
     const permissionStates: Array<{
       activeRequests: number;
+      completedResponses: number;
       replyWaitActive: boolean;
     }> = [];
     const adapter = new OpenCodeAdapter(
@@ -1774,6 +1856,7 @@ describe('OpenCodeAdapter', () => {
     expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
     expect(permissionStates.at(-1)).toEqual({
       activeRequests: 0,
+      completedResponses: 0,
       replyWaitActive: false,
     });
     const done = (await stream.next()).value;
@@ -1785,6 +1868,7 @@ describe('OpenCodeAdapter', () => {
     await stream.next();
     expect(permissionStates.at(-1)).toEqual({
       activeRequests: 0,
+      completedResponses: 0,
       replyWaitActive: false,
     });
   });
@@ -1797,6 +1881,7 @@ describe('OpenCodeAdapter', () => {
       let replyCancelled = false;
       const permissionStates: Array<{
         activeRequests: number;
+        completedResponses: number;
         replyWaitActive: boolean;
       }> = [];
       const adapter = new OpenCodeAdapter(
@@ -1866,6 +1951,7 @@ describe('OpenCodeAdapter', () => {
       );
       expect(permissionStates.at(-1)).toEqual({
         activeRequests: 0,
+        completedResponses: 0,
         replyWaitActive: false,
       });
 
@@ -1878,6 +1964,7 @@ describe('OpenCodeAdapter', () => {
       await stream.next();
       expect(permissionStates.at(-1)).toEqual({
         activeRequests: 0,
+        completedResponses: 0,
         replyWaitActive: false,
       });
     } finally {
@@ -1936,6 +2023,7 @@ describe('OpenCodeAdapter', () => {
     let replyCancelled = false;
     const permissionStates: Array<{
       activeRequests: number;
+      completedResponses: number;
       replyWaitActive: boolean;
     }> = [];
     let resolveReplyStarted: () => void = () => {};
@@ -2011,6 +2099,7 @@ describe('OpenCodeAdapter', () => {
     expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
     expect(permissionStates.at(-1)).toEqual({
       activeRequests: 0,
+      completedResponses: 0,
       replyWaitActive: false,
     });
     await stream.next();
@@ -2025,6 +2114,7 @@ describe('OpenCodeAdapter', () => {
     expect(shutdownCalls).toBe(1);
     expect(permissionStates.at(-1)).toEqual({
       activeRequests: 0,
+      completedResponses: 0,
       replyWaitActive: false,
     });
   });
@@ -2410,6 +2500,9 @@ describe('OpenCodeAdapter', () => {
               },
               event,
               permission: {
+                async list() {
+                  return { data: [{ id: requestId, sessionID: sessionId }] };
+                },
                 async reply(parameters: unknown, requestOptions?: unknown) {
                   v2ReplyParameters = parameters as Record<string, unknown>;
                   return rejectOnAbort(
@@ -5784,6 +5877,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
   });
 
   it('uses the v2 permission reply endpoint and surfaces SDK result errors', async () => {
+    const listCalls: Array<{
+      parameters: unknown;
+      requestOptions: unknown;
+    }> = [];
     const replyCalls: Array<{
       parameters: unknown;
       requestOptions: unknown;
@@ -5804,10 +5901,31 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         },
       },
       permission: {
+        async list(parameters: unknown, requestOptions?: unknown) {
+          listCalls.push({ parameters, requestOptions });
+          return {
+            data: [
+              {
+                id: 'v2-reply-request',
+                sessionID: 'v2-reply-session',
+              },
+              { id: 'foreign-request', sessionID: 'foreign-session' },
+            ],
+          };
+        },
         async reply(parameters: unknown, requestOptions?: unknown) {
           replyCalls.push({ parameters, requestOptions });
           if (replyCalls.length <= 2) return {};
           if (replyCalls.length === 3) {
+            return {
+              error: {
+                _tag: 'PermissionNotFoundError',
+                requestID: 'v2-resolved-request',
+                message: 'request already resolved',
+              },
+            };
+          }
+          if (replyCalls.length === 4) {
             return { error: { data: { message: 'request disappeared' } } };
           }
           return { data: false };
@@ -5816,14 +5934,38 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     };
     const client = wrapOpencodeClient(real, { apiVersion: 'v2' });
 
-    await client.replyPermission?.({
-      sessionId: 'v2-reply-session',
-      requestId: 'v2-reply-request',
-      permission: 'future_permission',
-      decision: 'once',
-      cwd: '/workspace',
-      signal: controller.signal,
-    });
+    await expect(
+      client.isPermissionPending?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-reply-request',
+        cwd: '/workspace',
+        signal: controller.signal,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      client.isPermissionPending?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'foreign-request',
+      }),
+    ).resolves.toBe(false);
+    expect(listCalls).toEqual([
+      {
+        parameters: { directory: '/workspace' },
+        requestOptions: { signal: controller.signal },
+      },
+      { parameters: undefined, requestOptions: undefined },
+    ]);
+
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-reply-request',
+        permission: 'future_permission',
+        decision: 'once',
+        cwd: '/workspace',
+        signal: controller.signal,
+      }),
+    ).resolves.toBe(true);
     expect(replyCalls[0]).toEqual({
       parameters: {
         requestID: 'v2-reply-request',
@@ -5833,12 +5975,14 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       requestOptions: { signal: controller.signal },
     });
 
-    await client.replyPermission?.({
-      sessionId: 'v2-reply-session',
-      requestId: 'v2-reject-request',
-      permission: 'future_permission',
-      decision: 'reject',
-    });
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-reject-request',
+        permission: 'future_permission',
+        decision: 'reject',
+      }),
+    ).resolves.toBe(true);
     expect(replyCalls[1]).toEqual({
       parameters: {
         requestID: 'v2-reject-request',
@@ -5847,6 +5991,15 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       },
       requestOptions: undefined,
     });
+
+    await expect(
+      client.replyPermission?.({
+        sessionId: 'v2-reply-session',
+        requestId: 'v2-resolved-request',
+        permission: 'future_permission',
+        decision: 'reject',
+      }),
+    ).resolves.toBe(false);
 
     await expect(
       client.replyPermission?.({

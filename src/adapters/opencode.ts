@@ -96,8 +96,8 @@ type StreamWaitResult =
   | { kind: 'inactivity' }
   | { kind: 'server_exit'; exit: ServerCloseInfo };
 
-type PermissionReplyWaitResult =
-  | { kind: 'replied' }
+type PermissionOperationWaitResult<T> =
+  | { kind: 'resolved'; value: T }
   | { kind: 'error'; error: unknown }
   | { kind: 'abort' }
   | { kind: 'timeout' };
@@ -115,6 +115,12 @@ interface OpenCodeClient {
     sessionId: string;
     cwd?: string;
   }) => Promise<void>;
+  isPermissionPending?: (options: {
+    sessionId: string;
+    requestId: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<boolean>;
   replyPermission?: (options: {
     sessionId: string;
     requestId: string;
@@ -122,7 +128,7 @@ interface OpenCodeClient {
     decision: 'once' | 'reject';
     cwd?: string;
     signal?: AbortSignal;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
 }
@@ -159,6 +165,7 @@ interface OpenCodeAdapterDeps {
   managedServerKillGraceMs?: number;
   observePermissionState?: (state: {
     activeRequests: number;
+    completedResponses: number;
     replyWaitActive: boolean;
   }) => void;
 }
@@ -1112,6 +1119,14 @@ function throwIfSdkResultError(result: unknown, operation: string): void {
   throw new Error(`${operation}: ${payload.message}`);
 }
 
+function isPermissionNotFound(value: unknown, requestId: string): boolean {
+  const error = asRecord(value);
+  return (
+    asString(error._tag) === 'PermissionNotFoundError' &&
+    asString(error.requestID) === requestId
+  );
+}
+
 export function wrapOpencodeClient(
   real: Record<string, unknown>,
   options: WrapOpencodeClientOptions = {},
@@ -1210,6 +1225,13 @@ export function wrapOpencodeClient(
     permission && typeof permission.reply === 'function'
       ? (permission.reply.bind(permission) as (
           args: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
+  const permissionList =
+    permission && typeof permission.list === 'function'
+      ? (permission.list.bind(permission) as (
+          args?: unknown,
           requestOptions?: unknown,
         ) => Promise<unknown>)
       : undefined;
@@ -1787,7 +1809,52 @@ export function wrapOpencodeClient(
       await abortSessionViaSdk(sessionId, cwd);
     },
 
-    async replyPermission(options): Promise<void> {
+    async isPermissionPending(options): Promise<boolean> {
+      const operation =
+        'OpenCode permission lookup failed ' +
+        `(sessionID=${JSON.stringify(options.sessionId)}, ` +
+        `requestID=${JSON.stringify(options.requestId)})`;
+      if (!permissionList) {
+        // The retired v1 response client exposes only a live, non-replaying
+        // permission stream. Current v2 clients expose the authoritative
+        // pending registry used to reject a stale transport replay.
+        if (apiVersion === 'v1') return true;
+        throw new Error(
+          `${operation}: SDK client.permission.list() not available`,
+        );
+      }
+
+      const result = await permissionList(
+        apiVersion === 'v2'
+          ? options.cwd
+            ? { directory: options.cwd }
+            : undefined
+          : {
+              ...(options.cwd ? { query: { directory: options.cwd } } : {}),
+              ...(options.signal ? { signal: options.signal } : {}),
+            },
+        apiVersion === 'v2' && options.signal
+          ? { signal: options.signal }
+          : undefined,
+      );
+      throwIfSdkResultError(result, operation);
+      const pending = unwrapSdkData(result);
+      if (!Array.isArray(pending)) {
+        throw new Error(`${operation}: SDK returned a non-array response`);
+      }
+
+      return pending.some((entry) => {
+        const request = asRecord(entry);
+        return (
+          (asString(request.id) ?? asString(request.requestID)) ===
+            options.requestId &&
+          (asString(request.sessionID) ?? asString(request.sessionId)) ===
+            options.sessionId
+        );
+      });
+    },
+
+    async replyPermission(options): Promise<boolean> {
       const operation =
         'OpenCode permission reply failed ' +
         `(sessionID=${JSON.stringify(options.sessionId)}, ` +
@@ -1841,10 +1908,15 @@ export function wrapOpencodeClient(
         );
       }
 
+      if (isPermissionNotFound(asRecord(result).error, options.requestId)) {
+        return false;
+      }
+
       throwIfSdkResultError(result, operation);
       if (unwrapSdkData(result) === false) {
         throw new Error(`${operation}: SDK declined the permission response`);
       }
+      return true;
     },
 
     events(options?: Record<string, unknown>): AsyncIterable<unknown> {
@@ -2217,6 +2289,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       try {
         this.observePermissionState({
           activeRequests: permissionRequests.size,
+          completedResponses: 0,
           replyWaitActive: abortPermissionWait !== undefined,
         });
       } catch {
@@ -2241,6 +2314,39 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
       return sessionId;
     };
+    const waitForPermissionOperation = <T>(
+      operation: Promise<T>,
+    ): Promise<PermissionOperationWaitResult<T>> =>
+      new Promise((resolve) => {
+        let settled = false;
+        let operationTimeout: ReturnType<typeof setTimeout> | undefined;
+        const finish = (result: PermissionOperationWaitResult<T>) => {
+          if (settled) return;
+          settled = true;
+          if (operationTimeout) clearTimeout(operationTimeout);
+          if (abortPermissionWait === abortCurrentOperation) {
+            abortPermissionWait = undefined;
+            reportPermissionState();
+          }
+          resolve(result);
+        };
+        const abortCurrentOperation = () => finish({ kind: 'abort' });
+
+        abortPermissionWait = abortCurrentOperation;
+        reportPermissionState();
+        operation.then(
+          (value) => finish({ kind: 'resolved', value }),
+          (error: unknown) => finish({ kind: 'error', error }),
+        );
+        operationTimeout = setTimeout(
+          () => finish({ kind: 'timeout' }),
+          PERMISSION_REPLY_TIMEOUT_MS,
+        );
+
+        if (abortRequested || options?.abortSignal?.aborted) {
+          abortCurrentOperation();
+        }
+      });
     reportPermissionState();
 
     const propagateCausality = (): void => {
@@ -4614,6 +4720,49 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             if (permissionRequests.has(requestKey)) {
               continue;
             }
+            // opencode-20: active state suppresses an in-flight repeat. Once
+            // native confirmation releases that state, OpenCode's pending
+            // registry distinguishes a stale replay from a genuinely reused
+            // request identity without retaining completed tombstones here.
+            const pendingPromise = client?.isPermissionPending
+              ? client.isPermissionPending({
+                  sessionId: permissionSessionId,
+                  requestId,
+                  ...(options?.cwd ? { cwd: options.cwd } : {}),
+                  signal: eventStreamController.signal,
+                })
+              : Promise.reject(
+                  new Error(
+                    'SDK client permission pending-state API not available',
+                  ),
+                );
+            const pendingRace =
+              await waitForPermissionOperation(pendingPromise);
+            if (pendingRace.kind === 'abort') {
+              pendingPromise.catch(() => {});
+              throw new OpenCodePromptDispatchAbortError(sessionId);
+            }
+            if (
+              pendingRace.kind === 'error' ||
+              pendingRace.kind === 'timeout'
+            ) {
+              eventStreamController.abort();
+              pendingPromise.catch(() => {});
+              const detail =
+                pendingRace.kind === 'timeout'
+                  ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
+                  : pendingRace.error instanceof Error
+                    ? pendingRace.error.message
+                    : String(pendingRace.error);
+              throw new Error(
+                'Failed to inspect OpenCode headless permission request ' +
+                  `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
+                  `requestID=${JSON.stringify(requestId)}): ${detail}`,
+              );
+            }
+            if (!pendingRace.value) {
+              continue;
+            }
             // permission.replied carries only requestID; remember which
             // tool call (callID) a later denial must resolve to.
             permissionRequests.set(requestKey, {
@@ -4761,40 +4910,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             : Promise.reject(
                 new Error('SDK client permission reply API not available'),
               );
-          const replyRace = await new Promise<PermissionReplyWaitResult>(
-            (resolve) => {
-              let settled = false;
-              let replyTimeout: ReturnType<typeof setTimeout> | undefined;
-              const finish = (result: PermissionReplyWaitResult) => {
-                if (settled) return;
-                settled = true;
-                if (replyTimeout) clearTimeout(replyTimeout);
-                if (abortPermissionWait === abortCurrentReply) {
-                  abortPermissionWait = undefined;
-                  reportPermissionState();
-                }
-                resolve(result);
-              };
-              const abortCurrentReply = () => finish({ kind: 'abort' });
+          const replyRace = await waitForPermissionOperation(replyPromise);
 
-              abortPermissionWait = abortCurrentReply;
-              reportPermissionState();
-              replyPromise.then(
-                () => finish({ kind: 'replied' }),
-                (error: unknown) => finish({ kind: 'error', error }),
-              );
-              replyTimeout = setTimeout(
-                () => finish({ kind: 'timeout' }),
-                PERMISSION_REPLY_TIMEOUT_MS,
-              );
-
-              if (abortRequested || options?.abortSignal?.aborted) {
-                abortCurrentReply();
-              }
-            },
-          );
-
-          if (replyRace.kind === 'replied' && decision === 'once') {
+          if (
+            replyRace.kind === 'resolved' &&
+            replyRace.value &&
+            decision === 'once'
+          ) {
             yield createEvent(
               'opencode:permission_decision',
               AGENT,
@@ -4811,6 +4933,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               },
               sessionId,
             );
+          }
+
+          if (replyRace.kind === 'resolved' && !replyRace.value) {
+            releasePermissionRequest(requestKey);
+            continue;
           }
 
           if (

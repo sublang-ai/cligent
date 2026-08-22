@@ -257,6 +257,11 @@ const currentOpenCodePrompt = currentOpenCodeClient.session.promptAsync({
 const currentOpenCodeSubscribe = currentOpenCodeClient.event.subscribe({
   directory: '/tmp/cligent-open-code',
 });
+const currentOpenCodePendingPermissions = currentOpenCodeClient.permission.list(
+  {
+    directory: '/tmp/cligent-open-code',
+  },
+);
 const currentOpenCodeSessionError: CurrentOpenCodeSessionError = {
   id: 'conformance-error-event',
   type: 'session.error',
@@ -281,23 +286,31 @@ type CurrentOpenCodeCreateResult = Awaited<typeof currentOpenCodeCreate>;
 type CurrentOpenCodeUpdateResult = Awaited<typeof currentOpenCodeUpdate>;
 type CurrentOpenCodePromptResult = Awaited<typeof currentOpenCodePrompt>;
 type CurrentOpenCodeSubscribeResult = Awaited<typeof currentOpenCodeSubscribe>;
+type CurrentOpenCodePendingPermissionsResult = Awaited<
+  typeof currentOpenCodePendingPermissions
+>;
 void currentOpenCodeCreate;
 void currentOpenCodeUpdate;
 void currentOpenCodePrompt;
 void currentOpenCodeSubscribe;
+void currentOpenCodePendingPermissions;
 void currentOpenCodeSessionError;
 void currentOpenCodeSessionIdle;
 declare const currentOpenCodeCreateResult: CurrentOpenCodeCreateResult;
 declare const currentOpenCodeUpdateResult: CurrentOpenCodeUpdateResult;
 declare const currentOpenCodePromptResult: CurrentOpenCodePromptResult;
 declare const currentOpenCodeSubscribeResult: CurrentOpenCodeSubscribeResult;
+declare const currentOpenCodePendingPermissionsResult: CurrentOpenCodePendingPermissionsResult;
 const currentOpenCodeCreatedSession = currentOpenCodeCreateResult.data;
 const currentOpenCodeCreateError = currentOpenCodeCreateResult.error;
 const currentOpenCodeUpdateError = currentOpenCodeUpdateResult.error;
 const currentOpenCodePromptError = currentOpenCodePromptResult.error;
 const currentOpenCodeEventStream = currentOpenCodeSubscribeResult.stream;
+const currentOpenCodePendingPermissionList =
+  currentOpenCodePendingPermissionsResult.data;
 void currentOpenCodeCreatedSession;
 void currentOpenCodeCreateError;
 void currentOpenCodeUpdateError;
 void currentOpenCodePromptError;
 void currentOpenCodeEventStream;
+void currentOpenCodePendingPermissionList;

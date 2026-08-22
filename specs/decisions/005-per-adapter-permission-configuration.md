@@ -111,6 +111,10 @@ root or one of its run-owned descendants under `mode: 'auto'` shall be answered
 `once` without exposing an interactive `permission_request`; outside auto it
 shall be emitted for observability and rejected fail-closed through the active
 SDK route per [[opencode-20](../packages/adapters/opencode.md#opencode-20)].
+Before either outcome, the adapter shall confirm the composite session/request
+identity in OpenCode's pending-permission registry, so a stale replay after
+native confirmation produces neither a second event nor a second response,
+while a genuinely pending later lifecycle may reuse that identity [[12]].
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
