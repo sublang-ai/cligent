@@ -1064,7 +1064,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
               toolUseId: update.toolCallId,
               status: state.status === 'failed' ? 'error' : 'success',
               output: toolOutput(state),
-              durationMs: Date.now() - state.startedAt,
+              durationMs: observedAt - state.startedAt,
             },
             sessionId,
           ),

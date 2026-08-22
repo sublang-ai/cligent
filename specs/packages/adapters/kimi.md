@@ -109,7 +109,7 @@ For each native `toolCallId`, the adapter shall emit at most one correlated `too
 | `toolName` / `toolUseId` | the correlated selections above |
 | status | `completed` to `success`; `failed` to `error` |
 | output | defined `rawOutput`, including null; otherwise newline-joined text content; otherwise the content array or null |
-| duration | elapsed time since the call's first observed update |
+| duration | the terminal update's observation time minus the call's first observed update time |
 
 ### kimi-19
 
@@ -463,7 +463,7 @@ Given the installed Kimi target and fake ACP subprocesses whose protocol traffic
 | process | one child for every run reaching invocation, with [[kimi-3](#kimi-3)]'s cwd, environment, pipes, and drained bounded stderr; one [[kimi-25](#kimi-25)] cleanup sequence shall either observe its close or report its [[kimi-33](#kimi-33)] primary or [[kimi-35](#kimi-35)] secondary outcome after final grace |
 | wire | split, coalesced, and unterminated-final-line framing; oversized decoded buffers; every invalid JSON-RPC object, envelope, id, pending response, error, and consumed payload; unknown fields and update cases; optional usage; and handled pre-session or cross-session traffic select [[kimi-27](#kimi-27)]'s exact outcome, with each protocol failure terminating without exposing private traffic |
 | setup | protocol version 1 and empty capabilities succeed while another negotiated version rejects; fresh and resumed session selection and ordered configuration satisfy [[kimi-14](#kimi-14)], [[kimi-4](#kimi-4)], and [[kimi-16](#kimi-16)] |
-| prompt | `init` carries [[kimi-26](#kimi-26)]'s backend session identity and every [[kimi-17](#kimi-17)] fallback; valid same-session text, tool, and plan updates arriving during configuration stay hidden until `init`, then dispatch immediately in exact arrival order through [[kimi-30](#kimi-30)] and [[kimi-5](#kimi-5)] before [[kimi-16](#kimi-16)]'s one-text-block prompt |
+| prompt | `init` carries [[kimi-26](#kimi-26)]'s backend session identity and every [[kimi-17](#kimi-17)] fallback; valid same-session text, tool, and plan updates arriving during configuration stay hidden until `init`, then dispatch immediately in exact arrival order through [[kimi-30](#kimi-30)] and [[kimi-5](#kimi-5)] before [[kimi-16](#kimi-16)]'s one-text-block prompt, with buffered tool duration spanning [[kimi-18](#kimi-18)]'s original first and terminal observation times |
 | permissions and options | reverse requests reject per [[kimi-22](#kimi-22)]; unsupported policy, including writable-path failures, rejects per [[kimi-7](#kimi-7)] and [[kimi-8](#kimi-8)]; empty and non-empty tool lists reject per [[kimi-10](#kimi-10)]; invalid effort rejects per [[kimi-9](#kimi-9)]; and zero and nonzero limits reject per [[kimi-24](#kimi-24)], all before spawn |
 | failures | structured authentication, bare-key, protocol, operation, arbitrary process-close, and forced-cleanup candidates preserve diagnostics and select the complete priority in [[kimi-33](#kimi-33)] through [[kimi-21](#kimi-21)], [[kimi-27](#kimi-27)], [[kimi-29](#kimi-29)], and [[kimi-28](#kimi-28)] |
 | isolation | an aborted run retains no [[kimi-25](#kimi-25)] caller listener, and event identity changes only through [[kimi-26](#kimi-26)] |

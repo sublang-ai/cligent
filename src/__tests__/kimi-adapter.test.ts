@@ -535,6 +535,7 @@ describe('KimiAdapter', () => {
   });
 
   it('queues configuration updates until after init in arrival order', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
     let fake: FakeKimi;
     fake = new FakeKimi({
       sessionId: 'pre-init-session',
@@ -551,6 +552,7 @@ describe('KimiAdapter', () => {
             },
           });
         } else if (request.configId === 'thinking') {
+          now.mockReturnValue(1_020);
           await connection.sessionUpdate({
             sessionId: 'pre-init-session',
             update: {
@@ -558,12 +560,22 @@ describe('KimiAdapter', () => {
               toolCallId: 'pre-init-tool',
               title: 'Read',
               kind: 'read',
-              status: 'completed',
+              status: 'in_progress',
               rawInput: { path: 'README.md' },
+            },
+          });
+          now.mockReturnValue(1_044);
+          await connection.sessionUpdate({
+            sessionId: 'pre-init-session',
+            update: {
+              sessionUpdate: 'tool_call_update',
+              toolCallId: 'pre-init-tool',
+              status: 'completed',
               rawOutput: { text: 'contents' },
             },
           });
         } else if (request.configId === 'mode') {
+          now.mockReturnValue(1_344);
           await connection.sessionUpdate({
             sessionId: 'pre-init-session',
             update: {
@@ -597,10 +609,10 @@ describe('KimiAdapter', () => {
         effort: 'on',
         permissions: { mode: 'auto' },
       }),
-    );
+    ).finally(() => now.mockRestore());
 
-    // kimi-16 / kimi-30 / kimi-230: all configuration-time updates retain
-    // their normalization order, but init remains the first unified event.
+    // kimi-16 / kimi-18 / kimi-30 / kimi-230: configuration-time updates
+    // retain their observed timing and order, but init remains first.
     expect(events.map((event) => event.type)).toEqual([
       'init',
       'text_delta',
@@ -629,6 +641,7 @@ describe('KimiAdapter', () => {
         toolUseId: 'pre-init-tool',
         status: 'success',
         output: { text: 'contents' },
+        durationMs: 24,
       },
     });
     expect(events[4]).toMatchObject({
