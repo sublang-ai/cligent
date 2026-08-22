@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { getEventListeners } from 'node:events';
+
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -2093,7 +2095,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(captured?.settings).toEqual({ ultracode: true });
   });
 
-  it('rejects Codex and unknown effort values before invoking query()', async () => {
+  it('rejects invalid efforts without querying or retaining abort listeners', async () => {
     let queryCalls = 0;
     const adapter = new ClaudeCodeAdapter({
       loadSdk: async () => ({
@@ -2107,10 +2109,15 @@ describe('ClaudeCodeAdapter', () => {
     });
 
     for (const effort of ['ultra', 'future-effort']) {
-      const invalid = { effort } as unknown as AgentOptions<ClaudeEffort>;
+      const callerAbort = new AbortController();
+      const invalid = {
+        effort,
+        abortSignal: callerAbort.signal,
+      } as unknown as AgentOptions<ClaudeEffort>;
       await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
         `effort for adapter "claude-code" must be one of: minimal, low, medium, high, xhigh, max, ultracode`,
       );
+      expect(getEventListeners(callerAbort.signal, 'abort')).toHaveLength(0);
     }
     expect(queryCalls).toBe(0);
   });

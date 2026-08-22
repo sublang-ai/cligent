@@ -426,7 +426,7 @@ Given every Claude effort input, when the adapter maps a run, the verification s
 - each supported explicit value produces its exact SDK `effort` and `settings.ultracode` pair;
 - omission produces neither SDK field;
 - `ultracode` leaves the same permission input's controls unchanged [[claude-code-23](#claude-code-23)]; and
-- another adapter's value or an unknown string is rejected before backend invocation with the adapter and allowed values named.
+- another adapter's value or an unknown string is rejected before backend invocation with the adapter and allowed values named and, when accompanied by a live caller signal, leaves no caller listener registered after rejection [[claude-code-33](#claude-code-33)].
 
 ### claude-code-219
 

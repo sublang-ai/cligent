@@ -790,6 +790,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
   options: AgentOptions<ClaudeEffort> | undefined,
 ): MappedClaudeOptions {
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
+  const effortOptions = mapEffortToClaudeOptions(options?.effort);
 
   let cleanupAbort = () => {};
   let abortController: AbortController | undefined;
@@ -810,7 +811,6 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.CLAUDECODE;
 
-  const effortOptions = mapEffortToClaudeOptions(options?.effort);
   const explicitAllowlist = options?.allowedTools !== undefined;
   const toolFreeIsolation = options?.allowedTools?.length === 0;
 

@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 30 are done; tasks 31 through 53 remain.
+Tasks 1 through 31 are done; tasks 32 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -87,6 +87,7 @@ The reverse audit restores `SIGHUP` to [[tmux-play-77](../packages/tmux-play.md#
 Task 28 moved all 50 legacy records into `specs/intents/`, preserved their status and checkbox state, normalized their required sections and sentence layout, repaired the decision and meta citations, and removed `specs/iterations/` while keeping the temporary intent index accurate for task 30.
 Task 29 moved the remaining design rationale and unresolved provisioning questions into their owning decisions, removed every cross-record intent mention and the temporary intent index, and converted both legacy decision footnote sets to numbered external references.
 Task 30 rebuilt `specs/map.md` as one concise decision table and one concise package table with no intent-record index or item IDs; the guidance audit found the tracked repository guidance already describes the current layout.
+Task 31 validates Claude effort before acquiring caller abort-listener state and adds a live-signal rejection assertion, closing the pre-query leak without invoking the SDK query and narrowing task 49's remaining lifecycle handoff to cleanup after successful option mapping.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -413,7 +414,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `claude-code` | `claude-code-222`'s absent/empty-path omission and writable-path preservation through every non-auto permission-control row; | |
     | `claude-code` | `claude-code-229`'s undefined no-list `disallowedTools`, denylist-only case, and non-empty allowlist's undefined settings sources; | |
     | `claude-code` | `claude-code-38`'s repeated qualifying no-ops, pure-`text`, `text_delta`, `thinking`, orphan-`tool_result`, isolated-`tool_use`, camel-case, missing/malformed/nonzero/conflicting required counters, valid-zero/nonzero/malformed/conflicting cache counters, and absent/malformed/nonzero/conflicting reported-tool counter cases; | |
-    | `claude-code` | `claude-code-39`'s absent, already-aborted, listener-cleanup, and multiple-run controller cases; | |
+    | `claude-code` | `claude-code-39`'s absent, already-aborted, listener cleanup after option mapping succeeds, and multiple-run controller cases; | |
     | `claude-code` | `claude-code-40`'s fresh-clone and unrelated-variable assertions; | |
     | `claude-code` | and `claude-code-240`'s empty/array/non-object `modelUsage`, array/non-object entries, agreeing/conflicting dual counter aliases, unsafe per-record and cross-record sums, all-zero token and cost, empty/absent canonical-model map-key and empty/absent provider fallbacks, absent per-model cost and web units, per-model cost alias fallback/priority, agreeing/conflicting web-search aliases, and whole-run cost alias fallback/priority | |
     | `claude-code` | | `claude-code-1`, which no verification item cites and no check reaches |
