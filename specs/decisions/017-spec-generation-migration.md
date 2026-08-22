@@ -933,7 +933,7 @@ The owner answered five questions, the three this migration turned on — the sh
    That clause now retires a concern only where the owner approves it and an authorizing decision record admits it [[meta-12](../meta.md#meta-12)], this record being that authorization; without the amendment the approval alone would have left the clause binding `META-26` to a concern nothing carries.
    It read: "A spec item shall describe behavior as observable outcomes (e.g., file state, exit code, printed output, return value, network call) under named conditions, including any conditions under which a particular outcome shall not occur."
    Its named conditions survive in the GEARS clauses [[meta-6](../meta.md#meta-6)], so restoring it adds only the demand that an outcome be observable and that an item name where an outcome shall not occur, which would redraft `release-1`'s SemVer rule, `release-4`'s pre-tag procedure, `release-10`'s checklist, and `git-3`'s bullets-if-clearer judgment, none of them stating something anyone can observe.
-   The GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] are therefore the only shape an item must take, and the dead `meta-26` link in `iterations/022-tmux-play-layout-configuration.md` loses its target for good.
+   The GEARS clauses [[meta-6](../meta.md#meta-6)] and the one-requirement rule [[meta-29](../meta.md#meta-29)] are therefore the only shape an item must take, and the dead `meta-26` link in `intents/022-tmux-play-layout-configuration.md` loses its target for good.
 
 ## Consequences
 

@@ -69,4 +69,4 @@ Raising a supported floor makes an older runtime that still worked refuse to loa
 The floor therefore moves only on a cligent MINOR release, and the release notes name it.
 
 This decision supersedes no earlier decision.
-It constrains [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the version [IR-040](../iterations/040-consented-runtime-provisioning.md)'s consented install must acquire.
+It constrains [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the version [IR-040](../intents/040-consented-runtime-provisioning.md)'s consented install must acquire.

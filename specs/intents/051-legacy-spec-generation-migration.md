@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 27 are done; tasks 28 through 53 remain.
+Tasks 1 through 28 are done; tasks 29 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -21,7 +21,7 @@ The same review found `engine-219` reconstructed without the retry bound and san
 Task 14 landed `tmux-play` as 184 items matching the map exactly, emptied `specs/user/` and `specs/test/`, and handed task 49 ten uncovered behaviors; two defects its move carried out of the legacy generation were resolved against the destination's law in the same commit, `tmux-play-152` citing peer behavior a verification item may not reach [[meta-20](../meta.md#meta-20)] and `tmux-play-116` deferring its Kimi harness discipline to a citation instead of stating it [[meta-15](../meta.md#meta-15)].
 Task 14's own review then found `.github/workflows/ci.yml` still naming `TMUX-051` and `TTMUX-050`, the last legacy IDs quoted outside the records: the retarget sweep had asked only whether every current-form ID resolved, a question no legacy-form token can fail, so the invariant above now states the check in both directions.
 The same both-directions sweep found [DR-004](../decisions/004-tmux-play-captain-architecture.md) pointing at the deleted `user/` directory in a link whose href task 14 had already retargeted, the stale name surviving in the visible text alone.
-Only the six `META-*` citations task 28 carries, the two the `DR-017` index row names as history, and the legacy paths in the `specs/iterations/` records remain, each owned.
+At that point only the six `META-*` citations task 28 carried, the two the `DR-017` index row names as history, and the legacy paths in the `specs/iterations/` records remained, each owned.
 A further round found the residue that survives both directions until they expand shorthand: task 14 had rewritten only the leading element of eleven slash-separated ID lists, leaving continuations such as `/039` naming nothing, now expanded to whole IDs at every site.
 It also found the deleted `Real-tmux` and `Real-glow` preambles had carried the self-skip discipline for eighteen acceptance items that stated none of their own, the same loss `engine-219` suffered, so each now states it inline [[meta-8](../meta.md#meta-8)], and `engine-219` regained the *external*-CLI wording whose absence let it contradict `codex-219` on whether an absent SDK may skip a leg.
 That expansion then got seven IDs wrong by dropping the `+100` offset on continuations of a `TTMUX-` list, every one resolving to a live behavior item where a test item was meant, which is why the invariant above now checks a retargeted ID against the rename map rather than against the tree.
@@ -84,6 +84,7 @@ Task 27 made every remaining live task-14 baseline `tmux-play` verification item
 It centralized the remaining repeated real-tmux acceptance conditions in [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)], dropped left-click setup and delivered-ESC restatements to [[tmux-play-162](../packages/tmux-play.md#tmux-play-162)] and [[tmux-play-159](../packages/tmux-play.md#tmux-play-159)], and split the independent package-export flow from [[tmux-play-196](../packages/tmux-play.md#tmux-play-196)] into [[tmux-play-203](../packages/tmux-play.md#tmux-play-203)].
 The released-concern map and historical reference follow those moves.
 The reverse audit restores `SIGHUP` to [[tmux-play-77](../packages/tmux-play.md#tmux-play-77)]'s cancellation set, makes [[tmux-play-173](../packages/tmux-play.md#tmux-play-173)]'s no-`TMUX` no-op exact, records every newly visible coverage gap in task 49, including [[tmux-play-75](../packages/tmux-play.md#tmux-play-75)]'s idle-empty and non-TTY prompt branches, and leaves the `tmux-play` locator in `specs/map.md` accurate without an edit.
+Task 28 moved all 50 legacy records into `specs/intents/`, preserved their status and checkbox state, normalized their required sections and sentence layout, repaired the decision and meta citations, and removed `specs/iterations/` while keeping the temporary intent index accurate for task 30.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -130,7 +131,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 - [x] A decision record fixes the destination package set, the ID scheme, the disposition of the cross-adapter test file, and what the migration leaves alone.
 - [x] `specs/packages/` holds one lawful package per subject, and `specs/user/`, `specs/dev/`, and `specs/test/` are gone.
-- [ ] `specs/intents/` holds every intent record with its status and checkbox state intact, and `specs/iterations/` is gone.
+- [x] `specs/intents/` holds every intent record with its status and checkbox state intact, and `specs/iterations/` is gone.
 - [ ] Every item states one GEARS requirement [[meta-29](../meta.md#meta-29)] under the current section order, with peer relationships and verification evidence carried only by inline citations [[meta-14](../meta.md#meta-14)], [[meta-16](../meta.md#meta-16)], [[meta-20](../meta.md#meta-20)], and no `Verifies:` line survives.
 - [ ] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
@@ -263,7 +264,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 
 28. **Move the records.**
     Move the 50 records left in `specs/iterations/` to `specs/intents/`, task 2 having retired the duplicate, rename `Goal` to `Intent` and both `Acceptance criteria` and `Acceptance` to `Verification`, supply the `Status` the two remaining records without one are missing, and order the sections per [[meta-5](../meta.md#meta-5)].
-    Convert the 54 decision-record citations to the plain relative-link form [[meta-16](../meta.md#meta-16)], and retarget the six legacy `META-*` citations left on what the task-4 map settled for each concern.
+    Normalize all 69 decision-record citations in the moved records to the plain relative-file-link form [[meta-16](../meta.md#meta-16)] — linking the 7 previously bare semantic citations and dropping fragments from 18 of the 62 existing links — and retarget the six legacy `META-*` citations left on what the task-4 map settled for each concern.
     A concern with a carrier takes a citation pointing at it, while a concern whose retirement the owner approved keeps its still-true prose and loses the link, a claim the current law no longer makes being rewritten or removed — the `META-20` sentence about `Verifies:` lines among them.
     This task waits on that map rather than leaving a citation unresolved.
 
