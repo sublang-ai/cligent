@@ -10,6 +10,7 @@ import { performance } from 'node:perf_hooks';
 import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
+import { createOpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type {
   EventMessagePartDelta,
   EventMessagePartRemoved,
@@ -5210,6 +5211,75 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptCalls[0]).not.toHaveProperty('body');
     expect(promptCalls[1]).not.toHaveProperty('path');
     expect(promptCalls[1]).not.toHaveProperty('body');
+  });
+
+  it('preserves v2 turn limits through generated request serialization', async () => {
+    const promptRequests: Array<{
+      sessionId: string;
+      body: Record<string, unknown>;
+    }> = [];
+    const real = createOpencodeClient({
+      baseUrl: 'http://opencode.local:7777',
+      fetch: async (input, init) => {
+        const request =
+          input instanceof Request ? input : new Request(input, init);
+        promptRequests.push({
+          sessionId: new URL(request.url).pathname.split('/')[2]!,
+          body: JSON.parse(await request.clone().text()) as Record<
+            string,
+            unknown
+          >,
+        });
+        return new Response(null, { status: 204 });
+      },
+    });
+    let freshSessions = 0;
+    (real.session as unknown as Record<string, unknown>).create = async () => {
+      freshSessions++;
+      return { data: { id: `v2-limit-${freshSessions}` } };
+    };
+    (real.session as unknown as Record<string, unknown>).children = async () =>
+      ({ data: [] });
+    (real.event as unknown as Record<string, unknown>).subscribe = async () =>
+      ({ stream: (async function* () {})() });
+
+    const client = wrapOpencodeClient(
+      real as unknown as Record<string, unknown>,
+      { apiVersion: 'v2' },
+    );
+    await client.run?.({ prompt: 'fresh zero', steps: 0 });
+    await client.run?.({
+      prompt: 'resumed zero',
+      sessionId: 'resume-zero',
+      steps: 0,
+    });
+    await client.run?.({ prompt: 'fresh nonzero', steps: 5 });
+    await client.run?.({
+      prompt: 'resumed nonzero',
+      sessionId: 'resume-nonzero',
+      steps: 5,
+    });
+    await client.run?.({ prompt: 'fresh omitted' });
+    await client.run?.({
+      prompt: 'resumed omitted',
+      sessionId: 'resume-omitted',
+    });
+
+    expect(freshSessions).toBe(3);
+    expect(
+      promptRequests.map(({ sessionId, body }) => ({
+        sessionId,
+        hasSteps: Object.hasOwn(body, 'steps'),
+        steps: body.steps,
+      })),
+    ).toEqual([
+      { sessionId: 'v2-limit-1', hasSteps: true, steps: 0 },
+      { sessionId: 'resume-zero', hasSteps: true, steps: 0 },
+      { sessionId: 'v2-limit-2', hasSteps: true, steps: 5 },
+      { sessionId: 'resume-nonzero', hasSteps: true, steps: 5 },
+      { sessionId: 'v2-limit-3', hasSteps: false, steps: undefined },
+      { sessionId: 'resume-omitted', hasSteps: false, steps: undefined },
+    ]);
   });
 
   it('preserves native permissions on v2 fresh and resumed runs', async () => {

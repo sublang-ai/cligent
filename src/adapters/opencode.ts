@@ -1564,12 +1564,13 @@ export function wrapOpencodeClient(
         }
         if (signal?.aborted) return stopAbortedDispatch();
         const promptSessionId = sessionId;
+        const promptSteps = options.steps as number | undefined;
 
         const promptBody = {
           parts: [{ type: 'text', text: options.prompt }],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
-          ...(options.steps !== undefined ? { steps: options.steps } : {}),
+          ...(promptSteps !== undefined ? { steps: promptSteps } : {}),
           ...(effectivePermissionObj !== undefined
             ? { permission: effectivePermissionObj }
             : {}),
@@ -1579,6 +1580,7 @@ export function wrapOpencodeClient(
           sessionID: string;
         } & OpenCodeV2PromptBody & {
             directory?: string;
+            $body_steps?: number;
           } = {
           sessionID: promptSessionId,
           parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
@@ -1587,6 +1589,9 @@ export function wrapOpencodeClient(
             : {}),
           ...(variantVal ? { variant: variantVal } : {}),
           ...(cwdVal ? { directory: cwdVal } : {}),
+          // The generated v2 SDK uses this prefix to carry compatibility
+          // members through its request-field whitelist into the JSON body.
+          ...(promptSteps !== undefined ? { $body_steps: promptSteps } : {}),
         };
 
         // The SDK's event stream is a lazy async generator — the HTTP
