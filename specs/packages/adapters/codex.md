@@ -53,7 +53,8 @@ When the adapter normalizes a Codex stream, it shall dispatch native events acco
 
 - An `item.completed` content array contributes non-empty `text`, `output_text`, and `message_text` blocks as `text` events in block order, together with the compatibility tool events in [[codex-21](#codex-21)] and `file_change` or `file.changed` blocks as `codex:file_change` carrying their `file` value when present and otherwise the whole block.
 - A non-empty top-level item `text` contributes one `text` before those content events only where the content contains no non-empty text block, and otherwise is suppressed so mirrored text is not duplicated.
-- With no content blocks, non-empty top-level item text and top-level compatibility tool or file shapes produce the corresponding event, a top-level `file_change` or `file.changed` item carrying its `file` value when present and otherwise the whole item, while empty text and every unrecognized shape produce none.
+- A top-level `tool_result`, `function_call_result`, or `tool_output` item contributes one compatibility `tool_result` selected by [[codex-21](#codex-21)] after every selected top-level text and content-array event, whether or not content blocks are present.
+- With no content blocks, non-empty top-level item text and top-level compatibility tool-use or file shapes produce the corresponding event, a top-level `file_change` or `file.changed` item carrying its `file` value when present and otherwise the whole item, while empty text and every unrecognized shape produce none.
 
 ### codex-19
 
