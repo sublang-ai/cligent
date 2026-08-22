@@ -102,6 +102,11 @@ type PermissionOperationWaitResult<T> =
   | { kind: 'abort' }
   | { kind: 'timeout' };
 
+type PermissionOperationFailure = Extract<
+  PermissionOperationWaitResult<unknown>,
+  { kind: 'error' | 'timeout' }
+>;
+
 interface OpenCodeClient {
   run?: (options: Record<string, unknown>) => Promise<unknown>;
   query?: (options: Record<string, unknown>) => Promise<unknown>;
@@ -2316,6 +2321,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     };
     const waitForPermissionOperation = <T>(
       operation: Promise<T>,
+      deadline: number,
     ): Promise<PermissionOperationWaitResult<T>> =>
       new Promise((resolve) => {
         let settled = false;
@@ -2338,13 +2344,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           (value) => finish({ kind: 'resolved', value }),
           (error: unknown) => finish({ kind: 'error', error }),
         );
-        operationTimeout = setTimeout(
-          () => finish({ kind: 'timeout' }),
-          PERMISSION_REPLY_TIMEOUT_MS,
-        );
 
         if (abortRequested || options?.abortSignal?.aborted) {
           abortCurrentOperation();
+        } else {
+          const remainingMs = deadline - performance.now();
+          if (remainingMs <= 0) {
+            finish({ kind: 'timeout' });
+          } else {
+            operationTimeout = setTimeout(
+              () => finish({ kind: 'timeout' }),
+              remainingMs,
+            );
+          }
         }
       });
     reportPermissionState();
@@ -3842,6 +3854,102 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       const abortActiveSession = (raceCallerAbort: boolean) =>
         runControlOperation<void>(startKnownSessionAbort, raceCallerAbort);
 
+      const terminatePermissionFailure = async function* (
+        requestKey: string | undefined,
+        operationPromise: Promise<unknown>,
+        failure: PermissionOperationFailure,
+        permissionSessionId: string,
+        requestId: string,
+        toolName: string,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        if (requestKey) releasePermissionRequest(requestKey);
+        // Cancel the failed operation and paired SSE transport before yielding
+        // queued output. The consumer may suspend at that yield, but native I/O
+        // must already be stopped.
+        eventStreamController.abort();
+        operationPromise.catch(() => {});
+        yield* drainPendingContent(true);
+        await abortActiveSession(true);
+        if (abortRequested || options?.abortSignal?.aborted) {
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
+              usage: buildAccumulatedUsage(false),
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          return;
+        }
+
+        const detail =
+          failure.kind === 'timeout'
+            ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
+            : failure.error instanceof Error
+              ? failure.error.message
+              : String(failure.error);
+        yield createEvent(
+          'error',
+          AGENT,
+          {
+            code: 'OPENCODE_PERMISSION_REPLY_FAILED',
+            message:
+              'Failed to resolve OpenCode headless permission request ' +
+              `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
+              `requestID=${JSON.stringify(requestId)}, ` +
+              `permission=${JSON.stringify(toolName)}): ${detail}`,
+            recoverable: false,
+          },
+          sessionId,
+        );
+        if (abortRequested || options?.abortSignal?.aborted) {
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status: 'interrupted',
+              ...doneResumeTokenPayload(
+                'interrupted',
+                backendProvidedSessionId,
+                sessionId,
+                options?.resume,
+              ),
+              usage: buildAccumulatedUsage(false),
+              durationMs: Date.now() - startTime,
+            },
+            sessionId,
+          );
+          doneYielded = true;
+          return;
+        }
+        yield createEvent(
+          'done',
+          AGENT,
+          {
+            status: 'error',
+            ...doneResumeTokenPayload(
+              'error',
+              backendProvidedSessionId,
+              sessionId,
+              options?.resume,
+            ),
+            usage: buildAccumulatedUsage(false),
+            durationMs: Date.now() - startTime,
+          },
+          sessionId,
+        );
+        doneYielded = true;
+      };
+
       const describeControlOutcome = (
         outcome: ControlOutcome<unknown>,
       ): string => {
@@ -4715,6 +4823,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           );
 
           let requestKey: string | undefined;
+          const permissionDeadline =
+            performance.now() + PERMISSION_REPLY_TIMEOUT_MS;
           if (requestId) {
             requestKey = permissionRequestKey(permissionSessionId, requestId);
             if (permissionRequests.has(requestKey)) {
@@ -4736,8 +4846,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                     'SDK client permission pending-state API not available',
                   ),
                 );
-            const pendingRace =
-              await waitForPermissionOperation(pendingPromise);
+            const pendingRace = await waitForPermissionOperation(
+              pendingPromise,
+              permissionDeadline,
+            );
             if (pendingRace.kind === 'abort') {
               pendingPromise.catch(() => {});
               throw new OpenCodePromptDispatchAbortError(sessionId);
@@ -4746,19 +4858,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               pendingRace.kind === 'error' ||
               pendingRace.kind === 'timeout'
             ) {
-              eventStreamController.abort();
-              pendingPromise.catch(() => {});
-              const detail =
-                pendingRace.kind === 'timeout'
-                  ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
-                  : pendingRace.error instanceof Error
-                    ? pendingRace.error.message
-                    : String(pendingRace.error);
-              throw new Error(
-                'Failed to inspect OpenCode headless permission request ' +
-                  `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
-                  `requestID=${JSON.stringify(requestId)}): ${detail}`,
+              yield* terminatePermissionFailure(
+                requestKey,
+                pendingPromise,
+                pendingRace,
+                permissionSessionId,
+                requestId,
+                toolName,
               );
+              break;
             }
             if (!pendingRace.value) {
               continue;
@@ -4910,7 +5018,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             : Promise.reject(
                 new Error('SDK client permission reply API not available'),
               );
-          const replyRace = await waitForPermissionOperation(replyPromise);
+          const replyRace = await waitForPermissionOperation(
+            replyPromise,
+            permissionDeadline,
+          );
 
           if (
             replyRace.kind === 'resolved' &&
@@ -4936,7 +5047,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (replyRace.kind === 'resolved' && !replyRace.value) {
-            releasePermissionRequest(requestKey);
             continue;
           }
 
@@ -4970,91 +5080,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
-            releasePermissionRequest(requestKey);
-            // Cancel the failed response request and paired SSE transport
-            // before yielding queued output. The caller may suspend the
-            // generator at that yield, but native I/O must already be stopped.
-            eventStreamController.abort();
-            replyPromise.catch(() => {});
-            yield* drainPendingContent(true);
-            await abortActiveSession(true);
-            if (abortRequested || options?.abortSignal?.aborted) {
-              yield createEvent(
-                'done',
-                AGENT,
-                {
-                  status: 'interrupted',
-                  ...doneResumeTokenPayload(
-                    'interrupted',
-                    backendProvidedSessionId,
-                    sessionId,
-                    options?.resume,
-                  ),
-                  usage: buildAccumulatedUsage(false),
-                  durationMs: Date.now() - startTime,
-                },
-                sessionId,
-              );
-              doneYielded = true;
-              break;
-            }
-            const detail =
-              replyRace.kind === 'timeout'
-                ? `timed out after ${PERMISSION_REPLY_TIMEOUT_MS}ms`
-                : replyRace.error instanceof Error
-                  ? replyRace.error.message
-                  : String(replyRace.error);
-            yield createEvent(
-              'error',
-              AGENT,
-              {
-                code: 'OPENCODE_PERMISSION_REPLY_FAILED',
-                message:
-                  'Failed to resolve OpenCode headless permission request ' +
-                  `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
-                  `requestID=${JSON.stringify(requestId)}, ` +
-                  `permission=${JSON.stringify(toolName)}): ${detail}`,
-                recoverable: false,
-              },
-              sessionId,
+            yield* terminatePermissionFailure(
+              requestKey,
+              replyPromise,
+              replyRace,
+              permissionSessionId,
+              requestId,
+              toolName,
             );
-            if (abortRequested || options?.abortSignal?.aborted) {
-              yield createEvent(
-                'done',
-                AGENT,
-                {
-                  status: 'interrupted',
-                  ...doneResumeTokenPayload(
-                    'interrupted',
-                    backendProvidedSessionId,
-                    sessionId,
-                    options?.resume,
-                  ),
-                  usage: buildAccumulatedUsage(false),
-                  durationMs: Date.now() - startTime,
-                },
-                sessionId,
-              );
-              doneYielded = true;
-              break;
-            }
-            yield createEvent(
-              'done',
-              AGENT,
-              {
-                status: 'error',
-                ...doneResumeTokenPayload(
-                  'error',
-                  backendProvidedSessionId,
-                  sessionId,
-                  options?.resume,
-                ),
-                usage: buildAccumulatedUsage(false),
-                durationMs: Date.now() - startTime,
-              },
-              sessionId,
-            );
-            doneYielded = true;
             break;
           }
           continue;

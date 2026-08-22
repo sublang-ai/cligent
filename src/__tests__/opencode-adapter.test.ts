@@ -1494,6 +1494,14 @@ describe('OpenCodeAdapter', () => {
               },
             },
             {
+              type: 'permission.replied',
+              properties: {
+                sessionID: 'reply-race-session',
+                requestID: 'reply-race-request',
+                reply: 'reject',
+              },
+            },
+            {
               type: 'session.idle',
               properties: { sessionID: 'reply-race-session' },
             },
@@ -1508,7 +1516,16 @@ describe('OpenCodeAdapter', () => {
     const events = await collect(
       adapter.run('reply race probe', { permissions: { mode: 'auto' } }),
     );
-    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_result',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      toolName: 'edit',
+      toolUseId: 'reply-race-call',
+      status: 'denied',
+    });
     expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
   });
 
@@ -1873,6 +1890,116 @@ describe('OpenCodeAdapter', () => {
     });
   });
 
+  it('normalizes a pending-permission lookup failure', async () => {
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          runResult: { sessionId: 'lookup-failure-session' },
+          events: [
+            {
+              type: 'permission.asked',
+              properties: {
+                id: 'lookup-failure-request',
+                sessionID: 'lookup-failure-session',
+                permission: 'future_permission',
+              },
+            },
+          ],
+          async permissionPendingFactory() {
+            throw new Error('pending registry unavailable');
+          },
+        }),
+      },
+    );
+
+    const events = await collect(adapter.run('lookup failure probe'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      code: 'OPENCODE_PERMISSION_REPLY_FAILED',
+      recoverable: false,
+    });
+    expect((events[1]?.payload as { message: string }).message).toContain(
+      'lookup-failure-session',
+    );
+    expect((events[1]?.payload as { message: string }).message).toContain(
+      'lookup-failure-request',
+    );
+    expect((events[1]?.payload as { message: string }).message).toContain(
+      'future_permission',
+    );
+    expect((events[1]?.payload as { message: string }).message).toContain(
+      'pending registry unavailable',
+    );
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
+  });
+
+  it('bounds a pending-permission lookup that never settles', async () => {
+    vi.useFakeTimers();
+    let monotonicNow = 0;
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => monotonicNow);
+    try {
+      let resolveLookupStarted: () => void = () => {};
+      const lookupStarted = new Promise<void>((resolve) => {
+        resolveLookupStarted = resolve;
+      });
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'lookup-timeout-session' },
+            events: [
+              {
+                type: 'permission.asked',
+                properties: {
+                  id: 'lookup-timeout-request',
+                  sessionID: 'lookup-timeout-session',
+                  permission: 'future_permission',
+                },
+              },
+            ],
+            permissionPendingFactory: async () => {
+              resolveLookupStarted();
+              return new Promise<boolean>(() => {});
+            },
+          }),
+        },
+      );
+
+      const stream = adapter.run('lookup timeout probe');
+      expect((await stream.next()).value?.type).toBe('init');
+      const pendingError = stream.next();
+      await lookupStarted;
+      monotonicNow = 5_000;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const error = (await pendingError).value as AgentEvent & {
+        payload: { code?: string; message: string };
+      };
+      expect(error.type).toBe('error');
+      expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
+      expect(error.payload.message).toContain('lookup-timeout-session');
+      expect(error.payload.message).toContain('lookup-timeout-request');
+      expect(error.payload.message).toContain('future_permission');
+      expect(error.payload.message).toContain('timed out after 5000ms');
+
+      const done = (await stream.next()).value;
+      expect(done?.type).toBe('done');
+      expect(done?.payload).toMatchObject({ status: 'error' });
+      await stream.next();
+    } finally {
+      now.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('bounds a permission reply that never settles', async () => {
     vi.useFakeTimers();
     try {
@@ -1968,6 +2095,108 @@ describe('OpenCodeAdapter', () => {
         replyWaitActive: false,
       });
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shares one five-second deadline across permission lookup and reply', async () => {
+    vi.useFakeTimers();
+    let monotonicNow = 0;
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => monotonicNow);
+    try {
+      let resolveLookupStarted: () => void = () => {};
+      const lookupStarted = new Promise<void>((resolve) => {
+        resolveLookupStarted = resolve;
+      });
+      let replyStarted = false;
+      let replyCancelled = false;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'shared-deadline-session' },
+            events: [
+              {
+                type: 'permission.asked',
+                properties: {
+                  id: 'shared-deadline-request',
+                  sessionID: 'shared-deadline-session',
+                  permission: 'future_permission',
+                },
+              },
+            ],
+            permissionPendingFactory: async () => {
+              resolveLookupStarted();
+              return new Promise<boolean>((resolve) => {
+                setTimeout(() => resolve(true), 4_000);
+              });
+            },
+            replyPermissionFactory: async (options) =>
+              new Promise<void>((_resolve, reject) => {
+                replyStarted = true;
+                const cancel = () => {
+                  replyCancelled = true;
+                  reject(new Error('reply request cancelled'));
+                };
+                if (options.signal?.aborted) {
+                  cancel();
+                } else {
+                  options.signal?.addEventListener('abort', cancel, {
+                    once: true,
+                  });
+                }
+              }),
+          }),
+        },
+      );
+
+      const stream = adapter.run('shared deadline probe', {
+        permissions: { mode: 'auto' },
+      });
+      expect((await stream.next()).value?.type).toBe('init');
+
+      let errorSettled = false;
+      const pendingError = stream.next().then((result) => {
+        errorSettled = true;
+        return result;
+      });
+      await lookupStarted;
+      monotonicNow = 3_999;
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(errorSettled).toBe(false);
+      expect(replyStarted).toBe(false);
+
+      monotonicNow = 4_000;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(replyStarted).toBe(true);
+      expect(errorSettled).toBe(false);
+
+      monotonicNow = 4_999;
+      await vi.advanceTimersByTimeAsync(999);
+      expect(errorSettled).toBe(false);
+      monotonicNow = 5_000;
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const error = (await pendingError).value as AgentEvent & {
+        payload: { code?: string; message: string };
+      };
+      expect(error.type).toBe('error');
+      expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
+      expect(error.payload.message).toContain('shared-deadline-session');
+      expect(error.payload.message).toContain('shared-deadline-request');
+      expect(error.payload.message).toContain('future_permission');
+      expect(error.payload.message).toContain('timed out after 5000ms');
+      expect(replyCancelled).toBe(true);
+
+      const done = (await stream.next()).value;
+      expect(done?.type).toBe('done');
+      expect(done?.payload).toMatchObject({ status: 'error' });
+      await stream.next();
+    } finally {
+      now.mockRestore();
       vi.useRealTimers();
     }
   });

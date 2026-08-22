@@ -290,15 +290,15 @@ outcome matrix, including unknown permission names:
 | State | Observable outcome |
 | --- | --- |
 | `mode: 'auto'` and the `once` reply succeeds | no `permission_request`; after confirmation, exactly one `opencode:permission_decision` with native request and session identifiers, permission name, patterns, correlated tool-use identifier, `decision: 'once'`, `automated: true`, normalized input, and optional reason |
-| outside auto mode before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
+| outside auto mode after the registry confirms pending and before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
 | outside auto mode and the `reject` reply succeeds | no automated-decision extension after that request |
 | composite session/request identity absent from OpenCode's pending-permission registry, including a replay after its matching `permission.replied` | no reply or event [[6]] |
-| provider removes the request after the pending lookup but before the reply arrives | treat its exact `PermissionNotFoundError` as already resolved, without an error or automated-decision extension [[6]] |
+| provider removes the request after the pending lookup but before the reply arrives | treat its exact `PermissionNotFoundError` as already resolved, retain the active denial correlation until matching native confirmation or terminal cleanup, and emit no error or automated-decision extension [[6]] |
 | same composite session/request identity repeated before its matching `permission.replied` is observed | no second reply or event |
 | same composite identity is provider-pending again after the earlier lifecycle's matching `permission.replied` | resolve it once as a later native request lifecycle [[6]] |
 | unrelated session tree | no response or event per [[opencode-6](#opencode-6)] |
 | missing request identifier | non-recoverable `OPENCODE_PERMISSION_REQUEST_INVALID` naming session, missing request, and permission, then error `done` |
-| unavailable route, rejected operation, SDK-result error, or no settlement within five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done` |
+| pending-registry lookup or reply route unavailable, rejected, an SDK-result error, or their one shared deadline reaches five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done` |
 | caller abort before or during response | one interrupted `done` with no automated-decision extension |
 
 Failed, timed-out, and aborted paths use [[opencode-35](#opencode-35)] transport
@@ -565,10 +565,10 @@ matrix:
 | --- | --- |
 | first owned request | retain its composite session/request key and denial correlation while one re-armed response waiter is active |
 | same request repeated before native confirmation | start no second response waiter and preserve the original correlation |
-| successful response awaiting observation of its matching `permission.replied` | retain the active correlation until that native confirmation [[6]], with no completed-response tombstone |
+| accepted response or exact reply-time disappearance awaiting observation of its matching `permission.replied` | retain the active correlation until that native confirmation [[6]], with no completed-response tombstone |
 | matching `permission.replied` | use the active correlation for denial, then release that mapping so completed responses retain no state |
-| inactive ask | consult OpenCode's pending-permission registry; ignore an absent request and retain a present request only as active state [[6]] |
-| failed, five-second timed-out, or caller-aborted response | cancel response and stream I/O, release its active key and response waiter, close the iterator during bounded terminal cleanup, and release the caller listener |
+| inactive ask | consult OpenCode's pending-permission registry and any ensuing reply under one five-second deadline; ignore an absent request and retain a present request only as active state [[6]] |
+| failed registry lookup or reply, shared-deadline timeout, or caller-aborted operation | cancel response and stream I/O, release its active key and response waiter, close the iterator during bounded terminal cleanup, and release the caller listener |
 | terminal cleanup | clear every remaining active key and response waiter |
 
 ### Managed Resource Ownership
@@ -980,12 +980,12 @@ this matrix:
 | Concern | Assertions |
 | --- | --- |
 | auto mapping and delivery | no wildcard, present capabilities including denies, omitted capabilities preserved, and version-correct create/update/prompt placement [[opencode-7](#opencode-7)], [[opencode-33](#opencode-33)] |
-| successful root/descendant v1 and v2 asks, including unknown names | 257 sequential native request lifecycles, each repeated before confirmation, one post-confirmation stale replay absent from the provider registry, one identity genuinely pending again, and one reply-time provider disappearance receive exactly their selected response or suppression, preserve each lifecycle's denial correlation, release each confirmed mapping, report zero retained completed-response entries throughout, and clear one unconfirmed mapping at terminal; exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
+| successful root/descendant v1 and v2 asks, including unknown names | 257 sequential native request lifecycles, each repeated before confirmation, one post-confirmation stale replay absent from the provider registry, one identity genuinely pending again, and one reply-time provider disappearance followed by native denial receive exactly their selected response or suppression, preserve each lifecycle's tool name and call identity through denial correlation, release each confirmed mapping, report zero retained completed-response entries throughout, and clear one unconfirmed mapping at terminal; exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
 | resumed lineage discovery | recursive whole-deadline traversal, invalid-entry tolerance, and failure-before-prompt [[opencode-34](#opencode-34)] |
 | run ownership evolution | wrapper seeding, task-part child adoption, fresh and resumed lifecycle addition, owned-descendant deletion, unrelated/malformed preservation, child-route identity, and filtered child conversation [[opencode-56](#opencode-56)], [[opencode-6](#opencode-6)] |
 | unrelated or repeated events | no foreign response and no duplicate response |
 | missing identifier | exact invalid-request error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
-| unavailable, failed, SDK-error, or timed-out route | exact reply error, one error terminal, no automated-decision extension, and request and response-wait state released before the error [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
+| unavailable, failed, SDK-error, or timed-out registry / reply route | exact permission-reply error, one shared five-second deadline across both operations, one error terminal, no automated-decision extension, and request and response-wait state released before the error [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
 | pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, releases request and response-wait state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
 
 ### opencode-55

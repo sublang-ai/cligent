@@ -115,8 +115,11 @@ Before either outcome, the adapter shall confirm the composite session/request
 identity in OpenCode's pending-permission registry, so a stale replay after
 native confirmation produces neither a second event nor a second response,
 while a genuinely pending later lifecycle may reuse that identity [[12]].
+The registry lookup and ensuing reply share one five-second resolution deadline
+and one permission-specific failure path; an exact reply-time disappearance
+retains active denial correlation until native confirmation or terminal cleanup.
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
-A missing or failed reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
+A missing identifier or failed or timed-out registry lookup or reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].
 Kimi shall therefore reject a provided no-mode capability policy per [[kimi-7](../packages/adapters/kimi.md#kimi-7)], emit any remaining ACP permission request for observability, and answer it with a fail-closed rejection per [[kimi-22](../packages/adapters/kimi.md#kimi-22)].
 
