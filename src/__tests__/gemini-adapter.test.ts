@@ -899,6 +899,128 @@ describe('GeminiAdapter', () => {
     expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
+  it.each([
+    {
+      name: 'iterator failure after a backend identifier',
+      failure: 'iterator',
+      backendSessionId: 'gemini-stream-backend',
+      resume: undefined,
+      expectedResume: 'gemini-stream-backend',
+    },
+    {
+      name: 'child failure on a resumed run without a backend identifier',
+      failure: 'child',
+      backendSessionId: undefined,
+      resume: 'gemini-inbound-resume',
+      expectedResume: undefined,
+    },
+  ] as const)(
+    'selects normal terminal continuity for $name',
+    async ({ failure, backendSessionId, resume, expectedResume }) => {
+      const { spawnProcess } = makeSpawn((process) => {
+        process.stdout.write(
+          `${JSON.stringify({
+            type: 'init',
+            model: 'gem',
+            cwd: '/repo',
+            ...(backendSessionId ? { sessionId: backendSessionId } : {}),
+          })}\n`,
+        );
+
+        setImmediate(() => {
+          process.stderr.end();
+          if (failure === 'iterator') {
+            process.stdout.destroy(new Error('fake stream failed'));
+            process.emit('close', 1, null);
+          } else {
+            process.stdout.end();
+            process.emit('error', new Error('fake child failed'));
+          }
+        });
+      });
+      const adapter = new GeminiAdapter({ spawnProcess });
+
+      const events = await collect(
+        adapter.run('prompt', { ...(resume ? { resume } : {}) }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      const done = events[2] as AgentEvent & {
+        payload: { status: string; resumeToken?: string };
+      };
+      expect(done.payload.status).toBe('error');
+      if (expectedResume) {
+        expect(done.payload.resumeToken).toBe(expectedResume);
+      } else {
+        expect(done.payload).not.toHaveProperty('resumeToken');
+      }
+    },
+  );
+
+  it('awaits a stdout-less child close before temporary cleanup', async () => {
+    const order: string[] = [];
+    const controller = new AbortController();
+    const process = new MockGeminiProcess();
+    Object.defineProperty(process, 'stdout', { value: undefined });
+    process.kill = (signal?: NodeJS.Signals | number): boolean => {
+      process.killed = true;
+      process.killSignals.push(signal);
+      order.push(`kill:${String(signal)}`);
+      queueMicrotask(() => {
+        order.push('close');
+        process.stderr.end();
+        process.emit('close', null, 'SIGTERM');
+      });
+      return true;
+    };
+    const adapter = new GeminiAdapter({
+      spawnProcess: () =>
+        process as unknown as ChildProcessWithoutNullStreams,
+      createSettingsOverride: async () => ({
+        env: {},
+        cleanup: async () => {
+          order.push('settings-cleanup');
+        },
+      }),
+      createPolicyOverride: async () => ({
+        args: [],
+        cleanup: async () => {
+          order.push('policy-cleanup');
+        },
+      }),
+      createTelemetryCapture: async () => ({
+        env: {},
+        read: async () => '',
+        cleanup: async () => {
+          order.push('telemetry-cleanup');
+        },
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { abortSignal: controller.signal }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(process.killSignals).toEqual(['SIGTERM']);
+    expect(order.slice(0, 2)).toEqual(['kill:SIGTERM', 'close']);
+    for (const cleanup of [
+      'telemetry-cleanup',
+      'policy-cleanup',
+      'settings-cleanup',
+    ]) {
+      expect(order.indexOf(cleanup)).toBeGreaterThan(order.indexOf('close'));
+    }
+  });
+
   it('maps permission policy combinations to Gemini 0.50 policy rules', () => {
     const levels: PermissionLevel[] = ['allow', 'ask', 'deny'];
     const toolGroups = {
@@ -2030,7 +2152,7 @@ describe('GeminiAdapter', () => {
     expect(cleanupCalls).toEqual(['policy', 'defaults']);
   });
 
-  it('sends SIGTERM on abort and emits interrupted done status', async () => {
+  it('sends SIGTERM on abort and omits interrupted close stderr', async () => {
     const controller = new AbortController();
 
     let spawned: MockGeminiProcess | undefined;
@@ -2042,6 +2164,7 @@ describe('GeminiAdapter', () => {
         process.killSignals.push(signal);
 
         queueMicrotask(() => {
+          process.stderr.write('shutdown diagnostic');
           process.stdout.end();
           process.stderr.end();
           process.emit('close', null, 'SIGTERM');
@@ -2077,11 +2200,69 @@ describe('GeminiAdapter', () => {
 
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
 
-    const done = events[1] as AgentEvent & { payload: { status: string } };
+    const done = events[1] as AgentEvent & {
+      payload: { status: string; result?: string };
+    };
     expect(done.payload.status).toBe('interrupted');
+    expect(done.payload).not.toHaveProperty('result');
 
     expect(spawned).toBeDefined();
     expect(spawned?.killSignals).toContain('SIGTERM');
+  });
+
+  it('gives abort precedence over a buffered native result', async () => {
+    const controller = new AbortController();
+    const process = new MockGeminiProcess();
+    const stdout = {
+      async *[Symbol.asyncIterator]() {
+        yield `${JSON.stringify({
+          type: 'result',
+          status: 'error',
+          result: 'native result',
+          error: { code: 'NATIVE_ERROR', message: 'native rejection' },
+          sessionId: 'gemini-result-backend',
+          stats: { input_tokens: 3, output_tokens: 2, tool_uses: 0 },
+        })}\n`;
+        controller.abort();
+      },
+    };
+    Object.defineProperty(process, 'stdout', { value: stdout });
+    process.kill = (signal?: NodeJS.Signals | number): boolean => {
+      process.killed = true;
+      process.killSignals.push(signal);
+      queueMicrotask(() => {
+        process.stderr.end();
+        process.emit('close', null, 'SIGTERM');
+      });
+      return true;
+    };
+    const adapter = new GeminiAdapter({
+      spawnProcess: () =>
+        process as unknown as ChildProcessWithoutNullStreams,
+      createTelemetryCapture: async () => ({
+        env: {},
+        read: async () =>
+          JSON.stringify({
+            type: 'gemini_cli.api_response',
+            model: 'gem',
+          }),
+        cleanup: async () => {},
+      }),
+    });
+
+    const events = await collect(
+      adapter.run('prompt', { abortSignal: controller.signal }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    const done = events[1] as AgentEvent & { payload: DonePayload };
+    expect(done.payload).toEqual({
+      status: 'interrupted',
+      resumeToken: 'gemini-result-backend',
+      usage: { toolUses: 0 },
+      durationMs: expect.any(Number),
+    });
+    expect(process.killSignals).toEqual(['SIGTERM']);
   });
 
   it('sets interrupted resumeToken from backend id, inbound resume, or omission', async () => {

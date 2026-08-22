@@ -1422,6 +1422,9 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let backendProvidedSessionId = false;
     let doneYielded = false;
     let pendingDone: Omit<DonePayload, 'usage'> | undefined;
+    let pendingResultError:
+      | Extract<AgentEvent, { type: 'error' }>['payload']
+      | undefined;
     let pendingStreamStats: unknown;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
@@ -1437,6 +1440,21 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         // ignore kill errors during shutdown
       }
     };
+
+    const interruptedDonePayload = (): DonePayload => ({
+      status: 'interrupted',
+      ...doneResumeTokenPayload(
+        'interrupted',
+        backendProvidedSessionId,
+        sessionId,
+        resumeSessionId,
+      ),
+      usage: {
+        ...DEFAULT_DONE_USAGE,
+        toolUses: observedToolUseIds.size,
+      },
+      durationMs: Date.now() - startTime,
+    });
 
     if (options?.abortSignal && !options.abortSignal.aborted) {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
@@ -1477,17 +1495,6 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
       const processRef = child;
 
-      if (!processRef.stdout) {
-        throw new Error('Gemini CLI process does not expose stdout stream');
-      }
-
-      if (processRef.stderr) {
-        processRef.stderr.setEncoding('utf8');
-        processRef.stderr.on('data', (chunk: string | Buffer) => {
-          stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        });
-      }
-
       closePromise = new Promise<CloseResult>((resolve) => {
         const onClose = (
           code: number | null,
@@ -1512,6 +1519,17 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         processRef.once('close', onClose);
         processRef.once('error', onError);
       });
+
+      if (!processRef.stdout) {
+        throw new Error('Gemini CLI process does not expose stdout stream');
+      }
+
+      if (processRef.stderr) {
+        processRef.stderr.setEncoding('utf8');
+        processRef.stderr.on('data', (chunk: string | Buffer) => {
+          stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+        });
+      }
 
       if (abortRequested) {
         onAbort();
@@ -1729,20 +1747,13 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
               errorMsg ||
               `Gemini result error (raw: ${JSON.stringify({ error: message.error, result: message.result, status: message.status })})`;
 
-            yield createEvent(
-              'error',
-              AGENT,
-              {
-                ...(errorMsg
-                  ? toErrorPayload(message)
-                  : {
-                      code: 'GEMINI_RESULT_ERROR',
-                      message: diagMsg,
-                      recoverable: false,
-                    }),
-              },
-              sessionId,
-            );
+            pendingResultError = errorMsg
+              ? toErrorPayload(message)
+              : {
+                  code: 'GEMINI_RESULT_ERROR',
+                  message: diagMsg,
+                  recoverable: false,
+                };
           }
 
           const resultText =
@@ -1781,7 +1792,15 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         initYielded = true;
       }
 
-      if (pendingDone) {
+      if (abortRequested || options?.abortSignal?.aborted) {
+        yield createEvent(
+          'done',
+          AGENT,
+          interruptedDonePayload(),
+          sessionId,
+        );
+        doneYielded = true;
+      } else if (pendingDone) {
         let tokens: TokenUsageReport | undefined;
         try {
           tokens = mapTelemetryUsage(
@@ -1793,61 +1812,88 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           // report, never by a reconstructed or stream-only estimate.
         }
 
-        yield createEvent(
-          'done',
-          AGENT,
-          {
-            ...pendingDone,
-            usage: {
-              toolUses: observedToolUseIds.size,
-              ...(tokens ? { tokens } : {}),
-            },
-          },
-          sessionId,
-        );
-        doneYielded = true;
-      } else if (!doneYielded) {
-        const status = mapExitCodeToDoneStatus(close, abortRequested);
-        const stderrText = stderr.trim();
-        const fallbackMsg =
-          stderrText ||
-          (status === 'error'
-            ? `Gemini CLI exited with code ${close?.code ?? 'null'} without a result event`
-            : undefined);
-
-        if (status === 'error' && fallbackMsg) {
+        if (abortRequested || options?.abortSignal?.aborted) {
           yield createEvent(
-            'error',
+            'done',
+            AGENT,
+            interruptedDonePayload(),
+            sessionId,
+          );
+        } else {
+          if (pendingResultError) {
+            yield createEvent(
+              'error',
+              AGENT,
+              pendingResultError,
+              sessionId,
+            );
+          }
+          yield createEvent(
+            'done',
             AGENT,
             {
-              code: 'GEMINI_EXIT_ERROR',
-              message: fallbackMsg,
-              recoverable: false,
+              ...pendingDone,
+              usage: {
+                toolUses: observedToolUseIds.size,
+                ...(tokens ? { tokens } : {}),
+              },
             },
             sessionId,
           );
         }
+        doneYielded = true;
+      } else if (!doneYielded) {
+        const status = mapExitCodeToDoneStatus(close, abortRequested);
+        if (status === 'interrupted') {
+          yield createEvent(
+            'done',
+            AGENT,
+            interruptedDonePayload(),
+            sessionId,
+          );
+        } else {
+          const stderrText = stderr.trim();
+          const fallbackMsg =
+            stderrText ||
+            (status === 'error'
+              ? `Gemini CLI exited with code ${close?.code ?? 'null'} without a result event`
+              : undefined);
 
-        yield createEvent(
-          'done',
-          AGENT,
-          {
-            status,
-            ...doneResumeTokenPayload(
-              status,
-              backendProvidedSessionId,
+          if (status === 'error' && fallbackMsg) {
+            yield createEvent(
+              'error',
+              AGENT,
+              {
+                code: 'GEMINI_EXIT_ERROR',
+                message: fallbackMsg,
+                recoverable: false,
+              },
               sessionId,
-              resumeSessionId,
-            ),
-            ...(fallbackMsg ? { result: fallbackMsg } : {}),
-            usage: {
-              ...DEFAULT_DONE_USAGE,
-              toolUses: observedToolUseIds.size,
+            );
+          }
+
+          yield createEvent(
+            'done',
+            AGENT,
+            {
+              status,
+              ...doneResumeTokenPayload(
+                status,
+                backendProvidedSessionId,
+                sessionId,
+                resumeSessionId,
+              ),
+              ...(fallbackMsg ? { result: fallbackMsg } : {}),
+              usage: {
+                ...DEFAULT_DONE_USAGE,
+                toolUses: observedToolUseIds.size,
+              },
+              durationMs: Date.now() - startTime,
             },
-            durationMs: Date.now() - startTime,
-          },
-          sessionId,
-        );
+            sessionId,
+          );
+        }
+        doneYielded = true;
       }
     } catch (error) {
       if (!initYielded) {
@@ -1861,7 +1907,26 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       if (!doneYielded) {
+        if (abortRequested || options?.abortSignal?.aborted) {
+          yield createEvent(
+            'done',
+            AGENT,
+            interruptedDonePayload(),
+            sessionId,
+          );
+          doneYielded = true;
+          return;
+        }
+
         if (pendingDone) {
+          if (pendingResultError) {
+            yield createEvent(
+              'error',
+              AGENT,
+              pendingResultError,
+              sessionId,
+            );
+          }
           yield createEvent(
             'done',
             AGENT,
@@ -1874,29 +1939,6 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             sessionId,
           );
           doneYielded = true;
-          return;
-        }
-
-        if (abortRequested || options?.abortSignal?.aborted) {
-          yield createEvent(
-            'done',
-            AGENT,
-            {
-              status: 'interrupted',
-              ...doneResumeTokenPayload(
-                'interrupted',
-                backendProvidedSessionId,
-                sessionId,
-                resumeSessionId,
-              ),
-              usage: {
-                ...DEFAULT_DONE_USAGE,
-                toolUses: observedToolUseIds.size,
-              },
-              durationMs: Date.now() - startTime,
-            },
-            sessionId,
-          );
           return;
         }
 
@@ -1918,6 +1960,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           AGENT,
           {
             status: 'error',
+            ...doneResumeTokenPayload(
+              'error',
+              backendProvidedSessionId,
+              sessionId,
+              resumeSessionId,
+            ),
             usage: {
               ...DEFAULT_DONE_USAGE,
               toolUses: observedToolUseIds.size,
