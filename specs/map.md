@@ -3,7 +3,7 @@
 
 # Spec Map
 
-Quick-reference index for locating spec files.
+Quick-reference index for locating decisions and spec packages.
 Spec items are the source of truth.
 Code can be inconsistent with specs during development.
 
@@ -11,112 +11,52 @@ Code can be inconsistent with specs during development.
 
 Know the rules in [`meta.md`](meta.md) before authoring, modifying, or reviewing a DR, IR, or item.
 
-- DRs and IRs: see [Overall](meta.md#overall), [Record format](meta.md#record-format), and [Citation](meta.md#citation).
-- Items: see [Overall](meta.md#overall), [Item syntax](meta.md#item-syntax), [Spec packages](meta.md#spec-packages), and [Citation](meta.md#citation).
-
 ## Layout
 
 ```text
-decisions/  Decision records (DRs)
-intents/    Intent records (IRs)
-packages/   Spec packages (one file per package)
-map.md      This index
-meta.md     The spec of specs
+decisions/    Decision records (DRs)
+intents/      Intent records (IRs)
+packages/     Spec packages (one file per package)
+map.md        This index
+meta.md       The spec of specs
 ```
 
 ## Decisions
 
-| ID     | File                                                                                                             | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DR-000 | [000-spec-structure-format.md](decisions/000-spec-structure-format.md)                                           | Spec structure, format, and naming conventions                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| DR-001 | [001-unified-cli-agent-interface-architecture.md](decisions/001-unified-cli-agent-interface-architecture.md)     | TypeScript library with async generator interface across CLI agents                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| DR-002 | [002-unified-event-stream-and-adapter-interface.md](decisions/002-unified-event-stream-and-adapter-interface.md) | Unified Event Stream, driver-adapter contract, permission model, and authentic usage payload                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| DR-003 | [003-role-scoped-session-management.md](decisions/003-role-scoped-session-management.md)                         | Cligent class, role attribution, session continuity, option merge                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| DR-004 | [004-tmux-play-captain-architecture.md](decisions/004-tmux-play-captain-architecture.md)                         | tmux-play Captain/player architecture including Boss-only empty rosters, records, presenter boundary                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DR-005 | [005-per-adapter-permission-configuration.md](decisions/005-per-adapter-permission-configuration.md)             | tmux-play YAML `permissions` retained as runtime-held call defaults and supplied to `Cligent.run()` as typed `PermissionPolicy`; `PermissionPolicy` expands for auto-mode incl. Codex auto-review on modern `default_permissions` profiles; permission-managed Codex runs ignore user-level config for deterministic profiles; headless auto-mode posture (SDK-native auto, no cligent-selected grants; OpenCode native auto replies and non-auto residual requests reject fail-closed); no project-wide default |
-| DR-006 | [006-workspace-writable-paths.md](decisions/006-workspace-writable-paths.md)                                     | Typed `PermissionPolicy.writablePaths` for workspace-relative write grants; all adapters accept them on otherwise supported policies and report a per-adapter enforcement class (Codex `profile` / Claude+Gemini `sandbox` when independently active / OpenCode+Kimi `ambient`), with Codex profile enforcement the release bar                                                                                                                                                                                  |
-| DR-007 | [007-tmux-play-dynamic-player-visibility.md](decisions/007-tmux-play-dynamic-player-visibility.md)               | tmux-play dynamic player visibility: optional empty roster with a strict Boss-only empty-visible exception, optional `layout.initialVisible`, first-class `setVisiblePlayers`, `player_view_changed` records, and session-mode full rebuild of visible player panes from bounded log tails                                                                                                                                                                                                                       |
-| DR-008 | [008-captain-pre-close-lifecycle.md](decisions/008-captain-pre-close-lifecycle.md)                               | Two-stage Captain shutdown with a live-emission `prepareDispose()` hook before legacy post-close `dispose()`                                                                                                                                                                                                                                                                                                                                                                                                     |
-| DR-009 | [009-adapter-scoped-effort-vocabularies.md](decisions/009-adapter-scoped-effort-vocabularies.md)                 | One `effort` property with portable base values, provider-native extras, adapter-correlated types, and built-in support metadata                                                                                                                                                                                                                                                                                                                                                                                 |
-| DR-010 | [010-isolated-captain-control-calls.md](decisions/010-isolated-captain-control-calls.md)                         | Fresh and tool-restricted Captain control calls with fail-closed adapter enforcement                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DR-011 | [011-kimi-code-acp-integration.md](decisions/011-kimi-code-acp-integration.md)                                   | Kimi Code through one per-run `kimi acp` process; reject legacy/private Kimi SDKs and lossy print mode                                                                                                                                                                                                                                                                                                                                                                                                           |
-| DR-012 | [012-runtime-derived-tmux-play-defaults.md](decisions/012-runtime-derived-tmux-play-defaults.md)                 | tmux-play first-run defaults follow the installed agent runtimes; optional peers stay optional and are checked, never installed                                                                                                                                                                                                                                                                                                                                                                                  |
-| DR-013 | [013-cligent-owned-runtime-compatibility.md](decisions/013-cligent-owned-runtime-compatibility.md)               | Cligent owns agent-runtime compatibility: one shipped descriptor per runtime, load-time version gate, structured readiness verdict, no published upper bound on an optional peer                                                                                                                                                                                                                                                                                                                                 |
-| DR-014 | [014-unified-token-usage-breakdown.md](decisions/014-unified-token-usage-breakdown.md)                           | Authentic nested usage with inclusive totals, exact optional subsets, causal coverage, rate-card records, direct-cost provenance, and cross-validated supplementary sources                                                                                                                                                                                                                                                                                                                                      |
-| DR-015 | [015-managed-tmux-play-lifecycle.md](decisions/015-managed-tmux-play-lifecycle.md)                               | Adopt the two-phase managed launch lifecycle — acknowledged readiness, activation, and shutdown with bounded timeouts — superseding the one-phase alternative drafted against a partial port; carries forward ownership-scoped teardown and mutation-order constraints                                                                                                                                                                                                                                           |
-| DR-016 | [016-tmux-pane-logical-identity.md](decisions/016-tmux-pane-logical-identity.md)                                 | Pane-scoped logical keys and stable pane ids for operational lookups; displayed titles are presentation-only, machine queries use a locale-safe separator, and a failed title round-trip gets one warning                                                                                                                                                                                                                                                                                                        |
-| [DR-017](decisions/017-spec-generation-migration.md) | 017-spec-generation-migration.md | Spec generation migration contract: destination package set, `+100` / `+200` ID blocks with padding dropped, dissolution of the cross-adapter test file into per-package verification, one package per subject, released-changelog scope boundary, and the settled approvals — released IDs respelled, released numbers moved under the one-time law exception this record authorizes, and a shared cross-adapter criterion restated once per destination package; carries the per-item rename map from every released ID to its destination, `META-15` restored as `meta-35` and `meta-36`, and `META-26` retired under the released-ID amendment the owner approved |
+| ID | File | Summary |
+| --- | --- | --- |
+| [DR-000](decisions/000-spec-structure-format.md) | 000-spec-structure-format.md | Spec structure and format |
+| [DR-001](decisions/001-unified-cli-agent-interface-architecture.md) | 001-unified-cli-agent-interface-architecture.md | Unified CLI-agent library architecture |
+| [DR-002](decisions/002-unified-event-stream-and-adapter-interface.md) | 002-unified-event-stream-and-adapter-interface.md | Unified events and adapter contract |
+| [DR-003](decisions/003-role-scoped-session-management.md) | 003-role-scoped-session-management.md | Role-scoped sessions and continuity |
+| [DR-004](decisions/004-tmux-play-captain-architecture.md) | 004-tmux-play-captain-architecture.md | tmux-play Captain and player architecture |
+| [DR-005](decisions/005-per-adapter-permission-configuration.md) | 005-per-adapter-permission-configuration.md | Portable permission policy and adapter mappings |
+| [DR-006](decisions/006-workspace-writable-paths.md) | 006-workspace-writable-paths.md | Workspace-relative writable paths |
+| [DR-007](decisions/007-tmux-play-dynamic-player-visibility.md) | 007-tmux-play-dynamic-player-visibility.md | tmux-play dynamic player visibility |
+| [DR-008](decisions/008-captain-pre-close-lifecycle.md) | 008-captain-pre-close-lifecycle.md | Captain pre-close lifecycle |
+| [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies |
+| [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls |
+| [DR-011](decisions/011-kimi-code-acp-integration.md) | 011-kimi-code-acp-integration.md | Kimi Code ACP integration |
+| [DR-012](decisions/012-runtime-derived-tmux-play-defaults.md) | 012-runtime-derived-tmux-play-defaults.md | Runtime-derived tmux-play defaults |
+| [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Agent-runtime compatibility ownership |
+| [DR-014](decisions/014-unified-token-usage-breakdown.md) | 014-unified-token-usage-breakdown.md | Unified usage accounting |
+| [DR-015](decisions/015-managed-tmux-play-lifecycle.md) | 015-managed-tmux-play-lifecycle.md | Managed tmux-play launch lifecycle |
+| [DR-016](decisions/016-tmux-pane-logical-identity.md) | 016-tmux-pane-logical-identity.md | Logical tmux pane identity |
+| [DR-017](decisions/017-spec-generation-migration.md) | 017-spec-generation-migration.md | Spec-generation migration and released-ID mappings |
 
 ## Packages
 
-### claude-code
-
-| Group | File                                                       | Summary                                                                                                                                                                                                                                                                                       |
-| ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [claude-code.md](packages/adapters/claude-code.md) | Claude Code adapter: SDK normalization including one init per run keyed to the handshake, complete per-model token records with inclusive output and agent-estimated cost, UPM mapping, options and adapter-scoped effort mapping, fresh SDK session id, resume token, and their checks |
-
-### codex
-
-| Group | File                                   | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [codex.md](packages/adapters/codex.md) | Codex adapter: SDK normalization including exact partial root-thread usage differenced from the cumulative snapshot, inclusive cache/reasoning subsets without requested-model substitution, UPM/default-permissions mapping including writablePaths profile enforcement and user-config isolation for permission-managed runs, thread resumption, options and adapter-scoped effort mapping, internal profile delivery and SDK-anchored executable resolution, and their checks |
-
-### engine
-
-| Group | File                            | Summary |
-| ----- | ------------------------------- | ------- |
-| pkg   | [engine.md](packages/engine.md) | Cligent class, run(), parallel(), event helpers, done semantics including abort-drain precedence for adapter-emitted interrupted `done`, resume-token capture, authentic nested token reports with explicit coverage, exact subsets, billable records and cost provenance, adapter-scoped effort metadata and validation, permission policy and writablePaths contracts, and their checks including the cross-adapter criteria the dissolved adapter-test file left |
-
-### gemini
-
-| Group | File                                     | Summary                                                                                                                                                                                                                                                                          |
-| ----- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [gemini.md](packages/adapters/gemini.md) | Gemini adapter: NDJSON normalization plus run-owned per-response telemetry reconciled to StreamStats for complete thinking/cache/subagent accounting, exit codes, process lifecycle, Policy Engine permissions, resume token, portable-effort thinking settings, and their checks |
-
-### git
-
-| Group | File                 | Summary                                             |
-| ----- | -------------------- | --------------------------------------------------- |
-| pkg   | [git.md](packages/git.md) | Commit preparation, subject and body format, AI co-authorship trailer, intent-record reference, and the commit audit |
-
-### kimi
-
-| Group | File                                 | Summary                                                                                                                                                                                                                                                     |
-| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [kimi.md](packages/adapters/kimi.md) | Kimi Code adapter: ACP lifecycle and normalization with honest omission of token/cost accounting the pinned runtime does not expose, native auto mode, binary thinking control, fail-closed unsupported options, cancellation, resume token, and their checks |
-
-### licensing
-
-| Group | File                              | Summary                                       |
-| ----- | --------------------------------- | --------------------------------------------- |
-| pkg   | [licensing.md](packages/licensing.md) | SPDX copyright and license headers: scope exclusions, license-file detection, upstream-header preservation, and the presence and preservation checks |
-
-### ndjson
-
-| Group | File                            | Summary                                                                       |
-| ----- | ------------------------------- | ----------------------------------------------------------------------------- |
-| pkg   | [ndjson.md](packages/ndjson.md) | parseNDJSON() line framing, per-line parse outcomes, and the mixed-stream check |
-
-### opencode
-
-| Group | File                                         | Summary |
-| ----- | -------------------------------------------- | ------- |
-| pkg   | [opencode.md](packages/adapters/opencode.md) | OpenCode adapter: role- and part-aware SSE normalization with verified title suppression, pinned causal root/task/compaction step accounting, exact partial subsets with fail-closed omission at unproved root boundaries, idempotent per-request records and agent-estimated cost, `callID`-correlated tool lifecycle with single `tool_use`/`tool_result` pairs, run-owned session-tree liveness and descendant permission replies with fail-closed handling, explicit tool-list rejection, two modes, root-session output filtering with same-session concurrent or delayed-background writing unsupported, finite active-wait inactivity with status recovery and cleanup, server lifecycle, resume token, options mapping, portable-effort variants, and their checks |
-
-### package
-
-| Group | File                              | Summary                                                                                                                                                                            |
-| ----- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| pkg   | [package.md](packages/package.md) | Package/TS config, runtime and declaration-consumer floors, clean builds, exports map, dependency constraints, the global-install agent-runtime contract, and their acceptance checks |
-
-### release
-
-| Group | File                              | Summary                                                                                                                     |
-| ----- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| pkg   | [release.md](packages/release.md) | SemVer, changelog form and pre-tag checklist, tag-driven publish with npm provenance, and the workflow-gate and smoke checks |
-
-### tmux-play
-
-| Group | File                                  | Summary |
-| ----- | ------------------------------------- | ------- |
-| pkg   | [tmux-play.md](packages/tmux-play.md) | tmux-play CLI, YAML config including an optional empty `players` roster with a strict Boss/Captain-only empty-visible topology (top-level `theme: mocha \| latte \| auto`, top-level `layout` with `window` resolution and shape-specific `singlePlayerColumnWeights` / `multiPlayerColumnWeights` (with `columnWeights` retained as a backward-compatible two-/three-element alias and home-config migration to the canonical field, and optional `initialVisible` startup-visible subset), top-level `notifications` with `player_finished` / `turn_finished` / `turn_aborted` sinks, per-player/captain `permissions` and adapter-scoped `effort` with legacy-key migration), discovery and first-run auto-create whose roster follows the installed agent runtimes, the pre-session adapter-runtime gate that reports every unmet runtime with its install command before a tmux session exists, Captain contract (including Captain-call `resumeToken` pass-through on `CaptainRunResult` (tmux-play-99) and the turn-scoped `CaptainContext.emitReply` conversational reply surface whose `captain_reply` records render as ordinary Captain prose, tmux-play-16 / tmux-play-92 / tmux-play-97), records, observers, topology, dynamic player visibility (static roster with `layout.initialVisible`, first-class `setVisiblePlayers` on `CaptainSession` / `CaptainContext`, `player_view_changed` records, and a display-only full-rebuild `LayoutObserver` reconstructing visible player panes from bounded `tail -n 200` log views), mouse selection + system clipboard right-click copy bound to the button release `MouseUp3Pane` (with a focus-neutral no-op `refresh-client` on the `MouseDown3Pane` press so tmux delivers the release and the toast is not wiped by it, while right-click stays a copy and does not also switch panes, tmux-play-62) via tmux `copy-pipe` (not `copy-pipe-and-cancel`) so the clicked pane's copy-mode scroll position survives the copy, with a `#{selection_present}`-gated `display-message Copied!` copy-confirmation toast (a single `if-shell` whose selection-present branch toasts then copies and whose empty branch copies silently) styled by the session's peach `message-style` (tmux-play-47) + left-click behavior that drops any active selection in every pane while preserving each pane's copy-mode state and scroll position, scrollback-safe Boss/Captain readline prompt (tmux-play-79) so editing the prompt no longer scrolls intermediate edit states into the pane's tmux history, leaving stock tmux wheel-up to clamp at the top of history with no phantom rows above the first line, copy-mode live-follow (tmux-play-69) that returns a scrolled pane to its live tail when new output is written to it while leaving panes with no concurrent output scrolled, OSC 11 flavor-aware Catppuccin theme + diagnostics, status-left `Spex` brand with lowercase navigation hints, run-time timers whose per-pane and status-bar duration text renders in `hh:mm:ss` form (all three components always present and zero-padded to two digits, e.g., `00:00:00`, `00:01:00`, `01:02:03`; hours field expands past two digits at 100 h so `100:00:00` follows `99:59:59`), best-effort sound/desktop notifications with lowercase `spex` desktop title where `player_finished: bell` is sound-only (macOS Hero) and does not write terminal BEL or request desktop badging, while macOS `turn_finished: desktop` writes exactly one terminal BEL for tmux-forwarded Dock/badge handling and non-turn-finished desktop notifications write no terminal BEL / escape bytes, Boss input keybindings, active-turn `boss> ` prompt suspension (tmux-play-75) that paints no fresh `boss> ` prompt line while a turn is in flight (the submitted-prompt input line aside) and paints a fresh ready prompt exactly once the queue of submitted Boss lines drains — never between consecutive queued turns and never amid a turn for an empty/whitespace submission — restoring it on every turn-end path (completion, ESC abort, or runtime error) so streaming output is never followed by a spurious turn-over prompt while typed/pasted type-ahead and ESC stay preserved per tmux-play-57 / tmux-play-58, session-wide `Ctrl+C` exit (tmux-play-65) and `ESC` turn-abort (tmux-play-70) each forwarded to the Boss/Captain pane via cancel-then-forward `root` + `copy-mode` + `copy-mode-vi` bindings (single-press from any pane in any mode — fixing the scrolled-pane double-press defect for `Ctrl+C` and the swallowed-on-player-pane defect for `ESC`), player continuity that supports per-call explicit-token or forced-fresh selection and survives ESC-aborted interrupted `done` through resume tokens and fanout-owned recovery for no-token aborts, speaker colors, tool lifecycle, glow-rendered Markdown pipeline with document-margin-compensated continuation wrapping, first-row prefix-fit splitting, trailing right-padding stripped + launcher gate, runtime API, per-call `callCaptain` visibility and presentation (tmux-play-72 / tmux-play-40 / tmux-play-69) where a `hidden` call keeps its result and observer trace but produces zero Boss-pane output and no copy-mode follow, session-mode player-agent tmux isolation (tmux-play-74) that strips `TMUX` / `TMUX_PANE` and redirects `TMUX_TMPDIR` for spawned agents so an agent's `tmux` (even `kill-server`) cannot reach or kill the session hosting the run while the orchestrator's own tmux commands keep targeting it via a pinned pre-scrub environment, dot-segmented player IDs, complete detached per-call settings with provider-reset fail-closed behavior, transactional managed launch/session lifecycle, fanout, logical pane identity via pane-scoped keys with a title round-trip warning (tmux-play-96 / tmux-play-189), and their checks |
+| File | Summary |
+| --- | --- |
+| [claude-code.md](packages/adapters/claude-code.md) | Claude Code SDK adapter |
+| [codex.md](packages/adapters/codex.md) | Codex SDK adapter |
+| [engine.md](packages/engine.md) | Cligent engine and shared adapter contract |
+| [gemini.md](packages/adapters/gemini.md) | Gemini CLI child-process adapter |
+| [git.md](packages/git.md) | Commit workflow and message conventions |
+| [kimi.md](packages/adapters/kimi.md) | Kimi Code ACP adapter |
+| [licensing.md](packages/licensing.md) | SPDX header policy |
+| [ndjson.md](packages/ndjson.md) | NDJSON stream parser |
+| [opencode.md](packages/adapters/opencode.md) | OpenCode SDK and server adapter |
+| [package.md](packages/package.md) | Distributable package configuration |
+| [release.md](packages/release.md) | Versioning and release workflow |
+| [tmux-play.md](packages/tmux-play.md) | tmux-play multi-agent application |
