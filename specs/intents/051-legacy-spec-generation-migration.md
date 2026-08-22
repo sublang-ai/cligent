@@ -574,7 +574,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | all of `tmux-play-15`; |
     | `tmux-play` | | `tmux-play-16`'s turn-scoped `signal` and runtime delivery of a string `CallCaptainOptions.resume`; |
     | `tmux-play` | | and `tmux-play-16` / `tmux-play-17`'s complete public declaration/type surfaces — including readonly manifests, optional status data, and member signatures — which `tmux-play-contract.test-d.ts` only partly exercises while no verification item claims them; |
-    | `tmux-play` | | `tmux-play-18`'s at-most-one in-flight `handleBossTurn` invocation per session, which `runtime.test.ts` asserts while no verification item reaches that guarantee; |
+    | `tmux-play` | | `tmux-play-18`'s at-most-one in-flight `handleBossTurn` invocation per session, which `runtime.test.ts` exercises without proving, while no verification item reaches that guarantee; |
     | `tmux-play` | | `tmux-play-20`; |
     | `tmux-play` | | `tmux-play-21`'s active-turn `captain_status` and both active- and outside-turn `captain_telemetry` cases, of which `runtime.test.ts` exercises the status and outside-telemetry cases without a verifier while no check reaches active-turn telemetry; |
     | `tmux-play` | | `tmux-play-22`'s unawaited completed/failed join and terminal-fence rows; |
