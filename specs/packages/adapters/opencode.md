@@ -319,9 +319,15 @@ URL, then connect the SDK client to that URL [[2]].
 
 ### opencode-9
 
-When `AbortSignal` fires during a managed run, the adapter shall preempt its
-active wait, yield [[engine-73](../engine.md#engine-73)] `done` with `status: 'interrupted'`, and only afterwards send
-`SIGTERM` to the managed server.
+When a managed run begins with or receives caller `AbortSignal` cancellation,
+the adapter shall select this phase-specific outcome:
+
+| Cancellation phase | Outcome |
+| --- | --- |
+| already aborted before SDK loading | start no SDK or backend work; yield [[engine-73](../engine.md#engine-73)] `done` with `status: 'interrupted'`; send no child signal |
+| pending SDK loading | preempt the wait; start no managed child, client, session, or prompt work; yield the interrupted `done`; send no child signal |
+| managed readiness after child spawn | abort the run-owned readiness signal and preempt the wait even when it does not settle; start no client, session, or prompt work; yield the interrupted `done`; only afterwards send `SIGTERM` and complete [[opencode-36](#opencode-36)]'s bounded teardown |
+| client, session, prompt, or stream work already active | preempt the active operation or wait; yield the interrupted `done`; only afterwards send `SIGTERM` and complete bounded teardown |
 
 ### opencode-10
 
@@ -770,8 +776,9 @@ matrix:
 | managed startup | exact `opencode serve --hostname <host> --port <port>`, cwd, readiness wait, and discovered URL before client creation [[opencode-4](#opencode-4)], [[opencode-8](#opencode-8)] |
 | external startup | no child spawn and caller URL used [[opencode-4](#opencode-4)] |
 | ordinary managed teardown | `SIGTERM` before bounded SDK cleanup [[opencode-36](#opencode-36)] |
-| caller abort | interrupted `done` before managed `SIGTERM` [[opencode-9](#opencode-9)] |
-| caller abort during SDK loading, managed readiness, or a stream wait | preempt the active wait and preserve [[opencode-9](#opencode-9)] terminal-before-signal order |
+| caller already aborted or abort during pending SDK loading | no prohibited later work, one interrupted terminal, no child signal, and caller-listener release [[opencode-9](#opencode-9)], [[opencode-35](#opencode-35)] |
+| caller abort during non-settling managed readiness | run-owned signal cancellation, no client/session/prompt work, interrupted `done` before `SIGTERM`, and bounded `SIGKILL` escalation [[opencode-9](#opencode-9)], [[opencode-36](#opencode-36)] |
+| caller abort during a stream wait | preempt the active wait and preserve [[opencode-9](#opencode-9)] terminal-before-signal order |
 | managed child crash before or after readiness | `OPENCODE_SERVER_EXIT`, then error `done`, then cleanup [[opencode-10](#opencode-10)] |
 | non-settling iterator/client cleanup | generator and managed termination remain bounded [[opencode-36](#opencode-36)] |
 | child ignores `SIGTERM` | `SIGKILL` after bounded grace and bounded final close [[opencode-36](#opencode-36)] |

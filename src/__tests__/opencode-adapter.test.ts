@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { EventEmitter } from 'node:events';
+import { EventEmitter, getEventListeners } from 'node:events';
 import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
@@ -625,6 +625,183 @@ describe('OpenCodeAdapter', () => {
       );
       expect(loadCalls).toBe(0);
       expect(invocations).toEqual([]);
+    }
+  });
+
+  it('preempts an already-aborted caller before OpenCode preflight', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { spawnProcess, invocations } = makeSpawn();
+    let loadCalls = 0;
+    let readinessCalls = 0;
+    let clientCalls = 0;
+    let runCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'managed' },
+      {
+        loadSdk: async () => {
+          loadCalls++;
+          return makeLoader({
+            onCreateClient: () => {
+              clientCalls++;
+            },
+            onRun: () => {
+              runCalls++;
+            },
+          })();
+        },
+        spawnProcess,
+        waitForServerReady: async () => {
+          readinessCalls++;
+          return 'http://127.0.0.1:4788';
+        },
+      },
+    );
+
+    const events = await collect(
+      adapter.run('already aborted', { abortSignal: controller.signal }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(loadCalls).toBe(0);
+    expect(invocations).toEqual([]);
+    expect(readinessCalls).toBe(0);
+    expect(clientCalls).toBe(0);
+    expect(runCalls).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('preempts pending SDK loading and releases the caller listener', async () => {
+    const controller = new AbortController();
+    const { spawnProcess, invocations } = makeSpawn();
+    let releaseLoader: () => void = () => {};
+    let announceLoaderStarted: () => void = () => {};
+    const loaderStarted = new Promise<void>((resolve) => {
+      announceLoaderStarted = resolve;
+    });
+    const loaderRelease = new Promise<void>((resolve) => {
+      releaseLoader = resolve;
+    });
+    let clientCalls = 0;
+    let runCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'managed' },
+      {
+        loadSdk: async () => {
+          announceLoaderStarted();
+          await loaderRelease;
+          return makeLoader({
+            onCreateClient: () => {
+              clientCalls++;
+            },
+            onRun: () => {
+              runCalls++;
+            },
+          })();
+        },
+        spawnProcess,
+      },
+    );
+
+    const collecting = collect(
+      adapter.run('abort SDK load', { abortSignal: controller.signal }),
+    );
+    await loaderStarted;
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+
+    controller.abort();
+    const events = await collecting;
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(invocations).toEqual([]);
+    expect(clientCalls).toBe(0);
+    expect(runCalls).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+
+    releaseLoader();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(invocations).toEqual([]);
+    expect(clientCalls).toBe(0);
+    expect(runCalls).toBe(0);
+  });
+
+  it('preempts non-settling managed readiness before bounded teardown', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const order: string[] = [];
+      const { spawnProcess, invocations } = makeSpawn({
+        ignoreSigterm: true,
+        onKill(signal) {
+          order.push(String(signal));
+        },
+      });
+      let announceReadinessStarted: () => void = () => {};
+      const readinessStarted = new Promise<void>((resolve) => {
+        announceReadinessStarted = resolve;
+      });
+      let readinessSignal: AbortSignal | undefined;
+      let clientCalls = 0;
+      let runCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed', serverUrl: 'http://127.0.0.1:4788' },
+        {
+          loadSdk: makeLoader({
+            onCreateClient: () => {
+              clientCalls++;
+            },
+            onRun: () => {
+              runCalls++;
+            },
+          }),
+          spawnProcess,
+          waitForServerReady: async (_processRef, _timeoutMs, signal) => {
+            readinessSignal = signal;
+            announceReadinessStarted();
+            return new Promise<string>(() => {});
+          },
+          managedServerTermGraceMs: 5,
+          managedServerKillGraceMs: 5,
+        },
+      );
+
+      const events: AgentEvent[] = [];
+      const consuming = (async () => {
+        for await (const event of adapter.run('abort readiness', {
+          abortSignal: controller.signal,
+        })) {
+          events.push(event);
+          if (event.type === 'done') order.push('done.interrupted');
+        }
+      })();
+
+      await readinessStarted;
+      expect(readinessSignal).toBeDefined();
+      expect(readinessSignal).not.toBe(controller.signal);
+      expect(readinessSignal?.aborted).toBe(false);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+      expect(invocations[0]?.process.killSignals).toEqual([]);
+
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(20);
+      await consuming;
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
+      expect(readinessSignal?.aborted).toBe(true);
+      expect(clientCalls).toBe(0);
+      expect(runCalls).toBe(0);
+      expect(invocations[0]?.process.killSignals).toEqual([
+        'SIGTERM',
+        'SIGKILL',
+      ]);
+      expect(order).toEqual(['done.interrupted', 'SIGTERM', 'SIGKILL']);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
     }
   });
 

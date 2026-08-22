@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 37 are done; tasks 38 through 53 remain.
+Tasks 1 through 38 are done; tasks 39 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -95,6 +95,7 @@ Task 34 makes caller abort outrank any buffered native result before terminal se
 Task 35 records the owner's caller-abort-first causal precedence in [DR-011](../decisions/011-kimi-code-acp-integration.md), adds [[kimi-33](../packages/adapters/kimi.md#kimi-33)]'s complete selector and [[kimi-34](../packages/adapters/kimi.md#kimi-34)]'s close matrix, retains abort observation until another cause commits, queues interrupted `done` before abort teardown while bounding stalled delivery to one event-loop handoff, and makes cleanup one idempotent sequence whose later failure follows [[kimi-35](../packages/adapters/kimi.md#kimi-35)]'s defined and independently checked reporter contract without replacing that terminal.
 Task 36 retains valid same-session updates received during model, thinking, or mode configuration until after `init`, flushes them in arrival order through [[kimi-5](../packages/adapters/kimi.md#kimi-5)]'s ordinary normalization, measures tool duration between the original first and terminal update observations, keeps pre-prompt permission requests on [[kimi-27](../packages/adapters/kimi.md#kimi-27)]'s failure path, and adds the exact integration flow that closes task 49's init-first handoff.
 Task 37 records the owner's fail-closed OpenCode turn-limit choice in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), removes inert legacy and v2 prompt `steps` data, rejects explicit `maxTurns` including zero before SDK loading or backend work, preserves omitted limits without turn-limit request data, and narrows task 49's remaining OpenCode option handoff.
+Task 38 establishes caller cancellation before OpenCode SDK loading, preempts pending SDK and managed-readiness waits through one run-owned signal, prevents later child/client/session/prompt work after abort, preserves interrupted-terminal-before-child-signal order with bounded escalation, and narrows task 49's remaining OpenCode lifecycle handoff.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -506,7 +507,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `opencode` | `opencode-202` against a physically absent SDK; the real managed CLI probe's supported, unreadable or unparseable fail-open, missing, nonzero, timed-out, and below-floor outcomes; managed positive availability; and below-floor `run()` refusal before spawn. | |
     | `opencode` | `opencode-52`'s absent and empty model/cwd and ignored-budget rows. | |
     | `opencode` | `opencode-204`'s bypass rejection after SDK load but before managed or SDK work, and invalid-writable-path validation before that bypass diagnostic. | |
-    | `opencode` | `opencode-53`'s managed-startup cwd; already-aborted, pending-SDK-load, and pending-managed-readiness cancellation that task 38 repairs; and the pre-readiness managed-child crash that task 40 repairs. | |
+    | `opencode` | `opencode-53`'s managed-startup cwd and the pre-readiness managed-child crash that task 40 repairs. | |
     | `opencode` | `opencode-212`'s wrapper `session_id`, `thread_id`, top-level `id`, and nested `session.id` aliases; stream `session_id` and nested `session.id`; alias priority and invalid values; generated or inbound provisional identity on every pre-backend event; and replacement after the wrapper identifies the backend. | |
     | `opencode` | `opencode-219`'s transient-only live retry classification, third-attempt exhaustion, fresh retry directories after side effects, successful-terminal and invariant-violation non-retry, and errored-result and stranded-use retry eligibility. | |
     | `opencode` | `opencode-222`'s absent and explicit-empty path omission plus invalid forms beyond parent traversal. | |

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** OpenCode now rejects an explicit `maxTurns`, including zero, before SDK loading or backend work. OpenCode 1.18.13 exposes turn ceilings only through persistent agent configuration rather than an exact per-run control, so the prior prompt `steps` data was ignored and left the requested limit unenforced. Callers must omit `maxTurns` or choose an adapter with an exact per-run limit — DR-002, IR-051
 
+### Fixed
+
+- OpenCode caller abort now preempts already-aborted runs, pending SDK loading, and managed readiness before later backend work starts. Once a managed child exists, the interrupted terminal still precedes bounded `SIGTERM` / `SIGKILL` teardown — OPENCODE-009, TADAPT-008, IR-051
+
 ## [0.22.0] - 2026-08-15
 
 ### Changed

@@ -153,6 +153,7 @@ interface OpenCodeAdapterDeps {
   waitForServerReady?: (
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
+    signal?: AbortSignal,
   ) => Promise<string>;
   managedServerTermGraceMs?: number;
   managedServerKillGraceMs?: number;
@@ -784,18 +785,21 @@ async function defaultProbeCliAvailability(): Promise<boolean> {
 function defaultWaitForServerReady(
   processRef: ChildProcessWithoutNullStreams,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (err?: Error, url?: string) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       processRef.removeListener('close', onClose);
       processRef.removeListener('error', onError);
       processRef.stdout?.removeListener('data', onData);
       processRef.stderr?.removeListener('data', onData);
+      signal?.removeEventListener('abort', onAbort);
 
       if (err) {
         reject(err);
@@ -827,7 +831,11 @@ function defaultWaitForServerReady(
       finish(error);
     };
 
-    const timer = setTimeout(() => {
+    const onAbort = () => {
+      finish(new Error('OpenCode server readiness aborted'));
+    };
+
+    timer = setTimeout(() => {
       finish(
         new Error(
           `Timed out waiting for OpenCode server readiness (${timeoutMs}ms)`,
@@ -839,6 +847,10 @@ function defaultWaitForServerReady(
     processRef.stderr?.on('data', onData);
     processRef.once('close', onClose);
     processRef.once('error', onError);
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    }
   });
 }
 
@@ -1970,6 +1982,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
   private readonly waitForServerReady: (
     process: ChildProcessWithoutNullStreams,
     timeoutMs: number,
+    signal?: AbortSignal,
   ) => Promise<string>;
 
   private readonly managedServerTermGraceMs: number;
@@ -2023,28 +2036,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     assertOpenCodeTurnLimitUnsupported(options);
 
     let sdk: OpenCodeSdk;
-    try {
-      sdk = await this.loadSdkFn();
-    } catch (err) {
-      // A version refusal already names installed, required, tree, and
-      // repair; replacing it would advise installing what is present.
-      if (isUnsupportedRuntimeError(err)) throw err;
-      throw new Error(
-        'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.' +
-          (err instanceof Error ? ` (${err.message})` : ''),
-      );
-    }
+    let mappedPermissions: OpenCodePermissionOptions;
+    let variant: OpenCodeVariant | undefined;
+    let normalizeRunFailure = false;
 
-    const mappedPermissions = mapPermissionsToOpenCodeOptions(
-      options?.permissions,
-      {
-        allowedTools: options?.allowedTools,
-        disallowedTools: options?.disallowedTools,
-      },
-    );
-    const variant = mapEffortToOpenCodeVariant(options?.model, options?.effort);
-
-    const startTime = Date.now();
+    let startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;
@@ -3400,10 +3396,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       abortPermissionWait?.();
     };
 
+    let callerAbortListenerInstalled = false;
     if (abortRequested) {
       onAbort();
     } else if (options?.abortSignal) {
       options.abortSignal.addEventListener('abort', onAbort, { once: true });
+      callerAbortListenerInstalled = true;
     }
 
     let client: OpenCodeClient | undefined;
@@ -3437,6 +3435,50 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     };
 
     try {
+      if (abortRequested) {
+        throw new Error('OpenCode run aborted before SDK loading');
+      }
+
+      const sdkLoadOutcome = await Promise.race([
+        Promise.resolve()
+          .then(() => this.loadSdkFn())
+          .then(
+            (value) => ({ kind: 'success' as const, value }),
+            (error: unknown) => ({ kind: 'failure' as const, error }),
+          ),
+        callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+      ]);
+      if (sdkLoadOutcome.kind === 'caller_abort') {
+        throw new Error('OpenCode run aborted during SDK loading');
+      }
+      if (sdkLoadOutcome.kind === 'failure') {
+        const error = sdkLoadOutcome.error;
+        // A version refusal already names installed, required, tree, and
+        // repair; replacing it would advise installing what is present.
+        if (isUnsupportedRuntimeError(error)) throw error;
+        throw new Error(
+          'OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.' +
+            (error instanceof Error ? ` (${error.message})` : ''),
+        );
+      }
+      sdk = sdkLoadOutcome.value;
+
+      if (abortRequested || options?.abortSignal?.aborted) {
+        onAbort();
+        throw new Error('OpenCode run aborted after SDK loading');
+      }
+
+      mappedPermissions = mapPermissionsToOpenCodeOptions(
+        options?.permissions,
+        {
+          allowedTools: options?.allowedTools,
+          disallowedTools: options?.disallowedTools,
+        },
+      );
+      variant = mapEffortToOpenCodeVariant(options?.model, options?.effort);
+      startTime = Date.now();
+      normalizeRunFailure = true;
+
       if (this.mode === 'managed') {
         // engine-25: the peer gate sits in the SDK loader, but managed mode
         // also spawns the paired CLI, and Cligent.run() reaches here without
@@ -3458,14 +3500,33 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           return info;
         });
 
-        actualServerUrl = await this.waitForServerReady(
-          serverProcess,
-          this.readyTimeoutMs,
-        );
-
-        if (abortRequested) {
-          onAbort();
+        const readinessOutcome = await Promise.race([
+          Promise.resolve()
+            .then(() =>
+              this.waitForServerReady(
+                serverProcess!,
+                this.readyTimeoutMs,
+                eventStreamController.signal,
+              ),
+            )
+            .then(
+              (url) => ({ kind: 'ready' as const, url }),
+              (error: unknown) => ({ kind: 'failure' as const, error }),
+            ),
+          callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+        ]);
+        if (readinessOutcome.kind === 'caller_abort') {
+          throw new Error('OpenCode run aborted during managed readiness');
         }
+        if (readinessOutcome.kind === 'failure') {
+          throw readinessOutcome.error;
+        }
+        actualServerUrl = readinessOutcome.url;
+      }
+
+      if (abortRequested || options?.abortSignal?.aborted) {
+        onAbort();
+        throw new Error('OpenCode run aborted before client creation');
       }
 
       client = createClientFromSdk(sdk, actualServerUrl);
@@ -5085,6 +5146,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } catch (error) {
+      if (
+        !normalizeRunFailure &&
+        !abortRequested &&
+        !options?.abortSignal?.aborted
+      ) {
+        throw error;
+      }
+
       if (!initYielded) {
         yield createEvent(
           'init',
@@ -5161,8 +5230,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } finally {
-      if (options?.abortSignal && !options.abortSignal.aborted) {
+      if (options?.abortSignal && callerAbortListenerInstalled) {
         options.abortSignal.removeEventListener('abort', onAbort);
+        callerAbortListenerInstalled = false;
       }
 
       eventStreamController.abort();
