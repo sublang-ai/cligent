@@ -26,7 +26,7 @@ Accepted
 ```
 
 The core normalizes heterogeneous agent outputs into a **Unified Event Stream (UES)**.
-Adapter implementations should align with vendor CLI documentation and repositories for event mapping and option semantics (Claude Code [^1][^2], Codex CLI [^3][^4], Gemini CLI [^5], Kimi Code [^12], OpenCode [^6]).
+Adapter implementations should align with vendor CLI documentation and repositories for event mapping and option semantics (Claude Code [[1]][[2]], Codex CLI [[3]][[4]], Gemini CLI [[5]], Kimi Code [[12]], OpenCode [[6]]).
 
 ### Unified Event Stream
 
@@ -204,9 +204,9 @@ Capability-based primitives map to vendor-specific controls (not always 1:1):
 
 | Capability | Description | Claude Code | Codex | Gemini | Kimi | OpenCode |
 | ---------- | ----------- | ----------- | ----- | ------ | ---- | -------- |
-| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `replace` / `write_file` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `edit` [^11] |
-| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [^8] | `sandbox_mode` + `approval_policy` [^9] | Policy Engine rules for `run_shell_command` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `bash` [^11] |
-| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [^8] | `sandbox_mode` + `network_access` + `approval_policy` [^9] | Policy Engine rules for `google_web_search` / `web_fetch` [^10] | no deterministic ACP mapping; reject a no-mode provided policy [^12] | `permission` map for `webfetch` [^11] |
+| `fileWrite` | Create/modify files | `permissions.allow/ask/deny` for `Write(...)` [[8]] | `sandbox_mode` + `approval_policy` [[9]] | Policy Engine rules for `replace` / `write_file` [[10]] | no deterministic ACP mapping; reject a no-mode provided policy [[12]] | `permission` map for `edit` [[11]] |
+| `shellExecute` | Run shell commands | `permissions.allow/ask/deny` for `Bash(...)` [[8]] | `sandbox_mode` + `approval_policy` [[9]] | Policy Engine rules for `run_shell_command` [[10]] | no deterministic ACP mapping; reject a no-mode provided policy [[12]] | `permission` map for `bash` [[11]] |
+| `networkAccess` | HTTP requests, external APIs | `permissions.allow/ask/deny` for `WebFetch` [[8]] | `sandbox_mode` + `network_access` + `approval_policy` [[9]] | Policy Engine rules for `google_web_search` / `web_fetch` [[10]] | no deterministic ACP mapping; reject a no-mode provided policy [[12]] | `permission` map for `webfetch` [[11]] |
 
 ```typescript
 type PermissionLevel = 'allow' | 'ask' | 'deny';
@@ -302,22 +302,22 @@ for await (const event of Cligent.parallel([
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` is fail-closed; adapters with no exact registry-control surface reject explicit restrictions
 - **Budgeting**: `maxTurns` supported by Claude Code and OpenCode (`steps`); `maxBudgetUsd` only by Claude Code
-- **MCP integration** deferred to adapter implementation [^7]
+- **MCP integration** deferred to adapter implementation [[7]]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
 - **Token accounting** is explicitly reported or unavailable; measured zero is
   distinct from missing totals, and tool-call counts remain independent
 
 ## References
 
-[^1]: Claude Code documentation: <https://code.claude.com/docs/en/overview>
-[^2]: Claude Code GitHub repository: <https://github.com/anthropics/claude-code>
-[^3]: OpenAI Codex CLI GitHub repository: <https://github.com/openai/codex>
-[^4]: Codex CLI features: <https://developers.openai.com/codex/cli/features/>
-[^5]: Gemini CLI GitHub repository: <https://github.com/google-gemini/gemini-cli>
-[^6]: OpenCode GitHub repository: <https://github.com/anomalyco/opencode>
-[^7]: MCP Specification: <https://modelcontextprotocol.io/specification/2025-11-25>
-[^8]: Claude Code settings (permissions): <https://code.claude.com/docs/en/settings>
-[^9]: Codex security and sandbox/approvals: <https://developers.openai.com/codex/security>
-[^10]: Gemini CLI Policy Engine: <https://geminicli.com/docs/reference/policy-engine/>
-[^11]: OpenCode permissions: <https://opencode.ai/docs/permissions>
-[^12]: Kimi Code ACP reference: <https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html>
+[1]: https://code.claude.com/docs/en/overview "Claude Code documentation"
+[2]: https://github.com/anthropics/claude-code "Claude Code GitHub repository"
+[3]: https://github.com/openai/codex "OpenAI Codex CLI GitHub repository"
+[4]: https://developers.openai.com/codex/cli/features/ "Codex CLI features"
+[5]: https://github.com/google-gemini/gemini-cli "Gemini CLI GitHub repository"
+[6]: https://github.com/anomalyco/opencode "OpenCode GitHub repository"
+[7]: https://modelcontextprotocol.io/specification/2025-11-25 "MCP Specification"
+[8]: https://code.claude.com/docs/en/settings "Claude Code settings (permissions)"
+[9]: https://developers.openai.com/codex/security "Codex security and sandbox/approvals"
+[10]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI Policy Engine"
+[11]: https://opencode.ai/docs/permissions "OpenCode permissions"
+[12]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"

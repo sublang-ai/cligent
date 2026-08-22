@@ -14,6 +14,10 @@ Accepted
 [DR-003](003-role-scoped-session-management.md) defined `Cligent` instances for role identity, session continuity, option merging, and single-flight execution.
 
 The prior fanout app proved multiple `Cligent` instances render across tmux panes.
+That prototype used one `fanout` binary in launcher and `--session` modes: the launcher resolved available adapters, created owned log files, built and attached a tmux session, and the session ran Boss readline, parallel `Cligent` calls, event-to-log rendering, abort, and marker-guarded cleanup.
+Its topology put one live-tailed pane per selected adapter across the upper region and a full-width Boss prompt below, with no config, persistent history, custom theme, or cross-launch resume.
+Its acceptance harness established a real prompt-to-response-to-done oracle with a unique workspace sentinel and a separate secrets-bearing CI job.
+The architecture below replaces that standalone CLI and topology while retaining the proven launcher/session boundary, log-backed presentation, multi-agent execution, and end-to-end oracle.
 The next layer needs a Captain that drives player cligents and answers a Boss, without coupling the runtime to tmux pane scraping or terminal layout.
 
 ## Decision
@@ -101,6 +105,53 @@ On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts 
 The tmux presenter is the first observer; it consumes `captain_status`, renders `runtime_error` in the Boss/Captain pane, ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels), and skips `captain_event` / `captain_finished` tagged `visibility: 'hidden'` so those calls produce zero Boss-pane output.
 Coordination stays testable without tmux; new observers attach without changing the Captain or player contracts.
 Runtime record types and the observer-registration contract are exported from `@sublang/cligent/tmux-play`, not the root package.
+
+#### Operational Line Grammar
+
+The tmux presenter gives operational lines one bracketed family whose tag identifies the kind and whose color identifies its outcome class.
+Single-state members—status, error, aborted, turn-aborted, and runtime-error—need no glyph because the word and color already encode their state.
+Tools alone have a two-dimensional state space, phase (call or result) by outcome (ok, error, or denied), so the common grammar leaves a glyph slot optional and fills it only for tool lines.
+
+Bodies sit outside the brackets.
+That choice replaces the historical `[error: message]` shape with a fixed-width colored tag followed by an unstyled body, matching status lines and making operational tags align at one scan position.
+A non-empty body renders as `[tag] <body>` and an empty body as `[tag]`.
+
+The tool-call glyph is `↪` (U+21AA, Rightwards Arrow With Hook): it reads as entering the invocation and contrasts with the `✓`, `✗`, and `·` result marks without reusing a generic progression arrow or a heavier branch symbol.
+It occupies one terminal cell under [[tmux-play-46](../packages/tmux-play.md#tmux-play-46)]'s measurement rule.
+Tool-result bodies retain the two-cell continuation indent and therefore render at `max(1, paneWidth - 2)`; the header wraps under [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)] after subtracting only the `<who>> ` prefix width, with the bracketed tag participating in ordinary body wrapping.
+
+This grammar is presenter-only.
+The runtime records and non-tmux observers are unchanged, so an observer that asserts record types rather than rendered bytes needs no corresponding presentation rule.
+
+#### Pane Chrome
+
+The pane-border title opens an active or inactive Catppuccin style, but resetting to the terminal default immediately after the title creates a hard background cut before the separator and timer.
+The presenter instead carries the resolved `mantle` surface from the post-title separator through the timer; the active Captain title keeps its distinct `blue` background.
+The idle timer uses the resolved Catppuccin `subtext1` (Mocha `#bac2de`, Latte `#5c5f77`) rather than the lower-contrast `overlay1` (Mocha `#7f849c`, Latte `#8c8fa1`), keeping it subdued relative to an active accent while legible on that surface [[3]].
+
+#### Copy-Mode Follow and Session Exit
+
+The copy-mode design was verified against tmux 3.6b and follows tmux's key-table, copy-mode, and `send-keys -X` semantics [[4]].
+Player panes are fed by a live log tail and the Boss/Captain pane by session output; scrolling either pane enters copy-mode and freezes its viewport while the underlying grid continues to grow.
+`send-keys -X cancel` leaves copy-mode and returns the pane to its live tail, but requires a pane already in a mode, so follow is gated by `#{pane_in_mode}` and leaves an unscrolled pane untouched.
+
+Stock `copy-mode` and `copy-mode-vi` consume `C-c` as `send-keys -X cancel` rather than delivering it to the pane's program.
+The session-wide exit binding therefore cancels pane 0's copy-mode before forwarding `C-c`, in all three key tables; a root-table binding alone is insufficient when pane 0 itself is scrolled.
+Its session-gated shape is:
+
+```text
+true  := if -F -t <s>:0.0 '#{pane_in_mode}' 'send-keys -t <s>:0.0 -X cancel' ; send-keys -t <s>:0.0 C-c
+root  false := send-keys C-c
+copy* false := send-keys -X cancel
+```
+
+Live follow is an observer on the record stream.
+It maps player records to the matching player pane and Captain, turn-aborted, and runtime-error output to pane 0, then issues the gated copy-mode cancel through the tmux command boundary.
+It follows only records and events that actually make the presenter write: block-boundary flushes, complete text and tool events, player-prompt echoes, `captain_status`, `turn_aborted`, `runtime_error`, `player_finished`, and visible `captain_finished` records.
+It ignores control-only records including `turn_finished`, buffered deltas before their flush, and suppressed adapter `error` and `done` events, so it never exits copy-mode without new visible content.
+The original mechanism proposed a short per-pane debounce of approximately 250 ms to avoid spawning a tmux process for each block.
+Any coalescing remains subordinate to visible-output follow: a no-op while a pane is outside copy-mode cannot suppress a later required exit after that pane re-enters copy-mode.
+Because leaving copy-mode drops an active selection, an implementation may additionally require `#{selection_present}` to be false; preserving a drag selection is permitted but not required.
 
 ### Captain
 
@@ -261,6 +312,7 @@ The built-in fanout captain accepts no options; its factory ignores any value at
 
 The built-in fanout captain stitches each player's full `finalText` (or `error`) into the summary prompt verbatim — no per-player truncation.
 When a player call aborts without `resumeToken`, fanout retains that player's base Boss prompt and includes unresolved retained Boss prompt(s) with the latest Boss prompt on the player's next call. This recovery policy lives in fanout, not in `Cligent`, because fanout owns prompt composition while `Cligent` owns only opaque resume-token continuity.
+Fanout stores the unresolved base prompts rather than already-composed recovery prompts, so consecutive no-token aborts grow as a flat list instead of nesting prior recovery text.
 The Captain's built-in instruction ("Players answered independently. Synthesize a final answer for the Boss. Preserve useful disagreements, call out failed or aborted players, and do not copy raw player logs wholesale.") is the only soft check; cligent imposes no hard cap on player output length.
 Workloads that need a hard cap should write a thin Captain wrapper or use a different Captain implementation.
 
@@ -291,6 +343,25 @@ Session shutdown order:
 6. Detach observers.
 
 Aborting before draining detaches producers cleanly and delivers their in-flight records without racing new ones.
+
+#### Boss Input and Prompt Lifecycle
+
+Boss input keeps Node's readline editor rather than replacing it with a raw-mode editor.
+An explicit `escapeCodeTimeout` of 100 ms avoids the default 500 ms bare-ESC delay while leaving more margin for escape sequences on sluggish pipes than a 50–75 ms timeout; the fixed value also gives timer-driven verification one deterministic boundary.
+The abort guard requires both `key.name === 'escape'` and `key.sequence === '\x1b'`, so Alt-ESC and other multi-byte escape combinations do not masquerade as a bare ESC.
+
+Bracketed paste uses the `paste-start` and `paste-end` keypress names emitted by Node's `emitKeypressEvents` [[2]] for xterm's `\x1b[200~` and `\x1b[201~` markers [[1]], not a second byte-level parser.
+Because readline still emits a `line` event for each pasted newline, the session accumulates those lines while paste is active and flushes them on the first line after `paste-end`.
+The submitted prompt is the buffered lines joined with `\n`, followed by `\n` and a non-empty post-paste line when present; an empty post-paste line acts only as the explicit Enter and adds no trailing newline.
+Bracketed-paste mode is enabled only for the session and disabled on every exit path, otherwise the user's later shell receives the raw wrapper markers.
+
+During an active Boss turn the readline prompt is suspended—no fresh `boss> ` prompt is painted—and restored once when the turn completes or aborts.
+This scopes ready-prompt input echo to the between-turn state while preserving the edit buffer required by [[tmux-play-57](../packages/tmux-play.md#tmux-play-57)].
+The accepted tradeoff is that type-ahead remains captured but is not visibly echoed until restoration; a separate active-turn input affordance was rejected as a distinct, more invasive UX convention.
+
+`readline.pause()` is not a valid suspension mechanism because it would also stop keypress delivery and break both ESC abort and type-ahead capture.
+The readline remains live while prompt chrome is suppressed: an implementation may clear the displayed line and temporarily use an empty prompt, or buffer active-turn keystrokes without echo and restore them to readline afterward.
+Whichever mechanism is used, its boundary is the active Boss turn and therefore covers normal completion, ESC abort, runtime error, and observer-dispatch failure, while preserving bracketed-paste type-ahead through the same path.
 
 ### Distribution and Extension
 
@@ -329,3 +400,10 @@ New behavior in any of these areas requires a separate decision record.
 - Coordination is testable without tmux because the runtime emits records before formatting.
 - The runtime record types and observer-registration contract export from `@sublang/cligent/tmux-play` (not the root package), so out-of-package observers — sketch presenters, metrics collectors — attach without depending on internal modules.
 - Shared app primitives are still needed for tmux process management, shell quoting, log handling, and event formatting.
+
+## References
+
+[1]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode "xterm Control Sequences — Bracketed Paste Mode"
+[2]: https://nodejs.org/api/readline.html#readlineemitkeypresseventsstream-interface "Node.js — readline.emitKeypressEvents()"
+[3]: https://catppuccin.com/palette/ "Catppuccin Palette"
+[4]: https://man.openbsd.org/tmux.1 "tmux manual — key tables, copy-mode, send-keys -X"

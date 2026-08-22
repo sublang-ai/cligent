@@ -22,32 +22,9 @@ This is an implementation refinement within the existing session-mode / presente
 
 Session mode (`src/app/tmux-play/session.ts`) runs the Boss readline and registers the tmux presenter as an observer; both write to the same Boss/Captain pane stdout per [DR-004](../decisions/004-tmux-play-captain-architecture.md).
 The session does not call `readline.prompt()` mid-turn — it re-prompts only in the `finally` after `runBossTurn` resolves — so a non-interacting Boss sees no mid-turn `boss> `.
-The defect surfaces because the readline is intentionally kept live and echoing during a turn (raw mode, `escapeCodeTimeout`) so a bare ESC aborts the turn and the edit buffer is preserved per [[tmux-play-57](../packages/tmux-play.md#tmux-play-57)] / [IR-019](019-boss-esc-interrupt-and-bracketed-paste.md).
+The defect surfaces because the readline is intentionally kept live and echoing during a turn (raw mode, `escapeCodeTimeout`) so a bare ESC aborts the turn and the edit buffer is preserved per [[tmux-play-57](../packages/tmux-play.md#tmux-play-57)].
 Any Boss keystroke during the turn triggers readline's line refresh, repainting `boss> <buffer>` chrome amid the presenter's streaming output; a consumer keying on `boss> ` as the turn-over marker is then misled.
 The fix therefore cannot simply stop the session from prompting (it already does not); it must keep the readline capturing ESC and type-ahead while preventing the `boss> ` chrome from rendering until the turn ends.
-
-## Design decision (adopted by this IR)
-
-Adopt the prescribed direction: while a Boss turn is active the readline prompt is **suspended** (no fresh `boss> ` prompt line painted), and it is **restored once** at turn completion / ESC abort.
-Reconcile the released items rather than contradict them:
-
-- [[tmux-play-37](../packages/tmux-play.md#tmux-play-37)] "echo the user's input line as the user types it" is scoped to the ready (between-turns) prompt; during an active turn the prompt is suspended per the new [[tmux-play-75](../packages/tmux-play.md#tmux-play-75)].
-- [[tmux-play-57](../packages/tmux-play.md#tmux-play-57)] edit-buffer preservation is unchanged; the preserved buffer is surfaced when [[tmux-play-75](../packages/tmux-play.md#tmux-play-75)] restores the prompt.
-
-Accepted tradeoff: the Boss does not see live echo of type-ahead bytes while a turn is active; the typed text appears when the prompt is restored.
-Alternative considered and left out of scope: keep echoing type-ahead on a distinct input affordance that does not carry the `boss> ` token — more invasive, defers a separate UX convention, and is not needed to remove the false turn-over signal.
-
-## Mechanism notes (pinned by this IR)
-
-`readline.pause()` is **not** viable: it pauses the input stream, which also stops `keypress` delivery, breaking the [[tmux-play-57](../packages/tmux-play.md#tmux-play-57)] ESC handler and type-ahead capture.
-Keep the readline live; suppress the prompt-chrome render instead.
-Viable mechanisms (implementer's choice, observable contract pinned by [[tmux-play-75](../packages/tmux-play.md#tmux-play-75)] / [[tmux-play-174](../packages/tmux-play.md#tmux-play-174)]):
-
-- On turn start, clear the current input line from the pane (`readline.clearLine(output, 0)` + `readline.cursorTo`, or write `\r\x1b[2K`) and set the readline prompt to the empty string so subsequent line refreshes paint no `boss> ` token; restore the colored `boss> ` prompt string at turn end before re-prompting.
-- Or intercept keystrokes during the turn (the session already owns a `keypress` listener), hold typed bytes in a buffer with no echo, and feed them back into the readline line when the prompt is restored.
-
-The turn-active window is already tracked by `this.activeBossTurn` (set true before `await runBossTurn`, false in the `finally`); the suspend/restore hooks attach to the same boundary so they cover normal completion, ESC abort, and the runtime-error / observer-dispatch failure paths.
-Bracketed-paste type-ahead during a turn must be preserved on the same path as typed type-ahead.
 
 ## Scope
 
@@ -71,7 +48,7 @@ In scope:
 
 Out of scope (deliberate non-goals):
 
-- Live echo of type-ahead during a turn on a separate, non-`boss> ` input affordance (the considered alternative above).
+- Live echo of type-ahead during a turn on a separate, non-`boss> ` input affordance.
 - Any change to ESC-abort semantics, bracketed-paste accumulation, or the SIGINT/SIGTERM/EOF lifecycle beyond keeping them working across the suspend/restore boundary.
 - A readline replacement / raw-mode editor; Node's `readline` keeps owning editing, history, echo at the ready prompt, and raw-mode entry/exit.
 

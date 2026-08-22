@@ -19,6 +19,21 @@ By then the report was inside a tmux pane, behind an alternate screen the user c
 The package cannot resolve this by acquiring the runtimes.
 Promoting the SDKs to installed dependencies would push two vendor runtimes and their platform binaries onto every library consumer, and it cannot help `gemini` or `kimi` at all, whose runtimes are executables on `PATH` rather than npm peers.
 
+### Deferred Consented-Provisioning Questions
+
+This decision does not authorize runtime acquisition.
+Any future decision that partly supersedes its no-install boundary with explicit terminal consent must first settle these unresolved questions:
+
+1. **Consent interaction.** Fix the prompt text, accepted affirmative tokens, default answer, and output stream.
+   The existing remedy goes to stderr and the first-run notice to stdout; [[tmux-play-10](../packages/tmux-play.md#tmux-play-10)] forbids stdout only on the first-run branch, while [[tmux-play-89](../packages/tmux-play.md#tmux-play-89)] imposes no equivalent gate-wide prohibition.
+2. **Caller-declared machine-readable output.** The consumers, not this CLI, currently own any `--json` flag.
+   The exported entry could accept the caller's decision explicitly while cligent derives its own CLI mode from the terminal, or the CLI could add a real machine-readable mode with its own behavior and verification.
+3. **Continuous integration.** Decide whether a CI signal alone refuses acquisition even when a terminal is attached.
+   A `--yes` escape hatch would recreate the unattended acquisition this decision forbids.
+4. **Offer size.** Choose an offline per-adapter download-size estimate that can become stale or a registry query that performs network access before consent.
+5. **First-run scope.** Decide whether a host with no runtime offers one adapter, every acquirable peer, or only the default roster cap; the failure names all supported adapters while only the peer-backed subset is acquirable.
+6. **Terminal-attached verification.** A real pseudo-terminal such as `script(1)` can exercise an affirmative path without making piped input an unattended consent mechanism.
+
 ## Decision
 
 Optional peers stay optional; cligent checks for agent runtimes and never installs them.

@@ -13,7 +13,7 @@ The current [DR-014](../decisions/014-unified-token-usage-breakdown.md) nests th
 ## Intent
 
 Make the reported accounting sufficient to price a run against a published rate card, per the billable decomposition added to [DR-014](../decisions/014-unified-token-usage-breakdown.md).
-[IR-047](047-unified-token-usage-breakdown.md) partitioned the totals by component; a rate is selected per model and per request, so a component partition alone still cannot be priced, and on Claude Code the totals did not even cover the whole run.
+A component partition alone still cannot be priced because a rate is selected per model and per request, and on Claude Code the earlier totals did not even cover the whole run.
 
 ## Deliverables
 
@@ -81,5 +81,5 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
   breakdown and the run's total cost.
 - Codex: fixtures only. The account was over its usage limit through 2026-08-17, and the limit path itself
   degrades correctly to unavailable accounting with no breakdown and no records.
-- Gemini and Kimi publish no breakdown, so they publish no records; both remain as
-  [IR-047](047-unified-token-usage-breakdown.md) left them.
+- Gemini and Kimi publish no breakdown, so they publish no records; both remain
+  unchanged from the earlier component-accounting implementation.

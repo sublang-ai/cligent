@@ -59,32 +59,6 @@ Out of scope:
 - Localizing the bracket literals (`[status]`, `[error]`, `[tool …]`) via YAML or any other user-facing knob.
   The bracketed-tag grammar remains presenter-prescribed; if real demand emerges for configurable tag text, that is a separate IR.
 
-## Mechanism notes (pinned by this IR)
-
-Why one shape, not text-plus-symbol for every member: the bracketed family's job is to encode the kind of operational line and, where applicable, its state.
-Single-state members (status, error, aborted, turn-aborted, runtime-error) carry one piece of state each; the word in the tag names it, and color names the outcome dimension (uncolored for status, red for error-class, yellow for aborted-class).
-Adding a glyph to those tags would duplicate what color already encodes.
-Tools are the only family member with a 2D state space: phase (call vs. result) × outcome (ok / err / denied).
-Color alone cannot distinguish a call from a result; the glyph slot earns its keep there.
-The unified rule "glyph slot is optional, populated only for kinds with multi-state semantics" expresses this without making single-state lines pay the cost of a decorative glyph.
-
-Why body outside the brackets, not inside: sub-shape B (`[error: msg]`) was chosen historically so a single colored SGR span could carry the entire bracketed tag plus the explanatory message as one visual unit.
-Moving the body outside trades that for two consistency wins: (a) the colored span becomes a fixed-width unit per kind, so the reader scans a column of operational lines and sees the tag light up at the same offset every time; (b) every member of the family — including `[status] msg` which already had this shape — follows the same body-attachment rule.
-The body color rule simplifies too: the body is always unstyled by the presenter (matching how text bodies behave today), and only the bracketed tag carries the outcome SGR.
-Lines whose body is non-empty include the explanatory text as `[tag] <body>`; lines with no body emit just `[tag]` (today: `[aborted]`).
-
-Why the call glyph is `↪`: `↪` (U+21AA, Rightwards Arrow With Hook) reads as entering the tool invocation without introducing the heavier branch-only feel of the retired `⤷`.
-It contrasts visually with the result glyphs `✓ ✗ ·` so a column of tool lines reads as alternating call-arrow / outcome-mark.
-`→` (U+2192) is kept out of the tool tag because it is too generic to distinguish a call marker from ordinary progression text.
-`↳` and `⤷` would introduce another branch-style entry symbol without enough distinct meaning for this presenter-only lifecycle grammar.
-The call arrow is 1-cell narrow per [[tmux-play-46](../packages/tmux-play.md#tmux-play-46)]'s cell-measurement rules.
-
-The tool result body's render width is preserved at `max(1, paneWidth - 2)` because the body is a fenced-code continuation block following a `<who>> [tool ✓] …` header; the two-space continuation indent is the budget anchor, the same way text bodies have been since [[tmux-play-50](../packages/tmux-play.md#tmux-play-50)].
-The header line itself wraps under [[tmux-play-38](../packages/tmux-play.md#tmux-play-38)]'s prefix grammar at `paneWidth - prefixWidth` where `prefixWidth` is the cell width of `<who>> ` only; the bracketed tag is part of the first-line body and contributes to soft-wrap normally.
-
-The change is presenter-only: the runtime emits the same records before and after; observers other than the tmux presenter (visualizers, metric exporters, third-party panels that listen on `captain_telemetry`) see no change.
-A test observer that asserts on record types (not on rendered bytes) needs no update.
-
 ## Deliverables
 
 - [x] `specs/user/tmux-play.md` — amend tmux-play-38's closing paragraph; rewrite tmux-play-39 with the unified rule + kind table; rewrite tmux-play-49 to defer the prefix grammar to tmux-play-38 and the bracketed tag to tmux-play-39; amend tmux-play-50's closing paragraph.

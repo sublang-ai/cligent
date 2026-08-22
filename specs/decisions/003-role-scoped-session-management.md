@@ -100,6 +100,12 @@ A `Cligent` instance allows at most one active `run()` at a time. Calling `run()
 
 No capability flag is needed. The presence or absence of `resumeToken` in `done` is sufficient.
 
+Interrupted runs use the same opaque continuation contract through a three-stage selector: prefer a resumable session identifier the backend made safe during this run, otherwise preserve a non-empty inbound `resume`, otherwise omit `resumeToken`.
+The inbound fallback matters when a resumed run is interrupted before its backend echoes a replacement identifier; omitting it there would silently make the next call fresh.
+Most adapters treat an identifier as resumable only after the backend emits it.
+Claude Code is the exception: its generated SDK session identifier becomes resumable only after non-system SDK activity, because a live probe that resumed an init-only aborted session failed with `No conversation found with session ID`.
+Every interrupted terminal path applies this selector uniformly, while ordinary successful continuity remains unchanged.
+
 ### Option Merge Semantics
 
 `run(prompt, overrides?)` merges `CligentOptions` instance defaults with per-call `RunOptions` overrides:

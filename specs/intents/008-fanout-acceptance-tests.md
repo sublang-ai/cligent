@@ -14,35 +14,6 @@ The evolved harness now verifies the complete deterministic fanout acceptance or
 
 Add end-to-end acceptance tests that exercise the full Fanout pipeline (prompt → response → done) with real API keys while minimizing token spend.
 
-## Design
-
-### Test file
-
-`src/app/fanout.acceptance.test.ts`
-
-- Creates a temp work dir, runs `git init` (required by Codex/OpenCode), creates log files, a `.fanout-session` marker, and a sentinel file (`SENTINEL_<short-uuid>.txt`) used to verify output correctness
-- Calls `resolveAgents()` with all four agents explicitly to test Fanout wiring
-- Runs each agent via `cligent.run()` with `cwd` set to the work dir and run-time `permissions: { shellExecute: 'allow', fileWrite: 'deny', networkAccess: 'deny' }` (Codex overridden to all-allow since it requires that for `approvalPolicy: 'never'`)
-- Reads each agent's log file after completion
-- Asserts each log contains: boss echo, the sentinel filename in text output, and a `[success | ...]` done line
-- 120 s timeout, abort signal, cleanup
-
-### Test separation
-
-- Acceptance tests use `*.acceptance.test.ts` naming
-- Separate vitest include pattern so `npm test` runs unit tests only
-- New `test:acceptance` script runs acceptance tests
-
-### CI
-
-New `acceptance` job in `.github/workflows/ci.yml`:
-
-- Triggers on main push only (protects secrets)
-- Node 22 only
-- Installs agent CLIs globally: `@google/gemini-cli`, `opencode-ai`
-- API keys from GitHub secrets: `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`
-- Runs `npm run test:acceptance`
-
 ## Deliverables
 
 - [x] `src/app/fanout.acceptance.test.ts` — original acceptance test, later

@@ -169,6 +169,19 @@ tmux-play-64 currently derives `layout.columnWeights` length from the configured
 The loader keeps strict positive-integer validation for every weight.
 It does not relax weight validation to arbitrary arrays whose meaning changes at runtime.
 
+Configured weights resolve a window width `W` by giving every non-rightmost column `i` the region width `floor(W * w_i / sum(w))` and assigning the rightmost column the remainder.
+Equal weights therefore collapse to the earlier `floor(W / N)` layout while preserving every cell when `W` is not divisible by the weight sum.
+The launcher's initial `split-window` sizes and its resize hooks both derive from the resolved window and weights, so creation does not depend on a later hook to converge on the requested geometry.
+
+The first configurable-layout design kept `1 : 1` for one player and selected `4 : 6 : 6` for multiple players, giving each content column fifty percent more cells than the Boss input column.
+The later shipped-default refresh returned the multi-player default to equal weights, and this decision subsequently made those equal defaults shape-specific, without removing configurable ratios.
+
+Weights remain positive integers because the resize hook interpolates them into integer-only POSIX shell arithmetic [[1]].
+Scaling any fractional ratio by a positive common factor preserves the floor formula without emitting invalid arithmetic.
+
+The launcher resolves missing layout values before writing the session snapshot.
+That snapshot carries concrete window dimensions and the active shape's weights and remains the sole layout input after session creation; neither launcher nor session reparses the YAML afterward.
+
 ### Config Migration
 
 Legacy configs that contain only `layout.columnWeights` remain valid through the compatibility alias above.
@@ -220,3 +233,7 @@ If hidden-pane view continuity becomes important, the `LayoutObserver` can repla
 Such an upgrade should introduce stable pane-ID bookkeeping then, not as a prerequisite for this simpler design.
 
 Future implementation work must update the TMUX user and test items to specify `layout.initialVisible`, the `setVisiblePlayers` contract, the `player_view_changed` record, full-rebuild pane semantics, strict per-visible-count weight validation, the home-config migration and tmux-play-90 amendment, the tmux-play-11 default-config canonical layout field, and the hidden-pane scrollback limitation.
+
+## References
+
+[1]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_06_04 "POSIX.1-2017 §2.6.4 Arithmetic Expansion"

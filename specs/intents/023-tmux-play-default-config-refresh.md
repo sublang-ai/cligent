@@ -10,7 +10,7 @@ Done — Tasks 1 (specs + map), 2 (config + config tests), and 3 (launcher tests
 ## Intent
 
 Move the shipped `tmux-play` defaults for a 1920×1080 display at 18pt monospace and the current model generation.
-Only default values change; the [IR-022](022-tmux-play-layout-configuration.md) configurability surface is unchanged.
+Only default values change; [[tmux-play-64](../packages/tmux-play.md#tmux-play-64)]'s configurability surface is unchanged.
 
 - Window grid `240×67` → `174×49`. (At ~96 DPI, 18pt monospace ≈ 11×22 px cells: `1920/11 ≈ 174`, `1080/22 ≈ 49`. Keeps the 16:9-ish framing and divides by 3 exactly.)
 - Multi-player (≥2 players) `columnWeights` `[4, 6, 6]` → `[1, 1, 1]`, giving `174 / 3 = 58` per column with no remainder.

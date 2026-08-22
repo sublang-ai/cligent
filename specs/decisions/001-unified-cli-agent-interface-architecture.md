@@ -42,7 +42,7 @@ The following examples illustrate the adapter pattern for specific CLI agents.
 
 ### Claude Code via Agent SDK
 
-The Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) returns typed `SDKMessage` objects via async generator [^1]:
+The Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) returns typed `SDKMessage` objects via async generator [[1]]:
 
 ```typescript
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -53,11 +53,11 @@ for await (const message of query({ prompt, options })) {
 }
 ```
 
-The SDK uses Claude Code as its runtime; filesystem-based settings can be loaded via `settingSources` option [^1][^8]. The wrapper normalizes `SDKMessage` → `AgentEvent`.
+The SDK uses Claude Code as its runtime; filesystem-based settings can be loaded via `settingSources` option [[1]][[8]]. The wrapper normalizes `SDKMessage` → `AgentEvent`.
 
 ### Codex via SDK
 
-The Codex SDK (`@openai/codex-sdk`) provides `startThread()` and `run()` methods for programmatic control [^2]:
+The Codex SDK (`@openai/codex-sdk`) provides `startThread()` and `run()` methods for programmatic control [[2]]:
 
 ```typescript
 import { Codex } from "@openai/codex-sdk";
@@ -68,11 +68,11 @@ await thread.run(prompt);
 // See SDK repository for full API details
 ```
 
-The SDK is preferred over non-interactive CLI mode [^2]. The wrapper normalizes Codex events → `AgentEvent`.
+The SDK is preferred over non-interactive CLI mode [[2]]. The wrapper normalizes Codex events → `AgentEvent`.
 
 ### Gemini via Stream Parser
 
-Spawn CLI and parse streaming JSON output [^3]:
+Spawn CLI and parse streaming JSON output [[3]]:
 
 ```typescript
 spawn('gemini', ['--output-format', 'stream-json', prompt]);
@@ -83,12 +83,12 @@ The wrapper parses NDJSON and normalizes to `AgentEvent`.
 
 ### Validated by Industry Prior Art
 
-Official VS Code extensions integrate with their CLI counterparts and share configuration where documented [^4][^5]:
+Official VS Code extensions integrate with their CLI counterparts and share configuration where documented [[4]][[5]]:
 
 | Extension | Architecture |
 | --------- | ------------ |
-| **Claude Code** | Shares settings/configuration with the CLI [^4] |
-| **Codex** | Uses the Codex CLI and shares `~/.codex/config.toml` configuration [^5] |
+| **Claude Code** | Shares settings/configuration with the CLI [[4]] |
+| **Codex** | Uses the Codex CLI and shares `~/.codex/config.toml` configuration [[5]] |
 
 ## Alternatives Considered
 
@@ -100,13 +100,13 @@ Spawn CLIs directly via shell and parse streaming output (e.g., `--output-format
 
 **Disadvantages:** Extra processes for JSON parsing (`jq`/awk), string-based error handling (exit codes + stderr), shell job control for parallelism (`&`/`wait`, traps) less ergonomic than `Promise.all()`/`AbortController`, less unit-testable than typed interfaces.
 
-TypeScript library is preferred because it provides typed events (e.g., Claude Agent SDK's `SDKMessage` [^1]), in-process JSON parsing, and compile-time validation.
+TypeScript library is preferred because it provides typed events (e.g., Claude Agent SDK's `SDKMessage` [[1]]), in-process JSON parsing, and compile-time validation.
 
 ### MCP
 
-Treat agents as MCP servers and communicate via JSON-RPC [^9].
+Treat agents as MCP servers and communicate via JSON-RPC [[9]].
 
-**Advantages:** Standardized protocol with SSE streaming and notifications [^9], dynamic tool discovery, built-in permission model [^6][^7].
+**Advantages:** Standardized protocol with SSE streaming and notifications [[9]], dynamic tool discovery, built-in permission model [[6]][[7]].
 
 **Disadvantages:** MCP is designed for tool connectivity (agents calling external tools), not agent invocation. Coordinating parallel agents via MCP requires managing multiple server connections, adding complexity compared to async generators with `Promise.all()`.
 
@@ -116,10 +116,10 @@ MCP doesn't define a standard for token-delta or trace events, so achieving glas
 
 | Framework | Approach | Gap |
 | --------- | -------- | --- |
-| **AWS CLI Agent Orchestrator** [^10] | tmux sessions | Multi-provider (Amazon Q, Claude Code, Codex); tmux-based, not a unified stream schema |
-| **Claude Squad** [^11] | Go TUI, tmux, git worktrees | Multi-agent terminal manager; not an orchestration engine |
-| **Claude Flow** [^12] | Stream-JSON chaining for Claude Code | Supports real-time NDJSON events; focused on Claude Code, not unified multi-CLI |
-| **MCP-Agent** [^13] | Agents as MCP servers | Composable workflows; granular streaming not standardized by MCP |
+| **AWS CLI Agent Orchestrator** [[10]] | tmux sessions | Multi-provider (Amazon Q, Claude Code, Codex); tmux-based, not a unified stream schema |
+| **Claude Squad** [[11]] | Go TUI, tmux, git worktrees | Multi-agent terminal manager; not an orchestration engine |
+| **Claude Flow** [[12]] | Stream-JSON chaining for Claude Code | Supports real-time NDJSON events; focused on Claude Code, not unified multi-CLI |
+| **MCP-Agent** [[13]] | Agents as MCP servers | Composable workflows; granular streaming not standardized by MCP |
 
 These solutions address pieces of the problem but none provide a unified, observable, rich-UI-friendly interface across multiple CLI agents.
 
@@ -135,16 +135,16 @@ These solutions address pieces of the problem but none provide a unified, observ
 
 ## References
 
-[^1]: Claude Agent SDK TypeScript Reference: <https://platform.claude.com/docs/en/agent-sdk/typescript>
-[^2]: Codex SDK: <https://developers.openai.com/codex/sdk/>
-[^3]: Gemini CLI Headless Mode: <https://geminicli.com/docs/cli/headless/>
-[^4]: Claude Code VS Code Extension: <https://code.claude.com/docs/en/vs-code>
-[^5]: Codex IDE Extension Settings: <https://developers.openai.com/codex/ide/settings/>
-[^6]: Claude Code MCP: <https://code.claude.com/docs/en/mcp>
-[^7]: Codex Agents SDK Guide (MCP server): <https://developers.openai.com/codex/guides/agents-sdk/>
-[^8]: Claude Agent SDK Overview: <https://platform.claude.com/docs/en/agent-sdk/overview>
-[^9]: MCP Specification: <https://spec.modelcontextprotocol.io/specification/>
-[^10]: AWS CLI Agent Orchestrator: <https://github.com/awslabs/cli-agent-orchestrator>
-[^11]: Claude Squad: <https://github.com/smtg-ai/claude-squad>
-[^12]: Claude Flow: <https://github.com/ruvnet/claude-flow>
-[^13]: MCP-Agent: <https://github.com/lastmile-ai/mcp-agent>
+[1]: https://platform.claude.com/docs/en/agent-sdk/typescript "Claude Agent SDK TypeScript Reference"
+[2]: https://developers.openai.com/codex/sdk/ "Codex SDK"
+[3]: https://geminicli.com/docs/cli/headless/ "Gemini CLI Headless Mode"
+[4]: https://code.claude.com/docs/en/vs-code "Claude Code VS Code Extension"
+[5]: https://developers.openai.com/codex/ide/settings/ "Codex IDE Extension Settings"
+[6]: https://code.claude.com/docs/en/mcp "Claude Code MCP"
+[7]: https://developers.openai.com/codex/guides/agents-sdk/ "Codex Agents SDK Guide (MCP server)"
+[8]: https://platform.claude.com/docs/en/agent-sdk/overview "Claude Agent SDK Overview"
+[9]: https://spec.modelcontextprotocol.io/specification/ "MCP Specification"
+[10]: https://github.com/awslabs/cli-agent-orchestrator "AWS CLI Agent Orchestrator"
+[11]: https://github.com/smtg-ai/claude-squad "Claude Squad"
+[12]: https://github.com/ruvnet/claude-flow "Claude Flow"
+[13]: https://github.com/lastmile-ai/mcp-agent "MCP-Agent"

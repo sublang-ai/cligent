@@ -48,29 +48,6 @@ Out of scope:
   The requested behavior is that output shows even when the pane has been scrolled, so new output unconditionally returns an in-mode pane to its tail; the gentler model is a separable future UX decision.
 - Boss/Captain readline behavior, presenter rendering, and per-pane timers are unchanged; the follow observer drives only copy-mode exit and never writes pane content.
 
-## Mechanism notes (pinned by this IR)
-
-Empirically verified against tmux 3.6b, and consistent with the tmux manual's key-table, copy-mode, and `send-keys -X` semantics [[1]]:
-
-- Player panes are fed by `tail -f <logfile>` (`launcher.ts` `tailCommand`) and the Boss/Captain pane is the session process's stdout; scrolling either with the mouse wheel enters copy-mode and freezes the client viewport while the underlying grid keeps growing.
-- `send-keys -t <pane> -X cancel` exits copy-mode and returns the pane to its live tail (`#{pane_in_mode}` → `0`), which is the follow primitive for tmux-play-69. `-X cancel` requires the pane to be in a mode, so the issue is gated on `#{pane_in_mode}` (a no-op, error-free pass for un-scrolled panes).
-- Stock `copy-mode` / `copy-mode-vi` both bind `C-c` to `send-keys -X cancel`. A `C-c` delivered via `send-keys` to a pane that is itself in copy-mode is therefore consumed by that `cancel` and does not reach the pane's program (probe: no `SIGINT` received). Exiting pane 0's copy-mode first and then sending `C-c` does deliver `SIGINT` to the Boss readline. This is why the tmux-play-65 true branch must cancel-then-forward in all three tables, and why the `root` binding alone is insufficient when pane 0 is the scrolled pane.
-
-Follow-observer shape: it is a `RecordObserver` like `TimingObserver` (`timing-observer.ts`), registered in `session.ts`'s `observers` array.
-It resolves the destination pane for each output-bearing record — records carrying a `playerId` map to that player pane; `captain_*` / `turn_aborted` / `runtime_error` map to the Boss/Captain pane (pane 0) per [[tmux-play-40](../packages/tmux-play.md#tmux-play-40)] — and issues the gated `send-keys -X cancel` via `runTmux`.
-The presenter already buffers `text_delta` and writes at block boundaries ([[tmux-play-50](../packages/tmux-play.md#tmux-play-50)]) — `writer.write` fires only inside `flushBlock`, when a later non-text event, a speaker change, or turn end closes the open block — so per-pane writes are block-level, not per-token, and a `text_delta` in isolation produces no pane write to follow.
-The follow therefore keys on the records and events that drive a presenter pane write — a block-boundary flush, a `text` / `tool_use` / `tool_result` event, a player-prompt echo, and the `captain_status` / `turn_aborted` / `runtime_error` / `player_finished` / `captain_finished` records — and not on the no-op control records (`turn_started` / `turn_finished` / `captain_prompt` / `captain_telemetry`), raw buffered `text_delta`, the `done` / `error` events the presenter suppresses (`presenter-tmux.ts` returns before writing), or events that render to nothing, so it never exits copy-mode without new content; a pane scrolled after some deltas but before the final flush is still returned to its tail when the flush lands.
-The observer additionally coalesces rapid records per pane (a short debounce, e.g. one issue per pane per ~250 ms) so an active turn does not spawn a `tmux` process per block.
-Because exiting copy-mode drops any active selection, an implementation may optionally gate the follow on "in copy-mode and no active selection" (`#{selection_present}`) so an in-progress drag-select is not disrupted; this refinement is permitted but not required by tmux-play-69.
-
-tmux-play-65 binding shape (all three tables, session-gated):
-
-```text
-true  := if -F -t <s>:0.0 '#{pane_in_mode}' 'send-keys -t <s>:0.0 -X cancel' ; send-keys -t <s>:0.0 C-c
-root  false := send-keys C-c
-copy* false := send-keys -X cancel
-```
-
 ## Deliverables
 
 - [x] `specs/user/tmux-play.md` — add tmux-play-69 (copy-mode live-follow); amend tmux-play-65 (three-table cancel-then-forward Ctrl+C).
@@ -95,7 +72,3 @@ copy* false := send-keys -X cancel
 - A single Ctrl+C triggers the [[tmux-play-26](../packages/tmux-play.md#tmux-play-26)] exit lifecycle from any pane, including when the active pane and/or pane 0 is scrolled into copy-mode (no second press required).
 - Other tmux sessions on the same server retain stock `Ctrl+C` and copy-mode `C-c` behavior (the `if-shell` false branches).
 - All per-task-boundary checks (build, typecheck, lint, unit, smoke, acceptance) pass at each task boundary.
-
-## References
-
-[1]: https://man.openbsd.org/tmux.1 "tmux manual — key tables, copy-mode, send-keys -X"

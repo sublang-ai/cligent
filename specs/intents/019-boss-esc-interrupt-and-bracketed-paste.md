@@ -44,24 +44,6 @@ Out of scope (deliberate non-goals):
 - ESC as a partial cancel (e.g., clearing the edit buffer or canceling a queued-but-not-yet-running turn).
   ESC is wired only to `abortActiveTurn`; the queued-turn case is handled by the existing serialization in [[tmux-play-18](../packages/tmux-play.md#tmux-play-18)] and an aborted active turn naturally yields to the next queued one.
 
-## Mechanism notes (pinned by this IR)
-
-`escapeCodeTimeout: 100` (ms): default 500 ms makes ESC feel laggy.
-50–75 ms risks splitting genuine escape sequences over unusual pipes; 100 ms keeps perceived latency under the human "instant" threshold while giving margin for sluggish containers.
-Setting it explicitly also makes unit tests deterministic with `vi.advanceTimersByTime(100)`.
-
-Bare-ESC guard: `key.name === 'escape' && key.sequence === '\x1b'`.
-Asserting on the byte sequence (one byte, `\x1b`) excludes Alt-ESC and other `\x1b\x1b`-encoded combos in a Node-version-insensitive way; `key.name` alone is not sufficient.
-
-Bracketed-paste detection: `paste-start` and `paste-end` are first-class `keypress` names emitted by Node's `emitKeypressEvents` [[2]] parser when the xterm bracketed-paste markers `\x1b[200~` / `\x1b[201~` [[1]] arrive in the input stream; no byte-level marker parsing is needed inside the session.
-
-Accumulation algorithm: Node's `readline` does **not** coalesce pasted multi-line text into a single `line` event even when paste-start/paste-end are recognized; each embedded `\n` still fires `line`.
-The session must observe `inPaste` state and intercept `line` events: push to buffer while `inPaste`, flush on the next `line` after `paste-end`.
-Submit shape on flush: one `runBossTurn` invocation whose prompt is `pasteBuffer.join('\n')` followed by `'\n' + line` (when `line` is non-empty) or just `pasteBuffer.join('\n')` (when `line` is empty, i.e., the paste carried a trailing newline absorbed by the explicit Enter).
-Validated end-to-end with a mock TTY (three cases: paste with trailing newline, paste without trailing newline + typed continuation, normal typed line).
-
-Cleanup: `\x1b[?2004l` must run on every exit path; otherwise the user's shell sees literal `\x1b[200~` … `\x1b[201~` wrapping subsequent pastes.
-
 ## Deliverables
 
 - [x] `specs/user/tmux-play.md` — add tmux-play-57 (ESC interrupt) and tmux-play-58 (bracketed paste).
@@ -87,8 +69,3 @@ Cleanup: `\x1b[?2004l` must run on every exit path; otherwise the user's shell s
 - Non-TTY stdin (piped input, CI) skips ESC keypress handling; non-TTY stdout (redirected output) skips the bracketed-paste toggle; either skip is non-fatal; SIGINT/SIGTERM/EOF still trigger the full-shutdown path per [[tmux-play-26](../packages/tmux-play.md#tmux-play-26)].
 - `\x1b[?2004l` is emitted on every shutdown path so tmux-play does not leave bracketed-paste mode enabled in the terminal after exit.
 - All per-task-boundary checks (build, typecheck, lint, unit, smoke, acceptance) pass at each task boundary.
-
-## References
-
-[1]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode "xterm Control Sequences — Bracketed Paste Mode"
-[2]: https://nodejs.org/api/readline.html#readlineemitkeypresseventsstream-interface "Node.js — readline.emitKeypressEvents()"

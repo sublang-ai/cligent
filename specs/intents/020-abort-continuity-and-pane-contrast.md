@@ -42,25 +42,6 @@ Out of scope:
   The session-level ESC test verifies abort behavior; resume-after-abort is verified at the adapter contract level by the new TADAPT item, since it depends on adapter-specific session-ID emission timing.
 - Status bar (`status-style`, `status-left`, `status-right`), pane border line styling outside the title row, player color palette, and adapter color accents are not changed.
 
-## Mechanism notes (pinned by this IR)
-
-Adapter abort path: each adapter captures a resumable session identifier into a local `sessionId` and tracks whether that identifier is safe to emit as a resume token.
-For most adapters the identifier becomes safe only after the backend emits it; for Claude Code fresh runs the generated SDK `sessionId` becomes safe after SDK activity beyond the initial `system` message.
-A live probe showed that `resume` after an init-only aborted Claude session fails with `No conversation found with session ID`, so init-only Claude aborts deliberately omit `resumeToken`.
-The interrupt-path emissions also need to fall back to `options.resume` when present — which is the abort-during-resumed-turn case where the backend hasn't yet echoed a replacement id but the call already had a known prior session to resume.
-The three-stage rule (Scope) captures both cases: prefer the known resumable id when present, otherwise echo the inbound `options.resume`, otherwise omit.
-Factoring the adapter token rule into one helper keeps the eight touch points uniform; the omitted-token interrupted path is exposed to the tmux-play Captain through `PlayerRunResult`.
-The built-in fanout Captain consumes that exposed signal by storing unresolved base Boss prompts per player.
-It stores base prompts, not already-composed recovery prompts, so consecutive no-token aborts grow linearly as a list of unresolved Boss turns rather than nesting prior recovery text.
-The success path's existing claude-code-210 / codex-211 / opencode-212 / gemini-213 coverage stays valid; only the interrupt path needs new verification.
-
-Pane-border row continuity: the current `paneBorderFormat` opens with either `#[fg=base,bg=blue,bold]` (active) or `#[fg=text,bg=mantle]` (inactive), writes the title, then emits `#[default]`.
-`#[default]` returns to the terminal's default style, which in most modern terminals is a near-black background — visually a hard cut between the colored title and the dim timer text that follows.
-Replacing `#[default]` with `#[bg=<surface>]` (matching the chosen surface for the row) keeps the whole pane-border row at one tone.
-
-Timer color: `timerColorFormat`'s not-running branch currently uses `overlay1` (`#7f849c`), close in luminance to the chosen surface tones; against `mantle` or any darker surface it reads as low-contrast grey-on-grey.
-Bumping to `subtext1` (`#bac2de`) keeps the timer subdued relative to the active title accent (`blue`) but legible at a glance.
-
 ## Deliverables
 
 - [x] `specs/packages/adapters/{claude-code,codex,gemini,opencode}.md` — amend claude-code-26 / codex-33 / gemini-9 / opencode-11 with the interrupt-token clause.
