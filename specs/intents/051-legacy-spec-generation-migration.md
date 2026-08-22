@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 26 are done; tasks 27 through 53 remain.
+Tasks 1 through 27 are done; tasks 28 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -80,6 +80,10 @@ Its artifact audit found [[tmux-play-69](../packages/tmux-play.md#tmux-play-69)]
 Task 26 made every live baseline `tmux-play` verification item from 101 through 150 lawful as one execution flow or explicit case matrix, while preserving superseded [[tmux-play-137](../packages/tmux-play.md#tmux-play-137)] for task 51.
 It centralized the real-tmux and real-`glow` acceptance conditions in [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)] and [[tmux-play-150](../packages/tmux-play.md#tmux-play-150)], split the independent minimum-version and adapter-accent assertions into [[tmux-play-200](../packages/tmux-play.md#tmux-play-200)] and [[tmux-play-202](../packages/tmux-play.md#tmux-play-202)], retargeted their released concerns and source references, and corrected task 49's bidirectional coverage handoff.
 Its audit found [[tmux-play-116](../packages/tmux-play.md#tmux-play-116)]'s released two-retry allowance false of the acceptance harness, which stops after two attempts rather than making the required third attempt; task 48 carries that verification repair with deterministic retry and exhaustion assertions.
+Task 27 made every remaining live task-14 baseline `tmux-play` verification item lawful as one execution flow or explicit case matrix, while preserving retired [[tmux-play-166](../packages/tmux-play.md#tmux-play-166)] and [[tmux-play-167](../packages/tmux-play.md#tmux-play-167)] for task 51.
+It centralized the remaining repeated real-tmux acceptance conditions in [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)], dropped left-click setup and delivered-ESC restatements to [[tmux-play-162](../packages/tmux-play.md#tmux-play-162)] and [[tmux-play-159](../packages/tmux-play.md#tmux-play-159)], and split the independent package-export flow from [[tmux-play-196](../packages/tmux-play.md#tmux-play-196)] into [[tmux-play-203](../packages/tmux-play.md#tmux-play-203)].
+The released-concern map and historical reference follow those moves.
+The reverse audit restores `SIGHUP` to [[tmux-play-77](../packages/tmux-play.md#tmux-play-77)]'s cancellation set, makes [[tmux-play-173](../packages/tmux-play.md#tmux-play-173)]'s no-`TMUX` no-op exact, records every newly visible coverage gap in task 49, and leaves the `tmux-play` locator in `specs/map.md` accurate without an edit.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -525,16 +529,19 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | `tmux-play-106`'s actual session-mode import resolution for local paths and package specifiers; | |
     | `tmux-play` | `tmux-play-107`'s exact shared numeric `turnId` across its causal sequence; | |
     | `tmux-play` | `tmux-play-111`'s active-turn abort after observer rejection; | |
-    | `tmux-play` | `tmux-play-114`'s zero-player navigation, `C-c`, ESC, drag, and right-click binding installation and absence of missing-player targets beyond the asserted session-mouse and primary-button cases; | |
+    | `tmux-play` | `tmux-play-114` and `tmux-play-182`'s zero-player navigation, `C-c`, ESC, drag, and right-click binding installation and absence of missing-player targets beyond the asserted session-mouse and primary-button cases; | |
     | `tmux-play` | `tmux-play-116`'s composite spent-Kimi self-skip and missing-dependency local-skip/CI-hard-fail rows; | |
     | `tmux-play` | `tmux-play-120`'s source-YAML mutation after launch; | |
     | `tmux-play` | `tmux-play-130`'s missing-binary and disposable-server self-skip rows; | |
     | `tmux-play` | `tmux-play-134` and `tmux-play-146` through `tmux-play-149`'s complete matrices under `tmux-play-130`'s real-tmux harness; | |
     | `tmux-play` | `tmux-play-152`'s accepted and invalid `shellExecute` / `networkAccess` members; | |
     | `tmux-play` | `tmux-play-153`'s mapping matrix beyond the exercised Claude `auto` plus writable paths and Codex `auto` plus writable paths cases — Claude and Codex bypass, every Gemini, OpenCode, and Kimi row, and the remaining role and capability variants; | |
+    | `tmux-play` | `tmux-play-154`'s Captain-path invalid-mode launcher failure and offending-path diagnostic plus exact single-line stderr cardinality for both role paths; | |
+    | `tmux-play` | `tmux-play-157`'s Kimi YAML-through-runtime-to-native-ACP `thinking: on` mapping flow; | |
+    | `tmux-play` | `tmux-play-158`'s exact single-line stderr cardinality for both invalid-effort role paths; | |
     | `tmux-play` | `tmux-play-159`'s non-TTY ESC-keybinding omission; | |
     | `tmux-play` | `tmux-play-161`'s concrete-YAML, fallback, and create-no-config diagnostics rows; | |
-    | `tmux-play` | `tmux-play-164`'s omitted-layout, partial-window, canonical, and two-element-alias snapshot rows plus every launcher-CLI malformed-layout case except decimal `columnWeights`; | |
+    | `tmux-play` | `tmux-play-164`'s omitted-layout, partial-window, canonical, and two-element-alias snapshot rows, every launcher-CLI malformed-layout case except decimal `columnWeights`, and exact single-line stderr cardinality for that exercised decimal case; | |
     | `tmux-play` | `tmux-play-181`'s cwd-project nonmutation and no-intermediate-alias-plus-canonical assertions; | |
     | `tmux-play` | `tmux-play-183`'s accepted-call preservation of configured-roster fields beyond the asserted IDs and player `Cligent` continuity; | |
     | `tmux-play` | `tmux-play-185`'s timer-option, mouse-binding, and layout-hook reapplication plus successful changed-list tracking before a same-list no-op; | |
@@ -548,10 +555,12 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | `tmux-play-149`'s both-binaries-missing tmux-first ordering even under injected availability checks; | |
     | `tmux-play` | `tmux-play-150`'s missing-glow self-skip row; | |
     | `tmux-play` | `tmux-play-202`'s fallback-pool exclusion of the reserved `blue`, `mauve`, `peach`, `red`, and `yellow` speaker / tool / status roles under both flavors, plus repeated unknown-adapter stability under Latte; | |
-    | `tmux-play` | `tmux-play-156`'s full Latte border, timer, and status palette plus active-Captain-versus-active-player highlight cases; | |
+    | `tmux-play` | `tmux-play-156`'s full Latte border, timer, and status palette, active-Captain-versus-active-player highlight cases, and real-tmux `[=scroll` omission; | |
     | `tmux-play` | `tmux-play-160`'s bracketed-paste disable on shutdown paths other than ordinary EOF; | |
     | `tmux-play` | `tmux-play-169`'s real-tmux tool, bracketed-status, turn-abort, and runtime-error live-follow paths; | |
-    | `tmux-play` | and all of `tmux-play-198`'s logical-key, title- and order-independent routing, title-round-trip warning-and-continue, no-warning, and self-skip assertions | |
+    | `tmux-play` | `tmux-play-173`'s no-`TMUX` preservation of inherited `TMUX_PANE` and `TMUX_TMPDIR`; | |
+    | `tmux-play` | `tmux-play-174`'s no-fresh-prompt and exactly-once restoration assertions when the active turn aborts; | |
+    | `tmux-play` | and all of `tmux-play-198`'s logical-key, title- and order-independent routing, title-round-trip warning-and-continue, and no-warning assertions | |
     | `tmux-play` | | `tmux-play-2`'s ordinary config-to-gate-to-construct-to-attach-to-exit sequence beyond `tmux-play-192`'s construction gate; |
     | `tmux-play` | | `tmux-play-3`'s player, readline, observer, and cleanup parts beyond `tmux-play-115`; |
     | `tmux-play` | | `tmux-play-4`, which no verification item cites while config and CLI checks assert explicit selection and forwarding, but whose no-auto-create side effect no assertion reaches; |
@@ -601,6 +610,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-69`'s target-not-in-mode, other-session, and pane-process-survival branches, with task 47 owning rapid-write correctness; |
     | `tmux-play` | | `tmux-play-71`'s negative clamp and 100-hour expansion, the latter exercised only by `timing.test.ts`; |
     | `tmux-play` | | `tmux-play-72`'s hidden-versus-visible `turnId` and `resumeToken` result parity; |
+    | `tmux-play` | | `tmux-play-75`'s exactly-once prompt restoration after a runtime error; |
     | `tmux-play` | | `tmux-play-74`'s pane-0 orchestrator placement; |
     | `tmux-play` | | `tmux-play-88`'s explicit-string Captain resume and presentation invariance beyond the tested fresh-plus-empty-tools row; |
     | `tmux-play` | | `tmux-play-89`'s above-tested nonblocking, below-floor-versus-missing diagnostic, credential exclusion, and gate ordering; |
