@@ -1853,6 +1853,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
           AGENT,
           {
             status: 'error',
+            ...doneResumeTokenPayload(
+              'error',
+              backendProvidedSessionId,
+              sessionId,
+              resumeSessionId,
+            ),
             usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
             durationMs: Date.now() - startTime,
           },
@@ -1903,6 +1909,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
         AGENT,
         {
           status: 'error',
+          ...doneResumeTokenPayload(
+            'error',
+            backendProvidedSessionId,
+            sessionId,
+            resumeSessionId,
+          ),
           usage: { ...DEFAULT_DONE_USAGE, toolUses: observedToolUseIds.size },
           durationMs: Date.now() - startTime,
         },

@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 32 are done; tasks 33 through 53 remain.
+Tasks 1 through 33 are done; tasks 34 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -89,6 +89,7 @@ Task 29 moved the remaining design rationale and unresolved provisioning questio
 Task 30 rebuilt `specs/map.md` as one concise decision table and one concise package table with no intent-record index or item IDs; the guidance audit found the tracked repository guidance already describes the current layout.
 Task 31 validates Claude effort before acquiring caller abort-listener state and adds a live-signal rejection assertion, closing the pre-query leak without invoking the SDK query and narrowing task 49's remaining lifecycle handoff to cleanup after successful option mapping.
 Task 32 makes only the compatibility normalizer honor case-insensitive `failed` and preserve a top-level result alias's array-valued `content` as selected result output while still emitting its recognized blocks as ordered content events, adds integration assertions for all four named statuses and array output, and narrows task 49's remaining Codex handoff without changing canonical lifecycle mapping.
+Task 33 routes both non-aborted synthetic error terminals through [[codex-6](../packages/adapters/codex.md#codex-6)]'s normal resume selector, preserves the latest backend thread identifier without echoing an inbound resume when none arrives from the backend, adds exhaustion and iterator-failure assertions for both identity states, and narrows task 49's remaining Codex continuity handoff.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -425,7 +426,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `codex` | `codex-42`'s status-source priority, remaining status aliases and case handling, result/duration/usage priority and fallbacks, resumed normal-terminal no-backend-ID omission, interrupted-status resume selection, and stop-after-done behavior; | |
     | `codex` | `codex-43`'s elapsed duration, result omission, no-backend resume omission, and `turn.failed` usage; | |
     | `codex` | `codex-44`'s remaining top-level and content text/tool aliases plus the remaining rows of the legacy name, ID, input, output, duration, error-flag, default, and priority matrices, including denied-over-error priority; | |
-    | `codex` | `codex-45`'s exact exhaustion diagnostic, elapsed duration, result omission, no-backend resume omission, backend-ID resume preservation that task 33 repairs, non-`Error` iterator fallback and JSON error-message unwrapping, and already-aborted or iterator-throw abort exits; | |
+    | `codex` | `codex-45`'s exact exhaustion diagnostic, elapsed duration, result omission, non-`Error` iterator fallback and JSON error-message unwrapping, and already-aborted or iterator-throw abort exits; | |
     | `codex` | `codex-46`'s compatibility use-only and result-only identifier counts; | |
     | `codex` | `codex-206`'s remaining top-level and item-contained file aliases and payload-priority fallbacks; | |
     | `codex` | `codex-217`'s remaining error code, message, recoverability, and fallback matrix rows; | |

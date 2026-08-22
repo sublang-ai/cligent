@@ -844,7 +844,12 @@ describe('CodexAdapter', () => {
 
   it('reports observed tool uses when the stream ends without a turn event', async () => {
     const adapter = new CodexAdapter({
-      loadSdk: makeLoader({ events: toolThenStreamEndEvents }),
+      loadSdk: makeLoader({
+        events: [
+          { type: 'thread.started', thread_id: 'thread-exhausted' },
+          ...toolThenStreamEndEvents,
+        ],
+      }),
     });
 
     const events = await collect(adapter.run('prompt'));
@@ -859,6 +864,7 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('MISSING_TURN_DONE');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
+    expect(done.resumeToken).toBe('thread-exhausted');
     expect(done.usage.tokens).toBeUndefined();
     expect(done.usage.toolUses).toBe(1);
   });
@@ -866,7 +872,10 @@ describe('CodexAdapter', () => {
   it('reports observed tool uses on the error done after a stream failure', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
-        events: toolThenStreamEndEvents,
+        events: [
+          { type: 'thread.started', thread_id: 'thread-failed' },
+          ...toolThenStreamEndEvents,
+        ],
         throwFromRun: new Error('stream blew up'),
       }),
     });
@@ -883,9 +892,32 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('SDK_STREAM_ERROR');
     const done = donePayload(events[4]);
     expect(done.status).toBe('error');
+    expect(done.resumeToken).toBe('thread-failed');
     expect(done.usage.tokens).toBeUndefined();
     expect(done.usage.toolUses).toBe(1);
   });
+
+  it.each([
+    ['stream exhaustion', undefined],
+    ['iterator failure', new Error('stream blew up')],
+  ] as const)(
+    'does not echo an inbound resume on synthetic %s',
+    async (_case, throwFromRun) => {
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: toolThenStreamEndEvents,
+          ...(throwFromRun ? { throwFromRun } : {}),
+        }),
+      });
+
+      const events = await collect(
+        adapter.run('prompt', { resume: 'inbound-only' }),
+      );
+      const done = donePayload(events.at(-1)!);
+      expect(done.status).toBe('error');
+      expect(done).not.toHaveProperty('resumeToken');
+    },
+  );
 
   it('synthesizes the missing tool_use before the result when the start was missed', async () => {
     const adapter = new CodexAdapter({
