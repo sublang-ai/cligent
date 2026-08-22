@@ -83,7 +83,7 @@ Its audit found [[tmux-play-116](../packages/tmux-play.md#tmux-play-116)]'s rele
 Task 27 made every remaining live task-14 baseline `tmux-play` verification item lawful as one execution flow or explicit case matrix, while preserving retired [[tmux-play-166](../packages/tmux-play.md#tmux-play-166)] and [[tmux-play-167](../packages/tmux-play.md#tmux-play-167)] for task 51.
 It centralized the remaining repeated real-tmux acceptance conditions in [[tmux-play-130](../packages/tmux-play.md#tmux-play-130)], dropped left-click setup and delivered-ESC restatements to [[tmux-play-162](../packages/tmux-play.md#tmux-play-162)] and [[tmux-play-159](../packages/tmux-play.md#tmux-play-159)], and split the independent package-export flow from [[tmux-play-196](../packages/tmux-play.md#tmux-play-196)] into [[tmux-play-203](../packages/tmux-play.md#tmux-play-203)].
 The released-concern map and historical reference follow those moves.
-The reverse audit restores `SIGHUP` to [[tmux-play-77](../packages/tmux-play.md#tmux-play-77)]'s cancellation set, makes [[tmux-play-173](../packages/tmux-play.md#tmux-play-173)]'s no-`TMUX` no-op exact, records every newly visible coverage gap in task 49, and leaves the `tmux-play` locator in `specs/map.md` accurate without an edit.
+The reverse audit restores `SIGHUP` to [[tmux-play-77](../packages/tmux-play.md#tmux-play-77)]'s cancellation set, makes [[tmux-play-173](../packages/tmux-play.md#tmux-play-173)]'s no-`TMUX` no-op exact, records every newly visible coverage gap in task 49, including [[tmux-play-75](../packages/tmux-play.md#tmux-play-75)]'s idle-empty and non-TTY prompt branches, and leaves the `tmux-play` locator in `specs/map.md` accurate without an edit.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -611,6 +611,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-71`'s negative clamp and 100-hour expansion, the latter exercised only by `timing.test.ts`; |
     | `tmux-play` | | `tmux-play-72`'s hidden-versus-visible `turnId` and `resumeToken` result parity; |
     | `tmux-play` | | `tmux-play-75`'s exactly-once prompt restoration after a runtime error; |
+    | `tmux-play` | | `tmux-play-75`'s idle empty-or-whitespace fresh-ready-prompt branch, which `session.test.ts` asserts while no verification item reaches that branch; |
+    | `tmux-play` | | `tmux-play-75`'s non-TTY no-keypress-handling beyond `tmux-play-159`'s no-ESC assertion, active-turn prompt-suspension no-op, and static between-turn readline-prompt preservation; |
     | `tmux-play` | | `tmux-play-74`'s pane-0 orchestrator placement; |
     | `tmux-play` | | `tmux-play-88`'s explicit-string Captain resume and presentation invariance beyond the tested fresh-plus-empty-tools row; |
     | `tmux-play` | | `tmux-play-89`'s above-tested nonblocking, below-floor-versus-missing diagnostic, credential exclusion, and gate ordering; |
