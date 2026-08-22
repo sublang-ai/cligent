@@ -736,6 +736,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     let abortRequested = options?.abortSignal?.aborted === true;
     let cancelSent = false;
     let abortFinalizationScheduled = false;
+    let initEmitted = false;
     let terminalQueued = false;
     let protocolFailure: Error | undefined;
     let promptActive = false;
@@ -750,6 +751,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     let assistantText = '';
     let emittedToolUses = 0;
     const tools = new Map<string, ToolState>();
+    const preInitUpdates: Array<{
+      update: SessionUpdate;
+      observedAt: number;
+    }> = [];
 
     let terminalDelivered = false;
     let resolveTerminalDelivered: (() => void) | undefined;
@@ -1015,7 +1020,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       );
     };
 
-    const handleToolUpdate = (update: SessionUpdate): void => {
+    const handleToolUpdate = (
+      update: SessionUpdate,
+      observedAt: number,
+    ): void => {
       if (
         update.sessionUpdate !== 'tool_call' &&
         update.sessionUpdate !== 'tool_call_update'
@@ -1027,7 +1035,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       const state: ToolState = existing ?? {
         useEmitted: false,
         resultEmitted: false,
-        startedAt: Date.now(),
+        startedAt: observedAt,
       };
       if (update.title !== undefined && update.title !== null) {
         state.title = update.title;
@@ -1064,15 +1072,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       }
     };
 
-    const handleSessionUpdate = async (
-      notification: SessionNotification,
-    ): Promise<void> => {
-      if (terminalQueued) return;
-      if (!backendSessionKnown || notification.sessionId !== sessionId) {
-        recordProtocolFailure('session/update referenced a non-active session');
-        return;
-      }
-      const update = notification.update;
+    const dispatchSessionUpdate = (
+      update: SessionUpdate,
+      observedAt: number,
+    ): void => {
       switch (update.sessionUpdate) {
         case 'agent_message_chunk':
           if (update.content.type === 'text') {
@@ -1092,7 +1095,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           return;
         case 'tool_call':
         case 'tool_call_update':
-          handleToolUpdate(update);
+          handleToolUpdate(update, observedAt);
           return;
         case 'plan':
         case 'plan_update':
@@ -1102,6 +1105,22 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         default:
           return;
       }
+    };
+
+    const handleSessionUpdate = async (
+      notification: SessionNotification,
+    ): Promise<void> => {
+      if (terminalQueued) return;
+      if (!backendSessionKnown || notification.sessionId !== sessionId) {
+        recordProtocolFailure('session/update referenced a non-active session');
+        return;
+      }
+      const observedAt = Date.now();
+      if (!initEmitted) {
+        preInitUpdates.push({ update: notification.update, observedAt });
+        return;
+      }
+      dispatchSessionUpdate(notification.update, observedAt);
     };
 
     const handlePermissionRequest = async (
@@ -1395,6 +1414,12 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             sessionId,
           ),
         );
+        initEmitted = true;
+        // kimi-30: configuration-time updates become observable only after
+        // init, retaining their arrival order and ordinary normalization.
+        for (const { update, observedAt } of preInitUpdates.splice(0)) {
+          dispatchSessionUpdate(update, observedAt);
+        }
 
         promptActive = true;
         let promptResponse: unknown;

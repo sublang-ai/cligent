@@ -534,6 +534,135 @@ describe('KimiAdapter', () => {
     });
   });
 
+  it('queues configuration updates until after init in arrival order', async () => {
+    let fake: FakeKimi;
+    fake = new FakeKimi({
+      sessionId: 'pre-init-session',
+      setConfig: async (request) => {
+        const connection = fake.connection;
+        if (!connection) throw new Error('Missing fake ACP connection');
+
+        if (request.configId === 'model') {
+          await connection.sessionUpdate({
+            sessionId: 'pre-init-session',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'configured ' },
+            },
+          });
+        } else if (request.configId === 'thinking') {
+          await connection.sessionUpdate({
+            sessionId: 'pre-init-session',
+            update: {
+              sessionUpdate: 'tool_call',
+              toolCallId: 'pre-init-tool',
+              title: 'Read',
+              kind: 'read',
+              status: 'completed',
+              rawInput: { path: 'README.md' },
+              rawOutput: { text: 'contents' },
+            },
+          });
+        } else if (request.configId === 'mode') {
+          await connection.sessionUpdate({
+            sessionId: 'pre-init-session',
+            update: {
+              sessionUpdate: 'plan',
+              entries: [
+                {
+                  content: 'Inspect project',
+                  priority: 'high',
+                  status: 'completed',
+                },
+              ],
+            },
+          });
+        }
+      },
+      prompt: async (connection, request) => {
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'prompt' },
+          },
+        });
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Keep order', {
+        model: 'kimi-k3',
+        effort: 'on',
+        permissions: { mode: 'auto' },
+      }),
+    );
+
+    // kimi-16 / kimi-30 / kimi-230: all configuration-time updates retain
+    // their normalization order, but init remains the first unified event.
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'text_delta',
+      'tool_use',
+      'tool_result',
+      'kimi:plan',
+      'text_delta',
+      'done',
+    ]);
+    expect(events[1]).toMatchObject({
+      type: 'text_delta',
+      payload: { delta: 'configured ' },
+    });
+    expect(events[2]).toMatchObject({
+      type: 'tool_use',
+      payload: {
+        toolName: 'Read',
+        toolUseId: 'pre-init-tool',
+        input: { path: 'README.md' },
+      },
+    });
+    expect(events[3]).toMatchObject({
+      type: 'tool_result',
+      payload: {
+        toolName: 'Read',
+        toolUseId: 'pre-init-tool',
+        status: 'success',
+        output: { text: 'contents' },
+      },
+    });
+    expect(events[4]).toMatchObject({
+      type: 'kimi:plan',
+      payload: {
+        sessionUpdate: 'plan',
+        entries: [
+          {
+            content: 'Inspect project',
+            priority: 'high',
+            status: 'completed',
+          },
+        ],
+      },
+    });
+    expect(events[5]).toMatchObject({
+      type: 'text_delta',
+      payload: { delta: 'prompt' },
+    });
+    expect(fake.calls).toEqual([
+      'initialize',
+      'session/new',
+      'config:model',
+      'config:thinking',
+      'config:mode',
+      'session/prompt',
+    ]);
+    expect(eventOf(events, 'done').payload).toMatchObject({
+      status: 'success',
+      result: 'configured prompt',
+      usage: { toolUses: 1 },
+    });
+  });
+
   it('does not promote hypothetical ACP usage into token accounting', async () => {
     const fake = new FakeKimi({
       prompt: async () => ({
