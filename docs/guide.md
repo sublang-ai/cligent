@@ -479,6 +479,12 @@ explicit deny and affect later resumed calls. Cligent rejects either option
 before loading the OpenCode SDK. Omit both options or choose an adapter with
 exact tool filtering.
 
+OpenCode also rejects an explicit `maxTurns`, including zero, before loading
+the SDK. OpenCode 1.18.13 exposes turn ceilings only through persistent agent
+configuration, not an exact per-run control, so Cligent neither leaves a
+requested limit silently unenforced nor mutates shared agent state. Omit
+`maxTurns` or choose an adapter with an exact per-run turn limit.
+
 Kimi has a deliberately narrower headless permission surface:
 
 - Omit `permissions` to preserve the Kimi CLI's native configured rules.

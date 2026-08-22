@@ -1008,6 +1008,19 @@ function assertOpenCodeToolRestrictionsUnsupported(
   );
 }
 
+function assertOpenCodeTurnLimitUnsupported(
+  options?: Pick<AgentOptions, 'maxTurns'>,
+): void {
+  if (options?.maxTurns === undefined) return;
+
+  throw new Error(
+    'OpenCode adapter does not support explicit maxTurns: OpenCode 1.18.13 ' +
+      'exposes turn ceilings only through persistent agent configuration, ' +
+      'not an exact per-run control. Omit maxTurns or choose an adapter with ' +
+      'an exact per-run turn limit.',
+  );
+}
+
 export function mapEffortToOpenCodeVariant(
   model: string | undefined,
   effort: OpenCodeEffort | undefined,
@@ -1564,24 +1577,20 @@ export function wrapOpencodeClient(
         }
         if (signal?.aborted) return stopAbortedDispatch();
         const promptSessionId = sessionId;
-        const promptSteps = options.steps as number | undefined;
 
         const promptBody = {
           parts: [{ type: 'text', text: options.prompt }],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
-          ...(promptSteps !== undefined ? { steps: promptSteps } : {}),
           ...(effectivePermissionObj !== undefined
             ? { permission: effectivePermissionObj }
             : {}),
         };
 
-        const v2PromptParameters: {
+        const v2PromptParameters: OpenCodeV2PromptBody & {
           sessionID: string;
-        } & OpenCodeV2PromptBody & {
-            directory?: string;
-            $body_steps?: number;
-          } = {
+          directory?: string;
+        } = {
           sessionID: promptSessionId,
           parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
           ...(modelVal
@@ -1589,9 +1598,6 @@ export function wrapOpencodeClient(
             : {}),
           ...(variantVal ? { variant: variantVal } : {}),
           ...(cwdVal ? { directory: cwdVal } : {}),
-          // The generated v2 SDK uses this prefix to carry compatibility
-          // members through its request-field whitelist into the JSON body.
-          ...(promptSteps !== undefined ? { $body_steps: promptSteps } : {}),
         };
 
         // The SDK's event stream is a lazy async generator — the HTTP
@@ -2014,6 +2020,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertOpenCodeToolRestrictionsUnsupported(options);
+    assertOpenCodeTurnLimitUnsupported(options);
 
     let sdk: OpenCodeSdk;
     try {
@@ -3497,7 +3504,6 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           this.eventInactivityTimeoutMs,
         ),
         ...(variant ? { variant } : {}),
-        ...(options?.maxTurns !== undefined ? { steps: options.maxTurns } : {}),
         ...(resumeSessionId ? { sessionId: resumeSessionId } : {}),
         ...mappedPermissions,
       });

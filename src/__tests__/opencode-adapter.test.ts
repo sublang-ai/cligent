@@ -596,6 +596,38 @@ describe('OpenCodeAdapter', () => {
     }
   });
 
+  it('rejects explicit turn limits before SDK or backend work', async () => {
+    const rejection =
+      /does not support explicit maxTurns.*persistent agent configuration.*exact per-run control/;
+    const cases: AgentOptions<OpenCodeEffort>[] = [
+      { maxTurns: 0 },
+      { maxTurns: 5 },
+      { maxTurns: 0, resume: 'existing-session' },
+      { maxTurns: 5, resume: 'existing-session' },
+    ];
+
+    for (const options of cases) {
+      const { spawnProcess, invocations } = makeSpawn();
+      let loadCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'managed' },
+        {
+          loadSdk: async () => {
+            loadCalls++;
+            throw new Error('SDK loader must not run');
+          },
+          spawnProcess,
+        },
+      );
+
+      await expect(collect(adapter.run('turn limit', options))).rejects.toThrow(
+        rejection,
+      );
+      expect(loadCalls).toBe(0);
+      expect(invocations).toEqual([]);
+    }
+  });
+
   it('runs in managed mode with server spawn, ready wait, and graceful shutdown', async () => {
     const { spawnProcess, invocations } = makeSpawn();
 
@@ -5123,6 +5155,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       const body = (call as { body: Record<string, unknown> }).body;
       expect(body).not.toHaveProperty('permission');
       expect(body).not.toHaveProperty('tools');
+      expect(body).not.toHaveProperty('steps');
     }
 
     const explicitlyManaged = mapPermissionsToOpenCodeOptions({});
@@ -5138,13 +5171,13 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { body: { title: 'Cligent run' } },
     ]);
     for (const call of promptCalls.slice(2)) {
-      expect(
-        (call as { body: Record<string, unknown> }).body.permission,
-      ).toEqual({
+      const body = (call as { body: Record<string, unknown> }).body;
+      expect(body.permission).toEqual({
         edit: 'ask',
         bash: 'ask',
         webfetch: 'ask',
       });
+      expect(body).not.toHaveProperty('steps');
     }
   });
 
@@ -5213,7 +5246,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptCalls[1]).not.toHaveProperty('body');
   });
 
-  it('preserves v2 turn limits through generated request serialization', async () => {
+  it('omits v2 turn-limit data from generated request serialization', async () => {
     const promptRequests: Array<{
       sessionId: string;
       body: Record<string, unknown>;
@@ -5238,47 +5271,30 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       freshSessions++;
       return { data: { id: `v2-limit-${freshSessions}` } };
     };
-    (real.session as unknown as Record<string, unknown>).children = async () =>
-      ({ data: [] });
-    (real.event as unknown as Record<string, unknown>).subscribe = async () =>
-      ({ stream: (async function* () {})() });
+    (real.session as unknown as Record<string, unknown>).children =
+      async () => ({ data: [] });
+    (real.event as unknown as Record<string, unknown>).subscribe =
+      async () => ({ stream: (async function* () {})() });
 
     const client = wrapOpencodeClient(
       real as unknown as Record<string, unknown>,
       { apiVersion: 'v2' },
     );
-    await client.run?.({ prompt: 'fresh zero', steps: 0 });
-    await client.run?.({
-      prompt: 'resumed zero',
-      sessionId: 'resume-zero',
-      steps: 0,
-    });
-    await client.run?.({ prompt: 'fresh nonzero', steps: 5 });
-    await client.run?.({
-      prompt: 'resumed nonzero',
-      sessionId: 'resume-nonzero',
-      steps: 5,
-    });
     await client.run?.({ prompt: 'fresh omitted' });
     await client.run?.({
       prompt: 'resumed omitted',
       sessionId: 'resume-omitted',
     });
 
-    expect(freshSessions).toBe(3);
+    expect(freshSessions).toBe(1);
     expect(
       promptRequests.map(({ sessionId, body }) => ({
         sessionId,
         hasSteps: Object.hasOwn(body, 'steps'),
-        steps: body.steps,
       })),
     ).toEqual([
-      { sessionId: 'v2-limit-1', hasSteps: true, steps: 0 },
-      { sessionId: 'resume-zero', hasSteps: true, steps: 0 },
-      { sessionId: 'v2-limit-2', hasSteps: true, steps: 5 },
-      { sessionId: 'resume-nonzero', hasSteps: true, steps: 5 },
-      { sessionId: 'v2-limit-3', hasSteps: false, steps: undefined },
-      { sessionId: 'resume-omitted', hasSteps: false, steps: undefined },
+      { sessionId: 'v2-limit-1', hasSteps: false },
+      { sessionId: 'resume-omitted', hasSteps: false },
     ]);
   });
 
@@ -5979,7 +5995,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       adapter.run('test options', {
         model: 'kimi-k2',
         cwd: '/workspace',
-        maxTurns: 5,
         permissions: {
           fileWrite: 'allow',
           shellExecute: 'ask',
@@ -5998,7 +6013,6 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       body: {
         parts: unknown[];
         model?: string;
-        steps?: number;
         permission?: { edit: string; bash: string; webfetch: string };
       };
     };
@@ -6009,7 +6023,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
     expect(promptArgs.signal).toBe(createArgs.signal);
     expect(promptArgs.body.model).toBe('kimi-k2');
     expect(promptArgs.body).not.toHaveProperty('cwd');
-    expect(promptArgs.body.steps).toBe(5);
+    expect(promptArgs.body).not.toHaveProperty('steps');
     expect(promptArgs.body.permission).toEqual({
       edit: 'allow',
       bash: 'ask',

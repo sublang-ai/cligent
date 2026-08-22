@@ -455,18 +455,18 @@ names, so this surface cannot guarantee exact per-call identifiers [[6]].
 
 ### opencode-44
 
-When `run()` prepares the compatibility-wrapper request and native prompt, the
-adapter shall map ordinary options through this matrix:
+When `run()` handles ordinary options, the adapter shall select through this
+matrix:
 
-| Portable input | OpenCode request |
+| Portable input | OpenCode outcome |
 | --- | --- |
 | prompt | one native text part with the exact string and no caller-supplied message identifier, because OpenCode mints the identifier and a foreign one leaves the session busy without a terminal [[14]] |
 | non-empty `cwd` | wrapper `cwd` and the version-specific request placement in [[opencode-41](#opencode-41)]; omit provider directory data for absent or empty `cwd` |
 | any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
 | non-empty model without `/` | pass through unchanged |
 | absent or empty model | omit the native model |
-| `maxTurns`, including zero | prompt `steps` with the exact value |
-| omitted `maxTurns` | omit `steps` |
+| explicitly present `maxTurns`, including zero | reject before SDK loading or backend work because OpenCode 1.18.13 exposes the ceiling only through persistent agent configuration, not an exact per-run control [[5]], as settled by [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) |
+| omitted `maxTurns` | send no turn-limit request member |
 | any `maxBudgetUsd` | no OpenCode request member because this runtime has no corresponding control |
 | non-empty resume | select the existing session rather than create one |
 | permission, effort, or tool-list input | the outcomes in [[opencode-7](#opencode-7)], [[opencode-12](#opencode-12)], [[opencode-14](#opencode-14)], and [[opencode-15](#opencode-15)] |
@@ -733,12 +733,13 @@ ordinary model forwarding.
 
 ### opencode-52
 
-Given fresh and resumed wrapper calls over every supported SDK path, when
-ordinary `AgentOptions` are mapped, the captured native requests shall assert
-[[opencode-44](#opencode-44)]'s exact prompt without a caller-supplied message
-identifier, model, cwd, zero and nonzero `maxTurns`, omitted `maxTurns`, ignored
-`maxBudgetUsd`, and session-selection rows, including `steps` on both legacy and
-v2 prompt bodies.
+Given ordinary `AgentOptions`, when the adapter maps them, the integration
+checks shall assert [[opencode-44](#opencode-44)] through this matrix:
+
+| Flow | Assertions |
+| --- | --- |
+| zero and nonzero `maxTurns` on fresh and resumed calls | rejection before SDK loading or backend work |
+| omitted `maxTurns` on fresh and resumed calls over every supported SDK path | exact native prompt without a caller-supplied message identifier or turn-limit member, plus model, cwd, ignored `maxBudgetUsd`, and session selection |
 
 ### opencode-204
 
@@ -1031,7 +1032,7 @@ causal report matrix while preserving independently observed `toolUses`
 [2]: https://opencode.ai/docs/server/ 'OpenCode server'
 [3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 'OpenCode 1.18.13 step-finish token split'
 [4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 'OpenCode 1.18.13 token roll-up'
-[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt-tool permission replacement'
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt input, agent step limit, and tool-permission replacement'
 [6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission evaluation'
 [7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'
 [8]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/session.ts#L338-L406 'OpenCode 1.18.13 usage cost calculation'

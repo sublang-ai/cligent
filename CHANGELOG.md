@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** OpenCode now rejects an explicit `maxTurns`, including zero, before SDK loading or backend work. OpenCode 1.18.13 exposes turn ceilings only through persistent agent configuration rather than an exact per-run control, so the prior prompt `steps` data was ignored and left the requested limit unenforced. Callers must omit `maxTurns` or choose an adapter with an exact per-run limit — DR-002, IR-051
+
 ## [0.22.0] - 2026-08-15
 
 ### Changed

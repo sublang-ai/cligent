@@ -10,6 +10,7 @@ Accepted
 ## Context
 
 [DR-001](001-unified-cli-agent-interface-architecture.md) established the architectural direction: a TypeScript library with async generator interface across CLI agents. This decision defines the concrete interface design—event types, adapter contract, and permission model.
+OpenCode 1.18.13's prompt schema exposes no per-run `steps` member; its step ceiling is persistent agent configuration, so an undeclared prompt member is ineffective and mutating the agent would escape one run's scope [[13]].
 
 ## Decision
 
@@ -264,6 +265,8 @@ interface AgentOptions {
 }
 ```
 
+The OpenCode adapter shall reject an explicitly supplied `maxTurns`, including zero, before SDK loading or backend work rather than claim an ineffective prompt limit or mutate persistent agent configuration.
+
 Tool filtering: if `allowedTools` is set, only listed tools are available; `disallowedTools` further excludes from that set. Tool names are exact identifiers unless an adapter explicitly documents pattern support. Adapters should emit `permission_request` when user decision is required and handle approvals via adapter-native mechanisms (SDK callbacks, CLI prompts). Headless adapters may not support interactive approvals.
 
 Callers interact with adapters through `Cligent` instances ([DR-003](003-role-scoped-session-management.md)), which handle protocol hardening, session continuity, role attribution, and option merging.
@@ -301,7 +304,7 @@ for await (const event of Cligent.parallel([
 - **Role attribution** via `role` field on `CligentEvent` (not `BaseEvent`), distinguishing multiple sessions on the same backend; adapters do not emit `role`
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` is fail-closed; adapters with no exact registry-control surface reject explicit restrictions
-- **Budgeting**: `maxTurns` supported by Claude Code and OpenCode (`steps`); `maxBudgetUsd` only by Claude Code
+- **Budgeting**: Claude Code supports `maxTurns` and `maxBudgetUsd`; OpenCode rejects explicit `maxTurns` because its pinned runtime exposes no exact per-run control and maps no `maxBudgetUsd` member
 - **MCP integration** deferred to adapter implementation [[7]]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
 - **Token accounting** is explicitly reported or unavailable; measured zero is
@@ -321,3 +324,4 @@ for await (const event of Cligent.parallel([
 [10]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI Policy Engine"
 [11]: https://opencode.ai/docs/permissions "OpenCode permissions"
 [12]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt schema and agent step limit"
