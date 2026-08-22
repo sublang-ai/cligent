@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - OpenCode caller abort now preempts already-aborted runs, pending SDK loading, and managed readiness before later backend work starts. Once a managed child exists, the interrupted terminal still precedes bounded `SIGTERM` / `SIGKILL` teardown — OPENCODE-009, TADAPT-008, IR-051
+- OpenCode permission correlation no longer retains one tombstone for every completed response until the run ends. Active request data survives until native confirmation for denial correlation, repeated delivery before that boundary still receives one response, and failed, timed-out, aborted, or terminal paths release their remaining request and wait state — OPENCODE-020, TADAPT-037, IR-051
 
 ## [0.22.0] - 2026-08-15
 

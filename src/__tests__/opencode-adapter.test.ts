@@ -1302,75 +1302,133 @@ describe('OpenCodeAdapter', () => {
     ]);
   });
 
-  it('releases permission correlation after every replied decision', async () => {
+  it('releases permission correlation across repeated high-volume replies', async () => {
+    const completedRequestCount = 257;
+    const nativeEvents: unknown[] = [];
     const replies: string[] = [];
+    const permissionStates: Array<{
+      activeRequests: number;
+      replyWaitActive: boolean;
+    }> = [];
+
+    for (let index = 0; index < completedRequestCount; index++) {
+      const requestId = `bounded-request-${index}`;
+      const ask = {
+        type: 'permission.asked',
+        properties: {
+          id: requestId,
+          sessionID: 'correlation-cleanup-session',
+          permission: 'edit',
+          tool: { callID: `bounded-call-${index}` },
+        },
+      };
+      nativeEvents.push(
+        ask,
+        {
+          ...ask,
+          properties: { ...ask.properties },
+        },
+        {
+          type: 'permission.replied',
+          properties: {
+            sessionID: 'correlation-cleanup-session',
+            requestID: requestId,
+            reply: 'reject',
+          },
+        },
+      );
+    }
+    const reusedRequestId = `bounded-request-${completedRequestCount - 1}`;
+    const reusedAsk = {
+      type: 'permission.asked',
+      properties: {
+        id: reusedRequestId,
+        sessionID: 'correlation-cleanup-session',
+        permission: 'edit',
+        tool: { callID: 'reused-lifecycle-call' },
+      },
+    };
+    nativeEvents.push(
+      reusedAsk,
+      {
+        ...reusedAsk,
+        properties: { ...reusedAsk.properties },
+      },
+      {
+        type: 'permission.replied',
+        properties: {
+          sessionID: 'correlation-cleanup-session',
+          requestID: reusedRequestId,
+          reply: 'reject',
+        },
+      },
+      {
+        type: 'permission.asked',
+        properties: {
+          id: 'terminal-active-request',
+          sessionID: 'correlation-cleanup-session',
+          permission: 'edit',
+          tool: { callID: 'terminal-active-call' },
+        },
+      },
+    );
+
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
         loadSdk: makeLoader({
           runResult: { sessionId: 'correlation-cleanup-session' },
-          events: [
-            {
-              type: 'permission.asked',
-              properties: {
-                id: 'reused-request',
-                sessionID: 'correlation-cleanup-session',
-                permission: 'edit',
-                tool: { callID: 'stale-call' },
-              },
-            },
-            {
-              type: 'permission.replied',
-              properties: {
-                sessionID: 'correlation-cleanup-session',
-                requestID: 'reused-request',
-                reply: 'once',
-              },
-            },
-            {
-              type: 'permission.asked',
-              properties: {
-                id: 'reused-request',
-                sessionID: 'correlation-cleanup-session',
-                permission: 'edit',
-                tool: { callID: 'duplicate-call' },
-              },
-            },
-            {
-              type: 'permission.replied',
-              properties: {
-                sessionID: 'correlation-cleanup-session',
-                requestID: 'reused-request',
-                reply: 'reject',
-                toolUseId: 'current-call',
-                toolName: 'write',
-              },
-            },
-            {
-              type: 'session.idle',
-              properties: { sessionID: 'correlation-cleanup-session' },
-            },
-          ],
+          events: nativeEvents,
           onReplyPermission(options) {
             replies.push(options.requestId);
           },
         }),
+        observePermissionState(state) {
+          permissionStates.push(state);
+        },
       },
     );
 
-    const events = await collect(
-      adapter.run('correlation cleanup probe', {
-        permissions: { mode: 'auto' },
-      }),
-    );
-    const denied = events.find((event) => event.type === 'tool_result') as
+    const events = await collect(adapter.run('correlation cleanup probe'));
+    const denied = events.find(
+      (event) =>
+        event.type === 'tool_result' &&
+        (event.payload as { toolUseId?: string }).toolUseId ===
+          'reused-lifecycle-call',
+    ) as
       | (AgentEvent & { payload: { toolUseId: string; status: string } })
       | undefined;
     expect(denied?.payload).toMatchObject({
-      toolUseId: 'current-call',
+      toolUseId: 'reused-lifecycle-call',
       status: 'denied',
     });
-    expect(replies).toEqual(['reused-request']);
+    expect(replies).toEqual([
+      ...Array.from(
+        { length: completedRequestCount },
+        (_unused, index) => `bounded-request-${index}`,
+      ),
+      reusedRequestId,
+      'terminal-active-request',
+    ]);
+    expect(
+      events.filter((event) => event.type === 'permission_request'),
+    ).toHaveLength(completedRequestCount + 2);
+    expect(events.filter((event) => event.type === 'tool_result')).toHaveLength(
+      completedRequestCount + 1,
+    );
+    expect(
+      Math.max(...permissionStates.map((state) => state.activeRequests)),
+    ).toBe(1);
+    expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
+    expect(
+      permissionStates.some(
+        (state) => state.activeRequests === 1 && !state.replyWaitActive,
+      ),
+    ).toBe(true);
+    expect(permissionStates.at(-1)).toEqual({
+      activeRequests: 0,
+      replyWaitActive: false,
+    });
   });
 
   it('ignores foreign-session asks and replies once to a repeated local request', async () => {
@@ -1671,6 +1729,10 @@ describe('OpenCodeAdapter', () => {
   });
 
   it('terminates with request identifiers when a permission reply fails', async () => {
+    const permissionStates: Array<{
+      activeRequests: number;
+      replyWaitActive: boolean;
+    }> = [];
     const adapter = new OpenCodeAdapter(
       { mode: 'external', serverUrl: 'http://opencode.local:7777' },
       {
@@ -1691,27 +1753,39 @@ describe('OpenCodeAdapter', () => {
           ],
           replyPermissionError: new Error('reply route unavailable'),
         }),
+        observePermissionState(state) {
+          permissionStates.push(state);
+        },
       },
     );
 
-    const events = await collect(
-      adapter.run('failure probe', { permissions: { mode: 'auto' } }),
-    );
-    expect(events.map((event) => event.type)).toEqual([
-      'init',
-      'error',
-      'done',
-    ]);
-    const error = events[1] as AgentEvent & {
+    const stream = adapter.run('failure probe', {
+      permissions: { mode: 'auto' },
+    });
+    expect((await stream.next()).value?.type).toBe('init');
+    const error = (await stream.next()).value as AgentEvent & {
       payload: { code?: string; message: string };
     };
+    expect(error.type).toBe('error');
     expect(error.payload.code).toBe('OPENCODE_PERMISSION_REPLY_FAILED');
     expect(error.payload.message).toContain('reply-failure-session');
     expect(error.payload.message).toContain('reply-failure-request');
     expect(error.payload.message).toContain('unknown_future_permission');
-    expect(events[2]!.payload).toMatchObject({
+    expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
+    expect(permissionStates.at(-1)).toEqual({
+      activeRequests: 0,
+      replyWaitActive: false,
+    });
+    const done = (await stream.next()).value;
+    expect(done?.type).toBe('done');
+    expect(done?.payload).toMatchObject({
       status: 'error',
       resumeToken: 'reply-failure-session',
+    });
+    await stream.next();
+    expect(permissionStates.at(-1)).toEqual({
+      activeRequests: 0,
+      replyWaitActive: false,
     });
   });
 
@@ -1721,6 +1795,10 @@ describe('OpenCodeAdapter', () => {
       let eventSignal: AbortSignal | undefined;
       let replySignal: AbortSignal | undefined;
       let replyCancelled = false;
+      const permissionStates: Array<{
+        activeRequests: number;
+        replyWaitActive: boolean;
+      }> = [];
       const adapter = new OpenCodeAdapter(
         { mode: 'external', serverUrl: 'http://opencode.local:7777' },
         {
@@ -1758,6 +1836,9 @@ describe('OpenCodeAdapter', () => {
                 }
               }),
           }),
+          observePermissionState(state) {
+            permissionStates.push(state);
+          },
         },
       );
 
@@ -1780,6 +1861,13 @@ describe('OpenCodeAdapter', () => {
       expect(eventSignal?.aborted).toBe(true);
       expect(replySignal?.aborted).toBe(true);
       expect(replyCancelled).toBe(true);
+      expect(permissionStates.some((state) => state.replyWaitActive)).toBe(
+        true,
+      );
+      expect(permissionStates.at(-1)).toEqual({
+        activeRequests: 0,
+        replyWaitActive: false,
+      });
 
       const done = (await stream.next()).value;
       expect(done?.type).toBe('done');
@@ -1788,6 +1876,10 @@ describe('OpenCodeAdapter', () => {
         resumeToken: 'reply-timeout-session',
       });
       await stream.next();
+      expect(permissionStates.at(-1)).toEqual({
+        activeRequests: 0,
+        replyWaitActive: false,
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -1842,6 +1934,10 @@ describe('OpenCodeAdapter', () => {
     let eventSignal: AbortSignal | undefined;
     let replySignal: AbortSignal | undefined;
     let replyCancelled = false;
+    const permissionStates: Array<{
+      activeRequests: number;
+      replyWaitActive: boolean;
+    }> = [];
     let resolveReplyStarted: () => void = () => {};
     const replyStarted = new Promise<void>((resolve) => {
       resolveReplyStarted = resolve;
@@ -1891,6 +1987,9 @@ describe('OpenCodeAdapter', () => {
         spawnProcess,
         probeCliAvailability: async () => true,
         waitForServerReady: async () => 'http://127.0.0.1:4998',
+        observePermissionState(state) {
+          permissionStates.push(state);
+        },
       },
     );
 
@@ -1909,6 +2008,11 @@ describe('OpenCodeAdapter', () => {
       'interrupted',
     );
     expect(invocations[0]?.process.killSignals).not.toContain('SIGTERM');
+    expect(permissionStates.some((state) => state.replyWaitActive)).toBe(true);
+    expect(permissionStates.at(-1)).toEqual({
+      activeRequests: 0,
+      replyWaitActive: false,
+    });
     await stream.next();
 
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
@@ -1919,6 +2023,10 @@ describe('OpenCodeAdapter', () => {
     expect(replyCancelled).toBe(true);
     expect(closeCalls).toBe(1);
     expect(shutdownCalls).toBe(1);
+    expect(permissionStates.at(-1)).toEqual({
+      activeRequests: 0,
+      replyWaitActive: false,
+    });
   });
 
   it('bounds stuck iterator and SDK cleanup after terminating the managed server', async () => {

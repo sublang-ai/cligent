@@ -292,7 +292,8 @@ including unknown permission names:
 | `mode: 'auto'` and the `once` reply succeeds | no `permission_request`; after confirmation, exactly one `opencode:permission_decision` with native request and session identifiers, permission name, patterns, correlated tool-use identifier, `decision: 'once'`, `automated: true`, normalized input, and optional reason |
 | outside auto mode before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
 | outside auto mode and the `reject` reply succeeds | no automated-decision extension after that request |
-| request already resolved | no second reply or event |
+| same composite session/request identity repeated before its matching `permission.replied` is observed | no second reply or event |
+| same composite identity received after the earlier lifecycle's matching `permission.replied` | resolve it as a later native request lifecycle [[6]] |
 | unrelated session tree | no response or event per [[opencode-6](#opencode-6)] |
 | missing request identifier | non-recoverable `OPENCODE_PERMISSION_REQUEST_INVALID` naming session, missing request, and permission, then error `done` |
 | unavailable route, rejected operation, SDK-result error, or no settlement within five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done` |
@@ -554,12 +555,18 @@ its run-owned control scope through this matrix:
 
 ### opencode-35
 
-While the adapter awaits SSE or a permission response, it shall use one
-run-owned abort signal and bounded correlation state so a missing, failed,
-five-second timed-out, or caller-aborted reply cancels response and stream I/O,
-closes the iterator during bounded terminal cleanup, releases the caller listener,
-and leaves retained wait-control and correlation state bounded independently of
-the number of completed events and permission responses.
+For a run that awaits SSE or a permission response, the adapter shall keep one
+run-owned abort signal and lifecycle-bounded permission state through this
+matrix:
+
+| Transition | State effect |
+| --- | --- |
+| first owned request | retain its composite session/request key and denial correlation while one re-armed response waiter is active |
+| same request repeated before native confirmation | start no second response waiter and preserve the original correlation |
+| successful response awaiting observation of its matching `permission.replied` | retain the active correlation until that native confirmation [[6]], with no completed-response tombstone |
+| matching `permission.replied` | use the active correlation for denial, then release that mapping so completed responses retain no state |
+| failed, five-second timed-out, or caller-aborted response | cancel response and stream I/O, release its active key and response waiter, close the iterator during bounded terminal cleanup, and release the caller listener |
+| terminal cleanup | clear every remaining active key and response waiter |
 
 ### Managed Resource Ownership
 
@@ -970,12 +977,13 @@ this matrix:
 | Concern | Assertions |
 | --- | --- |
 | auto mapping and delivery | no wildcard, present capabilities including denies, omitted capabilities preserved, and version-correct create/update/prompt placement [[opencode-7](#opencode-7)], [[opencode-33](#opencode-33)] |
-| successful root/descendant v1 and v2 asks, including unknown names | once-only native correlation and exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)] |
+| successful root/descendant v1 and v2 asks, including unknown names | 257 sequential native request lifecycles, each repeated before confirmation, plus one identity reused after confirmation receive one native response apiece, preserve each lifecycle's denial correlation, release each confirmed mapping, retain no completed-response state, and clear one unconfirmed mapping at terminal; exact auto extension, or observable request plus reject outside auto [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
 | resumed lineage discovery | recursive whole-deadline traversal, invalid-entry tolerance, and failure-before-prompt [[opencode-34](#opencode-34)] |
 | run ownership evolution | wrapper seeding, task-part child adoption, fresh and resumed lifecycle addition, owned-descendant deletion, unrelated/malformed preservation, child-route identity, and filtered child conversation [[opencode-56](#opencode-56)], [[opencode-6](#opencode-6)] |
 | unrelated or repeated events | no foreign response and no duplicate response |
-| missing identifier or unavailable, failed, SDK-error, or timed-out route | exact permission error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
-| pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, bounds retained state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
+| missing identifier | exact invalid-request error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
+| unavailable, failed, SDK-error, or timed-out route | exact reply error, one error terminal, no automated-decision extension, and request and response-wait state released before the error [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
+| pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, releases request and response-wait state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
 
 ### opencode-55
 
@@ -1041,7 +1049,7 @@ causal report matrix while preserving independently observed `toolUses`
 [3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 'OpenCode 1.18.13 step-finish token split'
 [4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 'OpenCode 1.18.13 token roll-up'
 [5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt input, agent step limit, and tool-permission replacement'
-[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission evaluation'
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission lifecycle and evaluation'
 [7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'
 [8]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/session.ts#L338-L406 'OpenCode 1.18.13 usage cost calculation'
 [9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L276 'OpenCode 1.18.13 title inference'

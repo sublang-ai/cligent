@@ -157,6 +157,10 @@ interface OpenCodeAdapterDeps {
   ) => Promise<string>;
   managedServerTermGraceMs?: number;
   managedServerKillGraceMs?: number;
+  observePermissionState?: (state: {
+    activeRequests: number;
+    replyWaitActive: boolean;
+  }) => void;
 }
 
 interface OpenCodePermissionOptions {
@@ -1989,6 +1993,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
   private readonly managedServerKillGraceMs: number;
 
+  private readonly observePermissionState?: NonNullable<
+    OpenCodeAdapterDeps['observePermissionState']
+  >;
+
   constructor(
     config: OpenCodeAdapterConfig = {},
     deps: OpenCodeAdapterDeps = {},
@@ -2012,6 +2020,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       deps.managedServerTermGraceMs ?? DEFAULT_MANAGED_SERVER_TERM_GRACE_MS;
     this.managedServerKillGraceMs =
       deps.managedServerKillGraceMs ?? DEFAULT_MANAGED_SERVER_KILL_GRACE_MS;
+    this.observePermissionState = deps.observePermissionState;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -2203,7 +2212,20 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       string,
       { toolUseId: string; toolName: string }
     >();
-    const repliedPermissionRequests = new Set<string>();
+    const reportPermissionState = (): void => {
+      if (!this.observePermissionState) return;
+      try {
+        this.observePermissionState({
+          activeRequests: permissionRequests.size,
+          replyWaitActive: abortPermissionWait !== undefined,
+        });
+      } catch {
+        // Diagnostic observation cannot alter adapter behavior or cleanup.
+      }
+    };
+    const releasePermissionRequest = (requestKey: string): void => {
+      if (permissionRequests.delete(requestKey)) reportPermissionState();
+    };
     const permissionRequestKey = (
       permissionSessionId: string,
       requestId: string,
@@ -2215,15 +2237,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       if (eventSessionId || !requestId) return eventSessionId ?? sessionId;
       for (const ownedSessionId of ownedSessionIds) {
         const requestKey = permissionRequestKey(ownedSessionId, requestId);
-        if (
-          permissionRequests.has(requestKey) ||
-          repliedPermissionRequests.has(requestKey)
-        ) {
-          return ownedSessionId;
-        }
+        if (permissionRequests.has(requestKey)) return ownedSessionId;
       }
       return sessionId;
     };
+    reportPermissionState();
 
     const propagateCausality = (): void => {
       causalPromptKeys.clear();
@@ -4590,12 +4608,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             event.pattern,
           );
 
+          let requestKey: string | undefined;
           if (requestId) {
-            const requestKey = permissionRequestKey(
-              permissionSessionId,
-              requestId,
-            );
-            if (repliedPermissionRequests.has(requestKey)) {
+            requestKey = permissionRequestKey(permissionSessionId, requestId);
+            if (permissionRequests.has(requestKey)) {
               continue;
             }
             // permission.replied carries only requestID; remember which
@@ -4607,6 +4623,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 toolUseId,
               toolName,
             });
+            reportPermissionState();
           }
 
           if (options?.permissions?.mode !== 'auto') {
@@ -4624,6 +4641,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (abortRequested || options?.abortSignal?.aborted) {
+            if (requestKey) releasePermissionRequest(requestKey);
             yield* drainPendingContent(true);
             startKnownSessionAbort();
             yield createEvent(
@@ -4727,11 +4745,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             break;
           }
 
-          const requestKey = permissionRequestKey(
-            permissionSessionId,
-            requestId,
-          );
-          repliedPermissionRequests.add(requestKey);
+          requestKey ??= permissionRequestKey(permissionSessionId, requestId);
 
           const decision =
             options?.permissions?.mode === 'auto' ? 'once' : 'reject';
@@ -4757,12 +4771,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 if (replyTimeout) clearTimeout(replyTimeout);
                 if (abortPermissionWait === abortCurrentReply) {
                   abortPermissionWait = undefined;
+                  reportPermissionState();
                 }
                 resolve(result);
               };
               const abortCurrentReply = () => finish({ kind: 'abort' });
 
               abortPermissionWait = abortCurrentReply;
+              reportPermissionState();
               replyPromise.then(
                 () => finish({ kind: 'replied' }),
                 (error: unknown) => finish({ kind: 'error', error }),
@@ -4802,6 +4818,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             abortRequested ||
             options?.abortSignal?.aborted
           ) {
+            releasePermissionRequest(requestKey);
             replyPromise.catch(() => {});
             yield* drainPendingContent(true);
             startKnownSessionAbort();
@@ -4826,6 +4843,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
 
           if (replyRace.kind === 'error' || replyRace.kind === 'timeout') {
+            releasePermissionRequest(requestKey);
             // Cancel the failed response request and paired SSE transport
             // before yielding queued output. The caller may suspend the
             // generator at that yield, but native I/O must already be stopped.
@@ -4935,7 +4953,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // A reply is terminal correlation state regardless of decision.
             // Keeping successful `once` replies would grow the correlation
             // state for the lifetime of a long-running session.
-            permissionRequests.delete(
+            releasePermissionRequest(
               permissionRequestKey(permissionSessionId, requestId),
             );
           }
@@ -5230,6 +5248,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } finally {
+      abortPermissionWait = undefined;
+      permissionRequests.clear();
+      reportPermissionState();
+
       if (options?.abortSignal && callerAbortListenerInstalled) {
         options.abortSignal.removeEventListener('abort', onAbort);
         callerAbortListenerInstalled = false;
