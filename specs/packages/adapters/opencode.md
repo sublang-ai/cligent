@@ -40,7 +40,8 @@ configured server mode through this matrix:
 ### opencode-22
 
 Where the OpenCode SDK is not installed and neither tool-list field is
-present, when `run()` is called, the adapter shall throw
+present, when SDK loading fails before caller cancellation is observed, the
+adapter shall throw
 `OpenCodeAdapter requires @opencode-ai/sdk. Install it to use this adapter.`,
 appending the loader's `Error` message when one exists.
 
@@ -776,7 +777,7 @@ matrix:
 | managed startup | exact `opencode serve --hostname <host> --port <port>`, cwd, readiness wait, and discovered URL before client creation [[opencode-4](#opencode-4)], [[opencode-8](#opencode-8)] |
 | external startup | no child spawn and caller URL used [[opencode-4](#opencode-4)] |
 | ordinary managed teardown | `SIGTERM` before bounded SDK cleanup [[opencode-36](#opencode-36)] |
-| caller already aborted or abort during pending SDK loading | no prohibited later work, one interrupted terminal, no child signal, and caller-listener release [[opencode-9](#opencode-9)], [[opencode-35](#opencode-35)] |
+| caller already aborted or abort during pending SDK loading | no prohibited later work, one interrupted terminal, and no child signal [[opencode-9](#opencode-9)]; caller-listener release [[opencode-42](#opencode-42)] |
 | caller abort during non-settling managed readiness | run-owned signal cancellation, no client/session/prompt work, interrupted `done` before `SIGTERM`, and bounded `SIGKILL` escalation [[opencode-9](#opencode-9)], [[opencode-36](#opencode-36)] |
 | caller abort during a stream wait | preempt the active wait and preserve [[opencode-9](#opencode-9)] terminal-before-signal order |
 | managed child crash before or after readiness | `OPENCODE_SERVER_EXIT`, then error `done`, then cleanup [[opencode-10](#opencode-10)] |
