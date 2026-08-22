@@ -923,7 +923,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
     itemType === 'tool_result' ||
     itemType === 'function_call_result' ||
     itemType === 'tool_output';
-  const hasContentBlocks = content.length > 0 && !isTopLevelToolResult;
+  const hasContentBlocks = content.length > 0;
 
   if (!hasContentBlocks) {
     if (topText) {
@@ -936,10 +936,6 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
       itemType === 'tool_use'
     ) {
       pushToolUse(item, events);
-    }
-
-    if (isTopLevelToolResult) {
-      pushToolResult(item, events);
     }
 
     if (itemType === 'file_change' || itemType === 'file.changed') {
@@ -997,6 +993,10 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
       events.push({ type: 'text', payload: { content: topText } });
     }
     events.push(...contentEvents);
+  }
+
+  if (isTopLevelToolResult) {
+    pushToolResult(item, events);
   }
 
   return events;

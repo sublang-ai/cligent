@@ -1199,8 +1199,12 @@ describe('CodexAdapter', () => {
     ).toEqual(statusCases.map(([, expected]) => expected));
   });
 
-  it('preserves array content on a top-level legacy tool result', async () => {
-    const arrayOutput = [{ type: 'text', text: 'array output' }, { code: 0 }];
+  it('preserves top-level result arrays alongside their content events', async () => {
+    const arrayOutput = [
+      { type: 'output_text', text: 'mirrored output' },
+      { type: 'output_text', text: 'block-only output' },
+      { code: 0 },
+    ];
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
         events: [
@@ -1211,6 +1215,7 @@ describe('CodexAdapter', () => {
               tool_call_id: 'array-result',
               name: 'array_tool',
               status: 'success',
+              text: 'mirrored output',
               content: arrayOutput,
             },
           },
@@ -1228,10 +1233,18 @@ describe('CodexAdapter', () => {
     const events = await collect(adapter.run('prompt'));
     expect(events.map((event) => event.type)).toEqual([
       'init',
+      'text',
+      'text',
       'tool_result',
       'done',
     ]);
-    expect(toolResultPayload(events[1])).toEqual({
+    expect(events[1]).toMatchObject({
+      payload: { content: 'mirrored output' },
+    });
+    expect(events[2]).toMatchObject({
+      payload: { content: 'block-only output' },
+    });
+    expect(toolResultPayload(events[3])).toEqual({
       toolName: 'array_tool',
       toolUseId: 'array-result',
       status: 'success',
