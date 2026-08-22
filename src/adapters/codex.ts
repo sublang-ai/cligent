@@ -858,6 +858,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
   const events: NormalizedItemEvent[] = [];
 
   const item = asRecord(itemRaw) as CodexItem;
+  const itemType = asString(item.type);
   const content = Array.isArray(item.content) ? item.content : [];
   const topText = asString(item.text);
 
@@ -895,7 +896,8 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
         ? 'denied'
         : source.isError === true ||
             source.is_error === true ||
-            statusText === 'error'
+            statusText === 'error' ||
+            statusText === 'failed'
           ? 'error'
           : 'success';
 
@@ -917,8 +919,11 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
     });
   };
 
-  const itemType = asString(item.type);
-  const hasContentBlocks = content.length > 0;
+  const isTopLevelToolResult =
+    itemType === 'tool_result' ||
+    itemType === 'function_call_result' ||
+    itemType === 'tool_output';
+  const hasContentBlocks = content.length > 0 && !isTopLevelToolResult;
 
   if (!hasContentBlocks) {
     if (topText) {
@@ -933,11 +938,7 @@ function parseItemCompleted(itemRaw: unknown): NormalizedItemEvent[] {
       pushToolUse(item, events);
     }
 
-    if (
-      itemType === 'tool_result' ||
-      itemType === 'function_call_result' ||
-      itemType === 'tool_output'
-    ) {
+    if (isTopLevelToolResult) {
       pushToolResult(item, events);
     }
 

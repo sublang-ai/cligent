@@ -1151,6 +1151,94 @@ describe('CodexAdapter', () => {
     expect(done.durationMs).toBe(222);
   });
 
+  it('maps legacy tool-result status values case-insensitively', async () => {
+    const statusCases = [
+      ['FaIlEd', 'error'],
+      ['ERROR', 'error'],
+      ['DeNiEd', 'denied'],
+      ['SuCcEsS', 'success'],
+    ] as const;
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'item.completed',
+            item: {
+              type: 'message',
+              content: statusCases.map(([status], index) => ({
+                type: 'tool_result',
+                tool_call_id: `status-${index}`,
+                name: 'status_tool',
+                status,
+                output: { status },
+              })),
+            },
+          },
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_result',
+      'tool_result',
+      'tool_result',
+      'tool_result',
+      'done',
+    ]);
+    expect(
+      events.slice(1, 5).map((event) => toolResultPayload(event).status),
+    ).toEqual(statusCases.map(([, expected]) => expected));
+  });
+
+  it('preserves array content on a top-level legacy tool result', async () => {
+    const arrayOutput = [{ type: 'text', text: 'array output' }, { code: 0 }];
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          {
+            type: 'item.completed',
+            item: {
+              type: 'tool_result',
+              tool_call_id: 'array-result',
+              name: 'array_tool',
+              status: 'success',
+              content: arrayOutput,
+            },
+          },
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+            },
+          },
+        ],
+      }),
+    });
+
+    const events = await collect(adapter.run('prompt'));
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'tool_result',
+      'done',
+    ]);
+    expect(toolResultPayload(events[1])).toEqual({
+      toolName: 'array_tool',
+      toolUseId: 'array-result',
+      status: 'success',
+      output: arrayOutput,
+    });
+  });
+
   it('preserves item.completed content block order', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
