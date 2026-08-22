@@ -1587,6 +1587,126 @@ describe('KimiAdapter', () => {
     expect(cleanupFailures[0]?.message).toContain('did not exit');
   });
 
+  it('reports abort cleanup failures through the default diagnostic', async () => {
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      exitCode: 7,
+      inputEndDelayMs: 1,
+      prompt: async () => {
+        controller.abort();
+        return { stopReason: 'end_turn' };
+      },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+      // Capture the default cleanup diagnostic without writing test output.
+    });
+
+    try {
+      const events = await collect(
+        new KimiAdapter({
+          spawnProcess: fake.spawn,
+          processStdinExitGraceMs: 5,
+          processSignalExitGraceMs: 5,
+        }).run('Report cleanup', { abortSignal: controller.signal }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledWith(
+        'Kimi ACP cleanup after caller abort failed: Kimi ACP process exited with code 7',
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('replaces the default abort cleanup diagnostic', async () => {
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      exitCode: 7,
+      inputEndDelayMs: 1,
+      prompt: async () => {
+        controller.abort();
+        return { stopReason: 'end_turn' };
+      },
+    });
+    const reportCleanupFailure = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+      // A supplied reporter replaces the default console diagnostic.
+    });
+
+    try {
+      const events = await collect(
+        new KimiAdapter({
+          spawnProcess: fake.spawn,
+          processStdinExitGraceMs: 5,
+          processSignalExitGraceMs: 5,
+          reportCleanupFailure,
+        }).run('Replace cleanup report', { abortSignal: controller.signal }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+      expect(reportCleanupFailure).toHaveBeenCalledTimes(1);
+      expect(reportCleanupFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Kimi ACP process exited with code 7',
+        }),
+      );
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('contains a throwing replacement cleanup diagnostic', async () => {
+    const lifecycle: string[] = [];
+    const controller = new AbortController();
+    const fake = new FakeKimi({
+      ignoreInputEnd: true,
+      ignoreSigterm: true,
+      lifecycle,
+      prompt: async () => {
+        controller.abort();
+        return { stopReason: 'end_turn' };
+      },
+    });
+    const reportCleanupFailure = vi.fn((_error: Error) => {
+      throw new Error('diagnostic sink failed');
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+      // A supplied reporter replaces the default console diagnostic.
+    });
+
+    try {
+      const events = await collect(
+        new KimiAdapter({
+          spawnProcess: fake.spawn,
+          processStdinExitGraceMs: 5,
+          processSignalExitGraceMs: 5,
+          reportCleanupFailure,
+        }).run('Contain diagnostic', { abortSignal: controller.signal }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+      expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+      expect(fake.children[0]?.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+      expect(lifecycle.filter((entry) => entry === 'stdin:end')).toHaveLength(
+        1,
+      );
+      expect(reportCleanupFailure).toHaveBeenCalledTimes(1);
+      expect(reportCleanupFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Kimi ACP process required SIGKILL during cleanup',
+        }),
+      );
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('keeps caller-abort priority while awaiting post-prompt close', async () => {
     const lifecycle: string[] = [];
     const cleanupFailures: Error[] = [];
@@ -1623,7 +1743,7 @@ describe('KimiAdapter', () => {
     expect(cleanupFailures).toEqual([]);
   });
 
-  it('holds close-wait escalation until the abort terminal is delivered', async () => {
+  it('bounds abort teardown when terminal consumption stalls', async () => {
     const lifecycle: string[] = [];
     const controller = new AbortController();
     const fake = new FakeKimi({ ignoreInputEnd: true, lifecycle });
@@ -1639,13 +1759,17 @@ describe('KimiAdapter', () => {
       await new Promise((resolveWait) => setTimeout(resolveWait, 1));
     }
     controller.abort();
-    await new Promise((resolveWait) => setTimeout(resolveWait, 30));
     expect(fake.children[0]?.killSignals).toEqual([]);
+
+    await new Promise<void>((resolveHandoff) => {
+      setImmediate(resolveHandoff);
+    });
+    expect(fake.children[0]?.killSignals).toEqual(['SIGTERM']);
+    expect(lifecycle).toContain('close');
 
     const terminal = await stream.next();
     expect(terminal.value?.type).toBe('done');
     expect(terminal.value?.payload.status).toBe('interrupted');
-    expect(fake.children[0]?.killSignals).toEqual([]);
 
     const completion = await stream.next();
     expect(completion.done).toBe(true);

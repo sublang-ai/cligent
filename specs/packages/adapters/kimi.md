@@ -145,7 +145,7 @@ When a Kimi run reaches preflight or terminal selection, the adapter shall selec
 | --- | --- | --- |
 | caller signal already aborted at adapter entry | one interrupted `done` before runtime and option validation; no child spawn | adapter entry |
 | no entry abort; runtime or option validation rejects | propagate the rejection before spawning or emitting events | validation rejection |
-| caller abort after spawn and before another terminal cause commits | one interrupted `done` ahead of every native stop, authentication, protocol, setup, prompt, process, or cleanup candidate; after an active-prompt drain, deliver it before abort-initiated final child termination; report any later abnormal or forced-cleanup failure only through [[kimi-25](#kimi-25)]'s secondary diagnostic sink | caller-signal observation |
+| caller abort after spawn and before another terminal cause commits | one interrupted `done` ahead of every native stop, authentication, protocol, setup, prompt, process, or cleanup candidate; after an active-prompt drain, queue it before abort-initiated final child termination and apply [[kimi-25](#kimi-25)]'s bounded delivery handoff; report any later abnormal or forced-cleanup failure only through [[kimi-35](#kimi-35)] | caller-signal observation |
 | no caller abort; authentication-classified ACP failure | `KIMI_AUTH_REQUIRED` and error `done` through [[kimi-21](#kimi-21)] | ACP operation rejection |
 | no higher candidate; protocol failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-27](#kimi-27)] and [[kimi-29](#kimi-29)] | protocol rejection, before forced teardown |
 | no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)], overriding every native stop including `cancelled` | spawn/process failure, close observation, or the decision to escalate beyond `SIGTERM` |
@@ -181,6 +181,16 @@ When [[kimi-33](#kimi-33)] selects a non-authentication child spawn, ACP operati
 ### kimi-28
 
 For every terminal path selected by [[kimi-33](#kimi-33)], the adapter shall emit its applicable non-recoverable unified error followed by exactly one `done` carrying elapsed duration, [[kimi-12](#kimi-12)]'s resume selection, [[kimi-13](#kimi-13)]'s usage, and [[kimi-19](#kimi-19)]'s accumulated result when non-empty.
+
+### kimi-35
+
+When [[kimi-25](#kimi-25)]'s caller-abort cleanup discovers a secondary failure after queuing interrupted `done`, the adapter shall select its diagnostic sink through this matrix:
+
+| Reporter state | Outcome |
+| --- | --- |
+| constructor supplies a non-throwing `reportCleanupFailure` | invoke that reporter exactly once with the exact cleanup `Error`; call no default reporter |
+| constructor omits `reportCleanupFailure` | call `console.error` exactly once with `Kimi ACP cleanup after caller abort failed: ${error.message}` |
+| supplied reporter throws | suppress that exception, call no default reporter, preserve interrupted `done`, emit no later event, and start no further cleanup |
 
 ### Permission Mapping
 
@@ -269,8 +279,8 @@ When caller abort is requested before another terminal cause commits, the adapte
 | Abort phase | Outcome |
 | --- | --- |
 | signal already aborted at adapter entry | select [[kimi-33](#kimi-33)]'s interruption before preflight, spawn no child, and yield exactly one interrupted `done` |
-| child spawned but session setup incomplete | select interruption, deliver exactly one interrupted `done`, and terminate the child through [[kimi-25](#kimi-25)] |
-| backend session known | send `session/cancel` exactly once, suppress any later configuration or prompt stage, continue draining an active prompt response and queued updates when possible, deliver exactly one [[engine-73](../engine.md#engine-73)] interrupted `done` before abort-initiated final child termination, and report only [[kimi-25](#kimi-25)]'s secondary cleanup diagnostic afterward |
+| child spawned but session setup incomplete | select interruption, queue exactly one interrupted `done`, and terminate the child after [[kimi-25](#kimi-25)]'s bounded delivery handoff |
+| backend session known | send `session/cancel` exactly once, suppress any later configuration or prompt stage, continue draining an active prompt response and queued updates when possible, queue exactly one [[engine-73](../engine.md#engine-73)] interrupted `done`, begin final child termination only after [[kimi-25](#kimi-25)]'s bounded delivery handoff, and report only [[kimi-35](#kimi-35)]'s secondary diagnostic afterward |
 
 ### Resume Token
 
@@ -340,12 +350,13 @@ After a run has spawned a child, cleanup shall perform this containment sequence
 | --- | --- |
 | cleanup begins before the terminal cause commits | retain the abort listener, end stdin, and await close for a bounded grace |
 | terminal cause commits | remove the abort listener and close protocol resources with the child or after final grace |
+| caller-abort terminal queued | wait until an active consumer advances past it or one event-loop handoff completes, whichever occurs first; then continue containment without requiring another iterator request |
 | child still open after the first grace | send `SIGTERM` and await another bounded grace |
 | child still open after the second grace | send `SIGKILL` and await one final grace |
 | terminal prompt response already selected when cleanup sends `SIGTERM` | preserve the selected outcome |
 | cleanup already in progress or complete | reuse its one promise and outcome; repeat no protocol close, stdin end, or process signal |
 | process requires `SIGKILL` or remains alive after final grace, with no caller abort or higher authentication / protocol candidate selected | surface the failure through [[kimi-29](#kimi-29)] and select error through [[kimi-33](#kimi-33)] |
-| caller-aborted run later closes nonzero or on an unexpected signal, requires `SIGKILL`, or survives final grace | preserve its already-delivered interrupted terminal and report the exact cleanup failure once through the adapter's secondary diagnostic sink, without emitting another event or starting another cleanup sequence |
+| caller-aborted run later closes nonzero or on an unexpected signal, requires `SIGKILL`, or survives final grace | preserve its queued interrupted terminal and report the exact cleanup failure once through [[kimi-35](#kimi-35)], without emitting another event or starting another cleanup sequence |
 
 ## Verification
 
@@ -379,14 +390,24 @@ Given caller abort at each lifecycle phase, when the adapter runs, it shall sati
 
 ### kimi-34
 
-Under [[kimi-230](#kimi-230)]'s controlled ACP-subprocess harness, given each primary candidate paired with each close state, when the adapter runs, the check shall assert exactly one [[kimi-25](#kimi-25)] containment sequence, exactly one terminal, terminal-versus-close order, exact diagnostic cardinality, and this [[kimi-33](#kimi-33)] matrix:
+Under [[kimi-230](#kimi-230)]'s controlled ACP-subprocess harness, given each primary candidate paired with each close state, when the adapter runs, the check shall assert exactly one [[kimi-25](#kimi-25)] containment sequence, exactly one terminal, terminal-versus-close order, exact [[kimi-35](#kimi-35)] diagnostic cardinality, and this [[kimi-33](#kimi-33)] matrix:
 
 | Primary candidate | clean or adapter-owned `SIGTERM` close | nonzero close | unexpected-signal close | requires `SIGKILL`, including one caller-aborted child surviving final grace |
 | --- | --- | --- | --- | --- |
 | `end_turn` | no error; success `done` after close [[kimi-6](#kimi-6)] | `KIMI_ACP_ERROR`, then error `done` after close [[kimi-29](#kimi-29)] | same | same, with one `SIGTERM`, one `SIGKILL`, and no repeated cleanup |
 | `refusal` | `KIMI_REFUSAL`, then error `done` after close [[kimi-6](#kimi-6)] | `KIMI_ACP_ERROR` rather than refusal, then error `done` after close [[kimi-29](#kimi-29)] | same | same, bounded and idempotent |
 | native `cancelled` | no error; interrupted `done` after close [[kimi-6](#kimi-6)] | `KIMI_ACP_ERROR`, then error `done` after close [[kimi-29](#kimi-29)] | same | same, bounded and idempotent |
-| caller abort, including during the post-prompt close wait before close or signal escalation commits another cause | no error; interrupted `done` delivered before abort-initiated stdin close or child termination [[kimi-11](#kimi-11)] | the same terminal order and one later secondary cleanup diagnostic, with no later unified event | same | the same terminal order, exact one-time signal sequence and diagnostic, and bounded completion even when the child survives final grace |
+| caller abort, including during the post-prompt close wait before close or signal escalation commits another cause | no error; interrupted `done` queued before abort-initiated stdin close or child termination, delivered first while the consumer advances, and containment continuing after one event-loop handoff when consumption stalls [[kimi-11](#kimi-11)] | the same terminal order and one later secondary cleanup diagnostic, with no later unified event | same | the same terminal order, exact one-time signal sequence and diagnostic, and bounded completion even when the child survives final grace |
+
+### kimi-36
+
+Under [[kimi-230](#kimi-230)]'s controlled ACP-subprocess harness, given caller abort followed by a cleanup failure, when each [[kimi-35](#kimi-35)] reporter state is selected, the check shall assert this matrix:
+
+| Reporter state | Assertions |
+| --- | --- |
+| supplied non-throwing reporter | one call with the exact cleanup `Error`, no default report, and interrupted `done` unchanged |
+| omitted reporter | one exact default `console.error` diagnostic and interrupted `done` unchanged |
+| supplied throwing reporter | one attempted call, no default report, the reporter exception suppressed, one cleanup sequence, interrupted `done` unchanged, and no later event |
 
 ### kimi-204
 
@@ -439,7 +460,7 @@ Given the installed Kimi target and fake ACP subprocesses whose protocol traffic
 | --- | --- |
 | package and target | `KimiAdapter` loads with its typed identity, the official SDK public surface compiles at [[kimi-15](#kimi-15)]'s paired target, and no private SDK build path is consumed [[kimi-1](#kimi-1)] |
 | availability | the real default probe invokes only `kimi --version`, respects its timeout and version floor, selects every result in [[kimi-2](#kimi-2)], and starts neither ACP nor authentication |
-| process | one child for every run reaching invocation, with [[kimi-3](#kimi-3)]'s cwd, environment, pipes, and drained bounded stderr; one [[kimi-25](#kimi-25)] cleanup sequence shall either observe its close or report its [[kimi-33](#kimi-33)] primary or secondary outcome after final grace |
+| process | one child for every run reaching invocation, with [[kimi-3](#kimi-3)]'s cwd, environment, pipes, and drained bounded stderr; one [[kimi-25](#kimi-25)] cleanup sequence shall either observe its close or report its [[kimi-33](#kimi-33)] primary or [[kimi-35](#kimi-35)] secondary outcome after final grace |
 | wire | split, coalesced, and unterminated-final-line framing; oversized decoded buffers; every invalid JSON-RPC object, envelope, id, pending response, error, and consumed payload; unknown fields and update cases; optional usage; and handled pre-session or cross-session traffic select [[kimi-27](#kimi-27)]'s exact outcome, with each protocol failure terminating without exposing private traffic |
 | setup | protocol version 1 and empty capabilities succeed while another negotiated version rejects; fresh and resumed session selection and ordered configuration satisfy [[kimi-14](#kimi-14)], [[kimi-4](#kimi-4)], and [[kimi-16](#kimi-16)] |
 | prompt | `init` carries [[kimi-26](#kimi-26)]'s backend session identity, has every [[kimi-17](#kimi-17)] fallback and, per [[kimi-16](#kimi-16)], [[kimi-30](#kimi-30)], and [[kimi-5](#kimi-5)], precedes one-text-block prompting and every normalized event |

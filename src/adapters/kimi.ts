@@ -761,6 +761,18 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       terminalDelivered = true;
       resolveTerminalDelivered?.();
     };
+    let terminalHandoff: Promise<void> | undefined;
+    const waitForTerminalHandoff = (): Promise<void> => {
+      // kimi-25: an active consumer advances past the queued terminal first,
+      // while one handoff keeps a stalled iterator from blocking containment.
+      terminalHandoff ??= Promise.race([
+        terminalDelivery,
+        new Promise<void>((resolveHandoff) => {
+          setImmediate(resolveHandoff);
+        }),
+      ]);
+      return terminalHandoff;
+    };
 
     const commitCallerAbort = (): boolean => {
       if (terminalCause === 'non-abort') return false;
@@ -893,7 +905,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (!processExited) {
           const firstWait = await waitForCloseOrEscalation();
           if (firstWait !== 'closed') {
-            if (terminalCause === 'caller-abort') await terminalDelivery;
+            if (terminalCause === 'caller-abort') {
+              await waitForTerminalHandoff();
+            }
             sendSigterm();
             if (
               !(await waitForClose(closePromise, this.processSignalExitGraceMs))
@@ -943,7 +957,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     const finalizeAbort = (forceShutdown: boolean): Promise<void> => {
       abortFinalizationPromise ??= (async () => {
         finish('interrupted');
-        await terminalDelivery;
+        await waitForTerminalHandoff();
         reachAbortDeadline();
         if (forceShutdown) requestEscalation();
         reportSecondaryCleanupFailure(await shutdownProcess());

@@ -46,7 +46,9 @@ Terminal selection shall use the first applicable row of this priority table:
 
 The first observed caller abort or non-provisional failure shall commit its terminal cause synchronously before initiating forced teardown; a native stop remains provisional until clean close or adapter-owned `SIGTERM` cleanup commits it, and a later failure may still replace a lower-priority non-abort candidate.
 After backend identity is known and caller abort commits first, abort shall send ACP `session/cancel` exactly once and drain the active prompt result and queued updates when possible.
-The interrupted `done` shall be delivered before abort-initiated final child termination begins, and a cleanup failure discovered afterward shall be reported exactly once to a replaceable secondary diagnostic sink without adding a post-terminal event or replacing the interrupted outcome.
+The interrupted `done` shall be queued before abort-initiated final child termination begins; containment shall wait until an active consumer advances past it or one event-loop handoff completes, whichever occurs first, and shall never require another iterator request.
+A cleanup failure discovered afterward shall invoke a constructor-supplied `reportCleanupFailure` exactly once with the cleanup `Error`, or shall make one default `console.error` call with `Kimi ACP cleanup after caller abort failed: ${error.message}` when no reporter is supplied, without adding a post-terminal event or replacing the interrupted outcome.
+A supplied reporter's exception shall be suppressed without restarting containment or invoking the default reporter.
 Containment shall retain the caller's abort listener until a terminal cause commits and remove it at that boundary.
 Every path shall share one idempotent containment sequence even when the child survives final grace.
 
@@ -77,7 +79,7 @@ Cligent targets the maintained Kimi Code product without coupling to a legacy or
 The ACP session identifier is available before model work begins, so fresh aborts can preserve continuity.
 Text, tools, permissions, model selection, and cancellation remain structured, while raw Kimi thought content stays outside UES.
 One short-lived process per run preserves adapter thread safety and avoids a resident Kimi service.
-Caller cancellation remains the terminal cause of an aborted run, while abnormal or forced cleanup remains observable as secondary diagnostic detail and cannot restart containment.
+Caller cancellation remains the terminal cause of an aborted run, while a bounded delivery handoff keeps containment live and abnormal or forced cleanup remains observable as secondary diagnostic detail that cannot restart it.
 Without caller cancellation, process failure takes precedence over a provisional native outcome, including native cancellation.
 Kimi users receive a narrower permission, tool-filter, and effort surface than adapters whose vendor APIs expose deterministic per-run controls; unsupported requests fail before backend invocation.
 The generic ACP SDK and its schema peer become production dependencies, while Kimi Code itself remains an external CLI with an exact CI conformance target.
