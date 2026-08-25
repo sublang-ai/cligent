@@ -82,7 +82,6 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 // option merging, and protocol hardening.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
 });
 
 for await (const event of agent.run('Refactor auth module')) {
