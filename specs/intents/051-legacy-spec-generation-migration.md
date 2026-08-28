@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 41 are done; tasks 42 through 53 remain.
+Tasks 1 through 42 are done; tasks 43 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -99,6 +99,7 @@ Task 38 establishes caller cancellation before OpenCode SDK loading, preempts pe
 Task 39 retains each OpenCode permission request's denial correlation through an accepted reply or exact reply-time disappearance until matching native confirmation, consults the provider's pending registry to suppress both pre-confirmation repeats and post-confirmation stale replays while admitting a genuinely pending later lifecycle, gives registry lookup and reply one shared five-second provider-operation budget and permission-specific failure path without charging downstream suspension, gives an already-settled operation precedence at the budget boundary, retains zero completed-response tombstones, releases failed, timed-out, aborted, and terminal request and wait state, and adds a high-volume sequence with 257 distinct completed requests that closes task 49's bounded-correlation handoff.
 Task 40 makes the managed process-lifecycle observer authoritative during readiness, distinguishes child-process errors from genuine closes so spawn failures keep [[opencode-28](../packages/adapters/opencode.md#opencode-28)]'s exact `OPENCODE_STREAM_ERROR`, carries a close's exact code and signal through the same `OPENCODE_SERVER_EXIT` path used after readiness, preserves caller-abort precedence, and closes task 49's pre-readiness crash handoff with terminal-before-cleanup lifecycle coverage.
 Task 41 records the owner's choice to preserve optional role attribution in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) and [DR-003](../decisions/003-role-scoped-session-management.md), aligns [[engine-14](../packages/engine.md#engine-14)] so every parallel event carries backend `agent` while `role` follows [[engine-4](../packages/engine.md#engine-4)], leaves the released runtime and types unchanged, and narrows task 49's handoff to exact interleaving after asserting configured and omitted roles on every event.
+Task 42 records the owner's portable configured-command identity in [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), aligns [[engine-25](../packages/engine.md#engine-25)], [[engine-26](../packages/engine.md#engine-26)], and [[engine-118](../packages/engine.md#engine-118)] so peers retain their exact resolved tree while CLIs retain `target.command` without inventing a host-selected path, makes CLI readiness and below-floor diagnostics name that command, and narrows task 49 after isolated peer and CLI assertions.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -467,7 +468,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `engine` | `engine-113`'s exact failing-stream sequence and error terminal; | |
     | `engine` | `engine-115`'s ordered-ladder type assertion plus Gemini and OpenCode direct, `Cligent`, and heterogeneous-parallel vocabulary cases; | |
     | `engine` | `engine-116`'s exact Claude `minimal`-to-`low` lossy-note disclosure; | |
-    | `engine` | `engine-118`'s `missing` verdict and false compatibility, satisfied load-success half, `untested` and `unknown` verdict, load-success, and true-compatibility rows, exact installed/range/tested/repair payload fields, and exact resolved-location reporting, with task 42 owning the missing CLI path; | |
+    | `engine` | `engine-118`'s `missing` verdict and false compatibility, satisfied load-success half, `untested` and `unknown` verdict, load-success, and true-compatibility rows, and exact installed/range/tested/repair payload fields; | |
     | `engine` | `engine-122`'s missing-`toolUses` compile rejection; | |
     | `engine` | `engine-69`'s interrupted and pre-aborted synthetic usage shape plus distinct-count behavior for duplicate tool identifiers across every synthetic terminal path; | |
     | `engine` | `engine-70`'s valid greater-than-one request-count interpretation and remaining malformed total, detail, request, record, and priced-unit cases; | |

@@ -6,7 +6,11 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shellQuote } from '../shared/shell.js';
 import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
-import { isBelowFloor, readRuntimeVersion } from '../../runtime-version.js';
+import {
+  isBelowFloor,
+  readRuntimeVersion,
+  runtimeIdentity,
+} from '../../runtime-version.js';
 import {
   DEFAULT_ADAPTER_IMPORTS,
   KNOWN_PLAYER_ADAPTERS,
@@ -420,7 +424,7 @@ function unusableRuntimeDetail(
     const installed = readRuntimeVersion(target);
     if (installed === undefined) continue;
     if (isBelowFloor(installed, target)) {
-      return `${target.bundles ?? target.package} ${installed} is installed but this release requires >=${target.supportedFrom}`;
+      return `${runtimeIdentity(target)} ${installed} is installed but this release requires >=${target.supportedFrom}`;
     }
   }
   return undefined;

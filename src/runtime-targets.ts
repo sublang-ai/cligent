@@ -39,12 +39,9 @@ export type RuntimeKind =
   /** An executable found through `PATH`. */
   | 'cli';
 
-export interface RuntimeTarget {
-  readonly kind: RuntimeKind;
+export type RuntimeTarget = {
   /** npm package name; for a `cli`, the package that installs the executable. */
   readonly package: string;
-  /** Executable name for a `cli` runtime. */
-  readonly command?: string;
   /** Lowest supported version — the published peer floor. Blocks below. */
   readonly supportedFrom: string;
   /** Exact version this release verifies. Above it is untested, not unsupported. */
@@ -65,7 +62,21 @@ export interface RuntimeTarget {
    * decide, so a consumer never reconstructs an adapter-to-package mapping.
    */
   readonly repairSpec: string;
-}
+} & (
+  | {
+      readonly kind: 'peer';
+      readonly command?: never;
+    }
+  | {
+      readonly kind: 'cli';
+      /**
+       * Configured executable command. The host resolves it through its
+       * native lookup at spawn time; this command, not an invented
+       * host-specific absolute path, is the portable readiness identity.
+       */
+      readonly command: string;
+    }
+);
 
 export type AgentRuntimeName =
   | 'claude'

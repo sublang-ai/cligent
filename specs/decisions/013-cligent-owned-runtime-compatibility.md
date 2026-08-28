@@ -43,12 +43,13 @@ The supported range's upper bound lives in the descriptor and is enforced at loa
 npm intersects an optional peer range into version selection: a published upper bound silently selects an older SDK, with no error, which is the failure this decision exists to remove.
 
 **The verdict is produced by the loader.**
-Each adapter reads its runtime's version through the same resolution it will actually use, inside the loader `isAvailable()` and `run()` share.
-The gate and the load therefore cannot disagree, and a consumer that already calls `isAvailable()` inherits the check without changing a line.
+Each adapter reads a peer runtime's version through the same package resolution it will actually use and reads a CLI runtime's version by spawning the configured command through the same native lookup mechanism its execution path uses.
+Peer readiness carries the exact resolved `node_modules` tree, while CLI readiness carries the configured command as its portable identity and does not invent a host-selected absolute path that child-process spawning does not expose.
+The `isAvailable()` and `run()` gates apply the same compatibility rule to the identity each native lookup observes, and a consumer that already calls `isAvailable()` inherits the check without changing a line.
 A version that cannot be read is *unknown* and never blocks, because vendored, bundled, and archived layouts are legitimate.
 
 **Readiness is structured, not boolean.**
-The exported verdict distinguishes satisfied, missing, too old, untested, and unknown, and carries the installed version, the required range, the resolved tree, and the repair command.
+The exported verdict distinguishes satisfied, missing, too old, untested, and unknown, and carries the installed version, the required range, the peer's resolved tree or the CLI's configured command identity, and the repair command.
 A consumer renders it; it does not recompute it.
 
 **Cligent states the declaration form, and cannot enforce it.**

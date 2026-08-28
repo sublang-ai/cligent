@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { basename, delimiter, dirname } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -12,13 +14,15 @@ import {
 import {
   assertRuntimeSupported,
   classifyRuntime,
+  describeRuntimeReadiness,
   isAboveTested,
   isBelowFloor,
+  isCliRuntimeSupported,
+  isUnsupportedRuntimeError,
   parseCliVersion,
   readPackageVersion,
   readRuntimeVersion,
-  isCliRuntimeSupported,
-  isUnsupportedRuntimeError,
+  resolvedTreeOf,
   unsupportedRuntimeError,
 } from '../runtime-version.js';
 
@@ -51,6 +55,23 @@ describe('agent runtime targets (package-16)', () => {
   it('is frozen against mutation by a consumer', () => {
     expect(Object.isFrozen(AGENT_RUNTIME_TARGETS)).toBe(true);
     expect(Object.isFrozen(AGENT_RUNTIME_TARGETS.codex[0])).toBe(true);
+  });
+
+  it('requires every CLI target to carry its configured command identity', () => {
+    for (const target of agentRuntimeTargets()) {
+      if (target.kind === 'cli') {
+        expect(target.command.length).toBeGreaterThan(0);
+      }
+    }
+    // @ts-expect-error A CLI descriptor without its command has no identity.
+    const missingCommand: RuntimeTarget = {
+      kind: 'cli',
+      package: '@example/cli-runtime',
+      repairSpec: '@example/cli-runtime@1.0.0',
+      supportedFrom: '1.0.0',
+      tested: '1.0.0',
+    };
+    expect(missingCommand.kind).toBe('cli');
   });
 });
 
@@ -95,6 +116,90 @@ describe('runtime version comparison (engine-25)', () => {
     expect(readRuntimeVersion(AGENT_RUNTIME_TARGETS.codex[0]!)).toMatch(
       /^\d+\.\d+\.\d+/,
     );
+  });
+
+  it('reports a peer tree and a CLI command without inventing a CLI path', () => {
+    const peerVersion = readPackageVersion('zod');
+    const peerTree = resolvedTreeOf('zod');
+    expect(peerVersion).toMatch(/^\d+\.\d+\.\d+/);
+    expect(peerTree).toBeDefined();
+    if (peerVersion === undefined || peerTree === undefined) {
+      throw new Error('expected the installed zod peer and its resolved tree');
+    }
+
+    const peer: RuntimeTarget = {
+      kind: 'peer',
+      package: 'zod',
+      repairSpec: `zod@${peerVersion}`,
+      supportedFrom: '0.0.1',
+      tested: peerVersion,
+    };
+    expect(classifyRuntime(peer, true)).toEqual({
+      state: 'satisfied',
+      target: peer,
+      installed: peerVersion,
+      resolvedFrom: peerTree,
+      repair: { spec: `zod@${peerVersion}`, steps: [] },
+    });
+    expect(
+      unsupportedRuntimeError(
+        peer,
+        '0.0.0',
+        `npm install zod@${peerVersion}`,
+      ).message,
+    ).toBe(
+      `zod 0.0.0 is older than this release of @sublang/cligent supports ` +
+        `(requires >=0.0.1, tested at ${peerVersion}), resolved from ` +
+        `${peerTree}. Repair: npm install zod@${peerVersion}`,
+    );
+
+    const previousPath = process.env.PATH;
+    const command = basename(process.execPath);
+    try {
+      process.env.PATH =
+        `${dirname(process.execPath)}${delimiter}${previousPath ?? ''}`;
+      const cli: RuntimeTarget = {
+        kind: 'cli',
+        package: '@example/cli-runtime',
+        command,
+        repairSpec: '@example/cli-runtime@99.0.0',
+        supportedFrom: '99.0.0',
+        tested: '99.0.0',
+      };
+      const readiness = classifyRuntime(cli, true);
+      expect(readiness).toEqual({
+        state: 'unsupported',
+        target: cli,
+        installed: process.versions.node,
+        repair: { spec: '@example/cli-runtime@99.0.0', steps: [] },
+      });
+      expect(readiness).not.toHaveProperty('resolvedFrom');
+      expect(describeRuntimeReadiness(readiness)).toBe(
+        `${command} ${process.versions.node} is too old ` +
+          '(requires >=99.0.0, tested at 99.0.0)',
+      );
+      let refusal: unknown;
+      try {
+        assertRuntimeSupported(
+          cli,
+          'npm install -g @example/cli-runtime@99.0.0',
+        );
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(Error);
+      expect((refusal as Error).message).toBe(
+        `${command} ${process.versions.node} is older than this release of ` +
+          '@sublang/cligent supports (requires >=99.0.0, tested at 99.0.0). ' +
+          'Repair: npm install -g @example/cli-runtime@99.0.0',
+      );
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
   });
 
   it('parses a version out of CLI output', () => {

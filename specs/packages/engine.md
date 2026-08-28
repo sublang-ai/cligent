@@ -371,14 +371,15 @@ When an adapter evaluates runtime compatibility, it shall select the load outcom
 | Runtime source and observed version | Outcome |
 | --- | --- |
 | package in the installed `@sublang/cligent` tree | read its declared version through the same resolution used to load it |
-| executable found through `PATH` | read the version reported by that executable and apply the same version rules |
-| readable version below the supported floor | refuse with an error naming the package or executable, installed and required versions, resolved `node_modules` tree or executable path, and repair command |
+| configured executable command found through native `PATH` lookup | read the version reported by that command through the same native lookup used to execute it, retaining the configured command as its portable identity rather than inventing a host-selected absolute path |
+| readable peer version below the supported floor | refuse with an error naming the package, installed and required versions, resolved `node_modules` tree, and repair command |
+| readable CLI version below the supported floor | refuse with an error naming the configured command, installed and required versions, and repair command |
 | readable version at or above the supported floor | load unchanged, including when the version is above the tested ceiling |
 | unreadable version | load unchanged because vendored, bundled, or archived layouts remain supported and unreadability is not evidence of incompatibility |
 
 ### engine-26
 
-The public engine API shall expose a runtime-readiness classification carrying the installed version when read, the supported range and tested version from [[package-16](package.md#package-16)], the resolved `node_modules` tree or executable path, and repair commands through this matrix:
+The public engine API shall expose a runtime-readiness classification carrying the installed version when read, the supported range and tested version from [[package-16](package.md#package-16)], a peer's resolved `node_modules` tree as `resolvedFrom` or a CLI's configured command as `target.command`, and repair commands through this matrix:
 
 | Runtime state | Verdict | `adapter.isAvailable()` compatibility |
 | --- | --- | --- |
@@ -617,7 +618,7 @@ Where a TypeScript consumer uses the legacy mutable-registry declarations, the t
 
 ### engine-118
 
-Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, location, repair, and boolean compatibility rows.
+Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
 
 ### engine-119
 

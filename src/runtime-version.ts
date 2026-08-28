@@ -61,7 +61,7 @@ export function readRuntimeVersion(target: RuntimeTarget): string | undefined {
   // walk, so searching the module tree for it always answered "unknown" and
   // left every CLI floor unenforced.
   if (target.kind === 'cli') {
-    return target.command ? readCommandVersion(target.command) : undefined;
+    return readCommandVersion(target.command);
   }
   if (target.bundles) {
     const bundled = readPackageVersion(target.bundles);
@@ -114,18 +114,19 @@ export function isAboveTested(
 
 /**
  * The error raised when a resolved runtime is older than the adapter
- * supports. It names what is installed, what is required, where it resolved
- * from, and the command that repairs it, because the alternative the user
- * otherwise gets is the vendor's own message about a capability that has no
- * apparent connection to a version.
+ * supports. It names the runtime identity, what is installed and required,
+ * the peer tree when applicable, and the command that repairs it, because the
+ * alternative is the vendor's own capability error with no apparent version
+ * connection.
  */
 export function unsupportedRuntimeError(
   target: RuntimeTarget,
   installed: string,
   repair: string,
 ): Error {
-  const named = target.bundles ?? target.package;
-  const tree = resolvedTreeOf(target.package);
+  const named = runtimeIdentity(target);
+  const tree =
+    target.kind === 'peer' ? resolvedTreeOf(target.package) : undefined;
   const error = new Error(
     `${named} ${installed} is older than this release of @sublang/cligent supports ` +
       `(requires >=${target.supportedFrom}, tested at ${target.tested})` +
@@ -152,13 +153,12 @@ export function cligentRoot(): string {
 }
 
 /**
- * Enforces a peer runtime's supported floor after its module has loaded.
+ * Enforces a runtime's supported floor on the direct run path.
  *
- * Called from inside the loader that `isAvailable()` and `run()` share, so
- * the readiness verdict and the load it protects can never disagree — the
- * property DR-012 states and DR-013 preserves by construction rather than by
- * discipline. Memoized per package: the manifest walk is filesystem work and
- * the answer cannot change within a process.
+ * Peer loaders and CLI run paths use the same descriptor, reader, and version
+ * rule as readiness. The observed version is memoized per package, while a
+ * CLI's actual executable selection remains the host's native spawn-time
+ * lookup rather than a persisted absolute path.
  */
 const gateCache = new Map<string, string | undefined>();
 
@@ -192,7 +192,11 @@ export interface RuntimeReadiness {
   readonly target: RuntimeTarget;
   /** The version found, absent when missing or unreadable. */
   readonly installed?: string;
-  /** The `node_modules` tree the runtime resolved from, when known. */
+  /**
+   * The `node_modules` tree a peer runtime resolved from, when known. A CLI's
+   * portable identity remains `target.command`; native spawning does not
+   * expose the host-selected absolute executable path.
+   */
   readonly resolvedFrom?: string;
   /**
    * What repairs this runtime: the package specifier to install, and any
@@ -248,7 +252,7 @@ export function classifyRuntime(
 /** A one-line human summary of a verdict, for a caller that renders text. */
 export function describeRuntimeReadiness(readiness: RuntimeReadiness): string {
   const { target, installed, state } = readiness;
-  const named = target.bundles ?? target.package;
+  const named = runtimeIdentity(target);
   switch (state) {
     case 'satisfied':
       return `${named} ${installed} is supported`;
@@ -263,6 +267,11 @@ export function describeRuntimeReadiness(readiness: RuntimeReadiness): string {
   }
 }
 
+/** The stable runtime identity a readiness result can honestly report. */
+export function runtimeIdentity(target: RuntimeTarget): string {
+  if (target.kind === 'cli') return target.command;
+  return target.bundles ?? target.package;
+}
 
 /**
  * Whether an error is a runtime version refusal rather than an absent
@@ -282,9 +291,8 @@ export function isUnsupportedRuntimeError(error: unknown): boolean {
  * Whether a CLI runtime on `PATH` meets its floor.
  *
  * The adapters already spawn `<command> --version` to answer
- * `isAvailable()`; this reuses that answer so availability and the readiness
- * verdict cannot disagree — the DR-013 invariant that a boolean probe must
- * not report a runtime usable while the verdict calls it unsupported.
+ * `isAvailable()`; this reuses the same reader and rule as readiness so the
+ * same observed version receives the same classification.
  * An unreadable version stays available, matching the peer-side fail-open.
  */
 export function isCliRuntimeSupported(target: RuntimeTarget): boolean {
