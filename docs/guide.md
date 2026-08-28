@@ -92,7 +92,7 @@ for await (const event of agent.run('Fix the login bug')) {
 
 `Cligent` is the recommended way to interact with adapters. It provides:
 
-- **Role identity** — tag every event with a task-level role (e.g. `'coder'`, `'reviewer'`)
+- **Role identity** — when configured, tag every event with a task-level role (e.g. `'coder'`, `'reviewer'`)
 - **Session continuity** — automatically resume previous sessions via `resumeToken`
 - **Option merging** — set defaults in the constructor, override per-call
 - **Single-flight guard** — prevents concurrent `run()` calls on the same instance

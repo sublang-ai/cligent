@@ -286,8 +286,8 @@ controller.abort();
 ### Parallel Execution
 
 ```typescript
-// Cligent.parallel() merges streams from multiple role-scoped instances.
-// Events carry both agent (backend) and role (task) identity.
+// Cligent.parallel() merges streams from multiple Cligent instances.
+// Events always carry agent identity and carry role when it is configured.
 for await (const event of Cligent.parallel([
   { agent: coder, prompt: 'Fix lint errors' },
   { agent: reviewer, prompt: 'Review the fix' },
@@ -301,7 +301,7 @@ for await (const event of Cligent.parallel([
 - **UPM** uses capability primitives (`fileWrite`, `shellExecute`, `networkAccess`) mapped by adapters to vendor controls
 - **AbortSignal** standardizes interruption (no custom `interrupt()` method)
 - **Session resumption** via `resumeToken` in `DonePayload`; `Cligent` auto-injects on subsequent calls; adapters that don't support resumption omit the token
-- **Role attribution** via `role` field on `CligentEvent` (not `BaseEvent`), distinguishing multiple sessions on the same backend; adapters do not emit `role`
+- **Role attribution** via the optional `role` field on `CligentEvent` (not `BaseEvent`) when configured, distinguishing multiple sessions on the same backend; every event retains backend `agent`, and adapters do not emit `role`
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` is fail-closed; adapters with no exact registry-control surface reject explicit restrictions
 - **Budgeting**: Claude Code supports `maxTurns` and `maxBudgetUsd`; OpenCode rejects explicit `maxTurns` because its pinned runtime exposes no exact per-run control and maps no `maxBudgetUsd` member

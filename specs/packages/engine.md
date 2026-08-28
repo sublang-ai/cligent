@@ -138,7 +138,13 @@ When an adapter-emitted `done` is available before terminal synthesis, the engin
 
 ### engine-14
 
-`Cligent.parallel()` shall merge multiple `Cligent` streams as they become available while yielding each `CligentEvent` with both `agent` backend identity and `role` task identity.
+`Cligent.parallel()` shall merge multiple `Cligent` streams as they become available while selecting each yielded `CligentEvent` identity through this matrix:
+
+| Member and source configuration | Outcome |
+| --- | --- |
+| `agent` | the source adapter's backend identity, always present |
+| configured `CligentOptions.role` | the exact configured task identity selected by [[engine-4](#engine-4)] |
+| omitted `CligentOptions.role` | no `role` member per [[engine-4](#engine-4)] |
 
 ### engine-15
 
@@ -574,7 +580,12 @@ When `AbortSignal` fires concurrently with the adapter emitting its own `done`, 
 
 ### engine-111
 
-Given multiple `Cligent` instances with mock adapters, when calling `Cligent.parallel()`, the check shall assert [[engine-14](#engine-14)] interleaving and per-instance agent and role attribution plus exactly one [[engine-11](#engine-11)] terminal per instance.
+Given multiple `Cligent` instances with mock adapters, when calling `Cligent.parallel()`, the check shall assert [[engine-14](#engine-14)] interleaving and identity selection plus exactly one [[engine-11](#engine-11)] terminal per instance through this matrix:
+
+| Source role | Every yielded event |
+| --- | --- |
+| configured | exact backend `agent` and configured `role` |
+| omitted | exact backend `agent` and no `role` member |
 
 ### engine-112
 

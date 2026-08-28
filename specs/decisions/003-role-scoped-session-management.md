@@ -84,6 +84,7 @@ interface RunOptions extends CligentOptions {
 ### Role Attribution
 
 `BaseEvent.agent` is backend identity (`'claude-code'`). When two roles use the same backend, events are indistinguishable by `agent` alone. `Cligent` adds a top-level `role` field to emitted `CligentEvent` values (defined in [DR-002](002-unified-event-stream-and-adapter-interface.md#base-event)). `role` is `undefined` when `CligentOptions.role` is not set — backward-compatible with raw `AgentEvent` consumers.
+`Cligent.parallel()` preserves the source event's backend `agent`, preserves its configured `role`, and neither requires nor synthesizes a role for an unconfigured source.
 
 ### Single-Flight Enforcement
 
@@ -129,7 +130,7 @@ Callers needing concurrent sessions on constrained adapters should instantiate s
 - **`Cligent` is the primary API** — wraps adapter + role config + session state
 - **Adapters remain run-local translators** — only spec-authorized cumulative-accounting state may cross calls; the interface contract from [DR-002](002-unified-event-stream-and-adapter-interface.md) is preserved
 - **Protocol hardening** (abort racing, synthetic done/error, post-done suppression) moves into `Cligent.prototype.run()`
-- **`Cligent.parallel()`** takes `Cligent` instances, interleaving `CligentEvent` streams
+- **`Cligent.parallel()`** takes `Cligent` instances, interleaving `CligentEvent` streams while preserving backend identity and any configured role
 - **`CligentEvent` extends `AgentEvent`** with optional `role` field
 - **`DonePayload` gains `resumeToken`** — adapters opt in by setting it
 - **Single-flight** prevents session state corruption under concurrency

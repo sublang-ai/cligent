@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 40 are done; tasks 41 through 53 remain.
+Tasks 1 through 41 are done; tasks 42 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -98,6 +98,7 @@ Task 37 records the owner's fail-closed OpenCode turn-limit choice in [DR-002](.
 Task 38 establishes caller cancellation before OpenCode SDK loading, preempts pending SDK and managed-readiness waits through one run-owned signal, prevents later child/client/session/prompt work after abort, preserves interrupted-terminal-before-child-signal order with bounded escalation, and narrows task 49's remaining OpenCode lifecycle handoff.
 Task 39 retains each OpenCode permission request's denial correlation through an accepted reply or exact reply-time disappearance until matching native confirmation, consults the provider's pending registry to suppress both pre-confirmation repeats and post-confirmation stale replays while admitting a genuinely pending later lifecycle, gives registry lookup and reply one shared five-second provider-operation budget and permission-specific failure path without charging downstream suspension, gives an already-settled operation precedence at the budget boundary, retains zero completed-response tombstones, releases failed, timed-out, aborted, and terminal request and wait state, and adds a high-volume sequence with 257 distinct completed requests that closes task 49's bounded-correlation handoff.
 Task 40 makes the managed process-lifecycle observer authoritative during readiness, distinguishes child-process errors from genuine closes so spawn failures keep [[opencode-28](../packages/adapters/opencode.md#opencode-28)]'s exact `OPENCODE_STREAM_ERROR`, carries a close's exact code and signal through the same `OPENCODE_SERVER_EXIT` path used after readiness, preserves caller-abort precedence, and closes task 49's pre-readiness crash handoff with terminal-before-cleanup lifecycle coverage.
+Task 41 records the owner's choice to preserve optional role attribution in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) and [DR-003](../decisions/003-role-scoped-session-management.md), aligns [[engine-14](../packages/engine.md#engine-14)] so every parallel event carries backend `agent` while `role` follows [[engine-4](../packages/engine.md#engine-4)], leaves the released runtime and types unchanged, and narrows task 49's handoff to exact interleaving after asserting configured and omitted roles on every event.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -461,7 +462,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `engine` | `engine-108`'s pre-`done` `ADAPTER_ERROR` non-recoverability and stored-resume clearing plus its post-`done` throw row; | |
     | `engine` | `engine-109`'s stored-resume clearing after `MISSING_DONE`; | |
     | `engine` | `engine-110`'s actual abort / native-`done` race; | |
-    | `engine` | `engine-111`'s exact interleaving and per-event attribution; | |
+    | `engine` | `engine-111`'s exact interleaving; | |
     | `engine` | `engine-112`'s exact failing-stream error-then-`done` sequence and cardinality; | |
     | `engine` | `engine-113`'s exact failing-stream sequence and error terminal; | |
     | `engine` | `engine-115`'s ordered-ladder type assertion plus Gemini and OpenCode direct, `Cligent`, and heterogeneous-parallel vocabulary cases; | |

@@ -767,12 +767,59 @@ describe('Cligent.parallel', () => {
     );
 
     const types = events.map((e) => e.type);
+    expect(events).toHaveLength(4);
     expect(types.filter((t) => t === 'done')).toHaveLength(2);
     expect(types.filter((t) => t === 'text')).toHaveLength(2);
-    expect(events.some((e) => e.agent === 'claude-code')).toBe(true);
-    expect(events.some((e) => e.agent === 'codex')).toBe(true);
-    expect(events.some((e) => e.role === 'coder')).toBe(true);
-    expect(events.some((e) => e.role === 'reviewer')).toBe(true);
+    for (const [agent, role] of [
+      ['claude-code', 'coder'],
+      ['codex', 'reviewer'],
+    ] as const) {
+      const sourceEvents = events.filter((event) => event.agent === agent);
+      expect(sourceEvents).toHaveLength(2);
+      expect(
+        sourceEvents.filter((event) => event.type === 'done'),
+      ).toHaveLength(1);
+      for (const event of sourceEvents) {
+        expect(event.agent).toBe(agent);
+        expect(event.role).toBe(role);
+      }
+    }
+  });
+
+  it('omits role from every event for role-less parallel agents', async () => {
+    const agent1 = new Cligent(
+      createMockAdapter('claude-code', [
+        textEvent('claude-code', 'a1'),
+        doneEvent('claude-code'),
+      ]),
+    );
+    const agent2 = new Cligent(
+      createMockAdapter('codex', [
+        textEvent('codex', 'a2'),
+        doneEvent('codex'),
+      ]),
+    );
+
+    const events = await collectEvents(
+      Cligent.parallel([
+        { agent: agent1, prompt: 'hi' },
+        { agent: agent2, prompt: 'hi' },
+      ]),
+    );
+
+    expect(events).toHaveLength(4);
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(2);
+    for (const agent of ['claude-code', 'codex']) {
+      const sourceEvents = events.filter((event) => event.agent === agent);
+      expect(sourceEvents).toHaveLength(2);
+      expect(
+        sourceEvents.filter((event) => event.type === 'done'),
+      ).toHaveLength(1);
+      for (const event of sourceEvents) {
+        expect(event.agent).toBe(agent);
+        expect(event).not.toHaveProperty('role');
+      }
+    }
   });
 
   // engine-112: error isolation
