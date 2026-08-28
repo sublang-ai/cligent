@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 39 are done; tasks 40 through 53 remain.
+Tasks 1 through 40 are done; tasks 41 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -97,6 +97,7 @@ Task 36 retains valid same-session updates received during model, thinking, or m
 Task 37 records the owner's fail-closed OpenCode turn-limit choice in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), removes inert legacy and v2 prompt `steps` data, rejects explicit `maxTurns` including zero before SDK loading or backend work, preserves omitted limits without turn-limit request data, and narrows task 49's remaining OpenCode option handoff.
 Task 38 establishes caller cancellation before OpenCode SDK loading, preempts pending SDK and managed-readiness waits through one run-owned signal, prevents later child/client/session/prompt work after abort, preserves interrupted-terminal-before-child-signal order with bounded escalation, and narrows task 49's remaining OpenCode lifecycle handoff.
 Task 39 retains each OpenCode permission request's denial correlation through an accepted reply or exact reply-time disappearance until matching native confirmation, consults the provider's pending registry to suppress both pre-confirmation repeats and post-confirmation stale replays while admitting a genuinely pending later lifecycle, gives registry lookup and reply one shared five-second provider-operation budget and permission-specific failure path without charging downstream suspension, gives an already-settled operation precedence at the budget boundary, retains zero completed-response tombstones, releases failed, timed-out, aborted, and terminal request and wait state, and adds a high-volume sequence with 257 distinct completed requests that closes task 49's bounded-correlation handoff.
+Task 40 makes the managed process-close observer authoritative during readiness, carries its exact code and signal through the same `OPENCODE_SERVER_EXIT` path used after readiness, preserves caller-abort precedence, and closes task 49's pre-readiness crash handoff with terminal-before-cleanup lifecycle coverage.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -508,7 +509,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `opencode` | `opencode-202` against a physically absent SDK; the real managed CLI probe's supported, unreadable or unparseable fail-open, missing, nonzero, timed-out, and below-floor outcomes; managed positive availability; and below-floor `run()` refusal before spawn. | |
     | `opencode` | `opencode-52`'s absent and empty model/cwd and ignored-budget rows. | |
     | `opencode` | `opencode-204`'s bypass rejection after SDK load but before managed or SDK work, and invalid-writable-path validation before that bypass diagnostic. | |
-    | `opencode` | `opencode-53`'s managed-startup cwd and the pre-readiness managed-child crash that task 40 repairs. | |
+    | `opencode` | `opencode-53`'s managed-startup cwd. | |
     | `opencode` | `opencode-212`'s wrapper `session_id`, `thread_id`, top-level `id`, and nested `session.id` aliases; stream `session_id` and nested `session.id`; alias priority and invalid values; generated or inbound provisional identity on every pre-backend event; and replacement after the wrapper identifies the backend. | |
     | `opencode` | `opencode-219`'s transient-only live retry classification, third-attempt exhaustion, fresh retry directories after side effects, successful-terminal and invariant-violation non-retry, and errored-result and stranded-use retry eligibility. | |
     | `opencode` | `opencode-222`'s absent and explicit-empty path omission plus invalid forms beyond parent traversal. | |

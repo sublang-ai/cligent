@@ -876,6 +876,164 @@ describe('OpenCodeAdapter', () => {
     expect(invocations[0]?.process.killSignals).toContain('SIGTERM');
   });
 
+  it('normalizes a managed child exit before readiness (opencode-53)', async () => {
+    const controller = new AbortController();
+    const order: string[] = [];
+    const { spawnProcess, invocations } = makeSpawn();
+    let clientCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'managed',
+        serverUrl: 'http://127.0.0.1:4788',
+        readyTimeoutMs: 1_000,
+      },
+      {
+        loadSdk: makeLoader({
+          onCreateClient() {
+            clientCalls++;
+          },
+        }),
+        spawnProcess,
+      },
+    );
+
+    const events: AgentEvent[] = [];
+    const consuming = (async () => {
+      for await (const event of adapter.run('pre-readiness crash', {
+        abortSignal: controller.signal,
+      })) {
+        events.push(event);
+        if (event.type === 'error') {
+          order.push(`error:${String(event.payload.code)}`);
+        }
+        if (event.type === 'done') {
+          order.push(`done:${String(event.payload.status)}`);
+        }
+      }
+      order.push('cleanup.complete');
+    })();
+
+    await vi.waitFor(() => {
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0]?.process.stdout.listenerCount('data')).toBe(1);
+    });
+    const processRef = invocations[0]!.process;
+    processRef.emit('close', 23, 'SIGABRT');
+    await consuming;
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({
+      code: 'OPENCODE_SERVER_EXIT',
+      message: 'OpenCode server exited unexpectedly (code=23, signal=SIGABRT)',
+      recoverable: false,
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
+    expect(order).toEqual([
+      'error:OPENCODE_SERVER_EXIT',
+      'done:error',
+      'cleanup.complete',
+    ]);
+    expect(clientCalls).toBe(0);
+    expect(processRef.killSignals).toEqual([]);
+    expect(processRef.listenerCount('close')).toBe(0);
+    expect(processRef.listenerCount('error')).toBe(0);
+    expect(processRef.stdout.listenerCount('data')).toBe(0);
+    expect(processRef.stderr.listenerCount('data')).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('gives caller abort precedence over a pre-readiness child exit', async () => {
+    const controller = new AbortController();
+    const { spawnProcess, invocations } = makeSpawn();
+    let clientCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'managed',
+        serverUrl: 'http://127.0.0.1:4788',
+        readyTimeoutMs: 1_000,
+      },
+      {
+        loadSdk: makeLoader({
+          onCreateClient() {
+            clientCalls++;
+          },
+        }),
+        spawnProcess,
+      },
+    );
+
+    const collecting = collect(
+      adapter.run('pre-readiness crash and abort', {
+        abortSignal: controller.signal,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0]?.process.stdout.listenerCount('data')).toBe(1);
+    });
+    const processRef = invocations[0]!.process;
+
+    processRef.emit('close', 24, 'SIGABRT');
+    controller.abort();
+    const events = await collecting;
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(clientCalls).toBe(0);
+    expect(processRef.killSignals).toEqual([]);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('preserves caller abort precedence after the readiness-exit error', async () => {
+    const controller = new AbortController();
+    const { spawnProcess, invocations } = makeSpawn();
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'managed',
+        serverUrl: 'http://127.0.0.1:4788',
+        readyTimeoutMs: 1_000,
+      },
+      {
+        loadSdk: makeLoader(),
+        spawnProcess,
+      },
+    );
+
+    const events: AgentEvent[] = [];
+    const consuming = (async () => {
+      for await (const event of adapter.run('abort after readiness error', {
+        abortSignal: controller.signal,
+      })) {
+        events.push(event);
+        if (event.type === 'error') controller.abort();
+      }
+    })();
+
+    await vi.waitFor(() => {
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0]?.process.stdout.listenerCount('data')).toBe(1);
+    });
+    const processRef = invocations[0]!.process;
+    processRef.emit('close', 25, 'SIGABRT');
+    await consuming;
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      code: 'OPENCODE_SERVER_EXIT',
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(processRef.killSignals).toEqual([]);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
   it.each([
     ['anthropic/claude-sonnet-4-5', 'minimal', 'high'],
     ['anthropic/claude-sonnet-4-5', 'low', 'high'],

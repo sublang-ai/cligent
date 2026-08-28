@@ -89,6 +89,17 @@ interface ServerCloseInfo {
   signal: NodeJS.Signals | null;
 }
 
+function formatOpenCodeServerExit(exit: ServerCloseInfo): string {
+  return `OpenCode server exited unexpectedly (code=${String(exit.code)}, signal=${String(exit.signal)})`;
+}
+
+class OpenCodeManagedServerExitError extends Error {
+  constructor(readonly exit: ServerCloseInfo) {
+    super(formatOpenCodeServerExit(exit));
+    this.name = 'OpenCodeManagedServerExitError';
+  }
+}
+
 type StreamWaitResult =
   | { kind: 'event'; result: IteratorResult<unknown> }
   | { kind: 'iterator_error'; error: unknown }
@@ -815,8 +826,6 @@ function defaultWaitForServerReady(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      processRef.removeListener('close', onClose);
-      processRef.removeListener('error', onError);
       processRef.stdout?.removeListener('data', onData);
       processRef.stderr?.removeListener('data', onData);
       signal?.removeEventListener('abort', onAbort);
@@ -839,18 +848,6 @@ function defaultWaitForServerReady(
       }
     };
 
-    const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
-      finish(
-        new Error(
-          `OpenCode server exited before ready (code=${String(code)}, signal=${String(signal)})`,
-        ),
-      );
-    };
-
-    const onError = (error: Error) => {
-      finish(error);
-    };
-
     const onAbort = () => {
       finish(new Error('OpenCode server readiness aborted'));
     };
@@ -865,8 +862,6 @@ function defaultWaitForServerReady(
 
     processRef.stdout?.on('data', onData);
     processRef.stderr?.on('data', onData);
-    processRef.once('close', onClose);
-    processRef.once('error', onError);
     if (signal) {
       signal.addEventListener('abort', onAbort, { once: true });
       if (signal.aborted) onAbort();
@@ -3656,9 +3651,16 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               (error: unknown) => ({ kind: 'failure' as const, error }),
             ),
           callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+          serverExitPromise.then((exit) => ({
+            kind: 'server_exit' as const,
+            exit,
+          })),
         ]);
         if (readinessOutcome.kind === 'caller_abort') {
           throw new Error('OpenCode run aborted during managed readiness');
+        }
+        if (readinessOutcome.kind === 'server_exit') {
+          throw new OpenCodeManagedServerExitError(readinessOutcome.exit);
         }
         if (readinessOutcome.kind === 'failure') {
           throw readinessOutcome.error;
@@ -4358,11 +4360,31 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             AGENT,
             {
               code: 'OPENCODE_SERVER_EXIT',
-              message: `OpenCode server exited unexpectedly (code=${String(raceResult.exit.code)}, signal=${String(raceResult.exit.signal)})`,
+              message: formatOpenCodeServerExit(raceResult.exit),
               recoverable: false,
             },
             sessionId,
           );
+          if (abortRequested || options?.abortSignal?.aborted) {
+            yield createEvent(
+              'done',
+              AGENT,
+              {
+                status: 'interrupted',
+                ...doneResumeTokenPayload(
+                  'interrupted',
+                  backendProvidedSessionId,
+                  sessionId,
+                  options?.resume,
+                ),
+                usage: buildAccumulatedUsage(false),
+                durationMs: Date.now() - startTime,
+              },
+              sessionId,
+            );
+            doneYielded = true;
+            break;
+          }
           yield createEvent(
             'done',
             AGENT,
@@ -5362,6 +5384,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         initYielded = true;
       }
 
+      const readinessServerExit =
+        error instanceof OpenCodeManagedServerExitError
+          ? error.exit
+          : undefined;
+
       if (!doneYielded) {
         for (const normalized of drainPendingContent(true)) {
           yield normalized;
@@ -5390,22 +5417,31 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             'error',
             AGENT,
             {
-              code: 'OPENCODE_STREAM_ERROR',
-              message:
-                error instanceof Error
+              code: readinessServerExit
+                ? 'OPENCODE_SERVER_EXIT'
+                : 'OPENCODE_STREAM_ERROR',
+              message: readinessServerExit
+                ? formatOpenCodeServerExit(readinessServerExit)
+                : error instanceof Error
                   ? error.message
                   : 'OpenCode adapter failed during stream',
               recoverable: false,
             },
             sessionId,
           );
+          const terminalStatus =
+            readinessServerExit &&
+            (abortRequested || options?.abortSignal?.aborted)
+              ? 'interrupted'
+              : 'error';
+          if (terminalStatus === 'interrupted') startKnownSessionAbort();
           yield createEvent(
             'done',
             AGENT,
             {
-              status: 'error',
+              status: terminalStatus,
               ...doneResumeTokenPayload(
-                'error',
+                terminalStatus,
                 backendProvidedSessionId,
                 sessionId,
                 options?.resume,
