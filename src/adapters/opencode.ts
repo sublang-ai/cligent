@@ -89,6 +89,14 @@ interface ServerCloseInfo {
   signal: NodeJS.Signals | null;
 }
 
+type ServerLifecycleResult =
+  | { kind: 'exit'; exit: ServerCloseInfo }
+  | { kind: 'process_error'; error: Error };
+
+type ServerWaitResult =
+  | { kind: 'server_exit'; exit: ServerCloseInfo }
+  | { kind: 'server_error'; error: Error };
+
 function formatOpenCodeServerExit(exit: ServerCloseInfo): string {
   return `OpenCode server exited unexpectedly (code=${String(exit.code)}, signal=${String(exit.signal)})`;
 }
@@ -105,7 +113,13 @@ type StreamWaitResult =
   | { kind: 'iterator_error'; error: unknown }
   | { kind: 'caller_abort' }
   | { kind: 'inactivity' }
-  | { kind: 'server_exit'; exit: ServerCloseInfo };
+  | ServerWaitResult;
+
+function toServerWaitResult(result: ServerLifecycleResult): ServerWaitResult {
+  return result.kind === 'exit'
+    ? { kind: 'server_exit', exit: result.exit }
+    : { kind: 'server_error', error: result.error };
+}
 
 type PermissionOperationWaitResult<T> =
   | { kind: 'resolved'; value: T }
@@ -869,18 +883,18 @@ function defaultWaitForServerReady(
   });
 }
 
-async function waitForProcessClose(
+async function waitForProcessLifecycle(
   processRef: ChildProcessWithoutNullStreams,
-): Promise<ServerCloseInfo> {
-  return new Promise<ServerCloseInfo>((resolve) => {
+): Promise<ServerLifecycleResult> {
+  return new Promise<ServerLifecycleResult>((resolve) => {
     const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
       cleanup();
-      resolve({ code, signal });
+      resolve({ kind: 'exit', exit: { code, signal } });
     };
 
-    const onError = () => {
+    const onError = (error: Error) => {
       cleanup();
-      resolve({ code: 1, signal: null });
+      resolve({ kind: 'process_error', error });
     };
 
     const cleanup = () => {
@@ -2134,8 +2148,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
     let serverClosed = false;
-    let serverExitPromise: Promise<ServerCloseInfo> | undefined;
-    let serverExitInfo: ServerCloseInfo | undefined;
+    let serverLifecyclePromise: Promise<ServerLifecycleResult> | undefined;
+    let serverLifecycleResult: ServerLifecycleResult | undefined;
     let finishStreamWait: ((result: StreamWaitResult) => void) | undefined;
     let abortPermissionWait: (() => void) | undefined;
 
@@ -3630,12 +3644,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           stdio: 'pipe',
         });
 
-        serverExitPromise = waitForProcessClose(serverProcess).then((info) => {
-          serverClosed = true;
-          serverExitInfo = info;
-          finishStreamWait?.({ kind: 'server_exit', exit: info });
-          return info;
-        });
+        serverLifecyclePromise = waitForProcessLifecycle(serverProcess).then(
+          (result) => {
+            serverClosed = true;
+            serverLifecycleResult = result;
+            finishStreamWait?.(toServerWaitResult(result));
+            return result;
+          },
+        );
 
         const readinessOutcome = await Promise.race([
           Promise.resolve()
@@ -3651,16 +3667,16 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               (error: unknown) => ({ kind: 'failure' as const, error }),
             ),
           callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
-          serverExitPromise.then((exit) => ({
-            kind: 'server_exit' as const,
-            exit,
-          })),
+          serverLifecyclePromise.then(toServerWaitResult),
         ]);
         if (readinessOutcome.kind === 'caller_abort') {
           throw new Error('OpenCode run aborted during managed readiness');
         }
         if (readinessOutcome.kind === 'server_exit') {
           throw new OpenCodeManagedServerExitError(readinessOutcome.exit);
+        }
+        if (readinessOutcome.kind === 'server_error') {
+          throw readinessOutcome.error;
         }
         if (readinessOutcome.kind === 'failure') {
           throw readinessOutcome.error;
@@ -4013,8 +4029,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // settled before this wait was armed.
             if (abortRequested || options?.abortSignal?.aborted) {
               finish({ kind: 'caller_abort' });
-            } else if (serverExitInfo) {
-              finish({ kind: 'server_exit', exit: serverExitInfo });
+            } else if (serverLifecycleResult) {
+              finish(toServerWaitResult(serverLifecycleResult));
             }
           });
           inactivityTimer.cancel();
@@ -4064,6 +4080,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         if (raceResult.kind === 'iterator_error') {
+          throw raceResult.error;
+        }
+
+        if (raceResult.kind === 'server_error') {
+          nextPromise?.catch(() => {});
           throw raceResult.error;
         }
 
@@ -5496,9 +5517,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ),
       ]).then(() => {});
       const termCleanup =
-        serverProcess && !serverClosed && serverExitPromise
+        serverProcess && !serverClosed && serverLifecyclePromise
           ? promiseSettlesWithin(
-              serverExitPromise,
+              serverLifecyclePromise,
               this.managedServerTermGraceMs,
             ).then(() => {})
           : Promise.resolve();
@@ -5514,9 +5535,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // primitive after a failed SIGKILL attempt.
           }
 
-          if (serverExitPromise) {
+          if (serverLifecyclePromise) {
             await promiseSettlesWithin(
-              serverExitPromise,
+              serverLifecyclePromise,
               this.managedServerKillGraceMs,
             );
           }

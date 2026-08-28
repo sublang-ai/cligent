@@ -1034,6 +1034,54 @@ describe('OpenCodeAdapter', () => {
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
+  it('preserves a managed spawn error through setup failure (opencode-201)', async () => {
+    const { spawnProcess, invocations } = makeSpawn();
+    let clientCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      {
+        mode: 'managed',
+        serverUrl: 'http://127.0.0.1:4788',
+        readyTimeoutMs: 1_000,
+      },
+      {
+        loadSdk: makeLoader({
+          onCreateClient() {
+            clientCalls++;
+          },
+        }),
+        spawnProcess,
+      },
+    );
+
+    const collecting = collect(adapter.run('missing managed executable'));
+    await vi.waitFor(() => {
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0]?.process.stdout.listenerCount('data')).toBe(1);
+    });
+    const processRef = invocations[0]!.process;
+    processRef.emit('error', new Error('spawn opencode ENOENT'));
+    processRef.emit('close', -2, null);
+    const events = await collecting;
+
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(events[1]?.payload).toEqual({
+      code: 'OPENCODE_STREAM_ERROR',
+      message: 'spawn opencode ENOENT',
+      recoverable: false,
+    });
+    expect(events[2]?.payload).toMatchObject({ status: 'error' });
+    expect(clientCalls).toBe(0);
+    expect(processRef.killSignals).toEqual([]);
+    expect(processRef.listenerCount('close')).toBe(0);
+    expect(processRef.listenerCount('error')).toBe(0);
+    expect(processRef.stdout.listenerCount('data')).toBe(0);
+    expect(processRef.stderr.listenerCount('data')).toBe(0);
+  });
+
   it.each([
     ['anthropic/claude-sonnet-4-5', 'minimal', 'high'],
     ['anthropic/claude-sonnet-4-5', 'low', 'high'],
