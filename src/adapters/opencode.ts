@@ -107,6 +107,10 @@ type PermissionOperationFailure = Extract<
   { kind: 'error' | 'timeout' }
 >;
 
+interface PermissionOperationBudget {
+  remainingMs: number;
+}
+
 interface OpenCodeClient {
   run?: (options: Record<string, unknown>) => Promise<unknown>;
   query?: (options: Record<string, unknown>) => Promise<unknown>;
@@ -2321,7 +2325,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     };
     const waitForPermissionOperation = <T>(
       operation: Promise<T>,
-      deadline: number,
+      budget: PermissionOperationBudget,
+      startedAt: number,
     ): Promise<PermissionOperationWaitResult<T>> =>
       new Promise((resolve) => {
         let settled = false;
@@ -2329,6 +2334,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const finish = (result: PermissionOperationWaitResult<T>) => {
           if (settled) return;
           settled = true;
+          budget.remainingMs = Math.max(
+            0,
+            budget.remainingMs - Math.max(0, performance.now() - startedAt),
+          );
           if (operationTimeout) clearTimeout(operationTimeout);
           if (abortPermissionWait === abortCurrentOperation) {
             abortPermissionWait = undefined;
@@ -2348,15 +2357,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         if (abortRequested || options?.abortSignal?.aborted) {
           abortCurrentOperation();
         } else {
-          const remainingMs = deadline - performance.now();
-          if (remainingMs <= 0) {
-            finish({ kind: 'timeout' });
-          } else {
-            operationTimeout = setTimeout(
-              () => finish({ kind: 'timeout' }),
-              remainingMs,
-            );
-          }
+          // Always arm even a zero-duration timer asynchronously so an
+          // operation that is already settled wins its queued microtask.
+          operationTimeout = setTimeout(
+            () => finish({ kind: 'timeout' }),
+            budget.remainingMs,
+          );
         }
       });
     reportPermissionState();
@@ -4823,8 +4829,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           );
 
           let requestKey: string | undefined;
-          const permissionDeadline =
-            performance.now() + PERMISSION_REPLY_TIMEOUT_MS;
+          const permissionBudget: PermissionOperationBudget = {
+            remainingMs: PERMISSION_REPLY_TIMEOUT_MS,
+          };
           if (requestId) {
             requestKey = permissionRequestKey(permissionSessionId, requestId);
             if (permissionRequests.has(requestKey)) {
@@ -4834,6 +4841,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             // native confirmation releases that state, OpenCode's pending
             // registry distinguishes a stale replay from a genuinely reused
             // request identity without retaining completed tombstones here.
+            const pendingStartedAt = performance.now();
             const pendingPromise = client?.isPermissionPending
               ? client.isPermissionPending({
                   sessionId: permissionSessionId,
@@ -4848,7 +4856,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 );
             const pendingRace = await waitForPermissionOperation(
               pendingPromise,
-              permissionDeadline,
+              permissionBudget,
+              pendingStartedAt,
             );
             if (pendingRace.kind === 'abort') {
               pendingPromise.catch(() => {});
@@ -5006,6 +5015,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
           const decision =
             options?.permissions?.mode === 'auto' ? 'once' : 'reject';
+          const replyStartedAt = performance.now();
           const replyPromise = client?.replyPermission
             ? client.replyPermission({
                 sessionId: permissionSessionId,
@@ -5020,7 +5030,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
               );
           const replyRace = await waitForPermissionOperation(
             replyPromise,
-            permissionDeadline,
+            permissionBudget,
+            replyStartedAt,
           );
 
           if (

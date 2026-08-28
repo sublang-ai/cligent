@@ -115,9 +115,11 @@ Before either outcome, the adapter shall confirm the composite session/request
 identity in OpenCode's pending-permission registry, so a stale replay after
 native confirmation produces neither a second event nor a second response,
 while a genuinely pending later lifecycle may reuse that identity [[12]].
-The registry lookup and ensuing reply share one five-second resolution deadline
-and one permission-specific failure path; an exact reply-time disappearance
-retains active denial correlation until native confirmation or terminal cleanup.
+The registry lookup and ensuing reply share five seconds of in-flight provider
+operation time and one permission-specific failure path; downstream suspension
+at the yielded request consumes none of that budget, and an already-settled
+operation wins at its boundary. An exact reply-time disappearance retains active
+denial correlation until native confirmation or terminal cleanup.
 Each successful automated reply shall remain observable to raw consumers as a namespaced audit event that does not imply human approval is needed.
 A missing identifier or failed or timed-out registry lookup or reply shall terminate diagnostically instead of leaving the server waiting indefinitely.
 Kimi's ACP client sees only permission decisions that the Kimi policy engine has already reduced to `ask`; configured allows, denies, native safe-tool decisions, and structural checks may resolve earlier [[10]].

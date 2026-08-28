@@ -298,7 +298,7 @@ outcome matrix, including unknown permission names:
 | same composite identity is provider-pending again after the earlier lifecycle's matching `permission.replied` | resolve it once as a later native request lifecycle [[6]] |
 | unrelated session tree | no response or event per [[opencode-6](#opencode-6)] |
 | missing request identifier | non-recoverable `OPENCODE_PERMISSION_REQUEST_INVALID` naming session, missing request, and permission, then error `done` |
-| pending-registry lookup or reply route unavailable, rejected, an SDK-result error, or their one shared deadline reaches five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done` |
+| pending-registry lookup or reply route unavailable, rejected, an SDK-result error, or their one shared provider-operation budget consumes five seconds | non-recoverable `OPENCODE_PERMISSION_REPLY_FAILED` naming session, request, permission, and failure, then error `done`; downstream suspension at the yielded `permission_request` consumes none of that budget, and an already-settled operation wins against an exhausted budget |
 | caller abort before or during response | one interrupted `done` with no automated-decision extension |
 
 Failed, timed-out, and aborted paths use [[opencode-35](#opencode-35)] transport
@@ -567,8 +567,8 @@ matrix:
 | same request repeated before native confirmation | start no second response waiter and preserve the original correlation |
 | accepted response or exact reply-time disappearance awaiting observation of its matching `permission.replied` | retain the active correlation until that native confirmation [[6]], with no completed-response tombstone |
 | matching `permission.replied` | use the active correlation for denial, then release that mapping so completed responses retain no state |
-| inactive ask | consult OpenCode's pending-permission registry and any ensuing reply under one five-second deadline; ignore an absent request and retain a present request only as active state [[6]] |
-| failed registry lookup or reply, shared-deadline timeout, or caller-aborted operation | cancel response and stream I/O, release its active key and response waiter, close the iterator during bounded terminal cleanup, and release the caller listener |
+| inactive ask | consult OpenCode's pending-permission registry and any ensuing reply under one shared five-second provider-operation budget that excludes downstream suspension at the yielded `permission_request`; ignore an absent request and retain a present request only as active state [[6]] |
+| failed registry lookup or reply, exhausted shared operation budget, or caller-aborted operation | cancel response and stream I/O, release its active key and response waiter, close the iterator during bounded terminal cleanup, and release the caller listener |
 | terminal cleanup | clear every remaining active key and response waiter |
 
 ### Managed Resource Ownership
@@ -985,7 +985,7 @@ this matrix:
 | run ownership evolution | wrapper seeding, task-part child adoption, fresh and resumed lifecycle addition, owned-descendant deletion, unrelated/malformed preservation, child-route identity, and filtered child conversation [[opencode-56](#opencode-56)], [[opencode-6](#opencode-6)] |
 | unrelated or repeated events | no foreign response and no duplicate response |
 | missing identifier | exact invalid-request error, one error terminal, and no automated-decision extension [[opencode-20](#opencode-20)] |
-| unavailable, failed, SDK-error, or timed-out registry / reply route | exact permission-reply error, one shared five-second deadline across both operations, one error terminal, no automated-decision extension, and request and response-wait state released before the error [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
+| unavailable, failed, SDK-error, or timed-out registry / reply route | exact permission-reply error, one shared five-second provider-operation budget across both operations, delayed default-mode consumption excluded, already-settled-operation precedence at zero remaining budget, one error terminal, no automated-decision extension, and request and response-wait state released before the error [[opencode-20](#opencode-20)], [[opencode-35](#opencode-35)] |
 | pending v1/v2 response or SSE transport under timeout/caller abort | one run-owned signal cancels native I/O, closes iterator/client, releases request and response-wait state, and preserves [[opencode-35](#opencode-35)] terminal ordering with [[opencode-9](#opencode-9)] |
 
 ### opencode-55

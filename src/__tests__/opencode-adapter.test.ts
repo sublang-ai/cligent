@@ -2000,6 +2000,143 @@ describe('OpenCodeAdapter', () => {
     }
   });
 
+  it('excludes permission-request consumer suspension from the provider budget', async () => {
+    let monotonicNow = 0;
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => monotonicNow);
+    try {
+      let replyCalls = 0;
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'backpressure-session' },
+            events: [
+              {
+                type: 'permission.asked',
+                properties: {
+                  id: 'backpressure-request',
+                  sessionID: 'backpressure-session',
+                  permission: 'edit',
+                  tool: { callID: 'backpressure-call' },
+                },
+              },
+              {
+                type: 'permission.replied',
+                properties: {
+                  sessionID: 'backpressure-session',
+                  requestID: 'backpressure-request',
+                  reply: 'reject',
+                },
+              },
+              {
+                type: 'session.idle',
+                properties: { sessionID: 'backpressure-session' },
+              },
+            ],
+            onReplyPermission() {
+              replyCalls++;
+            },
+          }),
+        },
+      );
+
+      const stream = adapter.run('backpressure probe');
+      expect((await stream.next()).value?.type).toBe('init');
+      expect((await stream.next()).value?.type).toBe('permission_request');
+
+      // The generator is suspended at a consumer-facing event here. That
+      // downstream delay is not provider-operation time.
+      monotonicNow = 5_200;
+
+      const result = (await stream.next()).value;
+      expect(result?.type).toBe('tool_result');
+      expect(result?.payload).toMatchObject({
+        toolName: 'edit',
+        toolUseId: 'backpressure-call',
+        status: 'denied',
+      });
+      expect(replyCalls).toBe(1);
+
+      const done = (await stream.next()).value;
+      expect(done?.type).toBe('done');
+      expect(done?.payload).toMatchObject({ status: 'success' });
+      await stream.next();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('lets an already-settled reply use the exhausted provider budget', async () => {
+    let monotonicNow = 0;
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => monotonicNow);
+    try {
+      let resolveLookupStarted: () => void = () => {};
+      const lookupStarted = new Promise<void>((resolve) => {
+        resolveLookupStarted = resolve;
+      });
+      let resolvePending: (value: boolean) => void = () => {};
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'settled-reply-session' },
+            events: [
+              {
+                type: 'permission.asked',
+                properties: {
+                  id: 'settled-reply-request',
+                  sessionID: 'settled-reply-session',
+                  permission: 'edit',
+                },
+              },
+              {
+                type: 'session.idle',
+                properties: { sessionID: 'settled-reply-session' },
+              },
+            ],
+            permissionPendingFactory: () => {
+              resolveLookupStarted();
+              return new Promise<boolean>((resolve) => {
+                resolvePending = resolve;
+              });
+            },
+          }),
+        },
+      );
+
+      const stream = adapter.run('settled reply probe', {
+        permissions: { mode: 'auto' },
+      });
+      expect((await stream.next()).value?.type).toBe('init');
+      const pendingDecision = stream.next();
+      await lookupStarted;
+
+      // The lookup consumes the full shared budget but wins its boundary
+      // race. The already-settled reply must likewise beat a zero-ms timer.
+      monotonicNow = 5_000;
+      resolvePending(true);
+
+      const decision = (await pendingDecision).value;
+      expect(decision?.type).toBe('opencode:permission_decision');
+      expect(decision?.payload).toMatchObject({
+        requestId: 'settled-reply-request',
+        decision: 'once',
+        automated: true,
+      });
+
+      const done = (await stream.next()).value;
+      expect(done?.type).toBe('done');
+      expect(done?.payload).toMatchObject({ status: 'success' });
+      await stream.next();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('bounds a permission reply that never settles', async () => {
     vi.useFakeTimers();
     try {
@@ -2099,7 +2236,7 @@ describe('OpenCodeAdapter', () => {
     }
   });
 
-  it('shares one five-second deadline across permission lookup and reply', async () => {
+  it('shares one five-second provider budget across lookup and reply', async () => {
     vi.useFakeTimers();
     let monotonicNow = 0;
     const now = vi
