@@ -2156,16 +2156,18 @@ When verifying the launcher's session-scoped primary-click handling, the check s
 
 ### tmux-play-169
 
-Under [[tmux-play-130](#tmux-play-130)]'s real-tmux harness, when a pane starts in copy-mode at a nonzero scroll position, the check shall assert this output-follow matrix:
+Under [[tmux-play-130](#tmux-play-130)]'s real-tmux harness, when exercising output follow across live-tail and nonzero-scroll copy-mode states, the check shall assert this matrix:
 
 | Activity | Assertion |
 | --- | --- |
 | flushed text block, `tool_use` / `tool_result` lifecycle line, player-prompt echo, or `[status]` / `[turn aborted]` / `[runtime error]` line written to the pane | destination reports `#{pane_in_mode}` as `0` and the new content is visible [[tmux-play-69](#tmux-play-69)] |
+| visible write to a live-tail pane, entry into copy-mode, then another visible write within 250 milliseconds | the second write exits copy-mode and makes its new content visible [[tmux-play-69](#tmux-play-69)] |
+| visible write exits copy-mode, the pane re-enters copy-mode, then another visible write within 250 milliseconds | the second write exits copy-mode again and makes its new content visible [[tmux-play-69](#tmux-play-69)] |
 | concurrent output written only to a sibling pane | untouched pane retains mode `1` and its prior scroll position [[tmux-play-69](#tmux-play-69)] |
 | between-turn idle activity | pane retains mode `1` and its prior scroll position [[tmux-play-69](#tmux-play-69)] |
 | `turn_started`, `turn_finished`, `captain_prompt`, or `captain_telemetry` | no live-tail command [[tmux-play-69](#tmux-play-69)] |
 | suppressed `done` or `error`, any other event rendering no visible text, or a buffered `text_delta` before flush | no live-tail command [[tmux-play-69](#tmux-play-69)] |
-| probe setup | require a genuinely nonzero pre-output scroll, use deterministic synthetic records and seeded history when useful, and require no adapter API key |
+| probe setup | require a genuinely nonzero pre-output scroll for every copy-mode phase, use deterministic synthetic records and seeded history when useful, and require no adapter API key |
 
 _The retired tmux-play-177 wheel-up clamp probe is removed together with its requirement tmux-play-78; the Boss/Captain phantom-scrollback behavior it tried to assert through wheel events is now owned at the source by [[tmux-play-178](#tmux-play-178)] / [[tmux-play-79](#tmux-play-79)]._
 

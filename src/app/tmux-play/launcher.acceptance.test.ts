@@ -1569,7 +1569,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'returns a scrolled pane to its live tail when the runtime + presenter write to it, with the written content visible and a sibling pane left scrolled (tmux-play-69)',
+    'follows each rapid copy-mode entry while leaving unwritten panes scrolled (tmux-play-69)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -1653,18 +1653,23 @@ describe('tmux-play real-tmux acceptance', () => {
           { id: 'coder', adapter: 'codex' },
           { id: 'reviewer', adapter: 'claude' },
         ],
-        debounceMs: 0,
       });
 
-      // The stub player streams this marker as its only output, so a
-      // capture-pane that contains it proves real presenter bytes reached the
-      // pane (not merely that copy-mode was exited against an empty tail).
-      const marker = `FOLLOW${randomBytes(3).toString('hex').toUpperCase()}`;
+      // Each stub invocation streams a distinct marker, so every phase can
+      // prove its own presenter bytes reached the live view rather than merely
+      // observing an exit against content written by an earlier phase.
+      const markerPrefix = `FOLLOW${randomBytes(3).toString('hex').toUpperCase()}`;
+      const marker = (sequence: number): string =>
+        `${markerPrefix}-${sequence}`;
+      let markerSequence = 0;
       const streamMarker = (agent: AgentType): new () => AgentAdapter =>
         class implements AgentAdapter {
           readonly agent = agent;
           async *run(): AsyncGenerator<AgentEvent, void, void> {
-            yield createEvent('text_delta', agent, { delta: marker });
+            markerSequence += 1;
+            yield createEvent('text_delta', agent, {
+              delta: marker(markerSequence),
+            });
             yield createEvent('done', agent, {
               status: 'success',
               usage: {
@@ -1707,9 +1712,24 @@ describe('tmux-play real-tmux acceptance', () => {
       });
 
       try {
-        // Phase 1: a real player write returns the written (coder) pane to its
-        // live tail with the streamed marker visible, while the sibling
-        // (reviewer) pane — no output this turn — stays scrolled in place.
+        // Phase 1: establish the formerly-dangerous live-pane no-op. The real
+        // presenter writes marker 1 while coder is already at its tail, so the
+        // mode-gated follow command has nothing to exit.
+        await runtime.runBossTurn('coder');
+        expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
+        expect(
+          await waitForPaneContains(
+            sessionName,
+            coder.index,
+            marker(1),
+            3_000,
+          ),
+        ).toContain(marker(1));
+
+        // Phase 2: enter copy-mode immediately after that live write, then
+        // write marker 2. The prior no-op cannot suppress this required exit;
+        // only coder follows, while the unwritten reviewer pane stays at its
+        // exact scroll position.
         scrollBack(coderTarget);
         scrollBack(reviewerTarget);
         const reviewerScroll = displayMessage(
@@ -1723,19 +1743,41 @@ describe('tmux-play real-tmux acceptance', () => {
         const coderView = await waitForPaneContains(
           sessionName,
           coder.index,
-          marker,
+          marker(2),
           3_000,
         );
-        expect(coderView).toContain(marker);
+        expect(coderView).toContain(marker(2));
 
         expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('1');
         expect(displayMessage(reviewerTarget, '#{scroll_position}')).toBe(
           reviewerScroll,
         );
 
-        // Phase 2: a turn that writes nothing to the coder pane (no player
-        // call) must leave a freshly-scrolled coder pane untouched — the follow
-        // fires only on real new output, never on the no-op control records.
+        // Phase 3: coder just followed in phase 2. Re-enter copy-mode and write
+        // marker 3 immediately; this fresh mode episode must also exit even
+        // though it follows the preceding one rapidly. Reviewer still receives
+        // no output and remains scrolled.
+        scrollBack(coderTarget);
+
+        await runtime.runBossTurn('coder');
+
+        expect(displayMessage(coderTarget, '#{pane_in_mode}')).toBe('0');
+        expect(
+          await waitForPaneContains(
+            sessionName,
+            coder.index,
+            marker(3),
+            3_000,
+          ),
+        ).toContain(marker(3));
+        expect(displayMessage(reviewerTarget, '#{pane_in_mode}')).toBe('1');
+        expect(displayMessage(reviewerTarget, '#{scroll_position}')).toBe(
+          reviewerScroll,
+        );
+
+        // Phase 4: records that write no visible player bytes leave a freshly
+        // scrolled coder pane untouched. The follow observer must not trade the
+        // no-visible-output exclusion for rapid-write correctness.
         scrollBack(coderTarget);
         const coderScroll = displayMessage(coderTarget, '#{scroll_position}');
 

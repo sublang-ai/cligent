@@ -27,8 +27,6 @@ import type { RecordObserver, TmuxPlayRecord } from './records.js';
 // to nothing — none of those put new bytes on a pane, so exiting copy-mode
 // then would discard a scroll position with no compensating content.
 
-const DEFAULT_DEBOUNCE_MS = 250;
-
 export interface FollowTmuxClient {
   queryPaneTargetsByTitle(sessionName: string): ReadonlyMap<string, string>;
   /**
@@ -43,8 +41,6 @@ export interface CreateFollowObserverOptions {
   readonly sessionName: string;
   readonly captainAdapter: string;
   readonly players: readonly Pick<PlayerConfig, 'id' | 'adapter'>[];
-  readonly now?: () => number;
-  readonly debounceMs?: number;
   readonly tmux?: FollowTmuxClient;
 }
 
@@ -59,20 +55,12 @@ export class FollowObserver implements RecordObserver {
   private readonly sessionName: string;
   private readonly captainTitle: string;
   private readonly playerTitles = new Map<string, string>();
-  private readonly now: () => number;
-  private readonly debounceMs: number;
   private readonly tmux: FollowTmuxClient;
   // Pane titles whose presenter block currently holds buffered, not-yet-flushed
   // text. A flush of such a block puts new bytes on the pane, so the record
   // that triggers the flush must drive a follow even when its own payload is
   // empty (e.g. a `captain_finished` that only flushes accumulated deltas).
   private readonly pending = new Set<string>();
-  // Per-pane leading-edge throttle: the timestamp of the last issued follow.
-  // A burst of block writes within `debounceMs` issues a single `tmux` call —
-  // the first exit already snapped the pane to its tail, so writes that land
-  // while the pane is no longer in a mode need no further follow.
-  private readonly lastIssued = new Map<string, number>();
-
   constructor(options: CreateFollowObserverOptions) {
     this.sessionName = options.sessionName;
     this.captainTitle = captainPaneTitle(options.captainAdapter);
@@ -82,8 +70,6 @@ export class FollowObserver implements RecordObserver {
         playerPaneTitle(player.id, player.adapter),
       );
     }
-    this.now = options.now ?? Date.now;
-    this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.tmux = options.tmux ?? spawnFollowClient;
   }
 
@@ -104,16 +90,14 @@ export class FollowObserver implements RecordObserver {
   }
 
   private follow(title: string): void {
-    const now = this.now();
-    const last = this.lastIssued.get(title);
-    if (last !== undefined && now - last < this.debounceMs) {
-      return;
-    }
     const target = this.tmux.queryPaneTargetsByTitle(this.sessionName).get(title);
     if (!target) {
       return;
     }
-    this.lastIssued.set(title, now);
+    // Check every visible write through the atomic tmux-side mode gate. A
+    // live-pane no-op cannot stand in for a later write after the pane enters
+    // copy-mode, and re-entering copy-mode after one exit must remain visible
+    // to the next write.
     this.tmux.followPane(target);
   }
 

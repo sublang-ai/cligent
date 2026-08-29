@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 46 are done; tasks 47 through 53 remain.
+Tasks 1 through 47 are done; tasks 48 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -104,6 +104,7 @@ Task 43 makes every local missing-dependency skip in [[engine-219](../packages/e
 Task 44 records the owner's help-before-diagnostics-before-session-before-launcher dispatch precedence in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and scopes [DR-012](../decisions/012-runtime-derived-tmux-play-defaults.md)'s generation and readiness rules to ordinary launch, adds [[tmux-play-204](../packages/tmux-play.md#tmux-play-204)]'s complete selector and [[tmux-play-205](../packages/tmux-play.md#tmux-play-205)]'s built-CLI matrix, scopes the earlier launcher, session, first-run, diagnostic, and minimum-tmux concerns through that selector, and narrows task 49 after asserting every selected flow and the invalid combination without changing shipped dispatch.
 Task 45 records the owner's source-delivery choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-008](../decisions/008-captain-pre-close-lifecycle.md), makes a rejecting observer's isolation preserve current and later source fanout to healthy observers while the originating caller and next drain still observe its failure, orders a nonterminal diagnostic before `turn_aborted`, bounds diagnostic-observer failure without recursion, makes a terminal-source diagnostic session-scoped after exactly one terminal with no later turn record, consumes an already-diagnosed pending observer failure as secondary so it cannot replace a later terminating failure or bypass that turn's terminal, and narrows task 49 after focused multi-observer assertions.
 Task 46 records the owner's resolved-startup-order choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.md), aligns [[tmux-play-27](../packages/tmux-play.md#tmux-play-27)] so an explicit `layout.initialVisible` array orders startup panes while omission retains config order, and binds the existing focused launcher and real-tmux assertions through [[tmux-play-182](../packages/tmux-play.md#tmux-play-182)] without changing shipped layout or that item's zero-player-only task-49 residue.
+Task 47 removes the live-follow observer's state-blind leading-edge throttle so neither a live-pane no-op nor an earlier copy-mode exit can suppress a rapid visible write after that pane enters or re-enters copy-mode, retains per-pane isolation and the no-visible-bytes exclusion, extends [[tmux-play-169](../packages/tmux-play.md#tmux-play-169)]'s real-tmux flow with both rapid-write sequences, and narrows task 49 to [[tmux-play-69](../packages/tmux-play.md#tmux-play-69)]'s remaining unasserted branches.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -626,7 +627,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-58`'s non-TTY-stdin branch; |
     | `tmux-play` | | `tmux-play-62`'s toast style and auto-dismiss, stock click and wheel behavior, terminal-policy fallback, and server-global binding lifetime; |
     | `tmux-play` | | `tmux-play-68`'s keyboard-switch selection preservation; |
-    | `tmux-play` | | `tmux-play-69`'s target-not-in-mode, other-session, and pane-process-survival branches, with task 47 owning rapid-write correctness; |
+    | `tmux-play` | | `tmux-play-69`'s target-not-in-mode, other-session, and pane-process-survival branches; |
     | `tmux-play` | | `tmux-play-71`'s negative clamp and 100-hour expansion, the latter exercised only by `timing.test.ts`; |
     | `tmux-play` | | `tmux-play-72`'s hidden-versus-visible `turnId` and `resumeToken` result parity; |
     | `tmux-play` | | `tmux-play-75`'s exactly-once prompt restoration after a runtime error; |

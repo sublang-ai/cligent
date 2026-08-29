@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CligentEvent } from '../../types.js';
 import {
   FollowObserver,
@@ -16,6 +16,10 @@ const CODER_PANE = '%1';
 const REVIEWER_PANE = '%2';
 
 describe('FollowObserver', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('follows a flushed text block, not the buffered text_delta in isolation', () => {
     const { observer, followed } = makeObserver();
 
@@ -88,13 +92,16 @@ describe('FollowObserver', () => {
   });
 
   it('does not follow on suppressed done/error events or events that render to nothing', () => {
-    const { observer, followed } = makeObserver();
+    const { observer, followed, paneModes } = makeStatefulObserver([
+      [CAPTAIN_PANE, true],
+    ]);
 
     observer.onRecord(captainEvent(doneEvent()));
     observer.onRecord(captainEvent(errorEvent()));
     observer.onRecord(captainEvent(initEvent()));
 
     expect(followed).toEqual([]);
+    expect(paneModes.get(CAPTAIN_PANE)).toBe(true);
   });
 
   it('does not follow on hidden captain events or hidden finished records', () => {
@@ -214,33 +221,55 @@ describe('FollowObserver', () => {
     expect(followed).toEqual([]);
   });
 
-  it('coalesces rapid writes per pane within the debounce window, then follows again after it', () => {
-    let now = 1000;
-    const { observer, followed } = makeObserver({
-      debounceMs: 250,
-      now: () => now,
-    });
+  it('lets a rapid visible write exit copy-mode after an earlier live-pane no-op', () => {
+    // Freeze the former throttle clock so this remains a deterministic
+    // regression check even if the host pauses between the two writes.
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { observer, followed, paneModes } = makeStatefulObserver();
 
-    observer.onRecord(captainEvent(toolUse())); // fires at 1000
-    now = 1100;
-    observer.onRecord(captainEvent(toolUse())); // 100ms < 250ms: suppressed
-    now = 1300;
-    observer.onRecord(captainEvent(toolUse())); // 300ms >= 250ms: fires
+    // A visible write against the live pane reaches tmux but changes no mode.
+    observer.onRecord(captainEvent(toolUse()));
+    expect(paneModes.get(CAPTAIN_PANE)).toBe(false);
+
+    // The user then scrolls back before the next visible write. The earlier
+    // no-op must not suppress the exit that this write now requires.
+    paneModes.set(CAPTAIN_PANE, true);
+    observer.onRecord(captainEvent(toolResult()));
 
     expect(followed).toEqual([CAPTAIN_PANE, CAPTAIN_PANE]);
+    expect(paneModes.get(CAPTAIN_PANE)).toBe(false);
   });
 
-  it('throttles each pane independently', () => {
-    let now = 1000;
-    const { observer, followed } = makeObserver({
-      debounceMs: 250,
-      now: () => now,
-    });
+  it('follows again when a pane rapidly re-enters copy-mode', () => {
+    // Both writes occupy the same former 250 ms window.
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { observer, followed, paneModes } = makeStatefulObserver([
+      [CAPTAIN_PANE, true],
+    ]);
 
-    observer.onRecord(captainEvent(toolUse())); // boss fires
-    observer.onRecord(playerEvent('coder', toolUse())); // coder fires (own window)
+    observer.onRecord(captainEvent(toolUse()));
+    expect(paneModes.get(CAPTAIN_PANE)).toBe(false);
 
-    expect(followed).toEqual([CAPTAIN_PANE, CODER_PANE]);
+    // A fresh scroll-back is a new mode episode even when no debounce window
+    // has elapsed since the preceding exit.
+    paneModes.set(CAPTAIN_PANE, true);
+    observer.onRecord(captainEvent(toolResult()));
+
+    expect(followed).toEqual([CAPTAIN_PANE, CAPTAIN_PANE]);
+    expect(paneModes.get(CAPTAIN_PANE)).toBe(false);
+  });
+
+  it('follows only the written pane when siblings are in copy-mode', () => {
+    const { observer, followed, paneModes } = makeStatefulObserver([
+      [CODER_PANE, true],
+      [REVIEWER_PANE, true],
+    ]);
+
+    observer.onRecord(playerEvent('coder', toolUse()));
+
+    expect(followed).toEqual([CODER_PANE]);
+    expect(paneModes.get(CODER_PANE)).toBe(false);
+    expect(paneModes.get(REVIEWER_PANE)).toBe(true);
   });
 
   it('swallows tmux failures so a transient error does not abort the turn', () => {
@@ -252,7 +281,6 @@ describe('FollowObserver', () => {
     };
     const observer = new FollowObserver({
       ...baseOptions(),
-      debounceMs: 0,
       tmux: throwingClient,
     });
 
@@ -263,7 +291,6 @@ describe('FollowObserver', () => {
     const followed: string[] = [];
     const observer = new FollowObserver({
       ...baseOptions(),
-      debounceMs: 0,
       tmux: {
         queryPaneTargetsByTitle: () => new Map(),
         followPane: (target) => followed.push(target),
@@ -302,7 +329,6 @@ function makeObserver(
   const targets = paneTargets();
   const observer = new FollowObserver({
     ...baseOptions(),
-    debounceMs: 0,
     tmux: {
       queryPaneTargetsByTitle: () => targets,
       followPane: (target) => followed.push(target),
@@ -310,6 +336,36 @@ function makeObserver(
     ...overrides,
   });
   return { observer, followed };
+}
+
+function makeStatefulObserver(
+  initialModes: readonly (readonly [string, boolean])[] = [],
+): {
+  observer: FollowObserver;
+  followed: string[];
+  paneModes: Map<string, boolean>;
+} {
+  const followed: string[] = [];
+  const targets = paneTargets();
+  const paneModes = new Map<string, boolean>([
+    [CAPTAIN_PANE, false],
+    [CODER_PANE, false],
+    [REVIEWER_PANE, false],
+    ...initialModes,
+  ]);
+  const observer = new FollowObserver({
+    ...baseOptions(),
+    tmux: {
+      queryPaneTargetsByTitle: () => targets,
+      followPane: (target) => {
+        followed.push(target);
+        if (paneModes.get(target)) {
+          paneModes.set(target, false);
+        }
+      },
+    },
+  });
+  return { observer, followed, paneModes };
 }
 
 // --- record factories -----------------------------------------------------
