@@ -75,6 +75,8 @@ jobs:
 
       - run: npm run build
 
+      - run: npm run test:package
+
       - run: npm run lint
 
       - run: npm test

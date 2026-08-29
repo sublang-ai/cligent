@@ -10,15 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-29
+
+### Added
+
+- Audited release-preparation evidence now fixes the reviewed Git range, Semantic Versioning rationale, notable-change reconciliation, and pre-tag checklist in a reproducible record. Repository system coverage verifies the record, release workflow, and local release-smoke composition without replacing the preparer's manual judgment — DR-020, IR-052
+- A Git-aware SPDX header audit now covers every tracked or addable in-scope file in CI, including production modules named `config.*`, while preserving exact exclusions for generated, vendored, legal, and declarative configuration artifacts — IR-052
+
 ### Changed
 
 - **Breaking:** OpenCode now rejects an explicit `maxTurns`, including zero, before SDK loading or backend work. OpenCode 1.18.13 exposes turn ceilings only through persistent agent configuration rather than an exact per-run control, so the prior prompt `steps` data was ignored and left the requested limit unenforced. Callers must omit `maxTurns` or choose an adapter with an exact per-run limit — DR-002, IR-051
+- **Breaking:** The canonical specification source has moved to the current `specs/packages/`, `specs/intents/`, and `specs/decisions/` layout, with package-local lowercase item IDs and verification colocated with behavior. DR-017 maps every released legacy ID to its current carrier, DR-018 preserves the NDJSON end-of-stream tail rule, and DR-019 permanently reserves retired released IDs while removing only superseded concerns — DR-017, DR-018, DR-019, IR-051
+- tmux-play CLI mode dispatch and startup pane order are now stated and system-pinned as the shipped first-applicable behavior: help precedes all work, diagnostics precede session and launcher validation, session mode precedes ordinary launch, and explicit `initialVisible` order controls startup panes while omission preserves configured player order — DR-004, DR-007, DR-012, IR-051
+- Local dependency-gated acceptance checks now report the adapter and every missing prerequisite, while CI keeps the same prerequisites as hard failures rather than silent skips — IR-051
 
 ### Fixed
 
-- Claude runtime readiness now classifies the version-tied Claude Agent SDK that its repair installs instead of allowing an unrelated Claude Code package in cligent's dependency tree to supply a differently versioned identity. The SDK remains the single compatibility authority; repository conformance derives selected-binary consistency from SDK-owned package and manifest metadata and leaves absent identity or version data unreported rather than guessed. Codex retains its executable as the runtime authority but resolves its readiness version only through the Codex SDK's dependency path, so an unrelated top-level package cannot supply the compared version — DR-013, IR-051, PKG-016
+- Runtime readiness now classifies the version-tied Claude Agent SDK that its repair installs instead of allowing an unrelated Claude Code package in cligent's dependency tree to supply a differently versioned identity. The SDK remains the single compatibility authority; repository conformance derives selected-binary consistency from SDK-owned package and manifest metadata and leaves absent identity or version data unreported rather than guessed. Codex retains its executable as the runtime authority but resolves its readiness version only through the Codex SDK's dependency path, so an unrelated top-level package cannot supply the compared version. CLI-backed targets report their portable configured command identity while peer-backed targets retain their resolved package tree — DR-013, IR-051, PKG-016
+- Claude invalid-effort rejection now occurs before caller-abort listener state is acquired, so an unsupported value reaches neither the SDK nor a leaked per-run listener — IR-051
+- Codex legacy tool-result aliases now normalize all string statuses case-insensitively, preserve array output and ordered content-derived events together, suppress mirrored text exactly once, and retain backend-confirmed continuity on synthetic exhaustion or iterator failure without echoing an inbound-only token — IR-051
+- Gemini caller abort now wins over buffered native results, synthetic failures use the normal continuity selector, child close is observed before stdout validation, and interrupted closes cannot promote stderr into a successful result — IR-051
+- Kimi now applies caller-abort-first terminal precedence across native, process, and cleanup outcomes; bounds idempotent child containment even when a consumer stops at `done`; reports secondary cleanup failure explicitly; and drains validated configuration-time updates after `init` in arrival order without charging later configuration latency to tool duration — DR-011, IR-051
 - OpenCode caller abort now preempts already-aborted runs, pending SDK loading, and managed readiness before later backend work starts. Once a managed child exists, the interrupted terminal still precedes bounded `SIGTERM` / `SIGKILL` teardown — OPENCODE-009, TADAPT-008, IR-051
-- OpenCode permission correlation no longer retains one tombstone for every completed response until the run ends. Active request data survives until native confirmation for denial correlation, repeated delivery before that boundary still receives one response, and failed, timed-out, aborted, or terminal paths release their remaining request and wait state — OPENCODE-020, TADAPT-037, IR-051
+- OpenCode permission correlation no longer retains one tombstone for every completed response until the run ends. Active request data survives until native confirmation for denial correlation, stale replays receive no second native reply, genuinely reused lifecycles remain actionable, and reply-time disappearance preserves the original call identity. Registry lookup and reply share one five-second provider-work budget that excludes consumer backpressure, while failed, timed-out, aborted, or terminal paths release their remaining state — OPENCODE-020, TADAPT-037, IR-051
+- OpenCode managed startup now distinguishes actionable child spawn errors from genuine pre-readiness exits, while real exits before or after readiness retain the same exact code-and-signal diagnostic and caller abort remains authoritative — IR-051
+- tmux-play captured whole-message framing no longer fuses adjacent complete `text` events when a terminal `done` omits `result`; streaming deltas remain contiguous while line-oriented final responses such as `Commit:` keep their boundary — IR-051
+- tmux-play observer delivery now isolates a rejecting observer only after healthy successors receive the source record, keeps later records flowing, reports the failure on the correct lane, closes an active turn with `turn_aborted`, and preserves the later causal failure when more than one failure overlaps — DR-004, DR-008, IR-051
+- tmux-play copy-mode follow now sends every visible write through the atomic pane-state gate, so rapid live-to-copy and copy-to-copy transitions cannot be hidden by the former state-blind throttle — IR-051
+- tmux-play fanout acceptance now honors the released two-retry bound, retrying only attempts made entirely of explicit transient upstream failures and exposing the third transient or any mixed failure immediately — IR-051
 
 ## [0.22.0] - 2026-08-15
 
@@ -421,7 +440,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/sublang-ai/cligent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/sublang-ai/cligent/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/sublang-ai/cligent/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/sublang-ai/cligent/compare/v0.19.0...v0.20.0

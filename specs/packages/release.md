@@ -74,6 +74,17 @@ Before tagging a release, the developer or agent shall verify:
 - [ ] the `package.json` version is bumped;
 - [ ] all changes are committed and pushed to `main`.
 
+### release-14
+
+Before creating a release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
+
+| Evidence | Required contents |
+| --- | --- |
+| commit-range review | previous tag, audited head, commit count, ordered-log digest, review command, and attestation that every commit was considered |
+| Semantic Versioning classification | chosen version, change level, and rationale tied to the reviewed changes [[release-1](#release-1)] |
+| notable-change reconciliation | each notable change group, its changelog heading, and the commits that establish it [[release-3](#release-3)], [[release-5](#release-5)] |
+| pre-tag checklist | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending |
+
 ## Verification
 
 ### release-11
@@ -83,13 +94,25 @@ When the release workflow is audited, the audit shall assert what starts the wor
 - only a pushed git tag starts the workflow, and a run whose tag is not `vMAJOR.MINOR.PATCH` stops before publishing [[release-6](#release-6)];
 - the run compares the tag against the `package.json` version and stops before publishing where the two disagree [[release-7](#release-7)], leaving only a matching pair publishable [[release-2](#release-2)];
 - the CI run for the tagged commit is awaited while in progress, and publishing is refused unless it concluded successfully [[release-7](#release-7)];
+- the package is built and its publishable surface is validated before publication [[release-7](#release-7)];
+- release notes are extracted from the matching version section in `CHANGELOG.md` before publication [[release-7](#release-7)];
 - the publish step carries `--provenance` [[release-8](#release-8)];
 - the job grants `id-token: write`, and no static npm token appears in the workflow [[release-13](#release-13)];
-- the publish step carries `--access public` [[release-9](#release-9)].
+- the publish step carries `--access public` [[release-9](#release-9)];
+- the GitHub release is created from the extracted notes after publication [[release-7](#release-7)].
 
 ### release-12
 
 When `npm run smoke:release` runs, the verification shall assert that this one entry point runs `build`, `test:package`, `test:distributable`, and `test:smoke`, in that order [[release-10](#release-10)].
+
+### release-15
+
+When a release-preparation record is audited, the system check shall assert the following evidence against the real repository [[release-14](#release-14)]:
+
+- the recorded Git range has the stated endpoint, commit count, subjects, and ordered-log digest [[release-4](#release-4)];
+- the recorded change level produces the chosen version from the previous tag [[release-1](#release-1)];
+- `CHANGELOG.md` has an empty `[Unreleased]` section, the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
+- `package.json` carries the chosen version and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
 
 ## References
 

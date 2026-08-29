@@ -45,6 +45,7 @@ meta.md       The spec of specs
 | [DR-017](decisions/017-spec-generation-migration.md) | 017-spec-generation-migration.md | Spec-generation migration and released-ID mappings |
 | [DR-018](decisions/018-ndjson-end-of-stream-tail.md) | 018-ndjson-end-of-stream-tail.md | NDJSON end-of-stream tail handling |
 | [DR-019](decisions/019-superseded-item-retirements.md) | 019-superseded-item-retirements.md | Superseded-item retirement and permanent ID reservations |
+| [DR-020](decisions/020-audited-release-preparation.md) | 020-audited-release-preparation.md | Audited release-preparation evidence |
 
 ## Packages
 
