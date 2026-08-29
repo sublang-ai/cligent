@@ -5,9 +5,9 @@
 
 ## Status
 
-Planned.
-No implementation task is complete; task 1 is next.
-The source audit contains 226 debt rows across 11 packages and at least 259 item scopes, so closing it as one commit would not be reviewable.
+In progress.
+Task 1 is complete; task 2 is next.
+The source audit began with 226 debt rows across 11 packages and at least 259 item scopes, so closing it as one commit would not be reviewable.
 
 ## Intent
 
@@ -28,7 +28,7 @@ Each slice independently walks from stated assertions to executing checks and fr
 
 Every task below is exactly one commit. Each implementation task changes only its listed scope, adds or strengthens the same-package Verification items and focused integration or system checks together, prefers real behavior, runs the affected focused suites, and removes only debt it demonstrably closes. If a slice exposes a contradiction or an uncheckable released concern, the task shall stop for its owner and carry the approved decision and resulting spec change in that task's commit rather than silently weakening the concern.
 
-1. **Close licensing verification.** Cover `licensing-3`, `licensing-4`, `licensing-6`, `licensing-7`, and `licensing-8`, including a real repository header audit.
+1. [x] **Close licensing verification.** Cover `licensing-3`, `licensing-4`, `licensing-6`, `licensing-7`, and `licensing-8`, including a real repository header audit.
 2. **Close release verification.** Cover `release-1`, `release-3`, `release-4`, `release-5`, `release-7`, and `release-10` through `release-12` through the real release workflow and smoke composition where feasible.
 3. **Close package surface verification.** Cover `package-1`, `package-5`, `package-8`, `package-101`, and `package-102` across declarations, distributable output, documentation, and runtime-target imports.
 4. **Close package readiness verification.** Cover `package-103` through `package-105` and `package-201` across lifecycle acquisition, target history, isolated resolution, and verdict behavior.

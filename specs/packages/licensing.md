@@ -45,11 +45,26 @@ Where a file's first comment block already contains `SPDX-FileCopyrightText` or 
 
 ### licensing-3
 
-Where the file has comment syntax and is included by the licensing scope [[licensing-7](#licensing-7)], while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the copyright-header requirement [[licensing-1](#licensing-1)] by finding `SPDX-FileCopyrightText`.
+When a real repository checkout and isolated Git worktrees are audited, the verification shall assert the copyright-header and scope matrix:
+
+| Git path                                                                                                | Assertion                                                                                                 |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| tracked or `git add`-able file with comment syntax outside the exclusions [[licensing-7](#licensing-7)] | its first comment block after any shebang contains `SPDX-FileCopyrightText` [[licensing-1](#licensing-1)] |
+| file with no comment syntax                                                                             | excluded from the audit [[licensing-7](#licensing-7)]                                                     |
+| configuration, including the named dotfile, settings, instruction, workflow, and lock-file examples     | excluded from the audit [[licensing-7](#licensing-7)]                                                     |
+| generated or vendor content                                                                             | excluded from the audit [[licensing-7](#licensing-7)]                                                     |
+| license or legal document                                                                               | excluded from the audit [[licensing-7](#licensing-7)]                                                     |
 
 ### licensing-4
 
-Where the file has comment syntax, is included by the licensing scope [[licensing-7](#licensing-7)], and the license-file detector [[licensing-8](#licensing-8)] recognizes a project-root license, while git-tracked or `git add`-able, when checking its first comment block after any shebang, the verification shall assert the license-header requirement [[licensing-2](#licensing-2)] by finding `SPDX-License-Identifier`.
+Where included files are selected by the licensing scope [[licensing-7](#licensing-7)], when a real repository checkout and isolated project roots are audited, the verification shall assert this license-detector and included-file header matrix:
+
+| Project-root form                                    | Assertion                                                                                                                                                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LICENSE`, `LICENSE.txt`, `LICENSE.md`, or `COPYING` | the detector recognizes the form [[licensing-8](#licensing-8)], and every included tracked or `git add`-able file has `SPDX-License-Identifier` in its first comment block after any shebang [[licensing-2](#licensing-2)] |
+| a named `LICENSE-*` variant                          | the detector recognizes the form [[licensing-8](#licensing-8)], and every included tracked or `git add`-able file has that header [[licensing-2](#licensing-2)]                                                            |
+| `LICENCE` or `LICENCE.txt`                           | the detector recognizes the form [[licensing-8](#licensing-8)], and every included tracked or `git add`-able file has that header [[licensing-2](#licensing-2)]                                                            |
+| `LICENSES/` directory                                | the detector recognizes the form [[licensing-8](#licensing-8)], and every included tracked or `git add`-able file has that header [[licensing-2](#licensing-2)]                                                            |
 
 ### licensing-6
 

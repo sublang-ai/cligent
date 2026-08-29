@@ -27,6 +27,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify licensing headers
+        run: node scripts/verify-license-headers.mjs
+
       - run: npm run build
 
       - run: npm run test:package
