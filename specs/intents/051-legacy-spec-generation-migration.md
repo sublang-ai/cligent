@@ -6,7 +6,9 @@
 ## Status
 
 In progress.
-Tasks 1 through 48 are done; tasks 49 through 53 remain.
+Tasks 1 through 49 are done; tasks 50 through 53 wait behind the bounded verification-closure phases.
+Task 49 found its 226-row, at-least-259-scope source audit unreviewable as one commit, so its completed sizing phase retains the table below as a live debt register and assigns every eligible scope exactly once across 47 bounded closure commits and one bidirectional reconciliation commit.
+This migration remains incomplete until those phases remove every eligible row they prove closed and the reconciliation finds no residual gap.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -155,6 +157,8 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [x] `specs/intents/` holds every intent record with its status and checkbox state intact, and `specs/iterations/` is gone.
 - [ ] Every item states one GEARS requirement [[meta-29](../meta.md#meta-29)] under the current section order, with peer relationships and verification evidence carried only by inline citations [[meta-14](../meta.md#meta-14)], [[meta-16](../meta.md#meta-16)], [[meta-20](../meta.md#meta-20)], and no `Verifies:` line survives.
 - [x] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
+- [x] The verification-gap audit is partitioned into bounded one-commit slices ending in one bidirectional reconciliation.
+- [ ] Every package behavior has a proving same-package Verification assertion [[meta-20](../meta.md#meta-20)], [[meta-33](../meta.md#meta-33)], and every stated assertion executes in an integration or system check [[meta-21](../meta.md#meta-21)].
 - [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
 - [ ] `spex lint` reports no error and no warning.
 - [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 53, every classification and split judgment, and every open question reach a human diff review.
@@ -410,8 +414,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     Add deterministic harness checks for transient-then-success, three consecutive named transients, and a non-transient failure, asserting fresh-attempt cardinality and that the third or first applicable failure remains visible rather than being replaced.
     The harness and checks land in this task's one commit, and this plan remains incomplete until it closes.
 
-49. **Close or record the verification gaps.**
-    Give every behavior in the table below an integration or system check [[meta-21](../meta.md#meta-21)] that prefers real behavior to a substitute [[meta-32](../meta.md#meta-32)], implementing the audits the table's packages state and nothing runs, and writing the verification items they still lack [[meta-33](../meta.md#meta-33)]:
+49. **Size the verification-gap closure.**
+    Preserve the table below as the live source audit, measure its scope, and assign every task-49-eligible scope exactly once to bounded one-commit package or document-order slices followed by one bidirectional reconciliation commit.
+    This sizing task changes no behavior or check:
 
     | Package     | Audit stated but unrun                                                                               | Behavior no assertion reaches                                                                                                                                                                                                                           |
     | ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -642,11 +647,15 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-204`'s treatment of explicitly empty `--session`, `--config`, and `--work-dir` values as absent for dispatch; its session-mode rejections for non-empty `--config`, an omitted `--work-dir`, a supplied path that is missing or not a directory, and a supplied path lacking write or traversal access; and its no-selector rejections for non-empty `--work-dir` and `--owned-work-dir`; |
     | `tmux-play` | | and `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, which task 51 settles rather than task 49 |
 
-    A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
+    The bounded closure slices give every behavior in the table an integration or system check [[meta-21](../meta.md#meta-21)] that prefers real behavior to a substitute [[meta-32](../meta.md#meta-32)], implement the audits the table's packages state and nothing runs, write the verification items they still lack [[meta-33](../meta.md#meta-33)], and remove only debt they prove closed.
+    A citation is not coverage: where a verification item asserts less than the behavior it cites states, a bounded slice strengthens it, or adds the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
     `git-6`'s trailer bullet shows the shape: it takes `git-4`'s `Co-authored-by` without its `<model> (<role>) <email>` schema, its role set, or its address, so a check written to it would accept the address this project forbids.
     Also add and audit the trailer-block integrity rule that every raw commit-message line beginning `Co-authored-by:` shall parse as a Git trailer, so a separated attribution cannot masquerade as body text.
-    Reconciling every behavior against the items citing it is this task's output rather than this plan's, so the clause-by-clause list lands in the strengthened items instead of here.
-    The branches tasks 16 through 27 split arrive as further rows of that table, as does any gap a migration task hands over, and this task closes only once none is left.
+    Reconciling every behavior against the items citing it is the bounded closure's output rather than this sizing task's, so the clause-by-clause list lands in the strengthened items instead of here.
+    The branches tasks 16 through 27 split arrive as further rows of that table, as does any gap a migration task hands over, and the bounded closure completes only once none is left.
+
+    This sizing task closes when every eligible scope is assigned exactly once and the final reconciliation is planned; it closes no coverage row.
+    The live register and coverage deliverable remain open until the bounded slices remove every eligible row and their final reverse walk finds no residual gap.
 
     Where a behavior admits no check at all, `git-3`'s bullets-if-clearer clause the candidate, a decision record [[meta-24](../meta.md#meta-24)] amends it into a checkable form with its concern preserved [[meta-12](../meta.md#meta-12)], the package then verifying everything it states.
     Where a gap is neither closed nor so amended, this plan does not complete: record it as blocking, name the behavior left unverified, and leave the deliverable open, a package that states a behavior it never verifies being unlawful [[meta-33](../meta.md#meta-33)].
