@@ -741,7 +741,7 @@ export class TmuxPlayRuntime {
     let reportingFailure: ObserverDispatchError | undefined;
 
     if (error instanceof ObserverDispatchError) {
-      await this.consumeDispatchFailure(error);
+      await this.consumePendingObserverFailure();
       if (
         error.record.type === 'turn_finished' ||
         error.record.type === 'turn_aborted'
@@ -752,16 +752,19 @@ export class TmuxPlayRuntime {
         return;
       }
     } else {
+      // An earlier pending observer failure has already delivered its source
+      // and diagnostic. Consume it before reporting this failure so it cannot
+      // replace the cause that is ending the turn.
+      await this.consumePendingObserverFailure();
       try {
-        await this.emitRuntimeError(turnId, error);
-        await this.dispatcher.drain();
+        await this.publishRuntimeError(turnId, error);
       } catch (reportingError) {
         if (!(reportingError instanceof ObserverDispatchError)) {
           throw reportingError;
         }
-        await this.consumeDispatchFailure(reportingError);
         reportingFailure = reportingError;
       }
+      await this.consumePendingObserverFailure();
     }
 
     try {
@@ -771,7 +774,7 @@ export class TmuxPlayRuntime {
       });
     } catch (terminalError) {
       if (terminalError instanceof ObserverDispatchError) {
-        await this.consumeDispatchFailure(terminalError);
+        await this.consumePendingObserverFailure();
       }
       throw terminalError;
     }
@@ -781,13 +784,11 @@ export class TmuxPlayRuntime {
     }
   }
 
-  private async consumeDispatchFailure(
-    failure: ObserverDispatchError,
-  ): Promise<void> {
+  private async consumePendingObserverFailure(): Promise<void> {
     try {
       await this.dispatcher.drain();
     } catch (pendingError) {
-      if (!Object.is(pendingError, failure)) {
+      if (!(pendingError instanceof ObserverDispatchError)) {
         throw pendingError;
       }
     }
@@ -797,12 +798,19 @@ export class TmuxPlayRuntime {
     turnId: number | null,
     error: unknown,
   ): Promise<void> {
+    await this.publishRuntimeError(turnId, error);
+    await this.dispatcher.drain();
+  }
+
+  private publishRuntimeError(
+    turnId: number | null,
+    error: unknown,
+  ): Promise<void> {
     const runtimeError: RuntimeErrorRecord = {
       ...makeRecordBase('runtime_error', turnId),
       message: errorMessage(error),
     };
-    await this.dispatcher.emit(runtimeError);
-    await this.dispatcher.drain();
+    return this.dispatcher.emit(runtimeError);
   }
 
   private async shutdownSessionEmissions(): Promise<void> {

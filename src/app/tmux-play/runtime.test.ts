@@ -2934,6 +2934,157 @@ describe('TmuxPlayRuntime', () => {
     },
   );
 
+  it('closes the turn with the later of two observer failures (tmux-play-111)', async () => {
+    const survivorRecords: TmuxPlayRecord[] = [];
+    let session!: CaptainSession;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+      },
+      async handleBossTurn(turn) {
+        if (turn.id !== 1) return;
+        void session.emitStatus('first observer failure');
+        await session.emitStatus('second observer failure');
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              record.type === 'captain_status' &&
+              record.message === 'first observer failure'
+            ) {
+              throw new Error('first observer failed');
+            }
+          },
+        },
+        {
+          onRecord(record) {
+            if (
+              record.type === 'captain_status' &&
+              record.message === 'second observer failure'
+            ) {
+              throw new Error('second observer failed');
+            }
+          },
+        },
+        {
+          onRecord(record) {
+            survivorRecords.push(record as TmuxPlayRecord);
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const failure = await runtime
+      .runBossTurn('two observer failures')
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      name: 'ObserverDispatchError',
+      cause: expect.objectContaining({ message: 'second observer failed' }),
+    });
+    expect(
+      survivorRecords.filter((record) => record.turnId === 1),
+    ).toMatchObject([
+      { type: 'turn_started' },
+      { type: 'captain_status', message: 'first observer failure' },
+      {
+        type: 'runtime_error',
+        message: 'first observer failed',
+        sourceRecordType: 'captain_status',
+      },
+      { type: 'captain_status', message: 'second observer failure' },
+      {
+        type: 'runtime_error',
+        message: 'second observer failed',
+        sourceRecordType: 'captain_status',
+      },
+      { type: 'turn_aborted' },
+    ]);
+    expect(
+      survivorRecords.filter(
+        (record) =>
+          record.turnId === 1 &&
+          (record.type === 'turn_finished' || record.type === 'turn_aborted'),
+      ),
+    ).toHaveLength(1);
+
+    await expect(runtime.runBossTurn('next turn')).resolves.toBeUndefined();
+    expect(
+      survivorRecords
+        .filter((record) => record.turnId === 2)
+        .map((record) => record.type),
+    ).toEqual(['turn_started', 'turn_finished']);
+
+    await runtime.dispose();
+  });
+
+  it('keeps a Captain failure primary after a pending observer failure (tmux-play-111)', async () => {
+    const captainFailure = new Error('captain ended the turn');
+    const survivorRecords: TmuxPlayRecord[] = [];
+    let session!: CaptainSession;
+    const captain: Captain = {
+      async init(captainSession) {
+        session = captainSession;
+      },
+      async handleBossTurn() {
+        void session.emitStatus('observer fails first');
+        throw captainFailure;
+      },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain,
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'coder', adapter: 'codex' }],
+      observers: [
+        {
+          onRecord(record) {
+            if (record.type === 'captain_status') {
+              throw new Error('status observer failed');
+            }
+          },
+        },
+        {
+          onRecord(record) {
+            survivorRecords.push(record as TmuxPlayRecord);
+          },
+        },
+      ],
+      adapterImports: adapterImports({}),
+    });
+
+    const failure = await runtime
+      .runBossTurn('Captain failure')
+      .catch((error: unknown) => error);
+
+    expect(failure).toBe(captainFailure);
+    expect(
+      survivorRecords.filter((record) => record.turnId === 1),
+    ).toMatchObject([
+      { type: 'turn_started' },
+      { type: 'captain_status', message: 'observer fails first' },
+      {
+        type: 'runtime_error',
+        message: 'status observer failed',
+        sourceRecordType: 'captain_status',
+      },
+      { type: 'runtime_error', message: 'captain ended the turn' },
+      { type: 'turn_aborted' },
+    ]);
+    expect(survivorRecords.at(-1)).toMatchObject({
+      type: 'turn_aborted',
+      reason: 'captain ended the turn',
+    });
+
+    await runtime.dispose();
+  });
+
   it('does not recurse when an observer rejects a runtime_error source (tmux-play-111)', async () => {
     const earlierRecords: TmuxPlayRecord[] = [];
     const laterRecords: TmuxPlayRecord[] = [];

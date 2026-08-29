@@ -474,6 +474,7 @@ When a control-plane failure occurs, the runtime shall apply this matrix:
 | observer caused failure on a nonterminal source other than `runtime_error` | after source delivery completes, deliver `runtime_error` with the source's turn ID additionally to healthy observers after the first rejection in registration order, then emit `turn_aborted` when a turn is active and run shutdown |
 | observer caused failure on `turn_finished` or `turn_aborted` | after that terminal reaches every healthy later observer exactly once, deliver `runtime_error` with `turnId: null` additionally to those observers; emit no later turn-ID record or second terminal |
 | observer caused failure while delivering `runtime_error` | complete that diagnostic's source delivery and isolate each rejecting observer under [[tmux-play-23](#tmux-play-23)], synthesize no recursive diagnostic, and continue shutdown |
+| earlier observer failure remains pending when a distinct later failure ends an active turn before terminal dispatch | consume the earlier pending failure after its source and diagnostic delivery without replacing the later runtime rejection cause or bypassing `turn_aborted` |
 | individual player or Captain run fails | use its `player_finished` / `captain_finished` with `status: 'error'`, not `runtime_error` |
 
 ### tmux-play-77
@@ -1440,6 +1441,8 @@ When a registered observer rejects while receiving a runtime source record, the 
 | nonterminal turn source | healthy later observers receive the source, its same-turn `runtime_error`, and then `turn_aborted`; the active turn aborts, cleanup completes, and the runtime call rejects [[tmux-play-25](#tmux-play-25)] |
 | `turn_finished` or `turn_aborted` source | healthy later observers receive the terminal once, followed by one `runtime_error` with `turnId: null`, and receive no later turn-ID record or second terminal [[tmux-play-22](#tmux-play-22)], [[tmux-play-25](#tmux-play-25)] |
 | `runtime_error` source | healthy later observers receive it once, no recursive diagnostic follows, the rejecting observer receives no later source, the active turn ends with `turn_aborted`, and the runtime call rejects [[tmux-play-23](#tmux-play-23)], [[tmux-play-25](#tmux-play-25)] |
+| pending observer failure, then a distinct awaited observer failure | a healthy observer later than both rejecting observers receives both sources and diagnostics followed by one `turn_aborted`; the later failure rejects the runtime call, and a later turn completes normally [[tmux-play-22](#tmux-play-22)], [[tmux-play-23](#tmux-play-23)], [[tmux-play-25](#tmux-play-25)] |
+| pending observer failure, then a Captain failure | healthy observers after the rejecting observer receive both diagnostics followed by one `turn_aborted`, and the Captain failure rejects the runtime call [[tmux-play-25](#tmux-play-25)] |
 
 ### tmux-play-112
 
