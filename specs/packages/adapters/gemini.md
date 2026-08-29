@@ -519,10 +519,10 @@ Given setup and child-process terminal conditions with no native result, when th
 | close code is `53` | exhausted close |
 | close code is `1`, `42`, another nonzero or null value, or another signal is present | errored close |
 
-Each synthetic-error row asserts init first if needed, a non-recoverable `GEMINI_STREAM_ERROR` with the exact thrown-`Error` message or fallback diagnostic, then error `done` with elapsed duration, normal-terminal resume selection, only the observed tool count, and no tokens or result [[gemini-9](#gemini-9)], [[gemini-19](#gemini-19)], [[gemini-27](#gemini-27)].
-The missing-stdout row additionally asserts child termination and close before temporary-resource cleanup [[gemini-35](#gemini-35)], [[gemini-44](#gemini-44)].
-The interrupted-close row supplies non-empty stderr and asserts result omission [[gemini-5](#gemini-5)], [[gemini-8](#gemini-8)].
-Each non-interrupted close row asserts the selected status and error-before-done ordering, exact fallback message, trimmed-stderr result, elapsed duration, normal resume selection, and usage containing only the observed tool count that its state requires [[gemini-5](#gemini-5)], [[gemini-9](#gemini-9)], [[gemini-27](#gemini-27)].
+- Each synthetic-error row asserts init first if needed, a non-recoverable `GEMINI_STREAM_ERROR` with the exact thrown-`Error` message or fallback diagnostic, then error `done` with elapsed duration, normal-terminal resume selection, only the observed tool count, and no tokens or result [[gemini-9](#gemini-9)], [[gemini-19](#gemini-19)], [[gemini-27](#gemini-27)].
+- The missing-stdout row additionally asserts child termination and close before temporary-resource cleanup [[gemini-35](#gemini-35)], [[gemini-44](#gemini-44)].
+- The interrupted-close row supplies non-empty stderr and asserts result omission [[gemini-5](#gemini-5)], [[gemini-8](#gemini-8)].
+- Each non-interrupted close row asserts the selected status and error-before-done ordering, exact fallback message, trimmed-stderr result, elapsed duration, normal resume selection, and usage containing only the observed tool count that its state requires [[gemini-5](#gemini-5)], [[gemini-9](#gemini-9)], [[gemini-27](#gemini-27)].
 
 ### gemini-213
 

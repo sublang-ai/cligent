@@ -9,7 +9,7 @@ Accepted
 
 ## Context
 
-[DR-002](002-unified-event-stream-and-adapter-interface.md#key-payloads) originally required
+[DR-002](002-unified-event-stream-and-adapter-interface.md) originally required
 `inputTokens` and `outputTokens` on every terminal event.
 The later flat-accounting generation added `tokenAvailability` because a required numeric zero could not
 distinguish measured zero from missing accounting; [DR-019](019-superseded-item-retirements.md) records that

@@ -83,7 +83,7 @@ interface RunOptions extends CligentOptions {
 
 ### Role Attribution
 
-`BaseEvent.agent` is backend identity (`'claude-code'`). When two roles use the same backend, events are indistinguishable by `agent` alone. `Cligent` adds a top-level `role` field to emitted `CligentEvent` values (defined in [DR-002](002-unified-event-stream-and-adapter-interface.md#base-event)). `role` is `undefined` when `CligentOptions.role` is not set — backward-compatible with raw `AgentEvent` consumers.
+`BaseEvent.agent` is backend identity (`'claude-code'`). When two roles use the same backend, events are indistinguishable by `agent` alone. `Cligent` adds a top-level `role` field to emitted `CligentEvent` values (defined in [DR-002](002-unified-event-stream-and-adapter-interface.md)). `role` is `undefined` when `CligentOptions.role` is not set — backward-compatible with raw `AgentEvent` consumers.
 `Cligent.parallel()` preserves the source event's backend `agent`, preserves its configured `role`, and neither requires nor synthesizes a role for an unconfigured source.
 
 ### Single-Flight Enforcement

@@ -6,7 +6,11 @@
 ## Status
 
 In progress.
-Tasks 1 through 52 are done; task 53 is next.
+Tasks 1 through 53 are done; the implementation handover is ready for human diff review.
+Task 53 reconciled the 402-item baseline through [DR-017](../decisions/017-spec-generation-migration.md)'s 815 package-map rows: all baseline IDs and the two later recovered retired IDs map to 648 live destinations, while the 24-item framework map resolves every live carrier and retains only the owner-approved `META-26` no-successor outcome.
+It confirmed that all 51 baseline records retain their leading status and checkbox sequences, with only two already-explained status narratives updated, that the legacy directories are absent, and that the only legacy-layout links are the two frozen Kimi changelog links.
+`spex lint`, the license audit, typecheck, lint, build, the 1,256-test unit suite, package-output and distributable checks, the 13-test smoke suite, and 46 feasible acceptance tests are green; 17 credential-gated acceptance tests self-skipped.
+The record remains in progress until the bounded successor coverage program closes its live register, a human chooses the two released Kimi changelog-link outcomes, and a human reviews the map, classifications, split judgments, owner settlements, and full diff.
 Task 49 found its 226-row, at-least-259-scope source audit unreviewable as one commit, so its completed sizing phase retains the table below as a live debt register and assigns every eligible scope exactly once across 47 bounded closure commits and one bidirectional reconciliation commit.
 The owner ruled that recording that bounded successor program satisfies task 49, so its verification debt remains open for later execution without gating tasks 50 through 53 or being treated as closed here.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
@@ -158,13 +162,13 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
 - [x] A decision record fixes the destination package set, the ID scheme, the disposition of the cross-adapter test file, and what the migration leaves alone.
 - [x] `specs/packages/` holds one lawful package per subject, and `specs/user/`, `specs/dev/`, and `specs/test/` are gone.
 - [x] `specs/intents/` holds every intent record with its status and checkbox state intact, and `specs/iterations/` is gone.
-- [ ] Every item states one GEARS requirement [[meta-29](../meta.md#meta-29)] under the current section order, with peer relationships and verification evidence carried only by inline citations [[meta-14](../meta.md#meta-14)], [[meta-16](../meta.md#meta-16)], [[meta-20](../meta.md#meta-20)], and no `Verifies:` line survives.
+- [x] Every item states one GEARS requirement [[meta-29](../meta.md#meta-29)] under the current section order, with peer relationships and verification evidence carried only by inline citations [[meta-14](../meta.md#meta-14)], [[meta-16](../meta.md#meta-16)], [[meta-20](../meta.md#meta-20)], and no `Verifies:` line survives.
 - [x] `specs/map.md` indexes decisions and packages in the current shape and names no intent record [[meta-18](../meta.md#meta-18)].
 - [x] The verification-gap audit is partitioned into bounded one-commit slices ending in one bidirectional reconciliation.
 - [ ] Every package behavior has a proving same-package Verification assertion [[meta-20](../meta.md#meta-20)], [[meta-33](../meta.md#meta-33)], and every stated assertion executes in an integration or system check [[meta-21](../meta.md#meta-21)].
-- [ ] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
-- [ ] `spex lint` reports no error and no warning.
-- [ ] The per-item rename map built into the decision record in task 4 and reconciled in task 53, every classification and split judgment, and every open question reach a human diff review.
+- [x] Comments, test names, and CI annotations quote current item IDs, while released `CHANGELOG.md` history stays byte-for-byte.
+- [x] `spex lint` reports no error and no warning.
+- [x] The per-item rename map built into the decision record in task 4 and reconciled in task 53, every classification and split judgment, and every open question reach a human diff review.
 
 ## Tasks
 1. **Record the migration contract.**

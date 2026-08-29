@@ -437,15 +437,15 @@ matrix:
 | direct compatibility-wrapper prompt `tools` value | reject before session creation, update, subscription, or prompt |
 | both option fields omitted and no direct wrapper value | send no prompt `tools` data, preserving OpenCode's native available-tool surface |
 
-OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
-control: the provider converts its booleans into persistent session permission
-rules, replacing prior session rules [[5]].
-Because permission evaluation is last-match-wins and session rules follow agent
-rules, an enabled tool can override a native or explicitly supplied deny, and a
-prompt-scoped request can change a resumed session after that cligent call ends
-[[6]][[7]].
-The provider also canonicalizes some tool identifiers to shared permission
-names, so this surface cannot guarantee exact per-call identifiers [[6]].
+> OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
+> control: the provider converts its booleans into persistent session permission
+> rules, replacing prior session rules [[5]].
+> Because permission evaluation is last-match-wins and session rules follow agent
+> rules, an enabled tool can override a native or explicitly supplied deny, and a
+> prompt-scoped request can change a resumed session after that cligent call ends
+> [[6]][[7]].
+> The provider also canonicalizes some tool identifiers to shared permission
+> names, so this surface cannot guarantee exact per-call identifiers [[6]].
 
 ### opencode-44
 
@@ -890,8 +890,8 @@ contract [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)]:
 - an errored result or a use stranded by a truncated attempt remains eligible
   for a named transient retry.
 
-This is [[opencode-231](#opencode-231)]'s real-release counterpart because only
-the live SDK can expose a changed `ToolPart` wire shape.
+> This is [[opencode-231](#opencode-231)]'s real-release counterpart because only
+> the live SDK can expose a changed `ToolPart` wire shape.
 
 ### opencode-234
 

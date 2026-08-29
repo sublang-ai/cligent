@@ -69,7 +69,7 @@ The empty set is accepted if and only if the configured roster is empty, so a
 non-empty roster cannot transition to a zero-player visible layout.
 When validation fails, the returned Promise rejects before any record is emitted.
 The visible set remains unchanged.
-The Captain may catch that rejection and continue; an uncaught rejection follows the normal Captain failure path from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation).
+The Captain may catch that rejection and continue; an uncaught rejection follows the normal Captain failure path from [DR-004](004-tmux-play-captain-architecture.md).
 
 The runtime emits one `player_view_changed` record for an accepted call:
 
@@ -83,14 +83,14 @@ interface PlayerViewChangedRecord {
 ```
 
 Calls from `CaptainContext` carry the active turn ID.
-Calls from `CaptainSession` carry the active turn ID when a turn is active, otherwise `null`, matching the existing session-emission convention for `captain_status` and `captain_telemetry` in [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation).
+Calls from `CaptainSession` carry the active turn ID when a turn is active, otherwise `null`, matching the existing session-emission convention for `captain_status` and `captain_telemetry` in [DR-004](004-tmux-play-captain-architecture.md).
 
 The runtime validates IDs and emits the record.
 It does not inspect tmux state or mutate presentation state directly.
-The runtime record taxonomy from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation) is extended by `player_view_changed`.
+The runtime record taxonomy from [DR-004](004-tmux-play-captain-architecture.md) is extended by `player_view_changed`.
 
 When a Captain awaits `setVisiblePlayers(next)` and then calls `callPlayer()` for a newly visible player, the layout reconciliation attempt is ordered before that player's later `player_prompt` / `player_event` records are presented.
-This design relies on the ordered, awaited observer dispatch from [DR-004](004-tmux-play-captain-architecture.md#runtime-and-presentation) to provide that sequencing.
+This design relies on the ordered, awaited observer dispatch from [DR-004](004-tmux-play-captain-architecture.md) to provide that sequencing.
 When reconciliation succeeds, the newly visible pane exists before that player's later records are presented.
 When reconciliation fails and the display-only observer swallows or surfaces the failure, later player output still reaches the player's log stream, but the pane may be absent or incomplete until a later successful visibility change.
 Any future asynchronous or coalesced layout reconciliation must preserve the same successful-reconciliation-before-player-output guarantee for awaited `setVisiblePlayers()` calls.

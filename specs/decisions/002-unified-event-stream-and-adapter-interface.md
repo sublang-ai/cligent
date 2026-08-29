@@ -296,7 +296,7 @@ for await (const event of Cligent.parallel([
 
 ## Consequences
 
-- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are run-local and thread-safe for concurrent `run()` calls under [[engine-18](../packages/engine.md#engine-18)] unless they retain [[engine-37](../packages/engine.md#engine-37)]'s cumulative baseline and [[engine-38](../packages/engine.md#engine-38)]'s ordering queue or document an environmental constraint ([DR-003](003-role-scoped-session-management.md#adapter-thread-safety))
+- **Adapters** translate native events to UES; one adapter implementation per agent type, instantiate one or more adapter instances as needed; adapters are run-local and thread-safe for concurrent `run()` calls under [[engine-18](../packages/engine.md#engine-18)] unless they retain [[engine-37](../packages/engine.md#engine-37)]'s cumulative baseline and [[engine-38](../packages/engine.md#engine-38)]'s ordering queue or document an environmental constraint ([DR-003](003-role-scoped-session-management.md))
 - **`Cligent` class** is the primary API ([DR-003](003-role-scoped-session-management.md)) — wraps adapter with role config, session state, and protocol hardening
 - **UPM** uses capability primitives (`fileWrite`, `shellExecute`, `networkAccess`) mapped by adapters to vendor controls
 - **AbortSignal** standardizes interruption (no custom `interrupt()` method)
