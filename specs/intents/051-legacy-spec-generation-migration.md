@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 43 are done; tasks 44 through 53 remain.
+Tasks 1 through 44 are done; tasks 45 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -101,6 +101,7 @@ Task 40 makes the managed process-lifecycle observer authoritative during readin
 Task 41 records the owner's choice to preserve optional role attribution in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) and [DR-003](../decisions/003-role-scoped-session-management.md), aligns [[engine-14](../packages/engine.md#engine-14)] so every parallel event carries backend `agent` while `role` follows [[engine-4](../packages/engine.md#engine-4)], leaves the released runtime and types unchanged, and narrows task 49's handoff to exact interleaving after asserting configured and omitted roles on every event.
 Task 42 records the owner's portable configured-command identity in [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), aligns [[engine-25](../packages/engine.md#engine-25)], [[engine-26](../packages/engine.md#engine-26)], and [[engine-118](../packages/engine.md#engine-118)] so peers retain their exact resolved tree while CLIs retain `target.command` without inventing a host-selected path, makes CLI readiness and below-floor diagnostics name that command, and narrows task 49 after isolated peer and CLI assertions.
 Task 43 makes every local missing-dependency skip in [[engine-219](../packages/engine.md#engine-219)] emit one stderr diagnostic naming its affected adapter leg and every absent CLI or credential prerequisite before selecting the runner's skip primitive, preserves CI hard failure and sandbox self-skips, adds focused diagnostic and runner-selection assertions, and narrows task 49 to the live gate matrix.
+Task 44 records the owner's help-before-diagnostics-before-session-before-launcher dispatch precedence in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and scopes [DR-012](../decisions/012-runtime-derived-tmux-play-defaults.md)'s generation and readiness rules to ordinary launch, adds [[tmux-play-204](../packages/tmux-play.md#tmux-play-204)]'s complete selector and [[tmux-play-205](../packages/tmux-play.md#tmux-play-205)]'s built-CLI matrix, scopes the earlier launcher, session, first-run, diagnostic, and minimum-tmux concerns through that selector, and narrows task 49 after asserting every selected flow and the invalid combination without changing shipped dispatch.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -557,7 +558,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | `tmux-play-157`'s Kimi YAML-through-runtime-to-native-ACP `thinking: on` mapping flow; | |
     | `tmux-play` | `tmux-play-158`'s exact single-line stderr cardinality for both invalid-effort role paths; | |
     | `tmux-play` | `tmux-play-159`'s non-TTY ESC-keybinding omission; | |
-    | `tmux-play` | `tmux-play-161`'s concrete-YAML, fallback, and create-no-config diagnostics rows; | |
+    | `tmux-play` | `tmux-play-161`'s diagnostic work-directory and ownership rejections; | |
     | `tmux-play` | `tmux-play-164`'s omitted-layout, partial-window, canonical, and two-element-alias snapshot rows, every launcher-CLI malformed-layout case except decimal `columnWeights`, and exact single-line stderr cardinality for that exercised decimal case; | |
     | `tmux-play` | `tmux-play-181`'s cwd-project nonmutation and no-intermediate-alias-plus-canonical assertions; | |
     | `tmux-play` | `tmux-play-183`'s accepted-call preservation of configured-roster fields beyond the asserted IDs and player `Cligent` continuity; | |
@@ -578,8 +579,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | `tmux-play-173`'s no-`TMUX` preservation of inherited `TMUX_PANE` and `TMUX_TMPDIR`; | |
     | `tmux-play` | `tmux-play-174`'s no-fresh-prompt and exactly-once restoration assertions when the active turn aborts; | |
     | `tmux-play` | and all of `tmux-play-198`'s logical-key, title- and order-independent routing, title-round-trip warning-and-continue, and no-warning assertions | |
-    | `tmux-play` | | `tmux-play-2`'s ordinary config-to-gate-to-construct-to-attach-to-exit sequence beyond `tmux-play-192`'s construction gate; |
-    | `tmux-play` | | `tmux-play-3`'s player, readline, observer, and cleanup parts beyond `tmux-play-115`; |
+    | `tmux-play` | | `tmux-play-3`'s player-construction and observer-dispatch paths beyond `tmux-play-115` and `tmux-play-205`'s built session selection, readline, and cleanup flow; |
     | `tmux-play` | | `tmux-play-4`, which no verification item cites while config and CLI checks assert explicit selection and forwarding, but whose no-auto-create side effect no assertion reaches; |
     | `tmux-play` | | `tmux-play-5`'s optional top-level fields; |
     | `tmux-play` | | `tmux-play-6`'s full Captain member and opaque-options surface; |
@@ -636,6 +636,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-89`'s above-tested nonblocking, below-floor-versus-missing diagnostic, credential exclusion, and gate ordering; |
     | `tmux-play` | | `tmux-play-99`'s Captain token-presence and token-omission rows, which `runtime.test.ts` asserts without a verification item; |
     | `tmux-play` | | `tmux-play-194`'s concrete programmatic Mocha choice, exact OSC query and timeout, channel-width, terminator, normalization, and luminance-boundary cases, fallback-cause variants, and ordinary-launch snapshot persistence; |
+    | `tmux-play` | | `tmux-play-204`'s explicit-empty string-option boundaries and non-diagnostic mode-local rejection rows; |
     | `tmux-play` | | and `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, which task 51 settles rather than task 49 |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].

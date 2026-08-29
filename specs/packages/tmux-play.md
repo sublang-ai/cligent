@@ -17,13 +17,33 @@ Its requirements are stated in this project's `Cligent`, `AgentOptions`, `Permis
 
 The `@sublang/cligent` package shall expose a `tmux-play` bin entry.
 
+### tmux-play-204
+
+After recognized CLI flags are parsed, `tmux-play` shall select the first applicable dispatch outcome:
+
+| Priority and invocation state | Outcome |
+| --- | --- |
+| `--help` present, alone or with any other recognized flags | print usage and exit zero before mode-specific validation or work |
+| no help; `--theme-diagnostics` combined with a non-empty `--session` | apply [[tmux-play-61](#tmux-play-61)]'s diagnostics/session rejection |
+| no help; diagnostics without a non-empty `--session`; non-empty `--work-dir` | apply [[tmux-play-61](#tmux-play-61)]'s diagnostic work-directory rejection |
+| no help; diagnostics without a non-empty `--session` or `--work-dir`; `--owned-work-dir` | apply [[tmux-play-61](#tmux-play-61)]'s diagnostic ownership rejection |
+| no help; diagnostics without a non-empty `--session` or `--work-dir` and without `--owned-work-dir` | apply [[tmux-play-61](#tmux-play-61)]'s launcher-only outcome |
+| no help or diagnostics; non-empty `--session` combined with a non-empty `--config` | reject because `--config` is launcher-only |
+| no help or diagnostics; non-empty `--session` without a non-empty `--work-dir` | reject because session mode requires `--work-dir` |
+| no help or diagnostics; non-empty `--session`; work directory missing or not a directory | reject with `work dir does not exist or is not a directory: <path>` |
+| no help or diagnostics; non-empty `--session`; work directory fails write or traversal access | reject with `work dir is not writable: <path>` |
+| no help or diagnostics; non-empty `--session`; valid work directory | dispatch [[tmux-play-3](#tmux-play-3)] |
+| no help, diagnostics, or non-empty `--session`; non-empty `--work-dir` | reject because `--work-dir` is session-only |
+| no help, diagnostics, non-empty `--session`, or `--work-dir`; `--owned-work-dir` | reject because `--owned-work-dir` is session-only |
+| no help, diagnostics, non-empty `--session`, non-empty `--work-dir`, or `--owned-work-dir` | dispatch [[tmux-play-2](#tmux-play-2)] |
+
 ### tmux-play-2
 
-When `tmux-play` is invoked without `--session`, the CLI shall run launcher mode: resolve the config, verify the configured adapters' runtimes per [[tmux-play-89](#tmux-play-89)], construct the tmux session, attach, and exit.
+When [[tmux-play-204](#tmux-play-204)] admits ordinary launcher mode, the CLI shall resolve the config, verify the configured adapters' runtimes per [[tmux-play-89](#tmux-play-89)], construct the tmux session, attach, and exit.
 
 ### tmux-play-3
 
-When `tmux-play` is invoked with `--session <id> --work-dir <path>`, the CLI shall run session mode: instantiate the Captain and players, run a Boss readline against stdin/stdout, dispatch records to observers, and clean up on exit.
+When [[tmux-play-204](#tmux-play-204)] admits session mode with `--session <id> --work-dir <path>`, the CLI shall instantiate the Captain and players, run a Boss readline against stdin/stdout, dispatch records to observers, and clean up on exit.
 
 ### tmux-play-4
 
@@ -31,13 +51,15 @@ When `--config <path>` is supplied, the launcher shall load that file and skip d
 
 ### tmux-play-61
 
-When `--theme-diagnostics` is supplied, the CLI shall select the diagnostic flow through this matrix and, for every accepted flow, exit without checking for `tmux` or `glow`, creating a tmux session, or attaching:
+When `--theme-diagnostics` is supplied after [[tmux-play-204](#tmux-play-204)]'s help check, the CLI shall select the first applicable diagnostic outcome through this matrix and, for every accepted flow, exit without checking adapter-runtime readiness, checking for `tmux` or Glow, creating a config or tmux session, or attaching:
 
 | Invocation and config state | Outcome |
 | --- | --- |
-| launcher mode with a discoverable or explicit config | load that config, resolve the Catppuccin flavor per [[tmux-play-194](#tmux-play-194)], and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received |
-| launcher mode, discovery per [[tmux-play-9](#tmux-play-9)] finds no config, and `--config` is absent | create no config, skip [[tmux-play-10](#tmux-play-10)]'s first-run creation, resolve the flavor as for `theme: auto`, and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received, without requiring an installed adapter runtime |
-| combined with `--session` | reject before dispatching session mode |
+| combined with a non-empty `--session` | reject with `--theme-diagnostics is only valid in launcher mode` before dispatching session mode |
+| no non-empty `--session`; non-empty `--work-dir` | reject with `--work-dir is only valid with --session` before diagnostic handling |
+| no non-empty `--session` or `--work-dir`; `--owned-work-dir` | reject with `--owned-work-dir is only valid with --session` before diagnostic handling |
+| diagnostic flow with a discoverable or explicit config | load that config, resolve the Catppuccin flavor per [[tmux-play-194](#tmux-play-194)], and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received |
+| diagnostic flow where discovery per [[tmux-play-9](#tmux-play-9)] finds no config and `--config` is absent | resolve the flavor as for `theme: auto` and print `selected: <flavor>` plus `reason: <explicit\|yaml\|osc11\|fallback>` to stdout, including the raw OSC 11 reply when received |
 
 ### Configuration
 
@@ -197,7 +219,7 @@ When `--config` is absent, the launcher shall select the configuration source th
 
 ### tmux-play-10
 
-Where neither discovery location holds a config and `--config` is absent, the launcher shall select the first-run outcome through this matrix:
+Where [[tmux-play-204](#tmux-play-204)] has admitted ordinary launcher mode, neither discovery location holds a config, and `--config` is absent, the launcher shall select the first-run outcome through this matrix:
 
 | Runtime availability | Outcome |
 | --- | --- |
@@ -723,7 +745,7 @@ While a tmux-play session is live, when its window width or visible-column shape
 
 ### tmux-play-172
 
-When launcher mode starts, it shall reject a tmux version older than 3.3 before configuration resolution or session construction with a diagnostic naming the 3.3 minimum, because the required post-negotiation `window-resized` signal first exists in tmux 3.3 [[3]].
+When ordinary launcher mode per [[tmux-play-2](#tmux-play-2)] starts, it shall reject a tmux version older than 3.3 before configuration resolution or session construction with a diagnostic naming the 3.3 minimum, because the required post-negotiation `window-resized` signal first exists in tmux 3.3 [[3]].
 
 ### tmux-play-45
 
@@ -1426,7 +1448,7 @@ On session shutdown, the check shall assert this lifecycle flow:
 
 ### tmux-play-113
 
-Given the built bin on PATH (or invoked directly with execute permission), when launched on a POSIX runner, `tmux-play --help` shall exit 0 and print a usage banner [[tmux-play-1](#tmux-play-1)].
+Given the built bin on PATH (or invoked directly with execute permission), when launched on a POSIX runner with `--help` alone or combined with recognized mode flags, `tmux-play` shall exit 0 and print a usage banner before mode validation or work [[tmux-play-1](#tmux-play-1)], [[tmux-play-204](#tmux-play-204)].
 
 ### tmux-play-114
 
@@ -2000,7 +2022,22 @@ When the CLI's theme-diagnostics paths are exercised, verification shall assert 
 | parseable light OSC 11 reply such as `rgb:eeee/eeee/eeee` | report `selected: latte` and `reason: osc11` |
 | no parseable reply and no concrete explicit or YAML flavor | report `selected: mocha` and `reason: fallback` |
 | discovery finds no config and `--config` is absent | create no config and report the same auto-theme outcome without requiring an installed adapter runtime |
-| combined with `--session` | reject before session-mode dispatch |
+| combined with a non-empty `--session` | reject with `--theme-diagnostics is only valid in launcher mode` before session-mode dispatch [[tmux-play-204](#tmux-play-204)] |
+| no non-empty `--session`; non-empty `--work-dir` | reject with `--work-dir is only valid with --session` before diagnostic handling [[tmux-play-204](#tmux-play-204)] |
+| no non-empty `--session` or `--work-dir`; `--owned-work-dir` | reject with `--owned-work-dir is only valid with --session` before diagnostic handling [[tmux-play-204](#tmux-play-204)] |
+
+### tmux-play-205
+
+Given the built CLI and isolated dependencies, when CLI dispatch precedence is exercised, the check shall assert this matrix:
+
+| Invocation | Assertion |
+| --- | --- |
+| POSIX runner; `--help` alone and combined with diagnostics, session, and invalid mode-local paths | print usage and exit zero before validation or external work [[tmux-play-204](#tmux-play-204)] |
+| ordinary launcher with cwd YAML and available configured runtimes | load and snapshot the config, pass the runtime gate, construct and attach the tmux session, and exit zero [[tmux-play-204](#tmux-play-204)], [[tmux-play-2](#tmux-play-2)], [[tmux-play-9](#tmux-play-9)], [[tmux-play-34](#tmux-play-34)], [[tmux-play-89](#tmux-play-89)] |
+| session invocation with a prepared snapshot and EOF | load the snapshot and package Captain, expose Boss readline, then remove launcher-owned work state and kill the tmux session [[tmux-play-204](#tmux-play-204)], [[tmux-play-3](#tmux-play-3)], [[tmux-play-13](#tmux-play-13)], [[tmux-play-26](#tmux-play-26)], [[tmux-play-100](#tmux-play-100)] |
+| diagnostics with explicit YAML whose configured Kimi runtime, tmux, and Glow are unavailable | print that YAML flavor and its reason, create no config or session, and invoke no prerequisite command [[tmux-play-204](#tmux-play-204)], [[tmux-play-4](#tmux-play-4)], [[tmux-play-61](#tmux-play-61)], [[tmux-play-194](#tmux-play-194)] |
+| diagnostics with no config, no parseable OSC 11 reply, and an executable search path whose prerequisite commands resolve only to failing sentinels | print the fallback flavor and reason, create no config or session, invoke no prerequisite command, and exit zero [[tmux-play-204](#tmux-play-204)], [[tmux-play-9](#tmux-play-9)], [[tmux-play-61](#tmux-play-61)], [[tmux-play-194](#tmux-play-194)] |
+| diagnostics combined with session mode | print the exact conflict, dispatch neither mode, and issue no tmux command [[tmux-play-204](#tmux-play-204)], [[tmux-play-61](#tmux-play-61)] |
 
 ### tmux-play-162
 

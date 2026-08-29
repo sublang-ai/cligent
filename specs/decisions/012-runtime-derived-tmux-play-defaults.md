@@ -38,10 +38,11 @@ Any future decision that partly supersedes its no-install boundary with explicit
 
 Optional peers stay optional; cligent checks for agent runtimes and never installs them.
 
-- A first run generates its default roster from the adapters whose runtimes are installed, in the canonical adapter order, capped at two ([[tmux-play-11](../packages/tmux-play.md#tmux-play-11)]).
+- An ordinary launcher first run generates its default roster from the adapters whose runtimes are installed, in the canonical adapter order, capped at two ([[tmux-play-11](../packages/tmux-play.md#tmux-play-11)]).
   With none installed it writes no file and fails with the install command for every supported adapter, because a config naming absent runtimes is the defect being removed ([[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]).
-- Launcher mode verifies every configured role's adapter runtime after resolving the config and before creating anything, and fails naming each unmet adapter, its roles, its install commands, and the config path ([[tmux-play-89](../packages/tmux-play.md#tmux-play-89)]).
+- Ordinary launcher mode verifies every configured role's adapter runtime after resolving the config and before creating anything, and fails naming each unmet adapter, its roles, its install commands, and the config path ([[tmux-play-89](../packages/tmux-play.md#tmux-play-89)]).
   This covers hand-written configs, `--config` files, copied configs, and a host that drifts after generation, which roster generation alone cannot.
+- [DR-004](004-tmux-play-captain-architecture.md)'s launcher-only diagnostic flow reaches neither rule above: it creates no first-run config and requires no installed adapter runtime ([[tmux-play-61](../packages/tmux-play.md#tmux-play-61)]).
 - Readiness is each adapter's own `isAvailable()`, so the gate and the load it protects can never disagree.
 - Repair commands are scoped to the tree the running package resolves from: a peer SDK follows cligent's own install scope [[package-32](../packages/package.md#package-32)], an external CLI is always global, and the reported tree and command follow the launcher repair contract [[tmux-play-89](../packages/tmux-play.md#tmux-play-89)] so a layout no canned command repairs stays diagnosable.
   "Scoped" has to mean the command lands there when run as printed, and where a bare `npm install [-g]` lands is a property of the shell the command is pasted into — its npm environment, which npm rewrites for every lifecycle child, and its working directory, whose nearest enclosing project captures a bare project install — which the launching process can never witness.

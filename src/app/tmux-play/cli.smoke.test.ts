@@ -27,6 +27,8 @@ interface SmokeHarness {
   readonly root: string;
   readonly binDir: string;
   readonly env: NodeJS.ProcessEnv;
+  readonly probeBinDir: string;
+  readonly probeLog: string;
   readonly tmuxLog: string;
 }
 
@@ -40,21 +42,48 @@ describe('tmux-play built CLI smoke', () => {
     }
   });
 
-  it('executes the built bin directly on POSIX', () => {
+  // tmux-play-113 / tmux-play-205: help wins before every later selector and
+  // mode-local validation, even when those flags would otherwise reject.
+  it('gives built-bin help precedence over every execution mode', () => {
     if (process.platform === 'win32') {
       return;
     }
+    harness = createHarness();
 
-    const result = spawnSync(builtBinPath(), ['--help'], {
-      encoding: 'utf8',
-      timeout: 10_000,
-    });
+    const invocations = [
+      ['--help'],
+      [
+        '--help',
+        '--theme-diagnostics',
+        '--session',
+        'ignored',
+        '--work-dir',
+        '/missing/session-work',
+        '--owned-work-dir',
+        '--config',
+        '/missing/config.yaml',
+      ],
+    ] as const;
 
-    expectSuccess(result);
-    expect(result.stdout).toContain('tmux-play [--config <path>]');
+    for (const args of invocations) {
+      const result = spawnSync(builtBinPath(), args, {
+        encoding: 'utf8',
+        env: {
+          ...harness.env,
+          PATH: harness.probeBinDir,
+        },
+        timeout: 10_000,
+      });
+
+      expectSuccess(result);
+      expect(result.stdout).toContain('tmux-play [--config <path>]');
+    }
+    expectNoProbeCalls(harness);
   });
 
-  it('discovers cwd YAML, writes a rewritten snapshot, and invokes tmux', () => {
+  // tmux-play-205: with no earlier selector, the built CLI admits ordinary
+  // launcher mode through config, readiness, construction, and attachment.
+  it('selects ordinary launcher mode for cwd YAML', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');
     mkdirSync(join(cwd, 'captains'), { recursive: true });
@@ -95,10 +124,101 @@ describe('tmux-play built CLI smoke', () => {
     ]);
   });
 
-  // tmux-play-192: the built CLI refuses a config whose adapter runtime is not
-  // installed. `kimi` needs the `kimi` executable, and the harness PATH holds
-  // only the stub bin directory, so the runtime is reliably absent whatever
-  // the developer has installed.
+  // tmux-play-161 / tmux-play-205: diagnostics loads explicit YAML but skips
+  // its configured CLI runtime, tmux, and Glow even when failing sentinels are
+  // the only matching commands on PATH.
+  it('selects explicit-YAML diagnostics without launcher work', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    const configHome = join(harness.root, 'xdg');
+    const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+    const configPath = join(cwd, 'diagnostics.yaml');
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        'theme: latte',
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: kimi',
+        '  options: {}',
+        'players: []',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runCli(
+      ['--theme-diagnostics', '--config', configPath, '--cwd', cwd],
+      harness,
+      {
+        PATH: harness.probeBinDir,
+        XDG_CONFIG_HOME: configHome,
+      },
+    );
+
+    expectSuccess(result);
+    expect(result.stdout).toBe('selected: latte\nreason: yaml\n');
+    expect(result.stderr).toBe('');
+    expect(existsSync(homeConfig)).toBe(false);
+    expectNoProbeCalls(harness);
+  });
+
+  // tmux-play-161 / tmux-play-205: no-config diagnostics selects fallback
+  // without entering first-run generation or any launcher prerequisite.
+  it('selects no-config diagnostics without first-run creation', () => {
+    harness = createHarness();
+    const cwd = join(harness.root, 'project');
+    const configHome = join(harness.root, 'xdg');
+    const homeConfig = join(configHome, TMUX_PLAY_HOME_CONFIG);
+    mkdirSync(cwd, { recursive: true });
+
+    const result = runCli(
+      ['--theme-diagnostics', '--cwd', cwd],
+      harness,
+      {
+        PATH: harness.probeBinDir,
+        XDG_CONFIG_HOME: configHome,
+      },
+      undefined,
+      { detached: process.platform !== 'win32' },
+    );
+
+    expectSuccess(result);
+    expect(result.stdout).toBe('selected: mocha\nreason: fallback\n');
+    expect(result.stderr).toBe('');
+    expect(existsSync(homeConfig)).toBe(false);
+    expectNoProbeCalls(harness);
+  });
+
+  // tmux-play-161 / tmux-play-205: diagnostics wins the selector but rejects
+  // its session conflict before validating the nonexistent session work dir.
+  it('rejects combined diagnostics and session before dispatch', () => {
+    harness = createHarness();
+
+    const result = runCli(
+      [
+        '--theme-diagnostics',
+        '--session',
+        'ignored',
+        '--work-dir',
+        '/missing/session-work',
+      ],
+      harness,
+      { PATH: harness.probeBinDir },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(
+      'Error: --theme-diagnostics is only valid in launcher mode\n',
+    );
+    expectNoProbeCalls(harness);
+  });
+
+  // tmux-play-192 / tmux-play-205: the built CLI refuses a config whose
+  // adapter runtime is not installed. `kimi` needs the `kimi` executable, and
+  // the harness PATH holds only the stub bin directory, so the runtime is
+  // reliably absent whatever the developer has installed.
   it('refuses a config naming an uninstalled runtime from the built CLI', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');
@@ -314,7 +434,9 @@ describe('tmux-play built CLI smoke', () => {
     expect(result.stdout).not.toContain('runtime_error');
   });
 
-  it('runs session mode from a package captain specifier', () => {
+  // tmux-play-205: after the higher-priority selectors are absent, the built
+  // CLI admits a prepared session through readline and owned cleanup.
+  it('selects session mode from a package captain specifier', () => {
     harness = createHarness();
     const cwd = join(harness.root, 'project');
     const workDir = join(harness.root, 'session-work');
@@ -373,9 +495,12 @@ describe('tmux-play built CLI smoke', () => {
 function createHarness(): SmokeHarness {
   const root = mkdtempSync(join(tmpdir(), 'tmux-play-cli-smoke-'));
   const binDir = join(root, 'bin');
+  const probeBinDir = join(root, 'probe-bin');
+  const probeLog = join(root, 'probe.log');
   const tmpRoot = join(root, 'tmp');
   const tmuxLog = join(root, 'tmux.jsonl');
   mkdirSync(binDir, { recursive: true });
+  mkdirSync(probeBinDir, { recursive: true });
   mkdirSync(tmpRoot, { recursive: true });
 
   const fakeTmux = join(binDir, 'tmux');
@@ -420,12 +545,42 @@ function createHarness(): SmokeHarness {
   // PATH down to it and know no agent CLI is reachable.
   symlinkSync(realpathSync(process.execPath), join(binDir, 'node'));
 
+  // Diagnostic and help flows run with only failing, logging prerequisites on
+  // PATH. An accidental runtime, tmux, or Glow probe therefore both fails the
+  // flow and leaves evidence, while the node symlink keeps the built wrapper
+  // executable through its env-based shebang.
+  for (const command of [
+    'claude',
+    'codex',
+    'gemini',
+    'kimi',
+    'opencode',
+    'tmux',
+    'glow',
+  ]) {
+    const probe = join(probeBinDir, command);
+    writeFileSync(
+      probe,
+      [
+        '#!/bin/sh',
+        'echo "$0 $*" >> "$FAKE_CLI_PROBE_LOG"',
+        'exit 127',
+        '',
+      ].join('\n'),
+    );
+    chmodSync(probe, 0o755);
+  }
+  symlinkSync(realpathSync(process.execPath), join(probeBinDir, 'node'));
+
   return {
     root,
     binDir,
+    probeBinDir,
+    probeLog,
     tmuxLog,
     env: {
       ...process.env,
+      FAKE_CLI_PROBE_LOG: probeLog,
       FAKE_TMUX_LOG: tmuxLog,
       PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
       TMPDIR: tmpRoot,
@@ -438,6 +593,7 @@ function runCli(
   harness: SmokeHarness,
   env: NodeJS.ProcessEnv = {},
   input?: string,
+  options: { readonly detached?: boolean } = {},
 ): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [builtBinPath(), ...args], {
     encoding: 'utf8',
@@ -446,6 +602,7 @@ function runCli(
       ...env,
     },
     input,
+    ...options,
     timeout: 10_000,
   });
 }
@@ -467,6 +624,10 @@ function builtBinPath(): string {
 function expectSuccess(result: SpawnSyncReturns<string>): void {
   expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(0);
+}
+
+function expectNoProbeCalls(harness: SmokeHarness): void {
+  expect(existsSync(harness.probeLog)).toBe(false);
 }
 
 function readTmuxCalls(harness: SmokeHarness): string[][] {

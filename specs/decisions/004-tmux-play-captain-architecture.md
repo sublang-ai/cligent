@@ -31,12 +31,21 @@ Boss talks to the Captain.
 The Captain coordinates players.
 Boss never addresses players directly, and players are not part of the public app API.
 
-A user always invokes `tmux-play` with no internal flags; that is launcher mode.
-The launcher builds the tmux session and exits.
+After recognized CLI flags are parsed, `tmux-play` selects one control path in this order ([[tmux-play-204](../packages/tmux-play.md#tmux-play-204)]):
+
+1. `--help` prints usage and exits before mode-specific validation or work.
+2. Without help, `--theme-diagnostics` selects launcher-only diagnostics;
+   combining it with a non-empty `--session` is invalid and dispatches neither flow.
+3. Without help or diagnostics, a non-empty `--session` selects session-mode admission.
+4. Without any applicable selector above, the CLI selects ordinary launcher admission.
+
+The ordinary launcher builds the tmux session and exits.
 Inside tmux, the Boss/Captain pane runs `tmux-play --session <id> --work-dir <path>`; that is session mode and owns the runtime until the session closes.
+The diagnostic flow resolves and reports the theme without first-run creation, runtime readiness, tmux or Glow checks, session construction, or attachment.
 One CLI keeps distribution simple; the split keeps the launcher short-lived and makes the runtime independently addressable for testing.
 
-- Launcher mode (no `--session`): load config, resolve Captain and players, create work directory and logs, build the tmux session, attach.
+- Ordinary launcher mode (no selector flag): load config, resolve Captain and players, create work directory and logs, build the tmux session, attach.
+- Launcher-only diagnostics (`--theme-diagnostics`): resolve and report the theme without constructing or attaching a session.
 - Session mode (`--session <id> --work-dir <path>`): run Boss readline, the Captain, the player runtime, event formatting, abort handling, and cleanup.
 
 ### tmux Topology
