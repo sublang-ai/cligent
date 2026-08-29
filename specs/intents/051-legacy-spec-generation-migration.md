@@ -636,7 +636,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-89`'s above-tested nonblocking, below-floor-versus-missing diagnostic, credential exclusion, and gate ordering; |
     | `tmux-play` | | `tmux-play-99`'s Captain token-presence and token-omission rows, which `runtime.test.ts` asserts without a verification item; |
     | `tmux-play` | | `tmux-play-194`'s concrete programmatic Mocha choice, exact OSC query and timeout, channel-width, terminator, normalization, and luminance-boundary cases, fallback-cause variants, and ordinary-launch snapshot persistence; |
-    | `tmux-play` | | `tmux-play-204`'s explicit-empty string-option boundaries and non-diagnostic mode-local rejection rows; |
+    | `tmux-play` | | `tmux-play-204`'s treatment of explicitly empty `--session`, `--config`, and `--work-dir` values as absent for dispatch; its session-mode rejections for non-empty `--config`, an omitted `--work-dir`, a supplied path that is missing or not a directory, and a supplied path lacking write or traversal access; and its no-selector rejections for non-empty `--work-dir` and `--owned-work-dir`; |
     | `tmux-play` | | and `tmux-play-67`, superseded by `tmux-play-68` and cited by no verification item, which task 51 settles rather than task 49 |
 
     A citation is not coverage: where a verification item asserts less than the behavior it cites states, strengthen it, or add the item its own statement cannot reach, until every case that behavior states is asserted [[meta-33](../meta.md#meta-33)], each assertion citing every behavior it reaches [[meta-20](../meta.md#meta-20)].
