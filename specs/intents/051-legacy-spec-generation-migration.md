@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 47 are done; tasks 48 through 53 remain.
+Tasks 1 through 48 are done; tasks 49 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -105,6 +105,7 @@ Task 44 records the owner's help-before-diagnostics-before-session-before-launch
 Task 45 records the owner's source-delivery choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-008](../decisions/008-captain-pre-close-lifecycle.md), makes a rejecting observer's isolation preserve current and later source fanout to healthy observers while the originating caller and next drain still observe its failure, orders a nonterminal diagnostic before `turn_aborted`, bounds diagnostic-observer failure without recursion, makes a terminal-source diagnostic session-scoped after exactly one terminal with no later turn record, consumes an already-diagnosed pending observer failure as secondary so it cannot replace a later terminating failure or bypass that turn's terminal, and narrows task 49 after focused multi-observer assertions.
 Task 46 records the owner's resolved-startup-order choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.md), aligns [[tmux-play-27](../packages/tmux-play.md#tmux-play-27)] so an explicit `layout.initialVisible` array orders startup panes while omission retains config order, and binds the existing focused launcher and real-tmux assertions through [[tmux-play-182](../packages/tmux-play.md#tmux-play-182)] without changing shipped layout or that item's zero-player-only task-49 residue.
 Task 47 removes the live-follow observer's state-blind leading-edge throttle so neither a live-pane no-op nor an earlier copy-mode exit can suppress a rapid visible write after that pane enters or re-enters copy-mode, retains per-pane isolation and the no-visible-bytes exclusion, extends [[tmux-play-169](../packages/tmux-play.md#tmux-play-169)]'s real-tmux flow with both rapid-write sequences, and narrows task 49 to [[tmux-play-69](../packages/tmux-play.md#tmux-play-69)]'s remaining unasserted branches.
+Task 48 gives the composite fanout acceptance harness three complete fresh attempts, retries only explicit upstream-overload, rate-limit, and service-unavailable failures, preserves the final attempt's records for the existing acceptance assertions, and adds deterministic checks for transient recovery, third-transient exhaustion, and immediate non-transient failure without changing [[tmux-play-116](../packages/tmux-play.md#tmux-play-116)].
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent

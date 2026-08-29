@@ -42,6 +42,73 @@ const acceptanceIt = dependencyReport.selfSkip
     : it.skip;
 
 describe('tmux-play fanout acceptance', () => {
+  it('retries one complete fresh probe after a named transient', async () => {
+    const outcomes = [fanoutFailure('529 Overloaded'), fanoutSuccess()];
+    const retryReports: string[] = [];
+    let attempts = 0;
+
+    const result = await runFanoutWithRetry(
+      { workDir: 'unused', sentinel: 'unused' },
+      async () => outcomes[attempts++]!,
+      (message) => retryReports.push(message),
+    );
+
+    expect(attempts).toBe(2);
+    expect(result).toBe(outcomes[1]);
+    expect(retryReports).toHaveLength(1);
+  });
+
+  it('keeps the third consecutive named transient fatal', async () => {
+    const outcomes = [
+      fanoutFailure('upstream rate limited attempt one'),
+      fanoutCaptainFailure('service unavailable attempt two'),
+      fanoutFailure('529 Overloaded attempt three'),
+    ];
+    const retryReports: string[] = [];
+    let attempts = 0;
+
+    const result = await runFanoutWithRetry(
+      { workDir: 'unused', sentinel: 'unused' },
+      async () => outcomes[attempts++]!,
+      (message) => retryReports.push(message),
+    );
+
+    expect(attempts).toBe(3);
+    expect(result).toBe(outcomes[2]);
+    expect(result.filter(isPlayerFinished)[0]?.result.error).toBe(
+      '529 Overloaded attempt three',
+    );
+    expect(retryReports).toHaveLength(2);
+  });
+
+  it('keeps any non-transient failure immediately fatal', async () => {
+    const failure = [
+      ...fanoutFailure('529 Overloaded', 'claude'),
+      ...fanoutFailure('API Error: Repeated 401 Unauthorized errors', 'codex'),
+    ];
+    const retryReports: string[] = [];
+    let attempts = 0;
+
+    const result = await runFanoutWithRetry(
+      { workDir: 'unused', sentinel: 'unused' },
+      async () => {
+        attempts += 1;
+        return failure;
+      },
+      (message) => retryReports.push(message),
+    );
+
+    expect(attempts).toBe(1);
+    expect(result).toBe(failure);
+    expect(
+      result.filter(isPlayerFinished).map((record) => record.result.error),
+    ).toEqual([
+      '529 Overloaded',
+      'API Error: Repeated 401 Unauthorized errors',
+    ]);
+    expect(retryReports).toEqual([]);
+  });
+
   acceptanceIt(
     'drives the fanout Captain through the runtime API',
     async () => {
@@ -182,17 +249,26 @@ interface RunFanoutTurnOptions {
   readonly sentinel: string;
 }
 
+type RunFanoutAttempt = (
+  options: RunFanoutTurnOptions,
+) => Promise<TmuxPlayRecord[]>;
+
+const MAX_FANOUT_ATTEMPTS = 3;
+
 async function runFanoutWithRetry(
   options: RunFanoutTurnOptions,
+  runAttempt: RunFanoutAttempt = runFanoutTurn,
+  reportRetry: (message: string) => void = (message) => {
+    process.stderr.write(message);
+  },
 ): Promise<TmuxPlayRecord[]> {
-  const maxAttempts = 2;
   let records: TmuxPlayRecord[] = [];
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    records = await runFanoutTurn(options);
+  for (let attempt = 1; attempt <= MAX_FANOUT_ATTEMPTS; attempt++) {
+    records = await runAttempt(options);
     const transient = findTransientUpstreamFailure(records);
-    if (!transient || attempt === maxAttempts) return records;
-    process.stderr.write(
+    if (!transient || attempt === MAX_FANOUT_ATTEMPTS) return records;
+    reportRetry(
       `tmux-play acceptance attempt ${attempt} hit transient upstream error: ${transient}\n`,
     );
   }
@@ -252,28 +328,38 @@ async function runFanoutTurn(
 }
 
 const TRANSIENT_UPSTREAM_MARKERS = [
-  /\bAPI Error: Repeated \d{3}/i,
-  /529 Overloaded/i,
-  /\b(?:overload(?:ed)?|over_capacity)\b/i,
-  /\bservice unavailable\b/i,
-  /\brate.?limit/i,
+  /\b(?:API Error:\s*Repeated|HTTP(?:[ _-]+status)?|status[ _-]+code)[ :=_-]*(?:429|503|529)\b/i,
+  /\boverload(?:ed|ing)?\b/i,
+  /\bover[ _-]?capacity\b/i,
+  /\bservice[ _-]?unavailable\b/i,
+  /\brate[ _-]?limit(?:ed|ing|[ _-]?exceeded)?\b/i,
+  /\btoo[ _-]?many[ _-]?requests\b/i,
 ];
 
 function findTransientUpstreamFailure(
   records: readonly TmuxPlayRecord[],
 ): string | undefined {
+  let firstTransient: string | undefined;
+
   for (const record of records) {
+    if (record.type === 'runtime_error' || record.type === 'turn_aborted') {
+      return undefined;
+    }
     if (record.type === 'player_finished') {
+      if (record.result.status === 'ok') continue;
       const transient = matchTransient(record.result);
-      if (transient) return `${record.playerId}: ${transient}`;
+      if (!transient) return undefined;
+      firstTransient ??= `${record.playerId}: ${transient}`;
       continue;
     }
     if (record.type === 'captain_finished') {
+      if (record.result.status === 'ok') continue;
       const transient = matchTransient(record.result);
-      if (transient) return `captain: ${transient}`;
+      if (!transient) return undefined;
+      firstTransient ??= `captain: ${transient}`;
     }
   }
-  return undefined;
+  return firstTransient;
 }
 
 function matchTransient(result: {
@@ -286,6 +372,41 @@ function matchTransient(result: {
   return TRANSIENT_UPSTREAM_MARKERS.some((pattern) => pattern.test(text))
     ? text
     : undefined;
+}
+
+function fanoutFailure(
+  error: string,
+  playerId: PlayerAdapterName = 'claude',
+): TmuxPlayRecord[] {
+  return [
+    {
+      type: 'player_finished',
+      turnId: 1,
+      timestamp: 0,
+      playerId,
+      result: {
+        playerId,
+        turnId: 1,
+        status: 'error',
+        error,
+      },
+    },
+  ];
+}
+
+function fanoutSuccess(): TmuxPlayRecord[] {
+  return [{ type: 'turn_finished', turnId: 1, timestamp: 0 }];
+}
+
+function fanoutCaptainFailure(error: string): TmuxPlayRecord[] {
+  return [
+    {
+      type: 'captain_finished',
+      turnId: 1,
+      timestamp: 0,
+      result: { turnId: 1, status: 'error', error },
+    },
+  ];
 }
 
 function isPlayerFinished(
