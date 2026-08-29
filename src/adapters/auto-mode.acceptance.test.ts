@@ -24,6 +24,10 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, inject, it } from 'vitest';
+import {
+  assertAcceptanceDependencies,
+  gateAcceptanceTest,
+} from '../__tests__/helpers/acceptance-dependency-gate.js';
 import { withKimiAcceptanceEnvironment } from '../__tests__/helpers/kimi-acceptance.js';
 import { Cligent } from '../index.js';
 import type {
@@ -116,10 +120,10 @@ const codexSandboxPreflight = preflightCodexSandbox();
 
 describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / gemini-219 / kimi-219 / opencode-219)', () => {
   const claudeMissing = missingDeps(['ANTHROPIC_API_KEY']);
-  gatedIt(claudeMissing)(
+  gatedIt('claude', claudeMissing)(
     'claude auto mode auto-approves a temp-file create + update',
     async () => {
-      assertReady('claude', claudeMissing);
+      assertAcceptanceDependencies('claude', claudeMissing);
       const outcome = await probeWithRetry(
         'claude',
         () => new ClaudeCodeAdapter(),
@@ -131,10 +135,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   );
 
   const codexMissing = missingDeps(['CODEX_API_KEY']);
-  gatedIt(codexMissing)(
+  gatedIt('codex', codexMissing)(
     'codex auto mode auto-approves a temp-file create + update',
     async (ctx) => {
-      assertReady('codex', codexMissing);
+      assertAcceptanceDependencies('codex', codexMissing);
       if (codexSandboxPreflight.kind === 'sandbox-init') {
         process.stderr.write(
           `codex auto-mode acceptance: skipping — Codex's workspace sandbox ` +
@@ -177,10 +181,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   // codex-224: live proof that permission-managed Codex runs ignore a
   // conflicting CODEX_HOME/config.toml instead of letting stale user config
   // override the adapter-selected `auto_review + :workspace` profile.
-  gatedIt(codexMissing)(
+  gatedIt('codex', codexMissing)(
     'codex auto mode ignores a hostile user Codex config',
     async (ctx) => {
-      assertReady('codex', codexMissing);
+      assertAcceptanceDependencies('codex', codexMissing);
       if (codexSandboxPreflight.kind === 'sandbox-init') {
         process.stderr.write(
           `codex user-config isolation acceptance: skipping — Codex's workspace sandbox ` +
@@ -229,10 +233,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   // codex-223: credential-free proof that the generated profile definition is
   // delivered to Codex's native sandbox without mutating user/repo config.
   const codexCliMissing = codexCliPath ? [] : ['@openai/codex CLI'];
-  gatedIt(codexCliMissing)(
+  gatedIt('codex', codexCliMissing)(
     'codex writablePaths profile config route grants .git writes in the native sandbox',
     async (ctx) => {
-      assertReady('codex', codexCliMissing);
+      assertAcceptanceDependencies('codex', codexCliMissing);
       const outcome = await runCodexWritablePathsSandboxProbe();
       if (outcome.skipReason) {
         process.stderr.write(
@@ -256,10 +260,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
 
   // codex-223: API-key-gated proof that the same policy works through the
   // SDK adapter path and completes a real git metadata write without approval.
-  gatedIt(codexMissing)(
+  gatedIt('codex', codexMissing)(
     'codex auto mode with writablePaths writes git metadata without approval',
     async (ctx) => {
-      assertReady('codex', codexMissing);
+      assertAcceptanceDependencies('codex', codexMissing);
       if (codexSandboxPreflight.kind === 'sandbox-init') {
         process.stderr.write(
           `codex writablePaths acceptance: skipping — Codex's workspace sandbox ` +
@@ -301,10 +305,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   );
 
   const geminiMissing = missingDeps(['GEMINI_API_KEY'], ['gemini']);
-  gatedIt(geminiMissing)(
+  gatedIt('gemini', geminiMissing)(
     'gemini auto mode auto-approves writes and reports usage',
     async () => {
-      assertReady('gemini', geminiMissing);
+      assertAcceptanceDependencies('gemini', geminiMissing);
       const outcome = await probeWithRetry(
         'gemini',
         () => new GeminiAdapter(),
@@ -327,10 +331,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   // dedicated fixture. The source is never passed to the spawned process.
   // A spent rotating refresh token self-skips even under CI — see
   // `KimiAcceptanceContext.unusable`. An absent fixture still hard-fails there.
-  (kimiAcceptance.unusable ? it.skip : gatedIt(kimiAcceptance.missing))(
+  (kimiAcceptance.unusable ? it.skip : gatedIt('kimi', kimiAcceptance.missing))(
     'kimi auto mode auto-approves a temp-file create + update',
     async () => {
-      assertReady('kimi', kimiAcceptance.missing);
+      assertAcceptanceDependencies('kimi', kimiAcceptance.missing);
       const outcome = await withKimiAcceptanceEnvironment(kimiAcceptance, () =>
         probeWithRetry('kimi', () => new KimiAdapter(), undefined),
       );
@@ -340,10 +344,10 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
   );
 
   const opencodeMissing = missingDeps(['MOONSHOT_API_KEY'], ['opencode']);
-  gatedIt(opencodeMissing)(
+  gatedIt('opencode', opencodeMissing)(
     'opencode auto mode auto-approves a temp-file create + update',
     async () => {
-      assertReady('opencode', opencodeMissing);
+      assertAcceptanceDependencies('opencode', opencodeMissing);
       const outcome = await probeWithRetry(
         'opencode',
         () => new OpenCodeAdapter(),
@@ -1528,14 +1532,9 @@ function missingDeps(
 // acceptance config does load this file, CI hard-fails on a missing dependency
 // instead of silently skipping. Locally, a missing dependency skips only the
 // affected adapter.
-function gatedIt(missing: readonly string[]): typeof it | typeof it.skip {
-  return missing.length === 0 || process.env.CI ? it : it.skip;
-}
-
-function assertReady(adapter: string, missing: readonly string[]): void {
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing ${adapter} auto-mode acceptance dependencies: ${missing.join(', ')}`,
-    );
-  }
+function gatedIt(
+  adapter: string,
+  missing: readonly string[],
+): typeof it | typeof it.skip {
+  return gateAcceptanceTest(it, it.skip, adapter, missing);
 }

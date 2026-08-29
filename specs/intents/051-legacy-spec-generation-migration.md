@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 42 are done; tasks 43 through 53 remain.
+Tasks 1 through 43 are done; tasks 44 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -100,6 +100,7 @@ Task 39 retains each OpenCode permission request's denial correlation through an
 Task 40 makes the managed process-lifecycle observer authoritative during readiness, distinguishes child-process errors from genuine closes so spawn failures keep [[opencode-28](../packages/adapters/opencode.md#opencode-28)]'s exact `OPENCODE_STREAM_ERROR`, carries a close's exact code and signal through the same `OPENCODE_SERVER_EXIT` path used after readiness, preserves caller-abort precedence, and closes task 49's pre-readiness crash handoff with terminal-before-cleanup lifecycle coverage.
 Task 41 records the owner's choice to preserve optional role attribution in [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) and [DR-003](../decisions/003-role-scoped-session-management.md), aligns [[engine-14](../packages/engine.md#engine-14)] so every parallel event carries backend `agent` while `role` follows [[engine-4](../packages/engine.md#engine-4)], leaves the released runtime and types unchanged, and narrows task 49's handoff to exact interleaving after asserting configured and omitted roles on every event.
 Task 42 records the owner's portable configured-command identity in [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), aligns [[engine-25](../packages/engine.md#engine-25)], [[engine-26](../packages/engine.md#engine-26)], and [[engine-118](../packages/engine.md#engine-118)] so peers retain their exact resolved tree while CLIs retain `target.command` without inventing a host-selected path, makes CLI readiness and below-floor diagnostics name that command, and narrows task 49 after isolated peer and CLI assertions.
+Task 43 makes every local missing-dependency skip in [[engine-219](../packages/engine.md#engine-219)] emit one stderr diagnostic naming its affected adapter leg and every absent CLI or credential prerequisite before selecting the runner's skip primitive, preserves CI hard failure and sandbox self-skips, adds focused diagnostic and runner-selection assertions, and narrows task 49 to the live gate matrix.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -477,7 +478,7 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `engine` | `engine-209`'s Claude denylist-only and Kimi non-empty allowlist and denylist rejection cases; | |
     | `engine` | `engine-214`'s cross-run stream, option, and state isolation for Claude, Codex, Gemini, and OpenCode plus Kimi per-call option isolation; | |
     | `engine` | `engine-218`'s Gemini omitted effort and Kimi `off`, omitted, other-adapter, and arbitrary-unknown inputs; | |
-    | `engine` | `engine-219`'s missing-prerequisite, CI, cross-adapter-isolation, and sandbox gates, with task 43 repairing the missing local-skip diagnostic; | |
+    | `engine` | `engine-219`'s live per-adapter missing-prerequisite, CI, cross-adapter-isolation, and sandbox gates beyond task 43's focused diagnostic assertion; | |
     | `engine` | `engine-221`'s complete five-adapter accepted, invalid, absent, and empty writable-path matrix; | |
     | `engine` | `engine-226`'s Kimi upstream-effort-rejection case; | |
     | `engine` | `engine-240`'s complete every-built-in authentic-zero, authentic-nonzero, malformed, and absent accounting matrix; | |

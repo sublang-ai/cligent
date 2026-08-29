@@ -705,7 +705,7 @@ Where each built-in adapter receives `CligentOptions.permissions = { mode: 'auto
 - no `permission_request`, denied tool result, or error in either stream;
 - successful terminal `done` in each stream;
 - retry only after explicit upstream overload, rate limit, or service unavailability, with at most two retries and every other failure or third consecutive named transient fatal;
-- per-adapter self-skip with a logged reason when its spawned external `gemini`, `opencode`, or `kimi` CLI is absent from `PATH` or its credential is absent from the environment, hard failure instead under `CI`, and no skip of another adapter's leg;
+- per-adapter self-skip preceded by one stderr diagnostic naming the affected adapter leg and every missing prerequisite when its spawned external `gemini`, `opencode`, or `kimi` CLI is absent from `PATH` or its credential is absent from the environment, hard failure instead under `CI`, and no skip of another adapter's leg;
 - no SDK-absence skip because a checkout capable of the suite has installed the loaded packages;
 - per-adapter self-skip with a logged reason, including under `CI`, where the host cannot initialize that adapter's OS-level sandbox.
 
