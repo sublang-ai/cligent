@@ -3,11 +3,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -22,6 +24,51 @@ function evidenceField(evidence: string, label: string): string {
   );
   if (!match?.[1]) throw new Error(`release evidence is missing ${label}`);
   return match[1];
+}
+
+function orderedAuditLog(
+  repository: string,
+  previousTag: string,
+  auditedHead: string,
+): string {
+  return execFileSync(
+    'git',
+    ['log', '--reverse', '--format=%H%x09%s', `${previousTag}..${auditedHead}`],
+    {
+      cwd: repository,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+}
+
+interface WorkflowStep {
+  run?: unknown;
+  uses?: unknown;
+  with?: Record<string, unknown>;
+}
+
+interface WorkflowJob {
+  steps?: WorkflowStep[];
+}
+
+function repositoryWorkflowJobs(): Array<{
+  id: string;
+  steps: WorkflowStep[];
+}> {
+  const workflowDirectory = '.github/workflows';
+  return readdirSync(join(projectRoot, workflowDirectory))
+    .filter((filename) => /\.ya?ml$/.test(filename))
+    .sort()
+    .flatMap((filename) => {
+      const workflow = parse(read(`${workflowDirectory}/${filename}`)) as {
+        jobs?: Record<string, WorkflowJob>;
+      };
+      return Object.entries(workflow.jobs ?? {}).map(([jobName, job]) => ({
+        id: `${workflowDirectory}/${filename}#${jobName}`,
+        steps: Array.isArray(job.steps) ? job.steps : [],
+      }));
+    });
 }
 
 function expectedVersion(previous: string, level: string): string {
@@ -57,16 +104,7 @@ describe('release preparation', () => {
     const releaseDate = evidenceField(evidence, 'Release date');
     const changeLevel = evidenceField(evidence, 'Change level');
 
-    const orderedLog = execFileSync(
-      'git',
-      [
-        'log',
-        '--reverse',
-        '--format=%H%x09%s',
-        `${previousTag}..${auditedHead}`,
-      ],
-      { cwd: projectRoot, encoding: 'utf8' },
-    );
+    const orderedLog = orderedAuditLog(projectRoot, previousTag, auditedHead);
     const commits = orderedLog.trimEnd().split('\n');
     const classes = new Map<string, number>();
     for (const entry of commits) {
@@ -207,27 +245,73 @@ describe('release preparation', () => {
     );
     expect(evidence).toMatch(/^- \[ \] Create and push tag `v[^`]+`/m);
 
-    for (const [workflowPath, jobName] of [
-      ['.github/workflows/ci.yml', 'ci'],
-      ['.github/workflows/release.yml', 'release'],
-    ] as const) {
-      const workflow = read(workflowPath);
-      const jobHeader = `  ${jobName}:\n`;
-      const jobStart = workflow.indexOf(jobHeader);
-      expect(jobStart).toBeGreaterThanOrEqual(0);
-      const remainingJobs = workflow.slice(jobStart + jobHeader.length);
-      const nextJobOffset = remainingJobs.search(/^  [a-zA-Z0-9_-]+:\n/m);
-      const job = workflow.slice(
-        jobStart,
-        nextJobOffset === -1
-          ? undefined
-          : jobStart + jobHeader.length + nextJobOffset,
+    const unitTestJobs = repositoryWorkflowJobs().filter((job) =>
+      job.steps.some(
+        (step) =>
+          typeof step.run === 'string' && step.run.trim() === 'npm test',
+      ),
+    );
+    expect(unitTestJobs.map((job) => job.id)).toEqual([
+      '.github/workflows/ci.yml#ci',
+      '.github/workflows/release.yml#release',
+    ]);
+    for (const job of unitTestJobs) {
+      const testIndex = job.steps.findIndex(
+        (step) =>
+          typeof step.run === 'string' && step.run.trim() === 'npm test',
       );
+      const checkoutIndexes = job.steps
+        .map((step, index) =>
+          typeof step.uses === 'string' &&
+          step.uses.startsWith('actions/checkout@')
+            ? index
+            : -1,
+        )
+        .filter((index) => index >= 0);
+      expect(checkoutIndexes).toHaveLength(1);
+      const checkoutIndex = checkoutIndexes[0] ?? -1;
+      const checkout = job.steps[checkoutIndex];
+      expect(checkoutIndex).toBeLessThan(testIndex);
+      expect(String(checkout?.with?.['fetch-depth'])).toBe('0');
+      expect(String(checkout?.with?.['fetch-tags'])).toBe('true');
+    }
+  });
 
-      expect(job).toContain('- run: npm test');
-      expect(job).toMatch(
-        /- uses: actions\/checkout@[^\n]+\n\s+with:\n\s+fetch-depth: 0\n\s+fetch-tags: true/,
+  it('fails closed when the recorded Git history is unavailable (release-15)', () => {
+    const manifest = JSON.parse(read('package.json')) as { version: string };
+    const evidence = read(`docs/releases/${manifest.version}-preparation.md`);
+    const previousTag = evidenceField(evidence, 'Previous tag');
+    const auditedHead = evidenceField(evidence, 'Audited head');
+    const scratch = mkdtempSync(join(tmpdir(), 'cligent-release-audit-'));
+
+    try {
+      execFileSync('git', ['init', '--quiet'], { cwd: scratch });
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Release Audit',
+          '-c',
+          'user.email=release-audit@example.invalid',
+          'commit',
+          '--quiet',
+          '--allow-empty',
+          '--no-gpg-sign',
+          '--no-verify',
+          '-m',
+          'fixture checkout',
+        ],
+        { cwd: scratch },
       );
+      expect(() => orderedAuditLog(scratch, previousTag, 'HEAD')).toThrow();
+      execFileSync('git', ['-c', 'tag.gpgSign=false', 'tag', previousTag], {
+        cwd: scratch,
+      });
+      expect(() =>
+        orderedAuditLog(scratch, previousTag, auditedHead),
+      ).toThrow();
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 

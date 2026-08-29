@@ -110,7 +110,7 @@ When `npm run smoke:release` runs, the verification shall assert that this one e
 When a release-preparation record is audited, the system check shall assert the following evidence against the real repository [[release-14](#release-14)]:
 
 - the recorded Git range has the stated endpoint, commit count, subjects, and ordered-log digest [[release-4](#release-4)];
-- every repository workflow job executing this audit checks out full Git history and tags so the previous tag and audited head remain available, with missing history still failing the audit [[release-4](#release-4)];
+- the `ci` job in `.github/workflows/ci.yml` and the `release` job in `.github/workflows/release.yml`, each of which executes the default unit suite containing this audit, are the complete set of jobs invoking `npm test` and check out full Git history and tags before that suite runs so the previous tag and audited head are available, while an otherwise valid checkout lacking the recorded history fails the audit [[release-4](#release-4)];
 - the recorded change level produces the chosen version from the previous tag [[release-1](#release-1)];
 - `CHANGELOG.md` has an empty `[Unreleased]` section, the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
 - `package.json` carries the chosen version and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
