@@ -217,10 +217,15 @@ describe('repository licensing verification', () => {
     writeFixture(root, 'LEGAL.md', '# Fixture legal terms\n');
 
     // Names containing category words remain included outside those categories.
+    writeFixture(root, 'src/config.ts', projectHeader());
     writeFixture(root, 'src/vendor-helper.ts', projectHeader());
     execFileSync('git', ['add', '--all', '--force'], { cwd: root });
 
     expectPass(runVerifier(root));
+
+    writeFixture(root, 'src/config.ts', 'export {};\n');
+    expectFailure(runVerifier(root), 'src/config.ts', 'SPDX-FileCopyrightText');
+    writeFixture(root, 'src/config.ts', projectHeader());
 
     writeFixture(root, 'src/vendor-helper.ts', 'export {};\n');
     expectFailure(

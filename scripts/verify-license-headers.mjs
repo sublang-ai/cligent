@@ -180,7 +180,7 @@ function isConfiguration(path) {
   if (basename === 'settings.json') return true;
   if (basename === 'npm-shrinkwrap.json') return true;
   if (/(?:^|[-.])lock(?:b|\.json|\.ya?ml)?$/i.test(basename)) return true;
-  return /(?:^|\.)config\.[^.]+$/.test(basename);
+  return /\.config\.[^.]+$/.test(basename);
 }
 
 function isGeneratedOrVendor(path) {
