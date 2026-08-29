@@ -30,6 +30,8 @@ Every task below is exactly one commit. Each implementation task changes only it
 
 1. [x] **Close licensing verification.** Cover `licensing-3`, `licensing-4`, `licensing-6`, `licensing-7`, and `licensing-8`, including a real repository header audit.
 2. **Close release verification.** Cover `release-1`, `release-3`, `release-4`, `release-5`, `release-7`, and `release-10` through `release-12` through the real release workflow and smoke composition where feasible.
+   The owner chose to preserve the released manual duties, so this task shall require an audited release-preparation evidence record for the commit-range review, Semantic Versioning classification, notable-change reconciliation, and pre-tag checklist rather than replace those duties with mechanical artifact proxies.
+   Its implementation commit shall carry the durable evidence contract in the release package and a decision record before closing those gaps.
 3. **Close package surface verification.** Cover `package-1`, `package-5`, `package-8`, `package-101`, and `package-102` across declarations, distributable output, documentation, and runtime-target imports.
 4. **Close package readiness verification.** Cover `package-103` through `package-105` and `package-201` across lifecycle acquisition, target history, isolated resolution, and verdict behavior.
 5. **Close Git workflow verification.** Cover `git-1`, `git-3`, `git-4`, and `git-6`, including raw `Co-authored-by:` line parsing, trailer schema, configured-identity reporting, and refusal before commit creation.

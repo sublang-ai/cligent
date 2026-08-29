@@ -6,9 +6,9 @@
 ## Status
 
 In progress.
-Tasks 1 through 49 are done; tasks 50 through 53 wait behind the bounded verification-closure phases.
+Tasks 1 through 50 are done; task 51 is next.
 Task 49 found its 226-row, at-least-259-scope source audit unreviewable as one commit, so its completed sizing phase retains the table below as a live debt register and assigns every eligible scope exactly once across 47 bounded closure commits and one bidirectional reconciliation commit.
-This migration remains incomplete until those phases remove every eligible row they prove closed and the reconciliation finds no residual gap.
+The owner ruled that recording that bounded successor program satisfies task 49, so its verification debt remains open for later execution without gating tasks 50 through 53 or being treated as closed here.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -108,6 +108,7 @@ Task 45 records the owner's source-delivery choice in [DR-004](../decisions/004-
 Task 46 records the owner's resolved-startup-order choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-007](../decisions/007-tmux-play-dynamic-player-visibility.md), aligns [[tmux-play-27](../packages/tmux-play.md#tmux-play-27)] so an explicit `layout.initialVisible` array orders startup panes while omission retains config order, and binds the existing focused launcher and real-tmux assertions through [[tmux-play-182](../packages/tmux-play.md#tmux-play-182)] without changing shipped layout or that item's zero-player-only task-49 residue.
 Task 47 removes the live-follow observer's state-blind leading-edge throttle so neither a live-pane no-op nor an earlier copy-mode exit can suppress a rapid visible write after that pane enters or re-enters copy-mode, retains per-pane isolation and the no-visible-bytes exclusion, extends [[tmux-play-169](../packages/tmux-play.md#tmux-play-169)]'s real-tmux flow with both rapid-write sequences, and narrows task 49 to [[tmux-play-69](../packages/tmux-play.md#tmux-play-69)]'s remaining unasserted branches.
 Task 48 gives the composite fanout acceptance harness three complete fresh attempts, retries only explicit upstream-overload, rate-limit, and service-unavailable failures, preserves the final attempt's records for the existing acceptance assertions, and adds deterministic checks for transient recovery, third-transient exhaustion, and immediate non-transient failure without changing [[tmux-play-116](../packages/tmux-play.md#tmux-play-116)].
+Task 50 records the owner's end-of-stream tail choice in [DR-018](../decisions/018-ndjson-end-of-stream-tail.md), makes [[ndjson-2](../packages/ndjson.md#ndjson-2)] distinguish open-stream buffering from end-of-stream finalization, adds [[ndjson-7](../packages/ndjson.md#ndjson-7)] as the final-tail carrier split from released `NDJSON-002`, and extends [[ndjson-207](../packages/ndjson.md#ndjson-207)] across valid, malformed, whitespace-only, and carriage-return tail assertions while leaving the test-pinned parser unchanged.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent

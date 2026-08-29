@@ -86,7 +86,7 @@ describe('parseNDJSON', () => {
     expect(results[0].raw).toBe('{bad json}');
   });
 
-  it('ignores empty lines and parses final line without trailing newline', async () => {
+  it('applies line rules to final content without a newline (ndjson-207)', async () => {
     const stream = Readable.from([
       '\n',
       '{"type":"message","content":"first"}\n',
@@ -100,5 +100,27 @@ describe('parseNDJSON', () => {
       { ok: true, data: { type: 'message', content: 'first' } },
       { ok: true, data: { type: 'message', content: 'last' } },
     ]);
+
+    const malformed = await collect(
+      parseNDJSON(Readable.from(['{"type":"message"'])),
+    );
+    expect(malformed).toHaveLength(1);
+    if (malformed[0].ok) {
+      throw new Error('Expected parse error result');
+    }
+    expect(malformed[0].raw).toBe('{"type":"message"');
+    expect(malformed[0].error).toContain('JSON');
+
+    expect(await collect(parseNDJSON(Readable.from([' \t\r'])))).toEqual([]);
+
+    const carriageReturn = await collect(
+      parseNDJSON(Readable.from(['{bad json}\r'])),
+    );
+    expect(carriageReturn).toHaveLength(1);
+    if (carriageReturn[0].ok) {
+      throw new Error('Expected parse error result');
+    }
+    expect(carriageReturn[0].raw).toBe('{bad json}');
+    expect(carriageReturn[0].error).toContain('JSON');
   });
 });

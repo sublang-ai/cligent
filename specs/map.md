@@ -43,6 +43,7 @@ meta.md       The spec of specs
 | [DR-015](decisions/015-managed-tmux-play-lifecycle.md) | 015-managed-tmux-play-lifecycle.md | Managed tmux-play launch lifecycle |
 | [DR-016](decisions/016-tmux-pane-logical-identity.md) | 016-tmux-pane-logical-identity.md | Logical tmux pane identity |
 | [DR-017](decisions/017-spec-generation-migration.md) | 017-spec-generation-migration.md | Spec-generation migration and released-ID mappings |
+| [DR-018](decisions/018-ndjson-end-of-stream-tail.md) | 018-ndjson-end-of-stream-tail.md | NDJSON end-of-stream tail handling |
 
 ## Packages
 
