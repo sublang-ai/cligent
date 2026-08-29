@@ -42,8 +42,9 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
 2. [x] **Account for the whole run.**
    Derive Claude aggregates from `result.modelUsage` rather than `result.usage`, falling back to the
    main-loop counters when the per-model map is absent or malformed; rewrite
-   [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)], which previously asserted — falsely — that no
-   runtime surface partitions the additional spend.
+   the then-current Claude aggregate-source item, which previously asserted — falsely — that no runtime
+   surface partitions the additional spend. [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)]
+   now carries the surviving authenticity rule.
    Keep the [[claude-code-28](../packages/adapters/claude-code.md#claude-code-28)] no-op signature on the main-loop
    counters, since the repair turn reports zero there while the run may already have spent tokens.
    Measured under-reporting on one subagent run: input 50%, output 63%.
@@ -51,17 +52,21 @@ Each task is one commit and keeps build, typecheck, lint, and unit checks green 
    Read `total_cost_usd` from the result message.
 4. [x] **Add the record structure.**
    Add `UsageRecord` and `DoneUsage.records`, the summing builder, and
-   [[engine-30](../packages/engine.md#engine-30)]; amend [DR-014](../decisions/014-unified-token-usage-breakdown.md)
+   the then-current billable-record item; amend [DR-014](../decisions/014-unified-token-usage-breakdown.md)
    to promote per-model attribution off its deferral list; publish Claude's per-model records.
+   [[engine-59](../packages/engine.md#engine-59)] now carries record reconciliation.
 5. [x] **Record OpenCode per request.**
    One record per step-finish part with `requests: 1`, its own cost, and the model and provider of the
-   owning assistant message; amend [[opencode-30](../packages/adapters/opencode.md#opencode-30)].
+   owning assistant message; amend the then-current OpenCode accounting item.
+   [[opencode-21](../packages/adapters/opencode.md#opencode-21)] now carries the causal report.
 6. [x] **Record the Codex turn.**
    One record for the turn with the pinned model and no request count; add
-   [[codex-14](../packages/adapters/codex.md#codex-14)].
+   the then-current Codex record item. [[codex-17](../packages/adapters/codex.md#codex-17)]
+   now carries runtime-observed attribution.
 7. [x] **Pin acceptance coverage.**
-   Add [[engine-121](../packages/engine.md#engine-121)] and [[engine-239](../packages/engine.md#engine-239)] with their
-   `Verifies:` lines, plus the integration coverage they name.
+   Add the then-current engine and cross-adapter record checks with their
+   `Verifies:` lines; [[engine-70](../packages/engine.md#engine-70)] and
+   [[engine-240](../packages/engine.md#engine-240)] now carry that coverage.
 8. [x] **Document the decomposition.**
    Extend the guide's token-usage section with the record fields and per-agent granularity, and record the
    additive change in the changelog.

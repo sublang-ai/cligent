@@ -55,7 +55,9 @@ Out of scope:
   A third-party Captain that already emits `captain_status` continues to work; only the rendered bytes in the tmux pane change.
 - Body content rules for the tool input summary (priority order, 60-cell truncation, JSON fallback) and the tool result body (fenced code, trailing-terminator strip, outer-margin trim, `renderMarkdown` fallback) — all preserved verbatim under the new grammar.
 - The `[status]` data-tail rendering (`formatStatusData(record.data)`) for structured `captain_status` data — preserved verbatim as the trailing portion of the body outside the brackets.
-- The cell-measurement rules of [[tmux-play-46](../packages/tmux-play.md#tmux-play-46)] and the SGR close/reopen rule for continuation indents — unchanged.
+- The cell-measurement rules of [[tmux-play-46](../packages/tmux-play.md#tmux-play-46)] — unchanged.
+  The then-current SGR close/reopen rule was later retired with the hand-written wrapping path by
+  [DR-019](../decisions/019-superseded-item-retirements.md).
 - Localizing the bracket literals (`[status]`, `[error]`, `[tool …]`) via YAML or any other user-facing knob.
   The bracketed-tag grammar remains presenter-prescribed; if real demand emerges for configurable tag text, that is a separate IR.
 

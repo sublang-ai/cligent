@@ -657,16 +657,16 @@ describe('tmux-play real-tmux acceptance', () => {
         expect(wheelUp).not.toContain('refresh-client');
       }
 
-      // tmux-play-168 (supersedes tmux-play-166 / tmux-play-167): the launcher
+      // tmux-play-168: the launcher
       // installs a session-scoped MouseDown1Pane override that
       // chains `send-keys -X clear-selection` per in-mode pane
       // before the per-table stock tail. `clear-selection` drops the
       // active selection without exiting copy-mode, so a click
       // anywhere releases any active selection while every
       // scrolled-back pane keeps its scroll position. The retired
-      // `-X cancel` primitive (tmux-play-66) exited copy-mode entirely
+      // former `-X cancel` primitive exited copy-mode entirely
       // and snapped scrolled panes to the live tail; the retired
-      // stock-only install (tmux-play-67) preserved scroll but never
+      // stock-only install preserved scroll but never
       // cleared selections. clear-selection is the tmux primitive
       // that splits the two effects.
       for (const table of ['root', 'copy-mode', 'copy-mode-vi']) {
@@ -694,7 +694,7 @@ describe('tmux-play real-tmux acceptance', () => {
 
       // tmux-play-168 behavioral probe: pin the observable consequence,
       // not only the binding string. Asserting only the binding
-      // strings is what allowed tmux-play-167 to land with the
+      // strings is what allowed the stock-only regression to land with the
       // click-doesn't-release-selection regression intact.
       //
       // Layout: pane 0 = Boss/Captain (not in copy-mode); pane 1 =
@@ -1991,7 +1991,7 @@ describe('tmux-play real-tmux acceptance', () => {
         displayMessage(`${sessionName}:0.${coder.index}`, '#{pane_in_mode}'),
       ).toBe('1');
       // ...and at the same scroll position (the user-visible "jumps to the
-      // last line" regression that -X cancel caused under tmux-play-66).
+      // last line" regression that the former -X cancel path caused).
       expect(
         displayMessage(`${sessionName}:0.${coder.index}`, '#{scroll_position}'),
       ).toBe(coderScrollBefore);

@@ -779,38 +779,6 @@ When the launcher creates a tmux-play session, it shall configure mouse interact
 | binding scope | accept that copy-mode bindings are server-global and outlive the session because tmux offers no session-local copy-mode table; safe future cleanup must preserve pre-existing bindings and concurrent tmux-play sessions |
 | Boss/Captain scrollback top | rely on [[tmux-play-79](#tmux-play-79)] to prevent readline-redraw pollution rather than install a wheel override |
 
-### tmux-play-66
-
-_Superseded by [[tmux-play-67](#tmux-play-67)]._
-_Status: retired and entirely non-normative. The paragraphs below record the original requirement in past tense for spec history; no clause in this item is in effect, and no `shall` text appears here. The active normative behavior for left-click on a tmux-play pane is owned by [[tmux-play-68](#tmux-play-68)]._
-_Summary of supersession: cancelling copy-mode on every pane in the session before focusing the clicked pane returned each scrolled pane to its live tail, which surfaced as the user-reported "previously focused pane jumps to the last line" defect; [[tmux-play-67](#tmux-play-67)] preserved scroll by keeping stock left-click behavior, and [[tmux-play-68](#tmux-play-68)] is the current active requirement that also clears active selections._
-
-Historical (non-normative) — what tmux-play-66 originally required:
-- While a tmux-play session was running, when the Boss pressed the primary mouse button on any pane in the launched session, the session cancelled copy-mode in every pane in the session before focusing the clicked pane, so any active selection was cleared on the next click and at most one pane in the session could hold a copy-mode selection at any time.
-- The deselect behavior held whether the clicked pane was currently in copy-mode or not, so a click on the pane that held the selection cleared it just as a click on a sibling pane did.
-- The launcher bound `MouseDown1Pane` in the `root`, `copy-mode`, and `copy-mode-vi` key tables, because tmux dispatches a mouse event through the clicked pane's mode-specific table when the pane is in a mode (`copy-mode` / `copy-mode-vi` both ship a default `MouseDown1Pane select-pane` that would otherwise have shadowed a `root`-only binding) and through the `root` table otherwise.
-- Each binding was gated on the current `#{session_name}` matching the launched session name via `if-shell -F`. The false branch reproduced tmux's stock per-table binding verbatim — `select-pane -t= ; send-keys -M` in the `root` table and `select-pane` in `copy-mode` and `copy-mode-vi` — so that in every other tmux session on the same server left-clicking retained tmux's default behavior. The `send-keys -M` forwarding in the `root` false branch was not omitted, since mouse-aware terminal applications (e.g. vim, less, htop) depend on it to receive forwarded clicks.
-- The true branch cancelled copy-mode on every pane in the session that was currently in a mode and then ran the same per-table tail as the false branch (`select-pane -t= ; send-keys -M` in `root`; `select-pane -t=` in `copy-mode` / `copy-mode-vi`), so the deselect logic did not regress mouse-event forwarding or click-to-focus in the launched session either.
-- The per-pane cancel was gated by `#{pane_in_mode}` so non-mode panes were not sent `-X cancel`, which would emit tmux's "no key table" error.
-- Drag-select per [[tmux-play-62](#tmux-play-62)] was unaffected: `MouseDown1Pane` fired at the start of a drag and cleared any prior selection, then `MouseDrag1Pane` (tmux's stock root binding) entered `copy-mode -M` on the dragged pane and began a fresh selection.
-- As with the copy-mode bindings of [[tmux-play-62](#tmux-play-62)] and the keyboard bindings of [[tmux-play-63](#tmux-play-63)] / [[tmux-play-65](#tmux-play-65)], tmux's `root`, `copy-mode`, and `copy-mode-vi` tables are server-global because tmux does not offer per-session bindings in those tables, so these entries outlived the tmux-play session; the `if-shell` guard kept each binding inert in every other session and was the launcher's narrowest available scoping mechanism.
-- A future cleanup hook to reduce the binding lifetime was contemplated, with the caveat that safe cleanup would have to preserve any pre-existing user bindings and account for multiple concurrent tmux-play sessions; under [[tmux-play-67](#tmux-play-67)] this concern is moot because the launcher writes stock per-table bindings rather than session-scoped overrides.
-
-### tmux-play-67
-
-_Superseded by [[tmux-play-68](#tmux-play-68)]._
-_Status: retired and entirely non-normative. The paragraphs below record the original requirement in past tense for spec history; no clause in this item is in effect, and no `shall` text appears here. The active normative behavior for left-click on a tmux-play pane is owned by [[tmux-play-68](#tmux-play-68)]._
-_Summary of supersession: installing only tmux's stock per-table `MouseDown1Pane` bindings preserved scroll position across focus changes but reintroduced the original "left-click does not release an active copy-mode selection" defect that [[tmux-play-66](#tmux-play-66)] was written to fix. Under [[tmux-play-68](#tmux-play-68)], the launcher installs a session-scoped `MouseDown1Pane` override that runs `send-keys -X clear-selection` (not the retired `-X cancel`) per pane currently in a mode, then chains the per-table stock tail; `clear-selection` drops the selection without exiting copy-mode, so both goals hold at once — a click anywhere in the session releases any active selection while every scrolled-back pane keeps its scroll position._
-
-Historical (non-normative) — what tmux-play-67 originally required:
-- While a tmux-play session was running, when the Boss pressed the primary mouse button on any pane in the launched session, every pane in the session retained its current copy-mode state, scroll position, and any active selection; only pane focus changed.
-- The launcher installed only tmux's stock per-table `MouseDown1Pane` bindings verbatim — `select-pane -t= ; send-keys -M` in the `root` table and `select-pane` in `copy-mode` and `copy-mode-vi` — explicitly written so a stale [[tmux-play-66](#tmux-play-66)] entry on a server reused across launches would be overwritten with stock semantics.
-- The launcher therefore emitted no `if-shell` gate on `#{session_name}`, no `#{pane_in_mode}` clause, and no `send-keys -X cancel` as part of the left-click handler in any of the three key tables, and a server reused across launches would have any prior session-scoped chain replaced by the stock tail.
-- The retired [[tmux-play-66](#tmux-play-66)] cancel-on-every-pane chain had used `send-keys -X cancel`, which exits copy-mode entirely and snaps a scrolled-back pane to its live tail; preserving scroll position across focus changes was the user-visible motivation for retiring it. tmux-play-67 chose a different tradeoff than [[tmux-play-68](#tmux-play-68)]: rather than splitting the two effects via a different `-X` primitive, it removed the override entirely and accepted that an active selection survived clicks elsewhere in the session.
-- Drag-select per [[tmux-play-62](#tmux-play-62)] was unaffected: tmux's stock `MouseDrag1Pane` enters `copy-mode -M` on the dragged pane and begins a fresh selection there without touching other panes.
-- The right-click copy path of [[tmux-play-62](#tmux-play-62)] was unaffected: right-clicking an active selection still ran `copy-pipe-and-cancel`, which cancels copy-mode on the clicked pane and returns it to its live tail because that is the explicit user action of copying and leaving copy-mode.
-- The keyboard pane-switch bindings of [[tmux-play-63](#tmux-play-63)] only call `select-pane -L` / `select-pane -R`, which do not enter or cancel copy-mode, so they too preserved every pane's scroll position and selection.
-
 ### tmux-play-68
 
 While a tmux-play session is running, its pane selection, copy-mode, scroll, and focus state shall respond to pointer and navigation input through this matrix:
@@ -842,7 +810,6 @@ While a tmux-play session is running, when record processing may write pane cont
 | write reaches one pane | leave every sibling pane that receives no concurrent write in its prior copy-mode state and scroll position |
 | pane in another tmux session | leave it unaffected |
 | interaction precedence | override [[tmux-play-62](#tmux-play-62)] and [[tmux-play-68](#tmux-play-68)] scroll preservation only for the pane receiving visible output |
-| retired `tmux-play-78` wheel clamp | install no replacement: stock tmux clamps at the oldest history line, and [[tmux-play-79](#tmux-play-79)] fixes the actual readline-scrollback cause |
 
 ### tmux-play-63
 
@@ -1053,35 +1020,18 @@ Each flushed block follows these ordered transformations:
 
 ### tmux-play-46
 
-_Superseded for text-body wrapping by [[tmux-play-50](#tmux-play-50)]: `glow` owns word-boundary wrapping inside rendered blocks. The cell-measurement rules below remain authoritative for tool-input truncation per [[tmux-play-49](#tmux-play-49)]. The character-level soft-wrap algorithm, the escape-parser carry, and the SGR close/reopen invariant described in the remainder of this item no longer apply to text bodies and are not implemented by the presenter; they are retained here for spec history and to keep the cell-measurement table addressable from one item._
+When the presenter measures visible content or resolves a pane width for [[tmux-play-49](#tmux-play-49)] and [[tmux-play-50](#tmux-play-50)], it shall apply this matrix:
 
-The two-space hanging indent required by [[tmux-play-38](#tmux-play-38)] shall apply to every visible continuation line in a pane, whether the line break is an explicit `\n` in the source text or a soft wrap inserted by the presenter when content would otherwise exceed the pane's current display width.
-The presenter shall soft-wrap each prefixed block at the per-pane display width by emitting `\n` followed by the two-space indent in place of the character that would have overflowed, so terminal-level rewrap is unnecessary and every wrapped row visibly carries the indent.
-
-Display width shall be measured in terminal cells, not code points.
-The following codepoints shall count as 2 cells:
-
-- Codepoints in the curated subset of East Asian Wide and Fullwidth blocks that the implementation tracks: Hangul Jamo and Hangul Jamo Extended-A and Hangul Syllables; CJK Radicals / Kangxi / Ideographic Description Characters and CJK Symbols and Punctuation; Hiragana, Katakana, Bopomofo, CJK Strokes, Enclosed CJK Letters and Months, and CJK Compatibility blocks through U+33FF; CJK Unified Ideographs and CJK Compatibility Ideographs and CJK Unified Ideographs Extensions A–G+; Yi Syllables and Radicals; Yijing Hexagram Symbols; Vertical Forms and CJK Compatibility Forms and Small Form Variants; Fullwidth ASCII (U+FF00–U+FF60) and Fullwidth signs (U+FFE0–U+FFE6); Ideographic Symbols and Punctuation (U+16FE0–U+16FE4) and Ideographic vertical forms (U+16FF0–U+16FF1); Tangut Ideographs and Tangut Components and Khitan Small Script and Tangut Supplement; Kana Extended-B and Kana Supplement and Kana Extended-A and Small Kana Extension; Nüshu; Tai Xuan Jing Symbols and Counting Rod Numerals.
-- Codepoints at `cp >= 0x2300` whose Unicode `Emoji_Presentation` property is `Yes`, including BMP emoji such as U+231A ⌚ and U+2615 ☕ and every supplementary emoji block — including blocks added in future Unicode releases — so this rule does not need a source update when Unicode adds new emoji.
-
-The list above is a curated subset of Unicode East Asian Width = Wide/Fullwidth, not the full set.
-JavaScript regex does not expose the `East_Asian_Width` property, so any codepoint that is EAW=W or =F per Unicode but is neither in the enumerated blocks nor `Emoji_Presentation` — for example, archaic scripts or rare symbol blocks not yet enumerated here — shall be measured as 1 cell.
-Soft-wrap based on this measurement may therefore over-fill the pane for such codepoints; this is the documented limitation of the implementation's table.
-
-Unicode combining marks (`\p{M}`) and zero-width formatting codepoints (ZWSP, ZWNJ, ZWJ, Word Joiner, BOM) count as 0 cells, and C0/C1 control bytes other than `\n` count as 0 cells.
-ANSI escape sequences (CSI `ESC [` … final byte `0x40`–`0x7E`; OSC `ESC ]` … terminated by BEL or ST; and the simple `ESC` + next-byte form) shall pass through with 0 cells and shall never be split across a soft-wrap boundary.
-The presenter shall keep its escape-parser state per writer across streaming writes (e.g., per `text_delta` event), so a CSI/OSC/`ESC` sequence whose bytes arrive in two or more chunks is reassembled into a single zero-width escape token before any subsequent visible byte is placed.
-At every block boundary on a writer — including the start of any non-streaming prefixed block, the start of a status line, and the close of a run regardless of `status` — the presenter shall drain its pending escape parser state, emitting any still-unterminated escape bytes verbatim to that block's writer before writing the boundary newline, so the next block parses from a clean state and cannot have its leading byte consumed as the missing terminator of an earlier escape.
-
-The presenter shall track the last body-emitted SGR opener (a CSI sequence ending in `m` that is not a reset) per writer.
-At every continuation boundary — soft-wrap, explicit newline, or any path that emits a continuation indent — the presenter shall close that SGR (emit `\x1b[0m`) before the `\n`, emit the uncolored continuation indent, and re-emit the same opener after the indent so the body's color resumes on the new row.
-This historically held the [[tmux-play-38](#tmux-play-38)] "continuation indents shall stay uncolored" invariant for status bodies that opened an SGR span and crossed a line break — the rule was motivated by the retired `[error: msg]` / `[runtime error: msg]` / `[turn aborted: reason]` shape in which the entire bracketed body, including the wrapping message, sat inside one SGR span.
-Under the current [[tmux-play-39](#tmux-play-39)], status bodies sit outside the brackets and are unstyled by the presenter, so the bracketed tag's SGR span closes inside the line and no presenter-opened body SGR survives across a wrap; the rule has no live caller and is retained only as spec history alongside the rest of this item, expressly so the retired inside-brackets coloring model is not reintroduced.
-Non-SGR CSI sequences (cursor movement, erase, etc., terminated by bytes other than `m`) do not change color/style and are not subject to this close/reopen rule.
-
-Width sources: the Boss/Captain pane width shall track the captain's stdout `columns` property, which Node refreshes via SIGWINCH on terminal resize.
-Each player pane width shall be queried from tmux at session start; the session shall refresh player widths when its stdout emits `'resize'` (the in-pane SIGWINCH that follows the tmux resize hooks set per [[tmux-play-44](#tmux-play-44)]) and again before each Boss turn as a safety net.
-When a width source is unavailable or the value would not leave room for the two-space indent, the writer shall fall back to no soft wrap.
+| Surface or value | Measurement or source |
+| --- | --- |
+| printable codepoint outside the cases below | 1 cell |
+| curated East Asian Wide / Fullwidth subset | 2 cells for Hangul Jamo and Hangul Jamo Extended-A and Hangul Syllables; CJK Radicals / Kangxi / Ideographic Description Characters and CJK Symbols and Punctuation; Hiragana, Katakana, Bopomofo, CJK Strokes, Enclosed CJK Letters and Months, and CJK Compatibility blocks through U+33FF; CJK Unified Ideographs and CJK Compatibility Ideographs and CJK Unified Ideographs Extensions A–G+; Yi Syllables and Radicals; Yijing Hexagram Symbols; Vertical Forms, CJK Compatibility Forms, and Small Form Variants; Fullwidth ASCII U+FF00–U+FF60 and signs U+FFE0–U+FFE6; Ideographic Symbols and Punctuation U+16FE0–U+16FE4 and vertical forms U+16FF0–U+16FF1; Tangut Ideographs, Tangut Components, Khitan Small Script, and Tangut Supplement; Kana Extended-B, Kana Supplement, Kana Extended-A, and Small Kana Extension; Nüshu; Tai Xuan Jing Symbols; and Counting Rod Numerals |
+| codepoint at or above U+2300 whose Unicode `Emoji_Presentation` property is `Yes` | 2 cells, including BMP emoji and supplementary or future emoji blocks |
+| East Asian Width = Wide / Fullwidth codepoint outside the curated subset and not selected by `Emoji_Presentation` | 1 cell, because JavaScript regex does not expose `East_Asian_Width` |
+| Unicode combining mark (`\p{M}`), ZWSP, ZWNJ, ZWJ, Word Joiner, BOM, C0/C1 control, or DEL | 0 cells |
+| ANSI CSI, OSC, or simple `ESC` sequence | preserve it as one token and count 0 cells |
+| Boss/Captain pane width | the Captain stdout `columns` property, refreshed by Node through SIGWINCH |
+| player pane width | query tmux at session start, when session stdout emits `'resize'` after [[tmux-play-44](#tmux-play-44)]'s resize hooks, and before each Boss turn |
 
 ### Theme
 
@@ -1712,21 +1662,20 @@ Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, given co
 
 ### tmux-play-137
 
-_Superseded for text-body wrapping by [[tmux-play-146](#tmux-play-146)], [[tmux-play-147](#tmux-play-147)], and [[tmux-play-148](#tmux-play-148)], matching the same supersession of [[tmux-play-46](#tmux-play-46)] by [[tmux-play-50](#tmux-play-50)]. The character-level soft-wrap and SGR close/reopen invariants asserted below are no longer implemented by the presenter; this item is retained for spec history alongside the cell-measurement table it verifies in the [[tmux-play-49](#tmux-play-49)] tool-input truncation path._
+When verifying [[tmux-play-46](#tmux-play-46)]'s active display-cell and player-width behavior, the check shall assert this matrix:
 
-Given a `TmuxPresenter` whose Boss writer has display width `W_b` and whose player writer has display width `W_r`, when the presenter writes a single-logical-line player event of length greater than `W_r`, the player writer's captured text shall contain `\n  ` (newline + two spaces) at the boundary that keeps every emitted row no wider than `W_r` cells, with the first row prefixed by `<playerId>> ` and every subsequent row prefixed by exactly two spaces.
-The same invariant shall hold for the Boss writer at width `W_b` for a Captain reply, including across `text_delta` events split before, at, and after the wrap boundary.
-When a writer's width source returns `Infinity`, the writer's output shall be identical to the pre-tmux-play-46 behavior (no soft-wrap), and explicit `\n` continuations shall continue to be indented per [[tmux-play-38](#tmux-play-38)] [[tmux-play-46](#tmux-play-46)].
-
-Cell-width and escape handling: when the source text contains East Asian Wide / Fullwidth codepoints, the presenter shall treat each such codepoint as 2 cells when computing the wrap boundary (e.g., at `W_r = 12` the captured text for `<playerId>> ` plus seven Wide characters shall wrap after the second Wide character so the first row is 11 cells and the continuation row is 12 cells).
-Supplementary-plane emoji whose Unicode `Emoji_Presentation` property is `Yes` shall likewise count as 2 cells, including codepoints outside the hand-curated emoji ranges in the implementation (e.g., U+1F7E7 🟧 in Geometric Shapes Extended and U+1FAE0 🫠 in Symbols and Pictographs Extended-A); the same rule shall apply to BMP emoji such as U+231A ⌚, U+2615 ☕, and U+23F0 ⏰.
-Each block enumerated in [[tmux-play-46](#tmux-play-46)]'s curated EAW=Wide/Fullwidth list shall also resolve to 2 cells, including at least: U+A960 (Hangul Jamo Extended-A), U+4DC0 (Yijing Hexagram Symbols), U+17000 (Tangut), U+18800 (Tangut Components), U+18B00 and U+18CFF (Khitan Small Script, including reserved tail), U+1AFF0 (Kana Extended-B), U+1B000 (Kana Supplement), U+1B100 (Kana Extended-A), U+1B150 (Small Kana Extension), U+1B170 (Nüshu), U+1D300 (Tai Xuan Jing Symbols), and U+1D360 (Counting Rod Numerals).
-Codepoints that Unicode reports as Neutral, and EAW=Wide/Fullwidth codepoints in blocks not enumerated by tmux-play-46 (e.g., archaic scripts not in the curated subset), shall count as 1 cell — including U+1FB70 in Symbols for Legacy Computing and U+1F800 in Supplemental Arrows-C, both Neutral per Unicode.
-Unicode combining marks and zero-width formatting codepoints shall not advance the wrap column.
-ANSI escape sequences (CSI, OSC, and `ESC` + next-byte) shall be passed through verbatim without contributing to the cell count and shall never have a `\n  ` inserted in their interior, including when the sequence's bytes arrive in two or more streaming chunks: given three player `text_delta` events whose payloads are `hello`, `\x1b[31`, and `m world` with `W_r = 12`, the player writer's captured text shall be `<playerId>> hello\x1b[31m\n   world` — i.e., the CSI is reassembled into a single `\x1b[31m` token before the soft-wrap fires, and the wrap lands between the escape and the following space rather than inside the escape's parameter bytes.
-Pending escape state shall not leak across block boundaries: given a player `text_delta` `hello\x1b[31` followed by a `player_finished` with `status: 'ok'` and then a fresh player `text` event `next`, the player writer's captured text shall be `<playerId>> hello\x1b[31\n<playerId>> next\n` — i.e., the partial CSI is flushed verbatim into the previous block before its closing newline, and the next block's leading `n` is not consumed as the missing CSI terminator.
-Additionally, given a `TmuxPlaySession` whose stdout emits `'resize'`, the session's player pane width query (`queryPaneWidths`) shall be invoked again so subsequent writes use the post-resize width; after the session has shut down, further `'resize'` emissions on stdout shall not invoke the query.
-The superseded probe's acceptance precondition is [[tmux-play-130](#tmux-play-130)]'s real-tmux harness.
+| Case | Assertion |
+| --- | --- |
+| ASCII printable | 1 cell |
+| C0/C1 control, DEL, ZWSP, ZWNJ, ZWJ, Word Joiner, BOM, or Unicode combining mark | 0 cells |
+| representative CJK, Hangul, and Fullwidth codepoint | 2 cells |
+| representative supplementary or BMP `Emoji_Presentation` codepoint | 2 cells, including U+1F7E7, U+1FAE0, U+231A, U+2615, and U+23F0 |
+| representative curated Wide / Fullwidth blocks | 2 cells, including U+A960, U+4DC0, U+17000, U+18800, U+18B00, U+18CFF, U+1AFF0, U+1B000, U+1B100, U+1B150, U+1B170, U+1D300, and U+1D360 |
+| Unicode Neutral or unlisted Wide / Fullwidth codepoint | 1 cell, including U+1FB70 and U+1F800 |
+| ANSI CSI, OSC, or simple `ESC` sequence | one preserved token that contributes 0 cells |
+| [[tmux-play-49](#tmux-play-49)] tool input containing Wide or emoji codepoints | truncate to 60 display cells without splitting a surrogate pair |
+| live session stdout emits `'resize'` | invoke the player pane-width query again |
+| session has shut down and stdout emits `'resize'` | do not invoke the query |
 
 ### tmux-play-138
 
@@ -2112,30 +2061,6 @@ When launcher and real-session checks exercise single-press `C-c` forwarding, th
 | under [[tmux-play-130](#tmux-play-130)]'s harness, pane 0 scrolled into copy-mode while another player is active in root mode and attached client presses `C-c` | pane 0 first leaves copy-mode and receives `0x03` after one press [[tmux-play-65](#tmux-play-65)], [[tmux-play-26](#tmux-play-26)] |
 | attached-client key driver unavailable or unable to attach | driven-key cases self-skip, including on a headless runner [[tmux-play-65](#tmux-play-65)] |
 
-### tmux-play-166
-
-_Superseded by [[tmux-play-167](#tmux-play-167)]._
-_Status: retired and entirely non-normative. The paragraphs below record the original verification criteria in past tense for spec history; no clause in this item is in effect, and no `shall` text appears here. The active verification of left-click behavior in a tmux-play session is owned by [[tmux-play-168](#tmux-play-168)]._
-
-Historical (non-normative) — what tmux-play-166 originally verified:
-- Given the launcher constructing a tmux-play session whose `sessionName` was `<session>` and which carried `paneCount` panes indexed `0..paneCount-1`, the tmux command stream included exactly one `bind-key -T <table> MouseDown1Pane if-shell -F #{==:#{session_name},<session>} '<trueBranch>' '<falseBranch>'` invocation for each `<table>` in `root`, `copy-mode`, `copy-mode-vi`. With one Boss/Captain pane plus N players, `paneCount` equalled `N + 1`.
-- `<trueBranch>` chained, for every pane index `i` in `0..paneCount-1`, an `if -F -t <session>:0.<i> '#{pane_in_mode}' 'send-keys -t <session>:0.<i> -X cancel'` clause separated by ` ; `, followed by the per-table tail: ` ; select-pane -t= ; send-keys -M` for the `root` table and ` ; select-pane -t=` for `copy-mode` and `copy-mode-vi`.
-- `<falseBranch>` was the per-table tmux stock binding verbatim: `select-pane -t= ; send-keys -M` for `root` and `select-pane` for `copy-mode` and `copy-mode-vi`; the `send-keys -M` byte in the `root` false branch was not omitted so mouse-aware applications in unrelated sessions continued to receive forwarded clicks.
-- Given a real tmux server, when `launchTmuxPlay({ attach: false })` returned, `tmux list-keys -T root MouseDown1Pane` reported a binding whose body contained `if-shell`, `session_name`, the launched session name, `pane_in_mode`, `send-keys` with `-X cancel`, `select-pane -t=`, and `send-keys -M`; and `tmux list-keys -T copy-mode MouseDown1Pane` together with `tmux list-keys -T copy-mode-vi MouseDown1Pane` each reported a binding whose body contained `if-shell`, `session_name`, the launched session name, `pane_in_mode`, `send-keys` with `-X cancel`, and `select-pane`.
-- The acceptance probe ran under `*.acceptance.test.ts`, did not require adapter API keys, and self-skipped when either `tmux -V` or `glow -v` failed.
-
-### tmux-play-167
-
-_Superseded by [[tmux-play-168](#tmux-play-168)]._
-_Status: retired and entirely non-normative. The paragraphs below record the original verification criteria in past tense for spec history; no clause in this item is in effect, and no `shall` text appears here. The active verification of left-click behavior in a tmux-play session is owned by [[tmux-play-168](#tmux-play-168)], which pins the joint contract: a click clears any active selection in every pane while preserving each pane's copy-mode state and scroll position, via `send-keys -X clear-selection` (not the retired `-X cancel`) gated per pane by `#{pane_in_mode}`._
-
-Historical (non-normative) — what tmux-play-167 originally verified:
-- Given the launcher constructing a tmux-play session whose `sessionName` was `<session>`, the tmux command stream included exactly one `bind-key -T root MouseDown1Pane 'select-pane -t= ; send-keys -M'` invocation and exactly one `bind-key -T <table> MouseDown1Pane 'select-pane'` invocation for each `<table>` in `copy-mode`, `copy-mode-vi` — the stock per-table tmux defaults verbatim — and did not include any `MouseDown1Pane` argv that referenced `if-shell`, the launched session name, `#{pane_in_mode}`, or `send-keys -X cancel`.
-- The `mouse` option was still set to `on`, and the `MouseDragEnd1Pane` stop-selection and `MouseDown3Pane` system-clipboard right-click-copy bindings of [[tmux-play-162](#tmux-play-162)] were installed unchanged.
-- Given a real tmux server, `tmux list-keys -T root MouseDown1Pane`, `tmux list-keys -T copy-mode MouseDown1Pane`, and `tmux list-keys -T copy-mode-vi MouseDown1Pane` each reported a binding whose body matched the corresponding stock per-table tail.
-- This verification was retired because it pinned an implementation (stock bindings) that turned out to lose the click-releases-selection behavior of the prior [[tmux-play-66](#tmux-play-66)] intent. Asserting only the binding strings — not the user-observable selection / scroll behavior — was the gap that let the regression land. [[tmux-play-168](#tmux-play-168)] corrects this by combining a static binding assertion with a real-tmux behavioral probe.
-- The acceptance probe ran under `*.acceptance.test.ts`, did not require adapter API keys, and self-skipped when either `tmux -V` or `glow -v` failed.
-
 ### tmux-play-168
 
 When verifying the launcher's session-scoped primary-click handling, the check shall assert this matrix:
@@ -2168,8 +2093,6 @@ Under [[tmux-play-130](#tmux-play-130)]'s real-tmux harness, when exercising out
 | `turn_started`, `turn_finished`, `captain_prompt`, or `captain_telemetry` | no live-tail command [[tmux-play-69](#tmux-play-69)] |
 | suppressed `done` or `error`, any other event rendering no visible text, or a buffered `text_delta` before flush | no live-tail command [[tmux-play-69](#tmux-play-69)] |
 | probe setup | require a genuinely nonzero pre-output scroll for every copy-mode phase, use deterministic synthetic records and seeded history when useful, and require no adapter API key |
-
-_The retired tmux-play-177 wheel-up clamp probe is removed together with its requirement tmux-play-78; the Boss/Captain phantom-scrollback behavior it tried to assert through wheel events is now owned at the source by [[tmux-play-178](#tmux-play-178)] / [[tmux-play-79](#tmux-play-79)]._
 
 ### tmux-play-170
 

@@ -11,8 +11,9 @@ Accepted
 
 [DR-002](002-unified-event-stream-and-adapter-interface.md#key-payloads) originally required
 `inputTokens` and `outputTokens` on every terminal event.
-[[engine-27](../packages/engine.md#engine-27)] later added `tokenAvailability` because a required numeric zero could
-not distinguish measured zero from missing accounting.
+The later flat-accounting generation added `tokenAvailability` because a required numeric zero could not
+distinguish measured zero from missing accounting; [DR-019](019-superseded-item-retirements.md) records that
+generation's retirement.
 The first form of this decision added a disjoint `breakdown` and billable `records` beside those fields.
 
 That compatibility shape is not a sound cost ledger.

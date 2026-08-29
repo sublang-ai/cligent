@@ -165,12 +165,6 @@ When the adapter normalizes a native error, it shall select the unified payload 
 
 When a run emits any terminal `done`, the adapter shall report `DonePayload.usage.toolUses` as the number of distinct `toolUseId` values observed through canonical or compatibility `tool_use` and `tool_result` events, ignoring provider-reported tool counts and preserving the observed count when token accounting is absent.
 
-### codex-30
-
-_Superseded by [[codex-17](#codex-17)]._
-
-Where the SDK supplies canonical flat `Usage`, when the adapter publishes terminal usage, it shall preserve cache-inclusive `input_tokens` as `DonePayload.usage.inputTokens`, recognize and validate `cached_input_tokens`, `cache_write_input_tokens`, and `reasoning_output_tokens`, and never add those detail counters to the inclusive input or output total a second time [[6]][[7]].
-
 ### Permission Mapping
 
 ### codex-4
@@ -300,19 +294,6 @@ When the adapter maps a valid per-turn delta from [[codex-15](#codex-15)] into e
 | reasoning subset present | inclusive output total plus `reasoning` and exact non-negative `visible` subtraction |
 | reasoning subset absent | preserve the inclusive output total but omit `reasoning` and `visible` |
 | any mapped counter malformed, any subset greater than its inclusive total, or combined cache subsets greater than inclusive input | omit tokens rather than clamp or estimate |
-
-### codex-14
-
-_Superseded by [[codex-17](#codex-17)]; retained for the unreleased first billable-record design._
-
-Where one Codex turn supplied a complete flat breakdown, when the adapter published the superseded [[engine-30](../engine.md#engine-30)] record shape, it shall produce this matrix:
-
-| Input | Record outcome |
-| --- | --- |
-| turn breakdown | one record covering the whole turn, with request count and cost omitted |
-| pinned `AgentOptions.model` | use the requested model as rate-card key |
-| no pinned model but a model reported by the run | use that reported model |
-| neither model source present | publish no records rather than restating the unidentified breakdown |
 
 ### codex-17
 
@@ -570,40 +551,6 @@ Given Codex credentials and a throwaway `CODEX_HOME` whose `config.toml` grants 
 ### codex-229
 
 Given either tool-list field is present or both are omitted, when the adapter runs, it shall produce the pre-load rejection or native-tool preservation selected by [[codex-11](#codex-11)].
-
-### codex-233
-
-_Superseded for usage shape by [[codex-240](#codex-240)]._
-
-Given complete, incomplete, invalid, absent, or synthetic Codex accounting, when a caller reads the superseded terminal usage, the adapter shall select this obsolete availability matrix:
-
-| Accounting state | Superseded assertion |
-| --- | --- |
-| complete finite non-negative integer token counters, including explicit zeroes | `tokenAvailability: 'reported'` and the provider-inclusive input base preserved [[codex-30](#codex-30)] |
-| a required token or cache counter absent, or any present mapped counter negative, fractional, non-finite, or non-numeric | `tokenAvailability: 'unavailable'`; an absent optional cache counter alone retains zero contribution without invalidating otherwise complete accounting [[codex-53](#codex-53)] |
-| complete token accounting omitted, or an errored, interrupted, exhausted, or other terminal path synthesized | `tokenAvailability: 'unavailable'` and no token estimate introduced [[codex-17](#codex-17)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], [[codex-27](#codex-27)] |
-| tool calls observed or validly provider-reported in any row | `toolUses` preserves the greatest independently known count even when token accounting is unavailable [[codex-29](#codex-29)] |
-
-### codex-238
-
-_Superseded by [[codex-240](#codex-240)]._
-
-Given complete or incomplete upstream accounting and thread-cumulative Codex snapshots, when a caller reads the superseded `usage.breakdown`, the adapter shall select this obsolete breakdown matrix:
-
-| Accounting or snapshot state | Superseded outcome |
-| --- | --- |
-| complete inclusive counters and their subsets | publish both sides derived by subtraction [[codex-16](#codex-16)] |
-| cache or reasoning counter omitted | omit the corresponding component while the remaining published side still sums to its aggregate, and omit the whole output side when reasoning is omitted [[codex-16](#codex-16)] |
-| component subtraction would be negative | omit the affected side while publishing the unaffected side [[codex-16](#codex-16)] |
-| successive snapshots for one thread | publish the second turn's difference rather than the thread total [[codex-15](#codex-15)] |
-| resumed thread with no retained baseline | publish `tokenAvailability: 'unavailable'` [[codex-15](#codex-15)] |
-| snapshot smaller than the retained baseline | publish `tokenAvailability: 'unavailable'` and retain the smaller snapshot so the following stable turn recovers [[codex-15](#codex-15)] |
-
-### codex-239
-
-_Superseded by [[codex-240](#codex-240)]._
-
-Given complete upstream accounting, when a caller reads the superseded `usage.records`, the adapter shall publish one record covering the turn with no request count [[codex-14](#codex-14)].
 
 ### codex-240
 

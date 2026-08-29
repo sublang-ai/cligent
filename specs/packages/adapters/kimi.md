@@ -120,21 +120,6 @@ When the adapter normalizes a validated `agent_message_chunk`, `agent_thought_ch
 | `agent_message_chunk` text, including an empty string | emit `text_delta` with the exact text; append the deltas in order for `DonePayload.result`; omit that result only when no assistant text accumulated |
 | non-text agent-message content, `agent_thought_chunk`, or `user_message_chunk` | emit no `text_delta` and contribute neither text nor terminal result |
 
-### kimi-20
-
-_The following hypothetical ACP-usage behavior is superseded by [[kimi-13](#kimi-13)]._
-
-When a prompt response carries the unstable ACP usage extension, the adapter shall apply the historical accounting matrix:
-
-| Usage state | Historical outcome |
-| --- | --- |
-| complete unsigned-integer `totalTokens`, `inputTokens`, and `outputTokens`, with every present cache counter also valid, including explicit zeroes | accounting `'reported'`; cache reads and writes folded into input exactly once; output preserved; no breakdown per [[engine-28](../engine.md#engine-28)] |
-| any required structure or consumed token or cache counter absent, negative, fractional, non-finite, or non-numeric | accounting `'unavailable'`; valid stop status, accumulated result, and tool uses preserved |
-| unconsumed extension detail malformed, or optional cache counter null | ignore that detail; treat the null cache counter as absent |
-| usage absent | accounting `'unavailable'` with zero-valued compatibility placeholders rather than measured zero or an estimate |
-
-In every row, `toolUses` shall equal the emitted tool calls independently of token accounting; the cache fold shall remain Kimi-specific rather than become a portable ACP rule.
-
 ### Terminal Outcomes
 
 ### kimi-33
@@ -491,23 +476,6 @@ Given `PermissionPolicy.writablePaths`, when the adapter maps permissions, it sh
 ### kimi-229
 
 Where either tool-list field is omitted, empty, or non-empty, when the adapter maps a run, omission shall preserve the native tool registry while every explicitly provided list shall reject before spawning `kimi acp` [[kimi-10](#kimi-10)].
-
-### kimi-233
-
-_Superseded for usage shape by [[kimi-240](#kimi-240)]._
-
-Given a prompt with a valid stop reason but malformed optional usage, when the adapter emits terminal `done`, the stop reason shall still determine status while the historical token accounting is `'unavailable'` [[kimi-20](#kimi-20)]:
-
-- accumulated result text and tool use shall remain intact, and an unconsumed malformed thought detail or null optional cache detail shall not poison otherwise complete accounting;
-- given a required token or cache counter is absent, or any present mapped counter is negative, fractional, non-finite, or non-numeric, accounting shall be `'unavailable'`, an absent optional cache counter alone retaining zero contribution;
-- given upstream omits complete accounting, or the adapter synthesizes an errored, interrupted, exhausted, or other terminal path, accounting shall be `'unavailable'` and no token estimate shall be introduced; and
-- `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
-
-### kimi-238
-
-_Superseded by [[kimi-240](#kimi-240)]._
-
-Given the adapter emits a terminal `done` with complete upstream accounting, when a caller reads `usage.breakdown`, the adapter shall publish none [[kimi-20](#kimi-20)].
 
 ### kimi-240
 

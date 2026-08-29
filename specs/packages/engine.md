@@ -200,22 +200,6 @@ Where an adapter retains [[engine-37](#engine-37)]'s cumulative baseline, it sha
 | fresh calls or different resume identifiers | remain concurrent |
 | normal, error, interrupted, or setup-failure exit after acquisition | release the queue for its successor |
 
-### Usage Reporting
-
-### engine-19
-
-_Superseded by [[engine-31](#engine-31)]; retained for the released flat-field contract._
-
-Where token accounting is `'reported'`, `inputTokens` shall include all input tokens consumed by the request, regardless of caching tier (base, cache-read, and cache-creation).
-Where a provider defines its base input counter as cache-exclusive, the adapter shall sum provider-specific cache-read and cache-write fields into `inputTokens` exactly once.
-Where a provider defines its base input counter as cache-inclusive, including Codex `input_tokens` and Gemini `StreamStats.input_tokens`, the adapter shall preserve that base total and validate separately reported cache subset/detail counters without adding them again.
-Where token accounting is `'reported'`, `outputTokens` shall include every model-generated output token, including reasoning or thinking tokens.
-Where a provider reports reasoning or thinking separately from a visible or candidate output base, the adapter shall add that disjoint detail exactly once; where an aggregate exposes additional token use without partitioning it between normalized input and output, the adapter shall mark accounting unavailable rather than allocate the residual by estimation.
-Cache or reasoning details shall not make incomplete base input and output accounting `'reported'`; availability shall remain governed by [[engine-27](#engine-27)].
-Where the producer publishes the optional `DoneUsage.breakdown` partition of [[engine-28](#engine-28)], the input side `input` + `cacheRead` + `cacheWrite` shall equal `inputTokens` exactly in integers, and the output side `output` + `reasoning` shall equal `outputTokens` exactly, treating an omitted member of a published side as a zero contribution.
-Where a provider's base input counter is cache-inclusive, the producer shall obtain `input` by subtracting the mapped cache counters from that base, and where a provider's output counter includes reasoning, it shall obtain `output` by subtracting the mapped reasoning counter.
-Where such a subtraction is negative, the producer shall omit that side rather than clamp it, because a clamped component would make the side exceed the aggregate it partitions.
-
 ### Effort
 
 ### engine-20
@@ -388,51 +372,6 @@ The public engine API shall expose a runtime-readiness classification carrying t
 | below the supported floor | `unsupported` | `false` |
 | above the tested version | `untested` | `true` |
 | available but version unreadable | `unknown`, never a failure in this package's caller-facing behavior | `true` |
-
-### Token Usage Availability
-
-### engine-27
-
-_Superseded by [[engine-31](#engine-31)]; retained for the released availability-discriminator contract._
-
-Every `DonePayload.usage` shall carry the required `tokenAvailability` discriminator with the closed values `'reported' | 'unavailable'` per [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md).
-Where upstream supplies complete finite non-negative integer input and output counters, including explicit zeroes, and every present mapped cache or reasoning counter has the same form, the adapter shall set `'reported'`, shall preserve the mapped counters and [[engine-19](#engine-19)] composition rules, and shall not estimate any missing component.
-Where an optional cache counter is absent, its contribution shall be zero without invalidating otherwise complete accounting; where a required counter is absent or any present mapped token or cache counter is non-finite, negative, fractional, or non-numeric, the producer shall set `'unavailable'` rather than silently substituting a reported zero.
-Where complete upstream token counters are absent, malformed, or unavailable on a synthesized, errored, interrupted, exhausted, or other terminal path, the producer shall set `'unavailable'`; numeric token fields shall remain present for object-shape compatibility but consumers shall not treat them as measurements.
-Where either availability state applies, the producer shall preserve an independently known `toolUses` count from observed tool lifecycles or a valid provider-reported count instead of deriving its availability from token accounting.
-This discriminator shall govern the `inputTokens` and `outputTokens` aggregates only; the presence of the optional `breakdown` partition shall be governed by [[engine-28](#engine-28)].
-Where the discriminator is `'unavailable'`, the producer shall omit `breakdown` entirely, so that no consumer can sum components into a figure the run did not measure.
-
-### Token Usage Breakdown
-
-### engine-28
-
-_Superseded by [[engine-31](#engine-31)]; retained for the unreleased disjoint-breakdown design._
-
-`DoneUsage.breakdown` shall be an optional `TokenBreakdown` whose optional members `input`, `cacheRead`, `cacheWrite`, `output`, and `reasoning` are a disjoint partition of the aggregates per [DR-014](../decisions/014-unified-token-usage-breakdown.md), counting every token at most once and satisfying the [[engine-19](#engine-19)] identities.
-A present member shall be a finite non-negative integer the producer measured, and an absent member shall mean the runtime does not report that quantity; a present zero shall therefore never be interpreted as an unreported component, nor an absent member as a measured zero.
-The members shall form two sides, `input` / `cacheRead` / `cacheWrite` and `output` / `reasoning`, and the producer shall publish each side in full or omit it in full.
-Where a runtime's accounting model contains no counter for a member of a side it publishes, the producer shall omit that member alone.
-Where a runtime is known to bill a quantity that it does not expose separately, the producer shall omit that member's whole side, because publishing the remaining total under a narrower component name would assert a measurement the runtime did not make.
-Where neither side is publishable, the producer shall omit `breakdown` rather than emit an empty object.
-
-### engine-29
-
-_Superseded by [[engine-31](#engine-31)]; retained for the original supplementary-source rule._
-
-Where an adapter derives token accounting from a source other than the protocol stream it consumes for the run, including state the runtime writes outside that stream, it shall cross-validate the derived totals against the aggregates that stream itself reported.
-Where the cross-validation fails, or the source is absent, unreadable, or unparsable, the adapter shall fall back to the accounting the protocol stream supports, including `'unavailable'` where that accounting is incomplete, so that a supplementary source can only raise fidelity and never lower correctness.
-An adapter shall not read a source that lies outside a protocol boundary an applicable decision record establishes for it.
-
-### engine-30
-
-_Superseded by [[engine-31](#engine-31)]; retained for the original billable-record design._
-
-`DoneUsage.records` shall be an optional list of `UsageRecord` values decomposing the run into billable groups per [DR-014](../decisions/014-unified-token-usage-breakdown.md), each carrying that group's `tokens` in the [[engine-28](#engine-28)] frame and, where the runtime supplies them, the rate-card `model` and `provider`, the number of API `requests` the group covers, and the `costUsd` the runtime computed for it.
-Where the producer publishes records, their components shall sum exactly to `breakdown`, member by member, so that a component present in one is present in the other; where that identity cannot hold, the producer shall omit `records` entirely rather than publish a decomposition the aggregates do not support.
-Where a runtime does not report which model performed a group's work, the producer shall omit `model` rather than substitute a placeholder, because a placeholder selects a rate as confidently as a real identifier would.
-Where `requests` is `1`, a context-length pricing tier shall be determinable from that record's own tokens; where it is greater, it shall not be, because such tiers are selected per request and the record's counts are a sum; where it is absent, the request count is unreported.
-Where token accounting is `'unavailable'`, the producer shall omit `records`, on the same grounds as [[engine-27](#engine-27)]'s suppression of `breakdown`.
 
 ### Authentic Usage Accounting
 
@@ -620,29 +559,6 @@ Where a TypeScript consumer uses the legacy mutable-registry declarations, the t
 
 Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
 
-### engine-119
-
-_Superseded by [[engine-122](#engine-122)]._
-
-Where a TypeScript consumer constructs `DoneUsage`, the public declaration shall require `tokenAvailability` and shall reject values outside `'reported' | 'unavailable'` [[engine-13](#engine-13)], [[engine-27](#engine-27)].
-When the engine synthesizes any terminal `done`, its zero-valued token fields shall carry `'unavailable'` and its `toolUses` shall preserve the unique tool calls already observed on that stream.
-
-### engine-120
-
-_Superseded by [[engine-122](#engine-122)]._
-
-Where an adapter publishes `DoneUsage.breakdown` on a terminal `done` observed through `Cligent.run()`, every present member shall be a finite non-negative integer, a published input side shall sum exactly to `inputTokens`, and a published output side shall sum exactly to `outputTokens` [[engine-19](#engine-19)], [[engine-27](#engine-27)], [[engine-28](#engine-28)].
-Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `breakdown`.
-Where a runtime reports a component as zero and omits another, the emitted breakdown shall carry the zero and omit the other, so a consumer can distinguish a measured zero from an unreported component.
-
-### engine-121
-
-_Superseded by [[engine-122](#engine-122)]._
-
-Where a terminal `done` observed through `Cligent.run()` carries `DoneUsage.records`, the records' components shall sum member by member to `breakdown`, no record shall carry a component `breakdown` omits, and every present `requests` count shall be a finite non-negative integer [[engine-27](#engine-27)], [[engine-30](#engine-30)].
-Where a record's model is unknown to the producer, the record shall omit `model` rather than carry a placeholder value.
-Where a terminal `done` carries `tokenAvailability: 'unavailable'`, including every engine-synthesized terminal, it shall carry no `records`.
-
 ### engine-122
 
 Where a TypeScript consumer constructs `DoneUsage`, the type-level check shall assert [[engine-31](#engine-31)]'s required, optional, and removed members.
@@ -720,30 +636,6 @@ Where an effort value is valid for a built-in adapter but unavailable to the sel
 ### engine-229
 
 Where `allowedTools` is an explicit empty list, when the built-in adapters run, the adapters shall enforce the closed empty set where supported [[engine-17](#engine-17)].
-
-### engine-233
-
-_Superseded for usage shape by [[engine-240](#engine-240)]._
-
-Given each built-in adapter receives complete finite non-negative integer token counters, including explicit zeroes, when it emits terminal `done`, `usage.tokenAvailability` shall be `'reported'`, its input count shall preserve a provider-inclusive base or fold cache-read and cache-write counters into a cache-exclusive base exactly once, and, where reasoning or thinking is supplied disjoint from the output base, its output count shall add that component exactly once [[engine-19](#engine-19)], [[engine-27](#engine-27)].
-Given a required token or cache counter is absent or any present mapped counter is negative, fractional, non-finite, or non-numeric, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'`; an absent optional cache counter alone shall retain zero contribution without invalidating otherwise complete accounting.
-Given upstream omits complete token accounting or an adapter synthesizes an errored, interrupted, exhausted, or other terminal path, when the adapter emits terminal `done`, `usage.tokenAvailability` shall be `'unavailable'` and no token estimate shall be introduced.
-Where tool calls were observed or validly provider-reported on either path, `usage.toolUses` shall preserve the greatest independently known count even when token accounting is unavailable.
-
-### engine-238
-
-_Superseded by [[engine-240](#engine-240)]._
-
-Given a runtime omits a cache or reasoning counter, the corresponding component shall be absent while the remaining members of a published side still sum to their aggregate, and where the omitted counter is the reasoning counter the whole output side shall be absent [[engine-28](#engine-28)].
-Given a component subtraction would be negative, the affected side shall be absent while the unaffected side is still published.
-
-### engine-239
-
-_Superseded by [[engine-240](#engine-240)]._
-
-Given a run pinned no model and its runtime named none, no placeholder identifier shall appear [[engine-30](#engine-30)].
-Given a runtime reports a group's own cost, its record shall carry that cost, and the costs of a run's records shall not exceed the run's reported total.
-Given upstream accounting is incomplete, absent, or fails the partition identities, the adapter shall publish no records on that terminal.
 
 ### engine-240
 

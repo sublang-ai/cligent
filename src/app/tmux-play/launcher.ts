@@ -1812,17 +1812,16 @@ function configureMouseInteraction(
       copyCommand,
     );
   }
-  // tmux-play-68 (supersedes tmux-play-66 and tmux-play-67): a left-click in any
+  // tmux-play-68: a left-click in any
   // pane in the launched session shall clear any active copy-mode
   // selection on every pane in the session while preserving each
-  // pane's copy-mode state and scroll position. The retired tmux-play-66
+  // pane's copy-mode state and scroll position. The former cancel-on-click
   // chain used `send-keys -X cancel`, which exits copy-mode entirely
   // and snaps a scrolled-back pane to its live tail (the
   // "previously focused pane jumps to the last line" defect).
-  // tmux-play-67 then dropped the override altogether, which restored
+  // A later stock-only shape dropped the override altogether, which restored
   // scroll preservation but reintroduced the original
-  // "click doesn't release selection" defect that tmux-play-66 was
-  // written to fix. `send-keys -X clear-selection` (in place of
+  // "click doesn't release selection" defect. `send-keys -X clear-selection` (in place of
   // `cancel`) is the tmux primitive that splits the two effects: it
   // clears the active selection but does NOT exit copy-mode, so a
   // pane scrolled back without a selection stays scrolled, and a

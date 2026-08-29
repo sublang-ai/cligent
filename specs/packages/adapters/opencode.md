@@ -154,22 +154,6 @@ shall flush resolvable queued content and select this terminal sequence:
 | caller abort observed | one interrupted `done` with [[opencode-11](#opencode-11)] continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
 | no caller abort | non-recoverable `MISSING_SESSION_IDLE` error with message `Protocol violation: OpenCode stream ended without session.idle`, then one error `done` with ordinary failure continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
 
-### opencode-30
-
-_Superseded by [[opencode-21](#opencode-21)]; retained for the released
-root-stream accounting design._
-
-Where OpenCode supplies root-stream step accounting, the adapter shall select
-the legacy report through this matrix [[3]][[4]]:
-
-| Input | Legacy outcome |
-| --- | --- |
-| canonical `StepFinishPart` with finite non-negative integer `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write` | add both cache counters to cache-exclusive input exactly once, add reasoning to visible output exactly once, and accumulate those totals across steps |
-| valid step with complete accounting | both [[engine-28](../engine.md#engine-28)] breakdown sides from step-wise sums: input → `input`, cache read → `cacheRead`, cache write → `cacheWrite`, output → `output`, reasoning → `reasoning` |
-| `tokens.total` | ignore because the provider-passed value need not equal the five-counter sum |
-| a valid component reported as zero | preserve measured zero rather than infer absence from provider identity |
-| each valid step | one [[engine-30](../engine.md#engine-30)] record with `requests: 1`, its five counters, its cost when present, and the owning assistant message's `modelID` / `providerID` when known, omitting both identities otherwise [[opencode-17](#opencode-17)] |
-
 ### opencode-16
 
 When the adapter receives a tool-part snapshot or correlated rejected permission
@@ -909,21 +893,6 @@ contract [[opencode-5](#opencode-5)], [[opencode-16](#opencode-16)]:
 This is [[opencode-231](#opencode-231)]'s real-release counterpart because only
 the live SDK can expose a changed `ToolPart` wire shape.
 
-### opencode-233
-
-_Superseded for usage shape by [[opencode-240](#opencode-240)]._
-
-Given complete, incomplete, malformed, absent, and synthetic terminal
-accounting, when the adapter emits the superseded usage shape, it shall select
-this legacy matrix [[opencode-30](#opencode-30)]:
-
-| Input | Legacy assertion |
-| --- | --- |
-| complete finite non-negative integer counters, including zero | `'reported'`; input folds cache read/write into the cache-exclusive base once and output adds disjoint reasoning once |
-| absent required counter or negative, fractional, non-finite, or non-numeric present mapped counter | `'unavailable'`, while an absent optional cache counter contributes zero without invalidation |
-| absent complete accounting or synthesized error, interruption, exhaustion, or other terminal | `'unavailable'` without an estimate |
-| independently observed or valid provider-reported tool calls on any row | preserve the greatest known count |
-
 ### opencode-234
 
 Given canonical and legacy content whose role metadata precedes, follows, never
@@ -997,35 +966,6 @@ observe a `bash` use and at least one successful automated `once` audit event,
 no outer timeout, permission request, denied result, or error, and exactly one
 success `done` [[opencode-5](#opencode-5)], [[opencode-20](#opencode-20)].
 
-### opencode-238
-
-_Superseded by [[opencode-240](#opencode-240)]._
-
-Given complete, omitted-component, and inconsistent legacy step counters, when
-a caller reads the superseded `usage.breakdown`, it shall match this matrix
-[[opencode-30](#opencode-30)]:
-
-| Input | Legacy assertion |
-| --- | --- |
-| complete five-counter accounting | both partition sides from the step sums |
-| omitted cache or reasoning counter | omit that component while remaining published members reconcile, except omitted reasoning removes the whole output side |
-| a component subtraction would be negative | omit the affected side and retain the unaffected side |
-
-### opencode-239
-
-_Superseded by [[opencode-240](#opencode-240)]._
-
-Given complete, identity-free, cost-bearing, incomplete, absent, and
-inconsistent legacy step accounting, when a caller reads superseded
-`usage.records`, it shall match this matrix [[opencode-30](#opencode-30)]:
-
-| Input | Legacy assertion |
-| --- | --- |
-| each complete step part | one record with `requests: 1` |
-| no pinned or runtime model | no model and no placeholder |
-| runtime-reported step cost | that cost, with record costs not exceeding the run total |
-| incomplete, absent, or partition-inconsistent accounting | no records |
-
 ### opencode-240
 
 Given authentic zero, nonzero, partial, malformed, ambiguous, and absent OpenCode
@@ -1049,8 +989,6 @@ causal report matrix while preserving independently observed `toolUses`
 
 [1]: https://opencode.ai/docs/models/ 'OpenCode model configuration'
 [2]: https://opencode.ai/docs/server/ 'OpenCode server'
-[3]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/core/src/session/runner/publish-llm-event.ts#L16-L27 'OpenCode 1.18.13 step-finish token split'
-[4]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/cli/cmd/stats.ts#L193-L202 'OpenCode 1.18.13 token roll-up'
 [5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt input, agent step limit, and tool-permission replacement'
 [6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission lifecycle and evaluation'
 [7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'

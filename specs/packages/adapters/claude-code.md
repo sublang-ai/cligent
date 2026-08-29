@@ -81,24 +81,6 @@ When the adapter normalizes a sequence of SDK `system` messages, it shall select
 
 - An emitted `init` selects model from non-empty message `model`, requested model, then `unknown`; selects cwd from non-empty message `cwd`, requested cwd, then the process cwd; and retains each non-empty string tool or object tool name.
 
-### claude-code-16
-
-_Superseded by [[claude-code-12](#claude-code-12)]._
-
-Where a terminal `result` supplies complete flat usage, when the adapter publishes the [[engine-28](../engine.md#engine-28)] input side, it shall map the disjoint counters according to this table:
-
-| SDK counter | Input member |
-| --- | --- |
-| `input_tokens` | `input` |
-| `cache_read_input_tokens` | `cacheRead`, omitted when the counter is absent |
-| `cache_creation_input_tokens` | `cacheWrite`, omitted when the counter is absent |
-
-### claude-code-17
-
-_Superseded by [[claude-code-12](#claude-code-12)]._
-
-Where a terminal `result` supplies complete flat usage, when the adapter publishes token accounting, it shall omit the output side because Claude Code includes unseparated thinking tokens in `output_tokens`.
-
 ### claude-code-10
 
 When the SDK stream yields a success-classified `result` carrying no non-empty result or error text and a valid complete zero main-loop signature per [[claude-code-28](#claude-code-28)], the adapter shall classify it according to this continuation-repair matrix:
@@ -286,23 +268,6 @@ When the adapter emits terminal `done`, it shall set `usage.toolUses` to the num
 
 ### Token Accounting
 
-### claude-code-11
-
-_Superseded by [[claude-code-12](#claude-code-12)]; retained for the unreleased first billable-record design._
-
-When the adapter derives the superseded `DonePayload.usage` aggregate, it shall select its source according to this matrix:
-
-| Terminal accounting | Aggregate source and scope |
-| --- | --- |
-| valid per-model `modelUsage` | sum input, cache-read, cache-creation, and output counters across models, covering the whole run |
-| absent or malformed `modelUsage` | fall back to main-loop `usage`, which may omit subagent work |
-
-### claude-code-27
-
-_Superseded by [[claude-code-12](#claude-code-12)]; retained for the unreleased first billable-record design._
-
-When the adapter publishes the superseded [[engine-30](../engine.md#engine-30)] per-model records, it shall key them by the canonical priced model and carry provider and runtime cost when present, with only the input side because the runtime exposes no per-model output split.
-
 ### claude-code-12
 
 When the adapter selects the terminal token source, it shall publish numerically valid [[engine-56](../engine.md#engine-56)] accounting with [[engine-58](../engine.md#engine-58)] coverage according to this authenticity matrix:
@@ -484,18 +449,6 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 | explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
 | non-empty `allowedTools` | raw list in `tools` and `allowedTools`, `strictMcpConfig: true`, and `settingSources: undefined` |
 | `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence |
-
-### claude-code-238
-
-_Superseded by [[claude-code-240](#claude-code-240)]._
-
-Given the adapter emits terminal `done` with complete flat upstream accounting, when a caller reads the superseded `usage.breakdown`, the verification shall assert the input mapping and output omission in [[claude-code-16](#claude-code-16)] and [[claude-code-17](#claude-code-17)].
-
-### claude-code-239
-
-_Superseded by [[claude-code-240](#claude-code-240)]._
-
-Given valid, absent, and malformed per-model accounting, when a caller reads the superseded usage aggregate and records, the verification shall assert the source-selection matrix and one correctly keyed and attributed record per valid model in [[claude-code-11](#claude-code-11)] and [[claude-code-27](#claude-code-27)].
 
 ### claude-code-240
 

@@ -173,18 +173,6 @@ When `parseNDJSON()` yields `{ ok: false }` before a terminal is selected per [[
 
 When the adapter emits any terminal `done`, it shall set `usage.toolUses` to the number of distinct identifiers selected for native tool-use events by [[gemini-22](#gemini-22)], ignoring provider-reported counts and preserving the observed count when tokens are absent.
 
-### gemini-28
-
-_The following released stream-only accounting behavior is superseded by [[gemini-17](#gemini-17)]._
-
-Where a Gemini CLI 0.53.1 result supplies canonical `StreamStats`, the adapter shall map the stream-only accounting according to this matrix [[5]][[6]][[7]]:
-
-| StreamStats state | Outcome |
-| --- | --- |
-| complete non-negative finite integer `total_tokens`, cache-inclusive `input_tokens`, `output_tokens`, `cached`, and uncached `input`, with `cached + input = input_tokens` and `total_tokens = input_tokens + output_tokens` | preserve inclusive input without adding either detail twice, validate all details, and retain the greater of valid `tool_calls` and independently observed tool uses |
-| valid details but `total_tokens != input_tokens + output_tokens` | accounting `'unavailable'`, because the residual thinking and tool-use-prompt tokens cannot be partitioned without estimation |
-| any required token or cache detail absent, negative, fractional, non-finite, or non-numeric | accounting `'unavailable'` per [[engine-27](../engine.md#engine-27)] |
-
 ### Permission Mapping
 
 ### gemini-6
@@ -619,19 +607,6 @@ Where tool-list and stream-tool states vary, when the adapter maps policy and em
 | non-empty allowlist containing disallowed identifiers | effective allowlist only, provider surface closed, deny precedence preserved [[gemini-29](#gemini-29)] |
 | explicit non-empty, stream, capability-derived, or unavailable source | tools and capability metadata selected by [[gemini-16](#gemini-16)] |
 
-### gemini-233
-
-_Superseded for usage shape by [[gemini-240](#gemini-240)]._
-
-Given canonical StreamStats and synthesized terminal paths, when the adapter emits terminal `done`, its stream-only usage shall match this matrix [[gemini-28](#gemini-28)]:
-
-| Accounting state | Assertion |
-| --- | --- |
-| complete canonical counters | `'reported'`, cache-inclusive input unchanged, details not double-counted, valid provider tool calls included in the greater independently known count [[gemini-27](#gemini-27)] |
-| total differs from input plus output | `'unavailable'`, no residual assigned to output |
-| required counter invalid; optional cache absent | `'unavailable'`; or zero optional contribution without invalidating otherwise complete accounting |
-| absent complete accounting or synthesized terminal | `'unavailable'`, no estimate, independently observed tool count preserved [[gemini-27](#gemini-27)] |
-
 ### gemini-240
 
 Given run-owned telemetry and native StreamStats across an explicit accounting matrix, when the adapter emits terminal usage from authentic rather than stream-only counters, it shall select these outcomes [[gemini-17](#gemini-17)]:
@@ -655,8 +630,5 @@ Under [[gemini-219](#gemini-219)]'s real-target, credential, and sandbox precond
 [2]: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md 'Google Gemini CLI: Configuration reference'
 [3]: https://geminicli.com/docs/reference/policy-engine/ 'Gemini CLI: Policy engine'
 [4]: https://geminicli.com/docs/cli/cli-reference/ 'Gemini CLI: CLI reference'
-[5]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/types.ts#L81-L109 'Gemini CLI 0.53.1 stream output types'
-[6]: https://github.com/google-gemini/gemini-cli/blob/v0.53.1/packages/core/src/output/stream-json-formatter.ts#L37-L86 'Gemini CLI 0.53.1 StreamStats construction'
-[7]: https://ai.google.dev/api/generate-content#UsageMetadata 'Gemini API UsageMetadata'
 [8]: https://geminicli.com/docs/cli/telemetry/ 'Gemini CLI telemetry'
 [9]: https://github.com/googleapis/js-genai/blob/38cac5bbf4941ec5fa760238bd423c0ecc2c6f04/src/types.ts#L2607-L2628 'Google Gen AI SDK 1.30.0 UsageMetadata'

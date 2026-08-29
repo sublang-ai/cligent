@@ -31,12 +31,12 @@ Distinguish reported token totals, including measured zero, from unavailable acc
 ## Tasks
 
 1. [x] **Specify the availability model.**
-   Amend DR-002, [[engine-13](../packages/engine.md#engine-13)],
-   [[engine-19](../packages/engine.md#engine-19)],
-   [[engine-27](../packages/engine.md#engine-27)], and
-   [[kimi-20](../packages/adapters/kimi.md#kimi-20)]; add
-   [[engine-119](../packages/engine.md#engine-119)] and
-   [[engine-233](../packages/engine.md#engine-233)].
+   Amend DR-002 and the then-current flat usage contract and add its engine and
+   cross-adapter checks. [DR-019](../decisions/019-superseded-item-retirements.md)
+   records those items' later retirement; [[engine-31](../packages/engine.md#engine-31)],
+   [[engine-58](../packages/engine.md#engine-58)], [[engine-69](../packages/engine.md#engine-69)],
+   [[engine-240](../packages/engine.md#engine-240)], and
+   [[kimi-13](../packages/adapters/kimi.md#kimi-13)] carry the surviving concerns.
 2. [x] **Normalize every terminal producer.**
    Update all built-in adapter success, failure, interruption, exhaustion, and
    missing-accounting paths plus shared engine synthesis.

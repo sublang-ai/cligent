@@ -1764,7 +1764,7 @@ describe('launchTmuxPlay', () => {
     ).toBe(false);
   });
 
-  it('binds MouseDown1Pane in all three key tables to clear any active selection per in-mode pane while preserving copy-mode state and scroll position, per tmux-play-68 (supersedes tmux-play-66 and tmux-play-67)', async () => {
+  it('binds MouseDown1Pane in all three key tables to clear any active selection per in-mode pane while preserving copy-mode state and scroll position, per tmux-play-68', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     // Two players → Boss/Captain at pane 0, players at panes 1..2.
     // paneCount = 3 so the per-pane iteration covers indices 0, 1, 2.
@@ -1845,7 +1845,7 @@ describe('launchTmuxPlay', () => {
 
     // The tmux-play-68 supersession is in part *negative*: no
     // MouseDown1Pane body shall reference `-X cancel`, the retired
-    // [tmux-play-66] primitive that exits copy-mode entirely and snaps a
+    // cancel-on-click primitive that exits copy-mode entirely and snaps a
     // scrolled-back pane to its live tail. The negative assertion is
     // the static counterpart to the behavioral probe in tmux-play-168.
     for (const call of runTmuxMock.mock.calls) {
@@ -1864,7 +1864,7 @@ describe('launchTmuxPlay', () => {
     // The per-pane iteration must scale with paneCount: a regression
     // that hard-coded `paneCount = 1` would fail this check on a
     // multi-player session, while a regression that omitted the
-    // iteration entirely (the retired tmux-play-67 stock-only shape)
+    // iteration entirely (the former stock-only shape)
     // would also fail. Pin both the per-pane gate and the per-pane
     // send-keys target so neither degrades silently.
     const rootBinding = runTmuxMock.mock.calls.find(

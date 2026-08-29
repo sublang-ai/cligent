@@ -8,7 +8,9 @@
 Done
 
 The malformed-usage rejection below records the behavior when this iteration completed.
-[[kimi-20](../packages/adapters/kimi.md#kimi-20)] later supersedes it by failure-isolating optional prompt usage as unavailable accounting, while [[kimi-27](../packages/adapters/kimi.md#kimi-27)] keeps control traffic strict.
+The later hypothetical usage passage is retired by [DR-019](../decisions/019-superseded-item-retirements.md);
+[[kimi-13](../packages/adapters/kimi.md#kimi-13)] now omits unauthentic accounting, while
+[[kimi-27](../packages/adapters/kimi.md#kimi-27)] keeps control traffic strict.
 
 ## Intent
 

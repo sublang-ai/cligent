@@ -1377,7 +1377,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
     }
 
     // Rebuild only the counters the snapshot actually carried, so a counter
-    // Codex never sent does not become a measured zero (engine-28).
+    // Codex never sent does not become a measured zero (engine-57).
     const differenced: Record<string, unknown> = {
       ...(isUsageRecord(rawUsage) ? rawUsage : {}),
     };

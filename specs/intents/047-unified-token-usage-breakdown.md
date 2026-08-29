@@ -36,11 +36,12 @@ Spec work lands in the same commit as the code it governs, except tasks 1 and 2,
    Add DR-014 and this record; amend [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md)
    `Key payloads` with the optional field and a pointer; index both in `map.md`.
 2. [x] **Specify the engine contract.**
-   Amend [[engine-19](../packages/engine.md#engine-19)] and [[engine-27](../packages/engine.md#engine-27)]; add
-   [[engine-28](../packages/engine.md#engine-28)] for presence semantics and
-   [[engine-29](../packages/engine.md#engine-29)] for the fidelity-source rule; amend
-   [[kimi-20](../packages/adapters/kimi.md#kimi-20)] to record that ACP reports no usage today and that the
-   cache-exclusive fold is an assumption about the agent.
+   Amend the then-current flat usage contract, add presence semantics and the
+   fidelity-source rule, and record that ACP reports no usage today.
+   [DR-019](../decisions/019-superseded-item-retirements.md) records the old
+   items' retirement; [[engine-31](../packages/engine.md#engine-31)],
+   [[engine-57](../packages/engine.md#engine-57)], [[engine-64](../packages/engine.md#engine-64)],
+   and [[kimi-13](../packages/adapters/kimi.md#kimi-13)] carry the surviving concerns.
 3. [x] **Add the type and the shared builder.**
    Add `TokenBreakdown` and the optional `DonePayload.usage.breakdown`; add a shared builder that enforces
    the partition and side-atomicity rules and drops any side it cannot satisfy; keep every synthesized
@@ -48,11 +49,13 @@ Spec work lands in the same commit as the code it governs, except tasks 1 and 2,
    declaration test. No adapter behavior changes.
 4. [x] **Publish the OpenCode breakdown.**
    Accumulate the five step-finish counters separately and publish both sides; amend
-   [[opencode-30](../packages/adapters/opencode.md#opencode-30)].
+   the then-current OpenCode accounting item, whose causal successor is
+   [[opencode-21](../packages/adapters/opencode.md#opencode-21)].
 5. [x] **Publish the Claude Code input side.**
-   Publish `input` / `cacheRead` / `cacheWrite` and withhold the output side; amend
-   [[claude-code-16](../packages/adapters/claude-code.md#claude-code-16)] and [[claude-code-17](../packages/adapters/claude-code.md#claude-code-17)], and add
-   [[claude-code-11](../packages/adapters/claude-code.md#claude-code-11)] for the cost-versus-token scope mismatch.
+   Publish `input` / `cacheRead` / `cacheWrite` and withhold the output side;
+   the current carriers are [[claude-code-12](../packages/adapters/claude-code.md#claude-code-12)],
+   [[claude-code-29](../packages/adapters/claude-code.md#claude-code-29)], and
+   [[claude-code-30](../packages/adapters/claude-code.md#claude-code-30)].
 6. [x] **Correct Codex per-turn accounting.**
    Subtract a per-thread baseline from the cumulative snapshot, guard non-monotonic snapshots, and fail
    closed with no baseline; add [[codex-15](../packages/adapters/codex.md#codex-15)] and amend [[engine-37](../packages/engine.md#engine-37)] and [[engine-38](../packages/engine.md#engine-38)] with the
@@ -63,10 +66,14 @@ Spec work lands in the same commit as the code it governs, except tasks 1 and 2,
    The optional cost passthrough is retained rather than removed: it cannot produce a wrong number, since an
    absent field stays absent, and dropping it would forfeit forward compatibility for no gain.
 8. [ ] **Supplement Gemini accounting from its transcript.** *Deferred.*
-   Read the run's own transcript after the terminal result, reconcile it against the streamed statistics,
-   correct `outputTokens`, publish both sides, and fall back to today's behavior on any mismatch; amend
-   [[gemini-28](../packages/adapters/gemini.md#gemini-28)] and add
-   [[gemini-17](../packages/adapters/gemini.md#gemini-17)].
+   This historical transcript proposal was never implemented and shall not be
+   executed from this superseded record. The current [DR-014](../decisions/014-unified-token-usage-breakdown.md)
+   design instead uses run-owned telemetry through [[gemini-17](../packages/adapters/gemini.md#gemini-17)],
+   [[gemini-37](../packages/adapters/gemini.md#gemini-37)],
+   [[gemini-39](../packages/adapters/gemini.md#gemini-39)], and
+   [[gemini-40](../packages/adapters/gemini.md#gemini-40)];
+   [DR-019](../decisions/019-superseded-item-retirements.md) retires the old
+   stream-only carrier.
    Blocked on evidence, not design: the streamed statistics provably cannot partition the residual, because
    `convertToStreamStats` forwards only five of the seven per-model counters and drops `thoughts` and `tool`,
    while the transcript records all six per message. The transcript's format is confirmed on disk, but no
@@ -75,8 +82,9 @@ Spec work lands in the same commit as the code it governs, except tasks 1 and 2,
    ship machinery whose value cannot be demonstrated, so the task waits on one credentialed Gemini run.
    Until then Gemini keeps its current, correct fail-closed behavior.
 9. [x] **Pin acceptance coverage.**
-   Add [[engine-120](../packages/engine.md#engine-120)] and [[engine-238](../packages/engine.md#engine-238)] with their
-   `Verifies:` lines, plus the integration coverage they name.
+   Add the then-current engine and cross-adapter breakdown checks with their
+   `Verifies:` lines; [[engine-70](../packages/engine.md#engine-70)] and
+   [[engine-240](../packages/engine.md#engine-240)] now carry that coverage.
 10. [x] **Document the feature.**
     Add a token-usage section to the user guide with the per-agent coverage table, point to it from the
     README, and record the additive change in the changelog.

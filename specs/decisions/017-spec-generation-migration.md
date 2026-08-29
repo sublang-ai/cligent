@@ -82,10 +82,11 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `CLAUDE-002` | `claude-code-13` |
 | `CLAUDE-002` | `claude-code-14` |
 | `CLAUDE-003` | `claude-code-3` |
+| `CLAUDE-003` | `claude-code-12` |
 | `CLAUDE-003` | `claude-code-15` |
-| `CLAUDE-003` | `claude-code-16` |
-| `CLAUDE-003` | `claude-code-17` |
 | `CLAUDE-003` | `claude-code-24` |
+| `CLAUDE-003` | `claude-code-29` |
+| `CLAUDE-003` | `claude-code-30` |
 | `CLAUDE-003` | `claude-code-32` |
 | `CLAUDE-003` | `claude-code-42` |
 | `CLAUDE-003` | `claude-code-50` |
@@ -107,9 +108,9 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `CLAUDE-010` | `claude-code-18` |
 | `CLAUDE-010` | `claude-code-28` |
 | `CLAUDE-010` | `claude-code-48` |
-| `CLAUDE-011` | `claude-code-11` |
-| `CLAUDE-011` | `claude-code-27` |
+| `CLAUDE-011` | `claude-code-12` |
 | `CLAUDE-011` | `claude-code-28` |
+| `CLAUDE-011` | `claude-code-29` |
 | `CLAUDE-012` | `claude-code-12` |
 | `CLAUDE-012` | `claude-code-28` |
 | `CLAUDE-012` | `claude-code-29` |
@@ -142,7 +143,8 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `CODEX-003` | `codex-27` |
 | `CODEX-003` | `codex-28` |
 | `CODEX-003` | `codex-29` |
-| `CODEX-003` | `codex-30` |
+| `CODEX-003` | `codex-16` |
+| `CODEX-003` | `codex-17` |
 | `CODEX-003` | `codex-53` |
 | `CODEX-003` | `codex-54` |
 | `CODEX-004` | `codex-4` |
@@ -164,7 +166,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `CODEX-012` | `codex-12` |
 | `CODEX-013` | `codex-13` |
 | `CODEX-013` | `codex-40` |
-| `CODEX-014` | `codex-14` |
+| `CODEX-014` | `codex-17` |
 | `CODEX-015` | `codex-15` |
 | `CODEX-015` | `engine-37` |
 | `CODEX-015` | `engine-38` |
@@ -192,7 +194,10 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `GEMINI-004` | `gemini-25` |
 | `GEMINI-004` | `gemini-26` |
 | `GEMINI-004` | `gemini-27` |
-| `GEMINI-004` | `gemini-28` |
+| `GEMINI-004` | `gemini-17` |
+| `GEMINI-004` | `gemini-37` |
+| `GEMINI-004` | `gemini-39` |
+| `GEMINI-004` | `gemini-40` |
 | `GEMINI-005` | `gemini-5` |
 | `GEMINI-006` | `gemini-6` |
 | `GEMINI-006` | `gemini-12` |
@@ -239,11 +244,12 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `KIMI-004` | `kimi-26` |
 | `KIMI-004` | `kimi-30` |
 | `KIMI-005` | `kimi-5` |
+| `KIMI-005` | `kimi-13` |
 | `KIMI-005` | `kimi-18` |
 | `KIMI-005` | `kimi-19` |
-| `KIMI-005` | `kimi-20` |
 | `KIMI-005` | `kimi-28` |
 | `KIMI-005` | `kimi-30` |
+| `KIMI-005` | `kimi-31` |
 | `KIMI-006` | `kimi-6` |
 | `KIMI-006` | `kimi-21` |
 | `KIMI-006` | `kimi-27` |
@@ -282,7 +288,14 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `OPENCODE-005` | `opencode-27` |
 | `OPENCODE-005` | `opencode-28` |
 | `OPENCODE-005` | `opencode-29` |
-| `OPENCODE-005` | `opencode-30` |
+| `OPENCODE-005` | `opencode-21` |
+| `OPENCODE-005` | `opencode-45` |
+| `OPENCODE-005` | `opencode-46` |
+| `OPENCODE-005` | `opencode-47` |
+| `OPENCODE-005` | `opencode-48` |
+| `OPENCODE-005` | `opencode-49` |
+| `OPENCODE-005` | `opencode-50` |
+| `OPENCODE-005` | `opencode-51` |
 | `OPENCODE-006` | `opencode-6` |
 | `OPENCODE-006` | `opencode-25` |
 | `OPENCODE-007` | `opencode-7` |
@@ -356,7 +369,11 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `ENG-018` | `engine-18` |
 | `ENG-018` | `engine-37` |
 | `ENG-018` | `engine-38` |
-| `ENG-019` | `engine-19` |
+| `ENG-019` | `engine-31` |
+| `ENG-019` | `engine-55` |
+| `ENG-019` | `engine-56` |
+| `ENG-019` | `engine-57` |
+| `ENG-019` | `engine-58` |
 | `ENG-020` | `engine-20` |
 | `ENG-020` | `engine-39` |
 | `ENG-020` | `engine-40` |
@@ -380,10 +397,17 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `ENG-024` | `engine-51` |
 | `ENG-025` | `engine-25` |
 | `ENG-026` | `engine-26` |
-| `ENG-027` | `engine-27` |
-| `ENG-028` | `engine-28` |
-| `ENG-029` | `engine-29` |
-| `ENG-030` | `engine-30` |
+| `ENG-027` | `engine-31` |
+| `ENG-027` | `engine-56` |
+| `ENG-027` | `engine-57` |
+| `ENG-027` | `engine-58` |
+| `ENG-027` | `engine-65` |
+| `ENG-028` | `engine-31` |
+| `ENG-028` | `engine-57` |
+| `ENG-029` | `engine-64` |
+| `ENG-030` | `engine-59` |
+| `ENG-030` | `engine-60` |
+| `ENG-030` | `engine-61` |
 | `ENG-031` | `engine-31` |
 | `ENG-031` | `engine-55` |
 | `ENG-031` | `engine-56` |
@@ -418,9 +442,12 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TENG-017` | `engine-68` |
 | `TENG-018` | `engine-118` |
 | `TENG-018` | `package-201` |
-| `TENG-019` | `engine-119` |
-| `TENG-020` | `engine-120` |
-| `TENG-021` | `engine-121` |
+| `TENG-019` | `engine-122` |
+| `TENG-019` | `engine-69` |
+| `TENG-020` | `engine-70` |
+| `TENG-020` | `engine-71` |
+| `TENG-021` | `engine-70` |
+| `TENG-021` | `engine-71` |
 | `TENG-022` | `engine-122` |
 | `TENG-022` | `engine-69` |
 | `TENG-022` | `engine-70` |
@@ -485,6 +512,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-044` | `tmux-play-172` |
 | `TMUX-045` | `tmux-play-45` |
 | `TMUX-046` | `tmux-play-46` |
+| `TMUX-046` | `tmux-play-50` |
 | `TMUX-047` | `tmux-play-47` |
 | `TMUX-047` | `tmux-play-194` |
 | `TMUX-048` | `tmux-play-48` |
@@ -510,8 +538,8 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-063` | `tmux-play-63` |
 | `TMUX-064` | `tmux-play-64` |
 | `TMUX-065` | `tmux-play-65` |
-| `TMUX-066` | `tmux-play-66` |
-| `TMUX-067` | `tmux-play-67` |
+| `TMUX-066` | `tmux-play-68` |
+| `TMUX-067` | `tmux-play-68` |
 | `TMUX-068` | `tmux-play-68` |
 | `TMUX-069` | `tmux-play-69` |
 | `TMUX-070` | `tmux-play-70` |
@@ -524,6 +552,7 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TMUX-075` | `tmux-play-75` |
 | `TMUX-076` | `tmux-play-76` |
 | `TMUX-077` | `tmux-play-77` |
+| `TMUX-078` | `tmux-play-79` |
 | `TMUX-079` | `tmux-play-79` |
 | `TMUX-080` | `tmux-play-80` |
 | `TMUX-081` | `tmux-play-81` |
@@ -592,6 +621,9 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TTMUX-036` | `tmux-play-136` |
 | `TTMUX-037` | `tmux-play-130` |
 | `TTMUX-037` | `tmux-play-137` |
+| `TTMUX-037` | `tmux-play-146` |
+| `TTMUX-037` | `tmux-play-147` |
+| `TTMUX-037` | `tmux-play-148` |
 | `TTMUX-038` | `tmux-play-138` |
 | `TTMUX-039` | `tmux-play-130` |
 | `TTMUX-039` | `tmux-play-139` |
@@ -640,8 +672,9 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TTMUX-064` | `tmux-play-164` |
 | `TTMUX-065` | `tmux-play-130` |
 | `TTMUX-065` | `tmux-play-165` |
-| `TTMUX-066` | `tmux-play-166` |
-| `TTMUX-067` | `tmux-play-167` |
+| `TTMUX-066` | `tmux-play-168` |
+| `TTMUX-067` | `tmux-play-162` |
+| `TTMUX-067` | `tmux-play-168` |
 | `TTMUX-068` | `tmux-play-130` |
 | `TTMUX-068` | `tmux-play-162` |
 | `TTMUX-068` | `tmux-play-168` |
@@ -656,6 +689,8 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TTMUX-074` | `tmux-play-174` |
 | `TTMUX-075` | `tmux-play-175` |
 | `TTMUX-076` | `tmux-play-176` |
+| `TTMUX-077` | `tmux-play-130` |
+| `TTMUX-077` | `tmux-play-178` |
 | `TTMUX-078` | `tmux-play-130` |
 | `TTMUX-078` | `tmux-play-178` |
 | `TTMUX-079` | `tmux-play-179` |
@@ -828,26 +863,26 @@ It is kept true as the tree changes: a task that splits an item [[meta-29](../me
 | `TADAPT-030` | `kimi-230` |
 | `TADAPT-031` | `opencode-231` |
 | `TADAPT-032` | `opencode-232` |
-| `TADAPT-033` | `codex-233` |
-| `TADAPT-033` | `engine-233` |
-| `TADAPT-033` | `gemini-233` |
-| `TADAPT-033` | `kimi-233` |
-| `TADAPT-033` | `opencode-233` |
+| `TADAPT-033` | `codex-240` |
+| `TADAPT-033` | `engine-240` |
+| `TADAPT-033` | `gemini-240` |
+| `TADAPT-033` | `kimi-240` |
+| `TADAPT-033` | `opencode-240` |
 | `TADAPT-034` | `opencode-234` |
 | `TADAPT-035` | `opencode-235` |
 | `TADAPT-035` | `opencode-54` |
 | `TADAPT-036` | `opencode-236` |
 | `TADAPT-037` | `opencode-237` |
 | `TADAPT-037` | `opencode-55` |
-| `TADAPT-038` | `claude-code-238` |
-| `TADAPT-038` | `codex-238` |
-| `TADAPT-038` | `engine-238` |
-| `TADAPT-038` | `kimi-238` |
-| `TADAPT-038` | `opencode-238` |
-| `TADAPT-039` | `claude-code-239` |
-| `TADAPT-039` | `codex-239` |
-| `TADAPT-039` | `engine-239` |
-| `TADAPT-039` | `opencode-239` |
+| `TADAPT-038` | `claude-code-240` |
+| `TADAPT-038` | `codex-240` |
+| `TADAPT-038` | `engine-240` |
+| `TADAPT-038` | `kimi-240` |
+| `TADAPT-038` | `opencode-240` |
+| `TADAPT-039` | `claude-code-240` |
+| `TADAPT-039` | `codex-240` |
+| `TADAPT-039` | `engine-240` |
+| `TADAPT-039` | `opencode-240` |
 | `TADAPT-040` | `claude-code-240` |
 | `TADAPT-040` | `codex-240` |
 | `TADAPT-040` | `engine-32` |
@@ -942,6 +977,7 @@ The owner answered five questions, the three this migration turned on — the sh
 ## Consequences
 
 - Every legacy item reaches a destination ID this record maps, so a stale citation can still be resolved by hand.
+- [DR-019](019-superseded-item-retirements.md) authorizes the superseded-item cluster's retirements; this map points each released source at the live carrier that preserves its concern, while every retired number remains permanently reserved.
 - A criterion naming all five adapters is stated in five packages, so a later change to it must be applied in each of them.
 - Dissolving the 40 cross-adapter items yields 99 per-package test items, because 18 of them fan out.
 - `tmux-play` stays one file of roughly 1600 lines once merged.
