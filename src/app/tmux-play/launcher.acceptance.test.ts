@@ -930,7 +930,7 @@ describe('tmux-play real-tmux acceptance', () => {
   );
 
   acceptanceIt(
-    'builds startup panes only for the initial visible subset on a real tmux server (tmux-play-182)',
+    'builds startup panes only for the initial visible subset on a real tmux server (tmux-play-27, tmux-play-182)',
     async () => {
       if (!existsSync(BUILT_CLI_PATH)) {
         throw new Error(
@@ -973,11 +973,17 @@ describe('tmux-play real-tmux acceptance', () => {
       });
       sessionName = result.sessionName;
 
-      // tmux-play-80 / tmux-play-83: only the Boss/Captain pane plus the two visible
-      // players have panes; the hidden `reviewer` has none.
+      // tmux-play-27 / tmux-play-80 / tmux-play-83: only the Boss/Captain pane
+      // plus the two visible players have panes, in resolved visible-set order;
+      // the hidden `reviewer` has none.
       const panes = listPanes(sessionName);
       expect(panes).toHaveLength(3);
       expect(panes.map((pane) => pane.title)).not.toContain('Reviewer · claude');
+      expect(
+        [...panes]
+          .sort((left, right) => left.left - right.left)
+          .map((pane) => pane.title),
+      ).toEqual(['Captain · claude', 'Analyst · codex', 'Coder · codex']);
 
       const captain = paneByTitle(panes, 'Captain · claude');
       const analyst = paneByTitle(panes, 'Analyst · codex');

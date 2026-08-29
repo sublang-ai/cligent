@@ -738,11 +738,12 @@ function buildTmuxSession(
   if (options.captureBossPaneId) {
     options.onSessionCreated?.(bossPaneId ?? '');
   }
-  // tmux-play-80 / tmux-play-83: the player area is built from the resolved initial
-  // visible set (not the whole roster) by a routine the layout observer reuses
-  // on a visibility change. Its splits run first so they stay the calls right
-  // after `new-session`; the session-wide chrome and key bindings below run
-  // once and persist across a later rebuild; Boss focus is the final command.
+  // tmux-play-27 / tmux-play-80 / tmux-play-83: the player area is built from
+  // the resolved initial visible set (not the whole roster) by a routine the
+  // layout observer reuses on a visibility change. Its splits run first so they
+  // stay the calls right after `new-session`; the session-wide chrome and key
+  // bindings below run once and persist across a later rebuild; Boss focus is
+  // the final command.
   buildPlayerArea({
     sessionName: options.sessionName,
     workDir: options.workDir,
@@ -847,8 +848,9 @@ function activeColumnWeightsFor(
 }
 
 // Map the resolved visible player ids to their PlayerConfig in visible order
-// (tmux-play-80). Config validation guarantees the ids are a subset of the roster;
-// the guard keeps the launcher honest if a caller passes an unknown id.
+// (tmux-play-27 / tmux-play-80). Config validation guarantees the ids are a
+// subset of the roster; the guard keeps the launcher honest if a caller passes
+// an unknown id.
 export function resolveVisiblePlayers(
   players: readonly PlayerConfig[],
   visibleIds: readonly string[],

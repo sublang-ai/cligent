@@ -563,7 +563,7 @@ When the launcher arranges the main tmux window, it shall apply this topology ma
 | Roster or pane | Placement |
 | --- | --- |
 | Boss/Captain | left column |
-| configured player | right side in config order, read-only |
+| startup-visible configured player | right side in the resolved `layout.initialVisible` order from [[tmux-play-80](#tmux-play-80)], defaulting to config order when that field is omitted; read-only |
 | empty roster | Boss/Captain only, occupying the full window |
 
 ### tmux-play-28
@@ -2319,7 +2319,7 @@ When the launcher builds startup panes from the resolved visible set, the check 
 
 | Configuration or surface | Assertion |
 | --- | --- |
-| three configured players and ordered two-player subset `[b, a]` under [[tmux-play-130](#tmux-play-130)]'s real-tmux harness | Boss/Captain plus exactly two player panes in order `b`, `a`, each tailing its own log; third player has no pane [[tmux-play-80](#tmux-play-80)], [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
+| three configured players and ordered two-player subset `[b, a]` under [[tmux-play-130](#tmux-play-130)]'s real-tmux harness | Boss/Captain plus exactly two player panes in order `b`, `a`, each tailing its own log; third player has no pane [[tmux-play-27](#tmux-play-27)], [[tmux-play-80](#tmux-play-80)], [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
 | `layout.initialVisible` omitted | one player pane per configured player in `players` order [[tmux-play-27](#tmux-play-27)], [[tmux-play-80](#tmux-play-80)] |
 | one visible player | two-column single-player shape using resolved weights [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |
 | two or more visible players | three-column multi-player shape using resolved weights [[tmux-play-28](#tmux-play-28)], [[tmux-play-64](#tmux-play-64)] |

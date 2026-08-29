@@ -51,7 +51,7 @@ One CLI keeps distribution simple; the split keeps the launcher short-lived and 
 ### tmux Topology
 
 Boss/Captain occupies the left pane.
-Player panes are read-only on the right, in config order:
+Player panes are read-only on the right, in resolved startup-visible order:
 
 ```text
 +--------------+------------------------+------------------------+
@@ -62,6 +62,8 @@ Player panes are read-only on the right, in config order:
 | boss> _      |                        |                        |
 +--------------+------------------------+------------------------+
 ```
+
+The resolved order follows `layout.initialVisible` when it is present and defaults to configured `players` order when it is omitted, as decided by [DR-007](007-tmux-play-dynamic-player-visibility.md).
 
 One player uses one right column.
 Two or more players use two columns, with `ceil(playerCount / 2)` players in the first column from top to bottom.

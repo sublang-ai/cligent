@@ -43,6 +43,7 @@ It may be empty if and only if the configured roster is empty.
 The launcher creates startup panes for exactly the initial visible set, not the whole roster followed by a synthetic reconciliation.
 When `layout.initialVisible` is present, its array order is the startup player pane order.
 When `layout.initialVisible` is omitted, configured `players` order remains the startup player pane order.
+This resolved ordering refines [DR-004](004-tmux-play-captain-architecture.md)'s earlier unconditional config-order topology only for an explicit `initialVisible` array.
 The startup layout weight shape derives from the same initial visible set.
 An empty roster therefore starts with only the full-width Boss/Captain pane;
 there are no player panes or log-tail processes.

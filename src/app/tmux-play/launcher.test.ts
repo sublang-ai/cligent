@@ -1347,7 +1347,7 @@ describe('launchTmuxPlay', () => {
     expect(existsSync(coordinationDir)).toBe(false);
   });
 
-  it('builds startup panes only for the initial visible subset, in order (tmux-play-182)', async () => {
+  it('builds startup panes only for the initial visible subset, in order (tmux-play-27, tmux-play-182)', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = join(tempDir, 'tmux-play.config.yaml');
     writeFileSync(
