@@ -3,6 +3,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -37,8 +38,7 @@ export const EXPECTED_CLI_VERSIONS = Object.freeze({
   opencode: cliOf('opencode').tested,
 });
 
-export const EXPECTED_BUNDLED_AGENT_VERSIONS = Object.freeze({
-  claudeCode: '2.1.220',
+export const EXPECTED_SELECTED_AGENT_VERSIONS = Object.freeze({
   codex: peerOf('codex').tested,
 });
 
@@ -55,6 +55,73 @@ function assertEqual(actual, expected, label) {
       `${label}: expected ${expected}, received ${String(actual)}`,
     );
   }
+}
+
+function reportedString(value) {
+  return typeof value === 'string' && value.trim() !== ''
+    ? value.trim()
+    : undefined;
+}
+
+function selectedBinaryIdentity(selectedBinaryManifest, platform, arch) {
+  const platforms = selectedBinaryManifest.platforms;
+  if (
+    platforms === null ||
+    typeof platforms !== 'object' ||
+    Array.isArray(platforms)
+  ) {
+    return undefined;
+  }
+
+  const platformPrefix = `${platform}-${arch}`;
+  const matchingEntries = Object.entries(platforms).filter(
+    ([key]) => key === platformPrefix || key.startsWith(`${platformPrefix}-`),
+  );
+  if (matchingEntries.length === 0) return undefined;
+  const reportedIdentities = matchingEntries.map(([, entry]) =>
+    entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+      ? reportedString(entry.binary)
+      : undefined,
+  );
+  if (reportedIdentities.some((identity) => identity === undefined)) {
+    return undefined;
+  }
+  const identities = new Set(reportedIdentities);
+  return identities.size === 1 ? identities.values().next().value : undefined;
+}
+
+export function inspectClaudeSdkSelectedBinary(
+  sdkManifest,
+  selectedBinaryManifest,
+  runtime = process,
+) {
+  const sdkDeclaredVersion = reportedString(sdkManifest.claudeCodeVersion);
+  const selectedBinaryVersion = reportedString(selectedBinaryManifest.version);
+  const identity = selectedBinaryIdentity(
+    selectedBinaryManifest,
+    runtime.platform,
+    runtime.arch,
+  );
+
+  if (sdkDeclaredVersion !== undefined && selectedBinaryVersion !== undefined) {
+    assertEqual(
+      selectedBinaryVersion,
+      sdkDeclaredVersion,
+      'Claude SDK selected-binary manifest',
+    );
+  }
+
+  return Object.freeze({
+    // Report only the executable name the SDK manifest exposes for this
+    // platform. A version key or neighbouring package name is not an
+    // executable identity and must not be promoted into one.
+    identity: identity ?? 'unreported',
+    version: selectedBinaryVersion ?? sdkDeclaredVersion ?? 'unreported',
+    consistency:
+      sdkDeclaredVersion !== undefined && selectedBinaryVersion !== undefined
+        ? 'verified'
+        : 'unreported',
+  });
 }
 
 export function verifySdkTargets() {
@@ -145,12 +212,8 @@ export function verifySdkTargets() {
       'package.json',
     ),
   );
-  assertEqual(
-    claudeManifest.claudeCodeVersion,
-    EXPECTED_BUNDLED_AGENT_VERSIONS.claudeCode,
-    'Claude Code bundled target',
-  );
-  assertEqual(
+  const claudeSelectedBinary = inspectClaudeSdkSelectedBinary(
+    claudeManifest,
     readJson(
       join(
         repoRoot,
@@ -159,25 +222,31 @@ export function verifySdkTargets() {
         'claude-agent-sdk',
         'manifest.json',
       ),
-    ).version,
-    EXPECTED_BUNDLED_AGENT_VERSIONS.claudeCode,
-    'Claude Code bundled manifest',
+    ),
   );
 
-  const codexSdkManifest = readJson(
-    join(repoRoot, 'node_modules', '@openai', 'codex-sdk', 'package.json'),
+  const codexSdkManifestPath = join(
+    repoRoot,
+    'node_modules',
+    '@openai',
+    'codex-sdk',
+    'package.json',
   );
+  const codexSdkManifest = readJson(codexSdkManifestPath);
   assertEqual(
     codexSdkManifest.dependencies?.['@openai/codex'],
-    EXPECTED_BUNDLED_AGENT_VERSIONS.codex,
-    'Codex SDK bundled CLI declaration',
+    EXPECTED_SELECTED_AGENT_VERSIONS.codex,
+    'Codex SDK-selected CLI declaration',
   );
   assertEqual(
-    readJson(join(repoRoot, 'node_modules', '@openai', 'codex', 'package.json'))
-      .version,
-    EXPECTED_BUNDLED_AGENT_VERSIONS.codex,
-    'installed Codex CLI package',
+    readJson(
+      createRequire(codexSdkManifestPath).resolve('@openai/codex/package.json'),
+    ).version,
+    EXPECTED_SELECTED_AGENT_VERSIONS.codex,
+    'Codex SDK-resolved CLI package',
   );
+
+  return Object.freeze({ claudeSelectedBinary });
 }
 
 function commandOutput(command, args) {
@@ -359,10 +428,15 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  verifySdkTargets();
+  const { claudeSelectedBinary } = verifySdkTargets();
   if (!process.argv.includes('--sdk-only')) {
     verifyCliTargets();
     await verifyKimiAcpInitialize();
   }
+  process.stdout.write(
+    `Claude SDK selected binary: identity=${claudeSelectedBinary.identity}, ` +
+      `version=${claudeSelectedBinary.version}, ` +
+      `consistency=${claudeSelectedBinary.consistency}.\n`,
+  );
   process.stdout.write('Agent conformance targets verified.\n');
 }

@@ -48,6 +48,12 @@ Peer readiness carries the exact resolved `node_modules` tree, while CLI readine
 The `isAvailable()` and `run()` gates apply the same compatibility rule to the identity each native lookup observes, and a consumer that already calls `isAvailable()` inherits the check without changing a line.
 A version that cannot be read is *unknown* and never blocks, because vendored, bundled, and archived layouts are legitimate.
 
+**A package-selected executable does not create an independent version domain.**
+The version-tied Claude Agent SDK is the sole Claude compatibility and readiness authority: its package identity, `0.3.x` version, supported range, and repair remain coherent, while the Claude Code executable it selects is consistency evidence derived only from SDK-owned package and manifest metadata.
+Where that metadata exposes the selected executable's identity or version, repository conformance reports exactly what it exposes; package- and manifest-reported versions must agree for consistency to be *verified*, otherwise consistency and each absent value are *unreported* rather than inferred from `PATH`, a separately installed package, or an independent literal.
+Codex remains the distinct case whose descriptor explicitly names the vendor package its SDK selects, because that package is the runtime that rejects unsupported models; the descriptor and readiness version lookup starts from the resolved Codex SDK and accepts only a dependency the SDK manifest declares at the exact version reached through that SDK's physical resolution path, never an unrelated package visible from cligent's own dependency roots.
+This version lookup does not remove the adapter's released executable-resolution fallbacks, including a package manager's ordinary hoisting of the SDK-declared dependency.
+
 **Readiness is structured, not boolean.**
 The exported verdict distinguishes satisfied, missing, too old, untested, and unknown, and carries the installed version, the required range, the peer's resolved tree or the CLI's configured command identity, and the repair command.
 A consumer renders it; it does not recompute it.
@@ -61,6 +67,8 @@ Cligent's obligation ends at making the required version knowable, the verdict u
 Compatibility knowledge lives in one place and reaches every consumer through a cligent upgrade alone.
 A stale runtime fails at the gate, before an agent call, naming what is installed, what is required, and the command that fixes it, instead of surfacing as a vendor error mid-turn.
 Consumers delete their own adapter-to-SDK maps and their own version literals.
+Claude readiness now names and compares the Claude Agent SDK that the repair installs, while repository conformance still exposes any disagreement in the SDK's own selected-binary metadata without fabricating an absent identity.
+Codex retains its selected-executable authority without allowing an unrelated top-level package to shadow or stand in for the readiness version its SDK declares and owns.
 
 The promise has a boundary worth stating plainly, because the opposite is easy to assume: upgrading cligent makes the requirement *known and enforced*, not *satisfied*.
 A committed lockfile, a `npm ci` install, and a global installation each pin a runtime that no library upgrade re-resolves.

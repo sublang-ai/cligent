@@ -3,7 +3,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,19 @@ import {
 } from './runtime-targets.js';
 
 const requireFromHere = createRequire(import.meta.url);
+
+type PackageResolver = {
+  readonly resolve: {
+    paths(request: string): string[] | null;
+  };
+};
+
+type PackageManifest = {
+  readonly name?: unknown;
+  readonly version?: unknown;
+  readonly dependencies?: Readonly<Record<string, unknown>>;
+  readonly optionalDependencies?: Readonly<Record<string, unknown>>;
+};
 
 /** Marker carried by a version refusal so callers can re-throw it intact. */
 const UNSUPPORTED_RUNTIME = Symbol.for('cligent.unsupportedRuntime');
@@ -29,24 +42,71 @@ const UNSUPPORTED_RUNTIME = Symbol.for('cligent.unsupportedRuntime');
  * cannot always reach, and blocking them would turn a working install into a
  * hard stop.
  */
-export function readPackageVersion(packageName: string): string | undefined {
-  for (const root of requireFromHere.resolve.paths(packageName) ?? []) {
-    const manifest = join(root, ...packageName.split('/'), 'package.json');
-    if (!existsSync(manifest)) continue;
+function readPackageManifest(
+  packageName: string,
+  resolver: PackageResolver,
+): { readonly path: string; readonly manifest: PackageManifest } | undefined {
+  for (const root of resolver.resolve.paths(packageName) ?? []) {
+    const candidate = join(root, ...packageName.split('/'), 'package.json');
+    if (!existsSync(candidate)) continue;
     try {
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as {
-        name?: unknown;
-        version?: unknown;
-      };
-      if (parsed.name !== packageName) continue;
-      if (typeof parsed.version === 'string') return parsed.version;
+      // Resolution from a symlink's consumer-facing path can climb into that
+      // consumer's ambient node_modules tree. Canonicalizing the owning
+      // manifest first makes a selected dependency resolve from the same
+      // physical SDK tree as the SDK's own imports.
+      const path = realpathSync(candidate);
+      const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest;
+      if (manifest.name !== packageName) continue;
+      return { path, manifest };
     } catch {
-      // An unreadable or malformed manifest is an unknown version, never an
-      // unsupported one.
+      // An unreadable or malformed manifest, or one whose physical owner
+      // cannot be established, is unknown. Keeping its consumer-facing path
+      // would re-open ambient lookup.
+      return undefined;
     }
-    return undefined;
   }
   return undefined;
+}
+
+export function readPackageVersion(
+  packageName: string,
+  resolver: PackageResolver = requireFromHere,
+): string | undefined {
+  const resolved = readPackageManifest(packageName, resolver);
+  return typeof resolved?.manifest.version === 'string'
+    ? resolved.manifest.version
+    : undefined;
+}
+
+/** Internal resolution seam for installed-layout verification. */
+export function readRuntimeVersionFromResolver(
+  target: RuntimeTarget,
+  resolver: PackageResolver,
+): string | undefined {
+  // A CLI runtime lives on PATH, not in any node_modules this process can
+  // walk, so searching the module tree for it always answered "unknown" and
+  // left every CLI floor unenforced.
+  if (target.kind === 'cli') {
+    return readCommandVersion(target.command);
+  }
+  if (target.bundles) {
+    const owner = readPackageManifest(target.package, resolver);
+    if (owner === undefined) return undefined;
+    const declaredVersion =
+      owner.manifest.dependencies?.[target.bundles] ??
+      owner.manifest.optionalDependencies?.[target.bundles];
+    if (typeof declaredVersion !== 'string') return undefined;
+    const selectedVersion = readPackageVersion(
+      target.bundles,
+      createRequire(owner.path),
+    );
+    // The selected package is SDK-owned only when the SDK declares it and
+    // the package reached from the SDK has that exact declared version. This
+    // rejects a same-named ancestor package Node could otherwise find after
+    // the SDK-owned dependency disappears.
+    return selectedVersion === declaredVersion ? selectedVersion : undefined;
+  }
+  return readPackageVersion(target.package, resolver);
 }
 
 /**
@@ -57,17 +117,7 @@ export function readPackageVersion(packageName: string): string | undefined {
  * it.
  */
 export function readRuntimeVersion(target: RuntimeTarget): string | undefined {
-  // A CLI runtime lives on PATH, not in any node_modules this process can
-  // walk, so searching the module tree for it always answered "unknown" and
-  // left every CLI floor unenforced.
-  if (target.kind === 'cli') {
-    return readCommandVersion(target.command);
-  }
-  if (target.bundles) {
-    const bundled = readPackageVersion(target.bundles);
-    if (bundled !== undefined) return bundled;
-  }
-  return readPackageVersion(target.package);
+  return readRuntimeVersionFromResolver(target, requireFromHere);
 }
 
 /**

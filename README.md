@@ -45,6 +45,12 @@ command that repairs it — before an agent call rather than in the middle of
 one. `@sublang/cligent/runtime-targets` publishes the supported and tested
 version of every runtime, so a tool built on cligent inherits the policy by
 upgrading cligent and carries no agent-SDK version knowledge of its own.
+For Claude, those fields classify the Claude Agent SDK itself; that SDK owns
+its Claude Code executable selection, and repository conformance checks only
+the selected-binary identity and version its own metadata reports. Missing
+metadata fields stay `unreported` rather than being guessed from `PATH` or
+another installed package. Codex explicitly names its SDK-owned executable
+package and resolves that version from inside the Codex SDK's dependency tree.
 Note pnpm rewrites `>=` back into a caret on `pnpm update`; there, move the
 pin deliberately and let the lockfile hold it.
 

@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { basename, delimiter, dirname } from 'node:path';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -22,6 +31,7 @@ import {
   parseCliVersion,
   readPackageVersion,
   readRuntimeVersion,
+  readRuntimeVersionFromResolver,
   resolvedTreeOf,
   unsupportedRuntimeError,
 } from '../runtime-version.js';
@@ -46,9 +56,13 @@ describe('agent runtime targets (package-16)', () => {
     expect(sdk?.supportedFrom).toBe(cli?.supportedFrom);
   });
 
-  it('names the vendor executable whose version actually decides behavior', () => {
+  it('keeps compatibility in one coherent runtime version domain', () => {
+    // Claude compatibility belongs to the version-tied SDK. Its selected
+    // executable identity is SDK-owned metadata, not an independently
+    // resolvable package dependency.
+    expect(AGENT_RUNTIME_TARGETS.claude[0]?.bundles).toBeUndefined();
     // The Codex CLI, not the SDK wrapping it, is what refuses a model newer
-    // than itself — so it is the version the gate must read.
+    // than itself. It is a real dependency in the SDK's version domain.
     expect(AGENT_RUNTIME_TARGETS.codex[0]?.bundles).toBe('@openai/codex');
   });
 
@@ -113,9 +127,84 @@ describe('runtime version comparison (engine-25)', () => {
   it('reads a version through the same resolution the adapter loads with', () => {
     // zod is a real production dependency of this package.
     expect(readPackageVersion('zod')).toMatch(/^\d+\.\d+\.\d+/);
+    const claude = AGENT_RUNTIME_TARGETS.claude[0]!;
+    expect(readRuntimeVersion(claude)).toBe(readPackageVersion(claude.package));
+    expect(
+      describeRuntimeReadiness(classifyRuntime(claude, true, claude.tested)),
+    ).toBe(`${claude.package} ${claude.tested} is supported`);
     expect(readRuntimeVersion(AGENT_RUNTIME_TARGETS.codex[0]!)).toMatch(
       /^\d+\.\d+\.\d+/,
     );
+  });
+
+  it('reads a selected package only from the SDK physical tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-runtime-owner-'));
+    const consumer = join(root, 'consumer');
+    const store = join(root, 'store');
+    const packageDirectory = (tree: string, packageName: string): string =>
+      join(tree, 'node_modules', ...packageName.split('/'));
+    const writePackage = (
+      tree: string,
+      packageName: string,
+      version: string,
+      extra: Readonly<Record<string, unknown>> = {},
+    ): string => {
+      const directory = packageDirectory(tree, packageName);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, 'package.json'),
+        `${JSON.stringify({ name: packageName, version, ...extra })}\n`,
+        'utf8',
+      );
+      return directory;
+    };
+
+    try {
+      const physicalSdk = writePackage(store, '@openai/codex-sdk', '0.146.0', {
+        dependencies: { '@openai/codex': '0.146.0' },
+      });
+      const ownedCodex = writePackage(physicalSdk, '@openai/codex', '0.146.0');
+      // This decoy is on the physical SDK resolver's ancestor path. Node can
+      // find it after the nested dependency disappears, so the reader must
+      // also validate the candidate against the SDK's exact declaration.
+      writePackage(store, '@openai/codex', '9.9.9');
+      writePackage(consumer, '@openai/codex', '8.8.8');
+      const linkedSdk = packageDirectory(consumer, '@openai/codex-sdk');
+      mkdirSync(dirname(linkedSdk), { recursive: true });
+      symlinkSync(physicalSdk, linkedSdk, 'junction');
+
+      const resolver = createRequire(join(consumer, 'probe.mjs'));
+      const codex = AGENT_RUNTIME_TARGETS.codex[0]!;
+      expect(readRuntimeVersionFromResolver(codex, resolver)).toBe('0.146.0');
+
+      writeFileSync(
+        join(physicalSdk, 'package.json'),
+        `${JSON.stringify({
+          name: '@openai/codex-sdk',
+          version: '0.146.0',
+        })}\n`,
+        'utf8',
+      );
+      expect(readRuntimeVersionFromResolver(codex, resolver)).toBeUndefined();
+      writeFileSync(
+        join(physicalSdk, 'package.json'),
+        `${JSON.stringify({
+          name: '@openai/codex-sdk',
+          version: '0.146.0',
+          dependencies: { '@openai/codex': '0.146.0' },
+        })}\n`,
+        'utf8',
+      );
+      expect(readRuntimeVersionFromResolver(codex, resolver)).toBe('0.146.0');
+
+      // Once the SDK-owned dependency disappears, the unrelated package in
+      // the consumer tree is not a substitute, nor may the SDK version be
+      // fabricated as the selected executable's version.
+      rmSync(ownedCodex, { recursive: true, force: true });
+      expect(readRuntimeVersionFromResolver(codex, resolver)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('reports a peer tree and a CLI command without inventing a CLI path', () => {

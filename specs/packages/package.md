@@ -132,9 +132,10 @@ When a known vulnerability is remediated, the remediation shall retain the Node 
 
 The distributable shall publish a runtime descriptor containing one complete target record for every runtime each built-in adapter requires:
 
-- the record identifies an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or both;
-- the record declares the runtime's exact tested version, supported version range, and installation repair; and
-- where a resolved package selects a vendor executable, the record names the vendor version read through the same runtime resolution the adapter uses [[engine-25](engine.md#engine-25)], so the declared version is the one that runs.
+- the record identifies one compatibility and readiness authority: an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or a vendor package selected through a resolved SDK's own resolution path;
+- the record declares that authority's exact tested version, supported version range, and installation repair;
+- where the descriptor names an SDK-selected vendor package as the authority, its readiness version lookup requires the SDK manifest to declare that dependency and the exact version reached through the SDK's physical resolution path to match the declaration [[engine-25](engine.md#engine-25)]; and
+- where a version-tied SDK remains the authority and its own metadata describes the executable it selects, repository conformance reports only what that metadata exposes, requires two exposed versions to agree before reporting consistency as `'verified'`, and reports an absent identity, version, or cross-source consistency check as `'unreported'` rather than inferring one from another package, `PATH`, or an independent literal.
 
 ### package-29
 
@@ -235,6 +236,8 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 - resolved SDK and protocol versions and reported CLI versions equal their exact targets in the required dependency locations [[package-12](#package-12)];
 - CLI versions are checked before acceptance [[package-22](#package-22)];
 - consumed SDK and protocol surfaces compile against the installed declarations [[package-34](#package-34)];
+- Claude compatibility and readiness use the Claude Agent SDK's identity and version; selected-binary identity comes only from one unambiguous value in the current platform and architecture's SDK manifest entries, selected-binary version derives from SDK package and manifest metadata, disagreement fails, consistency reports `'verified'` only where both versions exist and otherwise `'unreported'`, and each absent identity or version reports `'unreported'` [[package-16](#package-16)];
+- a descriptor-named Codex vendor package's readiness version is declared by the installed Codex SDK, resolved through its physical dependency path rather than from an unrelated package in cligent's dependency roots, and equals the exact version the SDK declares [[package-16](#package-16)];
 - the OpenCode targets match and the exact Kimi SDK and CLI targets are paired [[package-23](#package-23)];
 - the `kimi acp` command initializes successfully [[package-24](#package-24)];
 - every floor change follows the reasons and release level in [[package-17](#package-17)], and tested versions remain independent of supported floors [[package-25](#package-25)];
@@ -243,13 +246,13 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 
 ### package-105
 
-Where the packed tarball and each exact optional agent SDK target are installed in turn both into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with neither Codex layout leaving `@openai/codex` at its install root, when each installed adapter loads and resolves its optional peer, the verification shall assert this own-tree-resolution matrix [[package-32](#package-32)]:
+Where the packed tarball and each exact optional agent SDK target are installed in turn both into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with unrelated selected-executable packages visible outside the Claude and Codex SDK trees and neither Codex layout leaving its selected `@openai/codex` package at the install root, when each installed adapter loads, resolves its optional peer, and reads runtime identity and version, the verification shall assert this own-tree-resolution matrix [[package-16](#package-16)], [[package-32](#package-32)]:
 
-| Adapter | Optional peer resolved in both layouts |
-| --- | --- |
-| Claude Code | `@anthropic-ai/claude-agent-sdk` |
-| Codex | `@openai/codex-sdk` |
-| OpenCode | `@opencode-ai/sdk` |
+| Adapter     | Optional peer resolved in both layouts | Runtime authority and isolation                                                                             |
+| ----------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Claude Code | `@anthropic-ai/claude-agent-sdk`       | the SDK's identity and version, unaffected by an unrelated executable package outside its tree              |
+| Codex       | `@openai/codex-sdk`                    | the SDK-owned `@openai/codex` identity and version, unaffected by an unrelated package outside the SDK tree |
+| OpenCode    | `@opencode-ai/sdk`                     | the SDK's identity and version                                                                              |
 
 - in every nested case, the adapter loads through its subpath export [[package-7](#package-7)]; and
 - every nested case runs on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.

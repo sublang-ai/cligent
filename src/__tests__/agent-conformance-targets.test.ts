@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+import { inspectClaudeSdkSelectedBinary } from '../../scripts/verify-agent-targets.mjs';
+
 interface WorkflowStep {
   env?: Record<string, string>;
   name?: string;
@@ -26,6 +28,68 @@ interface Workflow {
 }
 
 describe('agent SDK and CLI conformance targets', () => {
+  it('does not invent a Claude binary identity from anonymous SDK metadata', () => {
+    expect(
+      inspectClaudeSdkSelectedBinary(
+        { claudeCodeVersion: 'reported-version' },
+        { version: 'reported-version' },
+      ),
+    ).toEqual({
+      identity: 'unreported',
+      version: 'reported-version',
+      consistency: 'verified',
+    });
+    expect(
+      inspectClaudeSdkSelectedBinary(
+        { claudeCodeVersion: 'reported-version' },
+        {
+          version: 'reported-version',
+          platforms: {
+            'linux-x64': { binary: 'claude' },
+            'linux-x64-musl': { binary: 'different-binary' },
+          },
+        },
+        { platform: 'linux', arch: 'x64' },
+      ).identity,
+    ).toBe('unreported');
+  });
+
+  it('rejects disagreeing Claude SDK-selected binary versions', () => {
+    expect(() =>
+      inspectClaudeSdkSelectedBinary(
+        { claudeCodeVersion: 'package-version' },
+        { version: 'manifest-version' },
+      ),
+    ).toThrow(
+      'Claude SDK selected-binary manifest: expected package-version, received manifest-version',
+    );
+  });
+
+  it('reports each absent Claude version datum without fabrication', () => {
+    expect(
+      inspectClaudeSdkSelectedBinary(
+        { claudeCodeVersion: 'package-only' },
+        {},
+      ),
+    ).toEqual({
+      identity: 'unreported',
+      version: 'package-only',
+      consistency: 'unreported',
+    });
+    expect(
+      inspectClaudeSdkSelectedBinary({}, { version: 'manifest-only' }),
+    ).toEqual({
+      identity: 'unreported',
+      version: 'manifest-only',
+      consistency: 'unreported',
+    });
+    expect(inspectClaudeSdkSelectedBinary({}, {})).toEqual({
+      identity: 'unreported',
+      version: 'unreported',
+      consistency: 'unreported',
+    });
+  });
+
   it('verifies exact manifest, lock, and installed SDK versions', () => {
     const result = spawnSync(
       process.execPath,
@@ -37,6 +101,31 @@ describe('agent SDK and CLI conformance targets', () => {
     );
 
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    const claudeSdkManifest = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../node_modules/@anthropic-ai/claude-agent-sdk/package.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    const claudeBinaryManifest = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../node_modules/@anthropic-ai/claude-agent-sdk/manifest.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    const selectedBinary = inspectClaudeSdkSelectedBinary(
+      claudeSdkManifest,
+      claudeBinaryManifest,
+    );
+    expect(result.stdout).toContain(
+      `Claude SDK selected binary: identity=${selectedBinary.identity}, version=${selectedBinary.version}, consistency=${selectedBinary.consistency}.`,
+    );
     expect(result.stdout).toContain('Agent conformance targets verified.');
   });
 

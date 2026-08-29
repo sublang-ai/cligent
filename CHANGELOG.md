@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Claude runtime readiness now classifies the version-tied Claude Agent SDK that its repair installs instead of allowing an unrelated Claude Code package in cligent's dependency tree to supply a differently versioned identity. The SDK remains the single compatibility authority; repository conformance derives selected-binary consistency from SDK-owned package and manifest metadata and leaves absent identity or version data unreported rather than guessed. Codex retains its executable as the runtime authority but resolves its readiness version only through the Codex SDK's dependency path, so an unrelated top-level package cannot supply the compared version — DR-013, IR-051, PKG-016
 - OpenCode caller abort now preempts already-aborted runs, pending SDK loading, and managed readiness before later backend work starts. Once a managed child exists, the interrupted terminal still precedes bounded `SIGTERM` / `SIGKILL` teardown — OPENCODE-009, TADAPT-008, IR-051
 - OpenCode permission correlation no longer retains one tombstone for every completed response until the run ends. Active request data survives until native confirmation for denial correlation, repeated delivery before that boundary still receives one response, and failed, timed-out, aborted, or terminal paths release their remaining request and wait state — OPENCODE-020, TADAPT-037, IR-051
 

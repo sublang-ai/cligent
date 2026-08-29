@@ -60,10 +60,13 @@ const codexNestedConsumerDirectory = join(
   verificationRoot,
   'codex-nested-consumer',
 );
+const CLAUDE_PROBE_FILENAME = 'claude-runtime-authority-probe.mjs';
 const CODEX_PROBE_FILENAME = 'codex-resolution-probe.mjs';
 const codexProbeHomeDirectory = join(verificationRoot, 'codex-home');
 const codexProbeWorkDirectory = join(verificationRoot, 'codex-probe-workdir');
+const claudeSdkInstallSpec = `@anthropic-ai/claude-agent-sdk@${EXPECTED_SDK_VERSIONS['@anthropic-ai/claude-agent-sdk']}`;
 const codexSdkInstallSpec = `@openai/codex-sdk@${EXPECTED_SDK_VERSIONS['@openai/codex-sdk']}`;
+const RUNTIME_DECOY_VERSION = '99.99.99';
 const tmuxPlayGlobalPrefix = join(verificationRoot, 'tmux-play-global');
 const tmuxPlayHarnessBin = join(verificationRoot, 'tmux-play-harness-bin');
 const tmuxPlayConfigHome = join(verificationRoot, 'tmux-play-xdg');
@@ -524,6 +527,108 @@ void namedFanout;
   );
 }
 
+// package-16: Claude compatibility belongs to the SDK that the adapter loads,
+// not to an unrelated package with the selected executable's historical name.
+// This runs from an installed tarball tree with both packages physically
+// present, so a reader that searches cligent's ambient roots is distinguishable
+// from one that reports the SDK domain honestly.
+function writeClaudeRuntimeAuthorityProbe(directory) {
+  const probePath = join(directory, CLAUDE_PROBE_FILENAME);
+  writeFileSync(
+    probePath,
+    `import { realpathSync } from 'node:fs';
+import { join } from 'node:path';
+
+const rootSpecifier = process.env.CLAUDE_PROBE_ROOT;
+const adapterSpecifier = process.env.CLAUDE_PROBE_ADAPTER;
+const expectedVersion = process.env.CLAUDE_PROBE_EXPECTED_VERSION;
+const expectedSdkRoot = process.env.CLAUDE_PROBE_SDK_ROOT;
+
+if (!rootSpecifier) throw new Error('CLAUDE_PROBE_ROOT is required');
+if (!adapterSpecifier) throw new Error('CLAUDE_PROBE_ADAPTER is required');
+if (!expectedVersion) {
+  throw new Error('CLAUDE_PROBE_EXPECTED_VERSION is required');
+}
+if (!expectedSdkRoot) throw new Error('CLAUDE_PROBE_SDK_ROOT is required');
+if (
+  process.env.CLAUDE_PROBE_REQUIRE_NODE_FLOOR === '1' &&
+  process.versions.node !== '${NODE_RUNTIME_VERSION}'
+) {
+  throw new Error(
+    'expected Node ${NODE_RUNTIME_VERSION}, got ' + process.versions.node,
+  );
+}
+
+const {
+  AGENT_RUNTIME_TARGETS,
+  classifyRuntime,
+  describeRuntimeReadiness,
+  readRuntimeVersion,
+} = await import(rootSpecifier);
+const { ClaudeCodeAdapter } = await import(adapterSpecifier);
+const target = AGENT_RUNTIME_TARGETS.claude[0];
+if (!target || target.kind !== 'peer') {
+  throw new Error('Claude peer runtime target is missing');
+}
+if ('bundles' in target) {
+  throw new Error(
+    'Claude target still treats an ambient package as its version authority: ' +
+      target.bundles,
+  );
+}
+const runtimeIdentity = target.bundles ?? target.package;
+if (runtimeIdentity !== '@anthropic-ai/claude-agent-sdk') {
+  throw new Error(
+    'Claude runtime identity is ' +
+      runtimeIdentity +
+      ', expected the SDK',
+  );
+}
+
+const installed = readRuntimeVersion(target);
+if (installed !== expectedVersion) {
+  throw new Error(
+    'Claude runtime version is ' +
+      installed +
+      ', expected SDK ' +
+      expectedVersion,
+  );
+}
+const available = await new ClaudeCodeAdapter().isAvailable();
+if (!available) throw new Error('Claude adapter did not load its installed SDK');
+const readiness = classifyRuntime(target, available);
+if (readiness.state !== 'satisfied' || readiness.installed !== expectedVersion) {
+  throw new Error(
+    'Claude readiness did not use SDK ' +
+      expectedVersion +
+      ': ' +
+      JSON.stringify(readiness),
+  );
+}
+const resolvedSdkRoot = readiness.resolvedFrom
+  ? realpathSync(
+      join(readiness.resolvedFrom, '@anthropic-ai', 'claude-agent-sdk'),
+    )
+  : undefined;
+if (resolvedSdkRoot !== expectedSdkRoot) {
+  throw new Error(
+    'Claude readiness resolved ' +
+      resolvedSdkRoot +
+      ', expected ' +
+      expectedSdkRoot,
+  );
+}
+const description = describeRuntimeReadiness(readiness);
+if (!description.includes('@anthropic-ai/claude-agent-sdk ' + expectedVersion)) {
+  throw new Error('Claude readiness names the wrong authority: ' + description);
+}
+process.stdout.write('claude SDK authority verified: ' + expectedVersion + '\\n');
+`,
+    'utf8',
+  );
+  return probePath;
+}
+
 // codex-205: the Codex CLI entry must resolve from install layouts that do
 // not hoist @openai/codex out of the SDK's own tree (npm global prefixes,
 // nested-strategy consumers), and a real permission-managed adapter
@@ -538,10 +643,13 @@ function writeCodexResolutionProbe(directory) {
 import { dirname, join } from 'node:path';
 
 const adapterSpecifier = process.env.CODEX_PROBE_ADAPTER;
+const rootSpecifier = process.env.CODEX_PROBE_ROOT;
 const expectation = process.env.CODEX_PROBE_EXPECT ?? 'sdk-owned';
 const sdkOwnedPrefix = process.env.CODEX_PROBE_SDK_OWNED_PREFIX ?? '';
+const expectedVersion = process.env.CODEX_PROBE_EXPECTED_VERSION ?? '';
 
 if (!adapterSpecifier) throw new Error('CODEX_PROBE_ADAPTER is required');
+if (!rootSpecifier) throw new Error('CODEX_PROBE_ROOT is required');
 if (
   process.env.CODEX_PROBE_REQUIRE_NO_LOADER === '1' &&
   typeof import.meta.resolve === 'function'
@@ -552,8 +660,15 @@ if (
 }
 
 const adapterModule = await import(adapterSpecifier);
+const rootModule = await import(rootSpecifier);
 const { CodexAdapter, createCodexConfigOverrideWrapper, resolveCodexBinPath } =
   adapterModule;
+const {
+  AGENT_RUNTIME_TARGETS,
+  classifyRuntime,
+  describeRuntimeReadiness,
+  readRuntimeVersion,
+} = rootModule;
 for (const [label, value] of [
   ['CodexAdapter', CodexAdapter],
   ['createCodexConfigOverrideWrapper', createCodexConfigOverrideWrapper],
@@ -589,6 +704,41 @@ if (expectation === 'missing') {
   }
   process.stdout.write('codex resolution diagnostic verified\\n');
 } else {
+  const target = AGENT_RUNTIME_TARGETS.codex[0];
+  const installed = readRuntimeVersion(target);
+  if (!expectedVersion) {
+    throw new Error('CODEX_PROBE_EXPECTED_VERSION is required');
+  }
+  if (installed !== expectedVersion) {
+    throw new Error(
+      'Codex runtime version is ' +
+        installed +
+        ', expected SDK-owned ' +
+        expectedVersion,
+    );
+  }
+  const runtimeIdentity = target.bundles ?? target.package;
+  if (runtimeIdentity !== '@openai/codex') {
+    throw new Error(
+      'Codex runtime identity is ' +
+        runtimeIdentity +
+        ', expected @openai/codex',
+    );
+  }
+  const readiness = classifyRuntime(target, true);
+  if (readiness.state !== 'satisfied' || readiness.installed !== expectedVersion) {
+    throw new Error(
+      'Codex readiness did not use SDK-owned ' +
+        expectedVersion +
+        ': ' +
+      JSON.stringify(readiness),
+    );
+  }
+  const description = describeRuntimeReadiness(readiness);
+  if (!description.includes('@openai/codex ' + expectedVersion)) {
+    throw new Error('Codex readiness names the wrong authority: ' + description);
+  }
+
   const binPath = resolveCodexBinPath();
   if (!existsSync(binPath)) {
     throw new Error(\`resolved Codex entry does not exist: \${binPath}\`);
@@ -802,15 +952,60 @@ function assertSdkOwnedCodexLayout(nodeModulesRoot, label) {
   if (!existsSync(sdkOwnedEntry)) {
     fail(`${label} did not nest @openai/codex inside the SDK (${sdkOwnedEntry})`);
   }
-  return realpathSync(join(nodeModulesRoot, '@openai', 'codex-sdk'));
+  return {
+    sdkRoot: realpathSync(join(nodeModulesRoot, '@openai', 'codex-sdk')),
+    selectedVersion: readJson(
+      join(
+        nodeModulesRoot,
+        '@openai',
+        'codex-sdk',
+        'node_modules',
+        '@openai',
+        'codex',
+        'package.json',
+      ),
+    ).version,
+  };
+}
+
+function writeAmbientPackageDecoy(
+  nodeModulesRoot,
+  packageName,
+  { withCodexEntry = false } = {},
+) {
+  const packageRoot = join(nodeModulesRoot, ...packageName.split('/'));
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(
+    join(packageRoot, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: packageName,
+        version: RUNTIME_DECOY_VERSION,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  if (withCodexEntry) {
+    const binDirectory = join(packageRoot, 'bin');
+    mkdirSync(binDirectory, { recursive: true });
+    writeFileSync(
+      join(binDirectory, 'codex.js'),
+      "throw new Error('ambient Codex decoy must never execute');\n",
+      'utf8',
+    );
+  }
 }
 
 function runCodexResolutionProbe(label, options) {
   const probePath = writeCodexResolutionProbe(options.cwd);
   const probeEnv = {
     CODEX_PROBE_ADAPTER: options.adapterSpecifier,
+    CODEX_PROBE_ROOT: options.rootSpecifier,
     CODEX_PROBE_EXPECT: options.expect ?? 'sdk-owned',
     CODEX_PROBE_SDK_OWNED_PREFIX: options.sdkOwnedPrefix ?? '',
+    CODEX_PROBE_EXPECTED_VERSION: options.expectedVersion ?? '',
     CODEX_PROBE_REQUIRE_NO_LOADER: options.requireNoLoader ? '1' : '',
     CODEX_HOME: codexProbeHomeDirectory,
   };
@@ -837,6 +1032,37 @@ function runCodexResolutionProbe(label, options) {
       : 'codex resolution verified:';
   if (!stdout.includes(expectedMarker)) {
     fail(`${label} probe did not report "${expectedMarker}":\n${stdout.trim()}`);
+  }
+}
+
+function runClaudeRuntimeAuthorityProbe(options) {
+  const probePath = writeClaudeRuntimeAuthorityProbe(options.cwd);
+  const probeEnv = {
+    CLAUDE_PROBE_ROOT: options.rootSpecifier,
+    CLAUDE_PROBE_ADAPTER: options.adapterSpecifier,
+    CLAUDE_PROBE_EXPECTED_VERSION: options.expectedVersion,
+    CLAUDE_PROBE_SDK_ROOT: options.sdkRoot,
+    CLAUDE_PROBE_REQUIRE_NODE_FLOOR: options.nodeRuntimeFloor ? '1' : '',
+  };
+  const { stdout } = options.nodeRuntimeFloor
+    ? run(
+        npm,
+        [
+          'exec',
+          '--yes',
+          `--package=node@${NODE_RUNTIME_VERSION}`,
+          '--',
+          'node',
+          probePath,
+        ],
+        { cwd: options.cwd, env: probeEnv },
+      )
+    : run(process.execPath, [probePath], {
+        cwd: options.cwd,
+        env: probeEnv,
+      });
+  if (!stdout.includes('claude SDK authority verified:')) {
+    fail(`Claude authority probe did not report success:\n${stdout.trim()}`);
   }
 }
 
@@ -1008,15 +1234,43 @@ try {
     '--no-audit',
     '--no-fund',
     tarballPath,
+    claudeSdkInstallSpec,
     codexSdkInstallSpec,
   ]);
   const globalRoot = globalNodeModulesRoot(codexGlobalPrefix);
-  const globalSdkRoot = assertSdkOwnedCodexLayout(globalRoot, 'global install');
+  const globalCodexLayout = assertSdkOwnedCodexLayout(
+    globalRoot,
+    'global install',
+  );
+  const globalClaudeSdkRoot = realpathSync(
+    join(globalRoot, '@anthropic-ai', 'claude-agent-sdk'),
+  );
+  const globalClaudeSdkVersion = readJson(
+    join(globalClaudeSdkRoot, 'package.json'),
+  ).version;
+  writeAmbientPackageDecoy(globalRoot, '@anthropic-ai/claude-code');
+  writeAmbientPackageDecoy(globalRoot, '@openai/codex', {
+    withCodexEntry: true,
+  });
+  const globalCligentRoot = join(globalRoot, '@sublang', 'cligent');
+  runClaudeRuntimeAuthorityProbe({
+    rootSpecifier: pathToFileURL(join(globalCligentRoot, 'dist', 'index.js'))
+      .href,
+    adapterSpecifier: pathToFileURL(
+      join(globalCligentRoot, 'dist', 'adapters', 'claude-code.js'),
+    ).href,
+    expectedVersion: globalClaudeSdkVersion,
+    sdkRoot: globalClaudeSdkRoot,
+    cwd: codexProbeWorkDirectory,
+  });
   runCodexResolutionProbe('global install', {
     adapterSpecifier: pathToFileURL(
-      join(globalRoot, '@sublang', 'cligent', 'dist', 'adapters', 'codex.js'),
+      join(globalCligentRoot, 'dist', 'adapters', 'codex.js'),
     ).href,
-    sdkOwnedPrefix: globalSdkRoot,
+    rootSpecifier: pathToFileURL(join(globalCligentRoot, 'dist', 'index.js'))
+      .href,
+    sdkOwnedPrefix: globalCodexLayout.sdkRoot,
+    expectedVersion: globalCodexLayout.selectedVersion,
     cwd: codexProbeWorkDirectory,
   });
 
@@ -1046,25 +1300,55 @@ try {
       '--no-fund',
       '--package-lock=false',
       tarballPath,
+      claudeSdkInstallSpec,
       codexSdkInstallSpec,
     ],
     { cwd: codexNestedConsumerDirectory },
   );
   const nestedRoot = join(codexNestedConsumerDirectory, 'node_modules');
-  const nestedSdkRoot = assertSdkOwnedCodexLayout(
+  const nestedCodexLayout = assertSdkOwnedCodexLayout(
     nestedRoot,
     'nested-strategy consumer',
   );
+  const nestedClaudeSdkRoot = realpathSync(
+    join(nestedRoot, '@anthropic-ai', 'claude-agent-sdk'),
+  );
+  const nestedClaudeSdkVersion = readJson(
+    join(nestedClaudeSdkRoot, 'package.json'),
+  ).version;
+  writeAmbientPackageDecoy(nestedRoot, '@anthropic-ai/claude-code');
+  writeAmbientPackageDecoy(nestedRoot, '@openai/codex', {
+    withCodexEntry: true,
+  });
+  runClaudeRuntimeAuthorityProbe({
+    rootSpecifier: '@sublang/cligent',
+    adapterSpecifier: '@sublang/cligent/adapters/claude-code',
+    expectedVersion: nestedClaudeSdkVersion,
+    sdkRoot: nestedClaudeSdkRoot,
+    cwd: codexNestedConsumerDirectory,
+  });
+  runClaudeRuntimeAuthorityProbe({
+    rootSpecifier: '@sublang/cligent',
+    adapterSpecifier: '@sublang/cligent/adapters/claude-code',
+    expectedVersion: nestedClaudeSdkVersion,
+    sdkRoot: nestedClaudeSdkRoot,
+    cwd: codexNestedConsumerDirectory,
+    nodeRuntimeFloor: true,
+  });
   runCodexResolutionProbe('nested-strategy consumer', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',
-    sdkOwnedPrefix: nestedSdkRoot,
+    rootSpecifier: '@sublang/cligent',
+    sdkOwnedPrefix: nestedCodexLayout.sdkRoot,
+    expectedVersion: nestedCodexLayout.selectedVersion,
     cwd: codexNestedConsumerDirectory,
   });
   // The Node runtime floor has no import.meta.resolve, so this leg proves
   // the search-path anchor alone finds the SDK-owned entry.
   runCodexResolutionProbe('nested-strategy consumer on the Node floor', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',
-    sdkOwnedPrefix: nestedSdkRoot,
+    rootSpecifier: '@sublang/cligent',
+    sdkOwnedPrefix: nestedCodexLayout.sdkRoot,
+    expectedVersion: nestedCodexLayout.selectedVersion,
     cwd: codexNestedConsumerDirectory,
     nodeRuntimeFloor: true,
     requireNoLoader: true,
@@ -1074,6 +1358,7 @@ try {
   // adapter must raise the ownership diagnostic with the repair.
   runCodexResolutionProbe('peer-free consumer diagnostic', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',
+    rootSpecifier: '@sublang/cligent',
     expect: 'missing',
     cwd: consumerDirectory,
   });
@@ -1181,6 +1466,6 @@ try {
 }
 
 process.stdout.write(
-  'Distributable tarball, consumers, audits, conformance targets, Codex ' +
-    'install layouts, and global tmux-play onboarding verified.\n',
+  'Distributable tarball, consumers, audits, conformance targets, Claude and ' +
+    'Codex runtime-authority layouts, and global tmux-play onboarding verified.\n',
 );

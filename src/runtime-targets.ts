@@ -47,10 +47,12 @@ export type RuntimeTarget = {
   /** Exact version this release verifies. Above it is untested, not unsupported. */
   readonly tested: string;
   /**
-   * A vendor executable the package selects and the adapter spawns, whose
-   * version follows the package's own. Named where the runtime that decides
-   * behavior is not the package itself — Codex's CLI is what rejects a model
-   * the installed version predates.
+   * A vendor executable package the peer selects and the adapter spawns.
+   * Its version is resolved from the peer's physical package tree rather
+   * than from cligent's ambient dependency roots. Named only where the
+   * selected executable is itself a package dependency with the same version
+   * domain — Codex's CLI is what rejects a model the installed version
+   * predates.
    */
   readonly bundles?: string;
   /** A one-time step no install command performs, such as an OAuth login. */
@@ -105,7 +107,6 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // than something the API surface reveals.
       supportedFrom: '0.3.219',
       tested: '0.3.220',
-      bundles: '@anthropic-ai/claude-code',
     }),
   ]),
   codex: Object.freeze([
