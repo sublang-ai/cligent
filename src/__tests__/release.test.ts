@@ -206,6 +206,29 @@ describe('release preparation', () => {
       /^- \[ \] Push the release-preparation commit to `main`/m,
     );
     expect(evidence).toMatch(/^- \[ \] Create and push tag `v[^`]+`/m);
+
+    for (const [workflowPath, jobName] of [
+      ['.github/workflows/ci.yml', 'ci'],
+      ['.github/workflows/release.yml', 'release'],
+    ] as const) {
+      const workflow = read(workflowPath);
+      const jobHeader = `  ${jobName}:\n`;
+      const jobStart = workflow.indexOf(jobHeader);
+      expect(jobStart).toBeGreaterThanOrEqual(0);
+      const remainingJobs = workflow.slice(jobStart + jobHeader.length);
+      const nextJobOffset = remainingJobs.search(/^  [a-zA-Z0-9_-]+:\n/m);
+      const job = workflow.slice(
+        jobStart,
+        nextJobOffset === -1
+          ? undefined
+          : jobStart + jobHeader.length + nextJobOffset,
+      );
+
+      expect(job).toContain('- run: npm test');
+      expect(job).toMatch(
+        /- uses: actions\/checkout@[^\n]+\n\s+with:\n\s+fetch-depth: 0\n\s+fetch-tags: true/,
+      );
+    }
   });
 
   it('audits every tag-workflow publication gate (release-11)', () => {
