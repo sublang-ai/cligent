@@ -187,7 +187,9 @@ describe('RecordDispatcher', () => {
     });
 
     void dispatcher.emitStatus(status('ready', null));
-    void dispatcher.emitTelemetry(telemetry('metrics.ready', { ok: true }, null));
+    void dispatcher.emitTelemetry(
+      telemetry('metrics.ready', { ok: true }, null),
+    );
     await dispatcher.drain();
 
     expect(seen).toMatchObject([
@@ -201,52 +203,66 @@ describe('RecordDispatcher', () => {
     ]);
   });
 
-  it('emits runtime_error to remaining observers on observer failure', async () => {
+  it('isolates a failed observer after completing source delivery (tmux-play-111)', async () => {
     const dispatcher = new RecordDispatcher();
     const seen: string[] = [];
 
     dispatcher.addObserver({
-      onRecord() {
-        seen.push('first');
+      onRecord(record) {
+        seen.push(`first:${record.type}`);
       },
     });
     dispatcher.addObserver({
-      onRecord() {
+      onRecord(record) {
+        seen.push(`failed:${record.type}`);
         throw new Error('observer failed');
       },
     });
     dispatcher.addObserver({
       onRecord(record) {
-        seen.push(`${record.type}:${record.type === 'runtime_error' ? record.message : ''}`);
+        seen.push(`third:${record.type}:${record.turnId}`);
       },
     });
 
     await expect(dispatcher.emit(turnStarted())).rejects.toThrow(
       ObserverDispatchError,
     );
+    await dispatcher.emit(turnFinished());
 
-    expect(seen).toEqual(['first', 'runtime_error:observer failed']);
+    expect(seen).toEqual([
+      'first:turn_started',
+      'failed:turn_started',
+      'third:turn_started:1',
+      'third:runtime_error:1',
+      'first:turn_finished',
+      'third:turn_finished:1',
+    ]);
   });
 
-  it('rejects later records after an observer failure', async () => {
+  it('surfaces a fire-and-forget observer failure from drain once (tmux-play-111)', async () => {
     const dispatcher = new RecordDispatcher();
     const seen: string[] = [];
 
     dispatcher.addObserver({
       onRecord(record) {
+        if (record.type === 'captain_status') {
+          throw new Error('status observer failed');
+        }
+      },
+    });
+    dispatcher.addObserver({
+      onRecord(record) {
         seen.push(record.type);
-        throw new Error('stop');
       },
     });
 
-    await expect(dispatcher.emit(status('bad'))).rejects.toThrow(
-      ObserverDispatchError,
-    );
-    await expect(dispatcher.emit(turnFinished())).rejects.toThrow(
-      ObserverDispatchError,
-    );
+    void dispatcher.emitStatus(status('bad'));
+    const queued = dispatcher.emit(turnFinished());
 
-    expect(seen).toEqual(['captain_status']);
+    await expect(dispatcher.drain()).rejects.toThrow(ObserverDispatchError);
+    await expect(queued).resolves.toBeUndefined();
+    await expect(dispatcher.drain()).resolves.toBeUndefined();
+    expect(seen).toEqual(['captain_status', 'runtime_error', 'turn_finished']);
   });
 
   it('supports observer unsubscription', async () => {

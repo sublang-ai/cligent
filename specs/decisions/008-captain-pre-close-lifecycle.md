@@ -34,7 +34,7 @@ Repeated or concurrent runtime disposal shares one cleanup operation and never r
 
 A rejected `prepareDispose()` does not skip session abort, emission drain, `Captain.dispose()`, or observer detachment.
 The runtime reports a non-observer pre-close failure through `runtime_error` while emissions remain live when possible, then rejects disposal with the failure after cleanup.
-An observer dispatch failure retains the existing remaining-observer `runtime_error` behavior.
+An observer dispatch failure detaches each rejecting observer after completing source delivery to healthy later observers and surfaces the failure without stopping subsequent cleanup emissions to the survivors; a non-diagnostic source reports the existing remaining-observer `runtime_error`, while a diagnostic source produces no recursive diagnostic.
 When cleanup produces multiple independent failures, the runtime rejects with an `AggregateError` that preserves each failure; one failure is rethrown directly.
 
 The same two-stage cleanup runs when `Captain.init()` rejects, because initialization may have acquired resources or emitted session state before failing.

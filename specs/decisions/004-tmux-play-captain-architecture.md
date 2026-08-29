@@ -105,11 +105,14 @@ Per turn: `turn_started` first; each player gets `player_prompt` → `player_eve
 The three `captain_*` records carry an optional `visibility` (default `'visible'`) copied from the `callCaptain` options; observers other than the tmux presenter receive every record regardless of the tag.
 
 Presenters subscribe as observers.
-The dispatcher delivers each record in registration order, awaits the returned promise, and never drops or coalesces.
+The dispatcher delivers each source record in registration order, awaits the returned promise, and never drops or coalesces.
+When one or more observers reject, the dispatcher detaches each, completes that source record's delivery to every healthy later observer, and keeps queued and future source records flowing to the survivors.
 `captain_status` and `captain_telemetry` share that same ordered per-session queue regardless of origin (`init`, turn, between turns).
 Turn-bound emissions drain before `turn_finished` / `turn_aborted`; `turnId: null` emissions dispatch in emission order without a turn boundary.
 Observers bridging to external transports must enqueue and return synchronously — the dispatcher is non-blocking on network flushes.
-On observer throw/reject, the runtime emits `runtime_error` to the rest, aborts the active turn if one exists, and runs normal cleanup.
+After completing a non-diagnostic source fanout, the dispatcher sends `runtime_error` additionally to the healthy later observers and rejects the originating operation so the runtime aborts an active turn and runs normal cleanup.
+A rejection while delivering `runtime_error` completes that diagnostic fanout and isolates the observer without recursively synthesizing another diagnostic.
+When the rejected source is `turn_finished` or `turn_aborted`, healthy observers receive that terminal exactly once before a session-lane `runtime_error` with `turnId: null`, and no later turn-ID record or second terminal follows.
 
 The tmux presenter is the first observer; it consumes `captain_status`, renders `runtime_error` in the Boss/Captain pane, ignores `captain_telemetry` (that lane is for opt-in observers — visualizer, metrics, third-party panels), and skips `captain_event` / `captain_finished` tagged `visibility: 'hidden'` so those calls produce zero Boss-pane output.
 Coordination stays testable without tmux; new observers attach without changing the Captain or player contracts.

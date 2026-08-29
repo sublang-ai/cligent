@@ -136,6 +136,10 @@ export interface RecordObserver {
   onRecord(record: TmuxPlayRecord): void | Promise<void>;
 }
 
+interface ObserverRegistration {
+  readonly observer: RecordObserver;
+}
+
 export class ObserverDispatchError extends Error {
   readonly record: TmuxPlayRecord;
   readonly observerIndex: number;
@@ -154,39 +158,33 @@ export class ObserverDispatchError extends Error {
 }
 
 export class RecordDispatcher {
-  private readonly observers: RecordObserver[] = [];
+  private readonly observers: ObserverRegistration[] = [];
   private tail: Promise<void> = Promise.resolve();
-  private failure: ObserverDispatchError | undefined = undefined;
+  private pendingFailure: ObserverDispatchError | undefined = undefined;
 
   addObserver(observer: RecordObserver): () => void {
-    this.observers.push(observer);
+    const registration = { observer };
+    this.observers.push(registration);
     return () => {
-      const index = this.observers.indexOf(observer);
-      if (index !== -1) {
-        this.observers.splice(index, 1);
-      }
+      this.removeObserver(registration);
     };
   }
 
   emit(record: TmuxPlayRecord): Promise<void> {
     const result = this.tail.then(async () => {
-      if (this.failure) {
-        throw this.failure;
-      }
-
       try {
         await this.dispatch(record);
       } catch (error) {
         if (error instanceof ObserverDispatchError) {
-          this.failure = error;
+          this.pendingFailure ??= error;
         }
         throw error;
       }
     });
 
     this.tail = result.catch(() => {
-      // The failure is retained and re-thrown to future callers. Swallowing
-      // here keeps the internal queue chain alive.
+      // Keep the ordered queue live so later source records still reach the
+      // healthy observers. drain() reports the pending failure once.
     });
     result.catch(() => {
       // Mark fire-and-forget status emissions as handled while preserving
@@ -205,47 +203,81 @@ export class RecordDispatcher {
 
   async drain(): Promise<void> {
     await this.tail;
-    if (this.failure) {
-      throw this.failure;
+    if (this.pendingFailure) {
+      const failure = this.pendingFailure;
+      this.pendingFailure = undefined;
+      throw failure;
     }
   }
 
   private async dispatch(record: TmuxPlayRecord): Promise<void> {
     const observers = [...this.observers];
+    const failedObservers = new Set<ObserverRegistration>();
+    let firstFailure: ObserverDispatchError | undefined;
+
     for (let i = 0; i < observers.length; i++) {
+      const registration = observers[i];
+      if (!registration) continue;
+
       try {
-        await observers[i]?.onRecord(record);
+        await registration.observer.onRecord(record);
       } catch (error) {
-        if (record.type !== 'runtime_error') {
-          await this.dispatchRuntimeError(observers, record, i, error);
-        }
-        throw new ObserverDispatchError(record, i, error);
+        failedObservers.add(registration);
+        this.removeObserver(registration);
+        firstFailure ??= new ObserverDispatchError(record, i, error);
+      }
+    }
+
+    if (!firstFailure) return;
+
+    if (record.type !== 'runtime_error') {
+      await this.dispatchRuntimeError(
+        observers,
+        failedObservers,
+        record,
+        firstFailure,
+      );
+    }
+    throw firstFailure;
+  }
+
+  private async dispatchRuntimeError(
+    observers: readonly ObserverRegistration[],
+    failedObservers: ReadonlySet<ObserverRegistration>,
+    sourceRecord: TmuxPlayRecord,
+    failure: ObserverDispatchError,
+  ): Promise<void> {
+    const runtimeError: RuntimeErrorRecord = {
+      type: 'runtime_error',
+      turnId:
+        sourceRecord.type === 'turn_finished' ||
+        sourceRecord.type === 'turn_aborted'
+          ? null
+          : sourceRecord.turnId,
+      timestamp: Date.now(),
+      message: errorMessage(failure.cause),
+      sourceRecordType: sourceRecord.type,
+      observerIndex: failure.observerIndex,
+    };
+
+    for (let i = failure.observerIndex + 1; i < observers.length; i++) {
+      const registration = observers[i];
+      if (!registration || failedObservers.has(registration)) continue;
+
+      try {
+        await registration.observer.onRecord(runtimeError);
+      } catch {
+        // A diagnostic observer failure cannot recursively produce another
+        // diagnostic, but it is still isolated from later source records.
+        this.removeObserver(registration);
       }
     }
   }
 
-  private async dispatchRuntimeError(
-    observers: readonly RecordObserver[],
-    sourceRecord: TmuxPlayRecord,
-    failedObserverIndex: number,
-    error: unknown,
-  ): Promise<void> {
-    const runtimeError: RuntimeErrorRecord = {
-      type: 'runtime_error',
-      turnId: sourceRecord.turnId,
-      timestamp: Date.now(),
-      message: errorMessage(error),
-      sourceRecordType: sourceRecord.type,
-      observerIndex: failedObserverIndex,
-    };
-
-    for (let i = failedObserverIndex + 1; i < observers.length; i++) {
-      try {
-        await observers[i]?.onRecord(runtimeError);
-      } catch {
-        // Best effort: DR-004 only requires notifying remaining observers
-        // when possible.
-      }
+  private removeObserver(registration: ObserverRegistration): void {
+    const index = this.observers.indexOf(registration);
+    if (index !== -1) {
+      this.observers.splice(index, 1);
     }
   }
 }

@@ -356,8 +356,9 @@ export class TmuxPlayRuntime {
       // Admission is already closed by the finally above, so the abort
       // listeners this fires synchronously cannot slip a call in behind the
       // failed run. The failure path dispatches the terminal turn_aborted
-      // via handleRuntimeFailure — join before it, like the success path, so
-      // a call the failed turn admitted still lands ahead of that record.
+      // via handleRuntimeFailure unless the failed observer was already
+      // handling that terminal — join before it, like the success path, so a
+      // call the failed turn admitted still lands ahead of that record.
       // The abort bounds that join: every admitted call's Cligent run is
       // bound to this controller's signal.
       controller.abort(errorMessage(error));
@@ -737,13 +738,58 @@ export class TmuxPlayRuntime {
     turnId: number,
     error: unknown,
   ): Promise<void> {
-    if (!(error instanceof ObserverDispatchError)) {
-      await this.emitRuntimeError(turnId, error);
-      await this.dispatcher.drain();
+    let reportingFailure: ObserverDispatchError | undefined;
+
+    if (error instanceof ObserverDispatchError) {
+      await this.consumeDispatchFailure(error);
+      if (
+        error.record.type === 'turn_finished' ||
+        error.record.type === 'turn_aborted'
+      ) {
+        // The dispatcher completed terminal delivery to every healthy
+        // observer before surfacing the failure and emitted its diagnostic on
+        // the session lane. A second terminal would violate the turn fence.
+        return;
+      }
+    } else {
+      try {
+        await this.emitRuntimeError(turnId, error);
+        await this.dispatcher.drain();
+      } catch (reportingError) {
+        if (!(reportingError instanceof ObserverDispatchError)) {
+          throw reportingError;
+        }
+        await this.consumeDispatchFailure(reportingError);
+        reportingFailure = reportingError;
+      }
+    }
+
+    try {
       await this.dispatcher.emit({
         ...makeRecordBase('turn_aborted', turnId),
         reason: errorMessage(error),
       });
+    } catch (terminalError) {
+      if (terminalError instanceof ObserverDispatchError) {
+        await this.consumeDispatchFailure(terminalError);
+      }
+      throw terminalError;
+    }
+
+    if (reportingFailure) {
+      throw reportingFailure;
+    }
+  }
+
+  private async consumeDispatchFailure(
+    failure: ObserverDispatchError,
+  ): Promise<void> {
+    try {
+      await this.dispatcher.drain();
+    } catch (pendingError) {
+      if (!Object.is(pendingError, failure)) {
+        throw pendingError;
+      }
     }
   }
 

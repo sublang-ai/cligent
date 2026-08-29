@@ -6,7 +6,7 @@
 ## Status
 
 In progress.
-Tasks 1 through 44 are done; tasks 45 through 53 remain.
+Tasks 1 through 45 are done; tasks 46 through 53 remain.
 The owner closed the two losses the map found: `META-15`'s concern returns as `meta-35` and `meta-36`, which every package from task 7 onward must satisfy and which the four already landed satisfy unchanged, while `META-26` is retired under the released-ID amendment its approval carried.
 Task 6 found the parser conflict that task 50 now carries, and the superseded-item cluster task 51 now carries, and completion waits on both.
 Task 7 landed `package` with `package-1`, `package-5`, `package-8`, and `package-9` unverified, a gap it inherited and handed to task 49's table.
@@ -102,6 +102,7 @@ Task 41 records the owner's choice to preserve optional role attribution in [DR-
 Task 42 records the owner's portable configured-command identity in [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), aligns [[engine-25](../packages/engine.md#engine-25)], [[engine-26](../packages/engine.md#engine-26)], and [[engine-118](../packages/engine.md#engine-118)] so peers retain their exact resolved tree while CLIs retain `target.command` without inventing a host-selected path, makes CLI readiness and below-floor diagnostics name that command, and narrows task 49 after isolated peer and CLI assertions.
 Task 43 makes every local missing-dependency skip in [[engine-219](../packages/engine.md#engine-219)] emit one stderr diagnostic naming its affected adapter leg and every absent CLI or credential prerequisite before selecting the runner's skip primitive, preserves CI hard failure and sandbox self-skips, adds focused diagnostic and runner-selection assertions, and narrows task 49 to the live gate matrix.
 Task 44 records the owner's help-before-diagnostics-before-session-before-launcher dispatch precedence in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and scopes [DR-012](../decisions/012-runtime-derived-tmux-play-defaults.md)'s generation and readiness rules to ordinary launch, adds [[tmux-play-204](../packages/tmux-play.md#tmux-play-204)]'s complete selector and [[tmux-play-205](../packages/tmux-play.md#tmux-play-205)]'s built-CLI matrix, scopes the earlier launcher, session, first-run, diagnostic, and minimum-tmux concerns through that selector, and narrows task 49 after asserting every selected flow and the invalid combination without changing shipped dispatch.
+Task 45 records the owner's source-delivery choice in [DR-004](../decisions/004-tmux-play-captain-architecture.md) and [DR-008](../decisions/008-captain-pre-close-lifecycle.md), makes a rejecting observer's isolation preserve current and later source fanout to healthy observers while the originating caller and next drain still observe its failure, orders a nonterminal diagnostic before `turn_aborted`, bounds diagnostic-observer failure without recursion, makes a terminal-source diagnostic session-scoped after exactly one terminal with no later turn record, and narrows task 49 after focused multi-observer assertions.
 All five approval questions in [DR-017](../decisions/017-spec-generation-migration.md) are answered, so task 2's respelling stands and the tasks below may move the released IDs their work collides on.
 
 ## Intent
@@ -546,7 +547,6 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | `tmux-play-105`'s offending-path diagnostic for invalid, duplicate, and reserved `captain` player IDs; | |
     | `tmux-play` | `tmux-play-106`'s actual session-mode import resolution for local paths and package specifiers; | |
     | `tmux-play` | `tmux-play-107`'s exact shared numeric `turnId` across its causal sequence; | |
-    | `tmux-play` | `tmux-play-111`'s active-turn abort after observer rejection; | |
     | `tmux-play` | `tmux-play-114` and `tmux-play-182`'s zero-player navigation, `C-c`, ESC, drag, and right-click binding installation and absence of missing-player targets beyond the asserted session-mouse and primary-button cases; | |
     | `tmux-play` | `tmux-play-116`'s composite spent-Kimi self-skip and missing-dependency local-skip/CI-hard-fail rows; | |
     | `tmux-play` | `tmux-play-120`'s source-YAML mutation after launch; | |
@@ -594,9 +594,9 @@ The destination packages, the `+100` and `+200` ID blocks, the dropped zero padd
     | `tmux-play` | | `tmux-play-18`'s at-most-one in-flight `handleBossTurn` invocation per session, which `runtime.test.ts` exercises without proving, while no verification item reaches that guarantee; |
     | `tmux-play` | | `tmux-play-20`; |
     | `tmux-play` | | `tmux-play-21`'s active-turn `captain_status` and both active- and outside-turn `captain_telemetry` cases, of which `runtime.test.ts` exercises the status and outside-telemetry cases without a verifier while no check reaches active-turn telemetry; |
-    | `tmux-play` | | `tmux-play-22`'s unawaited completed/failed join and terminal-fence rows; |
+    | `tmux-play` | | `tmux-play-22`'s unawaited completed/failed join rows; |
     | `tmux-play` | | `tmux-play-24`'s null-lane ordering; |
-    | `tmux-play` | | `tmux-play-25`'s startup-error, remaining-observer-order, and individual-call-error rows; |
+    | `tmux-play` | | `tmux-play-25`'s startup-error and individual-call-error rows; |
     | `tmux-play` | | `tmux-play-29`'s record-type and observer subexports; |
     | `tmux-play` | | `tmux-play-31`, `tmux-play-32`, and `tmux-play-33`, whose stated surfaces no verification item fully asserts; |
     | `tmux-play` | | `tmux-play-52`'s absent-policy row, which `players.test.ts` exercises without a verifier; |

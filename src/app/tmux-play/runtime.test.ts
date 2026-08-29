@@ -2702,14 +2702,247 @@ describe('TmuxPlayRuntime', () => {
     );
   });
 
-  it('still disposes after observer failure', async () => {
-    let disposeCount = 0;
+  it.each([
+    ['awaited publish', true],
+    ['fire-and-forget publish', false],
+  ] as const)(
+    'isolates an observer failure from an %s before aborting the active turn (tmux-play-111)',
+    async (_publishKind, awaitPublish) => {
+      const earlierRecords: TmuxPlayRecord[] = [];
+      const laterRecords: TmuxPlayRecord[] = [];
+      const lastRecords: TmuxPlayRecord[] = [];
+      const failedObserverTypes: string[] = [];
+      const deliveryOrder: string[] = [];
+      let session!: CaptainSession;
+      const turnSignals: AbortSignal[] = [];
+      let disposeCount = 0;
+      const captain: Captain = {
+        async init(captainSession) {
+          session = captainSession;
+        },
+        async handleBossTurn(_turn, context) {
+          turnSignals.push(context.signal);
+          const published = session.emitStatus('trigger observer failure');
+          if (awaitPublish) {
+            await published;
+          }
+        },
+        async dispose() {
+          disposeCount += 1;
+        },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'coder', adapter: 'codex' }],
+        observers: [
+          {
+            onRecord(record) {
+              earlierRecords.push(record as TmuxPlayRecord);
+              deliveryOrder.push(`earlier:${record.type}`);
+            },
+          },
+          {
+            onRecord(record) {
+              failedObserverTypes.push(record.type);
+              deliveryOrder.push(`failed:${record.type}`);
+              if (record.type === 'captain_status') {
+                throw new Error('observer failed on captain_status');
+              }
+            },
+          },
+          {
+            onRecord(record) {
+              laterRecords.push(record as TmuxPlayRecord);
+              deliveryOrder.push(`later:${record.type}`);
+            },
+          },
+          {
+            onRecord(record) {
+              lastRecords.push(record as TmuxPlayRecord);
+              deliveryOrder.push(`last:${record.type}`);
+            },
+          },
+        ],
+        adapterImports: adapterImports({}),
+      });
+
+      const failure = await runtime
+        .runBossTurn('fail observer')
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({
+        name: 'ObserverDispatchError',
+        cause: expect.objectContaining({
+          message: 'observer failed on captain_status',
+        }),
+      });
+      expect(turnSignals[0]?.aborted).toBe(true);
+      expect(earlierRecords).toMatchObject([
+        { type: 'turn_started', turnId: 1 },
+        {
+          type: 'captain_status',
+          turnId: 1,
+          message: 'trigger observer failure',
+        },
+        { type: 'turn_aborted', turnId: 1 },
+      ]);
+      expect(laterRecords).toMatchObject([
+        { type: 'turn_started', turnId: 1 },
+        {
+          type: 'captain_status',
+          turnId: 1,
+          message: 'trigger observer failure',
+        },
+        {
+          type: 'runtime_error',
+          turnId: 1,
+          message: 'observer failed on captain_status',
+          sourceRecordType: 'captain_status',
+          observerIndex: 1,
+        },
+        { type: 'turn_aborted', turnId: 1 },
+      ]);
+      expect(lastRecords).toMatchObject(laterRecords);
+      expect(deliveryOrder).toEqual([
+        'earlier:turn_started',
+        'failed:turn_started',
+        'later:turn_started',
+        'last:turn_started',
+        'earlier:captain_status',
+        'failed:captain_status',
+        'later:captain_status',
+        'last:captain_status',
+        'later:runtime_error',
+        'last:runtime_error',
+        'earlier:turn_aborted',
+        'later:turn_aborted',
+        'last:turn_aborted',
+      ]);
+      expect(failedObserverTypes).toEqual(['turn_started', 'captain_status']);
+
+      await expect(
+        runtime.runBossTurn('surviving observers'),
+      ).resolves.toBeUndefined();
+      expect(turnSignals[1]?.aborted).toBe(false);
+      expect(
+        earlierRecords
+          .filter((record) => record.turnId === 2)
+          .map((record) => record.type),
+      ).toEqual(['turn_started', 'captain_status', 'turn_finished']);
+      expect(
+        lastRecords
+          .filter((record) => record.turnId === 2)
+          .map((record) => record.type),
+      ).toEqual(['turn_started', 'captain_status', 'turn_finished']);
+      expect(
+        laterRecords
+          .filter((record) => record.turnId === 2)
+          .map((record) => record.type),
+      ).toEqual(['turn_started', 'captain_status', 'turn_finished']);
+      expect(failedObserverTypes).toEqual(['turn_started', 'captain_status']);
+
+      await runtime.dispose();
+
+      expect(disposeCount).toBe(1);
+    },
+  );
+
+  it.each([
+    ['turn_finished', false],
+    ['turn_aborted', true],
+  ] as const)(
+    'delivers a rejected %s once before a session-lane diagnostic (tmux-play-111)',
+    async (terminalType, abortTurn) => {
+      const earlierRecords: TmuxPlayRecord[] = [];
+      const laterRecords: TmuxPlayRecord[] = [];
+      const failedObserverTypes: string[] = [];
+      const externalAbort = new AbortController();
+      let turnSignal!: AbortSignal;
+      const captain: Captain = {
+        async handleBossTurn(_turn, context) {
+          turnSignal = context.signal;
+          if (abortTurn) {
+            externalAbort.abort('terminal observer test');
+          }
+        },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'coder', adapter: 'codex' }],
+        observers: [
+          {
+            onRecord(record) {
+              earlierRecords.push(record as TmuxPlayRecord);
+            },
+          },
+          {
+            onRecord(record) {
+              failedObserverTypes.push(record.type);
+              if (record.type === terminalType) {
+                throw new Error(`observer failed on ${terminalType}`);
+              }
+            },
+          },
+          {
+            onRecord(record) {
+              laterRecords.push(record as TmuxPlayRecord);
+            },
+          },
+        ],
+        signal: externalAbort.signal,
+        adapterImports: adapterImports({}),
+      });
+
+      const failure = await runtime
+        .runBossTurn('finish despite observer')
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({
+        name: 'ObserverDispatchError',
+        record: expect.objectContaining({ type: terminalType, turnId: 1 }),
+        cause: expect.objectContaining({
+          message: `observer failed on ${terminalType}`,
+        }),
+      });
+      expect(turnSignal.aborted).toBe(true);
+      expect(earlierRecords).toMatchObject([
+        { type: 'turn_started', turnId: 1 },
+        { type: terminalType, turnId: 1 },
+      ]);
+      expect(laterRecords).toMatchObject([
+        { type: 'turn_started', turnId: 1 },
+        { type: terminalType, turnId: 1 },
+        {
+          type: 'runtime_error',
+          turnId: null,
+          message: `observer failed on ${terminalType}`,
+          sourceRecordType: terminalType,
+          observerIndex: 1,
+        },
+      ]);
+      expect(
+        laterRecords.filter(
+          (record) =>
+            record.type === 'turn_finished' || record.type === 'turn_aborted',
+        ),
+      ).toHaveLength(1);
+      expect(failedObserverTypes).toEqual(['turn_started', terminalType]);
+
+      await runtime.dispose();
+    },
+  );
+
+  it('does not recurse when an observer rejects a runtime_error source (tmux-play-111)', async () => {
+    const earlierRecords: TmuxPlayRecord[] = [];
+    const laterRecords: TmuxPlayRecord[] = [];
+    const failedObserverTypes: string[] = [];
+    let turnSignal!: AbortSignal;
     const captain: Captain = {
-      async handleBossTurn() {
-        // no-op
-      },
-      async dispose() {
-        disposeCount += 1;
+      async handleBossTurn(_turn, context) {
+        turnSignal = context.signal;
+        throw new Error('captain failed before observer failure');
       },
     };
     const runtime = await createTmuxPlayRuntime({
@@ -2718,20 +2951,71 @@ describe('TmuxPlayRuntime', () => {
       players: [{ id: 'coder', adapter: 'codex' }],
       observers: [
         {
-          onRecord() {
-            throw new Error('observer failed');
+          onRecord(record) {
+            earlierRecords.push(record as TmuxPlayRecord);
+          },
+        },
+        {
+          onRecord(record) {
+            failedObserverTypes.push(record.type);
+            if (record.type === 'runtime_error') {
+              throw new Error('observer failed on runtime_error');
+            }
+          },
+        },
+        {
+          onRecord(record) {
+            laterRecords.push(record as TmuxPlayRecord);
           },
         },
       ],
       adapterImports: adapterImports({}),
     });
 
-    await expect(runtime.runBossTurn('fail observer')).rejects.toThrow(
-      'observer failed',
-    );
-    await runtime.dispose();
+    const failure = await runtime
+      .runBossTurn('fail while reporting')
+      .catch((error: unknown) => error);
 
-    expect(disposeCount).toBe(1);
+    expect(failure).toMatchObject({
+      name: 'ObserverDispatchError',
+      record: expect.objectContaining({ type: 'runtime_error', turnId: 1 }),
+      cause: expect.objectContaining({
+        message: 'observer failed on runtime_error',
+      }),
+    });
+    expect(turnSignal.aborted).toBe(true);
+    expect(earlierRecords).toMatchObject([
+      { type: 'turn_started', turnId: 1 },
+      {
+        type: 'runtime_error',
+        turnId: 1,
+        message: 'captain failed before observer failure',
+      },
+      {
+        type: 'turn_aborted',
+        turnId: 1,
+        reason: 'captain failed before observer failure',
+      },
+    ]);
+    expect(laterRecords).toMatchObject([
+      { type: 'turn_started', turnId: 1 },
+      {
+        type: 'runtime_error',
+        turnId: 1,
+        message: 'captain failed before observer failure',
+      },
+      {
+        type: 'turn_aborted',
+        turnId: 1,
+        reason: 'captain failed before observer failure',
+      },
+    ]);
+    expect(
+      laterRecords.filter((record) => record.type === 'runtime_error'),
+    ).toHaveLength(1);
+    expect(failedObserverTypes).toEqual(['turn_started', 'runtime_error']);
+
+    await runtime.dispose();
   });
 
   it('aborts the session signal and rejects post-abort emissions before dispose', async () => {
