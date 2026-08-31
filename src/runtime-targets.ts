@@ -134,7 +134,13 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: '@google/gemini-cli',
       repairSpec: '@google/gemini-cli@0.57.0',
       command: 'gemini',
-      supportedFrom: '0.50.0',
+      // The first release whose bundled catalog carries
+      // `gemini-3.5-flash`: it is absent from 0.45.0, appears in 0.45.1,
+      // and that catalog entry remains unchanged through tested 0.57.0.
+      // Version 0.45.0 passes an unknown slug through with `chat-base`
+      // defaults instead of rejecting it, so catalog presence is the
+      // capability boundary; 0.45.1 already serves every adapter surface.
+      supportedFrom: '0.45.1',
       tested: '0.57.0',
     }),
   ]),

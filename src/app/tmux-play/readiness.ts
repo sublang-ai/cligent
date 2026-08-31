@@ -54,61 +54,28 @@ export type InstallTarget =
       readonly unreachable: true;
     };
 
-interface AdapterRuntimeRequirement {
-  /**
-   * npm packages resolved from the cligent installation itself — the optional
-   * peer SDKs. The repair command follows the install scope of cligent.
-   */
-  readonly peers: readonly string[];
-  /**
-   * npm packages that must put an executable on `PATH`. These are always
-   * installed globally, whatever scope cligent itself uses.
-   */
-  readonly clis: readonly string[];
-  /** One-time steps that no install command covers, e.g. an OAuth login. */
-  readonly steps: readonly string[];
-}
-
-/**
- * What each built-in adapter needs before it can serve a tmux-play role.
- * Credentials are out of scope: they are the vendor CLI's own concern and
- * surface as a run-time error from the provider, not as a missing runtime.
- */
-const ADAPTER_RUNTIME_REQUIREMENTS: Readonly<
-  Record<PlayerAdapterName, AdapterRuntimeRequirement>
-> = Object.freeze({
-  claude: { peers: ['@anthropic-ai/claude-agent-sdk'], clis: [], steps: [] },
-  codex: { peers: ['@openai/codex-sdk'], clis: [], steps: [] },
-  gemini: { peers: [], clis: ['@google/gemini-cli'], steps: [] },
-  kimi: {
-    peers: [],
-    clis: ['@moonshot-ai/kimi-code@0.39.1'],
-    // One of Kimi's three ACP auth routes, and the only one expressible as a
-    // command; a configured default model or the KIMI_MODEL_* overlay also
-    // satisfies the gate, so this reads as the simplest path, not the sole one.
-    steps: ['kimi login  # or configure a default model'],
-  },
-  opencode: { peers: ['@opencode-ai/sdk'], clis: ['opencode-ai'], steps: [] },
-});
-
 /**
  * The repair commands that make one adapter runnable, in the order a user
- * should run them.
+ * should run them. Runtime identity, exact repair specifiers, and follow-up
+ * steps come from the canonical descriptor; this renderer adds only the
+ * installation-tree context it owns.
  */
 export function adapterRepairCommands(
   adapter: PlayerAdapterName,
   target: InstallTarget,
 ): readonly string[] {
-  const requirement = ADAPTER_RUNTIME_REQUIREMENTS[adapter];
+  const targets = AGENT_RUNTIME_TARGETS[adapter];
+  const peers = targets.filter((runtime) => runtime.kind === 'peer');
+  const clis = targets.filter((runtime) => runtime.kind === 'cli');
   const commands: string[] = [];
   if ('unreachable' in target) {
     // No npm invocation reaches the resolved tree, so an install command here
     // would land somewhere else and look like it had worked. Name the manual
     // placement instead; the install-tree note explains why.
-    for (const peer of requirement.peers) {
-      commands.push(`place ${peer} in ${target.moduleRoot}`);
+    for (const peer of peers) {
+      commands.push(`place ${peer.package} in ${target.moduleRoot}`);
     }
-  } else if (requirement.peers.length > 0) {
+  } else if (peers.length > 0) {
     // The peer SDK is resolved from cligent's own tree, and every peer
     // command names both the tree and the scope: a bare install follows
     // whatever prefix, project, and install scope the paste-time shell
@@ -131,17 +98,17 @@ export function adapterRepairCommands(
           : ['--global=false', '--location=project']),
         '--prefix',
         shellQuote(target.prefix),
-        ...requirement.peers,
+        ...peers.map((runtime) => runtime.repairSpec),
       ].join(' '),
     );
   }
-  for (const cli of requirement.clis) {
+  for (const cli of clis) {
     // An external CLI is found through PATH, not through cligent's tree, so
     // it belongs in whichever global prefix the user's shell already reads —
     // never pinned to cligent's.
-    commands.push(`npm install -g ${cli}`);
+    commands.push(`npm install -g ${cli.repairSpec}`);
   }
-  commands.push(...requirement.steps);
+  commands.push(...targets.flatMap((runtime) => runtime.steps ?? []));
   return commands;
 }
 

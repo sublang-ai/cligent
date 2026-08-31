@@ -1421,8 +1421,9 @@ describe('KimiAdapter', () => {
 
     expect(events.some((event) => event.type === 'error')).toBe(false);
     expect(eventOf(events, 'done').payload.status).toBe('success');
-    // Ignored must mean ignored: an unmapped update is isolated before SDK
-    // dispatch and must not surface as private traffic or an adapter error.
+    // Ignored must mean ignored: the pinned SDK rejects a case outside its
+    // closed union, so forwarding one would log an Invalid params error even
+    // though the turn succeeds. The filter drops it before SDK dispatch.
     expect(consoleErrors.join('\n')).not.toMatch(/Invalid params|-32602/);
     consoleSpy.mockRestore();
   });

@@ -892,17 +892,17 @@ function runInstalledTmuxPlay(args) {
  * that works, so the test executes this rather than composing its own — a
  * hand-written install can be scoped to a tree the printed one never names.
  */
-function extractRepairCommand(output, packageName) {
+function extractRepairCommand(output, repairSpec) {
   const line = output
     .split('\n')
     .map((candidate) => candidate.trim())
     .find(
       (candidate) =>
-        candidate.startsWith('npm install ') && candidate.endsWith(packageName),
+        candidate.startsWith('npm install ') && candidate.endsWith(repairSpec),
     );
   if (!line) {
     fail(
-      `tmux-play printed no npm install command for ${packageName}:\n${output.trim()}`,
+      `tmux-play printed no npm install command for ${repairSpec}:\n${output.trim()}`,
     );
   }
   return line.split(/\s+/);
@@ -1395,15 +1395,15 @@ try {
   );
   // Every peer SDK command names its tree with --prefix; here that tree is a
   // prefix supplied out of band that a bare install would never reach. PATH
-  // executables stay unpinned because they belong in whatever global prefix
-  // the user's shell reads.
+  // executables use the descriptor's exact repair spec but stay unpinned to
+  // cligent's tree because they belong in the global prefix the shell reads.
   for (const repair of [
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @anthropic-ai/claude-agent-sdk`,
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @openai/codex-sdk`,
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} @opencode-ai/sdk`,
-    'npm install -g @google/gemini-cli',
-    'npm install -g @moonshot-ai/kimi-code@0.39.1',
-    'npm install -g opencode-ai',
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.claude[0].repairSpec}`,
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.codex[0].repairSpec}`,
+    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.opencode[0].repairSpec}`,
+    `npm install -g ${AGENT_RUNTIME_TARGETS.gemini[0].repairSpec}`,
+    `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0].repairSpec}`,
+    `npm install -g ${AGENT_RUNTIME_TARGETS.opencode[1].repairSpec}`,
   ]) {
     assertOutputContains(emptyLaunch, repair, 'tmux-play repair commands');
   }
@@ -1420,7 +1420,10 @@ try {
   // Substituting a hand-written install here is what let a command scoped to
   // the wrong tree pass: this prefix is supplied out of band, so a bare
   // `npm install -g` would resolve against npm's own prefix instead.
-  const printedRepair = extractRepairCommand(emptyLaunch.output, '@openai/codex-sdk');
+  const printedRepair = extractRepairCommand(
+    emptyLaunch.output,
+    AGENT_RUNTIME_TARGETS.codex[0].repairSpec,
+  );
   run(npm, [
     ...printedRepair.slice(1),
     '--ignore-scripts',

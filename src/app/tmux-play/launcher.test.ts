@@ -82,6 +82,7 @@ import {
   TMUX_PLAY_WORK_DIR_OWNER_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
+import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import {
@@ -2919,13 +2920,13 @@ describe('launchTmuxPlay', () => {
     // process.
     const expectedPrefix = shellQuote(resolveInstallRoot(cligentPackageRoot()));
     expect(error!.message).toContain(
-      `npm install --global=false --location=project --prefix ${expectedPrefix} @anthropic-ai/claude-agent-sdk`,
+      `npm install --global=false --location=project --prefix ${expectedPrefix} ${AGENT_RUNTIME_TARGETS.claude[0]!.repairSpec}`,
     );
     expect(error!.message).toContain(
       'codex (player "coder", player "reviewer")',
     );
     expect(error!.message).toContain(
-      `npm install --global=false --location=project --prefix ${expectedPrefix} @openai/codex-sdk`,
+      `npm install --global=false --location=project --prefix ${expectedPrefix} ${AGENT_RUNTIME_TARGETS.codex[0]!.repairSpec}`,
     );
     expect(error!.message).toContain(configPath);
     expect(runTmuxMock).not.toHaveBeenCalled();

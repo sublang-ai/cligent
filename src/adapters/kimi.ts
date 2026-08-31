@@ -289,9 +289,10 @@ function parseAcpResult<Result>(
 /**
  * Validates one inbound message and reports whether it should reach the SDK.
  *
- * A `session/update` naming a case this adapter does not act on is dropped
- * before SDK dispatch. It has no mapped Cligent behavior, and isolating
- * protocol growth here keeps "an unhandled case is ignored" true end to end.
+ * A `session/update` naming a case this adapter does not act on is dropped.
+ * It has no mapped Cligent behavior, while a case outside the pinned SDK's
+ * closed union would otherwise produce an Invalid params log. Dropping every
+ * unhandled case keeps "ignored" true end to end as the protocol grows.
  */
 function validateInboundAcpMessage(
   value: unknown,
@@ -1482,9 +1483,8 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         }
         // Kimi Code 0.39.1's prompt response publishes only the stop reason.
         // Its later usage_update is session context occupancy, not
-        // invocation-scoped input/output or cost accounting, and the stream
-        // filter drops it before SDK dispatch. Never promote either surface
-        // into Cligent's authentic usage report.
+        // invocation-scoped input/output or cost accounting. This adapter
+        // maps neither surface into Cligent's authentic usage report.
         finish(status);
       } catch (error) {
         if (abortRequested) {

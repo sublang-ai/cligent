@@ -17,7 +17,7 @@ Unattended, continuous-integration, declined, and unreachable-tree invocations k
 ## Scope
 
 The capability covers only an adapter whose runtime includes a peer SDK resolved from cligent's own tree — `claude`, `codex`, and `opencode`.
-An adapter whose runtime is an external CLI found through `PATH` — `gemini`, `kimi`, and `opencode`'s CLI half — keeps its unpinned printed command unchanged, because the tree such a command lands in is the paste-time shell's own global prefix, which this process cannot witness and must not redirect.
+An adapter whose runtime is an external CLI found through `PATH` — `gemini`, `kimi`, and `opencode`'s CLI half — keeps its exact descriptor-owned repair spec but no `--prefix`, because the tree such a command lands in is the paste-time shell's own global prefix, which this process cannot witness and must not redirect.
 Phase one covers every runtime an adapter requires, including the external CLIs and the paired OpenCode SDK and CLI, because a version the adapter selects is a version cligent verifies; only the consented install of phase two is restricted to peer SDKs.
 `@sublang/playbook`, `@sublang/slc`, and `@sublang/spex` are sibling projects outside this repository; they are the consumers the exported surface exists for, and no item here depends on their contents.
 

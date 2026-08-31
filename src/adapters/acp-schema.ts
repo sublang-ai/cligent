@@ -202,9 +202,10 @@ const TOOL_UPDATES = ['tool_call', 'tool_call_update'] as const;
 const PLAN_UPDATES = ['plan', 'plan_update', 'plan_removed'] as const;
 /**
  * Every case this adapter acts on. A `session/update` naming anything else is
- * one the adapter would ignore, so the stream filter drops it before SDK
- * dispatch. This keeps Kimi Code's context-only `usage_update` isolated from
- * Cligent's invocation-scoped usage contract.
+ * one the adapter would ignore. A case outside the pinned SDK's closed union
+ * would otherwise produce an Invalid params log, so the stream filter drops
+ * all unhandled updates before SDK dispatch and makes "ignored" true end to
+ * end; stable but unmapped cases such as `usage_update` are inert either way.
  */
 export const ACTED_ON_UPDATES = new Set<string>([
   ...CHUNK_UPDATES,

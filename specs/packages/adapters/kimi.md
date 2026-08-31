@@ -150,12 +150,12 @@ When [[kimi-33](#kimi-33)] selects a valid ACP prompt response, the adapter shal
 
 ### kimi-21
 
-When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.39.1` admits exactly these authentication routes [[8]][[10]]:
+When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.39.1`'s default native ACP path admits exactly these authentication routes [[8]][[10]][[11]][[12]][[13]][[14]]:
 
 | Runtime state | Session gate |
 | --- | --- |
-| OAuth credential written by `kimi login` | admitted |
-| configured default-model alias resolving to a provider with non-OAuth credentials | admitted |
+| stored OAuth material resolved from the default model, or any provider reports logged in, including after `kimi login` | admitted |
+| configured default-model alias resolving to non-OAuth credentials | admitted |
 | both `KIMI_MODEL_NAME` and `KIMI_MODEL_API_KEY` environment values | admitted through a runtime-only synthesized provider and default alias |
 | bare `MOONSHOT_API_KEY` or `KIMI_API_KEY` | not admitted because no default-model alias exists |
 
@@ -287,7 +287,12 @@ For the pinned Kimi Code runtime, every terminal `done` shall omit token and cos
 
 ### kimi-31
 
-For the pinned runtime, the adapter shall drop ACP `usage_update` before SDK dispatch and shall not promote its session-context counters to public token or cost accounting; a future usage surface may be mapped only after its invocation, input/output, cache, and reasoning semantics are verified.
+Where a schema-valid ACP prompt-response or session-update surface lacks the evidence required for an accounting axis, the adapter shall omit that axis independently from public token and cost accounting under [[engine-62](../engine.md#engine-62)]:
+
+| Axis | Evidence required before promotion |
+| --- | --- |
+| token report | invocation ownership and input/output, cache, and reasoning semantics |
+| cost report | invocation ownership and amount, currency, and provenance semantics [[engine-61](../engine.md#engine-61)] |
 
 ## Internal Behavior
 
@@ -404,7 +409,7 @@ Given the complete `PermissionPolicy` mode and capability matrix plus every head
 
 ### kimi-32
 
-Given a schema-valid ACP `usage_update` carrying context occupancy and a prompt response carrying hypothetical usage counters before [[kimi-31](#kimi-31)]'s evidence gate is met, when repository integration verification runs prompts carrying each form, it shall assert that each prompt completes while terminal usage contains only independently observed tool calls and no token or cost report.
+Given a schema-valid ACP `usage_update` carrying context occupancy and a prompt response carrying hypothetical usage counters before the evidence gate is met, when repository integration verification runs prompts carrying each form, it shall assert that each prompt completes while terminal usage contains only independently observed tool calls and no token or cost report [[kimi-13](#kimi-13)] [[kimi-31](#kimi-31)].
 
 ### kimi-218
 
@@ -426,7 +431,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
 - the leg shall self-skip when the `kimi` CLI the adapter spawns is absent from `PATH` or its credential is absent, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- Kimi Code `0.39.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
+- Kimi Code `0.39.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
 - the harness exercises the OAuth route exclusively, so its credential probe shall run with the `KIMI_MODEL_*` overlay removed exactly as the live legs do, inheriting it being what would let an environment-configured model report a spent OAuth credential as usable and make those legs fail instead of self-skipping;
 - because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use;
 - the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in the behavior under test;
@@ -490,6 +495,10 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [5]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
 [7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
-[8]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-adapter/src/server.ts#L114-L160 "Kimi Code 0.39.1 ACP authentication gate"
-[9]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/session.ts#L866-L895 "Kimi Code 0.39.1 ACP prompt response and context-usage update"
-[10]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core/src/config/env-model.ts#L82-L115 "Kimi Code 0.39.1 environment model configuration"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/server.ts#L619-L640 "Kimi Code 0.39.1 native ACP authentication gate"
+[9]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/session.ts#L907-L937 "Kimi Code 0.39.1 ACP prompt response and context-usage update"
+[10]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/envOverlay.ts#L87-L174 "Kimi Code 0.39.1 environment model overlay"
+[11]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/auth/authService.ts#L628-L695 "Kimi Code 0.39.1 default-model and OAuth readiness"
+[12]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L23-L71 "Kimi Code 0.39.1 environment provider credentials"
+[13]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/apps/kimi-code/src/cli/sub/acp.ts#L1-L44 "Kimi Code 0.39.1 native ACP dispatch"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/kosong/model/modelAuth.ts#L27-L73 "Kimi Code 0.39.1 model and provider authentication resolution"

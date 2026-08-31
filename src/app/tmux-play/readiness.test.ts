@@ -3,6 +3,7 @@
 
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
 import {
   adapterRepairCommands,
   assertConfiguredAdaptersReady,
@@ -60,6 +61,10 @@ const LOCAL = {
   prefix: join('/srv', 'app'),
 } as const;
 
+function runtimeTarget(adapter: PlayerAdapterName, index = 0) {
+  return AGENT_RUNTIME_TARGETS[adapter][index]!;
+}
+
 describe('adapterRepairCommands', () => {
   it('pins every peer SDK install to the cligent installation', () => {
     // Every peer command names its tree: where a bare install lands is a
@@ -68,7 +73,7 @@ describe('adapterRepairCommands', () => {
     // outranks both. `-g` still marks the global scope; `--prefix` marks the
     // tree in both scopes.
     expect(adapterRepairCommands('claude', GLOBAL)).toEqual([
-      'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
+      `npm install -g --prefix /usr/local ${runtimeTarget('claude').repairSpec}`,
     ]);
     // The project form pins scope as well as tree: npm's globalness is
     // `global || location === 'global'`, either operand settable by the
@@ -76,7 +81,7 @@ describe('adapterRepairCommands', () => {
     // inherited `npm_config_global=true` lands the SDK in
     // `/srv/app/lib/node_modules`, outside the reported tree.
     expect(adapterRepairCommands('claude', LOCAL)).toEqual([
-      'npm install --global=false --location=project --prefix /srv/app @anthropic-ai/claude-agent-sdk',
+      `npm install --global=false --location=project --prefix /srv/app ${runtimeTarget('claude').repairSpec}`,
     ]);
     expect(
       adapterRepairCommands('codex', {
@@ -84,7 +89,9 @@ describe('adapterRepairCommands', () => {
         moduleRoot: '/opt/pfx/lib/node_modules',
         prefix: '/opt/pfx',
       }),
-    ).toEqual(['npm install -g --prefix /opt/pfx @openai/codex-sdk']);
+    ).toEqual([
+      `npm install -g --prefix /opt/pfx ${runtimeTarget('codex').repairSpec}`,
+    ]);
   });
 
   it('quotes a prefix a shell would split', () => {
@@ -96,7 +103,9 @@ describe('adapterRepairCommands', () => {
         moduleRoot: '/opt/my pfx/lib/node_modules',
         prefix: '/opt/my pfx',
       }),
-    ).toEqual(["npm install -g --prefix '/opt/my pfx' @openai/codex-sdk"]);
+    ).toEqual([
+      `npm install -g --prefix '/opt/my pfx' ${runtimeTarget('codex').repairSpec}`,
+    ]);
   });
 
   it('names a manual placement instead of a command for unreachable trees', () => {
@@ -108,23 +117,23 @@ describe('adapterRepairCommands', () => {
     // An install command here would land in npm's own prefix, not the tree
     // the error just said it resolves from.
     expect(adapterRepairCommands('claude', unreachable)).toEqual([
-      'place @anthropic-ai/claude-agent-sdk in /odd/node_modules',
+      `place ${runtimeTarget('claude').package} in /odd/node_modules`,
     ]);
     // Only the peer is unreachable; the PATH executable stays a real command.
     expect(adapterRepairCommands('opencode', unreachable)).toEqual([
-      'place @opencode-ai/sdk in /odd/node_modules',
-      'npm install -g opencode-ai',
+      `place ${runtimeTarget('opencode').package} in /odd/node_modules`,
+      `npm install -g ${runtimeTarget('opencode', 1).repairSpec}`,
     ]);
     expect(adapterRepairCommands('gemini', unreachable)).toEqual([
-      'npm install -g @google/gemini-cli',
+      `npm install -g ${runtimeTarget('gemini').repairSpec}`,
     ]);
   });
 
-  it('always installs PATH executables globally and unpinned', () => {
+  it('installs PATH executables globally with the descriptor repair spec', () => {
     // The gemini adapter spawns the `gemini` binary, so it belongs in whichever
     // global prefix the user's shell reads — never pinned to cligent's tree.
     expect(adapterRepairCommands('gemini', LOCAL)).toEqual([
-      'npm install -g @google/gemini-cli',
+      `npm install -g ${runtimeTarget('gemini').repairSpec}`,
     ]);
     expect(
       adapterRepairCommands('gemini', {
@@ -132,20 +141,20 @@ describe('adapterRepairCommands', () => {
         moduleRoot: '/opt/pfx/lib/node_modules',
         prefix: '/opt/pfx',
       }),
-    ).toEqual(['npm install -g @google/gemini-cli']);
+    ).toEqual([`npm install -g ${runtimeTarget('gemini').repairSpec}`]);
   });
 
   it('pins the Kimi CLI target and names its login step', () => {
     expect(adapterRepairCommands('kimi', GLOBAL)).toEqual([
-      'npm install -g @moonshot-ai/kimi-code@0.39.1',
-      'kimi login  # or configure a default model',
+      `npm install -g ${runtimeTarget('kimi').repairSpec}`,
+      ...(runtimeTarget('kimi').steps ?? []),
     ]);
   });
 
   it('names both the SDK and the CLI OpenCode needs', () => {
     expect(adapterRepairCommands('opencode', GLOBAL)).toEqual([
-      'npm install -g --prefix /usr/local @opencode-ai/sdk',
-      'npm install -g opencode-ai',
+      `npm install -g --prefix /usr/local ${runtimeTarget('opencode').repairSpec}`,
+      `npm install -g ${runtimeTarget('opencode', 1).repairSpec}`,
     ]);
   });
 });
@@ -319,7 +328,7 @@ describe('assertConfiguredAdaptersReady', () => {
     expect(error?.message).toContain('the codex adapter has no usable runtime');
     expect(error?.message).toContain('codex (player "coder")');
     expect(error?.message).toContain(
-      'npm install --global=false --location=project --prefix /srv/app @openai/codex-sdk',
+      `npm install --global=false --location=project --prefix /srv/app ${runtimeTarget('codex').repairSpec}`,
     );
     expect(error?.message).toContain(loaded.path);
     // A ready adapter is not reported as a repair the user has to make.
@@ -336,13 +345,14 @@ describe('formatNoRuntimeInstalled', () => {
 
     expect(message).toContain('found no agent runtime installed');
     for (const command of [
-      // Peer SDKs pin the tree; PATH executables stay bare `-g`.
-      'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
-      'npm install -g --prefix /usr/local @openai/codex-sdk',
-      'npm install -g @google/gemini-cli',
-      'npm install -g @moonshot-ai/kimi-code@0.39.1',
-      'npm install -g --prefix /usr/local @opencode-ai/sdk',
-      'npm install -g opencode-ai',
+      // Peer SDKs pin the tree; PATH executables use bare `-g`. Both install
+      // the descriptor-owned exact repair spec.
+      `npm install -g --prefix /usr/local ${runtimeTarget('claude').repairSpec}`,
+      `npm install -g --prefix /usr/local ${runtimeTarget('codex').repairSpec}`,
+      `npm install -g ${runtimeTarget('gemini').repairSpec}`,
+      `npm install -g ${runtimeTarget('kimi').repairSpec}`,
+      `npm install -g --prefix /usr/local ${runtimeTarget('opencode').repairSpec}`,
+      `npm install -g ${runtimeTarget('opencode', 1).repairSpec}`,
     ]) {
       expect(message).toContain(command);
     }
@@ -362,14 +372,20 @@ describe('formatNoRuntimeInstalled', () => {
     });
 
     // A command would land in npm's prefix, contradicting the note below it.
-    expect(message).not.toContain('npm install -g @anthropic-ai/claude-agent-sdk');
-    expect(message).not.toContain('npm install -g @openai/codex-sdk');
+    expect(message).not.toContain(
+      `npm install -g ${runtimeTarget('claude').package}`,
+    );
+    expect(message).not.toContain(
+      `npm install -g ${runtimeTarget('codex').package}`,
+    );
     expect(message).toContain(
-      'place @anthropic-ai/claude-agent-sdk in /odd/node_modules',
+      `place ${runtimeTarget('claude').package} in /odd/node_modules`,
     );
     expect(message).toContain('No npm install command targets that tree');
     // PATH executables are reached through the shell, not cligent's tree, so
     // their commands survive unreachability.
-    expect(message).toContain('npm install -g @google/gemini-cli');
+    expect(message).toContain(
+      `npm install -g ${runtimeTarget('gemini').repairSpec}`,
+    );
   });
 });

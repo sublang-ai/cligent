@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
 import {
   TMUX_PLAY_CONFIG_SNAPSHOT,
   TMUX_PLAY_HOME_CONFIG,
@@ -241,12 +242,13 @@ describe('tmux-play built CLI smoke', () => {
       PATH: harness.binDir,
     });
 
+    const kimiTarget = AGENT_RUNTIME_TARGETS.kimi[0]!;
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('kimi (player "thinker")');
-    expect(result.stderr).toContain(
-      'npm install -g @moonshot-ai/kimi-code@0.39.1',
-    );
-    expect(result.stderr).toContain('kimi login');
+    expect(result.stderr).toContain(`npm install -g ${kimiTarget.repairSpec}`);
+    for (const step of kimiTarget.steps ?? []) {
+      expect(result.stderr).toContain(step);
+    }
     // No tmux session was ever created: the stub logs every call but `-V`.
     expect(existsSync(harness.tmuxLog)).toBe(false);
   });
