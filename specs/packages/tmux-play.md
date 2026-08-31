@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets an operator run a multi-agent conversation in a tmux session, with a Boss at the keyboard, a scripted Captain orchestrating, and any number of coding agents as players, per [DR-004](../decisions/004-tmux-play-captain-architecture.md).
-It owns the application's configuration, its tmux topology and presentation, the Captain contract and its records, the session lifecycle, and the per-call settings a Captain may vary, not the behavior of any agent adapter it drives.
+It owns the application's adapter-correlated configuration, its tmux topology and presentation, the Captain contract and its records, the session lifecycle, and the per-call settings a Captain may vary, not the behavior of any agent adapter it drives.
 Its requirements are stated in this project's `Cligent`, `AgentOptions`, `PermissionPolicy`, and adapter vocabulary, which the engine and the adapter packages define, and in the `tmux-play` executable, configuration file, and `@sublang/cligent/tmux-play` sub-export the distributable ships.
 
 ## External Behavior
@@ -78,7 +78,7 @@ When the loader resolves the top-level configuration, it shall admit this surfac
 
 ### tmux-play-6
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### tmux-play-60
 
@@ -149,7 +149,7 @@ When the loader resolves an entry in `players`, it shall apply this matrix:
 | Field or roster condition | Outcome |
 | --- | --- |
 | `id` and `adapter` | require both; accept only adapters `claude`, `codex`, `gemini`, `opencode`, and `kimi` |
-| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], and `effort` per [[tmux-play-56](#tmux-play-56)] |
+| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], and `fastMode` per [[tmux-play-206](#tmux-play-206)] |
 | `id` | require a unique non-`captain` value matching `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$` |
 | adapter and model reused by several players | accept the entries |
 
@@ -177,6 +177,21 @@ When the loader resolves optional `effort` on the `captain` or a player, it shal
 ### tmux-play-95
 
 Where tmux-play exports captain, player, and runtime configuration types, those types shall preserve [[tmux-play-56](#tmux-play-56)]'s correlation between each adapter and its effort vocabulary.
+
+### tmux-play-206
+
+When the loader resolves optional `fastMode` on the Captain or a player, it shall select this outcome per [DR-021](../decisions/021-agent-runtime-fast-mode.md):
+
+| Input and adapter | Outcome |
+| --- | --- |
+| boolean with `claude` or `codex` | accept under [[engine-77](engine.md#engine-77)] and retain the exact boolean as the role's call default |
+| non-boolean with `claude` or `codex` | reject before runtime start with an error naming the path and adapter |
+| any present value, including `false`, with Gemini, OpenCode, or Kimi | reject before runtime start under [[engine-75](engine.md#engine-75)] with an error naming the path and adapter |
+| field absent | retain no fast-mode override under [[engine-75](engine.md#engine-75)] |
+
+### tmux-play-207
+
+Where tmux-play exports adapter-discriminated Captain, player, and runtime configuration types, those types shall preserve [[engine-74](engine.md#engine-74)]'s fast-mode capability correlation by exposing `fastMode?: boolean` only on the Claude and Codex members accepted by [[tmux-play-206](#tmux-play-206)].
 
 ### tmux-play-86
 
@@ -233,7 +248,7 @@ When fallback discovery loads an existing home YAML, the launcher shall apply th
 | Existing state or source | Outcome |
 | --- | --- |
 | safe default missing | add only `theme: auto`, a `layout` block carrying the default `window` and shipped `multiPlayerColumnWeights` per [[tmux-play-11](#tmux-play-11)], `captain.options: {}`, and [[tmux-play-11](#tmux-play-11)]'s notification defaults |
-| existing user values | preserve them; add no `model`, `instruction`, `permissions`, or `effort` defaults |
+| existing user values | preserve them; add no `model`, `instruction`, `permissions`, `effort`, or `fastMode` defaults |
 | two-element legacy `layout.columnWeights` | rewrite it as `layout.singlePlayerColumnWeights` and write one final YAML form without the alias |
 | three-element legacy `layout.columnWeights` | rewrite it as `layout.multiPlayerColumnWeights` and write one final YAML form without the alias |
 | alias and matching canonical field both present | do not resolve the conflict; reject per [[tmux-play-64](#tmux-play-64)] |
@@ -250,6 +265,7 @@ When the launcher authors the default home config from the installed-runtime set
 | Captain adapter and player IDs | Captain uses the first roster adapter; each player ID equals its adapter |
 | pinned roles | `claude` gets `model: claude-opus-4-8` and `effort: xhigh`; `codex` gets `model: gpt-5.5` and `effort: xhigh` |
 | every other adapter | omit `model` and `effort` so provider defaults apply, including Kimi's non-portable `off` / `on` vocabulary per [[tmux-play-56](#tmux-play-56)] |
+| fast mode | omit `fastMode` from the Captain and every player so generated configuration never selects an account-dependent paid serving mode |
 | both Claude and Codex installed | roster is Claude then Codex |
 | each player | include an `instruction` identifying it for the runtime-created `Cligent` |
 | Captain and each player | include `permissions: { mode: 'auto' }` per [[tmux-play-52](#tmux-play-52)], selecting each adapter's native protected-auto posture under [DR-005](../decisions/005-per-adapter-permission-configuration.md): Claude still blocks high-risk actions and falls back to prompts after deny thresholds; Codex maps unset capabilities to `on-request + auto_review` with `:workspace` per [[codex-4](adapters/codex.md#codex-4)] without broadening its filesystem or network profile; OpenCode retains configured rules but may answer a surviving permission ask `once` without a human, which it labels dangerous |
@@ -589,7 +605,7 @@ When a consumer imports `@sublang/cligent/tmux-play`, the sub-export shall expos
 
 | Surface | Contract |
 | --- | --- |
-| runtime factory input | instantiated `captain`; adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, and [[tmux-play-56](#tmux-play-56)] `effort`; an adapter-discriminated possibly-empty `players` array per [[tmux-play-7](#tmux-play-7)]; zero or more `observers`; optional `cwd`; optional session-scoped `signal` |
+| runtime factory input | instantiated `captain`; adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, [[tmux-play-56](#tmux-play-56)] `effort`, and [[tmux-play-206](#tmux-play-206)] `fastMode`; an adapter-discriminated possibly-empty `players` array per [[tmux-play-7](#tmux-play-7)]; zero or more `observers`; optional `cwd`; optional session-scoped `signal` |
 | runtime factory output | runtime that drives Boss turns without tmux |
 | record exports | the public record union and constituent record types for every type named by [[tmux-play-20](#tmux-play-20)], including `captain_reply` and `player_view_changed` |
 | observer export | observer-registration contract |
@@ -1204,13 +1220,13 @@ When tmux-play admits a player or Captain call, it shall resolve complete call s
 
 | Input or state | Admission outcome |
 | --- | --- |
-| `settings` omitted | use the configured model, effort, instruction, and permissions as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
-| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omission means none and no member merges with configured defaults |
-| supplied settings admitted | capture the object, selections, and permission data as a detached frozen snapshot before asynchronous work |
-| accessor, unknown field, incomplete selection, invalid effort vocabulary, or unenforceable setting | reject before the prompt record and provider run |
+| `settings` omitted | use the configured model, effort, [[tmux-play-206](#tmux-play-206)] `fastMode`, instruction, and permissions as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
+| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, whose optional `fastMode` is boolean, and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omitted `fastMode` selects provider default under [[engine-75](engine.md#engine-75)], other omission means none, and no member merges with configured defaults |
+| supplied settings admitted | capture the object, selections, fast-mode value, and permission data as a detached frozen snapshot before asynchronous work |
+| accessor, unknown field, incomplete selection, invalid effort vocabulary, non-boolean or adapter-unsupported fast mode under [[tmux-play-206](#tmux-play-206)], or another unenforceable setting | reject before the prompt record and provider run |
 | session selection | resolve the explicit token, forced-fresh selection, or stored automatic token exactly once at admission per [[tmux-play-41](#tmux-play-41)] and [[tmux-play-88](#tmux-play-88)], then give the same detached selection to reset preflight and `Cligent.run()` |
-| runtime-owned `Cligent` | carry none of the configured model, effort, instruction, or permissions defaults |
-| provider-default selector | omit that option from `Cligent.run()`, allowing Codex and Gemini defaults on fresh or resumed calls and Claude and OpenCode defaults on fresh calls |
+| runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, instruction, or permissions defaults |
+| provider-default selection | omit the selected model or effort, and omit `fastMode` under [[engine-75](engine.md#engine-75)] when absent from supplied settings, from `Cligent.run()`; never restore the configured role value |
 | concrete Gemini effort without a [[gemini-11](adapters/gemini.md#gemini-11)] model alias, or concrete OpenCode effort without an [[opencode-12](adapters/opencode.md#opencode-12)] variant | reject instead of silently ignoring the effort |
 | resumed Claude, provider-default model | reject because [[claude-code-6](adapters/claude-code.md#claude-code-6)] omission restores the transcript model |
 | resumed Claude, concrete model and provider-default effort | omit effort per [[claude-code-8](adapters/claude-code.md#claude-code-8)] so Claude uses that model's default |
@@ -1307,7 +1323,7 @@ Where the home and cwd are empty and the `claude` and `codex` adapter runtimes a
 
 | Observation | Assertion |
 | --- | --- |
-| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-opus-4-8`, `effort: xhigh`; `codex` uses `model: gpt-5.5`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }` [[tmux-play-11](#tmux-play-11)] |
+| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-opus-4-8`, `effort: xhigh`; `codex` uses `model: gpt-5.5`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }`; no role has `fastMode` [[tmux-play-11](#tmux-play-11)] |
 | authored layout and notifications | `layout.window: { columns: 174, rows: 49 }`, `layout.multiPlayerColumnWeights: [1, 1, 1]`, no authored `columnWeights`, and `notifications: { player_finished: bell, turn_finished: desktop }` [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)] |
 | stdout | one line naming the created path and the installed adapters used for the roster [[tmux-play-10](#tmux-play-10)] |
 | second invocation | the freshly created home YAML remains byte-for-byte unchanged [[tmux-play-90](#tmux-play-90)] |
@@ -2163,7 +2179,7 @@ When configuration loading selects notification or fallback-home behavior, the c
 | notifications omitted | loaded config and snapshot carry `off` for `player_finished`, `turn_finished`, and `turn_aborted` [[tmux-play-76](#tmux-play-76)], [[tmux-play-34](#tmux-play-34)] |
 | unknown key such as `runtime_error` | rejection names the offending `notifications.<key>` path [[tmux-play-76](#tmux-play-76)] |
 | sink outside `off`, `bell`, and `desktop` | rejection names the offending notification path [[tmux-play-76](#tmux-play-76)] |
-| fallback-discovered old home YAML missing safe defaults | update only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; preserve existing values; synthesize no `model`, `instruction`, `permissions`, or effort when neither effort key exists [[tmux-play-90](#tmux-play-90)] |
+| fallback-discovered old home YAML missing safe defaults | update only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; preserve existing values; synthesize no `model`, `instruction`, `permissions`, `fastMode`, or effort when neither effort key exists [[tmux-play-90](#tmux-play-90)] |
 
 ### tmux-play-176
 
@@ -2324,7 +2340,7 @@ When legacy-effort-like configuration input is loaded, the check shall assert th
 
 ### tmux-play-190
 
-Where a TypeScript consumer uses the public tmux-play declarations, the captain and player config types shall accept each adapter's own effort vocabulary and reject another adapter's provider-native value while retaining all non-effort runtime fields [[tmux-play-29](#tmux-play-29)], [[tmux-play-95](#tmux-play-95)].
+Where a TypeScript consumer uses the public tmux-play declarations, the captain and player config types shall accept each adapter's own effort vocabulary and reject another adapter's provider-native value while retaining every other field that the selected adapter's configuration member admits [[tmux-play-29](#tmux-play-29)], [[tmux-play-95](#tmux-play-95)].
 
 ### tmux-play-191
 
@@ -2361,7 +2377,7 @@ Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness, where 
 
 | Installed supported runtimes | Assertion |
 | --- | --- |
-| exactly one | created YAML wires the Captain and one player to that adapter, carries `model` and `effort` only where this project pins them for that adapter, and prints a stdout notice naming the adapter [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)] |
+| exactly one | created YAML wires the Captain and one player to that adapter, carries `model` and `effort` only where this project pins them, omits `fastMode` for every role, and prints a stdout notice naming the adapter [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)] |
 | more than two | generated roster uses the first two in canonical adapter order [[tmux-play-11](#tmux-play-11)] |
 | none | create no file; fail with every supported adapter and the commands that install its requirements [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)] |
 
@@ -2371,12 +2387,27 @@ Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness, when c
 
 | Input or state | Assertion |
 | --- | --- |
-| dot-delimited player IDs and concrete or provider-default selections | accept the IDs; apply detached settings without merging omitted instruction or permissions; use every enforceable provider default by omission; resolve explicit, forced-fresh, or automatic session selection once at admission for both reset preflight and the provider run [[tmux-play-7](#tmux-play-7)], [[tmux-play-41](#tmux-play-41)], [[tmux-play-93](#tmux-play-93)], [[tmux-play-94](#tmux-play-94)] |
-| accessor, unknown or incomplete value, adapter-invalid effort, unmappable Gemini alias or OpenCode variant, adapter-rejected permission policy, resumed Claude or OpenCode provider-default model, or unenforceable resumed-Kimi provider-default reset | fail before the prompt record and provider run while preserving the stored resume token [[tmux-play-93](#tmux-play-93)] |
+| dot-delimited player IDs, concrete or provider-default model and effort selections, and `fastMode` true, false, or omitted | accept the IDs; apply detached settings without merging omitted fast mode, instruction, or permissions; preserve explicit false; use every enforceable provider default by omission; resolve explicit, forced-fresh, or automatic session selection once at admission for both reset preflight and the provider run [[tmux-play-7](#tmux-play-7)], [[tmux-play-41](#tmux-play-41)], [[tmux-play-93](#tmux-play-93)], [[tmux-play-94](#tmux-play-94)] |
+| accessor, unknown or incomplete value, adapter-invalid effort, non-boolean or adapter-unsupported fast mode, unmappable Gemini alias or OpenCode variant, adapter-rejected permission policy, resumed Claude or OpenCode provider-default model, or unenforceable resumed-Kimi provider-default reset | fail before the prompt record and provider run while preserving the stored resume token [[tmux-play-93](#tmux-play-93)] |
 | supplied-settings rejection | expose an `AgentCallSettingsError` recognized by `isAgentCallSettingsError()`, preserving the prior message and original cause [[tmux-play-93](#tmux-play-93)] |
 | turn- or session-scope error, unknown-player error, provider execution failure, or observer dispatch error | `isAgentCallSettingsError()` returns false [[tmux-play-93](#tmux-play-93)] |
 | resumed OpenCode call with a concrete model and omitted permissions after an earlier call installed session rules | clear the prior Cligent-owned permission ruleset before dispatching the prompt [[tmux-play-93](#tmux-play-93)] |
 | resumed OpenCode call with a concrete model and provider-default effort after an earlier variant | clear the prior variant without rejecting [[tmux-play-93](#tmux-play-93)] |
+
+### tmux-play-208
+
+Where YAML Captain and player configurations under [[tmux-play-6](#tmux-play-6)] and [[tmux-play-7](#tmux-play-7)] exercise `fastMode` across every built-in adapter, when the launcher and session seam resolves them, the check shall assert this matrix:
+
+| Input | Assertion |
+| --- | --- |
+| `true` and `false` on Claude and Codex Captain and player roles | the exact boolean reaches the role call default under [[tmux-play-206](#tmux-play-206)] |
+| omitted on Claude and Codex | no role call override is created under [[tmux-play-206](#tmux-play-206)] |
+| non-boolean on Claude or Codex | nonzero startup failure names the exact Captain or player path and adapter under [[tmux-play-206](#tmux-play-206)] |
+| any present value, including `false`, on each of Gemini, OpenCode, and Kimi | nonzero startup failure names the exact Captain or player path and adapter, starts no runtime, and emits no `runtime_error` under [[tmux-play-206](#tmux-play-206)] |
+
+### tmux-play-209
+
+Where a TypeScript consumer uses the public tmux-play declarations, the type-level check shall assert [[tmux-play-29](#tmux-play-29)] and [[tmux-play-207](#tmux-play-207)] acceptance of `fastMode?: boolean` on Claude and Codex Captain, player, and runtime configuration members and rejection on the Gemini, OpenCode, and Kimi members while retaining every non-fast-mode field.
 
 ### tmux-play-203
 

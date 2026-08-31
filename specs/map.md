@@ -46,6 +46,7 @@ meta.md       The spec of specs
 | [DR-018](decisions/018-ndjson-end-of-stream-tail.md) | 018-ndjson-end-of-stream-tail.md | NDJSON end-of-stream tail handling |
 | [DR-019](decisions/019-superseded-item-retirements.md) | 019-superseded-item-retirements.md | Superseded-item retirement and permanent ID reservations |
 | [DR-020](decisions/020-audited-release-preparation.md) | 020-audited-release-preparation.md | Audited release-preparation evidence |
+| [DR-021](decisions/021-agent-runtime-fast-mode.md) | 021-agent-runtime-fast-mode.md | Adapter-scoped fast-mode requests and authentic observations |
 
 ## Packages
 

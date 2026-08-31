@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns how a portable request becomes an SDK query and how that query's stream becomes unified events, permission decisions, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns how a portable request becomes an SDK query, including native fast-mode selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -211,6 +211,35 @@ When the adapter maps the Claude-specific `AgentOptions.effort` vocabulary in [[
 
 Where `AgentOptions.effort` is `ultracode`, when the adapter maps the same permission input with and without that effort, it shall leave every permission control unchanged.
 
+### Fast Mode
+
+### claude-code-52
+
+When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Claude SDK settings matrix per [[4]], [[5]], and [[7]] while preserving [[claude-code-8](#claude-code-8)]'s independently selected `settings.ultracode` value in the same settings object:
+
+| `AgentOptions.fastMode` | `settings.fastMode` | `settings.fastModePerSessionOptIn` |
+| --- | --- | --- |
+| omitted | omitted | omitted |
+| `true` | `true` | omitted |
+| `false` | `false` | omitted |
+
+Every combination with omitted effort, ordinary effort, and `ultracode` retains both independently selected settings without one replacing the other.
+
+### claude-code-53
+
+When the adapter normalizes Claude SDK initialization or terminal result data, it shall map authentic fast-mode members into [[engine-78](../engine.md#engine-78)] through this matrix per [[4]], [[6]], and [[7]]:
+
+| SDK source member | Unified member |
+| --- | --- |
+| streamed `system/init.fast_mode_state` | `InitPayload.fastMode.state` |
+| streamed `system/init.fast_mode_disabled_reason` | `InitPayload.fastMode.disabledReason` |
+| success or error result `fast_mode_state` | `DonePayload.fastMode.state` |
+| success or error result `fast_mode_disabled_reason` | `DonePayload.fastMode.disabledReason` |
+| success or error result `usage.speed` | `DonePayload.fastMode.responseSpeed` |
+| absent source member | omit the corresponding member and omit `fastMode` when no member remains |
+
+Every present value is forwarded verbatim, `cooldown` remains state without an invented disabled reason, and `AgentOptions.fastMode` never becomes an observation source.
+
 ### Terminal Results
 
 ### claude-code-24
@@ -393,6 +422,14 @@ Given every Claude effort input, when the adapter maps a run, the verification s
 - `ultracode` leaves the same permission input's controls unchanged [[claude-code-23](#claude-code-23)]; and
 - another adapter's value or an unknown string is rejected before backend invocation with the adapter and allowed values named and, when accompanied by a live caller signal, leaves no caller listener registered after rejection [[claude-code-33](#claude-code-33)].
 
+### claude-code-54
+
+Where `fastMode` omitted, `true`, and `false` are crossed with omitted effort, ordinary effort, and `ultracode`, when the adapter reaches the Claude SDK boundary, the check shall assert [[claude-code-52](#claude-code-52)]'s exact `settings.fastMode`, `settings.ultracode`, and absent `settings.fastModePerSessionOptIn` values in one settings object.
+
+### claude-code-55
+
+Where SDK initialization plus success and error results cover every fast-mode state, every disabled reason, both response speeds, cooldown without a reason, and absent members, when the adapter emits unified events, the check shall assert [[claude-code-53](#claude-code-53)]'s exact init and done mappings, omissions, verbatim values, and no-request-echo rule.
+
 ### claude-code-219
 
 Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the adapter's auto-mode SDK knobs per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) shall let both non-destructive writes proceed without interactive approval [[claude-code-4](#claude-code-4)]:
@@ -465,3 +502,7 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
 [2]: https://code.claude.com/docs/en/workflows#let-claude-decide-with-ultracode "Claude Code workflows: let Claude decide with ultracode"
 [3]: https://code.claude.com/docs/en/agent-sdk/cost-tracking "Claude Code cost and usage tracking"
+[4]: https://code.claude.com/docs/en/fast-mode "Claude Code fast mode"
+[5]: https://code.claude.com/docs/en/agent-sdk/typescript "Claude Agent SDK TypeScript reference"
+[6]: https://platform.claude.com/docs/en/build-with-claude/fast-mode#checking-which-speed-was-used "Checking which Claude serving speed was used"
+[7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.251/sdk.d.ts "Claude Agent SDK 0.3.251 declarations"

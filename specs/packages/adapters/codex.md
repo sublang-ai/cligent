@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Codex through the `@openai/codex-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns how a portable request becomes a Codex thread, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
+It owns how a portable request becomes a Codex thread, including native fast-tier selection, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery, observation limits, and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 Further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the generated extra-writes profile this adapter names and delivers, and the programmatic working directory that motivates bypassing the interactive git-repository gate.
 
@@ -256,6 +256,24 @@ When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [
 ### codex-35
 
 Where `AgentOptions.effort` is `ultra`, when the adapter maps the same permission input with and without that effort, it shall leave every permission profile, approval, reviewer, legacy-control omission, writable-path mapping, and configuration-isolation control unchanged.
+
+### Fast Mode
+
+### codex-55
+
+When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Codex constructor-configuration matrix per [[9]], [[10]], [[11]], and [[12]] while preserving [[codex-4](#codex-4)] permission configuration, [[codex-7](#codex-7)] effort configuration, and [[codex-31](#codex-31)] configuration isolation in the same `CodexOptions.config` object:
+
+| `AgentOptions.fastMode` | `config.service_tier` | `config.features.fast_mode` |
+| --- | --- | --- |
+| omitted | omitted | omitted |
+| `true` | `'fast'` | `true` |
+| `false` | `'default'` | `true` |
+
+Every row retains independent `default_permissions`, `approvals_reviewer`, `model_reasoning_effort`, and other feature values, with `false` selecting Codex's native default tier rather than disabling the fast-mode feature mechanism.
+
+### codex-56
+
+While the public Codex SDK event stream exposes no effective service-tier result per [[12]], when the adapter emits unified init or done events, it shall omit [[engine-78](../engine.md#engine-78)]'s fast-mode observation even where the caller requested `fastMode`, never promoting constructor configuration to observed state.
 
 ### codex-11
 
@@ -515,6 +533,14 @@ Given every top-level, nested, object-valued, JSON-encoded, absent, and priority
 
 Given every Codex effort value, omission, foreign value, and unknown value, when the adapter maps a run, it shall produce [[codex-7](#codex-7)]'s exact transport or pre-backend rejection with `ultra` leaving every permission control unchanged per [[codex-35](#codex-35)].
 
+### codex-57
+
+Where `fastMode` omitted, `true`, and `false` are crossed with native and isolated configuration, supplied permissions, and ordinary, `max`, and `ultra` effort, when the adapter reaches the Codex SDK boundary, the check shall assert [[codex-55](#codex-55)]'s exact tier and feature values in one merged configuration object without losing any independent permission, effort, isolation, or feature field.
+
+### codex-58
+
+Where Codex init, completion, failure, and stream-exhaustion outcomes follow omitted and explicit fast-mode requests, when the adapter emits unified events, the check shall assert [[codex-56](#codex-56)]'s absence of fast-mode observation and requested-value echoes.
+
 ### codex-219
 
 Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions = { mode: 'auto' }`, when `run()` is invoked first to create and then to update a temporary file in a throwaway working directory, the adapter's auto-mode Codex knobs per [DR-005](../../decisions/005-per-adapter-permission-configuration.md) shall let both non-destructive writes proceed without interactive approval [[codex-4](#codex-4)]:
@@ -580,3 +606,7 @@ Given repeated executable-resolution or wrapper-setup failures on one caller sig
 [6]: https://github.com/openai/codex/blob/rust-v0.151.0/sdk/typescript/src/events.ts#L20-L38 'Codex SDK 0.151.0 turn usage'
 [7]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/protocol/src/protocol.rs#L2169-L2198 'Codex 0.151.0 token-usage protocol'
 [8]: https://nodejs.org/api/esm.html#importmetaresolvespecifier "Node.js import.meta.resolve"
+[9]: https://learn.chatgpt.com/docs/agent-configuration/speed "Codex speed"
+[10]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/core/config.schema.json "Codex 0.151.0 configuration schema"
+[11]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/tui/src/chatwidget/service_tiers.rs "Codex 0.151.0 fast-tier selection"
+[12]: https://unpkg.com/@openai/codex-sdk@0.151.0/dist/index.d.ts "Codex SDK 0.151.0 public event declarations"

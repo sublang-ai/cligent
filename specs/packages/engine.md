@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
-It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, runtime readiness, and the shape of an authentic usage report — not how any one adapter reaches those outcomes.
+It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, runtime readiness, and the shape of an authentic usage report — not how any one adapter reaches those outcomes.
 Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
@@ -20,7 +20,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | Input | Contract |
 | --- | --- |
 | `AgentAdapter` | required adapter |
-| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `allowedTools`, and `disallowedTools` |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `allowedTools`, and `disallowedTools` |
 | `abortSignal` and `resume` | excluded from instance defaults and available only in `RunOptions` |
 
 ### engine-2
@@ -36,7 +36,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `permissions` object | merge by member, with a provided per-call member taking precedence |
 | `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
-| another scalar shared by both option types | use the per-call value when provided, otherwise the instance default |
+| `fastMode` or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
 | `abortSignal` or `resume` | accept only the per-call value because neither field exists in instance defaults |
 
 ### engine-4
@@ -297,6 +297,92 @@ When an effort helper receives an unknown adapter or unsupported value, it shall
 
 Where a metadata-accepted effort is unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter shall expose that upstream failure through its normal error path without substituting another effort.
 
+### Fast Mode
+
+### engine-74
+
+Per [DR-021](../decisions/021-agent-runtime-fast-mode.md), the public statically adapter-bound surfaces shall preserve a defaulted fast-mode capability parameter `FM extends boolean = never` through this matrix:
+
+| Surface or adapter | Contract |
+| --- | --- |
+| `AgentAdapter<E, FM>`, `AgentOptions<E, FM>`, `CligentOptions<E, FM>`, `RunOptions<E, FM>`, and `Cligent<E, FM>` | expose `fastMode?: FM` and retain `FM` through constructor defaults and run overrides |
+| `Cligent.parallel()` and `runParallel()` | preserve each source adapter's `FM` independently |
+| Claude Code or Codex | bind `boolean` |
+| Gemini, OpenCode, or Kimi | bind `never`, making an explicit boolean a compile-time error |
+| custom adapter omitting `FM` | default to `never` |
+| custom adapter opting in | bind `boolean` |
+| existing single-parameter generic source | remain source- and assignment-compatible when it does not supply `fastMode`, including assignment of an inferred supported or unsupported adapter and `Cligent` instance to its existing `AgentAdapter<E>` or `Cligent<E>` annotation |
+
+### engine-75
+
+When a `fastMode` option reaches a typed or dynamic adapter path, Cligent shall select this outcome per [DR-021](../decisions/021-agent-runtime-fast-mode.md):
+
+| Input and adapter | Outcome |
+| --- | --- |
+| omitted | add no Cligent fast-mode override |
+| `true` on a request-supported adapter | forward the adapter's native fast request |
+| `false` on a request-supported adapter | forward the adapter's native standard or off request |
+| a defined non-boolean value on a request-supported built-in adapter | reject before backend invocation with an error naming the adapter, validation path, and expected boolean type |
+| any defined value, including `false`, on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
+| any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
+| legacy name-based mutable-registry path | accept `AgentOptions<string, boolean>` without claiming compile-time name-to-capability correlation |
+
+### engine-76
+
+The exported `FAST_MODE_SUPPORT` object shall be deeply frozen at runtime and expose immutable descriptors, including `notes`, through this adapter-transport matrix without promising selected-model, account, provider, policy, network, or installed-runtime availability:
+
+| Adapter | `requestSupported` | `observation` | `modelDependent` | `accountDependent` |
+| --- | ---: | --- | ---: | ---: |
+| `claude-code` | `true` | `'init-and-done'` | `true` | `true` |
+| `codex` | `true` | `'none'` | `true` | `true` |
+| `gemini` | `false` | `'none'` | `false` | `false` |
+| `opencode` | `false` | `'none'` | `false` | `false` |
+| `kimi` | `false` | `'none'` | `false` | `false` |
+
+The `notes` define support as native-request delivery, disclose Claude's authentic init-and-terminal observation under [[claude-code-53](adapters/claude-code.md#claude-code-53)], disclose Codex's lack of an effective-tier SDK event under [[codex-56](adapters/codex.md#codex-56)], and state that the other three adapters expose no native request surface under [[engine-75](#engine-75)].
+
+### engine-77
+
+The public `getFastModeSupport()`, `isFastModeSupported()`, and `assertFastModeSupported()` helpers shall read the same [[engine-76](#engine-76)] data and select this result:
+
+| Input and helper | Result |
+| --- | --- |
+| `claude` alias | resolve to `claude-code` |
+| known adapter; `getFastModeSupport()` | its frozen descriptor |
+| known adapter; `isFastModeSupported()` | its `requestSupported` value |
+| known unsupported adapter; `assertFastModeSupported()` | error naming the adapter and validation path |
+| unknown adapter; `getFastModeSupport()` | `undefined` |
+| unknown adapter; `isFastModeSupported()` | `false` |
+| unknown adapter; `assertFastModeSupported()` | error naming the adapter and validation path |
+
+### engine-78
+
+The public fast-mode observation types and payload members shall preserve only authentic upstream observations through this matrix per [DR-021](../decisions/021-agent-runtime-fast-mode.md):
+
+| Member or source state | Contract |
+| --- | --- |
+| `FastModeObservation<RS extends FastModeResponseSpeed = never>` | state and disabled-reason members plus `responseSpeed?: RS`, with the default `never` forbidding response speed |
+| `InitPayload.fastMode` | optional default `FastModeObservation` |
+| `DonePayload.fastMode` | optional `FastModeTerminalObservation` |
+| `FastModeTerminalObservation` | alias of `FastModeObservation<FastModeResponseSpeed>` |
+| `state` | optional `FastModeState` value `'off' \| 'cooldown' \| 'on'` |
+| `disabledReason` | optional `FastModeDisabledReason` value `'free' \| 'preference' \| 'extra_usage_disabled' \| 'network_error' \| 'unknown' \| 'not_first_party' \| 'disabled_by_env' \| 'model_not_allowed' \| 'sdk_opt_in_required' \| 'pending'` |
+| `responseSpeed` | optional `FastModeResponseSpeed` value `'standard' \| 'fast'`, scoped to the response represented by the upstream terminal usage rather than every internal model request |
+| one or more observed members | emit one observation object containing exactly those members |
+| no observed member | omit `fastMode` entirely |
+| requested option without observation | never echo it as observation or synthesize `off`, `unknown`, or another placeholder |
+| upstream `cooldown` without a disabled reason | preserve only the state and invent no reason |
+
+### engine-79
+
+Where [[engine-76](#engine-76)] marks an adapter request-supported but fast mode is unavailable to the selected model, account, provider, policy, network, or installed runtime, when the backend determines the outcome, the adapter shall preserve it without Cligent substitution through this matrix:
+
+| Backend outcome | Cligent outcome |
+| --- | --- |
+| refusal | expose the ordinary upstream error path without substituting another fast-mode request |
+| native standard-speed fallback or cooldown | preserve the ordinary backend completion and any authentic [[engine-78](#engine-78)] observation without manufacturing an error or fast-delivery claim |
+| no effective-tier observation | emit no placeholder or requested-value echo |
+
 ### Permission Policy Mode
 
 ### engine-21
@@ -480,7 +566,7 @@ When `run()` is called while a previous `run()` generator is still active on the
 
 ### engine-103
 
-Given instance defaults and per-call overrides, when `run()` invokes the adapter, the check shall assert every [[engine-3](#engine-3)] field-selection row, including per-call replacement of `permissions.writablePaths`, `allowedTools`, and `disallowedTools` arrays.
+Where instance defaults and per-call overrides are supplied, when `run()` invokes the adapter, the check shall assert every [[engine-3](#engine-3)] field-selection row, including per-call replacement of `permissions.writablePaths`, `allowedTools`, and `disallowedTools` arrays plus both `fastMode` boolean override directions.
 
 ### engine-104
 
@@ -550,6 +636,22 @@ Where a consumer imports effort metadata and helpers from the public entry point
 ### engine-117
 
 Where a custom adapter is registered through the legacy mutable registry, when `runAgent()` receives a custom effort, the runtime check shall assert exact forwarding under [[engine-45](#engine-45)].
+
+### engine-80
+
+Where a TypeScript consumer uses the public fast-mode API, the type-level check shall assert [[engine-1](#engine-1)] constructor-option placement; [[engine-74](#engine-74)] built-in, custom, direct, and heterogeneous-parallel capability correlation; source and assignment compatibility for existing single-parameter `AgentAdapter<E>`, `AgentOptions<E>`, `CligentOptions<E>`, `RunOptions<E>`, and `Cligent<E>` uses that omit `fastMode`; and [[engine-78](#engine-78)] observation member unions and phase availability, including rejection of a named terminal-observation value on `InitPayload`.
+
+### engine-81
+
+Where a consumer imports fast-mode metadata and helpers from the public entry point, the check shall assert [[engine-76](#engine-76)] deep immutability, every descriptor row, and required notes content plus [[engine-77](#engine-77)] alias, known-adapter, unsupported-adapter, and unknown-adapter outcomes.
+
+### engine-82
+
+Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-75](#engine-75)] omitted, boolean, malformed-value, and custom-validation outcomes, [[engine-3](#engine-3)] explicit-false precedence, [[engine-74](#engine-74)] custom opt-in, and pre-backend rejection for Gemini, OpenCode, and Kimi.
+
+### engine-83
+
+Where request-supported adapter integrations produce refusal, standard-speed fallback, cooldown, authentic partial observation, and no-observation outcomes, when their unified streams are consumed, the check shall assert every [[engine-79](#engine-79)] outcome and [[engine-78](#engine-78)] omission, verbatim-value, response-scope, and no-placeholder rule.
 
 ### engine-68
 
