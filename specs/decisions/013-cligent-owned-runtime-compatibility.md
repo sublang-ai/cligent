@@ -77,13 +77,13 @@ Those installs now fail loudly with a remedy rather than silently producing a wr
 Raising a supported floor makes an older runtime that still worked refuse to load.
 The floor therefore moves only on a cligent MINOR release, and the release notes name it.
 
-Any future consented-provisioning decision that amends [DR-012](012-runtime-derived-tmux-play-defaults.md)'s no-install boundary must also settle these compatibility-owned questions:
+The rendered-version choice is already settled: every rendered `npm install` remedy uses [[package-16](../packages/package.md#package-16)]'s descriptor-owned package specifier pinned to the exact tested version.
+Any future consented-provisioning decision must execute that displayed specifier unchanged so manual and consented remedies cannot diverge, and must also settle these remaining compatibility-owned questions:
 
 1. **Export location.** Reusing `./tmux-play` avoids a manifest change but names package-level compatibility facts after an app; the root already carries cross-cutting APIs; a dedicated subpath is clearest but adds the most public surface.
-2. **Installed version.** Running an unpinned rendered command can diverge from the conformance target, while pinning it changes the repair command and must remain coherent with the descriptor's tested and supported versions.
-3. **Stale-lock policy.** A crashed provisioning holder can block successors; cross-container liveness checks are unreliable, but timed unlink can reintroduce the race.
+2. **Stale-lock policy.** A crashed provisioning holder can block successors; cross-container liveness checks are unreliable, but timed unlink can reintroduce the race.
    Falling back to the exact printed remedy after a bounded wait preserves safety without claiming the target tree changed.
-4. **Placement probe.** Any scoped peer can prove the structural installation invariant; using the largest peer additionally exercises the cold-install timeout bound but makes the verification slowest.
+3. **Placement probe.** Any scoped peer can prove the structural installation invariant; using the largest peer additionally exercises the cold-install timeout bound but makes the verification slowest.
 
 This decision supersedes no earlier decision.
-It constrains [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the compatibility target and remedy facts that any future consented-install decision must honor without choosing whether its rendered command is pinned.
+It constrains [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the compatibility target and exact installation repair that any future consented-install decision must honor.

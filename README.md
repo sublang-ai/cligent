@@ -66,10 +66,11 @@ kimi login
 Adapters reuse each vendor's own authentication from your environment —
 a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
 (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.39.1 ACP accepts any
-of three: the OAuth credential created by `kimi login`, a configured default
-model whose provider holds non-OAuth credentials, or `KIMI_MODEL_NAME` plus
-`KIMI_MODEL_API_KEY`. A bare `MOONSHOT_API_KEY` is not one of them, because
-it names no default model.
+of three: stored OAuth material resolved from the default model or reported
+by any logged-in provider, including after `kimi login`; a configured
+default-model alias resolving to non-OAuth credentials; or `KIMI_MODEL_NAME`
+plus `KIMI_MODEL_API_KEY`. A bare `MOONSHOT_API_KEY` is not one of them,
+because it names no default model.
 Cligent stores no credentials and never starts an authentication flow itself.
 
 Runtime and declaration requirements:

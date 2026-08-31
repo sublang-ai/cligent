@@ -698,7 +698,7 @@ When launcher mode per [[tmux-play-2](#tmux-play-2)] evaluates a loaded configur
 | Runtime or repair state | Outcome |
 | --- | --- |
 | every configured runtime is installed at or above the version [[package-16](package.md#package-16)] declares supported | proceed; a version above the tested version does not block launch |
-| runtime package specifier or follow-up step in repair output | render [[package-16](package.md#package-16)]'s descriptor value exactly; maintain no independent adapter-to-package, version, or step mapping |
+| `npm install` package specifier or follow-up step in repair output | render [[package-16](package.md#package-16)]'s installation-repair package specifier or follow-up step exactly; maintain no independent adapter-to-package, version, or step mapping |
 | one or more runtimes are absent or below the supported version | fail after configuration resolution but before creating a work directory, log directory, snapshot, tmux session, attachment, or model request; report every unmet adapter in one error, its roles, its repair commands, and the configuration path to edit |
 | runtime is installed below the supported version | name the installed and required versions rather than report it absent |
 | adapter imports an optional peer SDK | require it in the tree the running `@sublang/cligent` resolves from |
@@ -707,7 +707,7 @@ When launcher mode per [[tmux-play-2](#tmux-play-2)] evaluates a loaded configur
 | project peer-SDK repair | set both npm `global` and `location` to their non-global values |
 | global peer-SDK repair | assert npm global mode, which wins the `global` / `location` disjunction |
 | install-scope classification | derive global versus project-local from the running package's own tree and its defining manifest, never from the working directory |
-| no `npm install` invocation reaches the resolved tree | print no peer-SDK install command; name the package and target tree and report that no command reaches it |
+| no `npm install` invocation reaches the resolved tree | print no peer-SDK install command; name the descriptor's runtime package identity and target tree and report that no command reaches it |
 | vendor credential is absent | leave it outside this install gate to surface as the provider's run-time error |
 | gate ordering | run after [[tmux-play-51](#tmux-play-51)]'s config-independent `tmux` and `glow` checks |
 | bare `npm install` destination | do not infer it from the launching process, which cannot witness the paste-time shell's global prefix or nearest project; rely on command-line `--prefix` and scope settings that outrank environment and project discovery |
@@ -2343,7 +2343,7 @@ Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness, when l
 | Runtime or installation state | Assertion |
 | --- | --- |
 | one unmet adapter used by one or more roles | issue no tmux command; fail the invocation; name the adapter once, every role using it, the commands that install its requirements, and the config path to edit [[tmux-play-89](#tmux-play-89)] |
-| descriptor-owned repair data | every rendered package specifier and follow-up step equals the runtime descriptor's value [[tmux-play-89](#tmux-play-89)] |
+| descriptor-owned installation repair | every rendered `npm install` package specifier and follow-up step equals the runtime descriptor's installation-repair value [[tmux-play-89](#tmux-play-89)] |
 | several unmet adapters | name every adapter rather than stopping at the first [[tmux-play-89](#tmux-play-89)] |
 | every configured adapter runtime installed | proceed to session construction [[tmux-play-89](#tmux-play-89)], [[tmux-play-2](#tmux-play-2)] |
 | every peer-SDK command | name the resolved tree with `--prefix` and pin install scope on the command line; accept no bare form because the launching process cannot witness the environment or working directory of the shell where the command is pasted [[tmux-play-89](#tmux-play-89)] |
@@ -2353,7 +2353,7 @@ Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness, when l
 | reported installation tree | use the `node_modules` root the adapters resolve from; leave a layout the canned command cannot repair diagnosable [[tmux-play-89](#tmux-play-89)] |
 | `--prefix` path that a shell would split | print it quoted while retaining the reported tree as its target [[tmux-play-89](#tmux-play-89)] |
 | project install invoked from another working directory | classify it by the manifest at its install root rather than the working directory [[tmux-play-89](#tmux-play-89)] |
-| resolved tree unreachable by any `npm install` invocation | print no peer-SDK install command; name the package and the tree where it must be placed [[tmux-play-89](#tmux-play-89)] |
+| resolved tree unreachable by any `npm install` invocation | print no peer-SDK install command; name the descriptor's runtime package identity and the tree where it must be placed [[tmux-play-89](#tmux-play-89)] |
 
 ### tmux-play-193
 

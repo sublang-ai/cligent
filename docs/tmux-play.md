@@ -36,8 +36,10 @@ missing runtime is a message on your terminal rather than an error on your
 first prompt inside tmux. Credentials are not part of that check: they are
 each vendor's own state and surface when a turn runs. Kimi in particular
 needs one of its ACP authentication routes after its pinned CLI is
-installed: `kimi login`, a configured default model whose provider holds
-non-OAuth credentials, or `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY`.
+installed: stored OAuth material resolved from the default model or reported
+by any logged-in provider, including after `kimi login`; a configured
+default-model alias resolving to non-OAuth credentials; or `KIMI_MODEL_NAME`
+plus `KIMI_MODEL_API_KEY`.
 
 ## Config
 

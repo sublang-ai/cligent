@@ -11,25 +11,28 @@
  *
  * Two versions per runtime, deliberately distinct:
  *
- * - `supportedFrom` is the lowest version that satisfies both halves of the
- *   floor rule: it supports every current model of that provider, and this
- *   adapter supports it. It is the published `peerDependencies` floor, and
- *   it blocks: below it the runtime refuses to load. It is established by
- *   checking the published runtimes, not by copying the tested version,
- *   because a floor set too high refuses installs that work.
- * - `tested` is the exact version CI verifies, the `devDependencies` pin.
- *   Above it a runtime still loads, reported as untested rather than as
- *   unsupported, because a version this release never saw is not thereby
- *   broken.
+ * - `supportedFrom` is the lowest version that serves every provider model or
+ *   route on which this release's declared adapter behavior depends and
+ *   supplies every runtime surface the adapter drives. It blocks: below it
+ *   the runtime refuses to load.
+ *   For a peer target it is also the published `peerDependencies` floor.
+ *   It is established by checking the published runtimes, not by copying
+ *   the tested version, because a floor set too high refuses installs that
+ *   work.
+ * - `tested` is the exact version CI verifies: a peer target's
+ *   `devDependencies` pin or a CLI target's exact CI install. Above it a
+ *   runtime still loads, reported as untested rather than as unsupported,
+ *   because a version this release never saw is not thereby broken.
  *
- * The gap between them is intentional and is not published as an upper bound:
- * npm intersects an optional peer range into version selection, so an upper
- * bound in `peerDependencies` silently resolves an older SDK with no error.
- * The ceiling therefore lives here and is enforced at load.
+ * For peer targets, the gap between them is intentional and is not published
+ * as an upper bound: npm intersects an optional peer range into version
+ * selection, so an upper bound in `peerDependencies` silently resolves an
+ * older SDK with no error. The ceiling therefore lives here and is enforced
+ * at load.
  *
- * Repository verification asserts every version below equals the manifest's
- * peer range and exact development pin, so this file and `package.json`
- * cannot drift apart.
+ * Repository verification derives its expectations from this descriptor,
+ * asserts peer targets match the manifest's range and development pin, and
+ * checks CLI targets against their exact CI installs.
  */
 
 /** How a runtime is found, which decides how its version is read and repaired. */
@@ -42,7 +45,7 @@ export type RuntimeKind =
 export type RuntimeTarget = {
   /** npm package name; for a `cli`, the package that installs the executable. */
   readonly package: string;
-  /** Lowest supported version — the published peer floor. Blocks below. */
+  /** Lowest supported version. Blocks below; also the peer floor for peers. */
   readonly supportedFrom: string;
   /** Exact version this release verifies. Above it is untested, not unsupported. */
   readonly tested: string;
@@ -119,8 +122,9 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // `gpt-5.6-pro` slug too and set the floor at 0.145.0; the binary
       // itself refutes that — "GPT-5.6 Pro is a Responses reasoning mode on
       // the base model, not a separate `gpt-5.6-pro` slug" — so string
-      // presence was never evidence of a route. 0.139.0, the runtime
-      // DR-013 was written about, remains refused.
+      // presence was never evidence of a route. 0.143.0 predates all three
+      // routes; 0.139.0, the runtime DR-013 was written about, remains
+      // refused.
       supportedFrom: '0.144.0',
       tested: '0.151.0',
       // The adapter spawns this executable, and it is what refuses a model
@@ -150,10 +154,11 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: '@moonshot-ai/kimi-code',
       repairSpec: '@moonshot-ai/kimi-code@0.39.1',
       command: 'kimi',
-      // The release that added the non-OAuth ACP route kimi-21 documents:
+      // The first release whose then-current legacy ACP gate admitted a
+      // configured default model with non-OAuth credentials:
       // `hasUsableConfiguredDefaultModel` is present in 0.28.1 and absent
-      // in 0.28.0. A floor at the tested version would refuse 0.28.1
-      // through 0.30.x, which serve every route this adapter uses.
+      // in 0.28.0. Version 0.28.1 also negotiates ACP protocol version 1,
+      // the protocol surface the paired SDK and this adapter drive.
       supportedFrom: '0.28.1',
       tested: '0.39.1',
       steps: Object.freeze(['kimi login  # or configure a default model']),
@@ -164,10 +169,9 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       kind: 'peer' as const,
       package: '@opencode-ai/sdk',
       repairSpec: '@opencode-ai/sdk@1.18.25',
-      // 1.18.12 fixed GPT-5.5+ completion requests failing when reasoning
-      // is enabled — the route this adapter drives whenever `effort` maps
-      // to a reasoning variant — so an earlier version admits a model path
-      // known to fail.
+      // 1.18.11 still fails GPT-5.5+ completion requests when reasoning is
+      // enabled; 1.18.12 fixed that route, which this adapter drives whenever
+      // `effort` maps to a reasoning variant.
       supportedFrom: '1.18.12',
       tested: '1.18.25',
     }),
@@ -176,7 +180,8 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: 'opencode-ai',
       repairSpec: 'opencode-ai@1.18.25',
       command: 'opencode',
-      // package-23 requires the SDK and CLI conformance targets to match.
+      // The managed CLI serves the same 1.18.12 reasoning-route boundary as
+      // the SDK above; package-23 requires their conformance targets to match.
       supportedFrom: '1.18.12',
       tested: '1.18.25',
     }),

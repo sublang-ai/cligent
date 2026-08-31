@@ -126,11 +126,16 @@ export function inspectClaudeSdkSelectedBinary(
 
 export function verifySdkTargets() {
   const manifest = readJson(join(repoRoot, 'package.json'));
-  // package-26 / package-27: expected values come from the descriptor; the
-  // manifest must agree. A divergence fails here rather than at a user's
-  // first turn.
+  // package-16 / package-26 / package-27: repair and expected-version values
+  // come from the descriptor; the descriptor and manifest must remain
+  // coherent. A divergence fails here rather than at a user's first turn.
   for (const [adapter, targets] of Object.entries(AGENT_RUNTIME_TARGETS)) {
     for (const target of targets) {
+      assertEqual(
+        target.repairSpec,
+        `${target.package}@${target.tested}`,
+        `${target.package} repair spec matches the exact tested version`,
+      );
       if (target.kind !== 'peer') continue;
       assertEqual(
         manifest.peerDependencies?.[target.package],

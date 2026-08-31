@@ -47,9 +47,11 @@ Each agent SDK optional-peer-dependency range shall have this shape:
 
 ### package-17
 
-When an agent SDK optional-peer floor in [[package-9](#package-9)] is reviewed, maintainers shall apply this change policy:
+When an agent-runtime supported floor in the descriptor under [[package-16](#package-16)] is selected or reviewed, maintainers shall apply this compatibility-floor policy:
 
-- dependence on a newer SDK surface raises the floor to the first version carrying that surface;
+- select the lowest published version that serves every provider model or route on which this release's declared adapter behavior depends and supplies every runtime surface the adapter drives;
+- record beside the descriptor target the concrete capability and adjacent published-version evidence establishing that floor;
+- dependence on a newer runtime surface raises the floor to the first version carrying that surface;
 - a version that can no longer serve the adapter's users, including a vendor runtime the SDK bundles and selects, permits the floor to rise past that version; and
 - every rise ships only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because the new floor refuses a version that previously loaded.
 
@@ -106,7 +108,7 @@ When the Kimi conformance target in [[package-23](#package-23)] is checked, repo
 
 ### package-25
 
-The exact conformance target and the optional-peer floor in [[package-9](#package-9)] shall remain independently declared compatibility values, with the target naming the tested version and the floor naming the lowest supported version, neither derived from the other automatically.
+For every runtime record in [[package-16](#package-16)], the exact conformance target and supported floor shall remain independently declared compatibility values, with the target naming the tested version and the floor naming the lowest supported version, neither derived from the other automatically.
 
 ### package-26
 
@@ -133,7 +135,8 @@ When a known vulnerability is remediated, the remediation shall retain the Node 
 The distributable shall publish a runtime descriptor containing one complete target record for every runtime each built-in adapter requires:
 
 - the record identifies one compatibility and readiness authority: an npm package resolved from the installed `@sublang/cligent` tree, an executable found through `PATH`, or a vendor package selected through a resolved SDK's own resolution path;
-- the record declares that authority's exact tested version, supported version range, and installation repair;
+- the record declares that authority's exact tested version and supported version range;
+- the record's installation repair consists of a package specifier pinned to that exact tested version and zero or more exact follow-up steps;
 - where the descriptor names an SDK-selected vendor package as the authority, its readiness version lookup requires the SDK manifest to declare that dependency and the exact version reached through the SDK's physical resolution path to match the declaration [[engine-25](engine.md#engine-25)]; and
 - where a version-tied SDK remains the authority and its own metadata describes the executable it selects, repository conformance reports only what that metadata exposes, requires two exposed versions to agree before reporting consistency as `'verified'`, and reports an absent identity, version, or cross-source consistency check as `'unreported'` rather than inferring one from another package, `PATH`, or an independent literal.
 
@@ -240,8 +243,8 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 - a descriptor-named Codex vendor package's readiness version is declared by the installed Codex SDK, resolved through its physical dependency path rather than from an unrelated package in cligent's dependency roots, and equals the exact version the SDK declares [[package-16](#package-16)];
 - the OpenCode targets match and the exact Kimi SDK and CLI targets are paired [[package-23](#package-23)];
 - the `kimi acp` command initializes successfully [[package-24](#package-24)];
-- every floor change follows the reasons and release level in [[package-17](#package-17)], and tested versions remain independent of supported floors [[package-25](#package-25)];
-- the descriptor carries every required runtime identity, version, range, and repair [[package-16](#package-16)] and supplies repository verification's expected tested versions and floors [[package-26](#package-26)]; and
+- every declared floor carries the concrete adjacent-version evidence in [[package-17](#package-17)], every floor selection or change follows its selection, rise, and release policy, and tested versions remain independent of supported floors [[package-25](#package-25)];
+- the descriptor carries every required runtime identity, version, range, and repair, with every installation-repair package specifier naming its runtime package at its exact tested version [[package-16](#package-16)], and supplies repository verification's expected tested versions and floors [[package-26](#package-26)]; and
 - every descriptor version agrees with the corresponding peer range and exact development pin, with a forced divergence failing verification [[package-27](#package-27)].
 
 ### package-105
