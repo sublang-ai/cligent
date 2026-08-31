@@ -695,6 +695,29 @@ describe('KimiAdapter', () => {
     });
   });
 
+  it('does not promote ACP context occupancy into token accounting', async () => {
+    const fake = new FakeKimi({
+      prompt: async (connection, request) => {
+        await connection.sessionUpdate({
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'usage_update',
+            used: 12_345,
+            size: 262_144,
+          },
+        });
+        return { stopReason: 'end_turn' };
+      },
+    });
+    const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+
+    const events = await collect(adapter.run('Do nothing'));
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(eventOf(events, 'done').payload.usage).toEqual({
+      toolUses: 0,
+    });
+  });
+
   it('degrades malformed ACP accounting without failing the turn', async () => {
     const fake = new FakeKimi({
       prompt: async (connection, request) => {
@@ -1398,9 +1421,8 @@ describe('KimiAdapter', () => {
 
     expect(events.some((event) => event.type === 'error')).toBe(false);
     expect(eventOf(events, 'done').payload.status).toBe('success');
-    // Ignored must mean ignored: the pinned SDK rejects any case outside its
-    // own closed union, so forwarding one would log an Invalid params error
-    // even though the turn succeeds. The filter drops it before that.
+    // Ignored must mean ignored: an unmapped update is isolated before SDK
+    // dispatch and must not surface as private traffic or an adapter error.
     expect(consoleErrors.join('\n')).not.toMatch(/Invalid params|-32602/);
     consoleSpy.mockRestore();
   });

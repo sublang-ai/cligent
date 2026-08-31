@@ -10,7 +10,7 @@ Accepted
 ## Context
 
 [DR-001](001-unified-cli-agent-interface-architecture.md) established the architectural direction: a TypeScript library with async generator interface across CLI agents. This decision defines the concrete interface design—event types, adapter contract, and permission model.
-OpenCode 1.18.13's prompt schema exposes no per-run `steps` member; its step ceiling is persistent agent configuration, so an undeclared prompt member is ineffective and mutating the agent would escape one run's scope [[13]].
+OpenCode 1.18.25's prompt schema exposes no per-run `steps` member; its step ceiling is persistent agent configuration, so an undeclared prompt member is ineffective and mutating the agent would escape one run's scope [[13]].
 
 ## Decision
 
@@ -324,4 +324,4 @@ for await (const event of Cligent.parallel([
 [10]: https://geminicli.com/docs/reference/policy-engine/ "Gemini CLI Policy Engine"
 [11]: https://opencode.ai/docs/permissions "OpenCode permissions"
 [12]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
-[13]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt schema and agent step limit"
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts "OpenCode 1.18.25 prompt schema and agent step limit"

@@ -1041,7 +1041,7 @@ function assertOpenCodeToolRestrictionsUnsupported(
 
   throw new Error(
     'OpenCode adapter does not support explicit allowedTools or ' +
-      'disallowedTools: OpenCode 1.18.13 merges prompt `tools` into ' +
+      'disallowedTools: OpenCode 1.18.25 merges prompt `tools` into ' +
       'persistent session permission rules, where they can override native ' +
       'or explicit denies, and exposes no independent exact per-call tool ' +
       'registry surface. Omit both options or choose an adapter with exact ' +
@@ -1055,7 +1055,7 @@ function assertOpenCodeTurnLimitUnsupported(
   if (options?.maxTurns === undefined) return;
 
   throw new Error(
-    'OpenCode adapter does not support explicit maxTurns: OpenCode 1.18.13 ' +
+    'OpenCode adapter does not support explicit maxTurns: OpenCode 1.18.25 ' +
       'exposes turn ceilings only through persistent agent configuration, ' +
       'not an exact per-run control. Omit maxTurns or choose an adapter with ' +
       'an exact per-run turn limit.',
@@ -1298,7 +1298,7 @@ export function wrapOpencodeClient(
       if (options.tools !== undefined) {
         throw new Error(
           'OpenCode compatibility client does not support prompt `tools`: ' +
-            'OpenCode 1.18.13 merges them into persistent session permission ' +
+            'OpenCode 1.18.25 merges them into persistent session permission ' +
             'rules, where they can override native or explicit denies, ' +
             'instead of enforcing an independent exact tool registry. Omit ' +
             '`tools` or choose an adapter with exact tool filtering.',

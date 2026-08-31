@@ -95,7 +95,7 @@ It shall append no wildcard allow rule, because OpenCode merges agent and sessio
 Explicitly supplied portable capability levels remain an independent permission-rule axis; omitted levels preserve native rules.
 That independence applies to `PermissionPolicy` capability levels, not to
 `AgentOptions.allowedTools` or `AgentOptions.disallowedTools`.
-OpenCode 1.18.13 marks prompt `tools` as merged with permissions and turns its
+OpenCode 1.18.25 marks prompt `tools` as merged with permissions and turns its
 booleans into a persistent replacement for the session permission rules
 [[14]].
 Because OpenCode then evaluates the combined agent and session rules
@@ -196,7 +196,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 [8]: https://developers.openai.com/codex/permissions "Codex: Permission profiles and sandbox settings"
 [9]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
 [10]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code permission rules"
-[11]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/cli/cmd/run.ts "OpenCode 1.18.13 native run auto responder"
-[12]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluator"
-[13]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
-[14]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
+[11]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/cli/cmd/run.ts "OpenCode 1.18.25 native run auto responder"
+[12]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/permission/index.ts "OpenCode 1.18.25 permission evaluator"
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/tools.ts "OpenCode 1.18.25 agent/session permission merge"
+[14]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts "OpenCode 1.18.25 prompt-tool permission replacement"

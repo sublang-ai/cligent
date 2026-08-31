@@ -36,13 +36,13 @@ and run, even though Cligent and its other adapter surfaces support Node.js
 18.3:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.31.1
+npm install -g @moonshot-ai/kimi-code@0.39.1
 kimi --version
 kimi login
 ```
 
 `kimi login` performs the one-time Kimi Code OAuth flow, which is the
-simplest way to satisfy the exact 0.31 ACP target's session gate. That gate
+simplest way to satisfy the exact 0.39.1 ACP target's session gate. That gate
 also accepts a [provider
 configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
 that names a `defaultModel` whose alias resolves to a provider holding
@@ -387,7 +387,7 @@ an invoice. Cligent never applies its own rate table.
 | `codex`       | partial                                                                                                                                                       | per turn only when the effective model is observed | none           | exec omits descendant threads and often the effective model                                                                                                                                                                                           |
 | `gemini`      | complete after telemetry reconciliation; partial after failed-request evidence                                                                                | per response with authentication route             | none           | failed-request tokens, subscription tier, storage duration, grounding, modality, and service-tier dimensions may be absent                                                                                                                            |
 | `opencode`    | complete only when the live server matches the tested version and the title and pinned causal boundaries prove the settled task tree; exact partial where an attributable observed subset remains; omitted where no run-owned prompt boundary can be proved | per request                                        | agent estimate | missing or mismatched server proof, reused task sessions, causal/unattributed retries, overflow replay, unproved internal prompts, or unsettled background work prevent complete coverage; the estimate follows OpenCode's price catalog, not billing |
-| `kimi`        | unavailable                                                                                                                                                   | none                                               | none           | Kimi 0.31.1 exposes no usage over ACP                                                                                                                                                                                                                 |
+| `kimi`        | unavailable                                                                                                                                                   | none                                               | none           | Kimi 0.39.1 exposes session context occupancy over ACP, not invocation token or cost accounting                                                                                                                                                       |
 
 Token records are enough to calculate ordinary text-token list price only when
 the model, request tier, cache details, and service-specific modifiers are all
@@ -472,7 +472,7 @@ native request, permission scope, and tool correlation. It remains distinct
 from `permission_request`, which means a human decision is needed.
 
 OpenCode does not support explicit `allowedTools` or `disallowedTools`,
-including empty arrays. In OpenCode 1.18.13 the prompt `tools` field is merged
+including empty arrays. In OpenCode 1.18.25 the prompt `tools` field is merged
 into persistent session permission rules rather than applied as an independent
 per-call tool registry; an enabled tool can therefore override a native or
 explicit deny and affect later resumed calls. Cligent rejects either option
@@ -480,7 +480,7 @@ before loading the OpenCode SDK. Omit both options or choose an adapter with
 exact tool filtering.
 
 OpenCode also rejects an explicit `maxTurns`, including zero, before loading
-the SDK. OpenCode 1.18.13 exposes turn ceilings only through persistent agent
+the SDK. OpenCode 1.18.25 exposes turn ceilings only through persistent agent
 configuration, not an exact per-run control, so Cligent neither leaves a
 requested limit silently unenforced nor mutates shared agent state. Omit
 `maxTurns` or choose an adapter with an exact per-run turn limit.

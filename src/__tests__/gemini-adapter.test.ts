@@ -60,7 +60,7 @@ interface SpawnInvocation {
   process: MockGeminiProcess;
 }
 
-// Mirrors the Gemini CLI 0.53.1 stream-json result stats emitted by
+// Mirrors the Gemini CLI 0.57.0 stream-json result stats emitted by
 // StreamJsonFormatter.convertToStreamStats().
 interface GeminiStreamStats {
   total_tokens: number;

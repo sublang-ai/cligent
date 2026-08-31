@@ -99,21 +99,21 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
-      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.220',
+      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.251',
       // The first release whose bundled model catalog carries
       // `claude-opus-5`: 0.3.218 has `claude-sonnet-5` only, and 0.3.154 —
       // the previous floor — has neither. Bisected against the published
       // tarballs, because the catalog is data inside the package rather
       // than something the API surface reveals.
       supportedFrom: '0.3.219',
-      tested: '0.3.220',
+      tested: '0.3.251',
     }),
   ]),
   codex: Object.freeze([
     Object.freeze({
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
-      repairSpec: '@openai/codex-sdk@0.146.0',
+      repairSpec: '@openai/codex-sdk@0.151.0',
       // The lowest release that serves the current gpt-5.6 routes
       // (`-sol`, `-luna`, `-terra`). An earlier draft required a
       // `gpt-5.6-pro` slug too and set the floor at 0.145.0; the binary
@@ -122,7 +122,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // presence was never evidence of a route. 0.139.0, the runtime
       // DR-013 was written about, remains refused.
       supportedFrom: '0.144.0',
-      tested: '0.146.0',
+      tested: '0.151.0',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
       bundles: '@openai/codex',
@@ -132,24 +132,24 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'cli' as const,
       package: '@google/gemini-cli',
-      repairSpec: '@google/gemini-cli@0.53.1',
+      repairSpec: '@google/gemini-cli@0.57.0',
       command: 'gemini',
       supportedFrom: '0.50.0',
-      tested: '0.53.1',
+      tested: '0.57.0',
     }),
   ]),
   kimi: Object.freeze([
     Object.freeze({
       kind: 'cli' as const,
       package: '@moonshot-ai/kimi-code',
-      repairSpec: '@moonshot-ai/kimi-code@0.31.1',
+      repairSpec: '@moonshot-ai/kimi-code@0.39.1',
       command: 'kimi',
       // The release that added the non-OAuth ACP route kimi-21 documents:
       // `hasUsableConfiguredDefaultModel` is present in 0.28.1 and absent
       // in 0.28.0. A floor at the tested version would refuse 0.28.1
       // through 0.30.x, which serve every route this adapter uses.
       supportedFrom: '0.28.1',
-      tested: '0.31.1',
+      tested: '0.39.1',
       steps: Object.freeze(['kimi login  # or configure a default model']),
     }),
   ]),
@@ -157,22 +157,22 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@opencode-ai/sdk',
-      repairSpec: '@opencode-ai/sdk@1.18.13',
+      repairSpec: '@opencode-ai/sdk@1.18.25',
       // 1.18.12 fixed GPT-5.5+ completion requests failing when reasoning
       // is enabled — the route this adapter drives whenever `effort` maps
       // to a reasoning variant — so an earlier version admits a model path
       // known to fail.
       supportedFrom: '1.18.12',
-      tested: '1.18.13',
+      tested: '1.18.25',
     }),
     Object.freeze({
       kind: 'cli' as const,
       package: 'opencode-ai',
-      repairSpec: 'opencode-ai@1.18.13',
+      repairSpec: 'opencode-ai@1.18.25',
       command: 'opencode',
       // package-23 requires the SDK and CLI conformance targets to match.
       supportedFrom: '1.18.12',
-      tested: '1.18.13',
+      tested: '1.18.25',
     }),
   ]),
 });

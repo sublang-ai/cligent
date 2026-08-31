@@ -412,7 +412,7 @@ plus `visibility: 'visible' | 'hidden'` and `allowedTools`. Its returned
 `CaptainRunResult.resumeToken` is the opaque handle to persist when a later
 Captain call must explicitly continue that backend session.
 Tool-list support is adapter-specific: adapters with no independent exact
-tool-registry surface, including Codex, Kimi, and OpenCode 1.18.13, reject an
+tool-registry surface, including Codex, Kimi, and OpenCode 1.18.25, reject an
 explicit list before backend invocation.
 
 Both call surfaces also accept a complete `settings` replacement:

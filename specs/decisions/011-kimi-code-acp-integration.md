@@ -69,7 +69,7 @@ Kimi's ACP configuration surface exposes thinking as the provider-native binary 
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-Kimi Code `0.31.1` gates ACP session creation on any of three routes: the OAuth credential written by `kimi login`; a configured default model whose alias resolves to a provider holding non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[5]][[6]][[14]].
+Kimi Code `0.39.1` gates ACP session creation on any of three routes: the OAuth credential written by `kimi login`; a configured default model whose alias resolves to a provider holding non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[5]][[6]][[14]].
 A bare provider key such as `MOONSHOT_API_KEY` or `KIMI_API_KEY` satisfies none of them, because it establishes no default model alias.
 ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
@@ -87,12 +87,7 @@ Wire-schema ownership sits with the adapter, not with the protocol SDK.
 The SDK generates a complete set of schemas but publishes them only inside its build output, so consuming them means depending on a file layout rather than on an interface — a dependency its `1.3.0` `exports` map ended, without offering any public replacement.
 Their generation also diverges from what this adapter needs in kind rather than in detail: they validate the entire protocol where the adapter reads a small subset of it, and they broadly salvage malformed payloads.
 The adapter therefore validates control fields it consumes against schemas held in this repository, strictly, while ignoring everything else, so an agent may extend the protocol without this client calling valid traffic malformed.
-Optional prompt usage is the deliberate exception: the pinned runtime does not
-expose it as public accounting per
-[[kimi-13](../packages/adapters/kimi.md#kimi-13)], and a malformed unstable
-extension is ignored instead of changing an otherwise completed turn into the
-malformed-control error required by
-[[kimi-27](../packages/adapters/kimi.md#kimi-27)].
+Optional prompt usage and the pinned runtime's session-context `usage_update` are the deliberate exceptions: neither exposes invocation accounting per [[kimi-13](../packages/adapters/kimi.md#kimi-13)], and a malformed unstable extension is ignored instead of changing an otherwise completed turn into the malformed-control error required by [[kimi-27](../packages/adapters/kimi.md#kimi-27)].
 Credential-free CI shall always exercise the exact ACP initialization handshake.
 This handshake is the release-critical Kimi signal: it validates the protocol surface the adapter depends on, runs against an empty `KIMI_CODE_HOME`, and never needs a credential.
 Local live acceptance shall resolve an authenticated source home from `CLIGENT_KIMI_ACCEPTANCE_HOME`, then an absolute `KIMI_CODE_HOME`, then Kimi Code's documented `~/.kimi-code` default, and shall resolve `kimi` from PATH or the source home's managed `bin` directory [[13]].
@@ -131,7 +126,7 @@ A future public, documented Kimi Code SDK may replace the ACP subprocess only th
 [11]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [12]: https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/src/cli/run-prompt.ts "Kimi Code prompt-mode implementation"
 [13]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html "Kimi Code data locations"
-[14]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code ACP authentication gate"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-adapter/src/server.ts#L114-L160 "Kimi Code 0.39.1 ACP authentication gate"
 [15]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/server.ts "Kimi Code ACP harnessIsAuthed gate — any managed provider holding a stored token"
 [16]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/node-sdk/src/auth.ts "Kimi Code auth facade — status() reports only the managed OAuth provider"
 [17]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/oauth/src/oauth-manager.ts "Kimi Code OAuth manager — refresh rotation, persistence, and revoked tombstone"

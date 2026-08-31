@@ -111,7 +111,7 @@ describe('owned ACP wire schemas (kimi-27 / kimi-31)', () => {
       id: 'model',
       currentValue: 'kimi-k2',
     });
-    // Kimi Code 0.31.1 reports a per-model effort ladder here rather than the
+    // Kimi Code 0.39.1 reports a per-model effort ladder here rather than the
     // binary on/off it used to; the adapter reads only `model`, so the value
     // passes through untouched.
     expect(parsed.configOptions?.[1]?.currentValue).toBe('high');

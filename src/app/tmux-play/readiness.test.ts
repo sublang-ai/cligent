@@ -137,7 +137,7 @@ describe('adapterRepairCommands', () => {
 
   it('pins the Kimi CLI target and names its login step', () => {
     expect(adapterRepairCommands('kimi', GLOBAL)).toEqual([
-      'npm install -g @moonshot-ai/kimi-code@0.31.1',
+      'npm install -g @moonshot-ai/kimi-code@0.39.1',
       'kimi login  # or configure a default model',
     ]);
   });
@@ -340,7 +340,7 @@ describe('formatNoRuntimeInstalled', () => {
       'npm install -g --prefix /usr/local @anthropic-ai/claude-agent-sdk',
       'npm install -g --prefix /usr/local @openai/codex-sdk',
       'npm install -g @google/gemini-cli',
-      'npm install -g @moonshot-ai/kimi-code@0.31.1',
+      'npm install -g @moonshot-ai/kimi-code@0.39.1',
       'npm install -g --prefix /usr/local @opencode-ai/sdk',
       'npm install -g opencode-ai',
     ]) {

@@ -325,7 +325,7 @@ describe('adapter auto-mode real-run acceptance (claude-code-219 / codex-219 / g
     PROBE_TIMEOUT_MS,
   );
 
-  // Kimi Code 0.31 gates ACP session creation on the OAuth credential written
+  // Kimi Code 0.39.1 gates ACP session creation on the OAuth credential written
   // by `kimi login`; an API-key provider alone cannot satisfy that gate. Local
   // runs discover the documented Kimi home, while CI requires an explicit
   // dedicated fixture. The source is never passed to the spawned process.

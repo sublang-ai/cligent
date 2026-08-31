@@ -24,7 +24,7 @@ adapters you use:
 # `>=` keeps the declaration open so a cligent upgrade can carry the runtime
 # forward. A bare `npm install <pkg>` writes a caret instead, and for a
 # `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
-# `0.146.0`, however often you run `npm update`.
+# `0.151.0`, however often you run `npm update`.
 npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
 npm install "@openai/codex-sdk@>=0.144.0"                # Codex
 npm install "@opencode-ai/sdk@>=1.18.12"                 # OpenCode
@@ -59,13 +59,13 @@ the exact conformance target. The external Kimi CLI itself requires Node.js
 22.19 or newer to install and run, then authenticate once:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.31.1
+npm install -g @moonshot-ai/kimi-code@0.39.1
 kimi login
 ```
 
 Adapters reuse each vendor's own authentication from your environment —
 a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
-(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.31 ACP accepts any
+(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.39.1 ACP accepts any
 of three: the OAuth credential created by `kimi login`, a configured default
 model whose provider holds non-OAuth credentials, or `KIMI_MODEL_NAME` plus
 `KIMI_MODEL_API_KEY`. A bare `MOONSHOT_API_KEY` is not one of them, because
@@ -135,7 +135,7 @@ whichever providers you have credentials for:
 | `claude` | `npm install -g @anthropic-ai/claude-agent-sdk` |
 | `codex` | `npm install -g @openai/codex-sdk` |
 | `gemini` | `npm install -g @google/gemini-cli` |
-| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.31.1` then `kimi login` (or configure a default model) |
+| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.39.1` then `kimi login` (or configure a default model) |
 | `opencode` | `npm install -g @opencode-ai/sdk opencode-ai` |
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`

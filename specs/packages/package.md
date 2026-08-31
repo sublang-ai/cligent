@@ -98,7 +98,7 @@ Repository verification shall compile every SDK or protocol surface consumed by 
 Where an adapter's conformance target consists of an SDK client and a CLI server, the repository shall keep their exact target versions paired:
 
 - the OpenCode SDK and CLI versions match; and
-- `@agentclientprotocol/sdk` `1.3.0` pairs with the `@moonshot-ai/kimi-code` CLI `0.31.1` for Kimi.
+- `@agentclientprotocol/sdk` `1.4.0` pairs with the `@moonshot-ai/kimi-code` CLI `0.39.1` for Kimi.
 
 ### package-24
 

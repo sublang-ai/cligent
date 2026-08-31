@@ -64,7 +64,7 @@ jobs:
       - run: npm run build
 
       - name: Install exact agent CLIs
-        run: npm install -g @google/gemini-cli@0.53.1 @moonshot-ai/kimi-code@0.31.1 opencode-ai@1.18.13
+        run: npm install -g @google/gemini-cli@0.57.0 @moonshot-ai/kimi-code@0.39.1 opencode-ai@1.18.25
 
       - name: Verify distributable
         run: npm run test:distributable
@@ -87,7 +87,7 @@ jobs:
       - run: npm run build
 
       - name: Install agent CLIs
-        run: npm install -g @google/gemini-cli@0.53.1 @moonshot-ai/kimi-code@0.31.1 opencode-ai@1.18.13
+        run: npm install -g @google/gemini-cli@0.57.0 @moonshot-ai/kimi-code@0.39.1 opencode-ai@1.18.25
 
       - name: Verify agent CLI targets
         run: node scripts/verify-agent-targets.mjs

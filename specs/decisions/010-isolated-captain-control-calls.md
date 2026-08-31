@@ -31,7 +31,7 @@ The built-in adapter mappings are:
 | --- | --- |
 | Claude Code | SDK `tools` selects the available built-ins and SDK `allowedTools` preserves automatic permission approval for the selected names; every explicit list sets `strictMcpConfig: true` to ignore ambient MCP configuration, while `tools: []` disables all built-ins and additionally uses `settingSources: []` to disable filesystem settings and `CLAUDE.md`. |
 | Gemini | User-tier Policy Engine allow rules plus a catch-all deny; an empty list emits only the catch-all deny. |
-| OpenCode | Reject before SDK loading. OpenCode 1.18.13 merges prompt `tools` booleans into persistent session permission rules, replacing prior session rules; its last-match-wins evaluation can let an allowed tool override a native or explicit deny, so it is not an independent exact registry-control surface [[1]][[2]][[3]]. |
+| OpenCode | Reject before SDK loading. OpenCode 1.18.25 merges prompt `tools` booleans into persistent session permission rules, replacing prior session rules; its last-match-wins evaluation can let an allowed tool override a native or explicit deny, so it is not an independent exact registry-control surface [[1]][[2]][[3]]. |
 | Codex | Reject before SDK loading because the supported Codex SDK surface cannot constrain the available tool registry. |
 | Kimi | Reject before spawning `kimi acp` because the ACP surface cannot constrain the available tool registry. |
 
@@ -47,6 +47,6 @@ Claude Code's explicit-allowlist mapping also removes ambient MCP configuration,
 
 ## References
 
-[1]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts "OpenCode 1.18.13 prompt-tool permission replacement"
-[2]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts "OpenCode 1.18.13 permission evaluator"
-[3]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts "OpenCode 1.18.13 agent/session permission merge"
+[1]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts "OpenCode 1.18.25 prompt-tool permission replacement"
+[2]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/permission/index.ts "OpenCode 1.18.25 permission evaluator"
+[3]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/tools.ts "OpenCode 1.18.25 agent/session permission merge"

@@ -150,7 +150,7 @@ When [[kimi-33](#kimi-33)] selects a valid ACP prompt response, the adapter shal
 
 ### kimi-21
 
-When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.31.1` admits exactly these authentication routes [[8]]:
+When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.39.1` admits exactly these authentication routes [[8]][[10]]:
 
 | Runtime state | Session gate |
 | --- | --- |
@@ -283,11 +283,11 @@ When the adapter emits terminal `done`, it shall select `resumeToken` through th
 
 ### kimi-13
 
-For the pinned Kimi Code runtime, every terminal `done` shall omit token and cost reports under [[engine-31](../engine.md#engine-31)], count `usage.toolUses` from distinct emitted native tool calls per [[engine-65](../engine.md#engine-65)], and preserve prompt status and accumulated result independently, because its supported ACP prompt response supplies no authentic accounting [[9]] and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
+For the pinned Kimi Code runtime, every terminal `done` shall omit token and cost reports under [[engine-31](../engine.md#engine-31)], count `usage.toolUses` from distinct emitted native tool calls per [[engine-65](../engine.md#engine-65)], and preserve prompt status and accumulated result independently, because its ACP prompt response supplies only a stop reason while its later `usage_update` supplies session context occupancy rather than invocation-scoped input/output or cost accounting [[9]], and [DR-011](../../decisions/011-kimi-code-acp-integration.md) forbids reading private Kimi session state outside ACP.
 
 ### kimi-31
 
-Until a supported runtime emits the optional ACP usage extension and its turn/session and cache/reasoning semantics are verified, the adapter shall treat a schema-valid instance as isolated future data rather than promote its counters to public token or cost accounting.
+For the pinned runtime, the adapter shall drop ACP `usage_update` before SDK dispatch and shall not promote its session-context counters to public token or cost accounting; a future usage surface may be mapped only after its invocation, input/output, cache, and reasoning semantics are verified.
 
 ## Internal Behavior
 
@@ -404,7 +404,7 @@ Given the complete `PermissionPolicy` mode and capability matrix plus every head
 
 ### kimi-32
 
-Given a schema-valid optional ACP usage extension before [[kimi-31](#kimi-31)]'s evidence gate is met, when repository integration verification runs a prompt carrying its counters, it shall assert that the prompt completes while terminal usage contains only independently observed tool calls and no token or cost report.
+Given a schema-valid ACP `usage_update` carrying context occupancy and a prompt response carrying hypothetical usage counters before [[kimi-31](#kimi-31)]'s evidence gate is met, when repository integration verification runs prompts carrying each form, it shall assert that each prompt completes while terminal usage contains only independently observed tool calls and no token or cost report.
 
 ### kimi-218
 
@@ -426,7 +426,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
 - the leg shall self-skip when the `kimi` CLI the adapter spawns is absent from `PATH` or its credential is absent, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- Kimi Code `0.31.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
+- Kimi Code `0.39.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to a provider with non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
 - the harness exercises the OAuth route exclusively, so its credential probe shall run with the `KIMI_MODEL_*` overlay removed exactly as the live legs do, inheriting it being what would let an environment-configured model report a spent OAuth credential as usable and make those legs fail instead of self-skipping;
 - because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use;
 - the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in the behavior under test;
@@ -479,7 +479,7 @@ Where either tool-list field is omitted, empty, or non-empty, when the adapter m
 
 ### kimi-240
 
-Given authentic accounting is sought across successful, interrupted, max-turn, refusal, errored, and synthetic terminal paths, when a caller reads terminal usage, the adapter shall publish no token or cost report for the pinned ACP runtime while preserving prompt status, accumulated result, and the distinct observed tool-call count [[kimi-13](#kimi-13)].
+Given authentic accounting is sought across successful, interrupted, max-turn, refusal, errored, and synthetic terminal paths, when a caller reads terminal usage, the adapter shall publish no token or cost report for the pinned ACP runtime, including after its context-only `usage_update`, while preserving prompt status, accumulated result, and the distinct observed tool-call count [[kimi-13](#kimi-13)] [[kimi-31](#kimi-31)].
 
 ## References
 
@@ -490,5 +490,6 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [5]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
 [6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
 [7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
-[8]: https://github.com/MoonshotAI/kimi-code/blob/5cc194956f6f9752d172aa4994385d2d2e7a066f/packages/acp-adapter/src/server.ts#L107-L116 "Kimi Code ACP authentication gate"
-[9]: https://github.com/MoonshotAI/kimi-code/blob/6b56c11697771fe596099b38bafae539820309a4/packages/acp-adapter/src/session.ts#L1228-L1273 "Kimi Code 0.31.1 ACP prompt response"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-adapter/src/server.ts#L114-L160 "Kimi Code 0.39.1 ACP authentication gate"
+[9]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/session.ts#L866-L895 "Kimi Code 0.39.1 ACP prompt response and context-usage update"
+[10]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core/src/config/env-model.ts#L82-L115 "Kimi Code 0.39.1 environment model configuration"

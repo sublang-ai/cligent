@@ -29,7 +29,7 @@ export const EXPECTED_SDK_VERSIONS = Object.freeze({
 });
 
 export const EXPECTED_PROTOCOL_VERSIONS = Object.freeze({
-  '@agentclientprotocol/sdk': '1.3.0',
+  '@agentclientprotocol/sdk': '1.4.0',
 });
 
 export const EXPECTED_CLI_VERSIONS = Object.freeze({

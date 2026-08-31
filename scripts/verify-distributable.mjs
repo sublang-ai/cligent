@@ -30,7 +30,7 @@ const NODE_RUNTIME_VERSION = '18.3.0';
 const TYPESCRIPT_VERSION = '5.4.5';
 const NODE_TYPES_VERSION = '18.19.24';
 const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
-  '@agentclientprotocol/sdk': '1.3.0',
+  '@agentclientprotocol/sdk': '1.4.0',
   yaml: '^2.8.4',
   zod: '4.4.3',
 });
@@ -1402,7 +1402,7 @@ try {
     `npm install -g --prefix ${tmuxPlayGlobalPrefix} @openai/codex-sdk`,
     `npm install -g --prefix ${tmuxPlayGlobalPrefix} @opencode-ai/sdk`,
     'npm install -g @google/gemini-cli',
-    'npm install -g @moonshot-ai/kimi-code@0.31.1',
+    'npm install -g @moonshot-ai/kimi-code@0.39.1',
     'npm install -g opencode-ai',
   ]) {
     assertOutputContains(emptyLaunch, repair, 'tmux-play repair commands');

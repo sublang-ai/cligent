@@ -29,7 +29,7 @@ The supported runtimes expose materially different accounting surfaces.
 | Codex       | cumulative thread usage       | root thread only; resumed calls require a baseline |
 | Gemini CLI  | run-owned local telemetry     | per response, including thinking and subagents     |
 | OpenCode    | causal step-finish parts      | per request across the invocation's task tree      |
-| Kimi Code   | ACP prompt response           | the pinned runtime reports no usage                |
+| Kimi Code   | ACP session usage update      | current context occupancy, not invocation totals   |
 
 The normalized shape must preserve authentic totals, expose exact pricing subsets without double counting,
 state its coverage, and omit unavailable data instead of manufacturing zero.
@@ -158,7 +158,7 @@ events, but those are not silently substituted for the pinned adapter transport 
   compaction boundaries, and downgrade exact subsets after causal or uncorrelatable retries, overflow replay,
   reused task sessions, missing child identity, unsettled background work, or any unproved post-activation
   request [[7]][[8]][[9]].
-- **Kimi Code:** publish no token report for the pinned runtime because ACP supplies none.
+- **Kimi Code:** publish no token report for the pinned runtime because its ACP `usage_update` supplies current session context occupancy rather than invocation-scoped input/output and omits cost [[10]].
   Independently observed tool calls remain reported.
 
 ## Consequences
@@ -173,7 +173,7 @@ events, but those are not silently substituted for the pinned adapter transport 
   charges, modality tiers, and other unreported dimensions stay absent.
 - Codex remains only root-thread priceable on the pinned exec transport; exact agent-tree pricing requires a
   separately decided app-server migration.
-- Kimi is not token-priceable through Cligent until its supported ACP runtime emits stable usage.
+- Kimi is not token-priceable through Cligent until its supported ACP runtime exposes invocation-scoped input/output semantics.
 - Removing the released flat fields is a breaking public API change.
 
 ## References
@@ -184,6 +184,7 @@ events, but those are not silently substituted for the pinned adapter transport 
 [4]: https://geminicli.com/docs/cli/telemetry/ 'Gemini CLI telemetry'
 [5]: https://opencode.ai/docs/sdk/ 'OpenCode SDK'
 [6]: https://github.com/googleapis/js-genai/blob/38cac5bbf4941ec5fa760238bd423c0ecc2c6f04/src/types.ts#L2607-L2628 'Google Gen AI SDK 1.30.0 UsageMetadata'
-[7]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L448 'OpenCode 1.18.13 title and foreground-task flow'
-[8]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/compaction.ts#L356-L535 'OpenCode 1.18.13 compaction flow'
-[9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/processor.ts#L630-L680 'OpenCode 1.18.13 retry boundary'
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 title and foreground-task flow'
+[8]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/compaction.ts 'OpenCode 1.18.25 compaction flow'
+[9]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/processor.ts 'OpenCode 1.18.25 retry boundary'
+[10]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/session.ts#L866-L895 'Kimi Code 0.39.1 prompt response and context-usage update'

@@ -437,7 +437,7 @@ matrix:
 | direct compatibility-wrapper prompt `tools` value | reject before session creation, update, subscription, or prompt |
 | both option fields omitted and no direct wrapper value | send no prompt `tools` data, preserving OpenCode's native available-tool surface |
 
-> OpenCode 1.18.13's prompt `tools` field is deprecated as an independent
+> OpenCode 1.18.25's prompt `tools` field is deprecated as an independent
 > control: the provider converts its booleans into persistent session permission
 > rules, replacing prior session rules [[5]].
 > Because permission evaluation is last-match-wins and session rules follow agent
@@ -459,7 +459,7 @@ matrix:
 | any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
 | non-empty model without `/` | pass through unchanged |
 | absent or empty model | omit the native model |
-| explicitly present `maxTurns`, including zero | reject before SDK loading or backend work because OpenCode 1.18.13 exposes the ceiling only through persistent agent configuration, not an exact per-run control [[5]], as settled by [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) |
+| explicitly present `maxTurns`, including zero | reject before SDK loading or backend work because OpenCode 1.18.25 exposes the ceiling only through persistent agent configuration, not an exact per-run control [[5]], as settled by [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) |
 | omitted `maxTurns` | send no turn-limit request member |
 | any `maxBudgetUsd` | no OpenCode request member because this runtime has no corresponding control |
 | non-empty resume | select the existing session rather than create one |
@@ -659,7 +659,7 @@ suppression cannot be proved [[9]]:
 
 Before prompt dispatch, the wrapper shall query the canonical global-health
 route and permit complete accounting only for a healthy response naming exact
-OpenCode version `1.18.13`, while a missing route, failure, timeout, malformed or
+OpenCode version `1.18.25`, while a missing route, failure, timeout, malformed or
 unhealthy response, or other version leaves the run unblocked with partial
 accounting [[13]].
 
@@ -857,7 +857,7 @@ Given each explicitly present tool-list field, including empty arrays and a list
 beside a portable deny, when every public mapping surface is invoked, the
 checks shall assert [[opencode-15](#opencode-15)]'s adapter pre-loader, direct
 mapper, and wrapper pre-operation rejection rows plus a diagnostic explaining
-OpenCode 1.18.13's persistent permission-rule replacement and lack of exact
+OpenCode 1.18.25's persistent permission-rule replacement and lack of exact
 per-call tool availability.
 
 ### opencode-231
@@ -989,15 +989,15 @@ causal report matrix while preserving independently observed `toolUses`
 
 [1]: https://opencode.ai/docs/models/ 'OpenCode model configuration'
 [2]: https://opencode.ai/docs/server/ 'OpenCode server'
-[5]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.13 prompt input, agent step limit, and tool-permission replacement'
-[6]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/permission/index.ts 'OpenCode 1.18.13 permission lifecycle and evaluation'
-[7]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/tools.ts 'OpenCode 1.18.13 agent/session permission merge'
-[8]: https://github.com/anomalyco/opencode/blob/v1.18.13/packages/opencode/src/session/session.ts#L338-L406 'OpenCode 1.18.13 usage cost calculation'
-[9]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L190-L276 'OpenCode 1.18.13 title inference'
-[10]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/compaction.ts#L356-L535 'OpenCode 1.18.13 compaction and continuation flow'
-[11]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/tool/task.ts#L64-L243 'OpenCode 1.18.13 foreground and background task continuations'
-[12]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/processor.ts#L630-L680 'OpenCode 1.18.13 retry accounting boundary'
-[13]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/sdk/js/src/v2/gen/types.gen.ts#L7226-L7252 'OpenCode 1.18.13 global-health version response'
-[14]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L656-L670 'OpenCode 1.18.13 user message created with role "user" and an identifier minted by MessageID.ascending() when the caller supplies none'
-[15]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/session/prompt.ts#L1186-L1200 'OpenCode 1.18.13 assistant message created with parentID set to the last user message id'
-[16]: https://github.com/anomalyco/opencode/blob/a105350812f05f914c768e468559dbd6bd508d8e/packages/opencode/src/tool/task.ts#L216-L252 'OpenCode 1.18.13 background task result injected into the parent session'
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 prompt input, agent step limit, and tool-permission replacement'
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/permission/index.ts 'OpenCode 1.18.25 permission lifecycle and evaluation'
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/tools.ts 'OpenCode 1.18.25 agent/session permission merge'
+[8]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/session.ts 'OpenCode 1.18.25 usage cost calculation'
+[9]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 title inference'
+[10]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/compaction.ts 'OpenCode 1.18.25 compaction and continuation flow'
+[11]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/tool/task.ts 'OpenCode 1.18.25 foreground and background task continuations'
+[12]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/processor.ts 'OpenCode 1.18.25 retry accounting boundary'
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/sdk/js/src/v2/gen/types.gen.ts 'OpenCode 1.18.25 global-health version response'
+[14]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 user message created with role "user" and an identifier minted by MessageID.ascending() when the caller supplies none'
+[15]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 assistant message created with parentID set to the last user message id'
+[16]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/tool/task.ts 'OpenCode 1.18.25 background task result injected into the parent session'

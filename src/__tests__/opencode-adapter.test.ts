@@ -5292,7 +5292,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
           config.onHealth?.(args);
           return (
             config.healthResult ?? {
-              data: { healthy: true, version: '1.18.13' },
+              data: { healthy: true, version: '1.18.25' },
             }
           );
         },
@@ -5614,7 +5614,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       {
         global: {
           async health() {
-            return { data: { healthy: true, version: '1.18.13' } };
+            return { data: { healthy: true, version: '1.18.25' } };
           },
         },
         session: {
@@ -5672,7 +5672,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       {
         global: {
           async health() {
-            return { data: { healthy: true, version: '1.18.13' } };
+            return { data: { healthy: true, version: '1.18.25' } };
           },
         },
         session: {
@@ -5710,7 +5710,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       {
         global: {
           async health() {
-            return { data: { healthy: true, version: '1.18.13' } };
+            return { data: { healthy: true, version: '1.18.25' } };
           },
         },
         session: {

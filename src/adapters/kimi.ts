@@ -289,10 +289,9 @@ function parseAcpResult<Result>(
 /**
  * Validates one inbound message and reports whether it should reach the SDK.
  *
- * A `session/update` naming a case this adapter does not act on is dropped:
- * the adapter would ignore it, while the pinned SDK rejects it against its
- * own closed union and logs an error, so forwarding it produces noise and no
- * behavior. Dropping makes "an unhandled case is ignored" true end to end.
+ * A `session/update` naming a case this adapter does not act on is dropped
+ * before SDK dispatch. It has no mapped Cligent behavior, and isolating
+ * protocol growth here keeps "an unhandled case is ignored" true end to end.
  */
 function validateInboundAcpMessage(
   value: unknown,
@@ -1481,9 +1480,11 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         } else {
           status = 'success';
         }
-        // Kimi Code 0.31.1's ACP prompt response does not publish token
-        // accounting. Keep the optional wire member isolated from terminal
-        // status, but never promote it into Cligent's authentic usage report.
+        // Kimi Code 0.39.1's prompt response publishes only the stop reason.
+        // Its later usage_update is session context occupancy, not
+        // invocation-scoped input/output or cost accounting, and the stream
+        // filter drops it before SDK dispatch. Never promote either surface
+        // into Cligent's authentic usage report.
         finish(status);
       } catch (error) {
         if (abortRequested) {

@@ -82,7 +82,7 @@ const ADAPTER_RUNTIME_REQUIREMENTS: Readonly<
   gemini: { peers: [], clis: ['@google/gemini-cli'], steps: [] },
   kimi: {
     peers: [],
-    clis: ['@moonshot-ai/kimi-code@0.31.1'],
+    clis: ['@moonshot-ai/kimi-code@0.39.1'],
     // One of Kimi's three ACP auth routes, and the only one expressible as a
     // command; a configured default model or the KIMI_MODEL_* overlay also
     // satisfies the gate, so this reads as the simplest path, not the sole one.
