@@ -25,13 +25,15 @@ All notable changes shall be documented in `CHANGELOG.md` in the Keep a Changelo
 
 ### release-4
 
-Before creating a release tag, the developer or agent shall:
+When preparing a release tag, the developer or agent shall:
 
-1. review all commits since the last release (`git log <last-tag>..HEAD`);
+1. review every commit since the last release that precedes the final release-preparation commit (`git log <last-tag>..<audited-head>`), initially recording the current `HEAD` as `<audited-head>`;
 2. ensure all notable changes are documented in `[Unreleased]`;
 3. add a new version section to `CHANGELOG.md` with the release date;
 4. move the `[Unreleased]` items into that section;
-5. update the comparison links at the bottom of the file.
+5. update the comparison links at the bottom of the file;
+6. review the staged final release-preparation changes and create that commit with `<audited-head>` as its sole parent; and
+7. create the release tag only on that final release-preparation commit, repeating these steps where another commit must enter the release first.
 
 ### release-5
 
@@ -76,14 +78,15 @@ Before tagging a release, the developer or agent shall verify:
 
 ### release-14
 
-Before creating a release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
+Before creating the final release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
 
-| Evidence                                                | Required contents                                                                                                                                                                                                                                        |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| commit-range review                                     | previous tag, audited head, commit count, subject-class counts derived from the text before each subject's first `(` or `:` and ordered lexicographically by class, ordered-log digest, review command, and attestation that every commit was considered |
-| release identity and Semantic Versioning classification | previous version, chosen version, release date, change level, and rationale tied to the reviewed changes [[release-1](#release-1)]                                                                                                                       |
-| notable-change reconciliation                           | each notable change group, its changelog heading, and the commits that establish it [[release-3](#release-3)], [[release-5](#release-5)]                                                                                                                 |
-| pre-tag checklist                                       | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending                                                                                                           |
+| Evidence                                                | Required contents                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| commit-range review                                     | previous tag; audited head as the containing final release-preparation commit's intended sole parent; commit count; subject-class counts derived from the text before each subject's first `(` or `:` and ordered lexicographically by class; ordered-log digest; review command; and attestation that every commit was considered |
+| containing preparation review                           | attestation that the staged contents and planned message of the symbolic `containing release-preparation commit` were considered and that this commit is the intended release-tag target [[release-4](#release-4)]                                                                                                                 |
+| release identity and Semantic Versioning classification | previous version, chosen version, release date, change level, and rationale tied to the reviewed changes [[release-1](#release-1)]                                                                                                                                                                                                 |
+| notable-change reconciliation                           | each notable change group, its changelog heading, and the commits that establish it, with every audited commit and the containing preparation changes either tied to a group or explicitly classified as non-notable with rationale [[release-3](#release-3)], [[release-5](#release-5)]                                           |
+| pre-tag checklist                                       | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending                                                                                                                                                                                     |
 
 ## Verification
 
@@ -110,6 +113,11 @@ When `npm run smoke:release` runs, the verification shall assert that this one e
 When a release-preparation record is audited, the system check shall assert the following evidence against the real repository [[release-14](#release-14)]:
 
 - the recorded previous tag, audited head, commit count, subject-class counts, ordered-log digest, and review command agree with the real Git range, and the record carries the complete-review attestation [[release-14](#release-14)], [[release-4](#release-4)];
+- the record carries the complete containing-preparation review attestation; reconciliation commit citations belong to the audited range, while each aggregate `all <count> <class> commits in the audited digest` citation agrees with its subject-class count, with `documentation` naming the `docs` class for the existing record; the reconciliation represents the containing preparation changes; and the final-preparation boundary selects exactly one valid state [[release-14](#release-14)], [[release-4](#release-4)]:
+  - with no matching tag and a pending working-tree update to the evidence record, the audited head is current `HEAD`;
+  - with no matching tag and a committed final preparation, current `HEAD` changes the evidence record and has exactly one parent, the audited head;
+  - with a matching tag reachable from current `HEAD`, that tag changes the evidence record and has exactly one parent, the audited head, while later descendants are permitted; or
+  - every other boundary fails the audit, including a clean pre-tag follow-up after the final preparation;
 - the `ci` job in `.github/workflows/ci.yml` and the `release` job in `.github/workflows/release.yml`, each of which executes the default unit suite containing this audit, are the complete set of jobs invoking `npm test` and check out full Git history and tags before that suite runs so the previous tag and audited head are available, while an otherwise valid checkout lacking the recorded history fails the audit [[release-4](#release-4)];
 - the recorded previous tag and previous version agree, the recorded change level produces the chosen version, and the recorded release date identifies its changelog section [[release-1](#release-1)], [[release-4](#release-4)];
 - `CHANGELOG.md` has the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links; `[Unreleased]` is empty in the prepared tree and matching release-tag tree, while later-release entries in a working tree based on that tag or in a descendant tree do not invalidate the prepared record [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
