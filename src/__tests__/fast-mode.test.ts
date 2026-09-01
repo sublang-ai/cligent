@@ -121,6 +121,80 @@ describe('built-in fast-mode metadata', () => {
   });
 });
 
+describe('supported built-in fast-mode requests', () => {
+  it('forwards instance defaults and parallel overrides to native settings', async () => {
+    const requests: unknown[] = [];
+    const query = vi.fn((request: unknown) => {
+      requests.push(request);
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'result',
+            status: 'success',
+            result: 'ok',
+            usage: { input_tokens: 1, output_tokens: 1 },
+            duration_ms: 1,
+          };
+        },
+      };
+    });
+    const cligent = new Cligent(
+      new ClaudeCodeAdapter({ loadSdk: async () => ({ query }) }),
+      { fastMode: true },
+    );
+
+    const defaultEvents = await collect(cligent.run('default'));
+    const overrideEvents = await collect(
+      Cligent.parallel([
+        {
+          agent: cligent,
+          prompt: 'override',
+          overrides: { fastMode: false },
+        },
+      ]),
+    );
+
+    expect(requests).toMatchObject([
+      { prompt: 'default', options: { settings: { fastMode: true } } },
+      { prompt: 'override', options: { settings: { fastMode: false } } },
+    ]);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(defaultEvents.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(overrideEvents.at(-1)?.payload).toMatchObject({ status: 'success' });
+  });
+
+  it('surfaces one upstream refusal without substituting a request', async () => {
+    const requests: unknown[] = [];
+    const query = vi.fn((request: unknown) => {
+      requests.push(request);
+      return {
+        async *[Symbol.asyncIterator](): AsyncGenerator<never, void, void> {
+          throw new Error('fast mode is unavailable for this account');
+        },
+      };
+    });
+    const cligent = new Cligent(
+      new ClaudeCodeAdapter({ loadSdk: async () => ({ query }) }),
+      { fastMode: true },
+    );
+
+    const events = await collect(cligent.run('prompt'));
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(requests).toMatchObject([
+      { prompt: 'prompt', options: { settings: { fastMode: true } } },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]?.payload).toMatchObject({
+      code: 'SDK_STREAM_ERROR',
+      message: 'fast mode is unavailable for this account',
+      recoverable: false,
+    });
+    expect(events[1]?.payload).toMatchObject({ status: 'error' });
+    expect(events[1]?.payload).not.toHaveProperty('fastMode');
+  });
+});
+
 describe('unsupported built-in fast-mode requests', () => {
   it.each([
     [

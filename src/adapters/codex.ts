@@ -669,22 +669,12 @@ export function mapAgentOptionsToCodexOptions(
   const configEffort =
     effort === 'max' || effort === 'ultra' ? effort : undefined;
   const permissionConfig = permissions.codexOptions?.config;
-  const permissionFeatures = permissionConfig?.features;
-  const existingFeatures =
-    typeof permissionFeatures === 'object' &&
-    permissionFeatures !== null &&
-    !Array.isArray(permissionFeatures)
-      ? permissionFeatures
-      : undefined;
   const fastModeConfig =
     options?.fastMode === undefined
       ? undefined
       : {
           service_tier: options.fastMode ? 'fast' : 'default',
-          features: {
-            ...(existingFeatures ?? {}),
-            fast_mode: true,
-          },
+          features: { fast_mode: true },
         };
   const codexConfig =
     permissionConfig || configEffort || fastModeConfig
