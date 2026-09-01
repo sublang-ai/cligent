@@ -269,7 +269,7 @@ When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#en
 | `true` | `'fast'` | `true` |
 | `false` | `'default'` | `true` |
 
-Every row retains independent `default_permissions`, `approvals_reviewer`, `model_reasoning_effort`, and other feature values, with `false` selecting Codex's native default tier rather than disabling the fast-mode feature mechanism.
+Every row retains independent `default_permissions`, `approvals_reviewer`, and `model_reasoning_effort` values, with `false` selecting Codex's native default tier rather than disabling the fast-mode feature mechanism.
 
 ### codex-56
 
@@ -535,7 +535,7 @@ Given every Codex effort value, omission, foreign value, and unknown value, when
 
 ### codex-57
 
-Where `fastMode` omitted, `true`, and `false` are crossed with native and isolated configuration, supplied permissions, and ordinary, `max`, and `ultra` effort, when the adapter reaches the Codex SDK boundary, the check shall assert [[codex-55](#codex-55)]'s exact tier and feature values in one merged configuration object without losing any independent permission, effort, isolation, or feature field.
+Where `fastMode` omitted, `true`, and `false` are crossed with native and isolated configuration, supplied permissions, and ordinary, `max`, and `ultra` effort, when the adapter reaches the Codex SDK boundary, the check shall assert [[codex-55](#codex-55)]'s exact tier and feature values in one merged configuration object without losing any independent permission, effort, or isolation field.
 
 ### codex-58
 
