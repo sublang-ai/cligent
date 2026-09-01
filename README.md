@@ -111,6 +111,12 @@ for await (const event of agent.run('Now add tests for it')) {
 - **Kimi Code** — via one short-lived `kimi acp` process per run
 - **OpenCode** — via `@opencode-ai/sdk` and, in managed mode, `opencode`
 
+Claude and Codex also accept the optional `fastMode` request, independently
+of reasoning `effort`. Availability still depends on the selected model,
+account, provider, and policy, and fast serving may cost more. Use the exported
+`FAST_MODE_SUPPORT` metadata before presenting the option; see the
+[fast-mode guide](docs/guide.md#fast-mode) for request and observation limits.
+
 ## tmux-play
 
 `tmux-play` is a reference application built on `Cligent` — a working

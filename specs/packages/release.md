@@ -71,19 +71,19 @@ Before tagging a release, the developer or agent shall verify:
 - [ ] all tests pass;
 - [ ] `npm run smoke:release` passes locally — the single local release-smoke entry point, chaining the existing gates in order: `build` [[package-10](package.md#package-10)], `test:package`, `test:distributable`, `test:smoke`;
 - [ ] `CHANGELOG.md` is updated with the new version and date;
-- [ ] the `package.json` version is bumped;
+- [ ] the chosen version is carried by `package.json` `version`, `package-lock.json` top-level `version`, and `package-lock.json` `packages[""].version`;
 - [ ] all changes are committed and pushed to `main`.
 
 ### release-14
 
 Before creating a release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
 
-| Evidence | Required contents |
-| --- | --- |
-| commit-range review | previous tag, audited head, commit count, ordered-log digest, review command, and attestation that every commit was considered |
-| Semantic Versioning classification | chosen version, change level, and rationale tied to the reviewed changes [[release-1](#release-1)] |
-| notable-change reconciliation | each notable change group, its changelog heading, and the commits that establish it [[release-3](#release-3)], [[release-5](#release-5)] |
-| pre-tag checklist | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending |
+| Evidence                                                | Required contents                                                                                                                                                                                                                                        |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| commit-range review                                     | previous tag, audited head, commit count, subject-class counts derived from the text before each subject's first `(` or `:` and ordered lexicographically by class, ordered-log digest, review command, and attestation that every commit was considered |
+| release identity and Semantic Versioning classification | previous version, chosen version, release date, change level, and rationale tied to the reviewed changes [[release-1](#release-1)]                                                                                                                       |
+| notable-change reconciliation                           | each notable change group, its changelog heading, and the commits that establish it [[release-3](#release-3)], [[release-5](#release-5)]                                                                                                                 |
+| pre-tag checklist                                       | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending                                                                                                           |
 
 ## Verification
 
@@ -109,11 +109,11 @@ When `npm run smoke:release` runs, the verification shall assert that this one e
 
 When a release-preparation record is audited, the system check shall assert the following evidence against the real repository [[release-14](#release-14)]:
 
-- the recorded Git range has the stated endpoint, commit count, subjects, and ordered-log digest [[release-4](#release-4)];
+- the recorded previous tag, audited head, commit count, subject-class counts, ordered-log digest, and review command agree with the real Git range, and the record carries the complete-review attestation [[release-14](#release-14)], [[release-4](#release-4)];
 - the `ci` job in `.github/workflows/ci.yml` and the `release` job in `.github/workflows/release.yml`, each of which executes the default unit suite containing this audit, are the complete set of jobs invoking `npm test` and check out full Git history and tags before that suite runs so the previous tag and audited head are available, while an otherwise valid checkout lacking the recorded history fails the audit [[release-4](#release-4)];
-- the recorded change level produces the chosen version from the previous tag [[release-1](#release-1)];
-- `CHANGELOG.md` has an empty `[Unreleased]` section, the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
-- `package.json` carries the chosen version and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
+- the recorded previous tag and previous version agree, the recorded change level produces the chosen version, and the recorded release date identifies its changelog section [[release-1](#release-1)], [[release-4](#release-4)];
+- `CHANGELOG.md` has the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links; `[Unreleased]` is empty in the prepared tree and matching release-tag tree, while later-release entries in a working tree based on that tag or in a descendant tree do not invalidate the prepared record [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
+- `package.json` `version`, `package-lock.json` top-level `version`, and `package-lock.json` `packages[""].version` carry the chosen version, and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
 
 ## References
 

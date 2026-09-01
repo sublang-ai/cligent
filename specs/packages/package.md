@@ -213,7 +213,7 @@ Where stale and current files exist under `dist/` and the package documentation 
 
 ### package-102
 
-Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when runtime consumers import every documented surface and run the installed launcher's help and a type consumer exercises adapter-scoped effort declarations, the verification shall assert the installed-package contract:
+Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when runtime consumers import every documented surface and run the installed launcher's help and a type consumer exercises adapter-scoped effort and fast-mode declarations, the verification shall assert the installed-package contract:
 
 - the root entry point loads [[package-6](#package-6)];
 - every adapter subpath loads [[package-7](#package-7)];

@@ -281,6 +281,66 @@ the validated in-memory value and the launcher warns you to rename
 `reasoningEffort` to `effort` manually. Conflicting keys, invalid legacy values,
 or any other config error reject without writing.
 
+## Fast mode
+
+`fastMode` requests a provider's lower-latency serving mode independently of
+reasoning `effort`. Claude Code and Codex accept the option. Gemini, OpenCode,
+and Kimi expose no native fast-mode request surface, so their adapter-bound
+TypeScript options admit no value and dynamic calls reject a defined value
+before provider work starts.
+
+- `true` requests the provider's native fast mode.
+- `false` explicitly requests its native standard or off mode and overrides a
+  constructor default of `true`.
+- Omission adds no Cligent override and leaves provider configuration in
+  control.
+
+```ts
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
+
+const claude = new Cligent(new ClaudeCodeAdapter(), { fastMode: true });
+
+// Explicit false is retained as a per-run scalar override.
+for await (const event of claude.run('Use standard serving for this turn', {
+  fastMode: false,
+})) {
+  // ...
+}
+```
+
+Fast-mode support means Cligent can deliver the request, not that the selected
+model, account, provider, organization policy, billing state, network, or
+installed runtime will honor it. A supported backend refusal follows the
+ordinary error path; Cligent does not retry at another speed or claim that
+fast serving occurred.
+
+Use `FAST_MODE_SUPPORT` and its helpers to build an adapter selector. The
+metadata is deeply frozen and separates request support from authentic
+observation support. `claude` is accepted as an alias for `claude-code`.
+
+```ts
+import {
+  FAST_MODE_SUPPORT,
+  assertFastModeSupported,
+  getFastModeSupport,
+  isFastModeSupported,
+} from '@sublang/cligent';
+
+console.log(FAST_MODE_SUPPORT['claude-code'].observation); // 'init-and-done'
+console.log(getFastModeSupport('codex')?.requestSupported); // true
+console.log(isFastModeSupported('gemini')); // false
+assertFastModeSupported('codex');
+```
+
+Claude may attach authentic `fastMode` observations to `init` and `done`
+payloads. Those observations can report `state` (`off`, `cooldown`, or `on`)
+and a `disabledReason`; a `done` observation may additionally report the
+completed response's `responseSpeed` (`standard` or `fast`). Missing or
+unrecognized upstream data stays absent. Codex accepts requests but exposes no
+effective-tier event through its public SDK, so its events carry no fast-mode
+observation and never echo the requested boolean as one.
+
 ## Session continuity
 
 When an adapter's `done` event includes a `resumeToken`, `Cligent` stores it
@@ -590,7 +650,7 @@ for await (const event of agent.run('Fix the login bug', {
 
 | Type                           | Payload                                                                              | Description                                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `init`                         | `model`, `cwd`, `tools`                                                              | Session started                                                          |
+| `init`                         | `model`, `cwd`, `tools`, `fastMode?`                                                 | Session started; Claude may report authentic fast-mode state             |
 | `text`                         | `content`                                                                            | Complete text response                                                   |
 | `text_delta`                   | `delta`                                                                              | Streaming text chunk                                                     |
 | `thinking`                     | `summary`                                                                            | Agent reasoning                                                          |
@@ -599,4 +659,4 @@ for await (const event of agent.run('Fix the login bug', {
 | `permission_request`           | `toolName`, `toolUseId`, `input`                                                     | Agent asks for permission                                                |
 | `opencode:permission_decision` | `requestId`, `permission`, `patterns`, `toolUseId`, `decision`, `automated`, `input` | Successful OpenCode auto approval audit                                  |
 | `error`                        | `code`, `message`, `recoverable`                                                     | Error                                                                    |
-| `done`                         | `status`, `resumeToken?`, `usage`, `durationMs`                                      | Terminal event — always the last event (see [Token usage](#token-usage)) |
+| `done`                         | `status`, `resumeToken?`, `usage`, `durationMs`, `fastMode?`                         | Terminal event — always last; Claude may report state and response speed |

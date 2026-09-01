@@ -376,6 +376,9 @@ for (const [label, value] of [
   ['TmuxPlayRuntime', tmuxPlay.TmuxPlayRuntime],
   ['FanoutCaptain', fanout.FanoutCaptain],
   ['fanout default factory', fanout.default],
+  ['getFastModeSupport', root.getFastModeSupport],
+  ['isFastModeSupported', root.isFastModeSupported],
+  ['assertFastModeSupported', root.assertFastModeSupported],
 ]) {
   if (typeof value !== 'function') throw new Error(\`missing public export \${label}\`);
 }
@@ -388,6 +391,43 @@ if (root.EFFORT_SUPPORT.codex.values.at(-1) !== 'ultra') {
 if (root.EFFORT_SUPPORT.kimi.values.join(',') !== 'off,on') {
   throw new Error('Kimi effort metadata is unavailable or stale');
 }
+const expectedFastModeSupport = {
+  'claude-code': [true, 'init-and-done', true, true],
+  codex: [true, 'none', true, true],
+  gemini: [false, 'none', false, false],
+  kimi: [false, 'none', false, false],
+  opencode: [false, 'none', false, false],
+};
+if (!Object.isFrozen(root.FAST_MODE_SUPPORT)) {
+  throw new Error('root fast-mode metadata is mutable');
+}
+for (const [agent, expected] of Object.entries(expectedFastModeSupport)) {
+  const support = root.FAST_MODE_SUPPORT[agent];
+  const actual = support && [
+    support.requestSupported,
+    support.observation,
+    support.modelDependent,
+    support.accountDependent,
+  ];
+  if (
+    support === undefined ||
+    !Object.isFrozen(support) ||
+    JSON.stringify(actual) !== JSON.stringify(expected) ||
+    typeof support.notes !== 'string' ||
+    support.notes.length === 0
+  ) {
+    throw new Error(\`\${agent} fast-mode metadata is unavailable or stale\`);
+  }
+}
+if (
+  root.getFastModeSupport('claude') !==
+    root.FAST_MODE_SUPPORT['claude-code'] ||
+  !root.isFastModeSupported('codex') ||
+  root.isFastModeSupported('gemini')
+) {
+  throw new Error('root fast-mode helpers are unavailable or stale');
+}
+root.assertFastModeSupported('codex');
 
 const installedBin = join(
   nodeModulesRoot,
@@ -429,9 +469,17 @@ process.stdout.write(
     `import {
   Cligent,
   EFFORT_SUPPORT,
+  FAST_MODE_SUPPORT,
+  assertFastModeSupported,
+  getFastModeSupport,
+  isFastModeSupported,
   type ClaudeEffort,
   type CodexEffort,
+  type DonePayload,
+  type FastModeObservation,
+  type FastModeTerminalObservation,
   type GeminiEffort,
+  type InitPayload,
   type KimiEffort,
   type OpenCodeEffort,
 } from '@sublang/cligent';
@@ -441,6 +489,7 @@ import { GeminiAdapter } from '@sublang/cligent/adapters/gemini';
 import { KimiAdapter } from '@sublang/cligent/adapters/kimi';
 import { OpenCodeAdapter } from '@sublang/cligent/adapters/opencode';
 import type {
+  AgentCallSettings,
   Captain,
   CaptainConfig,
   PlayerConfig,
@@ -449,14 +498,20 @@ import createFanoutCaptain, {
   FanoutCaptain,
 } from '@sublang/cligent/captains/fanout';
 
-const claude = new Cligent(new ClaudeCodeAdapter(), { effort: 'ultracode' });
-const codex = new Cligent(new CodexAdapter(), { effort: 'ultra' });
+const claude = new Cligent(new ClaudeCodeAdapter(), {
+  effort: 'ultracode',
+  fastMode: true,
+});
+const codex = new Cligent(new CodexAdapter(), {
+  effort: 'ultra',
+  fastMode: false,
+});
 const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
 const kimi = new Cligent(new KimiAdapter(), { effort: 'on' });
 const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'minimal' });
 
-claude.run('typed consumer', { effort: 'ultracode' });
-codex.run('typed consumer', { effort: 'ultra' });
+claude.run('typed consumer', { effort: 'ultracode', fastMode: false });
+codex.run('typed consumer', { effort: 'ultra', fastMode: true });
 gemini.run('typed consumer', { effort: 'xhigh' });
 kimi.run('typed consumer', { effort: 'off' });
 opencode.run('typed consumer', { effort: 'high' });
@@ -470,24 +525,100 @@ gemini.run('typed consumer', { effort: 'ultra' });
 opencode.run('typed consumer', { effort: 'ultracode' });
 // @ts-expect-error Kimi accepts only its binary native effort values.
 kimi.run('typed consumer', { effort: 'high' });
+// @ts-expect-error Gemini exposes no native fast-mode request surface.
+gemini.run('typed consumer', { fastMode: false });
+// @ts-expect-error OpenCode exposes no native fast-mode request surface.
+opencode.run('typed consumer', { fastMode: true });
+// @ts-expect-error Kimi exposes no native fast-mode request surface.
+kimi.run('typed consumer', { fastMode: false });
 
 const claudeValues: readonly ClaudeEffort[] = EFFORT_SUPPORT['claude-code'].values;
 const codexValues: readonly CodexEffort[] = EFFORT_SUPPORT.codex.values;
 const geminiValues: readonly GeminiEffort[] = EFFORT_SUPPORT.gemini.values;
 const kimiValues: readonly KimiEffort[] = EFFORT_SUPPORT.kimi.values;
 const opencodeValues: readonly OpenCodeEffort[] = EFFORT_SUPPORT.opencode.values;
+const claudeFastModeSupport = getFastModeSupport('claude');
+const codexFastModeSupported: boolean = isFastModeSupported('codex');
+const claudeFastModeObservation: 'init-and-done' =
+  FAST_MODE_SUPPORT['claude-code'].observation;
+assertFastModeSupported('codex');
+
+const initFastMode: FastModeObservation = {
+  state: 'on',
+  disabledReason: 'pending',
+};
+const doneFastMode: FastModeTerminalObservation = {
+  state: 'cooldown',
+  responseSpeed: 'standard',
+};
+const initPayload: InitPayload = {
+  model: 'claude-opus-4-8',
+  cwd: '.',
+  tools: [],
+  fastMode: initFastMode,
+};
+const donePayload: DonePayload = {
+  status: 'success',
+  usage: { toolUses: 0 },
+  durationMs: 0,
+  fastMode: doneFastMode,
+};
+const invalidInitFastMode: FastModeObservation = {
+  // @ts-expect-error Response speed is available only on terminal observations.
+  responseSpeed: 'fast',
+};
+
 const players: PlayerConfig[] = [
-  { id: 'claude', adapter: 'claude', effort: 'ultracode' },
-  { id: 'codex', adapter: 'codex', effort: 'ultra' },
+  { id: 'claude', adapter: 'claude', effort: 'ultracode', fastMode: true },
+  { id: 'codex', adapter: 'codex', effort: 'ultra', fastMode: false },
   { id: 'gemini', adapter: 'gemini', effort: 'max' },
   { id: 'kimi', adapter: 'kimi', effort: 'on' },
   { id: 'opencode', adapter: 'opencode', effort: 'minimal' },
 ];
-const captain: CaptainConfig = {
-  adapter: 'codex',
-  from: '@sublang/cligent/captains/fanout',
-  effort: 'ultra',
-  options: null,
+// @ts-expect-error Gemini player configuration rejects fast mode.
+const invalidGeminiPlayer: PlayerConfig = {
+  id: 'gemini-fast', adapter: 'gemini', fastMode: false,
+};
+// @ts-expect-error OpenCode player configuration rejects fast mode.
+const invalidOpenCodePlayer: PlayerConfig = {
+  id: 'opencode-fast', adapter: 'opencode', fastMode: true,
+};
+// @ts-expect-error Kimi player configuration rejects fast mode.
+const invalidKimiPlayer: PlayerConfig = {
+  id: 'kimi-fast', adapter: 'kimi', fastMode: false,
+};
+const captains: CaptainConfig[] = [
+  {
+    adapter: 'claude',
+    from: '@sublang/cligent/captains/fanout',
+    effort: 'ultracode',
+    fastMode: true,
+    options: null,
+  },
+  {
+    adapter: 'codex',
+    from: '@sublang/cligent/captains/fanout',
+    effort: 'ultra',
+    fastMode: false,
+    options: null,
+  },
+];
+// @ts-expect-error Gemini Captain configuration rejects fast mode.
+const invalidGeminiCaptain: CaptainConfig = {
+  adapter: 'gemini', from: '@sublang/cligent/captains/fanout', fastMode: true, options: null,
+};
+// @ts-expect-error OpenCode Captain configuration rejects fast mode.
+const invalidOpenCodeCaptain: CaptainConfig = {
+  adapter: 'opencode', from: '@sublang/cligent/captains/fanout', fastMode: false, options: null,
+};
+// @ts-expect-error Kimi Captain configuration rejects fast mode.
+const invalidKimiCaptain: CaptainConfig = {
+  adapter: 'kimi', from: '@sublang/cligent/captains/fanout', fastMode: true, options: null,
+};
+const callSettings: AgentCallSettings = {
+  model: { kind: 'provider-default' },
+  effort: { kind: 'value', value: 'high' },
+  fastMode: false,
 };
 const fanout: Captain = createFanoutCaptain();
 const namedFanout: Captain = new FanoutCaptain();
@@ -497,8 +628,23 @@ void codexValues;
 void geminiValues;
 void kimiValues;
 void opencodeValues;
+void claudeFastModeSupport;
+void codexFastModeSupported;
+void claudeFastModeObservation;
+void initFastMode;
+void doneFastMode;
+void initPayload;
+void donePayload;
+void invalidInitFastMode;
 void players;
-void captain;
+void invalidGeminiPlayer;
+void invalidOpenCodePlayer;
+void invalidKimiPlayer;
+void captains;
+void invalidGeminiCaptain;
+void invalidOpenCodeCaptain;
+void invalidKimiCaptain;
+void callSettings;
 void fanout;
 void namedFanout;
 `,

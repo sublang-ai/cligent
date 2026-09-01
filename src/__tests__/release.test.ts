@@ -3,7 +3,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +18,14 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+const allowedChangelogHeadings = [
+  'Added',
+  'Changed',
+  'Deprecated',
+  'Removed',
+  'Fixed',
+  'Security',
+];
 
 function read(relativePath: string): string {
   return readFileSync(join(projectRoot, relativePath), 'utf8');
@@ -40,6 +54,118 @@ function orderedAuditLog(
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
+}
+
+function changelogUnreleasedSection(
+  changelog: string,
+  version: string,
+): string | undefined {
+  const unreleasedHeader = '## [Unreleased]';
+  const unreleasedStart = changelog.indexOf(unreleasedHeader);
+  const versionStart = changelog.indexOf(
+    `## [${version}] - `,
+    unreleasedStart + unreleasedHeader.length,
+  );
+  if (unreleasedStart < 0 || versionStart < 0) return undefined;
+  return changelog.slice(
+    unreleasedStart + unreleasedHeader.length,
+    versionStart,
+  );
+}
+
+function isLaterReleaseTree(
+  repository: string,
+  version: string,
+  workingChangelog: string,
+): boolean {
+  let taggedCommit: string;
+  let headCommit: string;
+  try {
+    taggedCommit = execFileSync(
+      'git',
+      ['rev-parse', '--verify', `v${version}^{commit}`],
+      {
+        cwd: repository,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    ).trim();
+    headCommit = execFileSync(
+      'git',
+      ['rev-parse', '--verify', 'HEAD^{commit}'],
+      {
+        cwd: repository,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    ).trim();
+    execFileSync(
+      'git',
+      ['merge-base', '--is-ancestor', taggedCommit, headCommit],
+      {
+        cwd: repository,
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
+    );
+  } catch {
+    return false;
+  }
+  try {
+    const taggedChangelog = execFileSync(
+      'git',
+      ['show', `${taggedCommit}:CHANGELOG.md`],
+      {
+        cwd: repository,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const taggedUnreleased = changelogUnreleasedSection(
+      taggedChangelog,
+      version,
+    );
+    if (taggedUnreleased === undefined || taggedUnreleased.trim() !== '') {
+      throw new Error(
+        `v${version} does not contain an empty prepared Unreleased section`,
+      );
+    }
+    if (taggedCommit !== headCommit) return true;
+    return taggedChangelog !== workingChangelog;
+  } catch {
+    throw new Error(
+      `v${version} does not contain an auditable prepared changelog`,
+    );
+  }
+}
+
+function orderedChangelogHeadingMatches(section: string): RegExpMatchArray[] {
+  const matches = [...section.matchAll(/^### (.+)$/gm)];
+  const headings = matches.map((match) => match[1] ?? '');
+  expect(headings.length).toBeGreaterThan(0);
+  expect(headings).toEqual(
+    [...headings].sort(
+      (left, right) =>
+        allowedChangelogHeadings.indexOf(left) -
+        allowedChangelogHeadings.indexOf(right),
+    ),
+  );
+  expect(
+    headings.every((heading) => allowedChangelogHeadings.includes(heading)),
+  ).toBe(true);
+  return matches;
+}
+
+function auditUnreleasedSection(
+  repository: string,
+  version: string,
+  changelog: string,
+  section: string,
+): void {
+  if (!isLaterReleaseTree(repository, version, changelog)) {
+    expect(section.trim()).toBe('');
+    return;
+  }
+  if (section.trim() !== '') orderedChangelogHeadingMatches(section);
 }
 
 interface WorkflowStep {
@@ -136,36 +262,23 @@ describe('release preparation', () => {
     const versionStart = changelog.indexOf(versionHeader);
     expect(unreleasedStart).toBeGreaterThanOrEqual(0);
     expect(versionStart).toBeGreaterThan(unreleasedStart);
-    expect(
-      changelog
-        .slice(unreleasedStart + '## [Unreleased]'.length, versionStart)
-        .trim(),
-    ).toBe('');
+    const unreleasedSection = changelog.slice(
+      unreleasedStart + '## [Unreleased]'.length,
+      versionStart,
+    );
+    auditUnreleasedSection(
+      projectRoot,
+      chosenVersion,
+      changelog,
+      unreleasedSection,
+    );
 
     const nextVersionStart = changelog.indexOf('\n## [', versionStart + 1);
     const versionSection = changelog.slice(
       versionStart,
       nextVersionStart === -1 ? undefined : nextVersionStart,
     );
-    const allowedHeadings = [
-      'Added',
-      'Changed',
-      'Deprecated',
-      'Removed',
-      'Fixed',
-      'Security',
-    ];
-    const headingMatches = [...versionSection.matchAll(/^### (.+)$/gm)];
-    const headings = headingMatches.map((match) => match[1] ?? '');
-    expect(headings).toEqual(
-      [...headings].sort(
-        (left, right) =>
-          allowedHeadings.indexOf(left) - allowedHeadings.indexOf(right),
-      ),
-    );
-    expect(headings.every((heading) => allowedHeadings.includes(heading))).toBe(
-      true,
-    );
+    const headingMatches = orderedChangelogHeadingMatches(versionSection);
 
     const changelogGroups = new Map(
       headingMatches.map((match, index) => {
@@ -310,6 +423,142 @@ describe('release preparation', () => {
       expect(() =>
         orderedAuditLog(scratch, previousTag, auditedHead),
       ).toThrow();
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('scopes Unreleased emptiness to the prepared release lifecycle (release-15)', () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'cligent-release-state-'));
+    const changelogPath = join(scratch, 'CHANGELOG.md');
+    const emptyChangelog = '## [Unreleased]\n\n## [1.2.0] - 2026-08-31\n';
+    const laterChangelog = [
+      '## [Unreleased]',
+      '',
+      '### Added',
+      '',
+      '- A later feature.',
+      '',
+      '### Fixed',
+      '',
+      '- A later fix.',
+      '',
+      '## [1.2.0] - 2026-08-31',
+      '',
+    ].join('\n');
+    const nonemptyTaggedChangelog = laterChangelog.replace(
+      '## [1.2.0]',
+      '## [1.3.0]',
+    );
+    const laterSection = laterChangelog.slice(
+      laterChangelog.indexOf('## [Unreleased]') + '## [Unreleased]'.length,
+      laterChangelog.indexOf('## [1.2.0]'),
+    );
+
+    try {
+      execFileSync('git', ['init', '--quiet', '--initial-branch=main'], {
+        cwd: scratch,
+      });
+      execFileSync('git', ['config', 'user.name', 'Release Audit'], {
+        cwd: scratch,
+      });
+      execFileSync(
+        'git',
+        ['config', 'user.email', 'release-audit@example.invalid'],
+        { cwd: scratch },
+      );
+      writeFileSync(changelogPath, emptyChangelog);
+      execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: scratch });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'prepare release'],
+        { cwd: scratch },
+      );
+      const preparedCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: scratch,
+        encoding: 'utf8',
+      }).trim();
+
+      expect(() =>
+        auditUnreleasedSection(scratch, '1.2.0', emptyChangelog, ''),
+      ).not.toThrow();
+      writeFileSync(changelogPath, laterChangelog);
+      expect(() =>
+        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
+      ).toThrow();
+
+      writeFileSync(changelogPath, emptyChangelog);
+      execFileSync('git', ['-c', 'tag.gpgSign=false', 'tag', 'v1.2.0'], {
+        cwd: scratch,
+      });
+      expect(() =>
+        auditUnreleasedSection(scratch, '1.2.0', emptyChangelog, ''),
+      ).not.toThrow();
+
+      writeFileSync(changelogPath, laterChangelog);
+      expect(() =>
+        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
+      ).not.toThrow();
+      execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: scratch });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'add later notes'],
+        { cwd: scratch },
+      );
+      expect(() =>
+        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
+      ).not.toThrow();
+
+      execFileSync('git', ['switch', '--quiet', '--detach', preparedCommit], {
+        cwd: scratch,
+      });
+      execFileSync(
+        'git',
+        [
+          'commit',
+          '--quiet',
+          '--allow-empty',
+          '--no-gpg-sign',
+          '-m',
+          'unrelated release',
+        ],
+        { cwd: scratch },
+      );
+      execFileSync('git', ['-c', 'tag.gpgSign=false', 'tag', 'v9.9.9'], {
+        cwd: scratch,
+      });
+      execFileSync('git', ['switch', '--quiet', 'main'], { cwd: scratch });
+      expect(() =>
+        auditUnreleasedSection(scratch, '9.9.9', laterChangelog, laterSection),
+      ).toThrow();
+
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          laterChangelog,
+          '### Fixed\n\n- Fixed first.\n\n### Added\n\n- Added second.\n',
+        ),
+      ).toThrow();
+
+      writeFileSync(changelogPath, nonemptyTaggedChangelog);
+      execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: scratch });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'tag malformed notes'],
+        { cwd: scratch },
+      );
+      execFileSync('git', ['-c', 'tag.gpgSign=false', 'tag', 'v1.3.0'], {
+        cwd: scratch,
+      });
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.3.0',
+          nonemptyTaggedChangelog,
+          laterSection,
+        ),
+      ).toThrow(/auditable prepared changelog/);
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }

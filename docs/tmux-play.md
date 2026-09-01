@@ -64,7 +64,7 @@ When an older home config is loaded through fallback discovery, `tmux-play`
 adds only missing safe defaults to that home YAML: `theme: auto`, resolved
 layout defaults, `captain.options: {}`, and the notification defaults shown
 below. It preserves existing values and does not add model, instruction,
-permissions, or an `effort` default to old files.
+permissions, `fastMode`, or an `effort` default to old files.
 
 Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 `tmux-play.config.json` are ignored; when one is present without a cwd YAML
@@ -209,6 +209,37 @@ offending path, adapter, and that adapter's allowed values; for example,
 Claude rejects `ultra`, while Codex rejects `ultracode`, and Gemini and
 OpenCode reject both. Kimi rejects every portable value and accepts only
 `off` or `on`.
+
+### Fast mode
+
+The Captain and each player may request fast serving independently of
+`effort`. Only Claude and Codex accept the optional boolean `fastMode` key:
+
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  fastMode: true
+  options: {}
+players:
+  - id: coder
+    adapter: codex
+    fastMode: false
+```
+
+| Adapter                      | Request                                                         | Authentic observation                                                                                                |
+| ---------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `claude`                     | `true` requests fast serving; `false` requests standard/off     | Optional state and disabled reason on initialization and completion; optional completed-response speed on completion |
+| `codex`                      | `true` requests fast serving; `false` requests the default tier | None; the public SDK exposes no effective-tier event                                                                 |
+| `gemini`, `opencode`, `kimi` | Rejected when present, including `false`                        | None                                                                                                                 |
+
+Omission adds no override and leaves the provider default in control. The
+loader retains explicit `false` and validates the value against its adapter
+before runtime startup, naming the offending Captain or player path on error.
+The generated home config always omits `fastMode`, so first-run configuration
+never opts into an account-dependent paid serving mode. Request support does
+not guarantee availability for a selected model, account, provider, policy,
+network, or installed runtime.
 
 ### Legacy `reasoningEffort` compatibility
 
@@ -424,6 +455,7 @@ await context.callPlayer('dev.coder', prompt, {
   settings: {
     model: { kind: 'provider-default' },
     effort: { kind: 'value', value: 'high' },
+    fastMode: false,
     instruction: 'Implement the smallest coherent change.',
     permissions: { mode: 'auto', writablePaths: ['.git'] },
   },
@@ -432,10 +464,11 @@ await context.callPlayer('dev.coder', prompt, {
 
 Player IDs may use dot-delimited namespaces such as `dev.coder` and
 `dev.reviewer`. When `settings` is omitted, tmux-play supplies the YAML model,
-effort, instruction, and permissions as runtime-held call defaults. A supplied
-`settings` object is the entire effective call
-configuration: omitted `instruction` and `permissions` mean none, and neither
-is merged with YAML defaults. Each `model` and `effort` selector is either a
+effort, fast mode, instruction, and permissions as runtime-held call defaults.
+A supplied `settings` object is the entire effective call configuration:
+omitted `fastMode` restores provider-default selection rather than merging the
+YAML value; omitted `instruction` and `permissions` mean none, and neither is
+merged with YAML defaults. Each `model` and `effort` selector is either a
 concrete value or `provider-default`; the latter omits that option so Codex or
 Gemini chooses its current default even on a resumed call. Claude and OpenCode
 support provider defaults on fresh calls and can use default effort beside a
@@ -445,7 +478,8 @@ model without exposing a reset. Omitted permissions on
 a resumed OpenCode complete-settings call clear the prior Cligent-owned session
 ruleset. Kimi supports default reset only for a fresh call because ACP cannot
 restore a resumed session's provider default. Invalid or unenforceable settings
-fail before an agent call begins and do not discard the stored resume token.
+— including non-boolean or adapter-unsupported fast mode — fail before an
+agent call begins and do not discard the stored resume token.
 tmux-play resolves the effective explicit, forced-fresh, or automatic resume
 selection once at admission and uses that same selection for reset preflight
 and the provider run.
