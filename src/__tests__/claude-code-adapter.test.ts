@@ -45,7 +45,11 @@ interface MockSdkInnerOptions {
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   effort?: string;
-  settings?: { ultracode?: boolean };
+  settings?: {
+    ultracode?: boolean;
+    fastMode?: boolean;
+    fastModePerSessionOptIn?: boolean;
+  };
   sessionId?: string;
 }
 
@@ -99,6 +103,66 @@ async function collect(
     events.push(event);
   }
   return events;
+}
+
+async function collectFastModePayloads({
+  init,
+  result = {},
+  usage = {},
+  terminal = 'success',
+  fastMode,
+}: {
+  init?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  usage?: unknown;
+  terminal?: 'success' | 'error';
+  fastMode?: boolean;
+}): Promise<{ init?: InitPayload; done: DonePayload }> {
+  const terminalResult =
+    terminal === 'error'
+      ? {
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          errors: ['upstream failure'],
+          usage,
+          duration_ms: 1,
+          ...result,
+        }
+      : {
+          type: 'result',
+          status: 'success',
+          result: 'ok',
+          usage,
+          duration_ms: 1,
+          ...result,
+        };
+  const adapter = new ClaudeCodeAdapter({
+    loadSdk: makeLoader([
+      ...(init === undefined
+        ? []
+        : [
+            {
+              type: 'system',
+              subtype: 'init',
+              model: 'claude',
+              cwd: '/repo',
+              tools: [],
+              ...init,
+            },
+          ]),
+      terminalResult,
+    ]),
+  });
+  const events = await collect(
+    adapter.run('prompt', fastMode === undefined ? undefined : { fastMode }),
+  );
+  const initEvent = events.find((event) => event.type === 'init');
+  const doneEvent = events.find((event) => event.type === 'done')!;
+  return {
+    ...(initEvent ? { init: initEvent.payload as InitPayload } : {}),
+    done: doneEvent.payload as DonePayload,
+  };
 }
 
 describe('ClaudeCodeAdapter', () => {
@@ -2057,6 +2121,211 @@ describe('ClaudeCodeAdapter', () => {
         expect(mapped.queryOptions.effort).toBe(expectedEffort);
         expect(mapped.queryOptions.settings?.ultracode).toBe(expectedUltracode);
       }
+    }
+  });
+
+  it('maps fast mode independently into one Claude SDK settings object', async () => {
+    const efforts: Array<
+      [ClaudeEffort | undefined, string | undefined, boolean | undefined]
+    > = [
+      [undefined, undefined, undefined],
+      ['medium', 'medium', false],
+      ['ultracode', 'xhigh', true],
+    ];
+    const fastModes = [undefined, true, false] as const;
+
+    for (const [effort, expectedEffort, ultracode] of efforts) {
+      for (const fastMode of fastModes) {
+        let captured: MockSdkInnerOptions | undefined;
+        const adapter = new ClaudeCodeAdapter({
+          loadSdk: makeLoader(
+            [
+              {
+                type: 'result',
+                status: 'success',
+                result: 'ok',
+                usage: { input_tokens: 1 },
+                duration_ms: 1,
+                sessionId: 'session-fast-settings',
+              },
+            ],
+            (options) => {
+              captured = options;
+            },
+          ),
+        });
+        const options: AgentOptions<ClaudeEffort, boolean> = {
+          ...(effort !== undefined ? { effort } : {}),
+          ...(fastMode !== undefined ? { fastMode } : {}),
+        };
+
+        await collect(adapter.run('prompt', options));
+
+        expect(captured?.effort).toBe(expectedEffort);
+        const expectedSettings =
+          ultracode === undefined && fastMode === undefined
+            ? undefined
+            : {
+                ...(ultracode !== undefined ? { ultracode } : {}),
+                ...(fastMode !== undefined ? { fastMode } : {}),
+              };
+        expect(captured?.settings).toEqual(expectedSettings);
+        expect(captured?.settings?.fastModePerSessionOptIn).toBeUndefined();
+      }
+    }
+  });
+
+  it('rejects malformed fast mode before invoking the Claude SDK query', async () => {
+    let queryCalls = 0;
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(): AsyncIterable<unknown> {
+          queryCalls += 1;
+          return {
+            async *[Symbol.asyncIterator]() {},
+          };
+        },
+      }),
+    });
+    const malformed = {
+      fastMode: 'fast',
+    } as unknown as AgentOptions<ClaudeEffort, boolean>;
+
+    await expect(collect(adapter.run('prompt', malformed))).rejects.toThrow(
+      'fastMode for adapter "claude-code" must be a boolean',
+    );
+    expect(queryCalls).toBe(0);
+  });
+
+  it('maps authentic fast-mode state and disabled reasons on init and done', async () => {
+    const states = ['off', 'cooldown', 'on'] as const;
+    const disabledReasons = [
+      'free',
+      'preference',
+      'extra_usage_disabled',
+      'network_error',
+      'unknown',
+      'not_first_party',
+      'disabled_by_env',
+      'model_not_allowed',
+      'sdk_opt_in_required',
+      'pending',
+    ] as const;
+
+    for (const [index, disabledReason] of disabledReasons.entries()) {
+      const state = states[index % states.length]!;
+      const responseSpeed = index === 0 ? 'fast' : undefined;
+      const source = {
+        fast_mode_state: state,
+        fast_mode_disabled_reason: disabledReason,
+      };
+      const { init, done } = await collectFastModePayloads({
+        init: source,
+        result: source,
+        usage:
+          responseSpeed === undefined
+            ? {}
+            : { speed: responseSpeed, input_tokens: 1 },
+        terminal: index % 2 === 1 ? 'error' : 'success',
+      });
+      expect(init?.fastMode).toEqual({
+        state,
+        disabledReason,
+      });
+      expect(done.fastMode).toEqual({
+        state,
+        disabledReason,
+        ...(responseSpeed !== undefined ? { responseSpeed } : {}),
+      });
+    }
+
+    const partialCases = [
+      [{ fast_mode_state: 'cooldown' }, { state: 'cooldown' }],
+      [{ fast_mode_disabled_reason: 'pending' }, { disabledReason: 'pending' }],
+    ] as const;
+    for (const [source, expected] of partialCases) {
+      const { init, done } = await collectFastModePayloads({
+        init: source,
+        result: source,
+      });
+      expect(init?.fastMode).toEqual(expected);
+      expect(done.fastMode).toEqual(expected);
+    }
+  });
+
+  it('authenticates terminal fast-mode speed from completed-response usage', async () => {
+    const counters = [
+      'input_tokens',
+      'cache_creation_input_tokens',
+      'cache_read_input_tokens',
+      'output_tokens',
+    ] as const;
+    const speeds = ['standard', 'fast'] as const;
+
+    for (const speed of speeds) {
+      for (const [index, counter] of counters.entries()) {
+        const { done } = await collectFastModePayloads({
+          usage: { speed, [counter]: 1 },
+          terminal: index % 2 === 1 ? 'error' : 'success',
+        });
+        expect(done.fastMode).toEqual({
+          responseSpeed: speed,
+        });
+      }
+    }
+
+    const omittedCases: unknown[] = [
+      { speed: null, input_tokens: 1 },
+      { speed: 'turbo', input_tokens: 1 },
+      { speed: 'fast' },
+      {
+        speed: 'standard',
+        input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 0,
+      },
+      {
+        speed: 'fast',
+        input_tokens: -1,
+        cache_creation_input_tokens: 1.5,
+        cache_read_input_tokens: Number.POSITIVE_INFINITY,
+        output_tokens: '1',
+      },
+    ];
+    for (const usage of omittedCases) {
+      const { done } = await collectFastModePayloads({ usage });
+      expect(done.fastMode).toBeUndefined();
+    }
+
+    const { done: fallback } = await collectFastModePayloads({
+      fastMode: true,
+      result: {
+        fast_mode_state: 'cooldown',
+        modelUsage: {
+          claude: {
+            input_tokens: 2,
+            output_tokens: 1,
+            speed: 'fast',
+          },
+        },
+      },
+      usage: { speed: 'standard', input_tokens: 1 },
+    });
+    expect(fallback.status).toBe('success');
+    expect(fallback.fastMode).toEqual({
+      state: 'cooldown',
+      responseSpeed: 'standard',
+    });
+
+    for (const fastMode of [true, false]) {
+      const { init, done } = await collectFastModePayloads({
+        init: {},
+        usage: { input_tokens: 1 },
+        fastMode,
+      });
+      expect(init?.fastMode).toBeUndefined();
+      expect(done.fastMode).toBeUndefined();
     }
   });
 

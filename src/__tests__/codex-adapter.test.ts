@@ -2498,6 +2498,143 @@ describe('CodexAdapter', () => {
     });
   });
 
+  it('merges fast mode with permission, isolation, and effort configuration at the SDK boundary (codex-57)', async () => {
+    const fastModes = [undefined, true, false] as const;
+    const efforts = ['high', 'max', 'ultra'] as const;
+
+    for (const fastMode of fastModes) {
+      for (const isolated of [false, true]) {
+        for (const effort of efforts) {
+          let constructorOptions: MockCodexConstructorOptions | undefined;
+          let threadOptions: MockThreadOptions | undefined;
+          const adapter = new CodexAdapter({
+            loadSdk: makeLoader({
+              events: [
+                {
+                  type: 'turn.completed',
+                  turn: {
+                    status: 'success',
+                    usage: { input_tokens: 1, output_tokens: 1 },
+                  },
+                },
+              ],
+              onConstruct: (options) => {
+                constructorOptions = options;
+              },
+              onStartThread: (options) => {
+                threadOptions = options;
+              },
+            }),
+          });
+
+          await collect(
+            adapter.run('prompt', {
+              effort,
+              ...(fastMode === undefined ? {} : { fastMode }),
+              ...(isolated ? { permissions: { mode: 'auto' as const } } : {}),
+            }),
+          );
+
+          const expectedConfig: Record<string, unknown> = {
+            ...(isolated
+              ? {
+                  default_permissions: ':workspace',
+                  approvals_reviewer: 'auto_review',
+                }
+              : {}),
+            ...(effort === 'max' || effort === 'ultra'
+              ? { model_reasoning_effort: effort }
+              : {}),
+            ...(fastMode === undefined
+              ? {}
+              : {
+                  service_tier: fastMode ? 'fast' : 'default',
+                  features: { fast_mode: true },
+                }),
+          };
+
+          expect(constructorOptions?.config).toEqual(
+            Object.keys(expectedConfig).length > 0 ? expectedConfig : undefined,
+          );
+          expect(constructorOptions?.codexPathOverride === undefined).toBe(
+            !isolated,
+          );
+          expect(threadOptions?.modelReasoningEffort).toBe(
+            effort === 'high' ? 'high' : undefined,
+          );
+        }
+      }
+    }
+  });
+
+  it('omits fast-mode observations after every Codex terminal outcome (codex-58)', async () => {
+    const outcomes = [
+      {
+        name: 'completion',
+        events: [
+          {
+            type: 'turn.completed',
+            turn: {
+              status: 'success',
+              usage: { input_tokens: 1, output_tokens: 1 },
+            },
+          },
+        ],
+      },
+      {
+        name: 'failure',
+        events: [
+          {
+            type: 'turn.failed',
+            error: { code: 'refused', message: 'request refused' },
+          },
+        ],
+      },
+      { name: 'stream exhaustion', events: [] },
+    ] as const;
+
+    for (const fastMode of [undefined, true, false] as const) {
+      for (const outcome of outcomes) {
+        const adapter = new CodexAdapter({
+          loadSdk: makeLoader({ events: [...outcome.events] }),
+        });
+        const events = await collect(
+          adapter.run(
+            `prompt for ${outcome.name}`,
+            fastMode === undefined ? {} : { fastMode },
+          ),
+        );
+        const init = events.find((event) => event.type === 'init');
+        const done = events.find((event) => event.type === 'done');
+
+        expect(init?.payload).not.toHaveProperty('fastMode');
+        expect(done?.payload).not.toHaveProperty('fastMode');
+      }
+    }
+  });
+
+  it('rejects malformed fast mode before loading the Codex SDK', async () => {
+    let loadCalls = 0;
+    const loader = makeLoader({ events: [] });
+    const adapter = new CodexAdapter({
+      loadSdk: async () => {
+        loadCalls += 1;
+        return loader();
+      },
+    });
+    const invalid = {
+      fastMode: 'turbo',
+    } as unknown as AgentOptions<CodexEffort, boolean>;
+
+    expect(() => mapAgentOptionsToCodexOptions(invalid)).toThrow(
+      'fastMode for adapter "codex" must be a boolean',
+    );
+    await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+      'fastMode for adapter "codex" must be a boolean',
+    );
+    expect(loadCalls).toBe(0);
+  });
+
   it('rejects Claude and unknown effort values before starting a thread', async () => {
     let startCalls = 0;
     const adapter = new CodexAdapter({

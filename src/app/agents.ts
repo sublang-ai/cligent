@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { Cligent } from '../cligent.js';
-import type { AgentAdapter } from '../types.js';
+import type { AgentAdapter, Effort } from '../types.js';
 
 export interface AgentEntry {
   name: string;
@@ -20,7 +20,7 @@ type KnownAgentName = (typeof KNOWN_AGENTS)[number];
 
 const ADAPTER_IMPORTS: Record<
   KnownAgentName,
-  () => Promise<{ new (): AgentAdapter }>
+  () => Promise<{ new (): AgentAdapter<Effort, boolean> }>
 > = {
   claude: async () =>
     (await import('../adapters/claude-code.js')).ClaudeCodeAdapter,

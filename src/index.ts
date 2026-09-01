@@ -5,6 +5,11 @@ export type {
   AgentEventType,
   AgentType,
   BaseEvent,
+  FastModeState,
+  FastModeDisabledReason,
+  FastModeResponseSpeed,
+  FastModeObservation,
+  FastModeTerminalObservation,
   InitPayload,
   TextPayload,
   TextDeltaPayload,
@@ -36,6 +41,13 @@ export type {
   CligentOptions,
   RunOptions,
 } from './types.js';
+
+export {
+  FAST_MODE_SUPPORT,
+  getFastModeSupport,
+  isFastModeSupported,
+  assertFastModeSupported,
+} from './fast-mode.js';
 
 export {
   EFFORT_SUPPORT,

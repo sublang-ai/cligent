@@ -3,6 +3,7 @@
 
 import { Cligent } from '../../cligent.js';
 import type { EffortForAgent } from '../../effort.js';
+import type { FastModeForAgent } from '../../fast-mode.js';
 import type { AgentAdapter, PermissionPolicy } from '../../types.js';
 
 export const KNOWN_PLAYER_ADAPTERS = [
@@ -26,6 +27,7 @@ type PlayerConfigByAdapter = {
   [A in PlayerAdapterName]: PlayerConfigBase & {
     adapter: A;
     effort?: EffortForAgent<A>;
+    fastMode?: FastModeForAgent<A>;
   };
 };
 
@@ -40,7 +42,8 @@ type ResolvedPlayerByAdapter = {
     instruction?: string;
     permissions?: PermissionPolicy;
     effort?: EffortForAgent<A>;
-    cligent: Cligent<EffortForAgent<A>>;
+    fastMode?: FastModeForAgent<A>;
+    cligent: Cligent<EffortForAgent<A>, FastModeForAgent<A>>;
   };
 };
 
@@ -55,6 +58,7 @@ export interface CreatePlayerCligentOptions<
   role?: string;
   permissions?: PermissionPolicy;
   effort?: EffortForAgent<A>;
+  fastMode?: FastModeForAgent<A>;
   adapterImports?: PlayerAdapterImports;
 }
 
@@ -64,7 +68,8 @@ export interface ResolvePlayersOptions {
 }
 
 type AdapterConstructor<A extends PlayerAdapterName> = new () => AgentAdapter<
-  EffortForAgent<A>
+  EffortForAgent<A>,
+  FastModeForAgent<A>
 >;
 
 export type PlayerAdapterImports = {
@@ -128,7 +133,7 @@ export function validatePlayerConfigs(
 export async function createPlayerCligent<A extends PlayerAdapterName>(
   adapterName: A,
   options: CreatePlayerCligentOptions<NoInfer<A>> = {},
-): Promise<Cligent<EffortForAgent<A>>> {
+): Promise<Cligent<EffortForAgent<A>, FastModeForAgent<A>>> {
   return createPlayerCligentInternal(adapterName, options, true);
 }
 
@@ -136,7 +141,7 @@ export async function createPlayerCligent<A extends PlayerAdapterName>(
 export async function createRuntimePlayerCligent<A extends PlayerAdapterName>(
   adapterName: A,
   options: CreatePlayerCligentOptions<NoInfer<A>> = {},
-): Promise<Cligent<EffortForAgent<A>>> {
+): Promise<Cligent<EffortForAgent<A>, FastModeForAgent<A>>> {
   return createPlayerCligentInternal(adapterName, options, false);
 }
 
@@ -144,7 +149,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
   adapterName: A,
   options: CreatePlayerCligentOptions<NoInfer<A>>,
   inheritCallDefaults: boolean,
-): Promise<Cligent<EffortForAgent<A>>> {
+): Promise<Cligent<EffortForAgent<A>, FastModeForAgent<A>>> {
   if (!isKnownPlayerAdapter(adapterName)) {
     throw new Error(
       `Unknown adapter "${adapterName}". ` +
@@ -161,6 +166,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
           model: options.model,
           permissions: options.permissions,
           effort: options.effort,
+          fastMode: options.fastMode,
         }
       : {}),
   });
@@ -220,6 +226,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       role: config.id,
       permissions: config.permissions,
       effort: config.effort,
+      fastMode: config.fastMode,
     },
     inheritCallDefaults,
   );
@@ -230,6 +237,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     instruction: config.instruction,
     permissions: config.permissions,
     effort: config.effort,
+    fastMode: config.fastMode,
     cligent,
   } as ResolvedPlayer<A>;
 }

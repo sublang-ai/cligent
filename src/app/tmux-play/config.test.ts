@@ -105,6 +105,9 @@ function writeYamlConfig(path: string, config = validConfig()): void {
       config.captain.effort
         ? `  effort: ${config.captain.effort}`
         : undefined,
+      config.captain.fastMode !== undefined
+        ? `  fastMode: ${config.captain.fastMode}`
+        : undefined,
       ...(Object.keys(config.captain.options as Record<string, unknown>).length
         ? [
             '  options:',
@@ -121,6 +124,9 @@ function writeYamlConfig(path: string, config = validConfig()): void {
         player.instruction ? `    instruction: ${player.instruction}` : undefined,
         player.effort
           ? `    effort: ${player.effort}`
+          : undefined,
+        player.fastMode !== undefined
+          ? `    fastMode: ${player.fastMode}`
           : undefined,
       ]),
       '',
@@ -243,6 +249,10 @@ describe('tmux-play config loading', () => {
       'xhigh',
       'xhigh',
     ]);
+    expect(loaded.config.captain).not.toHaveProperty('fastMode');
+    expect(loaded.config.players.every((player) => !('fastMode' in player))).toBe(
+      true,
+    );
     expect(loaded.config.players.map((player) => player.instruction)).toEqual([
       'You are the claude player in a fanout Captain session. Provide an independent answer.',
       'You are the codex player in a fanout Captain session. Provide an independent answer.',
@@ -278,6 +288,7 @@ describe('tmux-play config loading', () => {
     expect(homeSource).toContain('player_finished: bell');
     expect(homeSource).toContain('turn_finished: desktop');
     expect(homeSource).not.toContain('turn_aborted:');
+    expect(homeSource).not.toContain('fastMode:');
   });
 
   // tmux-play-192: the generated roster follows the installed runtimes, so the
@@ -795,6 +806,96 @@ describe('tmux-play config loading', () => {
     }
   });
 
+  it('retains supported fast-mode booleans without creating omitted overrides', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cases = [
+      ['captain', 'claude', true],
+      ['captain', 'claude', false],
+      ['captain', 'codex', true],
+      ['captain', 'codex', false],
+      ['player', 'claude', true],
+      ['player', 'claude', false],
+      ['player', 'codex', true],
+      ['player', 'codex', false],
+    ] as const;
+
+    for (const [location, adapter, fastMode] of cases) {
+      const configPath = join(
+        workDir,
+        `fast-${location}-${adapter}-${fastMode}.yaml`,
+      );
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          `  adapter: ${adapter}`,
+          ...(location === 'captain' ? [`  fastMode: ${fastMode}`] : []),
+          '  options: {}',
+          'players:',
+          '  - id: worker',
+          `    adapter: ${adapter}`,
+          ...(location === 'player' ? [`    fastMode: ${fastMode}`] : []),
+          '',
+        ].join('\n'),
+      );
+
+      const loaded = await loadTmuxPlayConfig({ configPath });
+      const configured = location === 'captain'
+        ? loaded.config.captain
+        : loaded.config.players[0]!;
+      const omitted = location === 'captain'
+        ? loaded.config.players[0]!
+        : loaded.config.captain;
+      expect(configured.fastMode).toBe(fastMode);
+      expect(omitted).not.toHaveProperty('fastMode');
+    }
+  });
+
+  it('rejects malformed or adapter-unsupported fast mode with role context', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cases = [
+      ['captain', 'claude', 'quick'],
+      ['player', 'codex', 'quick'],
+      ['captain', 'gemini', false],
+      ['player', 'gemini', false],
+      ['captain', 'opencode', false],
+      ['player', 'opencode', false],
+      ['captain', 'kimi', false],
+      ['player', 'kimi', false],
+    ] as const;
+
+    for (const [location, adapter, fastMode] of cases) {
+      const configPath = join(workDir, `bad-fast-${location}-${adapter}.yaml`);
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          `  adapter: ${adapter}`,
+          ...(location === 'captain' ? [`  fastMode: ${fastMode}`] : []),
+          '  options: {}',
+          'players:',
+          '  - id: worker',
+          `    adapter: ${adapter}`,
+          ...(location === 'player' ? [`    fastMode: ${fastMode}`] : []),
+          '',
+        ].join('\n'),
+      );
+
+      const rejection = await loadTmuxPlayConfig({ configPath }).catch(
+        (error: unknown) => error,
+      );
+      const path = location === 'captain' ? 'captain' : 'players[0]';
+      expect(rejection).toBeInstanceOf(Error);
+      expect((rejection as Error).message).toContain(`${path}.fastMode`);
+      expect((rejection as Error).message).toContain(adapter);
+      if (adapter === 'claude' || adapter === 'codex') {
+        expect((rejection as Error).message).toContain('boolean');
+      }
+    }
+  });
+
   it('updates only direct legacy effort key tokens after validation', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
@@ -1215,6 +1316,7 @@ describe('tmux-play config loading', () => {
     expect(migrated).not.toContain('instruction:');
     expect(migrated).not.toContain('permissions:');
     expect(migrated).not.toContain('effort:');
+    expect(migrated).not.toContain('fastMode:');
   });
 
   it('preserves an existing partial home notifications block', async () => {

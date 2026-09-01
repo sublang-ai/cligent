@@ -34,6 +34,10 @@ import {
   type YAMLMap,
 } from 'yaml';
 import { assertSupportedEffort, type EffortForAgent } from '../../effort.js';
+import {
+  assertFastModeSupported,
+  type FastModeForAgent,
+} from '../../fast-mode.js';
 import { normalizeWritablePaths } from '../../permissions.js';
 import {
   KNOWN_PLAYER_ADAPTERS,
@@ -64,6 +68,7 @@ type CaptainConfigByAdapter = {
   [A in PlayerAdapterName]: CaptainConfigBase & {
     adapter: A;
     effort?: EffortForAgent<A>;
+    fastMode?: FastModeForAgent<A>;
   };
 };
 
@@ -1184,6 +1189,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'instruction',
     'permissions',
     'effort',
+    'fastMode',
     'reasoningEffort',
     'options',
   ]);
@@ -1211,11 +1217,16 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     adapter,
     configuredEffort.path,
   );
-  // `adapter` and `effort` were validated together immediately above. Keep the
-  // exported discriminated union without repeating the same runtime branch.
-  return (effort === undefined
-    ? { ...common, adapter }
-    : { ...common, adapter, effort }) as CaptainConfig;
+  const fastMode = optionalFastMode(input, adapter, 'captain');
+  // `adapter`, `effort`, and `fastMode` were validated together immediately
+  // above. Keep the exported discriminated union without repeating the same
+  // runtime branch.
+  return {
+    ...common,
+    adapter,
+    ...(effort === undefined ? {} : { effort }),
+    ...(fastMode === undefined ? {} : { fastMode }),
+  } as CaptainConfig;
 }
 
 function normalizePlayerConfigs(value: unknown): PlayerConfig[] {
@@ -1238,6 +1249,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     'instruction',
     'permissions',
     'effort',
+    'fastMode',
     'reasoningEffort',
   ]);
   rejectUnknownKeys(input, allowed, path);
@@ -1262,10 +1274,15 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     adapter,
     configuredEffort.path,
   );
-  // `adapter` and `effort` were validated together immediately above.
-  return (effort === undefined
-    ? { ...common, adapter }
-    : { ...common, adapter, effort }) as PlayerConfig;
+  const fastMode = optionalFastMode(input, adapter, path);
+  // `adapter`, `effort`, and `fastMode` were validated together immediately
+  // above.
+  return {
+    ...common,
+    adapter,
+    ...(effort === undefined ? {} : { effort }),
+    ...(fastMode === undefined ? {} : { fastMode }),
+  } as PlayerConfig;
 }
 
 function configuredEffortValue(
@@ -1400,6 +1417,20 @@ function optionalEffort<A extends PlayerAdapterName>(
   if (value === undefined) return undefined;
   assertSupportedEffort(adapter, value, path);
   return value;
+}
+
+function optionalFastMode<A extends PlayerAdapterName>(
+  input: Record<string, unknown>,
+  adapter: A,
+  objectPath: string,
+): FastModeForAgent<A> | undefined {
+  if (!Object.hasOwn(input, 'fastMode')) return undefined;
+  const path = `${objectPath}.fastMode`;
+  assertFastModeSupported(adapter, path);
+  if (typeof input.fastMode !== 'boolean') {
+    throw new Error(`${path} for adapter "${adapter}" must be a boolean`);
+  }
+  return input.fastMode as FastModeForAgent<A>;
 }
 
 function requireAdapterName(value: unknown, path: string): PlayerAdapterName {

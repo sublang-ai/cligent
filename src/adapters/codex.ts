@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
+import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -640,8 +641,9 @@ export function mapEffortToCodexEffort(
 }
 
 export function mapAgentOptionsToCodexOptions(
-  options: AgentOptions<CodexEffort> | undefined,
+  options: AgentOptions<CodexEffort, boolean> | undefined,
 ): MappedCodexOptions {
+  assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertCodexToolRestrictionsSupported(options);
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
   const effort = mapEffortToCodexEffort(options?.effort);
@@ -667,11 +669,29 @@ export function mapAgentOptionsToCodexOptions(
   const configEffort =
     effort === 'max' || effort === 'ultra' ? effort : undefined;
   const permissionConfig = permissions.codexOptions?.config;
+  const permissionFeatures = permissionConfig?.features;
+  const existingFeatures =
+    typeof permissionFeatures === 'object' &&
+    permissionFeatures !== null &&
+    !Array.isArray(permissionFeatures)
+      ? permissionFeatures
+      : undefined;
+  const fastModeConfig =
+    options?.fastMode === undefined
+      ? undefined
+      : {
+          service_tier: options.fastMode ? 'fast' : 'default',
+          features: {
+            ...(existingFeatures ?? {}),
+            fast_mode: true,
+          },
+        };
   const codexConfig =
-    permissionConfig || configEffort
+    permissionConfig || configEffort || fastModeConfig
       ? {
           ...(permissionConfig ?? {}),
           ...(configEffort ? { model_reasoning_effort: configEffort } : {}),
+          ...(fastModeConfig ?? {}),
         }
       : undefined;
   const codexOptions =
@@ -1284,7 +1304,7 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
   };
 }
 
-export class CodexAdapter implements AgentAdapter<CodexEffort> {
+export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
@@ -1424,8 +1444,9 @@ export class CodexAdapter implements AgentAdapter<CodexEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<CodexEffort>,
+    options?: AgentOptions<CodexEffort, boolean>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertCodexToolRestrictionsSupported(options);
     const resumeSessionId = asString(options?.resume);
 

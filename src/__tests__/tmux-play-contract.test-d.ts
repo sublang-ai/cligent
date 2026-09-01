@@ -62,6 +62,7 @@ describe('tmux-play public types', () => {
           settings: {
             model: { kind: 'provider-default' },
             effort: { kind: 'value', value: 'high' },
+            fastMode: false,
           },
         };
         await context.callCaptain('summarize', captainControl);

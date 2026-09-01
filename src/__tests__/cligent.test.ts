@@ -236,6 +236,29 @@ describe('Cligent lifecycle', () => {
     expect(opts.allowedTools).toEqual(['tool-b']);
   });
 
+  it('treats both fast-mode booleans as provided scalar overrides', async () => {
+    const captured: Array<boolean | undefined> = [];
+    const adapter: AgentAdapter<'quick', boolean> = {
+      agent: 'custom-fast-mode',
+      async *run(_prompt, options) {
+        captured.push(options?.fastMode);
+        yield doneEvent('custom-fast-mode');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+
+    const defaultOn = new Cligent(adapter, { fastMode: true });
+    await collectEvents(defaultOn.run('off', { fastMode: false }));
+    const defaultOff = new Cligent(adapter, { fastMode: false });
+    await collectEvents(defaultOff.run('on', { fastMode: true }));
+    const omitted = new Cligent(adapter);
+    await collectEvents(omitted.run('default'));
+
+    expect(captured).toEqual([false, true, undefined]);
+  });
+
   it('replaces writablePaths when per-call permissions provide the array', async () => {
     const { adapter, captured } = createCapturingAdapter('claude-code', [
       doneEvent('claude-code'),

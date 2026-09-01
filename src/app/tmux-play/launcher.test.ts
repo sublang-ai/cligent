@@ -2896,6 +2896,40 @@ describe('launchTmuxPlay', () => {
     expect(runTmuxMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['claude', 'quick'],
+    ['codex', 'quick'],
+    ['gemini', false],
+    ['opencode', false],
+    ['kimi', false],
+  ] as const)(
+    'rejects invalid %s fast mode before creating a session runtime',
+    async (adapter, fastMode) => {
+      tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+      const configPath = join(tempDir, `bad-fast-${adapter}.yaml`);
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          '  options: {}',
+          'players:',
+          '  - id: worker',
+          `    adapter: ${adapter}`,
+          `    fastMode: ${fastMode}`,
+          '',
+        ].join('\n'),
+      );
+
+      await expect(
+        launchTmuxPlay({ cwd: tempDir, configPath, attach: false }),
+      ).rejects.toThrow(`players[0].fastMode`);
+      // No session process exists to emit a runtime_error for this failure.
+      expect(runTmuxMock).not.toHaveBeenCalled();
+    },
+  );
+
   it('names every missing runtime, its roles, and its repair command', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, ['coder', 'reviewer']);

@@ -205,6 +205,7 @@ describe('TmuxPlayRuntime', () => {
         adapter: 'claude',
         instruction: 'Captain instruction.',
         effort: 'ultracode',
+        fastMode: false,
       },
       players: [
         {
@@ -212,6 +213,7 @@ describe('TmuxPlayRuntime', () => {
           adapter: 'codex',
           instruction: 'Player instruction.',
           effort: 'ultra',
+          fastMode: true,
         },
       ],
       observers: [
@@ -225,6 +227,7 @@ describe('TmuxPlayRuntime', () => {
           async *run(prompt, options) {
             prompts.push(prompt);
             expect(options?.effort).toBe('ultra');
+            expect(options?.fastMode).toBe(true);
             yield textEvent('codex', 'player text');
             yield doneEvent('codex', 'player done');
           },
@@ -234,6 +237,7 @@ describe('TmuxPlayRuntime', () => {
           async *run(prompt, options) {
             prompts.push(prompt);
             expect(options?.effort).toBe('ultracode');
+            expect(options?.fastMode).toBe(false);
             yield textEvent('claude-code', 'captain text');
             yield doneEvent('claude-code', 'captain done');
           },
@@ -290,6 +294,9 @@ describe('TmuxPlayRuntime', () => {
             adapter,
             model: 'configured-model',
             effort: configuredEffort,
+            ...(adapter === 'claude' || adapter === 'codex'
+              ? { fastMode: true }
+              : {}),
             instruction: 'Configured instruction.',
             permissions: { mode: 'auto' },
           },
@@ -314,6 +321,7 @@ describe('TmuxPlayRuntime', () => {
       });
       expect(observed[0]?.model).toBeUndefined();
       expect(observed[0]?.effort).toBeUndefined();
+      expect(observed[0]?.fastMode).toBeUndefined();
       expect(observed[0]?.permissions).toBeUndefined();
     },
   );
@@ -532,6 +540,7 @@ describe('TmuxPlayRuntime', () => {
     const playerSettings = {
       model: { kind: 'value' as const, value: 'codex-current' },
       effort: { kind: 'value' as const, value: 'xhigh' as const },
+      fastMode: false,
       instruction: 'Current player instruction.',
       permissions: playerPermissions,
     };
@@ -548,6 +557,7 @@ describe('TmuxPlayRuntime', () => {
           settings: {
             model: { kind: 'value', value: 'claude-current' },
             effort: { kind: 'value', value: 'high' },
+            fastMode: true,
           },
         });
       },
@@ -558,6 +568,7 @@ describe('TmuxPlayRuntime', () => {
         adapter: 'claude',
         model: 'claude-configured',
         effort: 'ultracode',
+        fastMode: false,
         instruction: 'Configured Captain instruction.',
         permissions: { mode: 'auto' },
       },
@@ -567,6 +578,7 @@ describe('TmuxPlayRuntime', () => {
           adapter: 'codex',
           model: 'codex-configured',
           effort: 'ultra',
+          fastMode: true,
           instruction: 'Configured player instruction.',
           permissions: { mode: 'auto' },
         },
@@ -597,6 +609,7 @@ describe('TmuxPlayRuntime', () => {
         options: expect.objectContaining({
           model: 'codex-current',
           effort: 'xhigh',
+          fastMode: false,
           permissions: {
             fileWrite: 'allow',
             writablePaths: ['generated'],
@@ -608,6 +621,7 @@ describe('TmuxPlayRuntime', () => {
         options: expect.objectContaining({
           model: 'claude-current',
           effort: 'high',
+          fastMode: true,
           permissions: undefined,
         }),
       },
@@ -639,6 +653,7 @@ describe('TmuxPlayRuntime', () => {
           adapter: 'codex',
           model: 'gpt-5.6-codex',
           effort: 'high',
+          fastMode: true,
           instruction: 'Configured instruction.',
           permissions: { mode: 'auto' },
         },
@@ -668,6 +683,7 @@ describe('TmuxPlayRuntime', () => {
           resume: undefined,
           model: 'gpt-5.6-codex',
           effort: 'high',
+          fastMode: true,
           permissions: { mode: 'auto' },
         }),
       },
@@ -677,6 +693,7 @@ describe('TmuxPlayRuntime', () => {
           resume: 'codex-session-1',
           model: undefined,
           effort: undefined,
+          fastMode: undefined,
           permissions: undefined,
         }),
       },
@@ -686,6 +703,7 @@ describe('TmuxPlayRuntime', () => {
           resume: 'codex-session-2',
           model: 'gpt-5.6-codex',
           effort: 'high',
+          fastMode: true,
           permissions: { mode: 'auto' },
         }),
       },
@@ -714,6 +732,15 @@ describe('TmuxPlayRuntime', () => {
         effort: { kind: 'value' },
       },
       'effort must select a non-empty value or provider-default',
+    ],
+    [
+      'a non-boolean fast mode',
+      {
+        model: { kind: 'value', value: 'gpt-5.6-codex' },
+        effort: { kind: 'value', value: 'high' },
+        fastMode: 'quick',
+      },
+      'fastMode must be a boolean',
     ],
   ])(
     'rejects complete settings with %s as a typed preflight failure',
@@ -807,6 +834,49 @@ describe('TmuxPlayRuntime', () => {
     expect(records.some((record) => record.type === 'player_prompt')).toBe(
       false,
     );
+  });
+
+  it('rejects fast mode on unsupported adapters before records or provider work', async () => {
+    const records: TmuxPlayRecord[] = [];
+    let providerRuns = 0;
+    const adapters = ['gemini', 'kimi', 'opencode'] as const;
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          for (const adapter of adapters) {
+            const rejection = await context.callPlayer(`dev.${adapter}`, 'work', {
+              settings: {
+                model: { kind: 'provider-default' },
+                effort: { kind: 'provider-default' },
+                fastMode: false,
+              },
+            }).catch((error: unknown) => error);
+            expect(rejection).toBeInstanceOf(AgentCallSettingsError);
+            expect((rejection as Error).message).toContain(adapter);
+          }
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: adapters.map((adapter) => ({
+        id: `dev.${adapter}`,
+        adapter,
+      })) as never,
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports(
+        Object.fromEntries(adapters.map((adapter) => [adapter, {
+          agent: adapter,
+          async *run() {
+            providerRuns += 1;
+            yield doneEvent(adapter, 'done');
+          },
+        }])) as never,
+      ),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(providerRuns).toBe(0);
+    expect(records.some((record) => record.type === 'player_prompt')).toBe(false);
   });
 
   it('classifies only complete-settings preflight rejections', async () => {

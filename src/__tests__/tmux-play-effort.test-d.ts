@@ -34,6 +34,17 @@ type EffortMap<T> = {
   [A in PlayerAdapterName]: EffortOf<T, A>;
 };
 
+type FastModeOf<T, A extends PlayerAdapterName> =
+  Extract<T, { adapter: A }> extends infer Config
+    ? Config extends { fastMode?: infer FM }
+      ? FM | undefined
+      : never
+    : never;
+
+type FastModeMap<T> = {
+  [A in PlayerAdapterName]: FastModeOf<T, A>;
+};
+
 type ExpectedEffortMap = {
   claude: ClaudeEffort | undefined;
   codex: CodexEffort | undefined;
@@ -47,6 +58,21 @@ type ConfigSurfaceEfforts = {
   player: EffortMap<PlayerConfig>;
   runtimeCaptain: EffortMap<RuntimeCaptainConfig>;
   runtimePlayer: EffortMap<RuntimePlayerConfig>;
+};
+
+type ExpectedFastModeMap = {
+  claude: boolean | undefined;
+  codex: boolean | undefined;
+  gemini: undefined;
+  kimi: undefined;
+  opencode: undefined;
+};
+
+type ConfigSurfaceFastModes = {
+  captain: FastModeMap<CaptainConfig>;
+  player: FastModeMap<PlayerConfig>;
+  runtimeCaptain: FastModeMap<RuntimeCaptainConfig>;
+  runtimePlayer: FastModeMap<RuntimePlayerConfig>;
 };
 
 describe('tmux-play effort types (tmux-play-190)', () => {
@@ -71,6 +97,7 @@ describe('tmux-play effort types (tmux-play-190)', () => {
       from: '@example/captain',
       adapter: 'claude',
       effort: 'ultracode',
+      fastMode: true,
       model: 'example-model',
       instruction: 'Coordinate the players.',
       permissions,
@@ -80,6 +107,7 @@ describe('tmux-play effort types (tmux-play-190)', () => {
       id: 'reviewer',
       adapter: 'codex',
       effort: 'ultra',
+      fastMode: false,
       model: 'example-model',
       instruction: 'Review the answer.',
       permissions,
@@ -114,9 +142,11 @@ describe('tmux-play effort types (tmux-play-190)', () => {
       role: 'captain',
       permissions,
       effort: 'ultracode',
+      fastMode: true,
     });
     const codex = createPlayerCligent('codex', {
       effort: 'ultra',
+      fastMode: false,
     });
     const gemini = createPlayerCligent('gemini', {
       effort: 'max',
@@ -128,8 +158,12 @@ describe('tmux-play effort types (tmux-play-190)', () => {
       effort: 'on',
     });
 
-    expectTypeOf(claude).toEqualTypeOf<Promise<Cligent<ClaudeEffort>>>();
-    expectTypeOf(codex).toEqualTypeOf<Promise<Cligent<CodexEffort>>>();
+    expectTypeOf(claude).toEqualTypeOf<
+      Promise<Cligent<ClaudeEffort, boolean>>
+    >();
+    expectTypeOf(codex).toEqualTypeOf<
+      Promise<Cligent<CodexEffort, boolean>>
+    >();
     expectTypeOf(gemini).toEqualTypeOf<Promise<Cligent<GeminiEffort>>>();
     expectTypeOf(kimi).toEqualTypeOf<Promise<Cligent<KimiEffort>>>();
     expectTypeOf(opencode).toEqualTypeOf<Promise<Cligent<OpenCodeEffort>>>();
@@ -144,5 +178,64 @@ describe('tmux-play effort types (tmux-play-190)', () => {
     void createPlayerCligent('opencode', { effort: 'ultracode' });
     // @ts-expect-error - Kimi accepts only its binary effort values
     void createPlayerCligent('kimi', { effort: 'high' });
+    // @ts-expect-error - unsupported adapters expose no fast-mode request
+    void createPlayerCligent('gemini', { fastMode: false });
+  });
+});
+
+describe('tmux-play fast-mode types (tmux-play-209)', () => {
+  it('keeps every config surface adapter-discriminated', () => {
+    expectTypeOf<ConfigSurfaceFastModes>().toEqualTypeOf<{
+      captain: ExpectedFastModeMap;
+      player: ExpectedFastModeMap;
+      runtimeCaptain: ExpectedFastModeMap;
+      runtimePlayer: ExpectedFastModeMap;
+    }>();
+  });
+
+  it('accepts supported roles and rejects unsupported roles', () => {
+    const runtimeCaptain = {
+      adapter: 'claude',
+      fastMode: false,
+      model: 'example-model',
+      instruction: 'Coordinate the players.',
+      permissions: { mode: 'auto' },
+      effort: 'high',
+    } satisfies RuntimeCaptainConfig;
+    const runtimePlayer = {
+      id: 'reviewer',
+      adapter: 'codex',
+      fastMode: true,
+      model: 'example-model',
+      instruction: 'Review the answer.',
+      permissions: { mode: 'auto' },
+      effort: 'high',
+    } satisfies RuntimePlayerConfig;
+
+    // @ts-expect-error - Gemini Captain does not support fast mode
+    const invalidCaptain: CaptainConfig = {
+      from: '@example/captain', adapter: 'gemini', fastMode: false, options: {},
+    };
+    // @ts-expect-error - OpenCode player does not support fast mode
+    const invalidPlayer: PlayerConfig = {
+      id: 'reviewer', adapter: 'opencode', fastMode: true,
+    };
+    // @ts-expect-error - Kimi runtime Captain does not support fast mode
+    const invalidRuntimeCaptain: RuntimeCaptainConfig = {
+      adapter: 'kimi', fastMode: false,
+    };
+    // @ts-expect-error - Gemini runtime player does not support fast mode
+    const invalidRuntimePlayer: RuntimePlayerConfig = {
+      id: 'reviewer', adapter: 'gemini', fastMode: true,
+    };
+
+    void [
+      runtimeCaptain,
+      runtimePlayer,
+      invalidCaptain,
+      invalidPlayer,
+      invalidRuntimeCaptain,
+      invalidRuntimePlayer,
+    ];
   });
 });

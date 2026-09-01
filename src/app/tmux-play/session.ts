@@ -1196,6 +1196,7 @@ function runtimeCaptain(
     instruction: captain.instruction,
     permissions: captain.permissions,
     effort: captain.effort,
+    fastMode: captain.fastMode,
   } as RunTmuxPlayOptions['captainConfig'];
 }
 
@@ -1219,6 +1220,7 @@ function runtimePlayer(player: PlayerConfig): RuntimePlayerConfig {
     instruction: player.instruction,
     permissions: player.permissions,
     effort: player.effort,
+    fastMode: player.fastMode,
   } as RuntimePlayerConfig;
 }
 

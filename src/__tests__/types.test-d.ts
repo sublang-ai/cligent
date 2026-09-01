@@ -11,7 +11,10 @@ import {
   AdapterRegistry,
   Cligent,
   EFFORT_SUPPORT,
+  FAST_MODE_SUPPORT,
+  assertFastModeSupported,
   assertSupportedEffort,
+  isFastModeSupported,
   isEffortSupported,
   runAgent,
   runParallel,
@@ -23,11 +26,18 @@ import type {
   AgentOptions,
   BaseEvent,
   ClaudeEffort,
+  CligentOptions,
   CodexEffort,
   DonePayload,
   DoneUsage,
   Effort,
+  FastModeDisabledReason,
+  FastModeObservation,
+  FastModeResponseSpeed,
+  FastModeState,
+  FastModeTerminalObservation,
   GeminiEffort,
+  InitPayload,
   InputTokenUsage,
   KimiEffort,
   OpenCodeEffort,
@@ -35,6 +45,7 @@ import type {
   PermissionCapability,
   PermissionPolicy,
   PortableEffort,
+  RunOptions,
   TextPayload,
   TokenUsage,
   TokenUsageReport,
@@ -49,7 +60,10 @@ type SupportEffortMap = {
   ]: (typeof EFFORT_SUPPORT)[A]['values'][number];
 };
 
-type AdapterEffort<T> = T extends AgentAdapter<infer E> ? E : never;
+type AdapterParameters<T> =
+  T extends AgentAdapter<infer E, infer FM> ? [E, FM] : never;
+type AdapterEffort<T> = AdapterParameters<T>[0];
+type AdapterFastMode<T> = AdapterParameters<T>[1];
 
 describe('core types', () => {
   it('narrows discriminated union on type field', () => {
@@ -398,5 +412,176 @@ describe('core types', () => {
       { effort: 'any-dynamic-string' },
       registry,
     );
+  });
+
+  it('types authentic fast-mode observations by event phase', () => {
+    expectTypeOf<FastModeState>().toEqualTypeOf<
+      'off' | 'cooldown' | 'on'
+    >();
+    expectTypeOf<FastModeDisabledReason>().toEqualTypeOf<
+      | 'free'
+      | 'preference'
+      | 'extra_usage_disabled'
+      | 'network_error'
+      | 'unknown'
+      | 'not_first_party'
+      | 'disabled_by_env'
+      | 'model_not_allowed'
+      | 'sdk_opt_in_required'
+      | 'pending'
+    >();
+    expectTypeOf<FastModeResponseSpeed>().toEqualTypeOf<'standard' | 'fast'>();
+
+    const initObservation: FastModeObservation = {
+      state: 'cooldown',
+      disabledReason: 'pending',
+    };
+    const terminalObservation: FastModeTerminalObservation = {
+      state: 'on',
+      responseSpeed: 'fast',
+    };
+    const init: InitPayload = {
+      model: 'claude-opus-4-8',
+      cwd: '/workspace',
+      tools: [],
+      fastMode: initObservation,
+    };
+    const done: DonePayload = {
+      status: 'success',
+      usage: { toolUses: 0 },
+      durationMs: 1,
+      fastMode: terminalObservation,
+    };
+    expectTypeOf(init.fastMode).toEqualTypeOf<
+      FastModeObservation | undefined
+    >();
+    expectTypeOf(done.fastMode).toEqualTypeOf<
+      FastModeTerminalObservation | undefined
+    >();
+
+    const invalidInit: InitPayload = {
+      model: 'claude-opus-4-8',
+      cwd: '/workspace',
+      tools: [],
+      fastMode: {
+        // @ts-expect-error - response speed is terminal-only.
+        responseSpeed: 'fast',
+      },
+    };
+    void invalidInit;
+  });
+
+  it('correlates fast-mode support across built-in and custom APIs', () => {
+    expectTypeOf<{
+      claude: AdapterFastMode<ClaudeCodeAdapter>;
+      codex: AdapterFastMode<CodexAdapter>;
+      gemini: AdapterFastMode<GeminiAdapter>;
+      kimi: AdapterFastMode<KimiAdapter>;
+      opencode: AdapterFastMode<OpenCodeAdapter>;
+    }>().toEqualTypeOf<{
+      claude: boolean;
+      codex: boolean;
+      gemini: never;
+      kimi: never;
+      opencode: never;
+    }>();
+
+    const claudeAdapter = new ClaudeCodeAdapter();
+    const codexAdapter = new CodexAdapter();
+    const geminiAdapter = new GeminiAdapter();
+    void claudeAdapter.run('prompt', { fastMode: true });
+    void codexAdapter.run('prompt', { fastMode: false });
+    // @ts-expect-error - Gemini has no native fast-mode request surface.
+    void geminiAdapter.run('prompt', { fastMode: false });
+
+    type CustomEffort = 'quick' | 'deep';
+    const customDefault = {} as AgentAdapter<CustomEffort>;
+    const customSupported = {} as AgentAdapter<CustomEffort, boolean>;
+    // @ts-expect-error - custom adapters default to unsupported.
+    void customDefault.run('prompt', { fastMode: true });
+    void customSupported.run('prompt', { fastMode: true });
+
+    const claude = new Cligent(claudeAdapter, { fastMode: true });
+    const codex = new Cligent(codexAdapter, { fastMode: false });
+    const gemini = new Cligent(geminiAdapter);
+    const custom = new Cligent(customSupported, { fastMode: false });
+    void claude.run('prompt', { fastMode: false });
+    void codex.run('prompt', { fastMode: true });
+    void custom.run('prompt', { fastMode: true });
+    // @ts-expect-error - unsupported Cligent instances reject booleans.
+    void gemini.run('prompt', { fastMode: true });
+
+    void Cligent.parallel([
+      { agent: claude, prompt: 'Claude', overrides: { fastMode: true } },
+      { agent: codex, prompt: 'Codex', overrides: { fastMode: false } },
+      { agent: gemini, prompt: 'Gemini' },
+      { agent: custom, prompt: 'Custom', overrides: { fastMode: true } },
+    ]);
+    void Cligent.parallel([
+      {
+        agent: gemini,
+        prompt: 'Gemini',
+        // @ts-expect-error - parallel overrides retain adapter capability.
+        overrides: { fastMode: false },
+      },
+    ]);
+    void runParallel([
+      { adapter: claudeAdapter, prompt: 'Claude', options: { fastMode: true } },
+      { adapter: codexAdapter, prompt: 'Codex', options: { fastMode: false } },
+      { adapter: geminiAdapter, prompt: 'Gemini' },
+      { adapter: customSupported, prompt: 'Custom', options: { fastMode: true } },
+    ]);
+    void runParallel([
+      {
+        adapter: geminiAdapter,
+        prompt: 'Gemini',
+        // @ts-expect-error - parallel options retain adapter capability.
+        options: { fastMode: true },
+      },
+    ]);
+
+    const registry = new AdapterRegistry();
+    registry.register(customSupported);
+    void runAgent('custom-agent', 'prompt', { fastMode: false }, registry);
+  });
+
+  it('keeps existing single-parameter generic uses source compatible', () => {
+    const supportedAdapter: AgentAdapter<ClaudeEffort, boolean> =
+      new ClaudeCodeAdapter();
+    const unsupportedAdapter: AgentAdapter<GeminiEffort> = new GeminiAdapter();
+    const legacySupportedAdapter: AgentAdapter<ClaudeEffort> = supportedAdapter;
+    const legacyUnsupportedAdapter: AgentAdapter<GeminiEffort> =
+      unsupportedAdapter;
+    const supported = new Cligent(supportedAdapter, { fastMode: true });
+    const unsupported = new Cligent(unsupportedAdapter);
+    const legacySupported: Cligent<ClaudeEffort> = supported;
+    const legacyUnsupported: Cligent<GeminiEffort> = unsupported;
+
+    const agentOptions: AgentOptions<ClaudeEffort> = { effort: 'high' };
+    const cligentOptions: CligentOptions<ClaudeEffort> = { effort: 'high' };
+    const runOptions: RunOptions<ClaudeEffort> = { effort: 'high' };
+    void legacySupportedAdapter;
+    void legacyUnsupportedAdapter;
+    void legacySupported;
+    void legacyUnsupported;
+    void agentOptions;
+    void cligentOptions;
+    void runOptions;
+  });
+
+  it('exports fast-mode metadata types and helper narrowing', () => {
+    expectTypeOf(FAST_MODE_SUPPORT['claude-code'].requestSupported).toEqualTypeOf<true>();
+    expectTypeOf(FAST_MODE_SUPPORT.codex.observation).toEqualTypeOf<'none'>();
+    expectTypeOf(FAST_MODE_SUPPORT.gemini.requestSupported).toEqualTypeOf<false>();
+
+    let candidate: string = 'codex';
+    if (isFastModeSupported(candidate)) {
+      expectTypeOf(candidate).toMatchTypeOf<'claude' | 'claude-code' | 'codex'>();
+    }
+    let asserted: string = 'claude-code';
+    assertFastModeSupported(asserted);
+    expectTypeOf(asserted).toMatchTypeOf<
+      'claude' | 'claude-code' | 'codex'
+    >();
   });
 });

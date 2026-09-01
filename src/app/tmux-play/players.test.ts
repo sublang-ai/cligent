@@ -189,6 +189,7 @@ describe('resolvePlayers', () => {
           adapter: 'codex',
           permissions: { mode: 'auto' },
           effort: 'ultra',
+          fastMode: false,
         },
       ],
       { adapterImports },
@@ -201,6 +202,7 @@ describe('resolvePlayers', () => {
 
     expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
     expect(captured[0]?.effort).toBe('ultra');
+    expect(captured[0]?.fastMode).toBe(false);
   });
 
   it('leaves adapter effort unset when PlayerConfig omits it', async () => {
@@ -238,6 +240,7 @@ describe('resolvePlayers', () => {
 
     expect(captured).toHaveLength(1);
     expect(captured[0]?.effort).toBeUndefined();
+    expect(captured[0]?.fastMode).toBeUndefined();
   });
 
   it('allows multiple players to use the same adapter and model', async () => {

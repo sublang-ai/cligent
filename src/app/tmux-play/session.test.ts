@@ -127,7 +127,7 @@ describe('TmuxPlaySession', () => {
   });
 
   it('imports the Captain, registers tmux presenter, and runs lines', async () => {
-    tempDir = makeWorkDir();
+    tempDir = makeWorkDir({ captainFastMode: false, playerFastMode: true });
     const readline = new FakeReadline();
     const output = new MemoryOutput();
     const runBossTurn = vi.fn(async () => undefined);
@@ -178,6 +178,7 @@ describe('TmuxPlaySession', () => {
           adapter: 'claude',
           instruction: 'Coordinate players.',
           effort: 'ultracode',
+          fastMode: false,
         }),
         cwd: '/repo',
         observers: expect.arrayContaining([
@@ -185,7 +186,13 @@ describe('TmuxPlaySession', () => {
           timingObserver,
           optInObserver,
         ]),
-        players: [expect.objectContaining({ id: 'coder', effort: 'ultra' })],
+        players: [
+          expect.objectContaining({
+            id: 'coder',
+            effort: 'ultra',
+            fastMode: true,
+          }),
+        ],
       }),
     );
     // Order: the tmux-play-83 layout observer first, then the presenter, the
@@ -1969,6 +1976,8 @@ function makeWorkDir(
   overrides: {
     theme?: 'mocha' | 'latte';
     emptyPlayers?: boolean;
+    captainFastMode?: boolean;
+    playerFastMode?: boolean;
   } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
@@ -1980,6 +1989,9 @@ function makeWorkDir(
       adapter: 'claude',
       instruction: 'Coordinate players.',
       effort: 'ultracode',
+      ...(overrides.captainFastMode === undefined
+        ? {}
+        : { fastMode: overrides.captainFastMode }),
       options: { tone: 'direct' },
     },
     players: emptyPlayers
@@ -1989,6 +2001,9 @@ function makeWorkDir(
             id: 'coder',
             adapter: 'codex',
             effort: 'ultra',
+            ...(overrides.playerFastMode === undefined
+              ? {}
+              : { fastMode: overrides.playerFastMode }),
           },
         ],
     layout: {

@@ -3,6 +3,7 @@
 
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
+import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -10,6 +11,11 @@ import type {
   AgentOptions,
   ClaudeEffort,
   DonePayload,
+  FastModeDisabledReason,
+  FastModeObservation,
+  FastModeResponseSpeed,
+  FastModeState,
+  FastModeTerminalObservation,
   PermissionCapability,
   PermissionLevel,
   PermissionPolicy,
@@ -38,6 +44,7 @@ type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 interface ClaudeSettings {
   ultracode?: boolean;
+  fastMode?: boolean;
   [key: string]: unknown;
 }
 
@@ -133,6 +140,8 @@ interface ClaudeSystemMessage {
   cwd?: unknown;
   tools?: unknown;
   sessionId?: unknown;
+  fast_mode_state?: unknown;
+  fast_mode_disabled_reason?: unknown;
 }
 
 interface ClaudeAssistantMessage {
@@ -163,6 +172,8 @@ interface ClaudeResultMessage {
   /** Runtime-computed cost, a sibling of `usage` rather than a member. */
   total_cost_usd?: unknown;
   totalCostUsd?: unknown;
+  fast_mode_state?: unknown;
+  fast_mode_disabled_reason?: unknown;
 }
 
 interface ClaudeErrorMessage {
@@ -215,6 +226,78 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function asFastModeState(value: unknown): FastModeState | undefined {
+  return value === 'off' || value === 'cooldown' || value === 'on'
+    ? value
+    : undefined;
+}
+
+function asFastModeDisabledReason(
+  value: unknown,
+): FastModeDisabledReason | undefined {
+  return value === 'free' ||
+    value === 'preference' ||
+    value === 'extra_usage_disabled' ||
+    value === 'network_error' ||
+    value === 'unknown' ||
+    value === 'not_first_party' ||
+    value === 'disabled_by_env' ||
+    value === 'model_not_allowed' ||
+    value === 'sdk_opt_in_required' ||
+    value === 'pending'
+    ? value
+    : undefined;
+}
+
+function readFastModeObservation(source: {
+  fast_mode_state?: unknown;
+  fast_mode_disabled_reason?: unknown;
+}): FastModeObservation | undefined {
+  const state = asFastModeState(source.fast_mode_state);
+  const disabledReason = asFastModeDisabledReason(
+    source.fast_mode_disabled_reason,
+  );
+  if (state === undefined && disabledReason === undefined) return undefined;
+  return {
+    ...(state !== undefined ? { state } : {}),
+    ...(disabledReason !== undefined ? { disabledReason } : {}),
+  };
+}
+
+function readFastModeResponseSpeed(
+  rawUsage: unknown,
+): FastModeResponseSpeed | undefined {
+  if (!isUsageRecord(rawUsage)) return undefined;
+  const speed = rawUsage.speed;
+  if (speed !== 'standard' && speed !== 'fast') return undefined;
+
+  const hasCompletedResponse = [
+    'input_tokens',
+    'cache_creation_input_tokens',
+    'cache_read_input_tokens',
+    'output_tokens',
+  ].some((key) => {
+    const value = rawUsage[key];
+    return (
+      typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    );
+  });
+  return hasCompletedResponse ? speed : undefined;
+}
+
+function readTerminalFastModeObservation(
+  result: ClaudeResultMessage,
+): FastModeTerminalObservation | undefined {
+  const observation = readFastModeObservation(result);
+  const responseSpeed = readFastModeResponseSpeed(result.usage);
+  if (observation === undefined && responseSpeed === undefined)
+    return undefined;
+  return {
+    ...(observation ?? {}),
+    ...(responseSpeed !== undefined ? { responseSpeed } : {}),
+  };
 }
 
 function normalizePermissionLevel(
@@ -787,10 +870,20 @@ export function mapEffortToClaudeOptions(
 }
 
 export function mapAgentOptionsToClaudeQueryOptions(
-  options: AgentOptions<ClaudeEffort> | undefined,
+  options: AgentOptions<ClaudeEffort, boolean> | undefined,
 ): MappedClaudeOptions {
+  assertBuiltInFastModeOption(AGENT, options?.fastMode);
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
+  const settings =
+    effortOptions.settings === undefined && options?.fastMode === undefined
+      ? undefined
+      : {
+          ...effortOptions.settings,
+          ...(options?.fastMode !== undefined
+            ? { fastMode: options.fastMode }
+            : {}),
+        };
 
   let cleanupAbort = () => {};
   let abortController: AbortController | undefined;
@@ -836,12 +929,13 @@ export function mapAgentOptionsToClaudeQueryOptions(
       abortController,
       env,
       ...effortOptions,
+      ...(settings !== undefined ? { settings } : {}),
     },
     cleanupAbort,
   };
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
+export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
@@ -861,7 +955,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<ClaudeEffort>,
+    options?: AgentOptions<ClaudeEffort, boolean>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: ClaudeAgentSdk;
     try {
@@ -936,6 +1030,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
           if ((subtype !== undefined && subtype !== 'init') || initYielded) {
             continue;
           }
+          const fastMode = readFastModeObservation(system);
           yield createEvent(
             'init',
             AGENT,
@@ -943,6 +1038,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
               model: asString(system.model) ?? options?.model ?? 'unknown',
               cwd: asString(system.cwd) ?? options?.cwd ?? process.cwd(),
               tools: asStringArray(system.tools),
+              ...(fastMode !== undefined ? { fastMode } : {}),
             },
             sessionId,
           );
@@ -1071,6 +1167,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
             ...(tokens ? { tokens } : {}),
             ...(cost ? { cost } : {}),
           };
+          const fastMode = readTerminalFastModeObservation(result);
           // claude-code-28's no-op signature is a property of the main-loop
           // result message, not of the run's total accounting: the repair
           // turn reports zero main-loop tokens while the run as a whole may
@@ -1136,6 +1233,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort> {
               ),
               usage,
               durationMs,
+              ...(fastMode !== undefined ? { fastMode } : {}),
             },
             sessionId,
           );

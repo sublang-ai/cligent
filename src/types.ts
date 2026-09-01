@@ -35,11 +35,39 @@ export interface BaseEvent {
   metadata?: Record<string, unknown>;
 }
 
+export type FastModeState = 'off' | 'cooldown' | 'on';
+
+export type FastModeDisabledReason =
+  | 'free'
+  | 'preference'
+  | 'extra_usage_disabled'
+  | 'network_error'
+  | 'unknown'
+  | 'not_first_party'
+  | 'disabled_by_env'
+  | 'model_not_allowed'
+  | 'sdk_opt_in_required'
+  | 'pending';
+
+export type FastModeResponseSpeed = 'standard' | 'fast';
+
+export interface FastModeObservation<
+  RS extends FastModeResponseSpeed = never,
+> {
+  state?: FastModeState;
+  disabledReason?: FastModeDisabledReason;
+  responseSpeed?: RS;
+}
+
+export type FastModeTerminalObservation =
+  FastModeObservation<FastModeResponseSpeed>;
+
 export interface InitPayload {
   model: string;
   cwd: string;
   tools: string[];
   capabilities?: Record<string, unknown>;
+  fastMode?: FastModeObservation;
 }
 
 export interface TextPayload {
@@ -185,6 +213,7 @@ export interface DonePayload {
   resumeToken?: string;
   usage: DoneUsage;
   durationMs: number;
+  fastMode?: FastModeTerminalObservation;
 }
 
 export type AgentEvent =
@@ -235,24 +264,31 @@ export interface PermissionPolicy {
   writablePaths?: string[];
 }
 
-export interface AgentAdapter<E extends string = Effort> {
+export interface AgentAdapter<
+  E extends string = Effort,
+  FM extends boolean = never,
+> {
   readonly agent: AgentType;
 
   run(
     prompt: string,
-    options?: AgentOptions<E>,
+    options?: AgentOptions<E, FM>,
   ): AsyncGenerator<AgentEvent, void, void>;
 
   isAvailable(): Promise<boolean>;
 }
 
-export interface AgentOptions<E extends string = Effort> {
+export interface AgentOptions<
+  E extends string = Effort,
+  FM extends boolean = never,
+> {
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
   effort?: E;
+  fastMode?: FM;
   resume?: string;
   abortSignal?: AbortSignal;
   allowedTools?: string[];
@@ -261,7 +297,10 @@ export interface AgentOptions<E extends string = Effort> {
 
 export type CligentEvent = AgentEvent & { role?: string };
 
-export interface CligentOptions<E extends string = Effort> {
+export interface CligentOptions<
+  E extends string = Effort,
+  FM extends boolean = never,
+> {
   role?: string;
   cwd?: string;
   model?: string;
@@ -269,12 +308,16 @@ export interface CligentOptions<E extends string = Effort> {
   maxTurns?: number;
   maxBudgetUsd?: number;
   effort?: E;
+  fastMode?: FM;
   allowedTools?: string[];
   disallowedTools?: string[];
 }
 
-export interface RunOptions<E extends string = Effort> extends Omit<
-  CligentOptions<E>,
+export interface RunOptions<
+  E extends string = Effort,
+  FM extends boolean = never,
+> extends Omit<
+  CligentOptions<E, FM>,
   'role'
 > {
   abortSignal?: AbortSignal;

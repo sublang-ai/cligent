@@ -125,10 +125,16 @@ describe('runAgent', () => {
 
   it('forwards an exact custom effort string through the mutable registry', async () => {
     type CustomEffort = 'quick' | 'deep' | 'exhaustive';
-    let captured: AgentOptions<CustomEffort> | undefined;
-    const adapter: AgentAdapter<CustomEffort> = {
+    let captured: AgentOptions<CustomEffort, boolean> | undefined;
+    const adapter: AgentAdapter<CustomEffort, boolean> = {
       agent: 'custom-agent',
       async *run(_prompt, options) {
+        if (
+          options?.fastMode !== undefined &&
+          typeof options.fastMode !== 'boolean'
+        ) {
+          throw new Error('custom fastMode must be boolean');
+        }
         captured = options;
         yield doneEvent('custom-agent');
       },
@@ -143,12 +149,23 @@ describe('runAgent', () => {
       runAgent(
         'custom-agent',
         'prompt',
-        { effort: 'exhaustive' },
+        { effort: 'exhaustive', fastMode: false },
         registry,
       ),
     );
 
     expect(captured?.effort).toBe('exhaustive');
+    expect(captured?.fastMode).toBe(false);
+
+    const invalid = {
+      fastMode: 'turbo',
+    } as unknown as AgentOptions<string, boolean>;
+    const events = await collectEvents(
+      runAgent('custom-agent', 'prompt', invalid, registry),
+    );
+    expect(events.find((event) => event.type === 'error')?.payload).toMatchObject(
+      { message: 'custom fastMode must be boolean' },
+    );
   });
 
   it('throws on missing adapter', async () => {
@@ -539,6 +556,42 @@ describe('runAgent', () => {
 // ---------------------------------------------------------------------------
 
 describe('runParallel', () => {
+  it('forwards each adapter fast-mode option independently', async () => {
+    const captured = new Map<string, boolean | undefined>();
+    const makeAdapter = (agent: string): AgentAdapter<'quick', boolean> => ({
+      agent,
+      async *run(_prompt, options) {
+        captured.set(agent, options?.fastMode);
+        yield doneEvent(agent);
+      },
+      async isAvailable() {
+        return true;
+      },
+    });
+
+    await collectEvents(
+      runParallel([
+        {
+          adapter: makeAdapter('custom-fast'),
+          prompt: 'fast',
+          options: { fastMode: true },
+        },
+        {
+          adapter: makeAdapter('custom-standard'),
+          prompt: 'standard',
+          options: { fastMode: false },
+        },
+        { adapter: makeAdapter('custom-default'), prompt: 'default' },
+      ]),
+    );
+
+    expect(Object.fromEntries(captured)).toEqual({
+      'custom-fast': true,
+      'custom-standard': false,
+      'custom-default': undefined,
+    });
+  });
+
   it('merges events from multiple adapters', async () => {
     const a1 = createMockAdapter('claude-code', [
       textEvent('claude-code', 'a1'),

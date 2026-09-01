@@ -21,21 +21,25 @@ import {
 } from './protocol.js';
 import { generateSessionId } from './events.js';
 
-type AnyCligent = Cligent<string>;
-type CligentEffort<C extends AnyCligent> =
-  C extends Cligent<infer E> ? E : never;
+type AnyCligent = Cligent<string, boolean>;
+type CligentParameters<C extends AnyCligent> =
+  C extends Cligent<infer E, infer FM> ? [E, FM] : never;
+type CligentEffort<C extends AnyCligent> = CligentParameters<C>[0];
+type CligentFastMode<C extends AnyCligent> = CligentParameters<C>[1];
 
 export interface CligentParallelTask<C extends AnyCligent = AnyCligent> {
   agent: C;
   prompt: string;
-  overrides?: RunOptions<CligentEffort<C>>;
+  overrides?: RunOptions<CligentEffort<C>, CligentFastMode<C>>;
 }
 
 type CheckedCligentParallelTask<T> = T extends {
   agent: infer C extends AnyCligent;
   prompt: string;
 }
-  ? Omit<T, 'overrides'> & { overrides?: RunOptions<CligentEffort<C>> }
+  ? Omit<T, 'overrides'> & {
+      overrides?: RunOptions<CligentEffort<C>, CligentFastMode<C>>;
+    }
   : never;
 
 type CheckedCligentParallelTasks<T extends readonly CligentParallelTask[]> = {
@@ -66,10 +70,10 @@ function mergePermissions(
   return { ...defaults, ...overrides };
 }
 
-function mergeOptions<E extends string>(
-  defaults: CligentOptions<E>,
-  overrides: RunOptions<E> | undefined,
-): { merged: RunOptions<E>; role: string | undefined } {
+function mergeOptions<E extends string, FM extends boolean>(
+  defaults: CligentOptions<E, FM>,
+  overrides: RunOptions<E, FM> | undefined,
+): { merged: RunOptions<E, FM>; role: string | undefined } {
   if (!overrides) {
     return {
       merged: { ...defaults },
@@ -77,13 +81,17 @@ function mergeOptions<E extends string>(
     };
   }
 
-  const merged: RunOptions<E> = {
+  const merged: RunOptions<E, FM> = {
     cwd: overrides.cwd ?? defaults.cwd,
     model: overrides.model ?? defaults.model,
     permissions: mergePermissions(defaults.permissions, overrides.permissions),
     maxTurns: overrides.maxTurns ?? defaults.maxTurns,
     maxBudgetUsd: overrides.maxBudgetUsd ?? defaults.maxBudgetUsd,
     effort: overrides.effort ?? defaults.effort,
+    fastMode:
+      overrides.fastMode !== undefined
+        ? overrides.fastMode
+        : defaults.fastMode,
     allowedTools: overrides.allowedTools ?? defaults.allowedTools,
     disallowedTools: overrides.disallowedTools ?? defaults.disallowedTools,
     abortSignal: overrides.abortSignal,
@@ -96,13 +104,19 @@ function mergeOptions<E extends string>(
   };
 }
 
-export class Cligent<E extends string = Effort> {
-  private readonly adapter: AgentAdapter<E>;
-  private readonly defaults: CligentOptions<E>;
+export class Cligent<
+  E extends string = Effort,
+  FM extends boolean = never,
+> {
+  private readonly adapter: AgentAdapter<E, boolean>;
+  private readonly defaults: CligentOptions<E, boolean>;
   private _resumeToken: string | undefined = undefined;
   private _running = false;
 
-  constructor(adapter: AgentAdapter<E>, options?: CligentOptions<NoInfer<E>>) {
+  constructor(
+    adapter: AgentAdapter<E, FM>,
+    options?: CligentOptions<NoInfer<E>, NoInfer<FM>>,
+  ) {
     this.adapter = adapter;
     this.defaults = options ?? {};
   }
@@ -121,7 +135,7 @@ export class Cligent<E extends string = Effort> {
 
   async *run(
     prompt: string,
-    overrides?: RunOptions<E>,
+    overrides?: RunOptions<E, FM>,
   ): AsyncGenerator<CligentEvent, void, void> {
     if (this._running) {
       throw new Error('Cligent.run() is already active on this instance');
@@ -132,13 +146,14 @@ export class Cligent<E extends string = Effort> {
 
     const resume = resolveResume(merged.resume, this._resumeToken);
 
-    const agentOptions: AgentOptions<E> = {
+    const agentOptions: AgentOptions<E, boolean> = {
       cwd: merged.cwd,
       model: merged.model,
       permissions: merged.permissions,
       maxTurns: merged.maxTurns,
       maxBudgetUsd: merged.maxBudgetUsd,
       effort: merged.effort,
+      fastMode: merged.fastMode,
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
       abortSignal: merged.abortSignal,
