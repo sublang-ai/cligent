@@ -48,9 +48,9 @@ Releases shall be triggered by pushing a git tag matching the pattern `vMAJOR.MI
 When the release workflow runs on GitHub, it shall:
 
 1. verify the tag version matches the `package.json` version [[release-2](#release-2)];
-2. refuse publication unless the tagged commit changes its matching preparation record and has exactly one parent, the audited head recorded there [[release-4](#release-4)], [[release-14](#release-14)];
-3. require the CI run for the tagged commit — its `push` to `main` — to have concluded successfully, waiting while it is in progress and refusing to publish where it concluded unsuccessfully or never ran, as for a tag off `main`;
-4. run the package's clean build [[package-10](package.md#package-10)] and validate the package;
+2. require the CI run for the tagged commit — its `push` to `main` — to have concluded successfully, waiting while it is in progress and refusing to publish where it concluded unsuccessfully or never ran, as for a tag off `main`;
+3. run the package's clean build [[package-10](package.md#package-10)] and validate the package;
+4. run the default unit suite with full Git history and tags, refusing publication unless the tagged commit changes its matching preparation record and has exactly one parent, the audited head recorded there [[release-4](#release-4)], [[release-14](#release-14)];
 5. extract release notes from `CHANGELOG.md`;
 6. publish the scoped package to npm with `--access public` [[release-9](#release-9)], `--provenance` [[release-8](#release-8)], and OIDC trusted publishing without a static npm token [[release-13](#release-13)];
 7. create a GitHub release carrying the extracted notes.
@@ -97,7 +97,7 @@ When the release workflow is audited, the audit shall assert what starts the wor
 
 - only a pushed git tag starts the workflow, and a run whose tag is not `vMAJOR.MINOR.PATCH` stops before publishing [[release-6](#release-6)];
 - the run compares the tag against the `package.json` version and stops before publishing where the two disagree [[release-7](#release-7)], leaving only a matching pair publishable [[release-2](#release-2)];
-- the run reads the matching preparation record from the tagged tree and stops before publishing unless the tagged commit changes that record and has its recorded audited head as its sole parent [[release-7](#release-7)];
+- before release-note extraction or publishing, the run's default unit suite reads the matching preparation record from the tagged tree and stops unless the tagged commit changes that record and has its recorded audited head as its sole parent [[release-7](#release-7)];
 - the CI run for the tagged commit is awaited while in progress, and publishing is refused unless it concluded successfully [[release-7](#release-7)];
 - the package is built and its publishable surface is validated before publication [[release-7](#release-7)];
 - release notes are extracted from the matching version section in `CHANGELOG.md` before publication [[release-7](#release-7)];
@@ -121,7 +121,7 @@ When a release-preparation record is audited, the system check shall assert the 
   - every other state fails the audit;
 - the `ci` job in `.github/workflows/ci.yml` and the `release` job in `.github/workflows/release.yml`, each of which executes the default unit suite containing this audit, are the complete set of jobs invoking `npm test` and check out full Git history and tags before that suite runs so the previous tag and audited head are available, while an otherwise valid checkout lacking the recorded history fails the audit [[release-4](#release-4)];
 - the recorded previous tag and previous version agree, the recorded change level produces the chosen version, and the recorded release date identifies its changelog section [[release-1](#release-1)], [[release-4](#release-4)];
-- `CHANGELOG.md` has the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links; `[Unreleased]` is empty in the prepared tree and matching release-tag tree, while later-release entries in a working tree based on that tag or in a descendant tree do not invalidate the prepared record [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
+- `CHANGELOG.md` has the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links; `[Unreleased]` is empty in the pending final-preparation changes, committed final-preparation tree, and matching release-tag tree, while ordered later-release entries in a working tree based on the committed preparation or tag, or in a later descendant, do not invalidate the prepared record [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
 - `package.json` `version`, `package-lock.json` top-level `version`, and `package-lock.json` `packages[""].version` carry the chosen version, and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
 
 ## References

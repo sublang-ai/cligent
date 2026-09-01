@@ -187,20 +187,93 @@ function changelogUnreleasedSection(
   );
 }
 
+function preparationCommitAfter(
+  repository: string,
+  auditedHead: string,
+  headCommit: string,
+  evidencePath: string,
+): string | undefined {
+  if (!isAncestor(repository, auditedHead, headCommit)) return undefined;
+  const output = execFileSync(
+    'git',
+    [
+      'rev-list',
+      '--reverse',
+      '--ancestry-path',
+      `${auditedHead}..${headCommit}`,
+    ],
+    {
+      cwd: repository,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  ).trim();
+  const candidates = (output === '' ? [] : output.split('\n')).filter(
+    (commit) => {
+      if (
+        soleParent(repository, commit) !== auditedHead ||
+        !commitChangesPath(repository, commit, evidencePath)
+      ) {
+        return false;
+      }
+      const evidence = commitFile(repository, commit, evidencePath);
+      if (evidence === undefined) return false;
+      try {
+        return evidenceField(evidence, 'Audited head') === auditedHead;
+      } catch {
+        return false;
+      }
+    },
+  );
+  if (candidates.length > 1) {
+    throw new Error('release history contains multiple preparation commits');
+  }
+  return candidates[0];
+}
+
 function isLaterReleaseTree(
   repository: string,
   version: string,
+  auditedHead: string,
+  evidencePath: string,
   workingChangelog: string,
 ): boolean {
   const taggedCommit = resolveCommit(repository, `v${version}`);
   const headCommit = resolveCommit(repository, 'HEAD');
-  if (
-    taggedCommit === undefined ||
-    headCommit === undefined ||
-    !isAncestor(repository, taggedCommit, headCommit)
-  ) {
-    return false;
+  if (headCommit === undefined) return false;
+
+  if (taggedCommit === undefined) {
+    const preparationCommit = preparationCommitAfter(
+      repository,
+      auditedHead,
+      headCommit,
+      evidencePath,
+    );
+    if (preparationCommit === undefined) return false;
+    const preparedChangelog = commitFile(
+      repository,
+      preparationCommit,
+      'CHANGELOG.md',
+    );
+    const preparedUnreleased =
+      preparedChangelog === undefined
+        ? undefined
+        : changelogUnreleasedSection(preparedChangelog, version);
+    if (preparedUnreleased === undefined) {
+      throw new Error(
+        `release ${version} does not contain an auditable prepared changelog`,
+      );
+    }
+    if (preparedUnreleased.trim() !== '') {
+      throw new Error(
+        `release ${version} does not contain an empty prepared Unreleased section`,
+      );
+    }
+    if (preparationCommit !== headCommit) return true;
+    return preparedChangelog !== workingChangelog;
   }
+
+  if (!isAncestor(repository, taggedCommit, headCommit)) return false;
 
   const taggedChangelog = commitFile(repository, taggedCommit, 'CHANGELOG.md');
   if (taggedChangelog === undefined) {
@@ -243,10 +316,20 @@ function orderedChangelogHeadingMatches(section: string): RegExpMatchArray[] {
 function auditUnreleasedSection(
   repository: string,
   version: string,
+  auditedHead: string,
+  evidencePath: string,
   changelog: string,
   section: string,
 ): void {
-  if (!isLaterReleaseTree(repository, version, changelog)) {
+  if (
+    !isLaterReleaseTree(
+      repository,
+      version,
+      auditedHead,
+      evidencePath,
+      changelog,
+    )
+  ) {
     expect(section.trim()).toBe('');
     return;
   }
@@ -254,7 +337,6 @@ function auditUnreleasedSection(
 }
 
 interface WorkflowStep {
-  name?: unknown;
   run?: unknown;
   uses?: unknown;
   with?: Record<string, unknown>;
@@ -364,6 +446,8 @@ describe('release preparation', () => {
     auditUnreleasedSection(
       projectRoot,
       chosenVersion,
+      auditedHead,
+      evidencePath,
       changelog,
       unreleasedSection,
     );
@@ -703,6 +787,8 @@ describe('release preparation', () => {
   it('scopes Unreleased emptiness to the prepared release lifecycle (release-15)', () => {
     const scratch = mkdtempSync(join(tmpdir(), 'cligent-release-state-'));
     const changelogPath = join(scratch, 'CHANGELOG.md');
+    const evidencePath = 'release-evidence.md';
+    const absoluteEvidencePath = join(scratch, evidencePath);
     const emptyChangelog = '## [Unreleased]\n\n## [1.2.0] - 2026-08-31\n';
     const laterChangelog = [
       '## [Unreleased]',
@@ -741,37 +827,124 @@ describe('release preparation', () => {
         { cwd: scratch },
       );
       writeFileSync(changelogPath, emptyChangelog);
-      execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: scratch });
+      writeFileSync(absoluteEvidencePath, '- Audited head: `pending`\n');
+      execFileSync('git', ['add', 'CHANGELOG.md', evidencePath], {
+        cwd: scratch,
+      });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'audited changes'],
+        { cwd: scratch },
+      );
+      const auditedHead = resolveCommit(scratch, 'HEAD');
+      if (auditedHead === undefined) {
+        throw new Error('scratch audited head could not be resolved');
+      }
+
+      execFileSync('git', ['switch', '--quiet', '-c', 'bad-preparation'], {
+        cwd: scratch,
+      });
+      writeFileSync(
+        absoluteEvidencePath,
+        `- Audited head: \`${auditedHead}\`\n`,
+      );
+      writeFileSync(changelogPath, laterChangelog);
+      execFileSync('git', ['add', 'CHANGELOG.md', evidencePath], {
+        cwd: scratch,
+      });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'bad preparation'],
+        { cwd: scratch },
+      );
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
+      ).toThrow(/empty prepared Unreleased section/);
+
+      execFileSync('git', ['switch', '--quiet', 'main'], { cwd: scratch });
+      writeFileSync(
+        absoluteEvidencePath,
+        `- Audited head: \`${auditedHead}\`\n`,
+      );
+
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          emptyChangelog,
+          '',
+        ),
+      ).not.toThrow();
+      writeFileSync(changelogPath, laterChangelog);
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
+      ).toThrow();
+
+      writeFileSync(changelogPath, emptyChangelog);
+      execFileSync('git', ['add', 'CHANGELOG.md', evidencePath], {
+        cwd: scratch,
+      });
       execFileSync(
         'git',
         ['commit', '--quiet', '--no-gpg-sign', '-m', 'prepare release'],
         { cwd: scratch },
       );
-      const preparedCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
-        cwd: scratch,
-        encoding: 'utf8',
-      }).trim();
-
+      const preparedCommit = resolveCommit(scratch, 'HEAD');
+      if (preparedCommit === undefined) {
+        throw new Error('scratch preparation commit could not be resolved');
+      }
       expect(() =>
-        auditUnreleasedSection(scratch, '1.2.0', emptyChangelog, ''),
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          emptyChangelog,
+          '',
+        ),
       ).not.toThrow();
+
       writeFileSync(changelogPath, laterChangelog);
       expect(() =>
-        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
-      ).toThrow();
-
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
+      ).not.toThrow();
       writeFileSync(changelogPath, emptyChangelog);
-      execFileSync('git', ['-c', 'tag.gpgSign=false', 'tag', 'v1.2.0'], {
+
+      execFileSync('git', ['switch', '--quiet', '-c', 'topic'], {
         cwd: scratch,
       });
-      expect(() =>
-        auditUnreleasedSection(scratch, '1.2.0', emptyChangelog, ''),
-      ).not.toThrow();
-
+      writeFileSync(join(scratch, 'topic.txt'), 'topic work\n');
+      execFileSync('git', ['add', 'topic.txt'], { cwd: scratch });
+      execFileSync(
+        'git',
+        ['commit', '--quiet', '--no-gpg-sign', '-m', 'topic work'],
+        { cwd: scratch },
+      );
+      execFileSync('git', ['switch', '--quiet', 'main'], { cwd: scratch });
       writeFileSync(changelogPath, laterChangelog);
-      expect(() =>
-        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
-      ).not.toThrow();
       execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: scratch });
       execFileSync(
         'git',
@@ -779,7 +952,57 @@ describe('release preparation', () => {
         { cwd: scratch },
       );
       expect(() =>
-        auditUnreleasedSection(scratch, '1.2.0', laterChangelog, laterSection),
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
+      ).not.toThrow();
+      execFileSync(
+        'git',
+        ['merge', '--quiet', '--no-ff', '--no-gpg-sign', '--no-edit', 'topic'],
+        { cwd: scratch },
+      );
+      expect(resolveCommit(scratch, 'HEAD^2')).toBeDefined();
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
+      ).not.toThrow();
+
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          '### Fixed\n\n- Fixed first.\n\n### Added\n\n- Added second.\n',
+        ),
+      ).toThrow();
+
+      execFileSync(
+        'git',
+        ['-c', 'tag.gpgSign=false', 'tag', 'v1.2.0', preparedCommit],
+        { cwd: scratch },
+      );
+      expect(() =>
+        auditUnreleasedSection(
+          scratch,
+          '1.2.0',
+          auditedHead,
+          evidencePath,
+          laterChangelog,
+          laterSection,
+        ),
       ).not.toThrow();
 
       execFileSync('git', ['switch', '--quiet', '--detach', preparedCommit], {
@@ -802,15 +1025,13 @@ describe('release preparation', () => {
       });
       execFileSync('git', ['switch', '--quiet', 'main'], { cwd: scratch });
       expect(() =>
-        auditUnreleasedSection(scratch, '9.9.9', laterChangelog, laterSection),
-      ).toThrow();
-
-      expect(() =>
         auditUnreleasedSection(
           scratch,
-          '1.2.0',
+          '9.9.9',
+          auditedHead,
+          evidencePath,
           laterChangelog,
-          '### Fixed\n\n- Fixed first.\n\n### Added\n\n- Added second.\n',
+          laterSection,
         ),
       ).toThrow();
 
@@ -828,6 +1049,8 @@ describe('release preparation', () => {
         auditUnreleasedSection(
           scratch,
           '1.3.0',
+          auditedHead,
+          evidencePath,
           nonemptyTaggedChangelog,
           laterSection,
         ),
@@ -844,7 +1067,14 @@ describe('release preparation', () => {
         cwd: scratch,
       });
       expect(() =>
-        auditUnreleasedSection(scratch, '1.4.0', malformedTaggedChangelog, ''),
+        auditUnreleasedSection(
+          scratch,
+          '1.4.0',
+          auditedHead,
+          evidencePath,
+          malformedTaggedChangelog,
+          '',
+        ),
       ).toThrow(/auditable prepared changelog/);
     } finally {
       rmSync(scratch, { recursive: true, force: true });
@@ -853,25 +1083,15 @@ describe('release preparation', () => {
 
   it('audits every tag-workflow publication gate (release-11)', () => {
     const workflow = read('.github/workflows/release.yml');
-    const parsedWorkflow = parse(workflow) as {
-      jobs?: Record<string, WorkflowJob>;
-    };
-    const boundaryStep = (parsedWorkflow.jobs?.['release']?.steps ?? []).find(
-      (step) => step.name === 'Verify release preparation boundary',
-    );
-    const boundaryRun =
-      typeof boundaryStep?.run === 'string' ? boundaryStep.run : '';
     const tagVersion = workflow.indexOf(
       '- name: Verify tag matches package.json version',
-    );
-    const preparationBoundary = workflow.indexOf(
-      '- name: Verify release preparation boundary',
     );
     const ciRequirement = workflow.indexOf(
       '- name: Require passing CI for this commit',
     );
     const build = workflow.indexOf('- run: npm run build');
     const packageCheck = workflow.indexOf('- run: npm run test:package');
+    const unitTest = workflow.indexOf('- run: npm test');
     const notes = workflow.indexOf(
       '- name: Extract release notes from CHANGELOG.md',
     );
@@ -888,60 +1108,13 @@ describe('release preparation', () => {
       'Tag $TAG does not match package.json version $PKG_VERSION',
     );
     expect(tagVersion).toBeGreaterThanOrEqual(0);
-    expect(preparationBoundary).toBeGreaterThan(tagVersion);
-    expect(ciRequirement).toBeGreaterThan(preparationBoundary);
-    expect(boundaryRun).toContain('VERSION="${GITHUB_REF_NAME#v}"');
-    expect(boundaryRun).toContain(
-      'EVIDENCE="docs/releases/${VERSION}-preparation.md"',
-    );
-    expect(boundaryRun).toContain(
-      'TAGGED_COMMIT="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"',
-    );
-    expect(boundaryRun).toContain(
-      'if ! EVIDENCE_CONTENT="$(git show "${TAGGED_COMMIT}:${EVIDENCE}")"; then\n' +
-        '  echo "::error::Release tag ${GITHUB_REF_NAME} lacks ${EVIDENCE}"\n' +
-        '  exit 1\n' +
-        'fi',
-    );
-    expect(boundaryRun).toContain(
-      'AUDITED_HEAD="$(printf \'%s\\n\' "$EVIDENCE_CONTENT" | sed -nE \'s/^- Audited head: `([0-9a-f]{40})`$/\\1/p\')"',
-    );
-    expect(boundaryRun).toContain(
-      'read -r -a COMMIT_AND_PARENTS <<<"$(git rev-list --parents -n 1 "$TAGGED_COMMIT")"',
-    );
-    expect(boundaryRun).toContain(
-      'if [ "${#COMMIT_AND_PARENTS[@]}" -ne 2 ]; then\n' +
-        '  echo "::error::Release tag ${GITHUB_REF_NAME} must point to a single-parent preparation commit"\n' +
-        '  exit 1\n' +
-        'fi',
-    );
-    expect(boundaryRun).toContain('TAGGED_PARENT="${COMMIT_AND_PARENTS[1]}"');
-    expect(boundaryRun).toContain(
-      'if [ "$TAGGED_PARENT" != "$AUDITED_HEAD" ]; then\n' +
-        '  echo "::error::Release tag parent $TAGGED_PARENT does not match audited head $AUDITED_HEAD"\n' +
-        '  exit 1\n' +
-        'fi',
-    );
-    expect(boundaryRun).toContain(
-      'if [ "$CHANGED_EVIDENCE" != "$EVIDENCE" ]; then\n' +
-        '  echo "::error::Release tag commit must change ${EVIDENCE}"\n' +
-        '  exit 1\n' +
-        'fi',
-    );
-    expect(boundaryRun).toContain(
-      'if ! [[ "$AUDITED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then\n' +
-        '  echo "::error::${EVIDENCE} must record exactly one full audited head"\n' +
-        '  exit 1\n' +
-        'fi',
-    );
-    expect(boundaryRun).toContain(
-      'CHANGED_EVIDENCE="$(git diff --name-only "$TAGGED_PARENT" "$TAGGED_COMMIT" -- "$EVIDENCE")"',
-    );
+    expect(ciRequirement).toBeGreaterThan(tagVersion);
     expect(workflow).toContain('event=push&branch=main');
     expect(workflow).toContain('conclusion" = "success"');
     expect(build).toBeGreaterThan(ciRequirement);
     expect(packageCheck).toBeGreaterThan(build);
-    expect(notes).toBeGreaterThan(packageCheck);
+    expect(unitTest).toBeGreaterThan(packageCheck);
+    expect(notes).toBeGreaterThan(unitTest);
     expect(workflow).toContain('No release notes found for version $VERSION');
     expect(publish).toBeGreaterThan(notes);
     expect(githubRelease).toBeGreaterThan(publish);

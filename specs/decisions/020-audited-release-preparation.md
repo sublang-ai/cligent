@@ -30,5 +30,5 @@ Without durable evidence, a later reviewer can see the resulting version bump an
 - Manual release duties remain enforceable without pretending that a script can decide notability or release impact.
 - A release-preparation commit may be reviewed and committed before its later push and tag, while the record still makes those remaining gates explicit.
 - Review follow-ups may land before a release without freezing ordinary CI; where a follow-up must enter that release, it becomes the audited parent of a refreshed final release-preparation commit rather than silently falling outside the record.
-- The prepared changelog remains auditable after the matching release tag while `[Unreleased]` accumulates entries for a later release.
+- The committed preparation and matching release-tag trees retain an empty `[Unreleased]` and remain auditable while working trees or descendants after preparation accumulate ordered entries for a later release before or after tagging.
 - The tag-triggered workflow rejects a tag whose commit does not satisfy the recorded final-preparation boundary before publication; its other publication controls remain unchanged.

@@ -37,36 +37,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify release preparation boundary
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          EVIDENCE="docs/releases/${VERSION}-preparation.md"
-          TAGGED_COMMIT="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
-          if ! EVIDENCE_CONTENT="$(git show "${TAGGED_COMMIT}:${EVIDENCE}")"; then
-            echo "::error::Release tag ${GITHUB_REF_NAME} lacks ${EVIDENCE}"
-            exit 1
-          fi
-          AUDITED_HEAD="$(printf '%s\n' "$EVIDENCE_CONTENT" | sed -nE 's/^- Audited head: `([0-9a-f]{40})`$/\1/p')"
-          if ! [[ "$AUDITED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::${EVIDENCE} must record exactly one full audited head"
-            exit 1
-          fi
-          read -r -a COMMIT_AND_PARENTS <<<"$(git rev-list --parents -n 1 "$TAGGED_COMMIT")"
-          if [ "${#COMMIT_AND_PARENTS[@]}" -ne 2 ]; then
-            echo "::error::Release tag ${GITHUB_REF_NAME} must point to a single-parent preparation commit"
-            exit 1
-          fi
-          TAGGED_PARENT="${COMMIT_AND_PARENTS[1]}"
-          if [ "$TAGGED_PARENT" != "$AUDITED_HEAD" ]; then
-            echo "::error::Release tag parent $TAGGED_PARENT does not match audited head $AUDITED_HEAD"
-            exit 1
-          fi
-          CHANGED_EVIDENCE="$(git diff --name-only "$TAGGED_PARENT" "$TAGGED_COMMIT" -- "$EVIDENCE")"
-          if [ "$CHANGED_EVIDENCE" != "$EVIDENCE" ]; then
-            echo "::error::Release tag commit must change ${EVIDENCE}"
-            exit 1
-          fi
-
       - name: Require passing CI for this commit
         # Do not publish a commit whose CI did not pass. The tagged commit is
         # also pushed to `main`, which triggers the CI workflow; wait for that
