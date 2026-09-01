@@ -49,7 +49,7 @@ import { KimiAdapter } from './kimi.js';
 import { OpenCodeAdapter } from './opencode.js';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL;
-const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k3';
 const kimiAcceptance = inject('kimiAcceptance');
 
 const PROBE_TIMEOUT_MS = 300_000;

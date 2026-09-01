@@ -20,7 +20,7 @@ import type { PlayerAdapterName } from './players.js';
 import { createTmuxPlayRuntime, type TmuxPlayRuntime } from './runtime.js';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL;
-const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k3';
 const kimiAcceptance = inject('kimiAcceptance');
 const PLAYER_ADAPTERS = [
   'claude',

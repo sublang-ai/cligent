@@ -28,7 +28,7 @@ import type {
 } from '../index.js';
 import { OpenCodeAdapter } from './opencode.js';
 
-const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k2.5';
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL ?? 'moonshotai-cn/kimi-k3';
 const PROBE_TIMEOUT_MS = 300_000;
 const MAX_PROBE_ATTEMPTS = 3;
 
