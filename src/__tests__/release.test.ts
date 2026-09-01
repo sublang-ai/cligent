@@ -164,13 +164,10 @@ function auditPreparationBoundary(
     return;
   }
 
-  if (auditedHead === head) {
-    expect(workingPathChanged(repository, evidencePath)).toBe(true);
-    return;
+  expect(isAncestor(repository, auditedHead, head)).toBe(true);
+  if (workingPathChanged(repository, evidencePath)) {
+    expect(auditedHead).toBe(head);
   }
-
-  expect(soleParent(repository, head)).toBe(auditedHead);
-  expect(commitChangesPath(repository, head, evidencePath)).toBe(true);
 }
 
 function changelogUnreleasedSection(
@@ -257,6 +254,7 @@ function auditUnreleasedSection(
 }
 
 interface WorkflowStep {
+  name?: unknown;
   run?: unknown;
   uses?: unknown;
   with?: Record<string, unknown>;
@@ -426,13 +424,12 @@ describe('release preparation', () => {
 
       const citedSubjectGroups = [
         ...row.evidence.matchAll(
-          /all (\d+) ([a-z][a-z0-9-]*|documentation) commits in the audited digest/g,
+          /all (\d+) ([a-z][a-z0-9-]*) commits in the audited digest/g,
         ),
       ];
       for (const group of citedSubjectGroups) {
         const count = Number(group[1]);
-        const label = group[2] ?? '';
-        const subjectClass = label === 'documentation' ? 'docs' : label;
+        const subjectClass = group[2] ?? '';
         expect(classes.has(subjectClass)).toBe(true);
         expect(count).toBe(classes.get(subjectClass));
       }
@@ -544,7 +541,7 @@ describe('release preparation', () => {
     }
   });
 
-  it('binds the final preparation commit to its sole audited parent and tag (release-15)', () => {
+  it('permits untagged descendants and binds the tagged preparation boundary (release-15)', () => {
     const scratch = mkdtempSync(join(tmpdir(), 'cligent-release-boundary-'));
     const evidencePath = 'release-evidence.md';
     const absoluteEvidencePath = join(scratch, evidencePath);
@@ -607,7 +604,7 @@ describe('release preparation', () => {
       );
       expect(() =>
         auditPreparationBoundary(scratch, '1.2.3', auditedHead, evidencePath),
-      ).toThrow();
+      ).not.toThrow();
 
       execFileSync(
         'git',
@@ -629,7 +626,7 @@ describe('release preparation', () => {
     }
   });
 
-  it('rejects a merge as the final preparation commit (release-15)', () => {
+  it('permits an untagged merge but rejects it as the tagged preparation (release-15)', () => {
     const scratch = mkdtempSync(join(tmpdir(), 'cligent-release-merge-'));
     const evidencePath = 'release-evidence.md';
 
@@ -688,7 +685,7 @@ describe('release preparation', () => {
       expect(resolveCommit(scratch, `${mergePreparation}^2`)).toBeDefined();
       expect(() =>
         auditPreparationBoundary(scratch, '1.2.5', auditedHead, evidencePath),
-      ).toThrow();
+      ).not.toThrow();
 
       execFileSync(
         'git',
@@ -856,6 +853,23 @@ describe('release preparation', () => {
 
   it('audits every tag-workflow publication gate (release-11)', () => {
     const workflow = read('.github/workflows/release.yml');
+    const parsedWorkflow = parse(workflow) as {
+      jobs?: Record<string, WorkflowJob>;
+    };
+    const boundaryStep = (parsedWorkflow.jobs?.['release']?.steps ?? []).find(
+      (step) => step.name === 'Verify release preparation boundary',
+    );
+    const boundaryRun =
+      typeof boundaryStep?.run === 'string' ? boundaryStep.run : '';
+    const tagVersion = workflow.indexOf(
+      '- name: Verify tag matches package.json version',
+    );
+    const preparationBoundary = workflow.indexOf(
+      '- name: Verify release preparation boundary',
+    );
+    const ciRequirement = workflow.indexOf(
+      '- name: Require passing CI for this commit',
+    );
     const build = workflow.indexOf('- run: npm run build');
     const packageCheck = workflow.indexOf('- run: npm run test:package');
     const notes = workflow.indexOf(
@@ -873,9 +887,59 @@ describe('release preparation', () => {
     expect(workflow).toContain(
       'Tag $TAG does not match package.json version $PKG_VERSION',
     );
+    expect(tagVersion).toBeGreaterThanOrEqual(0);
+    expect(preparationBoundary).toBeGreaterThan(tagVersion);
+    expect(ciRequirement).toBeGreaterThan(preparationBoundary);
+    expect(boundaryRun).toContain('VERSION="${GITHUB_REF_NAME#v}"');
+    expect(boundaryRun).toContain(
+      'EVIDENCE="docs/releases/${VERSION}-preparation.md"',
+    );
+    expect(boundaryRun).toContain(
+      'TAGGED_COMMIT="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"',
+    );
+    expect(boundaryRun).toContain(
+      'if ! EVIDENCE_CONTENT="$(git show "${TAGGED_COMMIT}:${EVIDENCE}")"; then\n' +
+        '  echo "::error::Release tag ${GITHUB_REF_NAME} lacks ${EVIDENCE}"\n' +
+        '  exit 1\n' +
+        'fi',
+    );
+    expect(boundaryRun).toContain(
+      'AUDITED_HEAD="$(printf \'%s\\n\' "$EVIDENCE_CONTENT" | sed -nE \'s/^- Audited head: `([0-9a-f]{40})`$/\\1/p\')"',
+    );
+    expect(boundaryRun).toContain(
+      'read -r -a COMMIT_AND_PARENTS <<<"$(git rev-list --parents -n 1 "$TAGGED_COMMIT")"',
+    );
+    expect(boundaryRun).toContain(
+      'if [ "${#COMMIT_AND_PARENTS[@]}" -ne 2 ]; then\n' +
+        '  echo "::error::Release tag ${GITHUB_REF_NAME} must point to a single-parent preparation commit"\n' +
+        '  exit 1\n' +
+        'fi',
+    );
+    expect(boundaryRun).toContain('TAGGED_PARENT="${COMMIT_AND_PARENTS[1]}"');
+    expect(boundaryRun).toContain(
+      'if [ "$TAGGED_PARENT" != "$AUDITED_HEAD" ]; then\n' +
+        '  echo "::error::Release tag parent $TAGGED_PARENT does not match audited head $AUDITED_HEAD"\n' +
+        '  exit 1\n' +
+        'fi',
+    );
+    expect(boundaryRun).toContain(
+      'if [ "$CHANGED_EVIDENCE" != "$EVIDENCE" ]; then\n' +
+        '  echo "::error::Release tag commit must change ${EVIDENCE}"\n' +
+        '  exit 1\n' +
+        'fi',
+    );
+    expect(boundaryRun).toContain(
+      'if ! [[ "$AUDITED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then\n' +
+        '  echo "::error::${EVIDENCE} must record exactly one full audited head"\n' +
+        '  exit 1\n' +
+        'fi',
+    );
+    expect(boundaryRun).toContain(
+      'CHANGED_EVIDENCE="$(git diff --name-only "$TAGGED_PARENT" "$TAGGED_COMMIT" -- "$EVIDENCE")"',
+    );
     expect(workflow).toContain('event=push&branch=main');
     expect(workflow).toContain('conclusion" = "success"');
-    expect(build).toBeGreaterThanOrEqual(0);
+    expect(build).toBeGreaterThan(ciRequirement);
     expect(packageCheck).toBeGreaterThan(build);
     expect(notes).toBeGreaterThan(packageCheck);
     expect(workflow).toContain('No release notes found for version $VERSION');

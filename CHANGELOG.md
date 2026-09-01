@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Final release-preparation auditing now binds the reviewed range to the tagged preparation commit's sole parent, invalidates stale evidence after an intervening pre-tag follow-up, explicitly reconciles every audited and containing change, and preserves distinct diagnostics for a malformed versus non-empty tagged changelog — DR-020
+- Final release-preparation auditing now binds the reviewed range to the tagged preparation commit's sole parent at publication, rejects stale evidence when a later commit is tagged without freezing ordinary pre-tag pushes or pull-request merge checks, explicitly reconciles every audited and containing change, and preserves distinct diagnostics for a malformed versus non-empty tagged changelog — DR-020
 
 ## [0.23.0] - 2026-08-29
 
