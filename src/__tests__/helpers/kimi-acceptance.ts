@@ -30,11 +30,52 @@ const KIMI_MODEL_ENV_KEYS = [
   'KIMI_MODEL_PROVIDER_TYPE',
 ] as const;
 
+/**
+ * Which authentication route the acceptance suite drives Kimi through.
+ *
+ * `api-key` synthesizes a provider and default alias from the environment, so
+ * it needs no fixture and cannot go stale. `oauth` replays a stored `kimi
+ * login` credential, which Kimi rotates on every refresh.
+ */
+export type KimiAuthRoute = 'api-key' | 'oauth';
+
+/** Model identifier used when the API-key route does not name one. */
+const KIMI_DEFAULT_MODEL_NAME = 'kimi-k3';
+/** Moonshot endpoint matching the platform that issues `MOONSHOT_API_KEY`. */
+const KIMI_DEFAULT_BASE_URL = 'https://api.moonshot.cn/v1';
+/** Provider trait that keeps kimi-9's thinking mapping meaningful. */
+const KIMI_DEFAULT_PROVIDER_TYPE = 'kimi';
+
+/**
+ * Build the environment overlay that authenticates Kimi without a stored
+ * credential. Kimi Code 0.39.1 admits this route only when both the model name
+ * and the API key are present: the name is what synthesizes the default alias,
+ * without which a bare `MOONSHOT_API_KEY` is not admitted.
+ */
+export function resolveKimiModelEnv(
+  env: Readonly<NodeJS.ProcessEnv> = process.env,
+): Record<string, string> | undefined {
+  const apiKey = nonEmpty(env.KIMI_MODEL_API_KEY ?? env.MOONSHOT_API_KEY);
+  if (!apiKey) return undefined;
+  return {
+    KIMI_MODEL_API_KEY: apiKey,
+    KIMI_MODEL_NAME: nonEmpty(env.KIMI_MODEL_NAME) ?? KIMI_DEFAULT_MODEL_NAME,
+    KIMI_MODEL_BASE_URL:
+      nonEmpty(env.KIMI_MODEL_BASE_URL) ?? KIMI_DEFAULT_BASE_URL,
+    KIMI_MODEL_PROVIDER_TYPE:
+      nonEmpty(env.KIMI_MODEL_PROVIDER_TYPE) ?? KIMI_DEFAULT_PROVIDER_TYPE,
+  };
+}
+
 export interface KimiAcceptanceContext {
   readonly sourceHome?: string;
   readonly source: 'explicit' | 'environment' | 'default' | 'missing';
   readonly cliCommand?: string;
   readonly missing: readonly string[];
+  /** Selected authentication route; `oauth` unless an API key resolves. */
+  readonly route?: KimiAuthRoute;
+  /** Environment overlay authenticating the `api-key` route. */
+  readonly modelEnv?: Readonly<Record<string, string>>;
   /**
    * Set when the credential is present and well-formed but no longer usable —
    * Kimi's rotating refresh token was already spent by an earlier run.
@@ -46,6 +87,26 @@ export interface KimiAcceptanceContext {
    * under `CI` rather than reporting a false regression.
    */
   readonly unusable?: string;
+}
+
+/**
+ * Put the target environment on the context's route.
+ *
+ * On `api-key` the overlay is written and any key the route does not define is
+ * removed, so a developer's stray override cannot leak into the run. On
+ * `oauth` all four keys are removed, because an environment-configured model
+ * would satisfy Kimi's gate on its own and let a spent credential look usable.
+ */
+function applyRouteModelEnv(
+  context: KimiAcceptanceContext,
+  target: NodeJS.ProcessEnv,
+): void {
+  const overlay = context.route === 'api-key' ? context.modelEnv : undefined;
+  for (const key of KIMI_MODEL_ENV_KEYS) {
+    const value = overlay?.[key];
+    if (value === undefined) delete target[key];
+    else target[key] = value;
+  }
 }
 
 export interface IsolatedKimiAcceptance {
@@ -75,6 +136,27 @@ export function resolveKimiAcceptance(
   const probeCommand = options.probeCommand ?? commandIsAvailable;
   const explicitHome = nonEmpty(env[KIMI_ACCEPTANCE_HOME_KEY]);
   const configuredHome = nonEmpty(env.KIMI_CODE_HOME);
+
+  // The API-key route needs no fixture at all: the overlay synthesizes the
+  // provider and default alias, so no config.toml, credentials file, or device
+  // identity is read. Prefer it, because it is the route that cannot go stale
+  // — an OAuth credential restored from an immutable secret is spent by the
+  // first run that refreshes it.
+  const modelEnv = resolveKimiModelEnv(env);
+  if (modelEnv) {
+    const apiKeyMissing: string[] = [];
+    let apiKeyCli: string | undefined;
+    if (probeCommand('kimi')) apiKeyCli = 'kimi';
+    if (!apiKeyCli) apiKeyMissing.push('kimi CLI on PATH');
+    return {
+      sourceHome: undefined,
+      source: 'environment',
+      cliCommand: apiKeyCli,
+      missing: apiKeyMissing,
+      route: 'api-key',
+      modelEnv,
+    };
+  }
 
   let sourceHome: string | undefined;
   let source: KimiAcceptanceContext['source'];
@@ -133,7 +215,7 @@ export function resolveKimiAcceptance(
     missing.push('kimi CLI on PATH or in the resolved Kimi Code home');
   }
 
-  return { sourceHome, source, cliCommand, missing };
+  return { sourceHome, source, cliCommand, missing, route: 'oauth' };
 }
 
 export function createIsolatedKimiAcceptance(
@@ -145,6 +227,19 @@ export function createIsolatedKimiAcceptance(
   const isolatedHome = mkdtempSync(join(tmpdir(), prefix));
   chmodSync(isolatedHome, 0o700);
   let cleaned = false;
+
+  // The API-key route reads no fixture, so there is nothing to clone. The
+  // empty home still isolates whatever the CLI writes during the suite.
+  if (context.route === 'api-key') {
+    return {
+      context: { ...context, sourceHome: isolatedHome },
+      cleanup() {
+        if (cleaned) return;
+        cleaned = true;
+        rmSync(isolatedHome, { recursive: true, force: true });
+      },
+    };
+  }
 
   try {
     cpSync(
@@ -201,7 +296,7 @@ export async function withKimiAcceptanceEnvironment<T>(
       ? `${cliDirectory}${delimiter}${previousPath}`
       : cliDirectory;
   }
-  for (const key of KIMI_MODEL_ENV_KEYS) delete process.env[key];
+  applyRouteModelEnv(context, process.env);
 
   try {
     return await run();
@@ -249,9 +344,14 @@ export async function probeKimiCredential(
   context: KimiAcceptanceContext,
   timeoutMs = 20_000,
 ): Promise<string | undefined> {
-  if (!context.sourceHome || !context.cliCommand) {
+  if (!context.cliCommand || (!context.sourceHome && context.route !== 'api-key')) {
     return 'Kimi acceptance context is not ready';
   }
+
+  // The API-key route cannot go stale, so there is no spent-credential state
+  // to detect and nothing to self-skip on. Its failures are real and must
+  // reach the suite as failures.
+  if (context.route === 'api-key') return undefined;
 
   const probeCwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-probe-'));
   // The probe answers one question: is the OAuth fixture still usable? The
@@ -370,11 +470,13 @@ function commandIsAvailable(command: string): boolean {
 function assertKimiAcceptanceReady(
   context: KimiAcceptanceContext,
 ): asserts context is KimiAcceptanceContext & {
-  readonly sourceHome: string;
   readonly cliCommand: string;
 } {
+  // The API-key route authenticates from the environment, so it requires the
+  // CLI only; the OAuth route additionally requires its source fixture.
+  const needsSourceHome = context.route !== 'api-key';
   if (
-    !context.sourceHome ||
+    (needsSourceHome && !context.sourceHome) ||
     !context.cliCommand ||
     context.missing.length > 0
   ) {

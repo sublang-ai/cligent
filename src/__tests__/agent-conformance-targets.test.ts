@@ -178,7 +178,7 @@ describe('agent SDK and CLI conformance targets', () => {
     expect(workflow.jobs?.acceptance?.needs).toEqual(['ci', 'distributable']);
   });
 
-  it('does not treat an API key as Kimi ACP OAuth state', () => {
+  it('authenticates Kimi acceptance through the model API-key route', () => {
     const workflow = parse(
       readFileSync(
         new URL('../../.github/workflows/ci.yml', import.meta.url),
@@ -189,13 +189,18 @@ describe('agent SDK and CLI conformance targets', () => {
       (candidate) => candidate.name === 'Run acceptance tests',
     );
 
+    // Kimi admits an API key only alongside a model name, which synthesizes
+    // its default alias; a bare MOONSHOT_API_KEY is not admitted, so the pair
+    // must travel together or the legs authenticate through nothing.
     expect(step?.env).toMatchObject({
       MOONSHOT_API_KEY: '${{ secrets.MOONSHOT_API_KEY }}',
+      KIMI_MODEL_API_KEY: '${{ secrets.MOONSHOT_API_KEY }}',
+      KIMI_MODEL_NAME: 'kimi-k3',
+      KIMI_MODEL_BASE_URL: 'https://api.moonshot.cn/v1',
     });
+    // The home stays unset: this route reads no fixture, and pointing it at
+    // one would reintroduce the credential Kimi's rotation renders single-use.
     expect(step?.env).not.toHaveProperty('KIMI_CODE_HOME');
-    expect(step?.env).not.toHaveProperty('KIMI_MODEL_API_KEY');
-    expect(step?.env).not.toHaveProperty('KIMI_MODEL_BASE_URL');
-    expect(step?.env).not.toHaveProperty('KIMI_MODEL_NAME');
     expect(step?.env).not.toHaveProperty('CLIGENT_KIMI_ACCEPTANCE_HOME');
   });
 

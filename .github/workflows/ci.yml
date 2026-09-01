@@ -139,4 +139,12 @@ jobs:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          # Kimi Code admits an API key only alongside a model name, which is
+          # what synthesizes its default alias; a bare MOONSHOT_API_KEY is not
+          # admitted. This route replaces the stored OAuth credential, which
+          # Kimi's per-refresh token rotation spends on first use.
+          KIMI_MODEL_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_MODEL_NAME: kimi-k3
+          KIMI_MODEL_BASE_URL: https://api.moonshot.cn/v1
+          KIMI_MODEL_PROVIDER_TYPE: kimi
         run: npm run test:acceptance

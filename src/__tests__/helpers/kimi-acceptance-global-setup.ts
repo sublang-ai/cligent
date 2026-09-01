@@ -12,6 +12,12 @@ export default async function setupKimiAcceptance(
   project: TestProject,
 ): Promise<() => void> {
   const source = resolveKimiAcceptance();
+  // Which route authenticated the suite decides how a failure should be read,
+  // so never leave it implicit: `api-key` failures are real, while `oauth`
+  // failures may be Kimi's unavoidable token rotation.
+  console.warn(
+    `kimi acceptance: authenticating through the ${source.route ?? 'oauth'} route`,
+  );
   if (source.missing.length > 0) {
     project.provide('kimiAcceptance', source);
     return () => undefined;
