@@ -18,6 +18,8 @@ Gemini, OpenCode, and Kimi expose no corresponding built-in runtime contract.
 Claude requires a non-interactive SDK session to opt in explicitly through flag settings, while `fastModePerSessionOptIn` is a separate persistence and cost-control policy [[1]], [[2]].
 Accordingly, `sdk_opt_in_required` means that the SDK session did not carry the explicit `settings.fastMode: true` opt-in; a saved interactive preference does not satisfy it [[1]], [[5]].
 Claude also distinguishes selected session state from actual serving speed: a fast-mode rate limit produces `cooldown`, which is state rather than a disabled reason, temporarily uses standard speed and pricing, and later reenables fast mode, while response usage reports the speed actually used for that response [[1]], [[3]], [[5]].
+The Messages API source type permits nullable response speed [[9]], while the Agent SDK result type makes usage keys non-nullable and documents that crash or startup-error accounting may be zeroed [[5]].
+A required terminal speed therefore cannot authenticate completed serving by presence alone.
 
 Fast-mode availability remains dependent on the selected model, account, provider, organization policy, billing, network state, and installed runtime.
 Cligent therefore needs to distinguish the ability to deliver a request from proof that fast serving occurred, while preserving its rule that reported data is authentic rather than inferred from caller intent.
@@ -43,6 +45,7 @@ No model-catalog API is added solely for Claude's initialization-time `ModelInfo
 Cligent exposes authentic fast-mode observation through typed optional members on both unified initialization and terminal payloads, not through vendor metadata.
 An observation may carry state, a disabled reason, and the terminal upstream response speed.
 Absent upstream data remains absent; the requested boolean is never echoed as observation; `unknown` is never synthesized; and `cooldown` is preserved as state rather than converted into a disabled reason.
+A terminal response speed counts as observation only where the adapter can authenticate that at least one model response completed; nullable or unrecognized values and runtime defaults without that evidence remain absent.
 Claude supplies the currently available observations.
 Codex supplies none until its public SDK reports an effective service tier, and its static descriptor discloses that limitation.
 
@@ -79,3 +82,4 @@ The additive feature ships in a MINOR release without making the release breakin
 [6]: https://unpkg.com/@openai/codex-sdk@0.151.0/dist/index.d.ts "Codex SDK 0.151.0 declarations"
 [7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.219/sdk.d.ts "Claude Agent SDK 0.3.219 declarations"
 [8]: https://github.com/openai/codex/blob/rust-v0.144.0/codex-rs/core/config.schema.json "Codex 0.144.0 configuration schema"
+[9]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"

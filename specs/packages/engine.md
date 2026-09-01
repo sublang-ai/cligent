@@ -368,6 +368,7 @@ The public fast-mode observation types and payload members shall preserve only a
 | `state` | optional `FastModeState` value `'off' \| 'cooldown' \| 'on'` |
 | `disabledReason` | optional `FastModeDisabledReason` value `'free' \| 'preference' \| 'extra_usage_disabled' \| 'network_error' \| 'unknown' \| 'not_first_party' \| 'disabled_by_env' \| 'model_not_allowed' \| 'sdk_opt_in_required' \| 'pending'` |
 | `responseSpeed` | optional `FastModeResponseSpeed` value `'standard' \| 'fast'`, scoped to the response represented by the upstream terminal usage rather than every internal model request |
+| terminal response-speed source is null, unrecognized, or lacks authentic evidence that any upstream response completed | omit `responseSpeed` |
 | one or more observed members | emit one observation object containing exactly those members |
 | no observed member | omit `fastMode` entirely |
 | requested option without observation | never echo it as observation or synthesize `off`, `unknown`, or another placeholder |
@@ -651,7 +652,7 @@ Where supported built-in adapters, unsupported built-in adapters, and custom ada
 
 ### engine-83
 
-Where request-supported adapter integrations produce refusal, standard-speed fallback, cooldown, authentic partial observation, and no-observation outcomes, when their unified streams are consumed, the check shall assert every [[engine-79](#engine-79)] outcome and [[engine-78](#engine-78)] omission, verbatim-value, response-scope, and no-placeholder rule.
+Where request-supported adapter integrations produce refusal, standard-speed fallback, cooldown, authentic partial observation, null or unrecognized speed, speed without completed-response evidence, and no-observation outcomes, when their unified streams are consumed, the check shall assert every [[engine-79](#engine-79)] outcome and [[engine-78](#engine-78)] omission, verbatim-value, completed-response-evidence, response-scope, and no-placeholder rule.
 
 ### engine-68
 

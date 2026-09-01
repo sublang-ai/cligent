@@ -227,7 +227,7 @@ Every combination with omitted effort, ordinary effort, and `ultracode` retains 
 
 ### claude-code-53
 
-When the adapter normalizes Claude SDK initialization or terminal result data, it shall map authentic fast-mode members into [[engine-78](../engine.md#engine-78)] through this matrix per [[4]], [[6]], and [[7]]:
+When the adapter normalizes Claude SDK initialization or terminal result data, it shall map authentic fast-mode members into [[engine-78](../engine.md#engine-78)] through this matrix per [[4]], [[6]], [[7]], and [[8]]:
 
 | SDK source member | Unified member |
 | --- | --- |
@@ -235,10 +235,11 @@ When the adapter normalizes Claude SDK initialization or terminal result data, i
 | streamed `system/init.fast_mode_disabled_reason` | `InitPayload.fastMode.disabledReason` |
 | success or error result `fast_mode_state` | `DonePayload.fastMode.state` |
 | success or error result `fast_mode_disabled_reason` | `DonePayload.fastMode.disabledReason` |
-| success or error result `usage.speed` | `DonePayload.fastMode.responseSpeed` |
-| absent source member | omit the corresponding member and omit `fastMode` when no member remains |
+| success or error result `usage.speed` equal to `'standard'` or `'fast'`; at least one of `usage.input_tokens`, `usage.cache_creation_input_tokens`, `usage.cache_read_input_tokens`, or `usage.output_tokens` is a finite positive safe integer | `DonePayload.fastMode.responseSpeed` |
+| result `usage.speed` absent, null, or any other value; or none of those four counters is a finite positive safe integer | omit `DonePayload.fastMode.responseSpeed` |
+| absent other source member | omit the corresponding member and omit `fastMode` when no member remains |
 
-Every present value is forwarded verbatim, `cooldown` remains state without an invented disabled reason, and `AgentOptions.fastMode` never becomes an observation source.
+Every mapped value is forwarded verbatim, `cooldown` remains state without an invented disabled reason, and `AgentOptions.fastMode` never becomes an observation source.
 
 ### Terminal Results
 
@@ -428,7 +429,7 @@ Where `fastMode` omitted, `true`, and `false` are crossed with omitted effort, o
 
 ### claude-code-55
 
-Where SDK initialization plus success and error results cover every fast-mode state, every disabled reason, both response speeds, cooldown without a reason, and absent members, when the adapter emits unified events, the check shall assert [[claude-code-53](#claude-code-53)]'s exact init and done mappings, omissions, verbatim values, and no-request-echo rule.
+Where SDK initialization plus success and error results cover every fast-mode state, every disabled reason, both response speeds with each listed main-loop counter in turn as the sole finite positive value, null and unrecognized speeds, recognized speeds with no finite positive counter across absent, all-zero, and malformed counter sets, cooldown without a reason, and absent members, when the adapter emits unified events, the check shall assert [[claude-code-53](#claude-code-53)]'s exact init and done mappings, served-response-evidence and default-only omissions, verbatim values, and no-request-echo rule.
 
 ### claude-code-219
 
@@ -506,3 +507,4 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 [5]: https://code.claude.com/docs/en/agent-sdk/typescript "Claude Agent SDK TypeScript reference"
 [6]: https://platform.claude.com/docs/en/build-with-claude/fast-mode#checking-which-speed-was-used "Checking which Claude serving speed was used"
 [7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.251/sdk.d.ts "Claude Agent SDK 0.3.251 declarations"
+[8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"
