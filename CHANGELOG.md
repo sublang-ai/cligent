@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-31
+
+### Added
+
+- Adapter-scoped fast mode can now be requested through `AgentOptions`, `Cligent`, and tmux-play Captain and player configuration for Claude and Codex. `FAST_MODE_SUPPORT` and its helpers expose request and observation capabilities; Gemini, OpenCode, and Kimi reject explicit requests before provider work. Claude reports authentic initialization and terminal observations, while Codex leaves observations absent because its public SDK exposes none. Omitting `fastMode` preserves the provider default — DR-021
+
+### Changed
+
+- Built-in agent runtime targets now use the latest published versions tested by this release: Claude Agent SDK 0.3.251, Codex SDK 0.151.0, Gemini CLI 0.57.0, Kimi Code 0.39.1, OpenCode SDK and CLI 1.18.25, and ACP SDK 1.4.0. Repair commands pin those tested versions. No compatibility floor was raised; the Claude, Codex, Kimi, and OpenCode floors are unchanged, while Gemini's floor is corrected downward from 0.50.0 to 0.45.1, widening accepted installations to its first `gemini-3.5-flash` catalog-bearing release — DR-013
+
 ## [0.23.0] - 2026-08-29
 
 ### Added
@@ -440,7 +450,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/sublang-ai/cligent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/sublang-ai/cligent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/sublang-ai/cligent/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/sublang-ai/cligent/compare/v0.20.0...v0.21.0
