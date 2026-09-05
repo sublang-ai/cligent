@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-05
+
 ### Added
 
 - Typed `SESSION_RESUME_REJECTED` results for provably missing OpenCode and
@@ -465,7 +467,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/sublang-ai/cligent/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/sublang-ai/cligent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/sublang-ai/cligent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/sublang-ai/cligent/compare/v0.21.0...v0.22.0
