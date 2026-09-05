@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Typed `SESSION_RESUME_REJECTED` results for provably missing OpenCode and
+  Kimi sessions before prompt execution, preserved through Captain and player
+  results so hosts can choose safe recovery without parsing error text.
+
+### Security
+
+- Update vulnerable `fast-uri` and `qs` development dependencies in both
+  lockfiles so release installation audits remain clean.
+
 ## [0.24.0] - 2026-08-31
 
 ### Added

@@ -325,6 +325,8 @@ describe('repository licensing verification', () => {
           'user.name=Licensing Fixture',
           '-c',
           'user.email=fixture@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
           'commit',
           '--quiet',
           '--message=record upstream header',
