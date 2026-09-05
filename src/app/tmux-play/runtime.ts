@@ -92,6 +92,7 @@ interface CligentCallResult {
   readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
+  readonly errorCode?: 'SESSION_RESUME_REJECTED';
 }
 
 interface ConfiguredAgentCallSettings {
@@ -497,6 +498,7 @@ export class TmuxPlayRuntime {
         ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
         finalText: call.finalText,
         error: call.error,
+        ...(call.errorCode ? { errorCode: call.errorCode } : {}),
       };
 
       await this.emit({
@@ -571,6 +573,7 @@ export class TmuxPlayRuntime {
         ...(call.resumeToken ? { resumeToken: call.resumeToken } : {}),
         finalText: call.finalText,
         error: call.error,
+        ...(call.errorCode ? { errorCode: call.errorCode } : {}),
       };
 
       await this.emit({
@@ -935,6 +938,7 @@ async function runCligentCall(
   const textParts: string[] = [];
   let donePayload: DonePayload | undefined;
   let lastError: string | undefined;
+  let lastErrorCode: string | undefined;
   let completed = false;
 
   try {
@@ -958,6 +962,7 @@ async function runCligentCall(
       captureText(event, textParts);
       if (event.type === 'error') {
         lastError = (event.payload as ErrorPayload).message;
+        lastErrorCode = (event.payload as ErrorPayload).code;
       }
       if (event.type === 'done') {
         donePayload = event.payload as DonePayload;
@@ -990,6 +995,9 @@ async function runCligentCall(
       : {}),
     finalText,
     error,
+    ...(status === 'error' && lastErrorCode === 'SESSION_RESUME_REJECTED'
+      ? { errorCode: lastErrorCode }
+      : {}),
   };
 }
 

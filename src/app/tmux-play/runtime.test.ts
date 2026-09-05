@@ -3901,3 +3901,78 @@ describe('TmuxPlayRuntime', () => {
     expect(spawnDetached).not.toHaveBeenCalled();
   });
 });
+
+// tmux-play-210: real runtime and engine preserve adapter classification.
+describe('runtime resume rejection results', () => {
+  it.each(['SESSION_RESUME_REJECTED', 'ORDINARY_ERROR'])(
+    'preserves %s across player and visible/hidden Captain calls',
+    async (code) => {
+      const calls: string[] = [];
+      const results: Array<PlayerRunResult | CaptainRunResult> = [];
+      const records: TmuxPlayRecord[] = [];
+      const run: RunScript = async function* (prompt) {
+        calls.push(prompt);
+        yield createEvent(
+          'error',
+          'test-agent',
+          {
+            code,
+            message: 'provider diagnostic',
+            recoverable: code === 'SESSION_RESUME_REJECTED',
+          },
+          'saved',
+        );
+        yield doneEvent('test-agent', undefined, 'error');
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            results.push(
+              await context.callPlayer('coder', 'player', { resume: 'saved' }),
+            );
+            results.push(
+              await context.callCaptain('visible', {
+                resume: 'saved',
+                visibility: 'visible',
+              }),
+            );
+            results.push(
+              await context.callCaptain('hidden', {
+                resume: 'saved',
+                visibility: 'hidden',
+              }),
+            );
+          },
+        },
+        captainConfig: { adapter: 'claude' },
+        players: [{ id: 'coder', adapter: 'codex' }],
+        adapterImports: adapterImports({
+          claude: { agent: 'test-agent', run },
+          codex: { agent: 'test-agent', run },
+        }),
+      });
+      runtime.addObserver({
+        onRecord(record) {
+          records.push(record);
+        },
+      });
+      await runtime.runBossTurn('run');
+      expect(calls).toEqual(['player', 'visible', 'hidden']);
+      for (const result of results) {
+        expect(result).toMatchObject({
+          status: 'error',
+          error: 'provider diagnostic',
+        });
+        expect(result).not.toHaveProperty('resumeToken');
+        if (code === 'SESSION_RESUME_REJECTED')
+          expect(result.errorCode).toBe(code);
+        else expect(result).not.toHaveProperty('errorCode');
+      }
+      expect(
+        records
+          .filter((record) => record.type === 'captain_finished')
+          .map((record) => record.visibility),
+      ).toEqual(['visible', 'hidden']);
+    },
+  );
+});

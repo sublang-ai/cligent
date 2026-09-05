@@ -211,6 +211,7 @@ export interface PlayerRunResult {
   readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
+  readonly errorCode?: 'SESSION_RESUME_REJECTED';
 }
 
 export interface CaptainRunResult {
@@ -219,6 +220,7 @@ export interface CaptainRunResult {
   readonly resumeToken?: string;
   readonly finalText?: string;
   readonly error?: string;
+  readonly errorCode?: 'SESSION_RESUME_REJECTED';
 }
 
 interface RuntimePlayerConfigBase {
