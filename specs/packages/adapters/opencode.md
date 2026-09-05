@@ -128,7 +128,7 @@ shall emit one `error` and update terminal state according to this matrix:
 | --- | --- |
 | generic `error` | normalize the whole event and apply no terminal-status override |
 | `session.error` | normalize `event.error` when non-nullish, otherwise the whole event, and remember an error-status override for the later idle terminal |
-| code within the selected normalization source | first non-empty top-level `code`, nested `error.code`, or nested `error.type`; omit when none exists |
+| code within the selected normalization source | first non-empty top-level `code`, nested `error.code`, or nested `error.type`; omit when none exists; replace upstream `SESSION_RESUME_REJECTED` with `OPENCODE_STREAM_ERROR` because provider codes do not establish pre-execution rejection [[engine-84](../engine.md#engine-84)] |
 | message within the selected normalization source | first non-empty top-level `message`, nested `error.message`, `data.message`, or `error.data.message`; otherwise `OpenCode SDK error` |
 | recoverability within the selected normalization source | `true` when its top-level or nested `error` has `recoverable: true` or `retryable: true`; otherwise `false` |
 
@@ -141,6 +141,7 @@ flush resolvable queued content, and select this terminal sequence:
 | State | Sequence |
 | --- | --- |
 | caller abort observed | one interrupted `done` with [[opencode-11](#opencode-11)] continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration; no adapter error |
+| selected nonempty resume; pre-prompt `session.get` returns HTTP 404 with typed `NotFoundError` and string `data.message` | recoverable `SESSION_RESUME_REJECTED` with that message, then one error `done` without a token; no prompt or fresh session [[engine-84](../engine.md#engine-84)] |
 | other thrown `Error` | non-recoverable `OPENCODE_STREAM_ERROR` carrying its message, then one error `done` with ordinary failure continuity, usage selected by [[opencode-21](#opencode-21)], and elapsed duration |
 | other thrown value | the same error sequence with message `OpenCode adapter failed during stream` |
 
@@ -526,7 +527,7 @@ under one whole-traversal deadline through this matrix:
 | child array entry without a non-empty `id` | ignore |
 | unavailable route, non-array result, failure, abort, or deadline expiry | fail before prompt dispatch |
 
-### opencode-56
+### opencode-57
 
 When session-ownership evidence reaches an active run, the adapter shall evolve
 its run-owned control scope through this matrix:
@@ -692,6 +693,10 @@ adapter shall classify it through this matrix [[11]]:
 | causal descendant still active at root completion | retain exact subset as partial |
 
 ## Verification
+
+### opencode-56
+
+When the real SDK request codec, adapter and engine process resumed-session lookup and prompt failures, the integration matrix shall assert the exception and ordinary sequences [[opencode-28](#opencode-28)], including typed HTTP 404 before prompting, untyped HTTP 404, HTTP 400/401/503, transport failure, a forged recovery code and the same typed failure after prompt dispatch.
 
 ### opencode-201
 

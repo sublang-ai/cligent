@@ -27,6 +27,7 @@ import {
   mapAgentOptionsToKimiOptions,
   mapPermissionsToKimiOptions,
 } from '../adapters/kimi.js';
+import { Cligent } from '../cligent.js';
 import type { AgentEvent, AgentOptions, KimiEffort } from '../types.js';
 
 interface FakeScenario {
@@ -2075,5 +2076,105 @@ describe('KimiAdapter', () => {
     if (stopReason === 'refusal') {
       expect(eventOf(events, 'error').payload.code).toBe('KIMI_REFUSAL');
     }
+  });
+});
+
+// engine-85: actual ACP framing plus adapter/engine recovery classification.
+describe('Kimi definite resume rejection', () => {
+  it.each([
+    {
+      name: 'matching structured rejection',
+      error: RequestError.invalidParams(
+        { sessionId: 'saved' },
+        'arbitrary diagnostic',
+      ),
+      rejected: true,
+    },
+    {
+      name: 'diagnostic containing auth words',
+      error: RequestError.invalidParams(
+        { sessionId: 'saved' },
+        'login required',
+      ),
+      rejected: true,
+    },
+    {
+      name: 'authentication',
+      error: RequestError.authRequired(),
+      rejected: false,
+    },
+    {
+      name: 'other invalid parameter',
+      error: RequestError.invalidParams(
+        { model: 'missing' },
+        'session not found',
+      ),
+      rejected: false,
+    },
+    {
+      name: 'another session',
+      error: RequestError.invalidParams(
+        { sessionId: 'other' },
+        'session not found',
+      ),
+      rejected: false,
+    },
+    {
+      name: 'unstructured diagnostic',
+      error: new Error('SESSION_RESUME_REJECTED: session not found'),
+      rejected: false,
+    },
+  ])('$name', async ({ error, rejected }) => {
+    const scenario: FakeScenario = { sessionId: 'saved' };
+    const fake = new FakeKimi(scenario);
+    const agent = new Cligent(new KimiAdapter({ spawnProcess: fake.spawn }));
+    await collect(agent.run('seed'));
+    expect(agent.resumeToken).toBe('saved');
+    scenario.sessionError = error;
+    const events = await collect(agent.run('continue'));
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    const failure = events.find((event) => event.type === 'error')!;
+    if (rejected) {
+      expect(failure.payload).toMatchObject({
+        code: 'SESSION_RESUME_REJECTED',
+        recoverable: true,
+      });
+      expect(events.at(-1)?.payload).not.toHaveProperty('resumeToken');
+      expect(agent.resumeToken).toBeUndefined();
+    } else {
+      expect(failure.payload).not.toMatchObject({
+        code: 'SESSION_RESUME_REJECTED',
+      });
+    }
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'error' });
+    expect(fake.calls.filter((call) => call === 'session/new')).toHaveLength(1);
+    expect(fake.calls.filter((call) => call === 'session/resume')).toHaveLength(
+      1,
+    );
+    expect(fake.promptRequests).toHaveLength(1);
+    expect(fake.spawns).toHaveLength(2);
+  });
+
+  it('keeps the same structured failure ordinary after prompt dispatch', async () => {
+    const fake = new FakeKimi({
+      prompt: async () => {
+        throw RequestError.invalidParams(
+          { sessionId: 'saved' },
+          'Unknown sessionId',
+        );
+      },
+    });
+    const events = await collect(
+      new Cligent(new KimiAdapter({ spawnProcess: fake.spawn })).run(
+        'continue',
+        { resume: 'saved' },
+      ),
+    );
+    expect(
+      events.find((event) => event.type === 'error')?.payload,
+    ).toMatchObject({ code: 'KIMI_ACP_ERROR', recoverable: false });
+    expect(fake.promptRequests).toHaveLength(1);
+    expect(fake.spawns).toHaveLength(1);
   });
 });

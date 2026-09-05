@@ -1018,3 +1018,33 @@ describe('Cligent.parallel', () => {
     expect(events).toHaveLength(0);
   });
 });
+
+// engine-85: abandoning consumption after the error cannot retain a bad token.
+it('clears a rejected automatic token before handing the error to the caller', async () => {
+  let calls = 0;
+  const received: Array<string | undefined> = [];
+  const agent = new Cligent({
+    agent: 'test-agent',
+    async isAvailable() { return true; },
+    async *run(_prompt, options) {
+      received.push(options?.resume);
+      calls++;
+      if (calls === 1) {
+        yield doneEvent('test-agent', 'success', 'saved', { resumeToken: 'saved' });
+      } else if (calls === 2) {
+        yield createEvent('error', 'test-agent', { code: 'SESSION_RESUME_REJECTED', message: 'missing', recoverable: true }, 'saved');
+        yield doneEvent('test-agent', 'error', 'saved');
+      } else {
+        yield doneEvent('test-agent');
+      }
+    },
+  });
+  await collectEvents(agent.run('seed'));
+  const rejected = agent.run('resume');
+  expect((await rejected.next()).value?.type).toBe('error');
+  expect(agent.resumeToken).toBeUndefined();
+  await rejected.return(undefined);
+  await collectEvents(agent.run('fresh'));
+  expect(received).toEqual([undefined, 'saved', undefined]);
+  expect(calls).toBe(3);
+});

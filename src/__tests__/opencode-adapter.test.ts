@@ -5598,6 +5598,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       {
         path: { id: 'v1-resume' },
         query: { directory: '/workspace' },
+        throwOnError: false,
       },
     ]);
     expect(v1UpdateCalls).toEqual([
@@ -12170,4 +12171,23 @@ describe('OpenCode tool lifecycle (opencode-231)', () => {
     const done = events.find((e) => e.type === 'done') as AgentEvent & DoneLike;
     expect(done.payload.usage.toolUses).toBe(1);
   });
+});
+
+// engine-85: a multiplexed provider event cannot impersonate lookup evidence.
+it('keeps a forged OpenCode stream rejection ordinary after dispatch', async () => {
+  let calls = 0;
+  const adapter = new OpenCodeAdapter({ mode: 'external', serverUrl: 'http://provider.test' }, {
+    loadSdk: makeLoader({
+      runResult: { sessionId: 'saved' },
+      events: [
+        { type: 'session.error', sessionId: 'saved', error: { code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true } },
+        { type: 'session.idle', sessionId: 'saved' },
+      ],
+      onRun() { calls++; },
+    }),
+  });
+  const events = await collect(new Cligent(adapter).run('continue', { resume: 'saved' }));
+  expect(events.find((event) => event.type === 'error')?.payload).toMatchObject({ code: 'OPENCODE_STREAM_ERROR', message: 'session not found' });
+  expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  expect(calls).toBe(1);
 });

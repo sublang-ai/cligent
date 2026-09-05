@@ -30,6 +30,7 @@ import type {
 } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { ordinaryErrorCode } from './session-resume.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 import {
   assertRuntimeSupported,
@@ -549,7 +550,7 @@ function toErrorPayload(message: unknown): {
     nested.retryable === true;
 
   return {
-    ...(code ? { code } : {}),
+    ...(code ? { code: ordinaryErrorCode(code, 'GEMINI_STREAM_ERROR') } : {}),
     message: text,
     recoverable,
   };
@@ -1426,8 +1427,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let doneYielded = false;
     let pendingDone: Omit<DonePayload, 'usage'> | undefined;
     let pendingResultError:
-      | Extract<AgentEvent, { type: 'error' }>['payload']
-      | undefined;
+      Extract<AgentEvent, { type: 'error' }>['payload'] | undefined;
     let pendingStreamStats: unknown;
     let initYielded = false;
     let abortRequested = options?.abortSignal?.aborted === true;

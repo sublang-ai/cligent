@@ -131,7 +131,8 @@ When a Kimi run reaches preflight or terminal selection, the adapter shall selec
 | caller signal already aborted at adapter entry | one interrupted `done` before runtime and option validation; no child spawn | adapter entry |
 | no entry abort; runtime or option validation rejects | propagate the rejection before spawning or emitting events | validation rejection |
 | caller abort after spawn and before another terminal cause commits | one interrupted `done` ahead of every native stop, authentication, protocol, setup, prompt, process, or cleanup candidate; after an active-prompt drain, queue it before abort-initiated final child termination and apply [[kimi-25](#kimi-25)]'s bounded delivery handoff; report any later abnormal or forced-cleanup failure only through [[kimi-35](#kimi-35)] | caller-signal observation |
-| no caller abort; authentication-classified ACP failure | `KIMI_AUTH_REQUIRED` and error `done` through [[kimi-21](#kimi-21)] | ACP operation rejection |
+| no caller abort; authentication-classified ACP failure without the structured resume rejection below | `KIMI_AUTH_REQUIRED` and error `done` through [[kimi-21](#kimi-21)] | ACP operation rejection |
+| no higher candidate; `session/resume` rejects with code `-32602` and data containing only the exact selected `sessionId`; no protocol or cleanup failure | recoverable `SESSION_RESUME_REJECTED` with the original message, then error `done` without a token; no prompt or fresh session [[engine-84](../engine.md#engine-84)], [[15]] | ACP resume rejection |
 | no higher candidate; protocol failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-27](#kimi-27)] and [[kimi-29](#kimi-29)] | protocol rejection, before forced teardown |
 | no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)], overriding every native stop including `cancelled` | spawn/process failure, close observation, or the decision to escalate beyond `SIGTERM` |
 | no higher candidate; another setup or prompt failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)] | operation rejection, before cleanup |
@@ -350,6 +351,10 @@ After a run has spawned a child, cleanup shall perform this containment sequence
 
 ## Verification
 
+### kimi-37
+
+When the real ACP transport, adapter and engine exercise resume failure, the integration matrix shall verify the classification and terminal precedence [[kimi-33](#kimi-33)] across a matching rejection, arbitrary diagnostic text, authentication, another invalid parameter, a different session ID, an unstructured failure, and the same rejection after prompt dispatch, with no automatic fresh call.
+
 ### kimi-201
 
 Given canned valid ACP traffic, when the adapter normalizes one prompt, the resulting unified stream shall satisfy this matrix:
@@ -504,3 +509,4 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [12]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L23-L71 "Kimi Code 0.39.1 environment provider credentials"
 [13]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/apps/kimi-code/src/cli/sub/acp.ts#L1-L44 "Kimi Code 0.39.1 native ACP dispatch"
 [14]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/kosong/model/modelAuth.ts#L27-L73 "Kimi Code 0.39.1 model and provider authentication resolution"
+[15]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/server.ts#L498-L518 "Kimi Code structured resume rejection"

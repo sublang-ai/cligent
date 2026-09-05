@@ -26,6 +26,7 @@ import {
   trimCodexRustWhitespace,
 } from './codex-path.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { ordinaryErrorCode } from './session-resume.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 import {
   assertRuntimeSupported,
@@ -1037,7 +1038,7 @@ function toErrorPayload(message: unknown): {
   );
 
   return {
-    ...(code ? { code } : {}),
+    ...(code ? { code: ordinaryErrorCode(code, 'SDK_STREAM_ERROR') } : {}),
     message: text,
     recoverable,
   };

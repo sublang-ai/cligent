@@ -2532,3 +2532,17 @@ describe('ClaudeCodeAdapter', () => {
     ).toThrow("permissions.writablePaths[0] must not contain '..'");
   });
 });
+
+// engine-85: provider metadata and diagnostics cannot grant safe-retry proof.
+it('does not promote a Claude provider error or result subtype to resume rejection', async () => {
+  for (const message of [
+    { type: 'error', code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true },
+    { type: 'result', subtype: 'SESSION_RESUME_REJECTED', is_error: true, errors: ['session not found'] },
+  ]) {
+    const adapter = new ClaudeCodeAdapter({ loadSdk: makeLoader([message, { type: 'result', status: 'error', result: 'failed' }]) });
+    const events = await collect(adapter.run('continue', { resume: 'saved' }));
+    expect(events.some((event) => event.type === 'error')).toBe(true);
+    expect(events.filter((event) => event.type === 'error').every((event) => (event.payload as { code?: string }).code !== 'SESSION_RESUME_REJECTED')).toBe(true);
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  }
+});

@@ -2957,3 +2957,17 @@ describe('GeminiAdapter', () => {
     ).toThrow("permissions.writablePaths[0] must not contain '..'");
   });
 });
+
+// engine-85: process diagnostics are not pre-execution rejection proof.
+it('does not promote a Gemini stream error to resume rejection', async () => {
+  const { spawnProcess, invocations } = makeSpawn((process) => {
+    writeEventsAndClose(process, [
+      JSON.stringify({ type: 'error', code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true }),
+      JSON.stringify({ type: 'result', status: 'error', error: { message: 'failed' } }),
+    ], 1, null);
+  });
+  const events = await collect(new GeminiAdapter({ spawnProcess }).run('continue', { resume: 'saved' }));
+  expect(events.find((event) => event.type === 'error')?.payload).toMatchObject({ code: 'GEMINI_STREAM_ERROR', message: 'session not found' });
+  expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  expect(invocations).toHaveLength(1);
+});

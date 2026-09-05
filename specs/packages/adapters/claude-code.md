@@ -64,7 +64,7 @@ When the adapter normalizes an SDK `error` message, it shall select its payload 
 
 | Payload member | First available value |
 | --- | --- |
-| `code` | non-empty top-level `code`, nested `error.code`, nested `error.type`, otherwise omitted |
+| `code` | non-empty top-level `code`, nested `error.code`, nested `error.type`, otherwise omitted; replace upstream `SESSION_RESUME_REJECTED` with `SDK_STREAM_ERROR` because provider codes do not establish pre-execution rejection [[engine-84](../engine.md#engine-84)] |
 | `message` | non-empty top-level `message`, nested `error.message`, otherwise `Claude Code SDK error` |
 | `recoverable` | boolean top-level `recoverable`, boolean top-level `retryable`, otherwise `false` |
 
@@ -259,7 +259,7 @@ When the adapter normalizes an SDK `result` that is not the internal no-op in [[
 | status `error` or `failed` | `done` with `status: 'error'` |
 | status absent or unrecognized | `done` with `status: 'success'` |
 
-- A synthesized `error` uses its non-empty subtype or `CLAUDE_CODE_RESULT_ERROR` as code, joins non-empty `errors` entries as its message before falling back to non-empty `result`, subtype, and `Claude Code SDK error`, and carries `recoverable: false`.
+- A synthesized `error` uses its non-empty subtype or `CLAUDE_CODE_RESULT_ERROR` as code, replacing a `SESSION_RESUME_REJECTED` subtype with that fallback [[engine-84](../engine.md#engine-84)], joins non-empty `errors` entries as its message before falling back to non-empty `result`, subtype, and `Claude Code SDK error`, and carries `recoverable: false`.
 - Terminal `done.result` prefers non-empty `result`, then error text produced by subtype or error-flag classification, and is otherwise omitted; status-only classification does not promote the `errors` array to result text.
 - Terminal duration prefers numeric `durationMs`, then numeric `duration_ms`, then elapsed run time.
 

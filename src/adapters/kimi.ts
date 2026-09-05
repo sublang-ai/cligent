@@ -730,6 +730,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
     let sessionId = initialSessionId;
     let backendSessionKnown = false;
+    let resumeRejected = false;
     let child: ChildProcessWithoutNullStreams | undefined;
     let closePromise: Promise<ProcessClose> | undefined;
     let processClose: ProcessClose | undefined;
@@ -838,12 +839,14 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           {
             status,
             ...(assistantText.length > 0 ? { result: assistantText } : {}),
-            ...kimiResumeTokenPayload(
-              status,
-              backendSessionKnown,
-              sessionId,
-              options?.resume,
-            ),
+            ...(resumeRejected
+              ? {}
+              : kimiResumeTokenPayload(
+                  status,
+                  backendSessionKnown,
+                  sessionId,
+                  options?.resume,
+                )),
             usage,
             durationMs: Date.now() - startTime,
           },
@@ -1299,11 +1302,23 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           const resumed = parseAcpResult(
             zResumeSessionResponse,
             await awaitAcp(
-              connection.resumeSession({
-                sessionId: options.resume,
-                cwd: mapped.cwd,
-                mcpServers: [],
-              }),
+              connection
+                .resumeSession({
+                  sessionId: options.resume,
+                  cwd: mapped.cwd,
+                  mcpServers: [],
+                })
+                .catch((error: unknown) => {
+                  // Kimi's resume endpoint uses invalid_params plus the exact
+                  // sessionId only when restore reports that session absent.
+                  const data = asRecord(asRecord(error)?.data);
+                  resumeRejected =
+                    errorCode(error) === -32602 &&
+                    data !== undefined &&
+                    data.sessionId === options.resume &&
+                    Object.keys(data).length === 1;
+                  throw error;
+                }),
             ),
             'session/resume',
           );
@@ -1498,23 +1513,30 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         commitNonAbortCause();
         const shutdown = await shutdownProcess();
         const closeFailure = shutdown ? shutdownError(shutdown) : undefined;
-        const structuredAuthError = isAuthenticationError(error);
+        resumeRejected = resumeRejected && !protocolFailure && !closeFailure;
+        const structuredAuthError =
+          !resumeRejected && isAuthenticationError(error);
         const reportedError = structuredAuthError
           ? error
           : (protocolFailure ?? closeFailure ?? error);
         const authError =
           structuredAuthError ||
-          isAuthenticationError(errorMessage(reportedError, stderr));
+          (!resumeRejected &&
+            isAuthenticationError(errorMessage(reportedError, stderr)));
         push(
           createEvent(
             'error',
             AGENT,
             {
-              code: authError ? 'KIMI_AUTH_REQUIRED' : 'KIMI_ACP_ERROR',
+              code: resumeRejected
+                ? 'SESSION_RESUME_REJECTED'
+                : authError
+                  ? 'KIMI_AUTH_REQUIRED'
+                  : 'KIMI_ACP_ERROR',
               message: authError
                 ? `${errorMessage(reportedError, stderr)}. Authenticate the Kimi Code CLI with \`kimi login\` before using ACP.`
                 : errorMessage(reportedError, stderr),
-              recoverable: false,
+              recoverable: resumeRejected,
             },
             sessionId,
           ),

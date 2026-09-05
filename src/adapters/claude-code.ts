@@ -23,6 +23,7 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
+import { ordinaryErrorCode } from './session-resume.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 import {
   assertRuntimeSupported,
@@ -693,7 +694,7 @@ function toErrorPayload(message: ClaudeErrorMessage): {
         : false;
 
   return {
-    ...(code ? { code } : {}),
+    ...(code ? { code: ordinaryErrorCode(code, 'SDK_STREAM_ERROR') } : {}),
     message: text,
     recoverable,
   };
@@ -1211,7 +1212,11 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
               'error',
               AGENT,
               {
-                code: asString(result.subtype) ?? 'CLAUDE_CODE_RESULT_ERROR',
+                code:
+                  ordinaryErrorCode(
+                    asString(result.subtype),
+                    'CLAUDE_CODE_RESULT_ERROR',
+                  ) ?? 'CLAUDE_CODE_RESULT_ERROR',
                 message: errorText,
                 recoverable: false,
               },

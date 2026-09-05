@@ -32,6 +32,10 @@ import type {
 } from '../types.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import {
+  ordinaryErrorCode,
+  SessionResumeRejectedError,
+} from './session-resume.js';
+import {
   isPermissionPolicyReset,
   PERMISSION_POLICY_RESET,
 } from '../internal/permission-reset.js';
@@ -644,7 +648,7 @@ function toErrorPayload(message: unknown): {
     nested.retryable === true;
 
   return {
-    ...(code ? { code } : {}),
+    ...(code ? { code: ordinaryErrorCode(code, 'OPENCODE_STREAM_ERROR') } : {}),
     message: text,
     recoverable,
   };
@@ -1489,7 +1493,7 @@ export function wrapOpencodeClient(
           signal?.removeEventListener('abort', abortLineage);
         }
       };
-      const suppressResumedTitleInference = async (
+      const prepareResumedSession = async (
         rootSessionId: string,
       ): Promise<void> => {
         if (!sessionGet) {
@@ -1509,10 +1513,24 @@ export function wrapOpencodeClient(
                     path: { id: rootSessionId },
                     ...(cwdVal ? { query: { directory: cwdVal } } : {}),
                     ...(signal ? { signal } : {}),
+                    throwOnError: false,
                   },
-              apiVersion === 'v2' && signal ? { signal } : undefined,
+              apiVersion === 'v2'
+                ? { ...(signal ? { signal } : {}), throwOnError: false }
+                : undefined,
             ),
           );
+          const lookup = asRecord(sessionResult);
+          const lookupError = asRecord(lookup.error);
+          if (
+            asRecord(lookup.response).status === 404 &&
+            lookupError.name === 'NotFoundError' &&
+            typeof asRecord(lookupError.data).message === 'string'
+          ) {
+            throw new SessionResumeRejectedError(
+              asRecord(lookupError.data).message as string,
+            );
+          }
           throwIfSdkResultError(sessionResult, 'OpenCode session.get failed');
           const sessionInfo = asRecord(unwrapSdkData(sessionResult));
           if (asString(sessionInfo.parentID)) return;
@@ -1555,7 +1573,11 @@ export function wrapOpencodeClient(
             usageCoverageIncomplete = true;
           }
         } catch (error) {
-          if (error instanceof OpenCodePromptDispatchAbortError) throw error;
+          if (
+            error instanceof OpenCodePromptDispatchAbortError ||
+            error instanceof SessionResumeRejectedError
+          )
+            throw error;
           usageCoverageIncomplete = true;
         }
       };
@@ -1565,6 +1587,7 @@ export function wrapOpencodeClient(
           // Resume an existing session instead of creating a new one.
           sessionId = resumeId;
           if (signal?.aborted) return stopAbortedDispatch();
+          await prepareResumedSession(resumeId);
           if (apiVersion === 'v2' && v2PermissionRuleset !== undefined) {
             if (!sessionUpdate) {
               throw new Error(
@@ -1583,7 +1606,6 @@ export function wrapOpencodeClient(
             );
             throwIfSdkResultError(updated, 'OpenCode session.update failed');
           }
-          await suppressResumedTitleInference(resumeId);
         } else {
           const created = asRecord(
             await (apiVersion === 'v2'
@@ -5440,15 +5462,18 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             'error',
             AGENT,
             {
-              code: readinessServerExit
-                ? 'OPENCODE_SERVER_EXIT'
-                : 'OPENCODE_STREAM_ERROR',
+              code:
+                error instanceof SessionResumeRejectedError
+                  ? 'SESSION_RESUME_REJECTED'
+                  : readinessServerExit
+                    ? 'OPENCODE_SERVER_EXIT'
+                    : 'OPENCODE_STREAM_ERROR',
               message: readinessServerExit
                 ? formatOpenCodeServerExit(readinessServerExit)
                 : error instanceof Error
                   ? error.message
                   : 'OpenCode adapter failed during stream',
-              recoverable: false,
+              recoverable: error instanceof SessionResumeRejectedError,
             },
             sessionId,
           );

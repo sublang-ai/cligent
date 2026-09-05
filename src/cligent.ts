@@ -279,6 +279,13 @@ export class Cligent<
 
           lastSessionId = event.sessionId;
           recordObservedToolUse(observedToolUseIds, event);
+          if (
+            event.type === 'error' &&
+            (event.payload as { code?: string }).code ===
+              'SESSION_RESUME_REJECTED'
+          ) {
+            this.captureResumeToken(undefined);
+          }
           yield injectRole(event, role);
 
           if (event.type === 'done') {

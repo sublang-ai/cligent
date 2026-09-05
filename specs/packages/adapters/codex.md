@@ -157,7 +157,7 @@ When the adapter normalizes a native error, it shall select the unified payload 
 
 | Payload member | First available value |
 | --- | --- |
-| `code` | non-empty `code` or `error_code` from the top-level event, nested `error`, or object-valued `message`, then non-empty nested `type`, otherwise omitted |
+| `code` | non-empty `code` or `error_code` from the top-level event, nested `error`, or object-valued `message`, then non-empty nested `type`, otherwise omitted; replace upstream `SESSION_RESUME_REJECTED` with `SDK_STREAM_ERROR` because provider codes do not establish pre-execution rejection [[engine-84](../engine.md#engine-84)] |
 | `message` | non-empty top-level `message`, `detail`, or `error`, walking nested objects in `detail`, `message`, `error_description`, then `error` order and decoding JSON-object strings until the third nesting level, otherwise `Codex SDK error` |
 | `recoverable` | `true` when top-level, nested-error, or object-valued-message `recoverable` or `retryable` is `true`, otherwise `false` |
 

@@ -3219,3 +3219,16 @@ describe('resolveCodexBinPath', () => {
     expect(resolved).toContain(join('@openai', 'codex', 'bin', 'codex.js'));
   });
 });
+
+// engine-85: even a structured stream failure may follow prompt execution.
+it('does not promote a Codex turn failure to resume rejection', async () => {
+  let calls = 0;
+  const adapter = new CodexAdapter({ loadSdk: makeLoader({
+    events: [{ type: 'turn.failed', error: { code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true } }],
+    onRun() { calls++; },
+  }) });
+  const events = await collect(adapter.run('continue', { resume: 'saved' }));
+  expect(events.find((event) => event.type === 'error')?.payload).toMatchObject({ code: 'SDK_STREAM_ERROR', message: 'session not found' });
+  expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  expect(calls).toBe(1);
+});
