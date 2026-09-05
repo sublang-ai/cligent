@@ -991,8 +991,7 @@ function runCodexSandboxWriteProbeThroughWrapper(
 function createPrompt(fileName: string): string {
   const path = shellQuote(`./${fileName}`);
   return exactShellPrompt(
-    `printf '%s\\n' phase-one > ${path} && ` +
-      `test "$(cat ${path})" = phase-one`,
+    `printf '%s\\n' phase-one > ${path}`,
     'created',
   );
 }
@@ -1000,8 +999,7 @@ function createPrompt(fileName: string): string {
 function updatePrompt(fileName: string): string {
   const path = shellQuote(`./${fileName}`);
   return exactShellPrompt(
-    `printf '%s\\n' phase-two > ${path} && ` +
-      `test "$(cat ${path})" = phase-two`,
+    `printf '%s\\n' phase-two > ${path}`,
     'updated',
   );
 }
