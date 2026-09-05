@@ -5,8 +5,8 @@
 
 ## Status
 
-Proposed; awaiting owner review.
-Proposes amendments to [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md) for typed pre-execution resume rejection.
+Accepted (2026-09-05).
+Amends [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md) for typed pre-execution resume rejection.
 
 ## Context
 
