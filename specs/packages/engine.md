@@ -555,6 +555,15 @@ Where an adapter reads a run-owned supplementary accounting source, it shall pub
 
 When the engine or a built-in adapter emits any terminal status, it shall preserve the independently known `toolUses` count whether `tokens` and `cost` are present or absent.
 
+### engine-84
+
+When an adapter classifies a rejected resume selection, it shall emit `error` with `code:'SESSION_RESUME_REJECTED'` and `recoverable:true`, followed by the ordinary error terminal without a resume token, only when authoritative provider/session-lookup evidence proves the selected nonempty token was rejected before prompt execution:
+
+- no prompt execution or model/tool output occurred for the call; a local lookup or provider rejection must prove this, not merely an absence of observed events;
+- authentication, permissions/settings rejection, timeouts, transport failures, unknown errors and any possible execution retain ordinary error codes;
+- diagnostic text and user content never establish the classification;
+- the engine preserves the classification and clears the rejected automatic token, but neither engine nor adapter retries; a later fresh call remains the caller's decision.
+
 ## Verification
 
 ### engine-101
@@ -747,3 +756,7 @@ Given authentic zero, authentic nonzero, malformed, and absent accounting from e
 ### engine-32
 
 Given an adapter retains [[engine-38](#engine-38)]'s cumulative-accounting queue, when concurrent equal-resume, different-resume, and fresh runs exit normally or through error, interruption, and setup failure after acquisition, the check shall assert every serialization, concurrency, and queue-release outcome.
+
+### engine-85
+
+When the adapter/engine integration matrix supplies authoritative pre-execution resume rejection, ordinary authentication/settings/transport failures, misleading error text, and failure after possible execution, it shall verify the exact rejection code only in the proven case, one error terminal without a token, no automatic retry and unchanged ordinary failure behavior [[engine-84](#engine-84)].

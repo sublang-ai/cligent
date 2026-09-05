@@ -645,10 +645,11 @@ The public run-result contract shall expose members through this matrix:
 
 | Result surface | Members |
 | --- | --- |
-| `PlayerRunResult` | required `playerId`, `turnId`, and `status`; optional `resumeToken`, `finalText`, and `error` |
-| `CaptainRunResult` | required `turnId` and `status`; optional `resumeToken`, `finalText`, and `error` |
+| `PlayerRunResult` | required `playerId`, `turnId`, and `status`; optional `resumeToken`, `finalText`, `error`, and `errorCode` |
+| `CaptainRunResult` | required `turnId` and `status`; optional `resumeToken`, `finalText`, `error`, and `errorCode` |
 | `status` | `'ok'`, `'aborted'`, or `'error'` |
 | aborted result | `finalText` and `error` may both be absent |
+| `errorCode` | `'SESSION_RESUME_REJECTED'` only on an error result carrying that engine classification [[engine-84](engine.md#engine-84)]; omitted otherwise, never inferred from `error` text |
 
 ### tmux-play-99
 
@@ -1198,7 +1199,7 @@ When `callCaptain` admits its optional `CallCaptainOptions`, the runtime shall s
 | `visibility: 'visible'` | resolve `'visible'` |
 | `visibility: 'hidden'` | resolve `'hidden'` |
 | options or `visibility` omitted | default to `'visible'` |
-| hidden or visible execution | run the Captain identically and return the same [[tmux-play-33](#tmux-play-33)] `CaptainRunResult` shape and values, including `status`, `turnId`, optional `resumeToken`, optional `finalText`, and optional `error` |
+| hidden or visible execution | run the Captain identically and return the same [[tmux-play-33](#tmux-play-33)] `CaptainRunResult` shape and values, including `status`, `turnId`, optional `resumeToken`, optional `finalText`, optional `error`, and optional `errorCode` |
 | emitted trace | emit `captain_prompt`, zero or more `captain_event` records, and `captain_finished` in [[tmux-play-22](#tmux-play-22)] order, each carrying the resolved visibility, so every non-presenter observer receives the full trace |
 
 ### tmux-play-88
@@ -2465,6 +2466,10 @@ Where the packed tarball alone is installed into an out-of-band global-style pre
 | Codex repair | execute the command printed by the failure verbatim as argv, adding no scope or target argument the user was not shown [[tmux-play-89](#tmux-play-89)] |
 | repaired installation | Codex SDK lands in the same reported `node_modules` root; launcher command succeeds; created config names `codex` as its only adapter; stdout notice names the adapter used for the roster; tmux session is created [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-89](#tmux-play-89)] |
 | test composes an install command instead of running the printed one | verification fails because that substitution could let a command scoped to the wrong tree pass [[tmux-play-89](#tmux-play-89)] |
+
+### tmux-play-210
+
+When an integration fixture makes both a player and Captain encounter a definite resume rejection and an ordinary failure, it shall verify that the returned result preserves `errorCode` only for the classified rejection, retains the ordinary message, and performs no fresh call [[tmux-play-33](#tmux-play-33)].
 
 ## References
 
