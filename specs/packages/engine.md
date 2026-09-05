@@ -557,12 +557,13 @@ When the engine or a built-in adapter emits any terminal status, it shall preser
 
 ### engine-84
 
-When an adapter classifies a rejected resume selection, it shall emit `error` with `code:'SESSION_RESUME_REJECTED'` and `recoverable:true`, followed by the ordinary error terminal without a resume token, only when authoritative provider/session-lookup evidence proves the selected nonempty token was rejected before prompt execution ([DR-022](../decisions/022-definite-session-rejection.md)):
+When an adapter identifies a rejected provider session token, it shall report `SESSION_RESUME_REJECTED` only with proof that the selected nonempty token was rejected before prompt execution ([DR-022](../decisions/022-definite-session-rejection.md)):
 
-- no prompt execution or model/tool output occurred for the call; a local lookup or provider rejection must prove this, not merely an absence of observed events;
+- emit `error` with `code:'SESSION_RESUME_REJECTED'` and `recoverable:true`, followed by the ordinary error terminal event without a resume token;
+- authoritative session-lookup or provider rejection evidence must prove that no prompt execution or model/tool output occurred for the call; absence of observed events is insufficient;
 - authentication, permissions/settings rejection, timeouts, transport failures, unknown errors and any possible execution retain ordinary error codes;
 - diagnostic text and user content never establish the classification;
-- the engine preserves the classification and clears the rejected automatic token, but neither engine nor adapter retries; a later fresh call remains the caller's decision.
+- the engine preserves the classification and clears the rejected automatic resume token; neither engine nor adapter retries, and a fresh call remains the caller's decision.
 
 ## Verification
 
@@ -759,4 +760,9 @@ Given an adapter retains [[engine-38](#engine-38)]'s cumulative-accounting queue
 
 ### engine-85
 
-When the adapter/engine integration matrix supplies authoritative pre-execution resume rejection, ordinary authentication/settings/transport failures, misleading error text, and failure after possible execution, it shall verify the exact rejection code only in the proven case, one error terminal without a token, no automatic retry and unchanged ordinary failure behavior [[engine-84](#engine-84)].
+When the adapter/engine integration matrix supplies proven rejection before execution, ordinary authentication/settings/transport failures, misleading error text, and failure after possible execution, it shall verify the rejection rules [[engine-84](#engine-84)]:
+
+- the exact rejection code only in the proven case;
+- one error terminal event without a token;
+- no automatic retry;
+- unchanged handling of ordinary failures.
