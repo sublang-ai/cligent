@@ -557,7 +557,7 @@ When the engine or a built-in adapter emits any terminal status, it shall preser
 
 ### engine-84
 
-When an adapter classifies a rejected resume selection, it shall emit `error` with `code:'SESSION_RESUME_REJECTED'` and `recoverable:true`, followed by the ordinary error terminal without a resume token, only when authoritative provider/session-lookup evidence proves the selected nonempty token was rejected before prompt execution:
+When an adapter classifies a rejected resume selection, it shall emit `error` with `code:'SESSION_RESUME_REJECTED'` and `recoverable:true`, followed by the ordinary error terminal without a resume token, only when authoritative provider/session-lookup evidence proves the selected nonempty token was rejected before prompt execution ([DR-022](../decisions/022-definite-session-rejection.md)):
 
 - no prompt execution or model/tool output occurred for the call; a local lookup or provider rejection must prove this, not merely an absence of observed events;
 - authentication, permissions/settings rejection, timeouts, transport failures, unknown errors and any possible execution retain ordinary error codes;

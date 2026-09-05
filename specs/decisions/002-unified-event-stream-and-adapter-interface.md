@@ -6,7 +6,6 @@
 ## Status
 
 Accepted
-Amended by [DR-022](022-definite-session-rejection.md): typed pre-execution session rejection, without automatic retry.
 
 ## Context
 
