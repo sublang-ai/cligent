@@ -109,22 +109,6 @@ function readTokens(value: unknown): TokenUsage | undefined {
   const output = value.output;
   const keys = ['total', 'uncached', 'cacheRead', 'cacheWrite'] as const;
   const outputKeys = ['total', 'visible', 'reasoning'] as const;
-  for (const [side, fields] of [
-    [input, keys],
-    [output, outputKeys],
-  ] as const) {
-    for (const field of fields) {
-      const count = side[field];
-      if (count === undefined && field !== 'total') continue;
-      if (
-        typeof count !== 'number' ||
-        !Number.isSafeInteger(count) ||
-        count < 0
-      ) {
-        return undefined;
-      }
-    }
-  }
   return buildTokenUsage(
     Object.fromEntries(
       keys
