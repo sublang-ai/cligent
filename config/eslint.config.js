@@ -7,7 +7,7 @@ import node from 'eslint-plugin-n';
 
 export default [
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'bin/**/*.mjs'],
     languageOptions: {
       parser,
       globals: node.configs['flat/recommended-module'].languageOptions.globals,
