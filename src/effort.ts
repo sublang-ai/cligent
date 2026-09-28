@@ -60,7 +60,7 @@ export const EFFORT_SUPPORT = Object.freeze({
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      'Gemini 3 collapses high, xhigh, and max to HIGH; Gemini 2.5 non-Pro models collapse xhigh and max to the same budget. Aliases, unmatched models, and an omitted model receive no effort override.',
+      'Gemini 3 collapses high, xhigh, and max to HIGH; Gemini 2.5 non-Pro models collapse xhigh and max to the same budget. Aliases, unmatched models, an omitted model, a working directory that is the home directory, and a run Gemini sandboxes receive no effort override.',
   }),
   kimi: Object.freeze({
     values: Object.freeze(['off', 'on'] as const),

@@ -149,16 +149,17 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'cli' as const,
       package: '@google/gemini-cli',
-      repairSpec: '@google/gemini-cli@0.57.0',
+      repairSpec: '@google/gemini-cli@0.61.0',
       command: 'gemini',
-      // The first release whose bundled catalog carries
-      // `gemini-3.5-flash`: it is absent from 0.45.0, appears in 0.45.1,
-      // and that catalog entry remains unchanged through tested 0.57.0.
-      // Version 0.45.0 passes an unknown slug through with `chat-base`
-      // defaults instead of rejecting it, so catalog presence is the
-      // capability boundary; 0.45.1 already serves every adapter surface.
-      supportedFrom: '0.45.1',
-      tested: '0.57.0',
+      // The first release whose bundled catalog carries the latest Gemini
+      // models, `gemini-3.8-flash` and `gemini-3.5-flash-lite`: both are
+      // absent from 0.60.0 and 0.61.0-preview.0 and first appear in
+      // 0.61.0-preview.1, so the stable 0.61.0 is the oldest release that
+      // serves them. Like every release from 0.60.0, it loads system
+      // settings and defaults only from root-owned paths, so effort reaches
+      // it through a per-run user-settings home rather than system defaults.
+      supportedFrom: '0.61.0',
+      tested: '0.61.0',
     }),
   ]),
   kimi: Object.freeze([

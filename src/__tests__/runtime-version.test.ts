@@ -380,8 +380,8 @@ describe('the runtimes DR-013 was written about', () => {
     // target, so a CLI on PATH read as unknown and its floor never applied.
     const gemini = AGENT_RUNTIME_TARGETS.gemini[0]!;
     expect(gemini.kind).toBe('cli');
-    expect(classifyRuntime(gemini, true, '0.45.0').state).toBe('unsupported');
-    expect(classifyRuntime(gemini, true, '0.45.1').state).toBe('satisfied');
+    expect(classifyRuntime(gemini, true, '0.60.0').state).toBe('unsupported');
+    expect(classifyRuntime(gemini, true, '0.61.0').state).toBe('satisfied');
     const kimi = AGENT_RUNTIME_TARGETS.kimi[0]!;
     expect(kimi.kind).toBe('cli');
     expect(classifyRuntime(kimi, true, '0.27.0').state).toBe('unsupported');

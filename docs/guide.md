@@ -237,7 +237,13 @@ The mappings have a few important qualifications:
   2.5 Flash and Flash Lite collapse `xhigh` and `max` to the same maximum
   budget. If the model is omitted, is a CLI alias such as `auto` or `flash`,
   or does not match those model families, the adapter preserves ordinary model
-  forwarding and applies no effort override.
+  forwarding and applies no effort override. The adapter delivers effort as a
+  model alias in a private per-run Gemini home (`GEMINI_CLI_HOME`) whose
+  settings are your user settings plus that alias; every other file there
+  links to your real home, so credentials, sessions, and trust state stay
+  shared, and files the run replaces are reconciled back when it ends. A run
+  whose working directory is the Gemini home, or that Gemini would sandbox,
+  gets the concrete model with no effort override.
 - **OpenCode:** Effort selects the prompt `variant` the chosen model
   advertises in the server's provider catalog for the run's directory, or else
   its nearest advertised effort variant, the higher on a tie: GPT-6 Sol's
