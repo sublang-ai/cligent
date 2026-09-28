@@ -79,7 +79,7 @@ When the adapter normalizes a sequence of SDK `system` messages, it shall select
 | no `init` emitted; any other subtype | emit nothing |
 | `init` already emitted; any `system` message | emit nothing, preserving the first handshake's capabilities |
 
-- An emitted `init` selects model from non-empty message `model`, requested model, then `unknown`; selects cwd from non-empty message `cwd`, requested cwd, then the process cwd; and retains each non-empty string tool or object tool name.
+- An emitted `init` selects model from non-empty message `model`, requested model, then `unknown`; sets `reportedModel` [[engine-89](../engine.md#engine-89)] only from non-empty message `model`; selects cwd from non-empty message `cwd`, requested cwd, then the process cwd; and retains each non-empty string tool or object tool name.
 
 ### claude-code-10
 
@@ -368,7 +368,7 @@ Given the native non-terminal message cases, when the adapter runs, the verifica
 
 ### claude-code-43
 
-Given the system-message sequences, when the adapter runs, the verification shall assert every handshake selection, payload, and exactly-once outcome in [[claude-code-15](#claude-code-15)].
+Given the system-message sequences, with and without a message `model` and a requested model, when the adapter runs, the verification shall assert every handshake selection, payload including `reportedModel` presence and absence, and exactly-once outcome in [[claude-code-15](#claude-code-15)].
 
 ### claude-code-44
 

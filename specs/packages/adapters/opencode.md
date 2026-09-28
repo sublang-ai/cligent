@@ -89,8 +89,8 @@ payload is selected by this matrix:
 
 | Available state | `InitPayload` |
 | --- | --- |
-| normal setup reaches a usable SSE iterator | `model`: non-nullish requested model, otherwise non-empty wrapper model, otherwise `unknown`; `cwd`: non-nullish requested cwd, otherwise non-empty wrapper cwd, otherwise `process.cwd()`; `tools`: the wrapper's array entries that are non-empty strings or objects with non-empty string `name`; `capabilities.mode`: configured server mode; `capabilities.toolsKnown`: whether that tool list is non-empty; `capabilities.toolsSource`: `sdk` when known and `unavailable` otherwise |
-| setup fails before normal init, including after a wrapper result with no usable stream | `model`: non-nullish requested model or `unknown`; `cwd`: non-nullish requested cwd or `process.cwd()`; `tools: []`; configured `capabilities.mode`; `capabilities.toolsKnown: false`; `capabilities.toolsSource: 'unavailable'` |
+| normal setup reaches a usable SSE iterator | `model`: non-nullish requested model, otherwise non-empty wrapper model, otherwise `unknown`; `reportedModel` [[engine-89](../engine.md#engine-89)]: non-empty wrapper model only, otherwise omitted; `cwd`: non-nullish requested cwd, otherwise non-empty wrapper cwd, otherwise `process.cwd()`; `tools`: the wrapper's array entries that are non-empty strings or objects with non-empty string `name`; `capabilities.mode`: configured server mode; `capabilities.toolsKnown`: whether that tool list is non-empty; `capabilities.toolsSource`: `sdk` when known and `unavailable` otherwise |
+| setup fails before normal init, including after a wrapper result with no usable stream | `model`: non-nullish requested model or `unknown`; no `reportedModel`; `cwd`: non-nullish requested cwd or `process.cwd()`; `tools: []`; configured `capabilities.mode`; `capabilities.toolsKnown: false`; `capabilities.toolsSource: 'unavailable'` |
 
 ### opencode-25
 
@@ -705,14 +705,14 @@ runs, the yielded stream shall match this integration matrix:
 
 | Fixture | Assertion |
 | --- | --- |
-| wrapper model, cwd, and string/object-name tools | first event is [[opencode-24](#opencode-24)] `init` with requested model priority, wrapper cwd, normalized tools, configured mode, and known SDK tool capabilities |
+| wrapper model, cwd, and string/object-name tools, with and without a wrapper model | first event is [[opencode-24](#opencode-24)] `init` with requested model priority, `reportedModel` only from a wrapper model, wrapper cwd, normalized tools, configured mode, and known SDK tool capabilities |
 | foreign identified event followed by local and untagged events | [[opencode-6](#opencode-6)] filtering and pass-through |
 | text, delta, thinking, file, and image parts | exact [[opencode-5](#opencode-5)] event types and payloads |
 | stateless tool part | [[opencode-16](#opencode-16)] selected identity, name, and input |
 | permission ask and rejected reply | [[opencode-20](#opencode-20)] request followed by [[opencode-16](#opencode-16)] denied result with correlation intact |
 | generic recoverable error | [[opencode-27](#opencode-27)] code, message, and recoverability |
 | idle with `max_turns`, generic usage aliases, and `duration_ms` | [[opencode-26](#opencode-26)] max-turn terminal and duration, ignoring unauthenticated usage aliases while preserving observed tool count [[opencode-21](#opencode-21)] |
-| setup or stream throws an `Error`, a non-`Error`, or after caller abort | [[opencode-24](#opencode-24)] init-first fallback and every [[opencode-28](#opencode-28)] error/interrupted terminal row |
+| setup or stream throws an `Error`, a non-`Error`, or after caller abort | [[opencode-24](#opencode-24)] init-first fallback without `reportedModel` and every [[opencode-28](#opencode-28)] error/interrupted terminal row |
 | iterator exhausts before idle, with and without caller abort | both [[opencode-29](#opencode-29)] terminal rows |
 
 ### opencode-202

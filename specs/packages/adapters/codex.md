@@ -112,6 +112,7 @@ When a run emits its exactly one `init`, the adapter shall select its payload ac
 | Payload member | First available value |
 | --- | --- |
 | `model` | requested model when supplied, including an empty string, then non-empty first-event model, otherwise `unknown` |
+| `reportedModel` [[engine-89](../engine.md#engine-89)] | non-empty first-event model only, otherwise omitted |
 | `cwd` | requested cwd when supplied, including an empty string, then non-empty first-event cwd, otherwise the process cwd |
 | `tools` | first non-empty string list from first-event `tools`, `session.tools`, or `turn.tools`, otherwise `[]`; object entries contribute their non-empty `name` |
 | `capabilities.toolsKnown` | `true` when a non-empty native tool list was selected, otherwise `false` |
@@ -482,7 +483,7 @@ Given canned native Codex events typed against the SDK's canonical exported even
 
 ### codex-41
 
-Given the SDK stream supplies events, no events, or throws before its first event, when the adapter runs, it shall emit exactly one `init` before every other output with the model, cwd, tool, and capability selections in [[codex-22](#codex-22)].
+Given the SDK stream supplies events with and without a model, no events, or throws before its first event, when the adapter runs with and without a requested model, it shall emit exactly one `init` before every other output with the model, reported-model, cwd, tool, and capability selections in [[codex-22](#codex-22)].
 
 ### codex-42
 
