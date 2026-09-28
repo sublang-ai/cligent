@@ -122,10 +122,15 @@ function claudeSdkPlatformPackages(
           optionalDependencies?: unknown;
         };
         const optional = manifest.optionalDependencies;
+        // Only a declared, non-empty map of optional dependencies is
+        // evidence of which hosts the SDK publishes a binary for; an
+        // absent, empty or malformed one says nothing (claude-code-57).
         if (
           manifest.name !== CLAUDE_SDK_PACKAGE ||
           typeof optional !== 'object' ||
-          optional === null
+          optional === null ||
+          Array.isArray(optional) ||
+          Object.keys(optional).length === 0
         ) {
           return undefined;
         }

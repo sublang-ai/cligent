@@ -619,6 +619,17 @@ describe('ClaudeCodeAdapter', () => {
         freebsdMissing,
       );
     });
+    for (const optionalDependencies of [{}, []]) {
+      await withClaudeTree(({ write }) => {
+        const sdkDir = write(CLAUDE_SDK, {
+          manifest: { optionalDependencies },
+        });
+        const anchor = join(sdkDir, 'package.json');
+        expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual(
+          freebsdMissing,
+        );
+      });
+    }
     await withClaudeTree(({ write }) => {
       const bundle = write('vendored-bundle', {
         manifest: {

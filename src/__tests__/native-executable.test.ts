@@ -183,6 +183,22 @@ describe('locateAgentExecutable over fake module trees (engine-89)', () => {
         }),
       ).toEqual(expected);
     });
+    // An empty or malformed optional-dependency field says nothing either.
+    for (const optionalDependencies of [{}, []]) {
+      withTree((modules) => {
+        const sdk = writeManifest(modules, CLAUDE_SDK);
+        writeFileSync(
+          join(sdk, 'package.json'),
+          JSON.stringify({ name: CLAUDE_SDK, optionalDependencies }),
+        );
+        expect(
+          locateAgentExecutableWith('claude', {
+            claude: { anchor: join(sdk, 'package.json') },
+            ...freebsd,
+          }),
+        ).toEqual(expected);
+      });
+    }
   });
 
   it('reports each Codex state by the launcher rule beside the SDK', () => {

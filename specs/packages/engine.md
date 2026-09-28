@@ -469,11 +469,12 @@ When a caller passes `claude` or `codex` to `locateAgentExecutable(runtime)`, th
 | --- | --- |
 | the runtime's SDK does not resolve from the installed `@sublang/cligent` tree | `{ state: 'no-sdk' }`, so a host reports no second fault beside the missing SDK |
 | the lookup finds the executable | `{ state: 'present', path }` |
-| the SDK publishes no executable for the host [[claude-code-56](adapters/claude-code.md#claude-code-56)], [[codex-63](adapters/codex.md#codex-63)]: for Claude, the SDK manifest's optional dependencies name none of the host's candidate packages; for Codex, the launcher has no target for the host | `{ state: 'unsupported', platform, arch }` |
+| the SDK publishes no executable for the host [[claude-code-56](adapters/claude-code.md#claude-code-56)], [[codex-63](adapters/codex.md#codex-63)]: for Claude, the SDK manifest declares at least one optional dependency and none of them is a host candidate package; for Codex, the launcher has no target for the host | `{ state: 'unsupported', platform, arch }` |
 | Codex's CLI entry does not resolve | `{ state: 'missing', package: '@openai/codex', platform, arch }` |
 | no platform package the SDK would spawn from on this host holds the executable | `{ state: 'missing', package, platform, arch }`, with `package` the first of those packages the SDK would try |
 
 - `platform` and `arch` are the host's `process.platform` and `process.arch`.
+- A Claude SDK manifest that is unreadable, is not the SDK's, or declares no optional dependency is no evidence of an unsupported host, so such a lookup reads `missing`.
 
 ### Authentic Usage Accounting
 
