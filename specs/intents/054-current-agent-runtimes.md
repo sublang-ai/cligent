@@ -5,7 +5,7 @@
 
 ## Status
 
-In progress (2026-09-28): every runtime follows [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md); deliverables are met and await review.
+Completed (2026-09-28): every runtime follows [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md); the deliverables were reviewed and merged into the release candidate.
 
 ## Intent
 
