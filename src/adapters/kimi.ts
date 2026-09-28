@@ -1351,8 +1351,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           throw new Error('Kimi ACP run aborted during session setup');
         }
 
-        let effectiveModel =
-          mapped.model ?? selectedConfigValue(configOptions, 'model');
+        // kimi-17: the session configuration's own selection, never the
+        // request, is the reported model.
+        let selectedModel = selectedConfigValue(configOptions, 'model');
+        let effectiveModel = mapped.model ?? selectedModel;
         if (mapped.model !== undefined) {
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
@@ -1366,8 +1368,8 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             'session/set_config_option',
           );
           configOptions = response.configOptions;
-          effectiveModel =
-            selectedConfigValue(configOptions, 'model') ?? mapped.model;
+          selectedModel = selectedConfigValue(configOptions, 'model');
+          effectiveModel = selectedModel ?? mapped.model;
           if (abortRequested) {
             onAbort();
             throw new Error('Kimi ACP run aborted during model configuration');
@@ -1418,6 +1420,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             AGENT,
             {
               model: effectiveModel ?? 'unknown',
+              ...(selectedModel ? { reportedModel: selectedModel } : {}),
               cwd: mapped.cwd,
               tools: [],
               capabilities: {

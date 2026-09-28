@@ -126,8 +126,9 @@ import { discoverAgentModels } from '@sublang/cligent';
 
 const catalog = await discoverAgentModels('codex', { timeoutMs: 10_000 });
 if (catalog.status === 'available') {
+  console.log('unconfigured runs select', catalog.defaultModel);
   for (const model of catalog.models) {
-    console.log(model.id, model.effortValues, model.fastModeSupported);
+    console.log(model.id, model.name, model.description, model.resolvedModel);
   }
 } else {
   console.log(catalog.reason);
@@ -136,12 +137,24 @@ if (catalog.status === 'available') {
 
 Model metadata comes from the provider: an empty `effortValues` list or
 `fastModeSupported: false` means unsupported; an absent field means unknown.
-`resolvedModel`, when present, names the model behind an alias. Keep custom
-model input available: catalogs may be incomplete and do not guarantee account
-access. `getEffortSupport()` and `getFastModeSupport()` describe what the
-adapter accepts, independently of model support.
+`name` is the runtime's human name when it reports one, otherwise the ID;
+`description` (the runtime's own text) and `resolvedModel` (the model behind an
+alias) appear only when reported. Keep custom model input available: catalogs
+may be incomplete and do not guarantee account access. `getEffortSupport()` and
+`getFastModeSupport()` describe what the adapter accepts, independently of
+model support.
 Catalog `unreportedEffortValues` lists adapter choices its discovery interface
 cannot describe; these are not claims of support by every model.
+
+`defaultModel` names what a run selects when you configure no model, read from
+the runtime's own configuration for the discovery `cwd` (Claude settings and
+`ANTHROPIC_MODEL`, Codex `config/read`, Kimi's configured default). It can name
+a value outside `models`, such as `opus[1m]`, and is absent when the runtime
+cannot report it; OpenCode reports none. A listing's own default flag counts
+only when the configuration names no model.
+
+At run time, `init` events carry `reportedModel` only when the runtime itself
+names the model for that call; `model` keeps its requested-model fallback.
 
 Claude, Codex, Kimi and OpenCode expose read-only catalogs; Gemini currently
 returns `unavailable`. Discovery accepts `cwd`, `env` and `signal`, cleans up

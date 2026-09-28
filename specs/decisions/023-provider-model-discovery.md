@@ -6,6 +6,7 @@
 ## Status
 
 Accepted.
+Amended by [DR-026](026-runtime-reported-model-identity.md): model descriptions, human names, resolved Kimi models, and the runtime's default model.
 
 ## Context
 

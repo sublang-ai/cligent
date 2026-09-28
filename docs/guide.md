@@ -745,7 +745,7 @@ for await (const event of agent.run('Fix the login bug', {
 
 | Type                           | Payload                                                                              | Description                                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `init`                         | `model`, `cwd`, `tools`, `fastMode?`                                                 | Session started; Claude may report authentic fast-mode state             |
+| `init`                         | `model`, `reportedModel?`, `cwd`, `tools`, `fastMode?`                               | Session started; `reportedModel` and fast-mode state only when reported  |
 | `text`                         | `content`                                                                            | Complete text response                                                   |
 | `text_delta`                   | `delta`                                                                              | Streaming text chunk                                                     |
 | `thinking`                     | `summary`                                                                            | Agent reasoning                                                          |

@@ -97,6 +97,7 @@ When a run selects its `init`, the adapter shall emit exactly one handshake acco
 | an `init` was already emitted | suppress every later native `init` |
 
 - The model is the requested model when present, otherwise the first non-empty source `model`, otherwise `unknown`.
+- The reported model [[engine-89](../engine.md#engine-89)] is the first non-empty source `model` unless it names the per-run effort alias selected by [[gemini-11](#gemini-11)], and is otherwise omitted.
 - The cwd is the requested cwd when present, otherwise the first non-empty source `cwd`, otherwise the process cwd.
 - The handshake carries the session identifier selected by [[gemini-43](#gemini-43)].
 
@@ -469,6 +470,7 @@ Given canned native Gemini NDJSON flows, when the adapter runs, the emitted even
 | Flow | Assertions |
 | --- | --- |
 | canonical init, message, tool use, tool result, native error, and result | exact ordered event types, session identity, init tool source, and canonical payload fields [[gemini-4](#gemini-4)], [[gemini-16](#gemini-16)], [[gemini-20](#gemini-20)], [[gemini-21](#gemini-21)], [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)], [[gemini-24](#gemini-24)], [[gemini-25](#gemini-25)], [[gemini-27](#gemini-27)], [[gemini-43](#gemini-43)] |
+| native init naming a model, the per-run effort alias, or no model, with and without a requested model | `reportedModel` presence and absence beside the unchanged `model` selection [[gemini-20](#gemini-20)] |
 | direct snake-case tool fields | selected name, identifier, input, and success status [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)] |
 | top-level and value-wrapped `functionCall` / `functionResponse` | selected name, identifier, input, output, and success status [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)] |
 | malformed line after init followed by valid message and result | recoverable diagnostic with raw input, continued text, and terminal done [[gemini-21](#gemini-21)], [[gemini-25](#gemini-25)], [[gemini-26](#gemini-26)] |

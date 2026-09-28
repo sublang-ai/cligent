@@ -1329,8 +1329,10 @@ function buildInitPayload(
   sourceEvent: Record<string, unknown> | undefined,
   options: AgentOptions<GeminiEffort> | undefined,
   toolConfig: GeminiToolConfig,
+  effortAlias: string | undefined,
 ): {
   model: string;
+  reportedModel?: string;
   cwd: string;
   tools: string[];
   capabilities: Record<string, unknown>;
@@ -1346,8 +1348,13 @@ function buildInitPayload(
         ? toolConfig.allowedTools
         : [];
 
+  const namedModel = asString(sourceEvent?.model);
+  // The runtime names this run's effort alias, not a model (gemini-11).
+  const reportedModel = namedModel === effortAlias ? undefined : namedModel;
+
   return {
-    model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
+    model: options?.model ?? namedModel ?? 'unknown',
+    ...(reportedModel !== undefined ? { reportedModel } : {}),
     cwd: options?.cwd ?? asString(sourceEvent?.cwd) ?? process.cwd(),
     tools,
     capabilities: {
@@ -1544,7 +1551,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             yield createEvent(
               'init',
               AGENT,
-              buildInitPayload(undefined, options, mapped.toolConfig),
+              buildInitPayload(
+                undefined,
+                options,
+                mapped.toolConfig,
+                mapped.settingsConfig.modelAlias?.alias,
+              ),
               sessionId,
             );
             initYielded = true;
@@ -1581,7 +1593,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             yield createEvent(
               'init',
               AGENT,
-              buildInitPayload(message, options, mapped.toolConfig),
+              buildInitPayload(
+                message,
+                options,
+                mapped.toolConfig,
+                mapped.settingsConfig.modelAlias?.alias,
+              ),
               sessionId,
             );
             initYielded = true;
@@ -1593,7 +1610,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           yield createEvent(
             'init',
             AGENT,
-            buildInitPayload(message, options, mapped.toolConfig),
+            buildInitPayload(
+              message,
+              options,
+              mapped.toolConfig,
+              mapped.settingsConfig.modelAlias?.alias,
+            ),
             sessionId,
           );
           initYielded = true;
@@ -1789,7 +1811,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         yield createEvent(
           'init',
           AGENT,
-          buildInitPayload(undefined, options, mapped.toolConfig),
+          buildInitPayload(
+            undefined,
+            options,
+            mapped.toolConfig,
+            mapped.settingsConfig.modelAlias?.alias,
+          ),
           sessionId,
         );
         initYielded = true;
@@ -1903,7 +1930,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         yield createEvent(
           'init',
           AGENT,
-          buildInitPayload(undefined, options, mapped.toolConfig),
+          buildInitPayload(
+            undefined,
+            options,
+            mapped.toolConfig,
+            mapped.settingsConfig.modelAlias?.alias,
+          ),
           sessionId,
         );
         initYielded = true;

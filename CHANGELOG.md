@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Model discovery reports each Claude and Codex choice's own `description`,
+  OpenCode model names, and Kimi display names and resolved models.
+  `defaultModel` names what a run selects when no model is configured, read
+  from Claude settings and `ANTHROPIC_MODEL`, Codex `config/read`, or Kimi's
+  configured default, and stays absent when the runtime cannot report it.
+- `InitPayload.reportedModel` carries the model the runtime itself names for a
+  call; it is absent when the runtime names none and never repeats a request.
+
+### Changed
+
+- OpenCode and Kimi catalog `name` values are the runtime's human names where
+  reported, instead of repeating the ID. Discovery now also reads Codex
+  configuration, runs `opencode models --verbose`, and runs `kimi provider
+  list` after the Kimi JSON listing.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added

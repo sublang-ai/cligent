@@ -50,6 +50,7 @@ meta.md       The spec of specs
 | [DR-022](decisions/022-definite-session-rejection.md) | 022-definite-session-rejection.md | Typed pre-execution resume rejection, preserved to hosts without automatic retry |
 | [DR-023](decisions/023-provider-model-discovery.md) | 023-provider-model-discovery.md | On-demand runtime model catalogs, model effort/fast facts and honest unavailable results |
 | [DR-024](decisions/024-optional-cost-estimation.md) | 024-optional-cost-estimation.md | Optional estimates using caller rates or cached external pricing |
+| [DR-026](decisions/026-runtime-reported-model-identity.md) | 026-runtime-reported-model-identity.md | Runtime-reported model descriptions, names, unconfigured default and init-time model |
 
 ## Packages
 

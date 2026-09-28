@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
-It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, runtime readiness, provider model discovery, and the shape of an authentic usage report — not how any one adapter executes a prompt.
+It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
 Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
@@ -567,18 +567,39 @@ When an adapter identifies a rejected provider session token, it shall report `S
 
 ### engine-86
 
-When a caller requests `discoverAgentModels(adapter, options?)`, Cligent shall return the selected runtime's model catalog without sending a prompt, creating or resuming a durable provider conversation, or changing configuration ([DR-023](../decisions/023-provider-model-discovery.md)):
+When a caller requests `discoverAgentModels(adapter, options?)`, Cligent shall return the selected runtime's model catalog without sending a prompt, creating or resuming a durable provider conversation, or changing configuration ([DR-023](../decisions/023-provider-model-discovery.md), [DR-026](../decisions/026-runtime-reported-model-identity.md)):
 
-- `options` accepts `cwd`, an environment overlay, an abort signal, and a positive `timeoutMs` (default `10000`); discovery ends on cancellation or deadline and closes its owned SDK query or child process; after discovery settles, child cleanup allows at most 500 ms for termination before closing inherited pipes, without discarding an obtained catalog or replacing its failure.
+- `options` accepts `cwd`, an environment overlay, an abort signal, and a positive `timeoutMs` (default `10000`); discovery ends on cancellation or deadline and closes each owned SDK query or child process; after discovery settles, child cleanup allows at most 500 ms for termination before closing inherited pipes, without discarding an obtained catalog or replacing its failure.
 - A catalog is obtained after complete valid protocol replies, or successful CLI exit and stream closure; printed output alone does not settle a CLI listing.
-- Success is `{status:'available',models}` in provider order, retaining only the first row for each exact `id`; unsupported discovery, unavailable runtime, malformed responses and operational failures return `{status:'unavailable',reason}`, never an invented catalog.
-- Each model has `id` and `name`, with `resolvedModel`, `effortValues`, `defaultEffort` and `fastModeSupported` only when reported or derived through an existing adapter mapping [[engine-42](#engine-42)]; absent effort/fast support means unknown, while `[]` and `false` mean known unsupported.
+- Success is `{status:'available',models}` in provider order, retaining only the first row for each exact `id`, plus any `defaultModel` selected by [[engine-88](#engine-88)]; unsupported discovery, unavailable runtime, malformed responses and operational failures return `{status:'unavailable',reason}`, never an invented catalog.
+- Each model has `id` and `name`, the runtime's human name or otherwise the `id`, with `description`, `resolvedModel`, `effortValues`, `defaultEffort` and `fastModeSupported` only when reported or derived through an existing adapter mapping [[engine-42](#engine-42)]; `description` is the runtime's own text, verbatim; absent effort/fast support means unknown, while `[]` and `false` mean known unsupported.
 - Available catalogs may expose `unreportedEffortValues`: adapter choices the discovery interface cannot describe, not guarantees of model eligibility; Claude reports its orchestration values [[engine-47](#engine-47)] here, and other adapters omit the field.
 - Model effort choices include only levels this adapter transports [[engine-24](#engine-24)]; they remain distinct from adapter-wide acceptance, orchestration capabilities and installed-runtime readiness [[engine-26](#engine-26)] [[engine-76](#engine-76)].
-- Claude uses its resolved Agent SDK's initialization model catalog with empty input and persistence/hooks/tools disabled; Codex uses its SDK-owned executable's `initialize` and paginated `model/list`, without a thread or turn request, deriving fast support only from a reported `additionalSpeedTiers` list containing `fast` (an empty list means false).
+- Claude uses its resolved Agent SDK's initialization model catalog with empty input and persistence/hooks/tools disabled; Codex uses its SDK-owned executable's `initialize` and paginated `model/list`, without a thread or turn request, deriving fast support only from a reported `additionalSpeedTiers` list containing `fast` (an empty list means false); both take `name` from `displayName` and `description` from `description`.
 - JavaScript entry points run in Node mode under Node or Electron, with overrides confined to the discovery child’s environment.
-- OpenCode uses `opencode models`; Kimi uses `kimi provider list --json` and returns only model aliases, never provider credentials; Gemini reports discovery unavailable until a non-session listing is supported.
+- OpenCode uses `opencode models --verbose`, taking only `name` from the pretty-printed JSON detail that follows each `<provider>/<model>` ID; Kimi uses `kimi provider list --json` and returns only model aliases, each with its `displayName` as `name` and its concrete `model` as `resolvedModel`, never provider credentials; listing failures never quote listing output; Gemini reports discovery unavailable until a non-session listing is supported.
 - The catalog is advisory: absence never rejects a custom model string, establishes account entitlement, substitutes settings, or triggers discovery during ordinary validation or execution.
+
+### engine-88
+
+When discovery obtains an available catalog, Cligent shall set `defaultModel` to the model value the runtime's own configuration selects when the caller configures none, as a run in the discovery context would resolve it, through this matrix, omitting it whenever the row cannot establish that value ([DR-026](../decisions/026-runtime-reported-model-identity.md)):
+
+| Adapter | Selected value | Omitted when |
+| --- | --- | --- |
+| Claude | non-empty `ANTHROPIC_MODEL` in the discovery environment, otherwise the effective `model` from the resolved Agent SDK's settings resolver for `cwd`, or without project and local settings when `cwd` is absent, otherwise `default` | the SDK exports no resolver, resolution fails or yields a malformed `model`, the resolved settings `env` sets `ANTHROPIC_MODEL`, or the overlay changes the host's `CLAUDE_CONFIG_DIR`, `HOME` or `USERPROFILE` |
+| Codex | the effective `model` from the app-server's `config/read` for `cwd`, or without project layers when `cwd` is absent, otherwise the first `model/list` row flagged `isDefault` | the read is refused or malformed, or no model is configured and no row is flagged |
+| Kimi | the alias on the sole `Default model: ` line of `kimi provider list`, run after the JSON listing | that listing fails, or its line is absent, repeated, or names no listed alias |
+| OpenCode | none, because no non-session interface reports its effective default | always |
+
+- The value may name a model absent from `models`, and no catalog row substitutes for configuration the runtime cannot report.
+- Configuration reads share discovery's deadline and cancellation, and their failure omits only `defaultModel`.
+
+### engine-89
+
+When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` to the model identifier its runtime's own stream or protocol names for that call, verbatim ([DR-026](../decisions/026-runtime-reported-model-identity.md)):
+
+- it is absent when the runtime names none, and it is never filled from the requested model, a Cligent-internal alias, or a placeholder such as `unknown`;
+- `InitPayload.model` keeps its requested-model and `unknown` fallbacks.
 
 ## Verification
 
@@ -784,10 +805,16 @@ When the adapter/engine integration matrix supplies proven rejection before exec
 
 ### engine-87
 
-When a discovery integration suite supplies provider initialization responses and real fixture child processes, it shall verify model discovery [[engine-86](#engine-86)]:
+When a discovery integration suite supplies provider initialization responses, the installed Claude settings resolver over fixture settings, and real fixture child processes, it shall verify model discovery [[engine-86](#engine-86)] and its default model [[engine-88](#engine-88)]:
 
-- exact IDs, aliases, defaults, mapped model effort levels and true/false/unknown fast support, with Claude’s unreported orchestration choices separate from model facts and absent on other catalogs;
-- native CLI command arguments and peer-runtime checks through the public entry point, plus complete paginated Codex results with only initialization and model-list requests;
+- exact IDs, human names, descriptions, aliases, defaults, mapped model effort levels and true/false/unknown fast support, with Claude’s unreported orchestration choices separate from model facts and absent on other catalogs;
+- OpenCode verbose names and Kimi display names and resolved models, with no other listing detail or credential in any result or failure;
+- `defaultModel` for every [[engine-88](#engine-88)] row, present and absent: Claude settings for a `cwd` versus without one, environment precedence, `default`, and each omission; Codex configuration versus the listing flag and a refused read; Kimi's matched and unmatched default line; and OpenCode's absence;
+- native CLI command arguments and peer-runtime checks through the public entry point, plus complete paginated Codex results with only initialization, configuration-read and model-list requests;
 - JavaScript child execution under Electron despite a missing or conflicting caller mode flag, with other environment values preserved;
 - no prompt, durable session, tool, hook or credential disclosure;
 - success, empty catalog, malformed response, unavailable interface, timeout and cancellation: bounded cleanup preserves completed protocol results and earlier failures, while CLI listings await stream closure and remain subject to cancellation or timeout.
+
+### engine-90
+
+Where each built-in adapter's runtime names a model, names none, or names a Cligent-internal alias, with and without a requested model, when the adapter emits `init`, the check shall assert [[engine-89](#engine-89)]'s verbatim `reportedModel`, its absence without a runtime-named model, no requested-value, alias, or placeholder echo, and unchanged `InitPayload.model`.
