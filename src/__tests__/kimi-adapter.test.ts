@@ -44,6 +44,11 @@ interface FakeScenario {
   stopReason?: PromptResponse['stopReason'];
   initialize?: () => Promise<void>;
   setConfig?: (request: SetSessionConfigOptionRequest) => Promise<void>;
+  /**
+   * The `thinking` select's `options` for the current model, as Kimi
+   * advertises them; `null` advertises no `thinking` option at all.
+   */
+  thinkingOptions?: (model: string) => unknown[] | null;
   prompt?: (
     connection: AgentSideConnection,
     request: PromptRequest,
@@ -162,6 +167,12 @@ class FakeKimi {
   };
 
   private configOptions() {
+    const thinkingOptions = this.scenario.thinkingOptions
+      ? this.scenario.thinkingOptions(this.currentModel)
+      : [
+          { value: 'off', name: 'Off' },
+          { value: 'on', name: 'On' },
+        ];
     return [
       {
         type: 'select' as const,
@@ -174,17 +185,23 @@ class FakeKimi {
           { value: 'kimi-k3', name: 'K3' },
         ],
       },
-      {
-        type: 'select' as const,
-        id: 'thinking',
-        name: 'Thinking',
-        category: 'thought_level',
-        currentValue: 'off',
-        options: [
-          { value: 'off', name: 'Off' },
-          { value: 'on', name: 'On' },
-        ],
-      },
+      ...(thinkingOptions === null
+        ? []
+        : [
+            {
+              type: 'select' as const,
+              id: 'thinking',
+              name: 'Thinking',
+              category: 'thought_level',
+              currentValue: this.scenario.thinkingOptions
+                ? String(
+                    (thinkingOptions[0] as { value?: unknown } | undefined)
+                      ?.value ?? 'on',
+                  )
+                : 'off',
+              options: thinkingOptions,
+            },
+          ]),
       {
         type: 'select' as const,
         id: 'mode',
@@ -2076,6 +2093,145 @@ describe('KimiAdapter', () => {
     if (stopReason === 'refusal') {
       expect(eventOf(events, 'error').payload.code).toBe('KIMI_REFUSAL');
     }
+  });
+});
+
+// kimi-218's thinking-availability rows: kimi-38 through kimi-33.
+describe('Kimi thinking availability', () => {
+  const offOn = [
+    { value: 'off', name: 'Off' },
+    { value: 'on', name: 'On' },
+  ];
+  const onOnly = [{ value: 'on', name: 'On' }];
+  const groupedWithOff = [
+    { group: 'basic', name: 'Basic', options: [{ value: 'off', name: 'Off' }] },
+    { group: 'deep', name: 'Deep', options: [{ value: 'on', name: 'On' }] },
+  ];
+  const groupedWithoutOff = [
+    { group: 'deep', name: 'Deep', options: onOnly },
+    { group: 'max', name: 'Max', options: [{ value: 'max', name: 'Max' }] },
+  ];
+
+  it.each([
+    {
+      label: 'flat values with off',
+      thinking: () => offOn,
+      model: undefined,
+      effort: 'off',
+    },
+    {
+      label: 'grouped values with off',
+      thinking: () => groupedWithOff,
+      model: 'kimi-k3',
+      effort: 'off',
+    },
+    {
+      label: 'no thinking option',
+      thinking: () => null,
+      model: 'kimi-k3',
+      effort: 'off',
+    },
+    {
+      label: 'an always-thinking model asked for on',
+      thinking: () => onOnly,
+      model: 'kimi-k3',
+      effort: 'on',
+    },
+    {
+      label: 'grouped values without off asked for on',
+      thinking: () => groupedWithoutOff,
+      model: undefined,
+      effort: 'on',
+    },
+  ] as const)(
+    'sends the requested value for $label',
+    async ({ thinking, model, effort }) => {
+      const fake = new FakeKimi({ thinkingOptions: thinking });
+      const events = await collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run('Think', {
+          ...(model === undefined ? {} : { model }),
+          effort,
+        }),
+      );
+
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(eventOf(events, 'done').payload.status).toBe('success');
+      expect(
+        fake.configRequests.map(({ configId, value }) => [configId, value]),
+      ).toEqual([
+        ...(model === undefined ? [] : [['model', model]]),
+        ['thinking', effort],
+      ]);
+      expect(fake.calls).toContain('session/prompt');
+    },
+  );
+
+  it.each([
+    {
+      label: 'a model change to an always-thinking model',
+      thinking: (current: string) => (current === 'kimi-k3' ? onOnly : offOn),
+      model: 'kimi-k3',
+      expectedModel: 'kimi-k3',
+      advertised: "'on'",
+      calls: ['initialize', 'session/new', 'config:model'],
+    },
+    {
+      label: 'a session default model advertising grouped values',
+      thinking: () => groupedWithoutOff,
+      model: undefined,
+      expectedModel: 'kimi-default',
+      advertised: "'on', 'max'",
+      calls: ['initialize', 'session/new'],
+    },
+  ] as const)(
+    'stops off before the prompt for $label',
+    async ({ thinking, model, expectedModel, advertised, calls }) => {
+      const fake = new FakeKimi({ thinkingOptions: thinking });
+      const events = await collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run('Do not send', {
+          ...(model === undefined ? {} : { model }),
+          effort: 'off',
+          permissions: { mode: 'auto' },
+        }),
+      );
+
+      expect(fake.calls).toEqual(calls);
+      expect(fake.configRequests.map(({ configId }) => configId)).not.toContain(
+        'thinking',
+      );
+      expect(fake.promptRequests).toHaveLength(0);
+      const error = eventOf(events, 'error');
+      expect(error.payload).toMatchObject({
+        code: 'KIMI_EFFORT_UNAVAILABLE',
+        recoverable: false,
+      });
+      expect(error.payload.message).toContain(`model ${expectedModel}`);
+      expect(error.payload.message).toContain("thinking 'off'");
+      expect(error.payload.message).toContain(`advertises ${advertised}`);
+      expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+      expect(eventOf(events, 'done').payload.status).toBe('error');
+      expect(fake.children[0]?.killSignals).not.toContain('SIGKILL');
+    },
+  );
+
+  it('treats unreadable thinking values as a protocol failure', async () => {
+    const fake = new FakeKimi({
+      thinkingOptions: () => [{ name: 'No value' }],
+    });
+    const events = await collect(
+      new KimiAdapter({ spawnProcess: fake.spawn }).run('Do not send', {
+        effort: 'off',
+      }),
+    );
+
+    expect(fake.calls).not.toContain('config:thinking');
+    expect(fake.calls).not.toContain('session/prompt');
+    expect(eventOf(events, 'error').payload.code).toBe('KIMI_ACP_ERROR');
+    expect(eventOf(events, 'error').payload.message).toContain(
+      'thinking config option carries a malformed value',
+    );
+    expect(eventOf(events, 'done').payload.status).toBe('error');
   });
 });
 

@@ -126,6 +126,7 @@ describe('built-in effort metadata', () => {
     expect(EFFORT_SUPPORT.opencode.notes).toContain('Google collapses');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('no effort override');
     expect(EFFORT_SUPPORT.kimi.notes).toContain('binary');
+    expect(EFFORT_SUPPORT.kimi.notes).toContain('always thinks');
     expect(EFFORT_SUPPORT.kimi.notes).toContain(
       "selected model's native default thinking effort",
     );

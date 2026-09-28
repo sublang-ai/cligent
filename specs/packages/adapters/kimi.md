@@ -135,6 +135,7 @@ When a Kimi run reaches preflight or terminal selection, the adapter shall selec
 | no higher candidate; `session/resume` rejects with code `-32602` and data containing only the exact selected `sessionId`; no protocol or cleanup failure | recoverable `SESSION_RESUME_REJECTED` with the original message, then error `done` without a token; no prompt or fresh session [[engine-84](../engine.md#engine-84)], [[15]] | ACP resume rejection |
 | no higher candidate; protocol failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-27](#kimi-27)] and [[kimi-29](#kimi-29)] | protocol rejection, before forced teardown |
 | no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)], overriding every native stop including `cancelled` | spawn/process failure, close observation, or the decision to escalate beyond `SIGTERM` |
+| no higher candidate; the session's advertised thinking values exclude a requested `off` | `KIMI_EFFORT_UNAVAILABLE` and error `done` through [[kimi-38](#kimi-38)]; no thinking change or prompt | thinking-availability check, before cleanup |
 | no higher candidate; another setup or prompt failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)] | operation rejection, before cleanup |
 | valid native stop after a clean close or adapter-owned cleanup `SIGTERM` | the [[kimi-6](#kimi-6)] mapping | clean close observation or immediately before sending cleanup `SIGTERM` |
 
@@ -230,9 +231,20 @@ When the adapter maps the Kimi values in [[engine-40](../engine.md#engine-40)], 
 | `AgentOptions.effort` | Outcome |
 | --- | --- |
 | omitted | set no ACP `thinking` override |
-| `'off'` | set ACP `thinking` to `off` |
+| `'off'` | set ACP `thinking` to `off`, subject to [[kimi-38](#kimi-38)]'s availability check |
 | `'on'` | set ACP `thinking` to `on`, selecting the chosen model's native default rather than a portable tier |
 | any other dynamic value | reject before spawn with the metadata-backed error naming Kimi and the allowed values |
+
+### kimi-38
+
+When the adapter applies a provided thinking value in [[kimi-16](#kimi-16)]'s order, it shall select the outcome from the `thinking` select option in the session's current configuration, as returned by session setup or the preceding model change, through this matrix, so a model that cannot disable thinking stops before its prompt with a clear cause rather than a protocol rejection or a silently kept default, per [[engine-51](../engine.md#engine-51)], [[5]], and [[16]]:
+
+| Advertised `thinking` option | Requested value | Outcome |
+| --- | --- | --- |
+| absent | `off` or `on` | set the value unchanged, leaving any rejection to the runtime |
+| its values, flat or grouped, include `off` | `off` | set `off` |
+| its values exclude `off` | `off` | set no thinking value; emit non-recoverable `KIMI_EFFORT_UNAVAILABLE` naming the selected model, the requested value, and the advertised values, then error `done` without a prompt |
+| present | `on` | set `on`, which Kimi maps to the model's default thinking effort where the values are effort levels |
 
 ### kimi-23
 
@@ -314,7 +326,7 @@ When ACP bytes and messages cross the adapter-owned wire boundary, it shall vali
 | inbound UTF-8 JSON lines split or coalesced across arbitrary chunks, including one unterminated final line | reconstruct and forward each complete non-empty message in order |
 | invalid UTF-8 or JSON, or the accumulated decoded buffer exceeding 16 MiB in JavaScript code units immediately after one input chunk is appended | protocol failure |
 | inbound value not a JSON-RPC 2.0 object; invalid request, notification, response, error, or id shape; response id not pending | protocol failure |
-| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field | protocol failure |
+| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field, including a `thinking` select's values once [[kimi-38](#kimi-38)] reads them | protocol failure |
 | valid object with unknown fields, or `session/update` with an unhandled non-empty case | admit the unknown fields without treating them as malformed; drop an unhandled update before the SDK |
 | malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
 | handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
@@ -424,6 +436,7 @@ Given an `AgentOptions.effort` value that is omitted, `off`, `on`, another adapt
 | --- | --- |
 | effort omitted, `off`, or `on`; model omitted | exact [[kimi-9](#kimi-9)] outcome, no model override, and the ACP call order and omissions in [[kimi-16](#kimi-16)] and [[kimi-23](#kimi-23)] |
 | effort omitted, `off`, or `on`; model provided, including empty | exact [[kimi-9](#kimi-9)] outcome and [[kimi-23](#kimi-23)] model behavior in [[kimi-16](#kimi-16)]'s ACP call order |
+| `off` or `on` against a session, or a model change, advertising a `thinking` option with or without `off`, in flat or grouped values, or advertising none | exact [[kimi-38](#kimi-38)] outcome: `off` without an advertised `off` sends no thinking change and ends in `KIMI_EFFORT_UNAVAILABLE` and error `done` before any prompt, naming the model, the requested value, and the advertised values, while every other row sends the requested value [[kimi-33](#kimi-33)] |
 | another adapter's effort or an arbitrary unknown string; any model | rejection before spawn naming Kimi and exactly its allowed values |
 
 ### kimi-219
@@ -510,3 +523,4 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [13]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/apps/kimi-code/src/cli/sub/acp.ts#L30-L75 "Kimi Code 2.1.1 native ACP dispatch"
 [14]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/llm-adapter/model/model-auth.ts#L21-L76 "Kimi Code 2.1.1 model and provider authentication resolution"
 [15]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L532-L556 "Kimi Code 2.1.1 structured resume rejection"
+[16]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/config-options.ts#L50-L79 "Kimi Code 2.1.1 advertised thinking values, without off for a model that always thinks"

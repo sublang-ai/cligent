@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `gpt-6-sol` for Codex roles, both at `xhigh` effort. Existing configs are
   unchanged.
 
+### Fixed
+
+- Kimi `effort: 'off'` on a model that always thinks, such as `kimi-code/k3`,
+  now stops before the prompt with `KIMI_EFFORT_UNAVAILABLE`, naming the model
+  and the thinking values it offers. Kimi Code 2.1.1 used to reject it during
+  setup with a bare `Invalid params`, and older releases silently kept
+  thinking on.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added

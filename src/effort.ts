@@ -67,7 +67,7 @@ export const EFFORT_SUPPORT = Object.freeze({
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      "Kimi thinking is binary: off disables it, while on uses the selected model's native default thinking effort rather than a portable reasoning-depth tier.",
+      "Kimi thinking is binary: off disables it, while on uses the selected model's native default thinking effort rather than a portable reasoning-depth tier. A model that always thinks offers no off, so off fails before the prompt.",
   }),
   opencode: Object.freeze({
     values: Object.freeze([

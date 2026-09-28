@@ -246,7 +246,10 @@ The mappings have a few important qualifications:
 - **Kimi:** `off` and `on` pass directly to ACP's `thinking` configuration
   option. `on` enables the selected model's native default thinking behavior;
   it does not select a portable Cligent effort tier. When both `model` and
-  `effort` are provided, the model is selected before thinking is toggled.
+  `effort` are provided, the model is selected before thinking is toggled. A
+  model that always thinks, such as `kimi-code/k3`, offers no `off`: the run
+  then stops before the prompt with `KIMI_EFFORT_UNAVAILABLE`, naming the
+  thinking values the model does offer.
 
 Omitting `effort` sets no effort, orchestration, generated alias, or variant
 override and leaves applicable adapter, model, account, and user-configuration
