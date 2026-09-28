@@ -116,7 +116,7 @@ const agent = new Cligent(adapter, {
 // Per-call overrides win for scalars; permissions are merged by field;
 // allowedTools/disallowedTools arrays are replaced entirely.
 for await (const event of agent.run('Fix the bug', {
-  model: 'claude-sonnet-4-6', // overrides the default
+  model: 'claude-sonnet-5', // overrides the default
   abortSignal: controller.signal,
 })) {
   // event.role === 'coder' (always from constructor defaults)
@@ -498,7 +498,7 @@ const custom = await estimateCost(usage, {
 // This Codex example supplies both because native usage often omits them.
 const estimate = await estimateCost(usage, {
   provider: 'openai',
-  model: 'gpt-5.6-luna',
+  model: 'gpt-6-luna',
 });
 
 if (estimate.status === 'estimated') {

@@ -441,7 +441,7 @@ describe('core types', () => {
       responseSpeed: 'fast',
     };
     const init: InitPayload = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       cwd: '/workspace',
       tools: [],
       fastMode: initObservation,
@@ -460,7 +460,7 @@ describe('core types', () => {
     >();
 
     const invalidInit: InitPayload = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       cwd: '/workspace',
       tools: [],
       fastMode: {
