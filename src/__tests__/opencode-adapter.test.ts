@@ -64,6 +64,11 @@ interface MockOpenCodeClient {
     cwd?: string;
     signal?: AbortSignal;
   }): Promise<boolean>;
+  getModelVariants?(options: {
+    model: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }): Promise<readonly string[] | undefined>;
   close(): Promise<void>;
   shutdown(): Promise<void>;
 }
@@ -172,6 +177,11 @@ function makeLoader(config: {
     signal?: AbortSignal;
   }) => Promise<boolean | void>;
   replyPermissionError?: unknown;
+  getModelVariants?: (options: {
+    model: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<readonly string[] | undefined>;
   onClose?: () => Promise<void> | void;
   onShutdown?: () => Promise<void> | void;
 }): () => Promise<{
@@ -182,6 +192,9 @@ function makeLoader(config: {
       config.onCreateClient?.(options ?? {});
 
       return {
+        ...(config.getModelVariants
+          ? { getModelVariants: config.getModelVariants }
+          : {}),
         async run(options: Record<string, unknown>): Promise<unknown> {
           config.onRun?.(options);
           return config.runResult ?? { sessionId: 'session-1' };
@@ -1285,6 +1298,325 @@ describe('OpenCodeAdapter', () => {
 
     expect(capturedRunOptions).toBeDefined();
     expect(capturedRunOptions).not.toHaveProperty('variant');
+  });
+
+  // opencode-218: opencode-12's catalog rows, then its documented fallback.
+  // Variant sets are those OpenCode 1.18.33's own catalog lists.
+  const gpt6Variants = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const opus55Variants = ['low', 'medium', 'high', 'xhigh', 'max'];
+  it.each([
+    ['openai/gpt-6-sol', gpt6Variants, 'max', 'max'],
+    ['openai/gpt-6-sol', gpt6Variants, 'minimal', 'low'],
+    ['openai/gpt-6-sol', gpt6Variants, 'medium', 'medium'],
+    ['anthropic/claude-opus-5-5', opus55Variants, 'medium', 'medium'],
+    ['anthropic/claude-opus-5-5', opus55Variants, 'xhigh', 'xhigh'],
+    ['anthropic/claude-opus-5-5', opus55Variants, 'minimal', 'low'],
+    ['google/gemini-3.8-flash', ['low', 'medium', 'high'], 'max', 'high'],
+    [
+      'google/gemini-3.5-flash',
+      ['minimal', 'low', 'medium', 'high'],
+      'xhigh',
+      'high',
+    ],
+    ['vercel/google/gemini-3.8-flash', ['low', 'high'], 'medium', 'high'],
+    ['digitalocean/openai-gpt-6-sol', gpt6Variants.slice(0, 5), 'max', 'xhigh'],
+    ['aihubmix/gpt-6-sol', [], 'high', undefined],
+    ['requesty/gpt-6-sol', ['none'], 'minimal', undefined],
+  ] satisfies Array<[string, string[], OpenCodeEffort, string | undefined]>)(
+    'selects %s variant from catalog %j for effort %s as %s',
+    async (model, advertised, effort, expected) => {
+      let capturedRunOptions: Record<string, unknown> | undefined;
+      const catalogReads: Array<{ model: string; cwd?: string }> = [];
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'catalog-session' },
+            events: [
+              {
+                id: 'catalog-idle',
+                type: 'session.idle',
+                properties: { sessionID: 'catalog-session' },
+              } satisfies EventSessionIdle,
+            ],
+            getModelVariants: async ({ model: read, cwd }) => {
+              catalogReads.push({ model: read, ...(cwd ? { cwd } : {}) });
+              return advertised;
+            },
+            onRun(options) {
+              capturedRunOptions = options;
+            },
+          }),
+        },
+      );
+
+      await collect(
+        adapter.run('prompt', { model, effort, cwd: '/work/project' }),
+      );
+
+      expect(catalogReads).toEqual([{ model, cwd: '/work/project' }]);
+      expect(capturedRunOptions?.model).toBe(model);
+      if (expected === undefined) {
+        expect(capturedRunOptions).not.toHaveProperty('variant');
+      } else {
+        expect(capturedRunOptions?.variant).toBe(expected);
+      }
+    },
+  );
+
+  it.each([
+    ['without the model', async () => undefined],
+    [
+      'unreadable',
+      async () => {
+        throw new Error('config.providers failed');
+      },
+    ],
+    ['late', () => new Promise<undefined>(() => {})],
+  ] as const)(
+    'falls back to the documented variant when the catalog is %s',
+    async (_label, read) => {
+      const captured: Array<Record<string, unknown>> = [];
+      const signals: AbortSignal[] = [];
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          modelCatalogTimeoutMs: 20,
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'fallback-session' },
+            events: [
+              {
+                id: 'fallback-idle',
+                type: 'session.idle',
+                properties: { sessionID: 'fallback-session' },
+              } satisfies EventSessionIdle,
+            ],
+            getModelVariants: (options) => {
+              if (options.signal) signals.push(options.signal);
+              return read();
+            },
+            onRun(options) {
+              captured.push(options);
+            },
+          }),
+        },
+      );
+
+      for (const [model, expected] of [
+        ['openai/gpt-6-sol', 'xhigh'],
+        ['anthropic/claude-opus-5-5', 'max'],
+        ['someprovider/somemodel', undefined],
+      ] as const) {
+        await collect(adapter.run('prompt', { model, effort: 'max' }));
+        const options = captured.at(-1);
+        if (expected === undefined) {
+          expect(options).not.toHaveProperty('variant');
+        } else {
+          expect(options?.variant).toBe(expected);
+        }
+      }
+      expect(signals).toHaveLength(3);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    },
+  );
+
+  it('reads no catalog without an effort or a provider-qualified model', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    let catalogReads = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          getModelVariants: async () => {
+            catalogReads++;
+            return ['max'];
+          },
+          onRun(options) {
+            captured.push(options);
+          },
+        }),
+      },
+    );
+
+    await collect(adapter.run('prompt', { model: 'openai/gpt-6-sol' }));
+    await collect(adapter.run('prompt', { model: 'gpt-6-sol', effort: 'max' }));
+    await collect(adapter.run('prompt', { effort: 'max' }));
+
+    expect(catalogReads).toBe(0);
+    expect(captured).toHaveLength(3);
+    for (const options of captured) {
+      expect(options).not.toHaveProperty('variant');
+    }
+  });
+
+  it('interrupts a run aborted during its catalog read before dispatch', async () => {
+    const controller = new AbortController();
+    let announceRead: () => void = () => {};
+    const readStarted = new Promise<void>((resolve) => {
+      announceRead = resolve;
+    });
+    let readSignal: AbortSignal | undefined;
+    let runCalls = 0;
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          getModelVariants: ({ signal }) => {
+            readSignal = signal;
+            announceRead();
+            return new Promise(() => {});
+          },
+          onRun: () => {
+            runCalls++;
+          },
+        }),
+      },
+    );
+
+    const collecting = collect(
+      adapter.run('prompt', {
+        model: 'openai/gpt-6-sol',
+        effort: 'max',
+        abortSignal: controller.signal,
+      }),
+    );
+    await readStarted;
+    controller.abort();
+    const events = await collecting;
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(events[1]?.payload).toMatchObject({ status: 'interrupted' });
+    expect(runCalls).toBe(0);
+    expect(readSignal?.aborted).toBe(true);
+  });
+
+  it('reads the v2 provider catalog for the run directory', async () => {
+    const requests: string[] = [];
+    let status = 200;
+    let body: unknown = {
+      providers: [
+        {
+          id: 'openai',
+          models: {
+            'gpt-6-sol': {
+              id: 'gpt-6-sol',
+              variants: { low: {}, medium: {}, xhigh: {}, max: {} },
+            },
+            'gpt-6-luna': { id: 'gpt-6-luna' },
+          },
+        },
+      ],
+      default: { openai: 'gpt-6-sol' },
+    };
+    const real = createOpencodeClient({
+      baseUrl: 'http://opencode.local:7777',
+      fetch: async (input, init) => {
+        const request =
+          input instanceof Request ? input : new Request(input, init);
+        requests.push(request.url);
+        return new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    const client = wrapOpencodeClient(
+      real as unknown as Record<string, unknown>,
+      { apiVersion: 'v2' },
+    );
+
+    await expect(
+      client.getModelVariants?.({
+        model: 'openai/gpt-6-sol',
+        cwd: '/work/project',
+      }),
+    ).resolves.toEqual(['low', 'medium', 'xhigh', 'max']);
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-6-luna' }),
+    ).resolves.toEqual([]);
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-7' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      client.getModelVariants?.({ model: 'anthropic/claude-opus-5-5' }),
+    ).resolves.toBeUndefined();
+
+    const first = new URL(requests[0]!);
+    expect(first.pathname).toBe('/config/providers');
+    expect(first.searchParams.get('directory')).toBe('/work/project');
+    expect(new URL(requests[1]!).searchParams.has('directory')).toBe(false);
+
+    body = { providers: [{ id: 'openai', models: { 'gpt-6-sol': [] } }] };
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-6-sol' }),
+    ).rejects.toThrow('malformed catalog entry');
+    body = {
+      providers: [
+        { id: 'openai', models: { 'gpt-6-sol': { variants: ['max'] } } },
+      ],
+    };
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-6-sol' }),
+    ).rejects.toThrow('malformed variants');
+    body = { default: {} };
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-6-sol' }),
+    ).rejects.toThrow('lists no providers');
+    status = 500;
+    body = { name: 'UnknownError', data: { message: 'catalog down' } };
+    await expect(
+      client.getModelVariants?.({ model: 'openai/gpt-6-sol' }),
+    ).rejects.toThrow('OpenCode config.providers failed');
+  });
+
+  it('passes the v1 catalog directory as a query with the signal', async () => {
+    const calls: unknown[] = [];
+    const real = {
+      session: {
+        async create() {
+          return { id: 'v1-catalog' };
+        },
+        async prompt() {
+          return {};
+        },
+      },
+      event: {
+        async subscribe() {
+          return { stream: (async function* () {})() };
+        },
+      },
+      config: {
+        async providers(args: unknown) {
+          calls.push(args);
+          return {
+            data: {
+              providers: [
+                {
+                  id: 'openai',
+                  models: { 'gpt-6-sol': { variants: { max: {} } } },
+                },
+              ],
+            },
+          };
+        },
+      },
+    };
+    const controller = new AbortController();
+    const client = wrapOpencodeClient(real);
+
+    await expect(
+      client.getModelVariants?.({
+        model: 'openai/gpt-6-sol',
+        cwd: '/work/project',
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual(['max']);
+    expect(calls).toEqual([
+      { query: { directory: '/work/project' }, signal: controller.signal },
+    ]);
+    expect(
+      wrapOpencodeClient({ ...real, config: undefined }).getModelVariants,
+    ).toBeUndefined();
   });
 
   it('normalizes OpenCode v2 permission.asked events', async () => {

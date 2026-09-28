@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenCode `effort` now selects the prompt variant the chosen model advertises
+  in the OpenCode server's provider catalog, or else its nearest advertised
+  effort variant, instead of a fixed per-provider table that could name a
+  variant the model lacks, which OpenCode silently ignores. GPT-6 Sol's `max`
+  now reaches its `max` variant rather than `xhigh`, its `minimal` reaches
+  `low`, and Claude Opus 5.5 keeps `medium` and `xhigh` instead of collapsing
+  them. The table remains the fallback when the catalog cannot be read within
+  10 seconds or does not list the model.
 - Kimi `effort: 'off'` on a model that always thinks, such as `kimi-code/k3`,
   now stops before the prompt with `KIMI_EFFORT_UNAVAILABLE`, naming the model
   and the thinking values it offers. Kimi Code 2.1.1 used to reject it during

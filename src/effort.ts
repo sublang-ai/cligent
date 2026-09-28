@@ -81,7 +81,7 @@ export const EFFORT_SUPPORT = Object.freeze({
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      'Anthropic collapses minimal through high to high and xhigh/max to max; OpenAI collapses max to xhigh; Google collapses minimal through medium to low and high through max to high. Unknown providers and malformed or omitted models receive no effort override.',
+      "Effort selects the variant the model advertises in the server's catalog, else its nearest advertised ladder variant, the higher on a tie. Without that catalog, Anthropic collapses minimal through high to high and xhigh/max to max; OpenAI collapses max to xhigh; Google collapses minimal through medium to low and high through max to high; other providers receive no effort override. Models advertising no ladder variant and malformed or omitted models receive none either.",
   }),
 }) satisfies Readonly<Record<BuiltinEffortAgent, EffortSupportShape>>;
 

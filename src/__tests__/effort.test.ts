@@ -121,6 +121,7 @@ describe('built-in effort metadata', () => {
   it('documents every lossy and no-op mapping condition', () => {
     expect(EFFORT_SUPPORT.gemini.notes).toContain('collapses');
     expect(EFFORT_SUPPORT.gemini.notes).toContain('no effort override');
+    expect(EFFORT_SUPPORT.opencode.notes).toContain('nearest advertised');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('Anthropic collapses');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('OpenAI collapses');
     expect(EFFORT_SUPPORT.opencode.notes).toContain('Google collapses');

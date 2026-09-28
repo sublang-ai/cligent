@@ -238,11 +238,17 @@ The mappings have a few important qualifications:
   budget. If the model is omitted, is a CLI alias such as `auto` or `flash`,
   or does not match those model families, the adapter preserves ordinary model
   forwarding and applies no effort override.
-- **OpenCode:** Variant mappings depend on the `provider/model` prefix and can
-  be lossy. Anthropic collapses `minimal` through `high` to `high` and
-  `xhigh`/`max` to `max`; OpenAI collapses `max` to `xhigh`; Google collapses
-  `minimal` through `medium` to `low` and `high` through `max` to `high`. An
-  unknown provider or malformed or omitted model receives no variant override.
+- **OpenCode:** Effort selects the prompt `variant` the chosen model
+  advertises in the server's provider catalog for the run's directory, or else
+  its nearest advertised effort variant, the higher on a tie: GPT-6 Sol's
+  `max` reaches `max`, and its `minimal` reaches `low`. A model listed without
+  effort variants receives none. Only when the catalog cannot be read within
+  10 seconds or does not list the model does a lossy provider table apply:
+  Anthropic collapses `minimal` through `high` to `high` and `xhigh`/`max` to
+  `max`; OpenAI collapses `max` to `xhigh`; Google collapses `minimal` through
+  `medium` to `low` and `high` through `max` to `high`, and any other provider
+  receives no variant override. A malformed or omitted model never receives
+  one.
 - **Kimi:** `off` and `on` pass directly to ACP's `thinking` configuration
   option. `on` enables the selected model's native default thinking behavior;
   it does not select a portable Cligent effort tier. When both `model` and
