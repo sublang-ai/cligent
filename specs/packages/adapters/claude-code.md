@@ -39,7 +39,12 @@ Where the Claude Agent SDK is not installed, when `run()` is called, the adapter
 
 ### claude-code-56
 
-Where the Claude Agent SDK loads but [[claude-code-57](#claude-code-57)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call with a message naming the lookup's first candidate package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies.
+Where the Claude Agent SDK loads but [[claude-code-57](#claude-code-57)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call with the message of the first matching row of this matrix:
+
+| Lookup outcome | Message names |
+| --- | --- |
+| the SDK publishes no native binary for the host [[claude-code-57](#claude-code-57)] | that the SDK publishes no native binary for the host as `<platform>-<arch>`, with no reinstall advice |
+| any other | the lookup's first candidate package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies |
 
 ### Event Normalization
 
@@ -385,6 +390,7 @@ When the adapter locates the native binary the Claude Agent SDK spawns, it shall
 
 - The binary is the package's `claude` file, `claude.exe` on Windows.
 - The SDK's location is the ESM loader's file resolution of the SDK where available, else the SDK manifest on the adapter's module search paths, canonicalized through symbolic links to the SDK's physical tree.
+- Where no candidate's binary exists, the SDK publishes no native binary for the host only when its manifest, the nearest `package.json` at or above the SDK's location, is the SDK's and declares optional dependencies naming none of the candidate packages; a manifest that is unreadable, is not the SDK's, or declares no optional dependencies is no such evidence.
 
 ## Verification
 
@@ -426,11 +432,14 @@ Where the absent-SDK precondition in [[claude-code-202](#claude-code-202)] holds
 
 ### claude-code-58
 
-Given candidate orders for every host row, fake module trees that link a consumer to an SDK whose platform packages sit only beside its physical location, and a loadable SDK whose lookup finds or misses the binary, when the lookup runs and `isAvailable()` answers, the verification shall assert every candidate order and selected binary in [[claude-code-57](#claude-code-57)] and each loadable-SDK row in [[claude-code-13](#claude-code-13)].
+Given candidate orders for every host row, including this process on Linux with a process report that carries and then lacks a glibc runtime version, fake module trees that link a consumer to an SDK whose platform packages sit only beside its physical location, SDK manifests that name none of the host's candidates, are unreadable, belong to another package, or declare no optional dependencies, and a loadable SDK whose lookup finds or misses the binary, when the lookup runs and `isAvailable()` answers, the verification shall assert every candidate order, selected binary, and publishes-no-binary conclusion in [[claude-code-57](#claude-code-57)] and each loadable-SDK row in [[claude-code-13](#claude-code-13)].
 
 ### claude-code-59
 
-Where a loadable SDK's lookup finds no native binary, when `run()` is consumed, the verification shall assert that it throws before any SDK query with a message naming the host's first candidate package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK [[claude-code-56](#claude-code-56)].
+Where a loadable SDK's lookup finds no native binary, both on a host the SDK publishes binaries for and on one it publishes none for, when `run()` is consumed, the verification shall assert that it throws before any SDK query with each row's message in [[claude-code-56](#claude-code-56)]:
+
+- the published host's first candidate package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK;
+- the unpublished host's `<platform>-<arch>`, with neither `npm ci` nor a reinstall.
 
 ### claude-code-203
 

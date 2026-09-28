@@ -41,7 +41,13 @@ Where the Codex SDK is not installed and both tool-list fields are omitted, when
 
 ### codex-63
 
-Where the Codex SDK loads and its CLI entry resolves but [[codex-64](#codex-64)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call with a message naming the lookup's platform package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies.
+Where the Codex SDK loads but [[codex-64](#codex-64)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call the error of the first matching row of this matrix:
+
+| Lookup outcome | Error |
+| --- | --- |
+| the host matches no platform row of [[codex-64](#codex-64)] | a message that the SDK publishes no native binary for the host as `<platform>-<arch>`, with no reinstall advice |
+| no route in [[codex-12](#codex-12)] resolves the Codex CLI entry | [[codex-13](#codex-13)]'s diagnostic |
+| any other | a message naming the lookup's platform package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies |
 
 ### Event Normalization
 
@@ -549,7 +555,11 @@ Given every host row's platform package and binary path, a fake entry with neith
 
 ### codex-66
 
-Where a loadable SDK's lookup finds no native binary, when `run()` is consumed, the verification shall assert that it throws before any SDK construction with a message naming the host's platform package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK [[codex-63](#codex-63)].
+Where a loadable SDK's lookup finds no native binary on a host with no platform row, with no resolvable CLI entry, and with the entry but no binary, when `run()` is consumed, the verification shall assert that it throws before any SDK construction each row's error in [[codex-63](#codex-63)]:
+
+- the unpublished host's `<platform>-<arch>`, with neither `npm ci` nor a reinstall;
+- the entry's `MODULE_NOT_FOUND` diagnostic, naming no platform package;
+- the host's platform package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK.
 
 ### codex-203
 
