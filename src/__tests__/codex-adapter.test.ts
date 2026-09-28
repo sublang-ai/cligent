@@ -11,23 +11,24 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Usage as CodexUsage } from '@openai/codex-sdk';
 
 import {
   CodexAdapter,
-  codexExecutableCandidate,
-  locateCodexExecutable,
   mapAgentOptionsToCodexOptions,
   mapEffortToCodexEffort,
   mapPermissionsToCodexOptions,
   resolveCodexBinPath,
 } from '../adapters/codex.js';
+import {
+  codexExecutableCandidate,
+  locateCodexExecutable,
+} from '../adapters/codex-executable.js';
 import { normalizeCodexWindowsDevicePath } from '../adapters/codex-path.js';
 import type {
   AgentEvent,
@@ -2006,8 +2007,19 @@ describe('CodexAdapter', () => {
     expect(error.payload.code).toBe('model_not_found');
   });
 
-  it('is unavailable when the SDK loads but the launcher\'s native binary is missing', async () => {
-    const sdk = { Codex: class {} as never };
+  it('is unavailable and refuses a run when the launcher lacks its native binary', async () => {
+    // codex-65 / codex-66: npm drops the optional platform package without
+    // failing the install; the SDK and its launcher still load, and the first
+    // run would fail with "Missing optional dependency".
+    let constructed = 0;
+    const sdk = {
+      Codex: class {
+        constructor() {
+          constructed += 1;
+          throw new Error('the SDK must not be called');
+        }
+      } as never,
+    };
     const missing = new CodexAdapter({
       loadSdk: async () => sdk,
       locateExecutable: () => undefined,
@@ -2015,41 +2027,116 @@ describe('CodexAdapter', () => {
     await expect(missing.isAvailable()).resolves.toBe(false);
     const present = new CodexAdapter({
       loadSdk: async () => sdk,
-      locateExecutable: () => '/tree/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex',
+      locateExecutable: () =>
+        '/tree/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex',
     });
     await expect(present.isAvailable()).resolves.toBe(true);
-    const stream = missing.run('prompt');
-    await expect(stream.next()).rejects.toThrow(
-      /native binary the Codex launcher spawns: @openai\/codex-.* is not installed .*npm ci/,
+    // An unresolvable launcher entry is unavailable too.
+    const noLauncher = new CodexAdapter({
+      loadSdk: async () => sdk,
+      locateExecutable: () => {
+        throw Object.assign(new Error('no launcher'), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      },
+    });
+    await expect(noLauncher.isAvailable()).resolves.toBe(false);
+
+    // The refusal names the platform package, the host, and the reinstall,
+    // before any SDK call.
+    const pkg = codexExecutableCandidate()?.package ?? '@openai/codex';
+    let refusal: unknown;
+    try {
+      await missing.run('prompt').next();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(Error);
+    const message = (refusal as Error).message;
+    expect(message).toContain(
+      `the optional platform package ${pkg} is not installed for ` +
+        `${process.platform}-${process.arch}`,
     );
+    expect(message).toContain('run npm ci in a checkout');
+    expect(message).toContain('reinstall the SDK');
+    expect(constructed).toBe(0);
   });
 
   it('locates the native binary by the launcher rule beside the resolved launcher', () => {
-    expect(codexExecutableCandidate('darwin', 'arm64')).toEqual({
-      package: '@openai/codex-darwin-arm64',
-      file: join('vendor', 'aarch64-apple-darwin', 'bin', 'codex'),
-    });
-    expect(codexExecutableCandidate('win32', 'x64')?.file).toBe(
-      join('vendor', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe'),
-    );
-    expect(codexExecutableCandidate('linux', 'x64')?.package).toBe('@openai/codex-linux-x64');
-    expect(codexExecutableCandidate('freebsd' as NodeJS.Platform, 'x64')).toBeUndefined();
+    // codex-65: every row of the launcher's target table.
+    const hosts: ReadonlyArray<
+      [NodeJS.Platform, string, string | undefined, string | undefined]
+    > = [
+      ['linux', 'x64', 'linux-x64', 'x86_64-unknown-linux-musl'],
+      ['android', 'x64', 'linux-x64', 'x86_64-unknown-linux-musl'],
+      ['linux', 'arm64', 'linux-arm64', 'aarch64-unknown-linux-musl'],
+      ['android', 'arm64', 'linux-arm64', 'aarch64-unknown-linux-musl'],
+      ['darwin', 'x64', 'darwin-x64', 'x86_64-apple-darwin'],
+      ['darwin', 'arm64', 'darwin-arm64', 'aarch64-apple-darwin'],
+      ['win32', 'x64', 'win32-x64', 'x86_64-pc-windows-msvc'],
+      ['win32', 'arm64', 'win32-arm64', 'aarch64-pc-windows-msvc'],
+      ['linux', 'ia32', undefined, undefined],
+      ['freebsd', 'x64', undefined, undefined],
+    ];
+    for (const [platform, arch, suffix, triple] of hosts) {
+      const exe = platform === 'win32' ? 'codex.exe' : 'codex';
+      expect(codexExecutableCandidate(platform, arch)).toEqual(
+        suffix === undefined || triple === undefined
+          ? undefined
+          : {
+              package: `@openai/codex-${suffix}`,
+              file: join('vendor', triple, 'bin', exe),
+            },
+      );
+    }
 
     const tree = mkdtempSync(join(tmpdir(), 'cligent-codex-tree-'));
-    const modules = join(tree, 'node_modules');
-    const launcherDir = join(modules, '@openai', 'codex', 'bin');
-    mkdirSync(launcherDir, { recursive: true });
-    writeFileSync(join(modules, '@openai', 'codex', 'package.json'), '{"name":"@openai/codex"}');
-    const launcherPath = join(launcherDir, 'codex.js');
-    writeFileSync(launcherPath, '');
-    expect(locateCodexExecutable({ launcherPath, platform: 'darwin', arch: 'arm64' })).toBeUndefined();
+    try {
+      const modules = join(tree, 'node_modules');
+      const launcherRoot = join(modules, '@openai', 'codex');
+      mkdirSync(join(launcherRoot, 'bin'), { recursive: true });
+      writeFileSync(
+        join(launcherRoot, 'package.json'),
+        '{"name":"@openai/codex"}',
+      );
+      const launcherPath = join(launcherRoot, 'bin', 'codex.js');
+      writeFileSync(launcherPath, '');
+      const host = { launcherPath, platform: 'darwin', arch: 'arm64' } as const;
+      expect(locateCodexExecutable(host)).toBeUndefined();
 
-    const platformDir = join(modules, '@openai', 'codex-darwin-arm64');
-    const binary = join(platformDir, 'vendor', 'aarch64-apple-darwin', 'bin', 'codex');
-    mkdirSync(join(platformDir, 'vendor', 'aarch64-apple-darwin', 'bin'), { recursive: true });
-    writeFileSync(join(platformDir, 'package.json'), '{"name":"@openai/codex-darwin-arm64"}');
-    writeFileSync(binary, '');
-    expect(locateCodexExecutable({ launcherPath, platform: 'darwin', arch: 'arm64' })).toBe(realpathSync(binary));
+      // The launcher's own vendor directory serves when no platform package
+      // resolves beside it.
+      const vendored = join(
+        launcherRoot,
+        'vendor',
+        'aarch64-apple-darwin',
+        'bin',
+        'codex',
+      );
+      mkdirSync(dirname(vendored), { recursive: true });
+      writeFileSync(vendored, '');
+      expect(locateCodexExecutable(host)).toBe(vendored);
+
+      // A resolvable platform package is where the launcher looks instead.
+      const platformRoot = join(modules, '@openai', 'codex-darwin-arm64');
+      const binary = join(
+        platformRoot,
+        'vendor',
+        'aarch64-apple-darwin',
+        'bin',
+        'codex',
+      );
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(
+        join(platformRoot, 'package.json'),
+        '{"name":"@openai/codex-darwin-arm64"}',
+      );
+      expect(locateCodexExecutable(host)).toBeUndefined();
+      writeFileSync(binary, '');
+      expect(locateCodexExecutable(host)).toBe(realpathSync(binary));
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
   });
 
   it('returns false from isAvailable when SDK load fails', async () => {
