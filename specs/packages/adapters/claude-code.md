@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns how a portable request becomes an SDK query, including native fast-mode selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -25,11 +25,21 @@ Where the Claude Agent SDK is not installed, the adapter module shall remain imp
 
 ### claude-code-13
 
-Where the Claude Agent SDK is missing under [[engine-26](../engine.md#engine-26)] runtime readiness, when `isAvailable()` is called, the adapter shall return `false`.
+When `isAvailable()` is called, the adapter shall return the result of the first matching row of this matrix:
+
+| SDK and native binary | Result |
+| --- | --- |
+| the Claude Agent SDK cannot be loaded, as when it is missing under [[engine-26](../engine.md#engine-26)] runtime readiness | `false` |
+| the SDK loads, but [[claude-code-57](#claude-code-57)]'s lookup finds no native binary | `false` |
+| the SDK loads and that lookup finds the native binary | `true` |
 
 ### claude-code-14
 
 Where the Claude Agent SDK is not installed, when `run()` is called, the adapter shall throw `ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.`.
+
+### claude-code-56
+
+Where the Claude Agent SDK loads but [[claude-code-57](#claude-code-57)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call with a message naming the lookup's first candidate package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies.
 
 ### Event Normalization
 
@@ -360,6 +370,22 @@ When the adapter observes an SDK message, it shall update the current run sessio
 
 When the adapter prepares an SDK query, it shall pass a per-run clone of the caller's process environment with `CLAUDECODE` omitted while leaving the caller's environment unchanged.
 
+### Native Binary Lookup
+
+### claude-code-57
+
+When the adapter locates the native binary the Claude Agent SDK spawns, it shall mirror the SDK's own lookup by resolving each candidate platform package in this order from the SDK's location and selecting the first whose binary exists:
+
+| Host | Candidate packages, in order |
+| --- | --- |
+| Linux whose process report carries no glibc runtime version (musl) | `@anthropic-ai/claude-agent-sdk-linux-<arch>-musl`, then `@anthropic-ai/claude-agent-sdk-linux-<arch>` |
+| any other Linux | `@anthropic-ai/claude-agent-sdk-linux-<arch>`, then `@anthropic-ai/claude-agent-sdk-linux-<arch>-musl` |
+| Android | `@anthropic-ai/claude-agent-sdk-linux-<arch>-android` |
+| any other platform | `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` |
+
+- The binary is the package's `claude` file, `claude.exe` on Windows.
+- The SDK's location is the ESM loader's file resolution of the SDK where available, else the SDK manifest on the adapter's module search paths, canonicalized through symbolic links to the SDK's physical tree.
+
 ## Verification
 
 ### claude-code-201
@@ -397,6 +423,14 @@ Where an installed package meets the absent-SDK precondition in [[claude-code-20
 ### claude-code-36
 
 Where the absent-SDK precondition in [[claude-code-202](#claude-code-202)] holds, when `run()` is called, the verification shall assert that consumption throws the installation error [[claude-code-14](#claude-code-14)].
+
+### claude-code-58
+
+Given candidate orders for every host row, fake module trees that link a consumer to an SDK whose platform packages sit only beside its physical location, and a loadable SDK whose lookup finds or misses the binary, when the lookup runs and `isAvailable()` answers, the verification shall assert every candidate order and selected binary in [[claude-code-57](#claude-code-57)] and each loadable-SDK row in [[claude-code-13](#claude-code-13)].
+
+### claude-code-59
+
+Where a loadable SDK's lookup finds no native binary, when `run()` is consumed, the verification shall assert that it throws before any SDK query with a message naming the host's first candidate package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK [[claude-code-56](#claude-code-56)].
 
 ### claude-code-203
 
