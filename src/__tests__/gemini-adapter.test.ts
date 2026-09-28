@@ -33,6 +33,7 @@ import type {
   AgentOptions,
   DonePayload,
   GeminiEffort,
+  InitPayload,
   PermissionLevel,
   PermissionPolicy,
 } from '../types.js';
@@ -1583,6 +1584,72 @@ describe('GeminiAdapter', () => {
       message: 'HIGH thinking is unavailable for this model',
     });
     expect(events[2]?.payload).toMatchObject({ status: 'error' });
+  });
+
+  it('reports only a model the native init names (gemini-201, engine-90)', async () => {
+    const cases: Array<
+      [
+        Record<string, unknown> | undefined,
+        AgentOptions<GeminiEffort>,
+        string | undefined,
+      ]
+    > = [
+      [{ model: 'auto-gemini-3' }, {}, 'auto-gemini-3'],
+      [{ model: 'gemini-3-pro' }, { model: 'gemini-3-pro' }, 'gemini-3-pro'],
+      // The runtime names this run's effort alias rather than a model.
+      [
+        { model: GEMINI_REASONING_EFFORT_ALIAS },
+        { model: 'gemini-3-pro', effort: 'high' },
+        undefined,
+      ],
+      [{}, { model: 'gemini-2.5-pro' }, undefined],
+      // The stream closes before any native event.
+      [undefined, { model: 'gemini-2.5-pro' }, undefined],
+    ];
+    for (const [init, options, expected] of cases) {
+      const { spawnProcess } = makeSpawn((process) => {
+        writeEventsAndClose(
+          process,
+          init === undefined
+            ? []
+            : [
+                JSON.stringify({
+                  type: 'init',
+                  sessionId: 'gemini-session',
+                  ...init,
+                }),
+                JSON.stringify({
+                  type: 'result',
+                  sessionId: 'gemini-session',
+                  status: 'success',
+                  stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+                }),
+              ],
+          init === undefined ? 1 : 0,
+          null,
+        );
+      });
+      const adapter = new GeminiAdapter({
+        spawnProcess,
+        probeAvailability: async () => true,
+        createSettingsOverride: async () => ({
+          env: {},
+          cleanup: async () => {},
+        }),
+      });
+
+      const events = await collect(adapter.run('prompt', options));
+      const payload = events[0]!.payload as InitPayload;
+      expect(events[0]!.type).toBe('init');
+      expect(payload.model).toBe(
+        options.model ?? (init?.model as string | undefined) ?? 'unknown',
+      );
+      if (expected === undefined) {
+        expect(payload).not.toHaveProperty('reportedModel');
+      } else {
+        expect(payload.reportedModel).toBe(expected);
+      }
+    }
   });
 
   it('maps Gemini 2.5 Pro max to its model-family upper bound', () => {

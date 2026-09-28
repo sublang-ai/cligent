@@ -153,6 +153,9 @@ a value outside `models`, such as `opus[1m]`, and is absent when the runtime
 cannot report it; OpenCode reports none. A listing's own default flag counts
 only when the configuration names no model.
 
+At run time, `init` events carry `reportedModel` only when the runtime itself
+names the model for that call; `model` keeps its requested-model fallback.
+
 Claude, Codex, Kimi and OpenCode expose read-only catalogs; Gemini currently
 returns `unavailable`. Discovery accepts `cwd`, `env` and `signal`, cleans up
 its transport, and defaults to a 10-second deadline.

@@ -484,6 +484,14 @@ describe('core types', () => {
     void catalog;
   });
 
+  it('types the runtime-reported init model as an optional fact', () => {
+    expectTypeOf<InitPayload['reportedModel']>().toEqualTypeOf<
+      string | undefined
+    >();
+    const init: InitPayload = { model: 'opus', cwd: '/workspace', tools: [] };
+    void init;
+  });
+
   it('correlates fast-mode support across built-in and custom APIs', () => {
     expectTypeOf<{
       claude: AdapterFastMode<ClaudeCodeAdapter>;

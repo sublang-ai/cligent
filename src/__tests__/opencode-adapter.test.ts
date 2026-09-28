@@ -458,9 +458,16 @@ describe('OpenCodeAdapter', () => {
     ]);
 
     const init = events[0] as AgentEvent & {
-      payload: { model: string; cwd: string; tools: string[] };
+      payload: {
+        model: string;
+        reportedModel?: string;
+        cwd: string;
+        tools: string[];
+      };
     };
     expect(init.payload.model).toBe('override-model');
+    // The wrapper's own model name, not the request (engine-90).
+    expect(init.payload.reportedModel).toBe('opencode-model');
     expect(init.payload.cwd).toBe('/repo');
     expect(init.payload.tools).toEqual(['edit', 'bash']);
 
@@ -1034,6 +1041,28 @@ describe('OpenCodeAdapter', () => {
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
+  it('reports no model when the wrapper names none (opencode-201, engine-90)', async () => {
+    for (const requested of ['provider/requested', undefined]) {
+      const adapter = new OpenCodeAdapter(
+        { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+        {
+          loadSdk: makeLoader({
+            runResult: { sessionId: 'session-1', model: '' },
+            events: [{ type: 'session.idle', sessionId: 'session-1' }],
+          }),
+        },
+      );
+      const events = await collect(
+        adapter.run('prompt', requested ? { model: requested } : {}),
+      );
+      expect(events[0]?.type).toBe('init');
+      expect(events[0]?.payload).toMatchObject({
+        model: requested ?? 'unknown',
+      });
+      expect(events[0]?.payload).not.toHaveProperty('reportedModel');
+    }
+  });
+
   it('preserves a managed spawn error through setup failure (opencode-201)', async () => {
     const { spawnProcess, invocations } = makeSpawn();
     let clientCalls = 0;
@@ -1068,6 +1097,7 @@ describe('OpenCodeAdapter', () => {
       'error',
       'done',
     ]);
+    expect(events[0]?.payload).not.toHaveProperty('reportedModel');
     expect(events[1]?.payload).toEqual({
       code: 'OPENCODE_STREAM_ERROR',
       message: 'spawn opencode ENOENT',

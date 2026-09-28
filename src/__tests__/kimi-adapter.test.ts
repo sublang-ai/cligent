@@ -42,6 +42,8 @@ interface FakeScenario {
   inputEndDelayMs?: number;
   lifecycle?: string[];
   stopReason?: PromptResponse['stopReason'];
+  omitModelOption?: boolean;
+  ignoreModelSelection?: boolean;
   initialize?: () => Promise<void>;
   setConfig?: (request: SetSessionConfigOptionRequest) => Promise<void>;
   prompt?: (
@@ -196,7 +198,7 @@ class FakeKimi {
           { value: 'auto', name: 'Auto' },
         ],
       },
-    ];
+    ].filter(({ id }) => !(this.scenario.omitModelOption && id === 'model'));
   }
 
   private agent(connection: AgentSideConnection): Agent {
@@ -234,7 +236,10 @@ class FakeKimi {
         this.calls.push(`config:${request.configId}`);
         this.configRequests.push(request);
         await this.scenario.setConfig?.(request);
-        if (request.configId === 'model')
+        if (
+          request.configId === 'model' &&
+          !this.scenario.ignoreModelSelection
+        )
           this.currentModel = String(request.value);
         return { configOptions: this.configOptions() };
       },
@@ -533,6 +538,38 @@ describe('KimiAdapter', () => {
       exitCode: 0,
       killed: false,
     });
+  });
+
+  it('reports only the session configuration model selection (kimi-230, engine-90)', async () => {
+    const cases: Array<
+      [FakeScenario, string | undefined, string, string | undefined]
+    > = [
+      [{}, undefined, 'kimi-default', 'kimi-default'],
+      [{}, 'kimi-k3', 'kimi-k3', 'kimi-k3'],
+      // The runtime keeps its own selection; the request is not evidence.
+      [
+        { ignoreModelSelection: true },
+        'kimi-k3',
+        'kimi-default',
+        'kimi-default',
+      ],
+      [{ omitModelOption: true }, undefined, 'unknown', undefined],
+      [{ omitModelOption: true }, 'kimi-k3', 'kimi-k3', undefined],
+    ];
+    for (const [scenario, requested, model, reportedModel] of cases) {
+      const fake = new FakeKimi(scenario);
+      const adapter = new KimiAdapter({ spawnProcess: fake.spawn });
+      const events = await collect(
+        adapter.run('prompt', requested ? { model: requested } : {}),
+      );
+      const init = eventOf(events, 'init').payload;
+      expect(init.model).toBe(model);
+      if (reportedModel === undefined) {
+        expect(init).not.toHaveProperty('reportedModel');
+      } else {
+        expect(init.reportedModel).toBe(reportedModel);
+      }
+    }
   });
 
   it('queues configuration updates until after init in arrival order', async () => {

@@ -3833,12 +3833,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       if (!initYielded) {
         const runRecord = asRecord(runResult);
         const runTools = asStringArray(runRecord.tools);
+        const reportedModel = asString(runRecord.model);
 
         yield createEvent(
           'init',
           AGENT,
           {
-            model: options?.model ?? asString(runRecord.model) ?? 'unknown',
+            model: options?.model ?? reportedModel ?? 'unknown',
+            ...(reportedModel !== undefined ? { reportedModel } : {}),
             cwd: options?.cwd ?? asString(runRecord.cwd) ?? process.cwd(),
             tools: runTools,
             capabilities: {

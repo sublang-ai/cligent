@@ -31,6 +31,7 @@ import type {
   AgentOptions,
   CodexEffort,
   DonePayload,
+  InitPayload,
   PermissionLevel,
   PermissionPolicy,
 } from '../types.js';
@@ -1907,6 +1908,52 @@ describe('CodexAdapter', () => {
 
     const done = events.at(-1) as AgentEvent & { payload: { status: string } };
     expect(done.payload.status).toBe('error');
+  });
+
+  it('reports only a model the first event names (codex-41, engine-90)', async () => {
+    const completed = {
+      type: 'turn.completed',
+      usage: { input_tokens: 0, output_tokens: 0 },
+    };
+    for (const [events, requested, expected] of [
+      [
+        [{ type: 'thread.started', thread_id: 't', model: 'gpt-runtime' }],
+        'gpt-requested',
+        'gpt-runtime',
+      ],
+      [
+        [{ type: 'thread.started', thread_id: 't' }],
+        'gpt-requested',
+        undefined,
+      ],
+      [
+        [{ type: 'thread.started', thread_id: 't', model: '' }],
+        undefined,
+        undefined,
+      ],
+      [[], 'gpt-requested', undefined],
+    ] as const) {
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [...events, completed],
+          ...(events.length === 0
+            ? { throwFromRun: new Error('stream failed before any event') }
+            : {}),
+        }),
+      });
+      const emitted = await collect(
+        adapter.run('prompt', requested ? { model: requested } : {}),
+      );
+      const init = emitted[0]!.payload as InitPayload;
+      expect(emitted[0]!.type).toBe('init');
+      // The compatibility model keeps its requested-model priority.
+      expect(init.model).toBe(requested ?? expected ?? 'unknown');
+      if (expected === undefined) {
+        expect(init).not.toHaveProperty('reportedModel');
+      } else {
+        expect(init.reportedModel).toBe(expected);
+      }
+    }
   });
 
   it('surfaces turn.failed message and stops iterating before SDK exit', async () => {
