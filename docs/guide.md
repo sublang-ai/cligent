@@ -63,7 +63,7 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 // session continuity, option merging, and protocol hardening.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
 });
 
 // agent.run(prompt, overrides?) → AsyncGenerator<CligentEvent>
@@ -106,7 +106,7 @@ import type { CligentOptions, RunOptions } from '@sublang/cligent';
 // CligentOptions — instance-level defaults (no abortSignal, no resume).
 const agent = new Cligent(adapter, {
   role: 'coder', // injected into every event as event.role
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
   permissions: { fileWrite: 'allow', shellExecute: 'ask' },
   maxTurns: 10,
 });
@@ -596,13 +596,13 @@ const codexGitPermissions: PermissionPolicy = {
 };
 
 const codexAgent = new Cligent(new CodexAdapter(), {
-  model: 'gpt-5.3-codex',
+  model: 'gpt-6-sol',
   permissions: codexGitPermissions,
 });
 
 // Set permissions as defaults, or override per-call.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
   permissions,
 });
 
@@ -669,11 +669,11 @@ import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 
 const coder = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
 });
 const reviewer = new Cligent(new CodexAdapter(), {
   role: 'reviewer',
-  model: 'gpt-5.3-codex',
+  model: 'gpt-6-sol',
 });
 
 // Cligent.parallel(tasks) → AsyncGenerator<CligentEvent>
@@ -702,12 +702,12 @@ for await (const event of runParallel([
   {
     adapter: new ClaudeCodeAdapter(),
     prompt: 'Write unit tests',
-    options: { model: 'claude-opus-4-8', effort: 'ultracode' },
+    options: { model: 'claude-opus-5-5', effort: 'ultracode' },
   },
   {
     adapter: new CodexAdapter(),
     prompt: 'Write integration tests',
-    options: { model: 'gpt-5.3-codex', effort: 'ultra' },
+    options: { model: 'gpt-6-sol', effort: 'ultra' },
   },
 ])) {
   console.log(`[${event.agent}] ${event.type}`);

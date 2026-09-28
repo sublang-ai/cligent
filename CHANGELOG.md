@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays at 0.57.0: Gemini CLI 0.60.0 and later load system defaults only from
   root-owned paths, so a run there cannot load the per-run model alias that
   carries `effort` — DR-013
+- `tmux-play`'s first-run config now pins `claude-opus-5-5` for Claude roles
+  and `gpt-6-sol` for Codex roles, both at `xhigh` effort. Existing configs are
+  unchanged.
 
 ## [0.27.0] - 2026-09-08
 

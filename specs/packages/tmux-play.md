@@ -263,7 +263,7 @@ When the launcher authors the default home config from the installed-runtime set
 | --- | --- |
 | Captain and roster | built-in `fanout` Captain plus one player per installed adapter, in canonical order `claude`, `codex`, `gemini`, `kimi`, `opencode`, limited to the first two players |
 | Captain adapter and player IDs | Captain uses the first roster adapter; each player ID equals its adapter |
-| pinned roles | `claude` gets `model: claude-opus-4-8` and `effort: xhigh`; `codex` gets `model: gpt-5.5` and `effort: xhigh` |
+| pinned roles | `claude` gets `model: claude-opus-5-5` and `effort: xhigh`; `codex` gets `model: gpt-6-sol` and `effort: xhigh` |
 | every other adapter | omit `model` and `effort` so provider defaults apply, including Kimi's non-portable `off` / `on` vocabulary per [[tmux-play-56](#tmux-play-56)] |
 | fast mode | omit `fastMode` from the Captain and every player so generated configuration never selects an account-dependent paid serving mode |
 | both Claude and Codex installed | roster is Claude then Codex |
@@ -1324,7 +1324,7 @@ Where the home and cwd are empty and the `claude` and `codex` adapter runtimes a
 
 | Observation | Assertion |
 | --- | --- |
-| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-opus-4-8`, `effort: xhigh`; `codex` uses `model: gpt-5.5`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }`; no role has `fastMode` [[tmux-play-11](#tmux-play-11)] |
+| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-opus-5-5`, `effort: xhigh`; `codex` uses `model: gpt-6-sol`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }`; no role has `fastMode` [[tmux-play-11](#tmux-play-11)] |
 | authored layout and notifications | `layout.window: { columns: 174, rows: 49 }`, `layout.multiPlayerColumnWeights: [1, 1, 1]`, no authored `columnWeights`, and `notifications: { player_finished: bell, turn_finished: desktop }` [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)] |
 | stdout | one line naming the created path and the installed adapters used for the roster [[tmux-play-10](#tmux-play-10)] |
 | second invocation | the freshly created home YAML remains byte-for-byte unchanged [[tmux-play-90](#tmux-play-90)] |
