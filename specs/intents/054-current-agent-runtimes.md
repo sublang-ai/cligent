@@ -5,26 +5,30 @@
 
 ## Status
 
-In progress (2026-09-28): every deliverable except Gemini CLI `0.61.0` is complete; Gemini awaits an owner decision on effort delivery.
+In progress (2026-09-28): Gemini awaits an owner decision on effort delivery; the other runtimes follow [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md).
 
 ## Intent
 
-Move every built-in adapter's runtime conformance target to its latest published release once the adapter is verified against it, and make tmux-play's shipped model pins name current models, per [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md) and [DR-023](../decisions/023-provider-model-discovery.md).
+Move every built-in adapter's runtime conformance target to its latest published release once the adapter is verified against it, set each supported floor at the oldest release that serves the latest models its provider offers, and make every shipped default and example name current models, per [DR-013](../decisions/013-cligent-owned-runtime-compatibility.md), [DR-023](../decisions/023-provider-model-discovery.md), and [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md).
 
 ## Deliverables
 
-- [x] Claude Agent SDK `0.3.283` is the tested version, repair, and development pin; the `0.3.219` floor is unchanged.
-- [x] Codex SDK `0.158.0`, selecting Codex CLI `0.158.0`, is the tested version, repair, and development pin; the `0.144.0` floor is unchanged.
-- [x] Kimi Code `2.1.1` is the tested version, repair, and exact CI install, paired with ACP SDK `1.4.0`; the `0.28.1` floor is unchanged, and Kimi source references follow the native ACP server `2.1.1` runs.
-- [x] OpenCode SDK and CLI `1.18.33` are the paired tested versions, repairs, development pin, and exact CI install; the `1.18.12` floors are unchanged.
-- [ ] Gemini CLI `0.61.0` is not adopted: `0.60.0` and later load system defaults only from root-owned paths, so the per-run effort alias cannot load; `0.57.0` stays tested until effort delivery is decided.
-- [x] tmux-play's generated roles pin `claude-opus-5-5` and `gpt-6-sol` at `xhigh`.
+- [x] Claude Agent SDK `0.3.283`, Codex SDK `0.158.0` with Codex CLI `0.158.0`, Kimi Code `2.1.1` paired with ACP SDK `1.4.0`, and OpenCode SDK and CLI `1.18.33` are the tested versions, repairs, development pins, and exact CI installs.
 - [x] Claude's per-model `thinkingTokens` stays out of exact reasoning detail.
+- [x] tmux-play's generated roles pin `claude-opus-5-5` and `gpt-6-sol` at `xhigh`.
+- [x] DR-027 records the latest-model floor rule and amends the floor rules of DR-013 and DR-023.
+- [ ] Claude's floor rises to `0.3.280`, Codex's to `0.156.1`, and OpenCode's SDK and CLI floors to `1.18.29`, each with bisected evidence beside the descriptor target and matching peer floors.
+- [ ] Kimi's floor records whether serving the latest Kimi models depends on the CLI version.
+- [ ] Every remaining default and example names the latest model of its line.
+- [ ] Gemini is not moved: its latest models `gemini-3.8-flash` and `gemini-3.5-flash-lite` first ship in CLI `0.61.0`, while CLI `0.60.0` and later load system defaults only from root-owned paths, so a floor there would leave `effort` unapplied on every supported version; `0.57.0` stays tested and `0.45.1` the floor until effort delivery is decided.
 
 ## Tasks
 
 1. Refresh the verified runtime targets with their manifests, lockfiles, CI installs, specs, docs, and changelog.
 2. Pin tmux-play's generated Claude and Codex roles to current models.
+3. Record DR-027 and its floor policy.
+4. Raise the supported floors to the oldest releases serving the latest models.
+5. Name the latest models in the remaining defaults and examples.
 
 ## Verification
 

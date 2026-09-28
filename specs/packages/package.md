@@ -47,11 +47,12 @@ Each agent SDK optional-peer-dependency range shall have this shape:
 
 ### package-17
 
-When an agent-runtime supported floor in the descriptor under [[package-16](#package-16)] is selected or reviewed, maintainers shall apply this compatibility-floor policy:
+When an agent-runtime supported floor in the descriptor under [[package-16](#package-16)] is selected or reviewed, maintainers shall apply this compatibility-floor policy per [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md):
 
-- select the lowest published version that serves every provider model or route on which this release's declared adapter behavior depends and supplies every runtime surface the adapter drives;
+- select the oldest published version that serves the latest models the runtime's provider offers and supplies every runtime surface the adapter drives;
+- treat a model as served where the runtime's own bundled model catalog carries it, and where the runtime takes its models and their capabilities from the provider or its configuration without a version gate, let the surface requirement alone set the floor;
 - record beside the descriptor target the concrete capability and adjacent published-version evidence establishing that floor;
-- dependence on a newer runtime surface raises the floor to the first version carrying that surface;
+- a newly offered provider model, or dependence on a newer runtime surface, raises the floor to the first version serving that model or carrying that surface;
 - a version that can no longer serve the adapter's users, including a vendor runtime the SDK bundles and selects, permits the floor to rise past that version; and
 - every rise ships only in a release that is MINOR or greater per [[release-1](release.md#release-1)], because the new floor refuses a version that previously loaded.
 

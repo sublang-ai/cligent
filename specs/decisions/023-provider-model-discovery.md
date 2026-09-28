@@ -6,6 +6,7 @@
 ## Status
 
 Accepted.
+Amended by [DR-027](027-latest-models-oldest-serving-runtime.md): a newly offered provider model raises the supported floor to the oldest release that serves it.
 
 ## Context
 
