@@ -20,6 +20,19 @@ import { discoverAgentModelsWithDeps } from '../model-discovery.js';
 
 const checkRuntime = () => {};
 
+/** A fixture settings resolver; no test reads the host's Claude settings. */
+function claudeSettings(
+  effective: unknown,
+  calls: unknown[] = [],
+): () => Promise<((options: unknown) => Promise<unknown>) | undefined> {
+  return async () => async (options) => {
+    calls.push(options);
+    if (effective instanceof Error) throw effective;
+    return { effective };
+  };
+}
+const noSettings = claudeSettings({});
+
 async function withCommand(
   source: string,
   run: (
@@ -47,10 +60,17 @@ for await (const line of createInterface({ input: process.stdin })) {
  if (message.method === 'initialize') {
    process.stdout.write(JSON.stringify({id:message.id,result:{}})+'\\n'); continue;
  }
+ if (message.method === 'config/read') {
+   const config = process.env.MODEL_TEST_CONFIG;
+   process.stdout.write(JSON.stringify(config === 'refuse'
+     ? {id:message.id,error:{code:-32600,message:'unknown variant'}}
+     : {id:message.id,result:config ? JSON.parse(config) : {config:{model:null}}})+'\\n');
+   continue;
+ }
  if (message.method !== 'model/list') throw new Error('unexpected model work');
  const result = message.params.cursor
-   ? {data:[{id:'second-picker',model:'model-two',displayName:'Second',supportedReasoningEfforts:[],additionalSpeedTiers:[]},{model:'model-unknown'}],nextCursor:null}
-   : {data:[{id:'picker',model:'model-one',displayName:'First',additionalSpeedTiers:['fast'],supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'max'},{reasoningEffort:'persistent'}],defaultReasoningEffort:'low'}],nextCursor:'page-two'};
+   ? {data:[{id:'second-picker',model:'model-two',displayName:'Second',description:'Second choice.',isDefault:true,supportedReasoningEfforts:[],additionalSpeedTiers:[]},{model:'model-unknown',isDefault:true}],nextCursor:null}
+   : {data:[{id:'picker',model:'model-one',displayName:'First',description:'First choice.',isDefault:false,additionalSpeedTiers:['fast'],supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'max'},{reasoningEffort:'persistent'}],defaultReasoningEffort:'low'}],nextCursor:'page-two'};
  process.stdout.write(JSON.stringify({id:message.id,result})+'\\n');
 }
 `;
@@ -59,11 +79,13 @@ describe('engine-86: provider model discovery', () => {
   it('uses Claude initialization without a prompt, tools, hooks or persistence', async () => {
     let closed = false;
     let next: Promise<IteratorResult<never>> | undefined;
+    const settingsCalls: unknown[] = [];
     const result = await discoverAgentModelsWithDeps(
       'claude-code',
       {},
       {
         checkRuntime,
+        claudeSettings: claudeSettings({}, settingsCalls),
         claudeQuery(input) {
           const query = input as {
             prompt: AsyncGenerator<never>;
@@ -85,10 +107,16 @@ describe('engine-86: provider model discovery', () => {
                 value: 'alias',
                 resolvedModel: 'canonical',
                 displayName: 'Preferred',
+                description: 'Canonical 5 · Best for complex tasks',
                 supportedEffortLevels: ['low', 'high', 'future'],
                 supportsFastMode: true,
               },
-              { value: 'none', supportsEffort: false, supportsFastMode: false },
+              {
+                value: 'none',
+                description: ' ',
+                supportsEffort: false,
+                supportsFastMode: false,
+              },
               { value: 'unknown' },
             ],
             close() {
@@ -101,10 +129,12 @@ describe('engine-86: provider model discovery', () => {
     expect(result).toEqual({
       status: 'available',
       unreportedEffortValues: ['ultracode'],
+      defaultModel: 'default',
       models: [
         {
           id: 'alias',
           name: 'Preferred',
+          description: 'Canonical 5 · Best for complex tasks',
           resolvedModel: 'canonical',
           effortValues: ['minimal', 'low', 'high'],
           fastModeSupported: true,
@@ -120,6 +150,8 @@ describe('engine-86: provider model discovery', () => {
     });
     expect(closed).toBe(true);
     expect(await next).toEqual({ done: true, value: undefined });
+    // Without a cwd, never the host process's project settings.
+    expect(settingsCalls).toEqual([{ settingSources: ['user'] }]);
   });
 
   it('closes Claude discovery on deadline without manufacturing a model', async () => {
@@ -129,6 +161,7 @@ describe('engine-86: provider model discovery', () => {
       { timeoutMs: 10 },
       {
         checkRuntime,
+        claudeSettings: noSettings,
         claudeQuery: () => ({
           supportedModels: () => new Promise(() => {}),
           close: () => {
@@ -152,6 +185,7 @@ describe('engine-86: provider model discovery', () => {
         {},
         {
           checkRuntime,
+          claudeSettings: noSettings,
           claudeQuery: () => ({
             supportedModels,
             close: () => {
@@ -165,7 +199,7 @@ describe('engine-86: provider model discovery', () => {
     }
   });
 
-  it('follows Codex pagination using only initialize and model/list', async () => {
+  it('follows Codex pagination using only initialize, config/read and model/list', async () => {
     await withCommand(catalogServer, async (command, dir) => {
       const log = join(dir, 'requests.jsonl');
       const result = await discoverAgentModelsWithDeps(
@@ -175,10 +209,13 @@ describe('engine-86: provider model discovery', () => {
       );
       expect(result).toEqual({
         status: 'available',
+        // No configured model: the first row the listing flags.
+        defaultModel: 'model-two',
         models: [
           {
             id: 'model-one',
             name: 'First',
+            description: 'First choice.',
             effortValues: ['low', 'max'],
             defaultEffort: 'low',
             fastModeSupported: true,
@@ -186,6 +223,7 @@ describe('engine-86: provider model discovery', () => {
           {
             id: 'model-two',
             name: 'Second',
+            description: 'Second choice.',
             effortValues: [],
             fastModeSupported: false,
           },
@@ -199,9 +237,11 @@ describe('engine-86: provider model discovery', () => {
       expect(requests.map((request) => request.method)).toEqual([
         'initialize',
         'initialized',
+        'config/read',
         'model/list',
         'model/list',
       ]);
+      expect(requests[2].params).toEqual({ cwd: dir });
       expect(requests.at(-1).params).toEqual({
         limit: 100,
         includeHidden: false,
@@ -277,8 +317,9 @@ describe('engine-86: provider model discovery', () => {
           executable,
           `#!${process.execPath}
 const fs = require('node:fs');
-fs.writeFileSync(process.env.MODEL_TEST_LOG, JSON.stringify(process.argv.slice(2)));
-console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { alias: { model: 'wire' } } }) : 'provider/model')});
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.MODEL_TEST_LOG, JSON.stringify(args) + '\\n');
+console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { alias: { model: 'wire' } } }) : 'provider/model\n{\n  "name": "Provider Model"\n}')});
 `,
         );
         await chmod(executable, 0o700);
@@ -290,12 +331,22 @@ console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { ali
           status: 'available',
           models: [
             adapter === 'kimi'
-              ? { id: 'alias', name: 'alias' }
-              : { id: 'provider/model', name: 'provider/model' },
+              ? { id: 'alias', name: 'alias', resolvedModel: 'wire' }
+              : { id: 'provider/model', name: 'Provider Model' },
           ],
         });
-        expect(JSON.parse(await readFile(log, 'utf8'))).toEqual(
-          adapter === 'kimi' ? ['provider', 'list', '--json'] : ['models'],
+        expect(
+          (await readFile(log, 'utf8'))
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line)),
+        ).toEqual(
+          adapter === 'kimi'
+            ? [
+                ['provider', 'list', '--json'],
+                ['provider', 'list'],
+              ]
+            : [['models', '--verbose']],
         );
       });
     },
@@ -336,6 +387,7 @@ console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { ali
         {},
         {
           checkRuntime,
+          claudeSettings: noSettings,
           claudeQuery: () => ({
             supportedModels: async () => [
               { value: 'model', displayName: 'First', supportsFastMode: true },
@@ -353,6 +405,7 @@ console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { ali
     ).toEqual({
       status: 'available',
       unreportedEffortValues: ['ultracode'],
+      defaultModel: 'default',
       models: [
         { id: 'model', name: 'First', fastModeSupported: true },
         { id: 'MODEL', name: 'Distinct' },
@@ -367,12 +420,14 @@ console.log(${JSON.stringify(adapter === 'kimi' ? JSON.stringify({ models: { ali
         'claude',
         {},
         {
+          claudeSettings: noSettings,
           claudeQuery: () => ({ supportedModels: async () => [], close() {} }),
         },
       );
       expect(result).toEqual({
         status: 'available',
         models: [],
+        defaultModel: 'default',
         unreportedEffortValues: ['ultracode'],
       });
       const target = AGENT_RUNTIME_TARGETS.claude[0]!;
@@ -616,7 +671,7 @@ ${response}
 
   it('projects Kimi model aliases without returning provider credentials', async () => {
     await withCommand(
-      `console.log(JSON.stringify({ providers:{private:{api_key:'secret-fixture-key'}},models:{'custom/one':{model:'wire-one'},local:{model:'wire-two'}}}));`,
+      `console.log(JSON.stringify({ providers:{private:{apiKey:'secret-fixture-key'}},models:{'custom/one':{provider:'private',model:'wire-one',displayName:'Wire One',maxContextSize:1},local:{provider:'private',model:'wire-two'},bare:7}}));`,
       async (command) => {
         const result = await discoverAgentModelsWithDeps(
           'kimi',
@@ -626,10 +681,13 @@ ${response}
         expect(result).toEqual({
           status: 'available',
           models: [
-            { id: 'custom/one', name: 'custom/one' },
-            { id: 'local', name: 'local' },
+            { id: 'custom/one', name: 'Wire One', resolvedModel: 'wire-one' },
+            { id: 'local', name: 'local', resolvedModel: 'wire-two' },
+            { id: 'bare', name: 'bare' },
           ],
         });
+        expect(JSON.stringify(result)).not.toContain('secret-fixture-key');
+        expect(JSON.stringify(result)).not.toContain('private');
       },
     );
   });
@@ -709,5 +767,301 @@ ${response}
         )
       ).status,
     ).toBe('unavailable');
+  });
+});
+
+describe('engine-88: runtime default model', () => {
+  const claudeCatalog = () => ({
+    supportedModels: async () => [
+      {
+        value: 'default',
+        resolvedModel: 'claude-fable-5-1',
+        displayName: 'Default (recommended)',
+        description: 'Fable 5.1',
+      },
+    ],
+    close() {},
+  });
+
+  it('selects the Claude default from its environment, settings and runtime alias', async () => {
+    for (const [options, effective, expected, calls] of [
+      // A configured value need not name a catalog row.
+      [{}, { model: 'opus[1m]' }, 'opus[1m]', [{ settingSources: ['user'] }]],
+      [
+        { cwd: '/project' },
+        { model: 'sonnet' },
+        'sonnet',
+        [{ cwd: '/project' }],
+      ],
+      [
+        { env: { ANTHROPIC_MODEL: 'haiku' } },
+        { model: 'opus[1m]' },
+        'haiku',
+        [{ settingSources: ['user'] }],
+      ],
+      [{}, { env: { OTHER: '1' } }, 'default', [{ settingSources: ['user'] }]],
+    ] as const) {
+      const settingsCalls: unknown[] = [];
+      const result = await discoverAgentModelsWithDeps('claude', options, {
+        checkRuntime,
+        claudeSettings: claudeSettings(effective, settingsCalls),
+        claudeQuery: claudeCatalog,
+      });
+      expect(result).toEqual({
+        status: 'available',
+        unreportedEffortValues: ['ultracode'],
+        defaultModel: expected,
+        models: [
+          {
+            id: 'default',
+            name: 'Default (recommended)',
+            description: 'Fable 5.1',
+            resolvedModel: 'claude-fable-5-1',
+          },
+        ],
+      });
+      expect(settingsCalls).toEqual(calls);
+    }
+  });
+
+  it('omits the Claude default whenever settings cannot establish it', async () => {
+    const home = process.env.HOME;
+    for (const [options, resolver, resolves] of [
+      // The SDK exports no resolver.
+      [{}, async () => undefined, true],
+      [{}, claudeSettings(new Error('settings unavailable')), true],
+      // Only the runtime's filtered environment could establish this value.
+      [
+        { env: { ANTHROPIC_MODEL: 'haiku' } },
+        claudeSettings({ model: 'opus', env: { ANTHROPIC_MODEL: 'sonnet' } }),
+        true,
+      ],
+      [{}, claudeSettings({ model: 42 }), true],
+      [{}, claudeSettings({ model: ' ' }), true],
+      [{}, claudeSettings(undefined), true],
+      [
+        { env: { CLAUDE_CONFIG_DIR: '/elsewhere/.claude' } },
+        claudeSettings({ model: 'opus' }),
+        false,
+      ],
+      [
+        { env: { HOME: `${home ?? ''}/elsewhere` } },
+        claudeSettings({ model: 'opus' }),
+        false,
+      ],
+    ] as const) {
+      // Relocated configuration is refused before the resolver loads.
+      let loaded = false;
+      const result = await discoverAgentModelsWithDeps('claude', options, {
+        checkRuntime,
+        claudeSettings: async () => {
+          loaded = true;
+          return resolver();
+        },
+        claudeQuery: claudeCatalog,
+      });
+      expect(result.status).toBe('available');
+      expect(result).not.toHaveProperty('defaultModel');
+      if (result.status === 'available') {
+        expect(result.models.map(({ id }) => id)).toEqual(['default']);
+      }
+      expect(loaded).toBe(resolves);
+    }
+  });
+
+  it('prefers the configured Codex model over the listing default flag', async () => {
+    await withCommand(catalogServer, async (command, dir) => {
+      const log = join(dir, 'requests.jsonl');
+      const result = await discoverAgentModelsWithDeps(
+        'codex',
+        {
+          env: {
+            MODEL_TEST_LOG: log,
+            MODEL_TEST_CONFIG: JSON.stringify({
+              config: { model: 'configured-model' },
+            }),
+          },
+        },
+        { checkRuntime, command: () => command },
+      );
+      expect(result).toMatchObject({
+        status: 'available',
+        defaultModel: 'configured-model',
+      });
+      const requests = (await readFile(log, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      // Without a cwd, the effective configuration has no project layers.
+      expect(requests[2]).toMatchObject({ method: 'config/read', params: {} });
+    });
+  });
+
+  it.each([
+    ['refused', 'refuse', undefined],
+    ['malformed model', JSON.stringify({ config: { model: 7 } }), undefined],
+    ['missing config', JSON.stringify({ settings: {} }), undefined],
+    ['unset model', JSON.stringify({ config: {} }), 'model-two'],
+  ])(
+    'keeps the Codex catalog when its configuration read is %s',
+    async (_case, config, expected) => {
+      await withCommand(catalogServer, async (command, dir) => {
+        const result = await discoverAgentModelsWithDeps(
+          'codex',
+          {
+            env: {
+              MODEL_TEST_LOG: join(dir, 'requests.jsonl'),
+              MODEL_TEST_CONFIG: config,
+            },
+          },
+          { checkRuntime, command: () => command },
+        );
+        expect(result.status).toBe('available');
+        if (result.status !== 'available') return;
+        expect(result.defaultModel).toBe(expected);
+        expect(result.models.map(({ id }) => id)).toEqual([
+          'model-one',
+          'model-two',
+          'model-unknown',
+        ]);
+      });
+    },
+  );
+
+  const kimiListing = `
+if (process.argv.includes('--json')) {
+  console.log(JSON.stringify({providers:{fixture:{apiKey:'secret-fixture-key',source:{kind:'apiJson',url:'https://registry.invalid/api.json?token=secret-fixture-token'}}},models:{coder:{provider:'fixture',model:'kimi-k2-fixture',displayName:'Kimi K2 Fixture'},plain:{provider:'fixture',model:'kimi-plain-fixture'}}}));
+} else {
+  process.stdout.write(process.env.MODEL_TEST_HUMAN);
+  process.exitCode = Number(process.env.MODEL_TEST_EXIT ?? 0);
+}
+`;
+  const providerLine =
+    'fixture  type=kimi  models=2  source=apiJson(https://registry.invalid/api.json?token=secret-fixture-token)\n';
+
+  it.each([
+    ['names a listed alias', 'Default model: coder\n', 0, 'coder'],
+    ['uses CRLF line endings', 'Default model: plain\r\n', 0, 'plain'],
+    ['has no default line', '', 0, undefined],
+    [
+      'repeats its default line',
+      'Default model: coder\nDefault model: plain\n',
+      0,
+      undefined,
+    ],
+    ['names an unlisted alias', 'Default model: missing\n', 0, undefined],
+    [
+      'annotates its default',
+      'Default model: coder (from env)\n',
+      0,
+      undefined,
+    ],
+    ['fails', 'Default model: coder\n', 1, undefined],
+  ])(
+    'reads the Kimi default only when its human listing %s',
+    async (_case, human, exit, expected) => {
+      await withCommand(kimiListing, async (command) => {
+        const result = await discoverAgentModelsWithDeps(
+          'kimi',
+          {
+            env: {
+              MODEL_TEST_HUMAN: `${providerLine}\n${human}`,
+              MODEL_TEST_EXIT: String(exit),
+            },
+          },
+          { checkRuntime, command: () => command },
+        );
+        expect(result).toEqual({
+          status: 'available',
+          ...(expected === undefined ? {} : { defaultModel: expected }),
+          models: [
+            {
+              id: 'coder',
+              name: 'Kimi K2 Fixture',
+              resolvedModel: 'kimi-k2-fixture',
+            },
+            { id: 'plain', name: 'plain', resolvedModel: 'kimi-plain-fixture' },
+          ],
+        });
+        expect(JSON.stringify(result)).not.toMatch(/secret-fixture|registry/);
+      });
+    },
+  );
+
+  it('takes only verbose OpenCode names, never provider details, and reports no default', async () => {
+    const listing = [
+      'openai/gpt-fixture',
+      JSON.stringify(
+        {
+          id: 'gpt-fixture',
+          providerID: 'openai',
+          name: 'GPT Fixture',
+          headers: { Authorization: 'Bearer secret-fixture-token' },
+          options: { apiKey: 'secret-fixture-key' },
+          cost: { input: 1 },
+        },
+        null,
+        2,
+      ),
+      'custom/nested/model',
+      JSON.stringify(
+        { id: 'nested/model', options: { nested: { deep: ['}', '{}'] } } },
+        null,
+        2,
+      ),
+      'local/empty',
+      '{}',
+      'local/compact',
+      '{"name":"Compact Model","options":{"apiKey":"secret-fixture-key"}}',
+      'local/plain',
+    ].join('\n');
+    await withCommand(
+      `process.stdout.write(${JSON.stringify(`${listing}\n`)});`,
+      async (command) => {
+        const result = await discoverAgentModelsWithDeps(
+          'opencode',
+          {},
+          { checkRuntime, command: () => command },
+        );
+        expect(result).toEqual({
+          status: 'available',
+          models: [
+            { id: 'openai/gpt-fixture', name: 'GPT Fixture' },
+            { id: 'custom/nested/model', name: 'custom/nested/model' },
+            { id: 'local/empty', name: 'local/empty' },
+            { id: 'local/compact', name: 'Compact Model' },
+            { id: 'local/plain', name: 'local/plain' },
+          ],
+        });
+        expect(JSON.stringify(result)).not.toContain('secret-fixture');
+      },
+    );
+  });
+
+  it.each([
+    [
+      'an unterminated detail',
+      'openai/gpt\n{\n  "apiKey": "secret-fixture-key",\n',
+    ],
+    ['an invalid detail', 'openai/gpt\n{\n  "apiKey": secret-fixture-key\n}\n'],
+    [
+      'a stray line after a detail',
+      'openai/gpt\n{\n}\n[\n  "secret-fixture-key"\n]\n',
+    ],
+  ])('rejects %s without quoting OpenCode output', async (_case, listing) => {
+    await withCommand(
+      `process.stdout.write(${JSON.stringify(listing)});`,
+      async (command) => {
+        const result = await discoverAgentModelsWithDeps(
+          'opencode',
+          {},
+          { checkRuntime, command: () => command },
+        );
+        expect(result).toEqual({
+          status: 'unavailable',
+          reason: 'Malformed OpenCode model listing.',
+        });
+      },
+    );
   });
 });

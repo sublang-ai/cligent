@@ -14,7 +14,7 @@ Implement [DR-026](../decisions/026-runtime-reported-model-identity.md): report 
 ## Deliverables
 
 - [x] Specify [[engine-86](../packages/engine.md#engine-86)] through [[engine-90](../packages/engine.md#engine-90)] and each adapter's init selection.
-- [ ] Discovery reports `description`, human names, Kimi `resolvedModel`, and [[engine-88](../packages/engine.md#engine-88)]'s `defaultModel`.
+- [x] Discovery reports `description`, human names, Kimi `resolvedModel`, and [[engine-88](../packages/engine.md#engine-88)]'s `defaultModel`.
 - [ ] Every built-in adapter sets [[engine-89](../packages/engine.md#engine-89)]'s `InitPayload.reportedModel` only from runtime evidence.
 - [ ] README, guide and changelog describe the additions.
 
