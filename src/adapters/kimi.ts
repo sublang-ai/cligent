@@ -1499,7 +1499,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         } else {
           status = 'success';
         }
-        // Kimi Code 0.39.1's prompt response publishes only the stop reason.
+        // Kimi Code 2.1.1's prompt response publishes only the stop reason.
         // Its later usage_update is session context occupancy, not
         // invocation-scoped input/output or cost accounting. This adapter
         // maps neither surface into Cligent's authentic usage report.

@@ -321,7 +321,7 @@ When the adapter publishes a per-model record from valid `modelUsage`, it shall 
 
 ### claude-code-30
 
-Where Claude Code includes reasoning tokens in its inclusive output total without exposing the subset, when the adapter publishes token accounting, it shall omit output reasoning detail per [[engine-57](../engine.md#engine-57)].
+Where Claude Code includes reasoning tokens in its inclusive output total without exposing an exact subset, when the adapter publishes token accounting, it shall omit output reasoning detail per [[engine-57](../engine.md#engine-57)], ignoring any per-model `thinkingTokens`, which counts only turns run on a runtime that records it and is therefore absent or partial for a resumed session begun on an older runtime [[7]].
 
 ### claude-code-31
 
@@ -493,7 +493,7 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 Given authentic zero, nonzero, absent, and malformed terminal accounting, when a caller reads `usage`, the verification shall assert this output matrix:
 
 - valid `modelUsage` produces complete whole-agent-tree totals and one authentic record per model [[claude-code-12](#claude-code-12)], [[claude-code-29](#claude-code-29)];
-- records omit reasoning detail [[claude-code-30](#claude-code-30)];
+- records omit reasoning detail, including where `modelUsage` carries `thinkingTokens` [[claude-code-30](#claude-code-30)];
 - whole-run and per-model cost preserve finite non-negative USD estimates, including present zero and absent cost, and whole-run cost survives absent tokens [[claude-code-29](#claude-code-29)], [[claude-code-31](#claude-code-31)];
 - `web_search_request` quantities preserve zero and nonzero values [[claude-code-29](#claude-code-29)]; and
 - absent, empty, or malformed `modelUsage` omits tokens and never promotes main-loop usage [[claude-code-12](#claude-code-12)], while observed tool uses remain independently preserved [[claude-code-50](#claude-code-50)].
@@ -506,5 +506,5 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 [4]: https://code.claude.com/docs/en/fast-mode "Claude Code fast mode"
 [5]: https://code.claude.com/docs/en/agent-sdk/typescript "Claude Agent SDK TypeScript reference"
 [6]: https://platform.claude.com/docs/en/build-with-claude/fast-mode#checking-which-speed-was-used "Checking which Claude serving speed was used"
-[7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.251/sdk.d.ts "Claude Agent SDK 0.3.251 declarations"
+[7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.283/sdk.d.ts "Claude Agent SDK 0.3.283 declarations"
 [8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"

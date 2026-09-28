@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Built-in agent runtime targets move to the latest published versions this
+  release verifies: Claude Agent SDK 0.3.283, Codex SDK 0.158.0 with its Codex
+  CLI 0.158.0, Kimi Code 2.1.1, and OpenCode SDK and CLI 1.18.33. Repair
+  commands pin those versions, and no compatibility floor changed. Gemini CLI
+  stays at 0.57.0: Gemini CLI 0.60.0 and later load system defaults only from
+  root-owned paths, so a run there cannot load the per-run model alias that
+  carries `effort` — DR-013
+
 ## [0.27.0] - 2026-09-08
 
 ### Added

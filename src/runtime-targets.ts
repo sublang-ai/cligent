@@ -102,21 +102,21 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
-      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.251',
+      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.283',
       // The first release whose bundled model catalog carries
       // `claude-opus-5`: 0.3.218 has `claude-sonnet-5` only, and 0.3.154 —
       // the previous floor — has neither. Bisected against the published
       // tarballs, because the catalog is data inside the package rather
       // than something the API surface reveals.
       supportedFrom: '0.3.219',
-      tested: '0.3.251',
+      tested: '0.3.283',
     }),
   ]),
   codex: Object.freeze([
     Object.freeze({
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
-      repairSpec: '@openai/codex-sdk@0.151.0',
+      repairSpec: '@openai/codex-sdk@0.158.0',
       // The lowest release that serves the current gpt-5.6 routes
       // (`-sol`, `-luna`, `-terra`). An earlier draft required a
       // `gpt-5.6-pro` slug too and set the floor at 0.145.0; the binary
@@ -126,7 +126,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // routes; 0.139.0, the runtime DR-013 was written about, remains
       // refused.
       supportedFrom: '0.144.0',
-      tested: '0.151.0',
+      tested: '0.158.0',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
       bundles: '@openai/codex',
@@ -152,7 +152,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'cli' as const,
       package: '@moonshot-ai/kimi-code',
-      repairSpec: '@moonshot-ai/kimi-code@0.39.1',
+      repairSpec: '@moonshot-ai/kimi-code@2.1.1',
       command: 'kimi',
       // The first release whose then-current legacy ACP gate admitted a
       // configured default model with non-OAuth credentials:
@@ -160,7 +160,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // in 0.28.0. Version 0.28.1 also negotiates ACP protocol version 1,
       // the protocol surface the paired SDK and this adapter drive.
       supportedFrom: '0.28.1',
-      tested: '0.39.1',
+      tested: '2.1.1',
       steps: Object.freeze(['kimi login  # or configure a default model']),
     }),
   ]),
@@ -168,22 +168,22 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@opencode-ai/sdk',
-      repairSpec: '@opencode-ai/sdk@1.18.25',
+      repairSpec: '@opencode-ai/sdk@1.18.33',
       // 1.18.11 still fails GPT-5.5+ completion requests when reasoning is
       // enabled; 1.18.12 fixed that route, which this adapter drives whenever
       // `effort` maps to a reasoning variant.
       supportedFrom: '1.18.12',
-      tested: '1.18.25',
+      tested: '1.18.33',
     }),
     Object.freeze({
       kind: 'cli' as const,
       package: 'opencode-ai',
-      repairSpec: 'opencode-ai@1.18.25',
+      repairSpec: 'opencode-ai@1.18.33',
       command: 'opencode',
       // The managed CLI serves the same 1.18.12 reasoning-route boundary as
       // the SDK above; package-23 requires their conformance targets to match.
       supportedFrom: '1.18.12',
-      tested: '1.18.25',
+      tested: '1.18.33',
     }),
   ]),
 });
