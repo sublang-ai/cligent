@@ -1708,6 +1708,10 @@ describe('ClaudeCodeAdapter', () => {
               cacheReadInputTokens: 900,
               cacheCreationInputTokens: 200,
               outputTokens: 400,
+              // claude-code-30: counted only on runtimes that record it, so
+              // it may be partial for a resumed session and is never promoted
+              // into an exact output reasoning subset.
+              thinkingTokens: 150,
               costUSD: 0.22,
               canonicalModel: 'claude-sonnet-5',
               provider: 'firstParty',

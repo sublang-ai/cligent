@@ -78,7 +78,7 @@ notifications:
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
-  model: claude-opus-4-8
+  model: claude-opus-5-5
   effort: xhigh
   instruction: Coordinate the players and answer the Boss.
   permissions:
@@ -156,13 +156,13 @@ players:
     effort: ultra
 ```
 
-| Adapter    | Accepted values                                                 | Provider transport and qualifications                                                                                                                                                                                                                                                        |
-| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claude`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultracode` | Portable values use the Claude SDK `effort` field and explicitly set `settings.ultracode: false`. `minimal` maps lossily to `low`. `ultracode` maps to SDK `effort: xhigh` plus `settings.ultracode: true`; it is an exact user-facing Claude term, not a literal single-field pass-through. |
-| `codex`    | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`     | `minimal` through `xhigh` use SDK thread `modelReasoningEffort`. `max` and `ultra` pass through unchanged as constructor `config.model_reasoning_effort`, leaving the thread field unset.                                                                                                    |
-| `gemini`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | A concrete `gemini-3*` model gets a temporary settings alias with `thinkingLevel`; a concrete `gemini-2.5*` model gets `thinkingBudget`. An unset model, a CLI alias, or an unmatched model gets no effort override.                                                                         |
-| `opencode` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | The value maps to the v2 prompt body's `variant`, selected from the `provider/model` prefix. An unknown provider or an omitted or malformed model gets no effort override.                                                                                                                   |
-| `kimi`     | `off`, `on`                                                     | Provider-native binary thinking control through ACP. `on` enables the selected model's native default thinking behavior; it is not a portable effort tier. When both are configured, the adapter selects `model` before toggling thinking.                                                   |
+| Adapter    | Accepted values                                                 | Provider transport and qualifications                                                                                                                                                                                                                                                                                            |
+| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultracode` | Portable values use the Claude SDK `effort` field and explicitly set `settings.ultracode: false`. `minimal` maps lossily to `low`. `ultracode` maps to SDK `effort: xhigh` plus `settings.ultracode: true`; it is an exact user-facing Claude term, not a literal single-field pass-through.                                     |
+| `codex`    | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`     | `minimal` through `xhigh` use SDK thread `modelReasoningEffort`. `max` and `ultra` pass through unchanged as constructor `config.model_reasoning_effort`, leaving the thread field unset.                                                                                                                                        |
+| `gemini`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | A concrete `gemini-3*` model gets a per-run settings alias with `thinkingLevel`; a concrete `gemini-2.5*` model gets `thinkingBudget`. An unset model, a CLI alias, an unmatched model, a working directory that is the Gemini home, or a sandboxed Gemini run gets no effort override.                                          |
+| `opencode` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | The value maps to the v2 prompt body's `variant`: the one the model advertises in the server's provider catalog, else its nearest advertised effort variant, the higher on a tie. A model listed without effort variants, or an omitted or malformed model, gets no effort override.                                             |
+| `kimi`     | `off`, `on`                                                     | Provider-native binary thinking control through ACP. `on` enables the selected model's native default thinking behavior; it is not a portable effort tier. When both are configured, the adapter selects `model` before toggling thinking. A model that always thinks offers no `off`, so `off` stops the run before its prompt. |
 
 Gemini's model-specific mappings are:
 
@@ -180,7 +180,9 @@ resolved by cligent because their target can change between CLI versions.
 They receive no effort override, while ordinary `model` forwarding remains
 unchanged.
 
-OpenCode's provider-specific prompt variants are:
+When the catalog cannot be read within 10 seconds or does not list the model,
+OpenCode falls back to these provider-specific prompt variants, and any other
+provider gets no effort override:
 
 | `effort`  | Anthropic | OpenAI    | Google |
 | --------- | --------- | --------- | ------ |
@@ -445,7 +447,7 @@ plus `visibility: 'visible' | 'hidden'` and `allowedTools`. Its returned
 `CaptainRunResult.resumeToken` is the opaque handle to persist when a later
 Captain call must explicitly continue that backend session.
 Tool-list support is adapter-specific: adapters with no independent exact
-tool-registry surface, including Codex, Kimi, and OpenCode 1.18.25, reject an
+tool-registry surface, including Codex, Kimi, and OpenCode 1.18.33, reject an
 explicit list before backend invocation.
 
 Both call surfaces also accept a complete `settings` replacement:

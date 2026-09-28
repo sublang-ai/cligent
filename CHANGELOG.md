@@ -22,10 +22,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Built-in agent runtime targets move to the latest published versions this
+  release verifies: Claude Agent SDK 0.3.283, Codex SDK 0.158.0 with its Codex
+  CLI 0.158.0, Gemini CLI 0.61.0, Kimi Code 2.1.1, and OpenCode SDK and CLI
+  1.18.33. Repair commands pin those versions — DR-013
+- Supported runtime floors now follow the latest models each provider offers.
+  `@anthropic-ai/claude-agent-sdk` rises from `>=0.3.219` to `>=0.3.280`, the
+  first release whose model catalog carries Claude Opus 5.5, and
+  `@openai/codex-sdk` with its bundled Codex CLI rises from `>=0.144.0` to
+  `>=0.156.1`, the first carrying GPT-6-Sol and GPT-6-Luna. The OpenCode SDK
+  and CLI rise from `1.18.12` to `1.18.29`, the first that keeps Claude Fable
+  5.1 and Opus 5.5 conversations working across turns and lists GPT-6 models
+  for ChatGPT sign-in. Gemini CLI rises from `0.45.1` to `0.61.0`, the first
+  release whose model catalog carries `gemini-3.8-flash` and
+  `gemini-3.5-flash-lite`. Older runtimes that loaded before are now refused at
+  load and by `isAvailable()`, with the installed and required versions and
+  the upgrade command named — DR-027
+- `tmux-play`'s first-run config now pins `claude-opus-5-5` for Claude roles
+  and `gpt-6-sol` for Codex roles, both at `xhigh` effort. Existing configs are
+  unchanged.
 - OpenCode and Kimi catalog `name` values are the runtime's human names where
   reported, instead of repeating the ID. Discovery now also reads Codex
   configuration, runs `opencode models --verbose`, and runs `kimi provider
   list` after the Kimi JSON listing.
+
+### Fixed
+
+- Gemini `effort` works on Gemini CLI 0.60.0 and later, which load system
+  defaults only from root-owned paths: they skipped the per-run defaults file
+  carrying the effort alias with a security warning and requested a model
+  named `cligent-reasoning-effort`. The alias now travels in a private per-run
+  Gemini home (`GEMINI_CLI_HOME`) whose settings are the user's settings plus
+  the alias and whose every other entry links to the real home, so
+  credentials, sessions, and trust state stay shared; files the run replaces
+  are reconciled back and the home is removed when the run ends. A run whose
+  working directory is the Gemini home, or that Gemini would sandbox, gets the
+  concrete model with no effort override.
+- OpenCode `effort` now selects the prompt variant the chosen model advertises
+  in the OpenCode server's provider catalog, or else its nearest advertised
+  effort variant, instead of a fixed per-provider table that could name a
+  variant the model lacks, which OpenCode silently ignores. GPT-6 Sol's `max`
+  now reaches its `max` variant rather than `xhigh`, its `minimal` reaches
+  `low`, and Claude Opus 5.5 keeps `medium` and `xhigh` instead of collapsing
+  them. The table remains the fallback when the catalog cannot be read within
+  10 seconds or does not list the model.
+- Kimi `effort: 'off'` on a model that always thinks, such as `kimi-code/k3`,
+  now stops before the prompt with `KIMI_EFFORT_UNAVAILABLE`, naming the model
+  and the thinking values it offers. Kimi Code 2.1.1 used to reject it during
+  setup with a bare `Invalid params`, and Kimi Code 0.28.1 silently kept
+  thinking on.
 
 ## [0.27.0] - 2026-09-08
 

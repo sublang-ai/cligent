@@ -3,10 +3,19 @@
 
 import { EventEmitter } from 'node:events';
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   rmSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import type {
@@ -14,10 +23,10 @@ import type {
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildGeminiPolicyToml,
@@ -61,7 +70,7 @@ interface SpawnInvocation {
   process: MockGeminiProcess;
 }
 
-// Mirrors the Gemini CLI 0.57.0 stream-json result stats emitted by
+// Mirrors the Gemini CLI 0.61.0 stream-json result stats emitted by
 // StreamJsonFormatter.convertToStreamStats().
 interface GeminiStreamStats {
   total_tokens: number;
@@ -222,6 +231,57 @@ function telemetryCapture(source: string, onRead?: () => void) {
     cleanup: async () => {},
   });
 }
+
+function successResult(): string {
+  return JSON.stringify({
+    type: 'result',
+    status: 'success',
+    stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
+  });
+}
+
+// gemini-34: each test gives the adapter its own real Gemini home, temporary
+// directory, and system settings paths, so the default settings overlay
+// never reaches the host's home or configuration. The runtime gate stays off:
+// these runs spawn a fake child, so the host's own `gemini` version must not
+// decide them; runtime-version.test.ts verifies the gate.
+let fixtureRoot: string;
+let realHome: string;
+let overlayTmp: string;
+
+function overlaysLeft(): string[] {
+  return readdirSync(overlayTmp).filter((name) =>
+    name.startsWith('cligent-gemini-home-'),
+  );
+}
+
+beforeEach(() => {
+  fixtureRoot = mkdtempSync(join(tmpdir(), 'cligent-gemini-fixture-'));
+  realHome = join(fixtureRoot, 'home');
+  overlayTmp = join(fixtureRoot, 'tmp');
+  mkdirSync(realHome);
+  mkdirSync(overlayTmp);
+  vi.stubEnv('CLIGENT_RUNTIME_GATE', 'off');
+  vi.stubEnv('GEMINI_CLI_HOME', realHome);
+  vi.stubEnv('TMPDIR', overlayTmp);
+  vi.stubEnv('TMP', overlayTmp);
+  vi.stubEnv('TEMP', overlayTmp);
+  vi.stubEnv('GEMINI_SANDBOX', undefined);
+  vi.stubEnv('SANDBOX', undefined);
+  vi.stubEnv(
+    'GEMINI_CLI_SYSTEM_SETTINGS_PATH',
+    join(fixtureRoot, 'system', 'settings.json'),
+  );
+  vi.stubEnv(
+    'GEMINI_CLI_SYSTEM_DEFAULTS_PATH',
+    join(fixtureRoot, 'system', 'system-defaults.json'),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(fixtureRoot, { recursive: true, force: true });
+});
 
 describe('GeminiAdapter', () => {
   it('maps Gemini NDJSON events to unified events', async () => {
@@ -1721,170 +1781,489 @@ describe('GeminiAdapter', () => {
     expect(mapped.args).not.toContain('--');
   });
 
-  it('overlays effort onto configured system defaults without replacing system settings', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-defaults-test-'));
-    const configuredDefaults = join(root, 'configured-defaults.json');
-    const originalDefaults = {
-      security: { disableAlwaysAllow: true },
+  it('delivers effort through a private home over the real user settings', async () => {
+    const realGemini = join(realHome, '.gemini');
+    mkdirSync(realGemini);
+    const userSettings = [
+      '{',
+      '  // Gemini settings accept JSON comments.',
+      '  "futureKey": { "kept": true },',
+      '  "security": { "auth": { "selectedType": "oauth-personal" } }, /* kept */',
+      '  "modelConfigs": {',
+      '    "routing": { "enabled": true },',
+      '    "customAliases": {',
+      '      "existing": { "modelConfig": { "model": "gemini-existing" } }',
+      '    }',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    writeFileSync(join(realGemini, 'settings.json'), userSettings);
+    writeFileSync(join(realGemini, 'oauth_creds.json'), '{"token":"old"}', {
+      mode: 0o600,
+    });
+    writeFileSync(join(realHome, '.env'), 'KEY=value\n');
+    mkdirSync(join(realHome, '.agents'));
+
+    const linked = ['.env', '.agents', '.gemini/oauth_creds.json'] as const;
+    const shared = ['.gemini/tmp', '.gemini/history'] as const;
+    let home: string | undefined;
+    let settingsMode: number | undefined;
+    let settingsIsLink: boolean | undefined;
+    let settings: unknown;
+    let targets: Record<string, string> = {};
+    let allLinks = false;
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      home = invocations[0]!.options.env!.GEMINI_CLI_HOME!;
+      const settingsPath = join(home, '.gemini', 'settings.json');
+      settingsMode = statSync(settingsPath).mode & 0o777;
+      settingsIsLink = lstatSync(settingsPath).isSymbolicLink();
+      settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+      targets = Object.fromEntries(
+        [...linked, ...shared].map((name) => [
+          name,
+          realpathSync(join(home!, name)),
+        ]),
+      );
+      allLinks = [...linked, ...shared].every((name) =>
+        lstatSync(join(home!, name)).isSymbolicLink(),
+      );
+      // Gemini refreshes OAuth credentials by writing the file in place.
+      writeFileSync(
+        join(home, '.gemini', 'oauth_creds.json'),
+        '{"token":"refreshed"}',
+        { mode: 0o600 },
+      );
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
+
+    await collect(
+      new GeminiAdapter({ spawnProcess }).run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'low',
+      }),
+    );
+
+    expect(modelArg(invocations[0]!.args)).toBe(GEMINI_REASONING_EFFORT_ALIAS);
+    expect(home).toBeDefined();
+    expect(realpathSync(dirname(home!))).toBe(realpathSync(overlayTmp));
+    expect(settingsMode).toBe(0o600);
+    expect(settingsIsLink).toBe(false);
+    expect(settings).toEqual({
+      futureKey: { kept: true },
+      security: { auth: { selectedType: 'oauth-personal' } },
       modelConfigs: {
         routing: { enabled: true },
         customAliases: {
           existing: { modelConfig: { model: 'gemini-existing' } },
+          [GEMINI_REASONING_EFFORT_ALIAS]: {
+            modelConfig: {
+              model: 'gemini-3-pro',
+              generateContentConfig: {
+                thinkingConfig: { thinkingLevel: 'LOW' },
+              },
+            },
+          },
         },
       },
-    };
-    writeFileSync(configuredDefaults, JSON.stringify(originalDefaults), 'utf8');
+    });
+    expect(allLinks).toBe(true);
+    for (const name of [...linked, ...shared]) {
+      expect(targets[name]).toBe(realpathSync(join(realHome, name)));
+    }
+    expect(statSync(join(realGemini, 'tmp')).isDirectory()).toBe(true);
+    expect(statSync(join(realGemini, 'history')).isDirectory()).toBe(true);
+    expect(readFileSync(join(realGemini, 'oauth_creds.json'), 'utf8')).toBe(
+      '{"token":"refreshed"}',
+    );
+    expect(statSync(join(realGemini, 'oauth_creds.json')).mode & 0o777).toBe(
+      0o600,
+    );
+    expect(readFileSync(join(realGemini, 'settings.json'), 'utf8')).toBe(
+      userSettings,
+    );
+    expect(readdirSync(realGemini).sort()).toEqual([
+      'history',
+      'oauth_creds.json',
+      'settings.json',
+      'tmp',
+    ]);
+    expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
+      process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH,
+    );
+    expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH).toBe(
+      process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH,
+    );
+    expect(existsSync(home!)).toBe(false);
+    expect(overlaysLeft()).toEqual([]);
+  });
 
-    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-    const previousSettings = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
-    process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = '/admin/gemini/settings.json';
+  it('reconciles what the run changed in its home before removing it', async () => {
+    const realGemini = join(realHome, '.gemini');
+    mkdirSync(join(realGemini, 'acknowledgments'), { recursive: true });
+    writeFileSync(join(realGemini, 'acknowledgments', 'agents.json'), 'real');
+    writeFileSync(join(realGemini, 'settings.json'), '{}');
+    writeFileSync(
+      join(realGemini, 'projects.json'),
+      JSON.stringify({ projects: { '/work/known': 'known' } }),
+    );
+    writeFileSync(join(realGemini, 'trustedFolders.json'), 'trust-before');
+    writeFileSync(join(realGemini, 'google_accounts.json'), 'accounts');
+    writeFileSync(join(realHome, '.env'), 'KEY=old\n');
+    writeFileSync(join(realHome, 'unrelated.txt'), 'untouched\n');
 
-    let temporaryDefaults: string | undefined;
-    let mergedDefaults: Record<string, unknown> | undefined;
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      const home = invocations[0]!.options.env!.GEMINI_CLI_HOME!;
+      const gemini = join(home, '.gemini');
+      // Gemini saves these files through a temporary file and a rename.
+      const replace = (path: string, content: string) => {
+        writeFileSync(`${path}.staged`, content);
+        renameSync(`${path}.staged`, path);
+      };
+      replace(
+        join(gemini, 'projects.json'),
+        JSON.stringify({
+          projects: {
+            '/work/known': 'known',
+            '/work/new': 'new',
+            '/work/shared': 'shared-run',
+          },
+        }),
+      );
+      // Meanwhile another run registers projects in the real registry.
+      writeFileSync(
+        join(realGemini, 'projects.json'),
+        JSON.stringify({
+          projects: {
+            '/work/known': 'known',
+            '/work/other': 'other',
+            '/work/shared': 'shared-real',
+          },
+        }),
+      );
+      replace(join(gemini, 'trustedFolders.json'), 'trust-after');
+      replace(join(home, '.env'), 'KEY=new\n');
+      writeFileSync(join(gemini, 'installation_id'), 'install-1');
+      mkdirSync(join(gemini, 'policies'));
+      writeFileSync(join(gemini, 'policies', 'auto-saved.toml'), 'rule');
+      unlinkSync(join(gemini, 'acknowledgments'));
+      mkdirSync(join(gemini, 'acknowledgments'));
+      writeFileSync(join(gemini, 'acknowledgments', 'agents.json'), 'run');
+      writeFileSync(join(gemini, 'acknowledgments', 'extra.json'), 'extra');
+      writeFileSync(join(home, 'notes.txt'), 'from the run\n');
+      writeFileSync(join(home, 'draft.tmp'), 'draft');
+      writeFileSync(join(gemini, 'projects.json.123.tmp'), 'partial');
+      writeFileSync(join(gemini, 'GEMINI.md.rollback'), 'staged');
+      mkdirSync(join(gemini, 'state.json.lock'));
+      writeFileSync(join(gemini, 'settings.json'), '{"model":{"name":"x"}}');
+      unlinkSync(join(gemini, 'google_accounts.json'));
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
 
-    try {
-      const { spawnProcess, invocations } = makeSpawn((process) => {
-        temporaryDefaults =
-          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-        mergedDefaults = temporaryDefaults
-          ? (JSON.parse(readFileSync(temporaryDefaults, 'utf8')) as Record<
-              string,
-              unknown
-            >)
-          : undefined;
-        writeEventsAndClose(
-          process,
-          [
-            JSON.stringify({
-              type: 'result',
-              status: 'success',
-              stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
-            }),
-          ],
-          0,
-          null,
-        );
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess }).run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'low',
+      }),
+    );
+
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(
+      JSON.parse(readFileSync(join(realGemini, 'projects.json'), 'utf8')),
+    ).toEqual({
+      projects: {
+        '/work/known': 'known',
+        '/work/other': 'other',
+        '/work/shared': 'shared-real',
+        '/work/new': 'new',
+      },
+    });
+    const real = (path: string) => readFileSync(join(realHome, path), 'utf8');
+    expect(real('.gemini/trustedFolders.json')).toBe('trust-after');
+    expect(real('.env')).toBe('KEY=new\n');
+    expect(real('.gemini/installation_id')).toBe('install-1');
+    expect(real('.gemini/policies/auto-saved.toml')).toBe('rule');
+    expect(real('.gemini/acknowledgments/agents.json')).toBe('real');
+    expect(real('.gemini/acknowledgments/extra.json')).toBe('extra');
+    expect(real('notes.txt')).toBe('from the run\n');
+    expect(real('draft.tmp')).toBe('draft');
+    expect(real('.gemini/settings.json')).toBe('{}');
+    expect(real('.gemini/google_accounts.json')).toBe('accounts');
+    expect(real('unrelated.txt')).toBe('untouched\n');
+    for (const leftover of [
+      'projects.json.123.tmp',
+      'GEMINI.md.rollback',
+      'state.json.lock',
+      'projects.json.lock',
+    ]) {
+      expect(existsSync(join(realGemini, leftover))).toBe(false);
+    }
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  it.each(['the real home', 'a link to the real home'] as const)(
+    'sends the concrete model without an overlay when the workspace is %s',
+    async (form) => {
+      const cwd =
+        form === 'the real home' ? realHome : join(fixtureRoot, 'home-link');
+      if (cwd !== realHome) symlinkSync(realHome, cwd, 'dir');
+      const { spawnProcess, invocations } = makeSpawn((child) => {
+        writeEventsAndClose(child, [successResult()], 0, null);
       });
-      const adapter = new GeminiAdapter({ spawnProcess });
 
-      await collect(
-        adapter.run('prompt', {
+      const events = await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
           model: 'gemini-3-pro',
-          effort: 'low',
+          effort: 'high',
+          cwd,
         }),
       );
 
-      expect(invocations).toHaveLength(1);
-      expect(temporaryDefaults).not.toBe(configuredDefaults);
-      expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
-        '/admin/gemini/settings.json',
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+      expect(invocations[0]!.args).not.toContain(
+        `--model=${GEMINI_REASONING_EFFORT_ALIAS}`,
       );
-      expect(mergedDefaults).toMatchObject({
-        security: { disableAlwaysAllow: true },
+      expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
+      expect(existsSync(join(realHome, '.gemini'))).toBe(false);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['GEMINI_SANDBOX=true', { GEMINI_SANDBOX: 'true' }, {}, false],
+    [
+      'GEMINI_SANDBOX naming a command',
+      { GEMINI_SANDBOX: 'docker' },
+      {},
+      false,
+    ],
+    ['user settings', {}, { user: { sandbox: true } }, false],
+    [
+      'an enabled user settings object',
+      {},
+      { user: { sandbox: { enabled: true, command: 'sandbox-exec' } } },
+      false,
+    ],
+    ['system settings', {}, { system: { sandbox: 'docker' } }, false],
+    ['system defaults', {}, { defaults: { sandbox: true } }, false],
+    [
+      'workspace settings over user settings',
+      {},
+      { user: { sandbox: true }, workspace: { sandbox: false } },
+      true,
+    ],
+    [
+      'user settings over system defaults',
+      {},
+      { defaults: { sandbox: true }, user: { sandbox: false } },
+      true,
+    ],
+    [
+      'GEMINI_SANDBOX=false over settings',
+      { GEMINI_SANDBOX: 'false' },
+      { user: { sandbox: true } },
+      true,
+    ],
+    [
+      'a child already inside a sandbox',
+      { SANDBOX: 'sandbox-exec', GEMINI_SANDBOX: 'true' },
+      {},
+      true,
+    ],
+    [
+      'a disabled settings object',
+      {},
+      { user: { sandbox: { enabled: false } } },
+      true,
+    ],
+  ] satisfies Array<
+    [
+      string,
+      Record<string, string>,
+      Partial<
+        Record<
+          'system' | 'workspace' | 'user' | 'defaults',
+          { sandbox: unknown }
+        >
+      >,
+      boolean,
+    ]
+  >)(
+    'honors a Gemini sandbox request from %s',
+    async (_source, env, layers, overlay) => {
+      for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+      const cwd = join(fixtureRoot, 'work');
+      const paths = {
+        system: process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!,
+        workspace: join(cwd, '.gemini', 'settings.json'),
+        user: join(realHome, '.gemini', 'settings.json'),
+        defaults: process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!,
+      };
+      mkdirSync(join(cwd, '.gemini'), { recursive: true });
+      for (const [layer, tools] of Object.entries(layers)) {
+        const path = paths[layer as keyof typeof paths];
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, JSON.stringify({ tools }));
+      }
+      const { spawnProcess, invocations } = makeSpawn((child) => {
+        writeEventsAndClose(child, [successResult()], 0, null);
+      });
+
+      await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'medium',
+          cwd,
+        }),
+      );
+
+      const childHome = invocations[0]!.options.env!.GEMINI_CLI_HOME;
+      if (overlay) {
+        expect(modelArg(invocations[0]!.args)).toBe(
+          GEMINI_REASONING_EFFORT_ALIAS,
+        );
+        expect(childHome).not.toBe(realHome);
+      } else {
+        expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+        expect(childHome).toBe(realHome);
+      }
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'overlays the operating-system home when GEMINI_CLI_HOME is unset',
+    async () => {
+      vi.stubEnv('GEMINI_CLI_HOME', undefined);
+      vi.stubEnv('HOME', realHome);
+      writeFileSync(join(realHome, '.profile'), 'profile\n');
+      let settings: unknown;
+      let profile: string | undefined;
+      const { spawnProcess, invocations } = makeSpawn((child) => {
+        const home = invocations[0]!.options.env!.GEMINI_CLI_HOME!;
+        settings = JSON.parse(
+          readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'),
+        );
+        profile = readFileSync(join(home, '.profile'), 'utf8');
+        writeEventsAndClose(child, [successResult()], 0, null);
+      });
+
+      await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
+          model: 'gemini-2.5-flash',
+          effort: 'max',
+        }),
+      );
+
+      expect(modelArg(invocations[0]!.args)).toBe(
+        GEMINI_REASONING_EFFORT_ALIAS,
+      );
+      expect(settings).toEqual({
         modelConfigs: {
-          routing: { enabled: true },
           customAliases: {
-            existing: { modelConfig: { model: 'gemini-existing' } },
             [GEMINI_REASONING_EFFORT_ALIAS]: {
               modelConfig: {
-                model: 'gemini-3-pro',
+                model: 'gemini-2.5-flash',
                 generateContentConfig: {
-                  thinkingConfig: { thinkingLevel: 'LOW' },
+                  thinkingConfig: { thinkingBudget: 24576 },
                 },
               },
             },
           },
         },
       });
-      expect(JSON.parse(readFileSync(configuredDefaults, 'utf8'))).toEqual(
-        originalDefaults,
-      );
-      expect(temporaryDefaults).toBeDefined();
-      expect(existsSync(temporaryDefaults!)).toBe(false);
-    } finally {
-      if (previousDefaults === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
-      }
-      if (previousSettings === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = previousSettings;
-      }
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+      expect(profile).toBe('profile\n');
+      expect(readdirSync(join(realHome, '.gemini')).sort()).toEqual([
+        'history',
+        'tmp',
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
 
-  it('derives system defaults beside system settings when the defaults env is empty', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-system-test-'));
-    const configuredSettings = join(root, 'settings.json');
-    const siblingDefaults = join(root, 'system-defaults.json');
-    writeFileSync(configuredSettings, '{}', 'utf8');
-    writeFileSync(
-      siblingDefaults,
-      '{\n  // Gemini settings accept JSON comments.\n  "siblingMarker": true /* keep */\n}\n',
-      'utf8',
-    );
+  it.each([
+    [
+      'malformed JSON',
+      '{ "modelConfigs": ',
+      'Unable to parse Gemini user settings at',
+    ],
+    ['a non-object root', '[]', 'must be a JSON object'],
+    [
+      'non-object modelConfigs',
+      '{ "modelConfigs": 1 }',
+      'Gemini user settings modelConfigs at',
+    ],
+    [
+      'non-object customAliases',
+      '{ "modelConfigs": { "customAliases": [] } }',
+      'Gemini user settings modelConfigs.customAliases at',
+    ],
+  ])(
+    'rejects %s user settings before spawning',
+    async (_name, content, message) => {
+      mkdirSync(join(realHome, '.gemini'));
+      writeFileSync(join(realHome, '.gemini', 'settings.json'), content);
+      const { spawnProcess, invocations } = makeSpawn(() => {});
 
-    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-    const previousSettings = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = '';
-    process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = configuredSettings;
-
-    let mergedDefaults: Record<string, unknown> | undefined;
-
-    try {
-      const { spawnProcess, invocations } = makeSpawn((process) => {
-        const temporaryDefaults =
-          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-        mergedDefaults = temporaryDefaults
-          ? (JSON.parse(readFileSync(temporaryDefaults, 'utf8')) as Record<
-              string,
-              unknown
-            >)
-          : undefined;
-        writeEventsAndClose(
-          process,
-          [
-            JSON.stringify({
-              type: 'result',
-              status: 'success',
-              stats: { input_tokens: 0, output_tokens: 0, tool_uses: 0 },
-            }),
-          ],
-          0,
-          null,
-        );
-      });
-      const adapter = new GeminiAdapter({ spawnProcess });
-
-      await collect(
-        adapter.run('prompt', {
-          model: 'gemini-2.5-pro',
-          effort: 'minimal',
+      const events = await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'low',
         }),
       );
 
-      expect(mergedDefaults).toMatchObject({ siblingMarker: true });
-      expect(invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(
-        configuredSettings,
+      expect(invocations).toHaveLength(0);
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]?.payload).toMatchObject({ code: 'GEMINI_STREAM_ERROR' });
+      expect((events[1]?.payload as { message: string }).message).toContain(
+        message,
       );
-    } finally {
-      if (previousDefaults === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'removes a partly built overlay when setup fails',
+    async () => {
+      const realGemini = join(realHome, '.gemini');
+      mkdirSync(join(realGemini, 'tmp'), { recursive: true });
+      mkdirSync(join(realGemini, 'history'));
+      writeFileSync(join(realHome, '.env'), 'KEY=value\n');
+      // The home links, then the unlistable .gemini fails the overlay.
+      chmodSync(realGemini, 0o300);
+      const { spawnProcess, invocations } = makeSpawn(() => {});
+
+      try {
+        const events = await collect(
+          new GeminiAdapter({ spawnProcess }).run('prompt', {
+            model: 'gemini-3-pro',
+            effort: 'low',
+          }),
+        );
+
+        expect(invocations).toHaveLength(0);
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'error',
+          'done',
+        ]);
+        expect((events[1]?.payload as { message: string }).message).toMatch(
+          /EACCES|permission denied/i,
+        );
+        expect(overlaysLeft()).toEqual([]);
+        expect(readFileSync(join(realHome, '.env'), 'utf8')).toBe(
+          'KEY=value\n',
+        );
+      } finally {
+        chmodSync(realGemini, 0o700);
       }
-      if (previousSettings === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = previousSettings;
-      }
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it('trusts the workspace for headless Gemini CLI runs by default', async () => {
     const previousTrust = process.env.GEMINI_CLI_TRUST_WORKSPACE;
@@ -2064,119 +2443,90 @@ describe('GeminiAdapter', () => {
     }
   });
 
-  it('cleans policy and defaults files after a stream error', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-cleanup-error-'));
-    const configuredDefaults = join(root, 'system-defaults.json');
-    writeFileSync(configuredDefaults, '{}', 'utf8');
-    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
-
+  it('cleans the policy and home overlay after a stream error', async () => {
     let policyPath: string | undefined;
-    let defaultsPath: string | undefined;
+    let home: string | undefined;
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      policyPath = invocations[0]?.args
+        .find((arg) => arg.startsWith('--policy='))
+        ?.slice('--policy='.length);
+      home = invocations[0]?.options.env?.GEMINI_CLI_HOME;
+      process.stderr.end();
+      process.stdout.destroy(new Error('fake stream failed'));
+      process.emit('close', 1, null);
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
 
-    try {
-      const { spawnProcess, invocations } = makeSpawn((process) => {
-        policyPath = invocations[0]?.args
-          .find((arg) => arg.startsWith('--policy='))
-          ?.slice('--policy='.length);
-        defaultsPath =
-          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-        process.stderr.end();
-        process.stdout.destroy(new Error('fake stream failed'));
-        process.emit('close', 1, null);
-      });
-      const adapter = new GeminiAdapter({ spawnProcess });
-
-      const events = await collect(
-        adapter.run('prompt', {
-          model: 'gemini-3-pro',
-          effort: 'high',
-          permissions: {},
-        }),
-      );
-
-      expect(events.map((event) => event.type)).toEqual([
-        'init',
-        'error',
-        'done',
-      ]);
-      expect(policyPath).toBeDefined();
-      expect(defaultsPath).toBeDefined();
-      expect(existsSync(policyPath!)).toBe(false);
-      expect(existsSync(defaultsPath!)).toBe(false);
-    } finally {
-      if (previousDefaults === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
-      }
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('cleans policy and defaults files after abort', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'cligent-gemini-cleanup-abort-'));
-    const configuredDefaults = join(root, 'system-defaults.json');
-    writeFileSync(configuredDefaults, '{}', 'utf8');
-    const previousDefaults = process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-    process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = configuredDefaults;
-
-    const controller = new AbortController();
-    let policyPath: string | undefined;
-    let defaultsPath: string | undefined;
-
-    try {
-      const { spawnProcess, invocations } = makeSpawn((process) => {
-        policyPath = invocations[0]?.args
-          .find((arg) => arg.startsWith('--policy='))
-          ?.slice('--policy='.length);
-        defaultsPath =
-          invocations[0]?.options.env?.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-        process.kill = (signal?: NodeJS.Signals | number): boolean => {
-          process.killed = true;
-          process.killSignals.push(signal);
-          queueMicrotask(() => {
-            process.stdout.end();
-            process.stderr.end();
-            process.emit('close', null, 'SIGTERM');
-          });
-          return true;
-        };
-        process.stdout.write(
-          `${JSON.stringify({
-            type: 'init',
-            sessionId: 'cleanup-abort',
-            model: 'gemini-3-pro',
-            cwd: '/repo',
-          })}\n`,
-        );
-      });
-      const adapter = new GeminiAdapter({ spawnProcess });
-      const events: AgentEvent[] = [];
-
-      for await (const event of adapter.run('prompt', {
+    const events = await collect(
+      adapter.run('prompt', {
         model: 'gemini-3-pro',
         effort: 'high',
         permissions: {},
-        abortSignal: controller.signal,
-      })) {
-        events.push(event);
-        if (event.type === 'init') controller.abort();
-      }
+      }),
+    );
 
-      expect(events.map((event) => event.type)).toEqual(['init', 'done']);
-      expect(policyPath).toBeDefined();
-      expect(defaultsPath).toBeDefined();
-      expect(existsSync(policyPath!)).toBe(false);
-      expect(existsSync(defaultsPath!)).toBe(false);
-    } finally {
-      if (previousDefaults === undefined) {
-        delete process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-      } else {
-        process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH = previousDefaults;
-      }
-      rmSync(root, { recursive: true, force: true });
+    expect(events.map((event) => event.type)).toEqual([
+      'init',
+      'error',
+      'done',
+    ]);
+    expect(policyPath).toBeDefined();
+    expect(home).toBeDefined();
+    expect(home).not.toBe(realHome);
+    expect(existsSync(policyPath!)).toBe(false);
+    expect(existsSync(home!)).toBe(false);
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  it('cleans the policy and home overlay after abort', async () => {
+    const controller = new AbortController();
+    let policyPath: string | undefined;
+    let home: string | undefined;
+
+    const { spawnProcess, invocations } = makeSpawn((process) => {
+      policyPath = invocations[0]?.args
+        .find((arg) => arg.startsWith('--policy='))
+        ?.slice('--policy='.length);
+      home = invocations[0]?.options.env?.GEMINI_CLI_HOME;
+      process.kill = (signal?: NodeJS.Signals | number): boolean => {
+        process.killed = true;
+        process.killSignals.push(signal);
+        queueMicrotask(() => {
+          process.stdout.end();
+          process.stderr.end();
+          process.emit('close', null, 'SIGTERM');
+        });
+        return true;
+      };
+      process.stdout.write(
+        `${JSON.stringify({
+          type: 'init',
+          sessionId: 'cleanup-abort',
+          model: 'gemini-3-pro',
+          cwd: '/repo',
+        })}\n`,
+      );
+    });
+    const adapter = new GeminiAdapter({ spawnProcess });
+    const events: AgentEvent[] = [];
+
+    for await (const event of adapter.run('prompt', {
+      model: 'gemini-3-pro',
+      effort: 'high',
+      permissions: {},
+      abortSignal: controller.signal,
+    })) {
+      events.push(event);
+      if (event.type === 'init') controller.abort();
     }
+
+    expect(events.map((event) => event.type)).toEqual(['init', 'done']);
+    expect(policyPath).toBeDefined();
+    expect(home).toBeDefined();
+    expect(home).not.toBe(realHome);
+    expect(existsSync(policyPath!)).toBe(false);
+    expect(existsSync(home!)).toBe(false);
+    expect(overlaysLeft()).toEqual([]);
   });
 
   it('attempts both cleanups and surfaces cleanup failures', async () => {

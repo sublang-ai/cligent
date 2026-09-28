@@ -618,7 +618,7 @@ const doneFastMode: FastModeTerminalObservation = {
   responseSpeed: 'standard',
 };
 const initPayload: InitPayload = {
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
   cwd: '.',
   tools: [],
   fastMode: initFastMode,

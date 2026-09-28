@@ -60,14 +60,14 @@ export const EFFORT_SUPPORT = Object.freeze({
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      'Gemini 3 collapses high, xhigh, and max to HIGH; Gemini 2.5 non-Pro models collapse xhigh and max to the same budget. Aliases, unmatched models, and an omitted model receive no effort override.',
+      'Gemini 3 collapses high, xhigh, and max to HIGH; Gemini 2.5 non-Pro models collapse xhigh and max to the same budget. Aliases, unmatched models, an omitted model, a working directory that is the home directory, and a run Gemini sandboxes receive no effort override.',
   }),
   kimi: Object.freeze({
     values: Object.freeze(['off', 'on'] as const),
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      "Kimi thinking is binary: off disables it, while on uses the selected model's native default thinking effort rather than a portable reasoning-depth tier.",
+      "Kimi thinking is binary: off disables it, while on uses the selected model's native default thinking effort rather than a portable reasoning-depth tier. A model that always thinks offers no off, so off fails before the prompt.",
   }),
   opencode: Object.freeze({
     values: Object.freeze([
@@ -81,7 +81,7 @@ export const EFFORT_SUPPORT = Object.freeze({
     orchestrationValues: Object.freeze([] as const),
     modelDependent: true,
     notes:
-      'Anthropic collapses minimal through high to high and xhigh/max to max; OpenAI collapses max to xhigh; Google collapses minimal through medium to low and high through max to high. Unknown providers and malformed or omitted models receive no effort override.',
+      "Effort selects the variant the model advertises in the server's catalog, else its nearest advertised ladder variant, the higher on a tie. Without that catalog, Anthropic collapses minimal through high to high and xhigh/max to max; OpenAI collapses max to xhigh; Google collapses minimal through medium to low and high through max to high; other providers receive no effort override. Models advertising no ladder variant and malformed or omitted models receive none either.",
   }),
 }) satisfies Readonly<Record<BuiltinEffortAgent, EffortSupportShape>>;
 

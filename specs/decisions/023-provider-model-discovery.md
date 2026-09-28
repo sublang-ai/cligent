@@ -7,6 +7,7 @@
 
 Accepted.
 Amended by [DR-026](026-runtime-reported-model-identity.md): model descriptions, human names, resolved Kimi models, and the runtime's default model.
+Amended by [DR-027](027-latest-models-oldest-serving-runtime.md): a newly offered provider model raises the supported floor to the oldest release that serves it.
 
 ## Context
 

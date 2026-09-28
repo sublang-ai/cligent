@@ -38,7 +38,7 @@ meta.md       The spec of specs
 | [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls |
 | [DR-011](decisions/011-kimi-code-acp-integration.md) | 011-kimi-code-acp-integration.md | Kimi Code ACP integration |
 | [DR-012](decisions/012-runtime-derived-tmux-play-defaults.md) | 012-runtime-derived-tmux-play-defaults.md | Runtime-derived tmux-play defaults |
-| [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Agent-runtime compatibility ownership |
+| [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Agent-runtime compatibility ownership; floor definition amended by DR-027 |
 | [DR-014](decisions/014-unified-token-usage-breakdown.md) | 014-unified-token-usage-breakdown.md | Unified usage accounting |
 | [DR-015](decisions/015-managed-tmux-play-lifecycle.md) | 015-managed-tmux-play-lifecycle.md | Managed tmux-play launch lifecycle |
 | [DR-016](decisions/016-tmux-pane-logical-identity.md) | 016-tmux-pane-logical-identity.md | Logical tmux pane identity |
@@ -48,9 +48,10 @@ meta.md       The spec of specs
 | [DR-020](decisions/020-audited-release-preparation.md) | 020-audited-release-preparation.md | Audited release-preparation evidence |
 | [DR-021](decisions/021-agent-runtime-fast-mode.md) | 021-agent-runtime-fast-mode.md | Adapter-scoped fast-mode requests and authentic observations |
 | [DR-022](decisions/022-definite-session-rejection.md) | 022-definite-session-rejection.md | Typed pre-execution resume rejection, preserved to hosts without automatic retry |
-| [DR-023](decisions/023-provider-model-discovery.md) | 023-provider-model-discovery.md | On-demand runtime model catalogs, model effort/fast facts and honest unavailable results |
+| [DR-023](decisions/023-provider-model-discovery.md) | 023-provider-model-discovery.md | On-demand runtime model catalogs, model effort/fast facts and honest unavailable results; floor consequence amended by DR-027 |
 | [DR-024](decisions/024-optional-cost-estimation.md) | 024-optional-cost-estimation.md | Optional estimates using caller rates or cached external pricing |
 | [DR-026](decisions/026-runtime-reported-model-identity.md) | 026-runtime-reported-model-identity.md | Runtime-reported model descriptions, names, unconfigured default and init-time model |
+| [DR-027](decisions/027-latest-models-oldest-serving-runtime.md) | 027-latest-models-oldest-serving-runtime.md | Latest models in every default and example; floors at the oldest release serving the latest models |
 
 ## Packages
 

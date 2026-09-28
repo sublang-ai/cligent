@@ -6,6 +6,7 @@
 ## Status
 
 Accepted
+Amended by [DR-027](027-latest-models-oldest-serving-runtime.md): each supported floor is the oldest release that serves the latest models its provider offers.
 
 ## Context
 

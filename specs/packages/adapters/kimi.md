@@ -137,6 +137,7 @@ When a Kimi run reaches preflight or terminal selection, the adapter shall selec
 | no higher candidate; `session/resume` rejects with code `-32602` and data containing only the exact selected `sessionId`; no protocol or cleanup failure | recoverable `SESSION_RESUME_REJECTED` with the original message, then error `done` without a token; no prompt or fresh session [[engine-84](../engine.md#engine-84)], [[15]] | ACP resume rejection |
 | no higher candidate; protocol failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-27](#kimi-27)] and [[kimi-29](#kimi-29)] | protocol rejection, before forced teardown |
 | no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)], overriding every native stop including `cancelled` | spawn/process failure, close observation, or the decision to escalate beyond `SIGTERM` |
+| no higher candidate; the session's advertised thinking values exclude a requested `off` | `KIMI_EFFORT_UNAVAILABLE` and error `done` through [[kimi-38](#kimi-38)]; no thinking change or prompt | thinking-availability check, before cleanup |
 | no higher candidate; another setup or prompt failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)] | operation rejection, before cleanup |
 | valid native stop after a clean close or adapter-owned cleanup `SIGTERM` | the [[kimi-6](#kimi-6)] mapping | clean close observation or immediately before sending cleanup `SIGTERM` |
 
@@ -153,12 +154,12 @@ When [[kimi-33](#kimi-33)] selects a valid ACP prompt response, the adapter shal
 
 ### kimi-21
 
-When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `0.39.1`'s default native ACP path admits exactly these authentication routes [[8]][[10]][[11]][[12]][[13]][[14]]:
+When [[kimi-33](#kimi-33)] selects missing authentication reported by ACP JSON-RPC code `-32000` or an authentication diagnostic, the adapter shall emit non-recoverable `KIMI_AUTH_REQUIRED` with actionable `kimi login` guidance and shall never launch login itself; Kimi Code `2.1.1`'s native ACP server admits exactly these authentication routes [[8]][[10]][[11]][[12]][[13]][[14]]:
 
 | Runtime state | Session gate |
 | --- | --- |
 | stored OAuth material resolved from the default model, or any provider reports logged in, including after `kimi login` | admitted |
-| configured default-model alias resolving to non-OAuth credentials | admitted |
+| configured default-model alias resolving to non-OAuth credentials, including a provider `api_key_env` that names a non-empty environment variable | admitted |
 | both `KIMI_MODEL_NAME` and `KIMI_MODEL_API_KEY` environment values | admitted through a runtime-only synthesized provider and default alias |
 | bare `MOONSHOT_API_KEY` or `KIMI_API_KEY` | not admitted because no default-model alias exists |
 
@@ -232,9 +233,20 @@ When the adapter maps the Kimi values in [[engine-40](../engine.md#engine-40)], 
 | `AgentOptions.effort` | Outcome |
 | --- | --- |
 | omitted | set no ACP `thinking` override |
-| `'off'` | set ACP `thinking` to `off` |
+| `'off'` | set ACP `thinking` to `off`, subject to [[kimi-38](#kimi-38)]'s availability check |
 | `'on'` | set ACP `thinking` to `on`, selecting the chosen model's native default rather than a portable tier |
 | any other dynamic value | reject before spawn with the metadata-backed error naming Kimi and the allowed values |
+
+### kimi-38
+
+When the adapter applies a provided thinking value in [[kimi-16](#kimi-16)]'s order, it shall select the outcome from the `thinking` select option in the session's current configuration, as returned by session setup or the preceding model change, through this matrix, so a model that cannot disable thinking stops before its prompt with a clear cause rather than a protocol rejection or a silently kept default, per [[engine-51](../engine.md#engine-51)], [[5]], and [[16]]:
+
+| Advertised `thinking` option | Requested value | Outcome |
+| --- | --- | --- |
+| absent | `off` or `on` | set the value unchanged, leaving any rejection to the runtime |
+| its values, flat or grouped, include `off` | `off` | set `off` |
+| its values exclude `off` | `off` | set no thinking value; emit non-recoverable `KIMI_EFFORT_UNAVAILABLE` naming the selected model, the requested value, and the advertised values, then error `done` without a prompt |
+| present | `on` | set `on`, which Kimi maps to the model's default thinking effort where the values are effort levels |
 
 ### kimi-23
 
@@ -316,7 +328,7 @@ When ACP bytes and messages cross the adapter-owned wire boundary, it shall vali
 | inbound UTF-8 JSON lines split or coalesced across arbitrary chunks, including one unterminated final line | reconstruct and forward each complete non-empty message in order |
 | invalid UTF-8 or JSON, or the accumulated decoded buffer exceeding 16 MiB in JavaScript code units immediately after one input chunk is appended | protocol failure |
 | inbound value not a JSON-RPC 2.0 object; invalid request, notification, response, error, or id shape; response id not pending | protocol failure |
-| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field | protocol failure |
+| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field, including a `thinking` select's values once [[kimi-38](#kimi-38)] reads them | protocol failure |
 | valid object with unknown fields, or `session/update` with an unhandled non-empty case | admit the unknown fields without treating them as malformed; drop an unhandled update before the SDK |
 | malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
 | handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
@@ -426,6 +438,7 @@ Given an `AgentOptions.effort` value that is omitted, `off`, `on`, another adapt
 | --- | --- |
 | effort omitted, `off`, or `on`; model omitted | exact [[kimi-9](#kimi-9)] outcome, no model override, and the ACP call order and omissions in [[kimi-16](#kimi-16)] and [[kimi-23](#kimi-23)] |
 | effort omitted, `off`, or `on`; model provided, including empty | exact [[kimi-9](#kimi-9)] outcome and [[kimi-23](#kimi-23)] model behavior in [[kimi-16](#kimi-16)]'s ACP call order |
+| `off` or `on` against a session, or a model change, advertising a `thinking` option with or without `off`, in flat or grouped values, or advertising none | exact [[kimi-38](#kimi-38)] outcome: `off` without an advertised `off` sends no thinking change and ends in `KIMI_EFFORT_UNAVAILABLE` and error `done` before any prompt, naming the model, the requested value, and the advertised values, while every other row sends the requested value [[kimi-33](#kimi-33)] |
 | another adapter's effort or an arbitrary unknown string; any model | rejection before spawn naming Kimi and exactly its allowed values |
 
 ### kimi-219
@@ -438,7 +451,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
 - the leg shall self-skip when the `kimi` CLI the adapter spawns is absent from `PATH` or its credential is absent, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg;
-- Kimi Code `0.39.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
+- Kimi Code `2.1.1` admits a prior interactive OAuth `kimi login`, a configured default model resolving to non-OAuth credentials, or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, while a bare `MOONSHOT_API_KEY` satisfies none of them [[kimi-21](#kimi-21)];
 - the harness shall select one authentication route and drive its probe and every live leg through that same route: where a non-empty model API key resolves it shall select the environment-overlay route, supplying the `KIMI_MODEL_NAME` and `KIMI_MODEL_API_KEY` pair [[kimi-21](#kimi-21)] that a bare key cannot satisfy, reading no stored credential, and reporting any authentication rejection as a failure because that route has no spent state to self-skip on; otherwise it shall select the OAuth route and remove the `KIMI_MODEL_*` overlay from both the probe and the legs, an inherited overlay being what would let an environment-configured model report a spent OAuth credential as usable and make those legs fail instead of self-skipping;
 - because Kimi rotates its refresh token on every refresh and persists the replacement into the refreshing home, a credential restored from an immutable CI secret is single-use;
 - on the OAuth route the harness shall therefore probe credential usability once, before any Kimi leg runs and against the same shared clone the suite will use, and shall distinguish two conditions: an absent fixture or CLI remains a hard failure under `CI`, while a present-but-spent credential shall self-skip every live Kimi leg — the composite fanout included — with a precise reason, under `CI` as well, because no runner configuration can supply a fresh token and a failure there would not indicate a defect in the behavior under test;
@@ -501,14 +514,15 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [2]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
 [3]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command "Kimi Code command reference"
 [4]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code configuration"
-[5]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
-[6]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
-[7]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/approval.ts "Kimi Code ACP permission options"
-[8]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/server.ts#L619-L640 "Kimi Code 0.39.1 native ACP authentication gate"
-[9]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/session.ts#L907-L937 "Kimi Code 0.39.1 ACP prompt response and context-usage update"
-[10]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/envOverlay.ts#L87-L174 "Kimi Code 0.39.1 environment model overlay"
-[11]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/auth/authService.ts#L628-L695 "Kimi Code 0.39.1 default-model and OAuth readiness"
-[12]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L23-L71 "Kimi Code 0.39.1 environment provider credentials"
-[13]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/apps/kimi-code/src/cli/sub/acp.ts#L1-L44 "Kimi Code 0.39.1 native ACP dispatch"
-[14]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/kosong/model/modelAuth.ts#L27-L73 "Kimi Code 0.39.1 model and provider authentication resolution"
-[15]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/server.ts#L498-L518 "Kimi Code structured resume rejection"
+[5]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/session.ts#L1065-L1100 "Kimi Code 2.1.1 ACP thinking values"
+[6]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/acp-fs/acpFsService.ts#L68-L87 "Kimi Code 2.1.1 ACP filesystem bridge and local fallback"
+[7]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/approval.ts#L57-L110 "Kimi Code 2.1.1 ACP permission options"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L625-L646 "Kimi Code 2.1.1 native ACP authentication gate"
+[9]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/session.ts#L907-L937 "Kimi Code 2.1.1 ACP prompt response and context-usage update"
+[10]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/kosongConfig/envOverlay.ts#L87-L174 "Kimi Code 2.1.1 environment model overlay"
+[11]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/auth/authService.ts#L658-L739 "Kimi Code 2.1.1 default-model and OAuth readiness"
+[12]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L24-L73 "Kimi Code 2.1.1 provider and environment credentials"
+[13]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/apps/kimi-code/src/cli/sub/acp.ts#L30-L75 "Kimi Code 2.1.1 native ACP dispatch"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/llm-adapter/model/model-auth.ts#L21-L76 "Kimi Code 2.1.1 model and provider authentication resolution"
+[15]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L532-L556 "Kimi Code 2.1.1 structured resume rejection"
+[16]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/config-options.ts#L50-L79 "Kimi Code 2.1.1 advertised thinking values, without off for a model that always thinks"

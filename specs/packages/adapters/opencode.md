@@ -398,8 +398,18 @@ matrix:
 
 Per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), when a
 portable `AgentOptions.effort` from [[engine-39](../engine.md#engine-39)] is
-provided with a `provider/model` selection, the adapter shall put this provider
-variant on the prompt body for both fresh and resumed sessions [[1]]:
+provided with a `provider/model` selection, the adapter shall put on the prompt
+body, for both fresh and resumed sessions, the variant this matrix selects from
+the selected model's variants in the connected-provider catalog the server
+reports for the run's directory, read before prompt dispatch within 10,000 ms,
+because a variant the model does not advertise has no effect [[1]][[17]][[18]]:
+
+| Selected model in the catalog | Variant |
+| --- | --- |
+| advertises a variant named the requested effort | that variant |
+| advertises variants named by other [[engine-39](../engine.md#engine-39)] values only | the advertised ladder value nearest the requested effort in [[engine-39](../engine.md#engine-39)]'s order, the greater on a tie, per [[engine-42](../engine.md#engine-42)] |
+| listed without a variant named by an [[engine-39](../engine.md#engine-39)] value | unset, because the model offers no mappable effort control |
+| catalog unreadable, malformed, or late, or the model absent from it | the documented provider variant below, otherwise unset |
 
 | `AgentOptions.effort` | Anthropic | OpenAI    | Google | Other |
 | --------------------- | --------- | --------- | ------ | ----- |
@@ -410,9 +420,10 @@ variant on the prompt body for both fresh and resumed sessions [[1]]:
 | `xhigh`               | `max`     | `xhigh`   | `high` | unset |
 | `max`                 | `max`     | `xhigh`   | `high` | unset |
 
-The nearest documented provider variant satisfies lossy rows under
-[[engine-42](../engine.md#engine-42)], while an unmatched provider leaves the
-field unset for `opencode.jsonc`.
+The documented table is the nearest documented provider variant under
+[[engine-42](../engine.md#engine-42)], used only where the model's own variants
+cannot be read, while an unmatched provider leaves the field unset for
+`opencode.jsonc`.
 
 ### opencode-14
 
@@ -438,7 +449,7 @@ matrix:
 | direct compatibility-wrapper prompt `tools` value | reject before session creation, update, subscription, or prompt |
 | both option fields omitted and no direct wrapper value | send no prompt `tools` data, preserving OpenCode's native available-tool surface |
 
-> OpenCode 1.18.25's prompt `tools` field is deprecated as an independent
+> OpenCode 1.18.33's prompt `tools` field is deprecated as an independent
 > control: the provider converts its booleans into persistent session permission
 > rules, replacing prior session rules [[5]].
 > Because permission evaluation is last-match-wins and session rules follow agent
@@ -460,7 +471,7 @@ matrix:
 | any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
 | non-empty model without `/` | pass through unchanged |
 | absent or empty model | omit the native model |
-| explicitly present `maxTurns`, including zero | reject before SDK loading or backend work because OpenCode 1.18.25 exposes the ceiling only through persistent agent configuration, not an exact per-run control [[5]], as settled by [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) |
+| explicitly present `maxTurns`, including zero | reject before SDK loading or backend work because OpenCode 1.18.33 exposes the ceiling only through persistent agent configuration, not an exact per-run control [[5]], as settled by [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md) |
 | omitted `maxTurns` | send no turn-limit request member |
 | any `maxBudgetUsd` | no OpenCode request member because this runtime has no corresponding control |
 | non-empty resume | select the existing session rather than create one |
@@ -660,7 +671,7 @@ suppression cannot be proved [[9]]:
 
 Before prompt dispatch, the wrapper shall query the canonical global-health
 route and permit complete accounting only for a healthy response naming exact
-OpenCode version `1.18.25`, while a missing route, failure, timeout, malformed or
+OpenCode version `1.18.33`, while a missing route, failure, timeout, malformed or
 unhealthy response, or other version leaves the run unblocked with partial
 accounting [[13]].
 
@@ -733,9 +744,9 @@ entered, the adapter shall satisfy this runtime matrix:
 
 Where application configurations select representative efforts for this
 adapter, when the runtime constructs and invokes each corresponding `Cligent`,
-the integration check shall assert [[opencode-12](#opencode-12)]'s known-provider
-prompt variants and an unmatched provider's absent effort override with
-ordinary model forwarding.
+the integration check shall assert [[opencode-12](#opencode-12)]'s
+catalog-selected and documented-provider prompt variants and an unmatched
+provider's absent effort override with ordinary model forwarding.
 
 ### opencode-52
 
@@ -798,10 +809,15 @@ adapter emits unified events and `done`, the checks shall cover this matrix:
 ### opencode-218
 
 Given every portable effort, omission, another adapter's native value, and an
-arbitrary unknown string, when the adapter maps a run, the checks shall assert
-[[opencode-12](#opencode-12)]'s provider variant matrix, unmatched-provider and
-model-less omission, and [[opencode-14](#opencode-14)]'s default-preserving and
-metadata-backed rejection rows before prompt dispatch.
+arbitrary unknown string, against catalogs whose selected model advertises the
+requested variant, only other ladder variants with and without ties, no ladder
+variant, or no entry, and against an unreadable, malformed, or late catalog,
+when the adapter maps a run, the checks shall assert
+[[opencode-12](#opencode-12)]'s advertised, nearest, tie-to-greater, unset, and
+documented-provider fallback rows, including GPT-6's `max` and `minimal` reaching
+`max` and `low`, unmatched-provider and model-less omission, and
+[[opencode-14](#opencode-14)]'s default-preserving and metadata-backed rejection
+rows before prompt dispatch.
 
 ### opencode-219
 
@@ -862,7 +878,7 @@ Given each explicitly present tool-list field, including empty arrays and a list
 beside a portable deny, when every public mapping surface is invoked, the
 checks shall assert [[opencode-15](#opencode-15)]'s adapter pre-loader, direct
 mapper, and wrapper pre-operation rejection rows plus a diagnostic explaining
-OpenCode 1.18.25's persistent permission-rule replacement and lack of exact
+OpenCode 1.18.33's persistent permission-rule replacement and lack of exact
 per-call tool availability.
 
 ### opencode-231
@@ -994,15 +1010,17 @@ causal report matrix while preserving independently observed `toolUses`
 
 [1]: https://opencode.ai/docs/models/ 'OpenCode model configuration'
 [2]: https://opencode.ai/docs/server/ 'OpenCode server'
-[5]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.25 prompt input, agent step limit, and tool-permission replacement'
-[6]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/permission/index.ts 'OpenCode 1.18.25 permission lifecycle and evaluation'
-[7]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/tools.ts 'OpenCode 1.18.25 agent/session permission merge'
-[8]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/session.ts#L338-L405 'OpenCode 1.18.25 usage cost calculation'
-[9]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts#L193-L253 'OpenCode 1.18.25 title inference'
-[10]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/compaction.ts#L319-L556 'OpenCode 1.18.25 compaction and continuation flow'
-[11]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/tool/task.ts#L136-L358 'OpenCode 1.18.25 foreground and background task continuations'
-[12]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/processor.ts#L630-L681 'OpenCode 1.18.25 retry accounting boundary'
-[13]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/sdk/js/src/v2/gen/types.gen.ts#L7226-L7252 'OpenCode 1.18.25 global-health version response'
-[14]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts#L656-L670 'OpenCode 1.18.25 user message created with role "user" and an identifier minted by MessageID.ascending() when the caller supplies none'
-[15]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/prompt.ts#L1186-L1201 'OpenCode 1.18.25 assistant message created with parentID set to the last user message id'
-[16]: https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/tool/task.ts#L227-L254 'OpenCode 1.18.25 background task result injected into the parent session'
+[5]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/prompt.ts 'OpenCode 1.18.33 prompt input, agent step limit, and tool-permission replacement'
+[6]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/permission/index.ts 'OpenCode 1.18.33 permission lifecycle and evaluation'
+[7]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/tools.ts 'OpenCode 1.18.33 agent/session permission merge'
+[8]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/session.ts#L338-L405 'OpenCode 1.18.33 usage cost calculation'
+[9]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/prompt.ts#L193-L253 'OpenCode 1.18.33 title inference'
+[10]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/compaction.ts#L319-L556 'OpenCode 1.18.33 compaction and continuation flow'
+[11]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/tool/task.ts#L136-L358 'OpenCode 1.18.33 foreground and background task continuations'
+[12]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/processor.ts#L644-L695 'OpenCode 1.18.33 retry accounting boundary'
+[13]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/sdk/js/src/v2/gen/types.gen.ts#L7229-L7255 'OpenCode 1.18.33 global-health version response'
+[14]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/prompt.ts#L656-L670 'OpenCode 1.18.33 user message created with role "user" and an identifier minted by MessageID.ascending() when the caller supplies none'
+[15]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/prompt.ts#L1186-L1201 'OpenCode 1.18.33 assistant message created with parentID set to the last user message id'
+[16]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/tool/task.ts#L227-L254 'OpenCode 1.18.33 background task result injected into the parent session'
+[17]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/provider/provider.ts#L1364-L1370 'OpenCode 1.18.33 per-model variants from the model catalog'
+[18]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/llm/request.ts#L80-L83 'OpenCode 1.18.33 prompt variant lookup, where an unadvertised name has no effect'

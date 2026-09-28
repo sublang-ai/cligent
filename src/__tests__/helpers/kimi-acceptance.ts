@@ -48,7 +48,7 @@ const KIMI_DEFAULT_PROVIDER_TYPE = 'kimi';
 
 /**
  * Build the environment overlay that authenticates Kimi without a stored
- * credential. Kimi Code 0.39.1 admits this route only when both the model name
+ * credential. Kimi Code 2.1.1 admits this route only when both the model name
  * and the API key are present: the name is what synthesizes the default alias,
  * without which a bare `MOONSHOT_API_KEY` is not admitted.
  */
@@ -325,7 +325,7 @@ export async function withIsolatedKimiCodeHome<T>(
 /**
  * Confirm the cloned OAuth credential can still open an ACP session.
  *
- * Kimi Code 0.39.1 rotates the refresh token on every refresh and persists the
+ * Kimi Code 2.1.1 rotates the refresh token on every refresh and persists the
  * replacement into whichever home performed it. A credential copied into an
  * immutable store (a CI secret) is therefore spent the first time any run
  * refreshes it: the next run's refresh returns `invalid_grant`, the CLI writes

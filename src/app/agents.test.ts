@@ -10,9 +10,9 @@ describe('parseAgentArg', () => {
   });
 
   it('parses name=model', () => {
-    expect(parseAgentArg('claude=claude-opus-4-6')).toEqual({
+    expect(parseAgentArg('claude=claude-opus-5-5')).toEqual({
       name: 'claude',
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-5-5',
     });
   });
 
