@@ -129,6 +129,10 @@ interface CodexSdk {
 
 interface CodexAdapterDeps {
   loadSdk?: () => Promise<CodexSdk>;
+  /** Where the Codex CLI's native binary stands, or undefined when the
+   * platform package that carries it is not installed; defaults to the
+   * launcher's own lookup rule beside the resolved launcher. */
+  locateExecutable?: () => string | undefined;
 }
 
 const AGENT = 'codex' as const;
@@ -1110,6 +1114,86 @@ interface CodexConfigOverrideWrapper {
 const CODEX_SDK_PACKAGE = '@openai/codex-sdk';
 const CODEX_BIN_SPECIFIER = '@openai/codex/bin/codex.js';
 
+/**
+ * The platform package the Codex launcher spawns from and the binary's
+ * path inside it, by the launcher's own table of target triples;
+ * undefined for a platform the launcher does not support.
+ */
+export function codexExecutableCandidate(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): { package: string; file: string } | undefined {
+  const os = platform === 'android' ? 'linux' : platform;
+  const triple =
+    os === 'linux'
+      ? arch === 'x64'
+        ? 'x86_64-unknown-linux-musl'
+        : arch === 'arm64'
+          ? 'aarch64-unknown-linux-musl'
+          : undefined
+      : os === 'darwin'
+        ? arch === 'x64'
+          ? 'x86_64-apple-darwin'
+          : arch === 'arm64'
+            ? 'aarch64-apple-darwin'
+            : undefined
+        : os === 'win32'
+          ? arch === 'x64'
+            ? 'x86_64-pc-windows-msvc'
+            : arch === 'arm64'
+              ? 'aarch64-pc-windows-msvc'
+              : undefined
+          : undefined;
+  if (triple === undefined) return undefined;
+  const exe = platform === 'win32' ? '.exe' : '';
+  return {
+    package: `@openai/codex-${os}-${arch}`,
+    file: join('vendor', triple, 'bin', `codex${exe}`),
+  };
+}
+
+/**
+ * Locate the native binary the Codex launcher would spawn, by the
+ * launcher's own rule: the platform package resolved beside the launcher,
+ * else the launcher's own `vendor` directory; `undefined` means npm
+ * dropped the optional platform package — the SDK module and the launcher
+ * still load, and a run would fail with "Missing optional dependency".
+ */
+export function locateCodexExecutable(
+  options: {
+    launcherPath?: string;
+    platform?: NodeJS.Platform;
+    arch?: string;
+  } = {},
+): string | undefined {
+  const candidate = codexExecutableCandidate(options.platform, options.arch);
+  if (candidate === undefined) return undefined;
+  const launcherPath = options.launcherPath ?? resolveCodexBinPath();
+  let vendorRoot: string;
+  try {
+    const manifest = createRequire(launcherPath).resolve(
+      `${candidate.package}/package.json`,
+    );
+    vendorRoot = join(dirname(manifest), 'vendor');
+  } catch {
+    vendorRoot = join(dirname(launcherPath), '..', 'vendor');
+  }
+  const path = join(vendorRoot, candidate.file.slice('vendor'.length + 1));
+  return existsSync(path) ? path : undefined;
+}
+
+/** The message a missing binary earns, naming the package and the repair. */
+function missingCodexExecutableMessage(): string {
+  const candidate = codexExecutableCandidate();
+  return (
+    `CodexAdapter found ${CODEX_SDK_PACKAGE} but not the native binary the Codex ` +
+    `launcher spawns: ${candidate?.package ?? '@openai/codex'} is not installed ` +
+    `for ${process.platform}-${process.arch}. Reinstall the SDK where ` +
+    `'@sublang/cligent' resolves it (npm ci in a checkout, or npm install -g ` +
+    `${CODEX_SDK_PACKAGE}@${AGENT_RUNTIME_TARGETS.codex[0]!.tested}).`
+  );
+}
+
 export interface CodexBinPathResolutionDeps {
   // Loader-provided ESM resolution; pass undefined to model runtimes that
   // predate import.meta.resolve (Node < 18.19).
@@ -1342,6 +1426,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
+  private readonly locateExecutable: () => string | undefined;
 
   /**
    * codex-15: `turn.completed.usage` reports the thread's cumulative total,
@@ -1361,6 +1446,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
 
   constructor(deps: CodexAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadCodexSdk;
+    this.locateExecutable = deps.locateExecutable ?? locateCodexExecutable;
   }
 
   private async acquireResumeSession(sessionId: string): Promise<() => void> {
@@ -1476,10 +1562,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     return tokens ? { ...usage, tokens } : usage;
   }
 
+  /** The SDK loads and the native binary its launcher spawns is installed:
+   * an importable SDK whose optional platform package npm dropped is not
+   * available, since its first run fails on "Missing optional dependency". */
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
-      return true;
+      return this.locateExecutable() !== undefined;
     } catch {
       return false;
     }
@@ -1504,6 +1593,9 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       throw new Error(
         'CodexAdapter requires @openai/codex-sdk. Install it to use this adapter.',
       );
+    }
+    if (this.locateExecutable() === undefined) {
+      throw new Error(missingCodexExecutableMessage());
     }
 
     const {

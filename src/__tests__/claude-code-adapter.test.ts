@@ -5,8 +5,15 @@ import { getEventListeners } from 'node:events';
 
 import { describe, it, expect } from 'vitest';
 
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import {
   ClaudeCodeAdapter,
+  claudeExecutableCandidates,
+  locateClaudeExecutable,
   mapAgentOptionsToClaudeQueryOptions,
   mapEffortToClaudeOptions,
   mapPermissionsToClaudeOptions,
@@ -354,6 +361,58 @@ describe('ClaudeCodeAdapter', () => {
       'text',
       'done',
     ]);
+  });
+
+  it('is unavailable when the SDK loads but its native binary is missing', async () => {
+    // npm drops the optional platform package without failing the install;
+    // the SDK module still imports, and the first run would fail with
+    // "executable not found", so availability asks for the binary.
+    const sdk = { query: (() => undefined) as never };
+    const missing = new ClaudeCodeAdapter({
+      loadSdk: async () => sdk,
+      locateExecutable: () => undefined,
+    });
+    await expect(missing.isAvailable()).resolves.toBe(false);
+    const present = new ClaudeCodeAdapter({
+      loadSdk: async () => sdk,
+      locateExecutable: () => '/tree/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude',
+    });
+    await expect(present.isAvailable()).resolves.toBe(true);
+    // A run refuses before the SDK, naming the package and the repair.
+    const stream = missing.run('prompt');
+    await expect(stream.next()).rejects.toThrow(
+      /native binary it spawns: @anthropic-ai\/claude-agent-sdk-.* is not installed .*npm ci/,
+    );
+  });
+
+  it('locates the native binary by the SDK rule over the tree the SDK resolves from', () => {
+    expect(claudeExecutableCandidates('linux', 'arm64')).toEqual([
+      '@anthropic-ai/claude-agent-sdk-linux-arm64/claude',
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl/claude',
+    ]);
+    expect(claudeExecutableCandidates('win32', 'x64')).toEqual([
+      '@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe',
+    ]);
+    expect(claudeExecutableCandidates('android', 'arm64')).toEqual([
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-android/claude',
+    ]);
+
+    const tree = mkdtempSync(join(tmpdir(), 'cligent-claude-tree-'));
+    const modules = join(tree, 'node_modules');
+    const sdkDir = join(modules, '@anthropic-ai', 'claude-agent-sdk');
+    mkdirSync(sdkDir, { recursive: true });
+    writeFileSync(join(sdkDir, 'package.json'), '{"name":"@anthropic-ai/claude-agent-sdk","main":"sdk.mjs"}');
+    writeFileSync(join(sdkDir, 'sdk.mjs'), 'export const query = () => {};\n');
+    const anchor = pathToFileURL(join(sdkDir, 'sdk.mjs')).href;
+    expect(locateClaudeExecutable({ anchor, platform: 'darwin', arch: 'arm64' })).toBeUndefined();
+
+    const platformDir = join(modules, '@anthropic-ai', 'claude-agent-sdk-darwin-arm64');
+    mkdirSync(platformDir, { recursive: true });
+    writeFileSync(join(platformDir, 'package.json'), '{"name":"@anthropic-ai/claude-agent-sdk-darwin-arm64"}');
+    writeFileSync(join(platformDir, 'claude'), '');
+    expect(locateClaudeExecutable({ anchor, platform: 'darwin', arch: 'arm64' })).toBe(realpathSync(join(platformDir, 'claude')));
+    // Another platform's package does not answer for this one.
+    expect(locateClaudeExecutable({ anchor, platform: 'linux', arch: 'x64' })).toBeUndefined();
   });
 
   it('returns false from isAvailable when SDK load fails', async () => {

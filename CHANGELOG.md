@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `ClaudeCodeAdapter` and `CodexAdapter` availability now also requires the
+  native binary their SDKs spawn: the platform package
+  (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`,
+  `@openai/codex-<platform>-<arch>`) npm can drop without failing the install,
+  after which the SDK module still imported and the first run failed with
+  "executable not found". Such an install reads unavailable, and a run refuses
+  before the SDK, naming the package and the reinstall.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added

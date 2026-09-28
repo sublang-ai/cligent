@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
@@ -189,6 +193,96 @@ interface ClaudeErrorMessage {
 
 interface ClaudeAdapterDeps {
   loadSdk?: () => Promise<ClaudeAgentSdk>;
+  /** Where the SDK's native binary stands, or undefined when the platform
+   * package that carries it is not installed; defaults to the SDK's own
+   * lookup rule over the tree this module resolves the SDK from. */
+  locateExecutable?: () => string | undefined;
+}
+
+const CLAUDE_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
+const requireFromHere = createRequire(import.meta.url);
+
+/**
+ * The platform packages the Claude SDK spawns its native binary from, in
+ * the SDK's own order: Linux tries the glibc package and then musl,
+ * Android its own package, every other platform the one package for its
+ * platform and architecture. The file inside is `claude` (`claude.exe`
+ * on Windows).
+ */
+export function claudeExecutableCandidates(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string[] {
+  const exe = platform === 'win32' ? '.exe' : '';
+  const packages =
+    platform === 'android'
+      ? [`${CLAUDE_SDK_PACKAGE}-linux-${arch}-android`]
+      : platform === 'linux'
+        ? [
+            `${CLAUDE_SDK_PACKAGE}-linux-${arch}`,
+            `${CLAUDE_SDK_PACKAGE}-linux-${arch}-musl`,
+          ]
+        : [`${CLAUDE_SDK_PACKAGE}-${platform}-${arch}`];
+  return packages.map((name) => `${name}/claude${exe}`);
+}
+
+/** The SDK module's location, as an anchor for resolving its siblings:
+ * the loader's resolution when it exists, else the package manifest found
+ * along this module's own search paths. */
+function claudeSdkAnchor(): string | undefined {
+  if (typeof import.meta.resolve === 'function') {
+    try {
+      const url = new URL(import.meta.resolve(CLAUDE_SDK_PACKAGE));
+      if (url.protocol === 'file:') return fileURLToPath(url);
+    } catch {
+      // The loader could not resolve it; the search paths may still.
+    }
+  }
+  for (const searchPath of requireFromHere.resolve.paths(CLAUDE_SDK_PACKAGE) ??
+    []) {
+    const manifest = `${searchPath}/${CLAUDE_SDK_PACKAGE}/package.json`;
+    if (existsSync(manifest)) return manifest;
+  }
+  return undefined;
+}
+
+/**
+ * Locate the native binary the Claude SDK would spawn, by the SDK's own
+ * rule: each candidate platform package resolved from the SDK's location,
+ * the first whose binary exists. `undefined` means npm dropped the
+ * optional platform package — the SDK module still loads, and a run would
+ * fail with "executable not found".
+ */
+export function locateClaudeExecutable(
+  options: { anchor?: string; platform?: NodeJS.Platform; arch?: string } = {},
+): string | undefined {
+  const anchor = options.anchor ?? claudeSdkAnchor();
+  if (anchor === undefined) return undefined;
+  const resolveFromSdk = createRequire(anchor);
+  for (const candidate of claudeExecutableCandidates(
+    options.platform,
+    options.arch,
+  )) {
+    try {
+      const path = resolveFromSdk.resolve(candidate);
+      if (existsSync(path)) return path;
+    } catch {
+      // Not installed here; try the next candidate.
+    }
+  }
+  return undefined;
+}
+
+/** The message a missing binary earns, naming the package and the repair. */
+function missingClaudeExecutableMessage(): string {
+  const [first] = claudeExecutableCandidates();
+  const pkg = first?.slice(0, first.lastIndexOf('/')) ?? CLAUDE_SDK_PACKAGE;
+  return (
+    `ClaudeCodeAdapter found ${CLAUDE_SDK_PACKAGE} but not the native binary it ` +
+    `spawns: ${pkg} is not installed for ${process.platform}-${process.arch}. ` +
+    `Reinstall the SDK where '@sublang/cligent' resolves it (npm ci in a checkout, ` +
+    `or npm install -g ${CLAUDE_SDK_PACKAGE}@${AGENT_RUNTIME_TARGETS.claude[0]!.tested}).`
+  );
 }
 
 const AGENT = 'claude-code' as const;
@@ -940,15 +1034,20 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
+  private readonly locateExecutable: () => string | undefined;
 
   constructor(deps: ClaudeAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadClaudeAgentSdk;
+    this.locateExecutable = deps.locateExecutable ?? locateClaudeExecutable;
   }
 
+  /** The SDK loads and the native binary it spawns is installed: an
+   * importable SDK whose optional platform package npm dropped is not
+   * available, since its first run fails on "executable not found". */
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
-      return true;
+      return this.locateExecutable() !== undefined;
     } catch {
       return false;
     }
@@ -969,6 +1068,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
       throw new Error(
         'ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.',
       );
+    }
+    if (this.locateExecutable() === undefined) {
+      throw new Error(missingClaudeExecutableMessage());
     }
 
     const inboundResume = options?.resume || undefined;
