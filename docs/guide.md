@@ -12,9 +12,9 @@ npm install @sublang/cligent
 Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
 
 ```bash
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
-npm install "@openai/codex-sdk@>=0.144.0"                 # Codex CLI
-npm install "@opencode-ai/sdk@>=1.18.12"                  # OpenCode
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.280"   # Claude Code
+npm install "@openai/codex-sdk@>=0.156.1"                 # Codex CLI
+npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
 # Kimi Code uses an external CLI — no Kimi-specific SDK required
 ```

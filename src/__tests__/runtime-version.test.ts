@@ -321,11 +321,12 @@ describe('the runtimes DR-013 was written about', () => {
     const codex = AGENT_RUNTIME_TARGETS.codex[0]!;
     expect(classifyRuntime(codex, true, '0.139.0').state).toBe('unsupported');
     expect(isBelowFloor('0.139.0', codex)).toBe(true);
-    // 0.145.0 is the first release carrying the whole current model family,
-    // and the floor is that version rather than the tested one, so a working
-    // 0.145.0 install is not refused.
-    expect(classifyRuntime(codex, true, '0.144.0').state).toBe('satisfied');
-    expect(classifyRuntime(codex, true, '0.143.0').state).toBe('unsupported');
+    // 0.156.1 is the first release whose bundled catalog carries the whole
+    // GPT-6 family, and the floor is that release rather than the tested
+    // one, so a working 0.156.1 install is not refused while 0.156.0, which
+    // lacks GPT-6-Sol and GPT-6-Luna, is.
+    expect(classifyRuntime(codex, true, '0.156.1').state).toBe('satisfied');
+    expect(classifyRuntime(codex, true, '0.156.0').state).toBe('unsupported');
   });
 
   it('keeps a CLI probe and the verdict from disagreeing', () => {
@@ -387,7 +388,8 @@ describe('the runtimes DR-013 was written about', () => {
     expect(classifyRuntime(kimi, true, '0.28.1').state).toBe('satisfied');
     const opencodeCli = AGENT_RUNTIME_TARGETS.opencode[1]!;
     expect(opencodeCli.kind).toBe('cli');
-    expect(classifyRuntime(opencodeCli, true, '1.18.11').state).toBe('unsupported');
+    expect(classifyRuntime(opencodeCli, true, '1.18.28').state).toBe('unsupported');
+    expect(classifyRuntime(opencodeCli, true, '1.18.29').state).toBe('satisfied');
   });
 
   it('carries the repair the verdict promises', () => {

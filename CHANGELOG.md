@@ -15,10 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built-in agent runtime targets move to the latest published versions this
   release verifies: Claude Agent SDK 0.3.283, Codex SDK 0.158.0 with its Codex
   CLI 0.158.0, Kimi Code 2.1.1, and OpenCode SDK and CLI 1.18.33. Repair
-  commands pin those versions, and no compatibility floor changed. Gemini CLI
-  stays at 0.57.0: Gemini CLI 0.60.0 and later load system defaults only from
-  root-owned paths, so a run there cannot load the per-run model alias that
-  carries `effort` — DR-013
+  commands pin those versions. Gemini CLI stays at 0.57.0: Gemini CLI 0.60.0
+  and later load system defaults only from root-owned paths, so a run there
+  cannot load the per-run model alias that carries `effort` — DR-013
+- Supported runtime floors now follow the latest models each provider offers.
+  `@anthropic-ai/claude-agent-sdk` rises from `>=0.3.219` to `>=0.3.280`, the
+  first release whose model catalog carries Claude Opus 5.5, and
+  `@openai/codex-sdk` with its bundled Codex CLI rises from `>=0.144.0` to
+  `>=0.156.1`, the first carrying GPT-6-Sol and GPT-6-Luna. The OpenCode SDK
+  and CLI rise from `1.18.12` to `1.18.29`, the first that keeps Claude Fable
+  5.1 and Opus 5.5 conversations working across turns and lists GPT-6 models
+  for ChatGPT sign-in. Older runtimes that loaded before are now refused at
+  load and by `isAvailable()`, with the installed and required versions and
+  the upgrade command named — DR-027
 - `tmux-play`'s first-run config now pins `claude-opus-5-5` for Claude roles
   and `gpt-6-sol` for Codex roles, both at `xhigh` effort. Existing configs are
   unchanged.

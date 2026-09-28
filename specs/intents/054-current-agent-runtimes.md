@@ -17,8 +17,8 @@ Move every built-in adapter's runtime conformance target to its latest published
 - [x] Claude's per-model `thinkingTokens` stays out of exact reasoning detail.
 - [x] tmux-play's generated roles pin `claude-opus-5-5` and `gpt-6-sol` at `xhigh`.
 - [x] DR-027 records the latest-model floor rule and amends the floor rules of DR-013 and DR-023.
-- [ ] Claude's floor rises to `0.3.280`, Codex's to `0.156.1`, and OpenCode's SDK and CLI floors to `1.18.29`, each with bisected evidence beside the descriptor target and matching peer floors.
-- [ ] Kimi's floor records whether serving the latest Kimi models depends on the CLI version.
+- [x] Claude's floor rises to `0.3.280`, Codex's to `0.156.1`, and OpenCode's SDK and CLI floors to `1.18.29`, each with bisected evidence beside the descriptor target and matching peer floors.
+- [x] Kimi's floor stays `0.28.1`, recording that serving the latest Kimi models does not depend on the CLI version.
 - [ ] Every remaining default and example names the latest model of its line.
 - [ ] Gemini is not moved: its latest models `gemini-3.8-flash` and `gemini-3.5-flash-lite` first ship in CLI `0.61.0`, while CLI `0.60.0` and later load system defaults only from root-owned paths, so a floor there would leave `effort` unapplied on every supported version; `0.57.0` stays tested and `0.45.1` the floor until effort delivery is decided.
 

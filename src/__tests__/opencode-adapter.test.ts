@@ -9,7 +9,7 @@ import type {
 import { performance } from 'node:perf_hooks';
 import { PassThrough } from 'node:stream';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type {
   EventMessagePartDelta,
@@ -328,6 +328,17 @@ async function collect(
   }
   return events;
 }
+
+// These tests drive scripted managed servers, so an OpenCode CLI installed on
+// the host must not decide them through its version; the runtime gate itself
+// is verified in runtime-version.test.ts.
+beforeAll(() => {
+  vi.stubEnv('CLIGENT_RUNTIME_GATE', 'off');
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('OpenCodeAdapter', () => {
   it('maps OpenCode SSE events to unified events and filters by session', async () => {

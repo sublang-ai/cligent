@@ -11,10 +11,10 @@
  *
  * Two versions per runtime, deliberately distinct:
  *
- * - `supportedFrom` is the lowest version that serves every provider model or
- *   route on which this release's declared adapter behavior depends and
- *   supplies every runtime surface the adapter drives. It blocks: below it
- *   the runtime refuses to load.
+ * - `supportedFrom` is the oldest version that serves the latest models the
+ *   runtime's provider offers and supplies every runtime surface the adapter
+ *   drives, per [DR-027](../specs/decisions/027-latest-models-oldest-serving-runtime.md).
+ *   It blocks: below it the runtime refuses to load.
  *   For a peer target it is also the published `peerDependencies` floor.
  *   It is established by checking the published runtimes, not by copying
  *   the tested version, because a floor set too high refuses installs that
@@ -103,12 +103,20 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
       repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.283',
-      // The first release whose bundled model catalog carries
-      // `claude-opus-5`: 0.3.218 has `claude-sonnet-5` only, and 0.3.154 —
-      // the previous floor — has neither. Bisected against the published
-      // tarballs, because the catalog is data inside the package rather
-      // than something the API surface reveals.
-      supportedFrom: '0.3.219',
+      // The first release whose baked-in model catalog, which Claude Code
+      // calls its source of truth for per-model IDs and metadata, carries
+      // `claude-opus-5-5`, the latest Claude model: 0.3.278 lacks the entry
+      // and still maps the `opus` alias to `claude-opus-5`, 0.3.279 was
+      // never published, and 0.3.280 carries it with its xhigh and max
+      // effort, adaptive-thinking, and fast-mode capabilities and makes it
+      // the `opus` default. The other latest lines arrived earlier:
+      // `claude-fable-5-1` in 0.3.257 (0.3.252 lacks it and 0.3.253 through
+      // 0.3.256 were never published), while 0.3.251 already carries
+      // `claude-sonnet-5` and `claude-haiku-4-5`. Bisected against the
+      // published darwin-arm64 and linux-x64 platform binaries, because the
+      // catalog is data inside the bundled executable rather than something
+      // the SDK's API surface reveals.
+      supportedFrom: '0.3.280',
       tested: '0.3.283',
     }),
   ]),
@@ -117,15 +125,20 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
       repairSpec: '@openai/codex-sdk@0.158.0',
-      // The lowest release that serves the current gpt-5.6 routes
-      // (`-sol`, `-luna`, `-terra`). An earlier draft required a
-      // `gpt-5.6-pro` slug too and set the floor at 0.145.0; the binary
-      // itself refutes that — "GPT-5.6 Pro is a Responses reasoning mode on
-      // the base model, not a separate `gpt-5.6-pro` slug" — so string
-      // presence was never evidence of a route. 0.143.0 predates all three
-      // routes; 0.139.0, the runtime DR-013 was written about, remains
-      // refused.
-      supportedFrom: '0.144.0',
+      // The first release whose bundled model catalog carries the whole
+      // GPT-6 family, the latest OpenAI models: the published 0.156.0 binary
+      // carries only `gpt-6-astra` (absent from 0.153.0, bundled since
+      // 0.153.1), and 0.156.1 adds `gpt-6-sol` and `gpt-6-luna`. API-key
+      // runs fetch no remote model list while the under-development
+      // `api_key_model_discovery` feature stays off by default, so the
+      // bundled catalog alone decides; ChatGPT account runs also merge a
+      // remote catalog the service filters by each entry's
+      // `minimal_client_version`, which is 0.155.0 for Sol and Luna. A
+      // runtime without the entry falls back to generic slug metadata with no
+      // reasoning levels or speed tiers. Bisected against the published
+      // darwin-arm64 binaries and the tagged `models.json`. 0.139.0, the
+      // runtime DR-013 was written about, stays refused.
+      supportedFrom: '0.156.1',
       tested: '0.158.0',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
@@ -154,11 +167,20 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: '@moonshot-ai/kimi-code',
       repairSpec: '@moonshot-ai/kimi-code@2.1.1',
       command: 'kimi',
-      // The first release whose then-current legacy ACP gate admitted a
-      // configured default model with non-OAuth credentials:
-      // `hasUsableConfiguredDefaultModel` is present in 0.28.1 and absent
-      // in 0.28.0. Version 0.28.1 also negotiates ACP protocol version 1,
-      // the protocol surface the paired SDK and this adapter drive.
+      // Serving Kimi's latest models, `kimi-k3` on the Open Platform and
+      // `k3` or `k3-256k` on Kimi Code, is not gated by the CLI version: from
+      // 0.28.1 through 2.1.1 a session runs only configured aliases, whether
+      // from config.toml, the KIMI_MODEL_* overlay, or the Kimi Code
+      // service's model list written at login, and the same alias sends the
+      // same request in 0.28.1, 0.39.1, and 2.1.1. From 0.40.0 a service
+      // model marked `protocol: "response"` uses the Responses API; that
+      // boundary stays unbound while the service still serves k3 over chat
+      // completions. The floor is therefore the surface boundary: the first
+      // release whose then-current legacy ACP gate admitted a configured
+      // default model with non-OAuth credentials, since
+      // `hasUsableConfiguredDefaultModel` is present in 0.28.1 and absent in
+      // 0.28.0. Version 0.28.1 also negotiates ACP protocol version 1, the
+      // protocol surface the paired SDK and this adapter drive.
       supportedFrom: '0.28.1',
       tested: '2.1.1',
       steps: Object.freeze(['kimi login  # or configure a default model']),
@@ -169,10 +191,19 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       kind: 'peer' as const,
       package: '@opencode-ai/sdk',
       repairSpec: '@opencode-ai/sdk@1.18.33',
-      // 1.18.11 still fails GPT-5.5+ completion requests when reasoning is
-      // enabled; 1.18.12 fixed that route, which this adapter drives whenever
-      // `effort` maps to a reasoning variant.
-      supportedFrom: '1.18.12',
+      // OpenCode takes its model catalog from models.dev at runtime, so the
+      // latest models resolve on any version; only two request paths are
+      // version-gated. Claude Fable 5.1 and Opus 5.5 bind thinking
+      // signatures to a conversation prefix OpenCode re-renders between
+      // turns: 1.18.25 sends no binding control, 1.18.26 adds
+      // `drop_block` but for every Claude model, which Vertex and proxy routes
+      // reject for Claude 5.0 models such as Sonnet 5, and 1.18.27 limits it
+      // to Claude 5.1 and later. The ChatGPT-account route drops every
+      // `gpt-6-*` model through a `gpt-<major>.<minor>` filter up to 1.18.28
+      // and admits them from 1.18.29. The previous 1.18.12 floor fixed an
+      // Azure-only completion route. The server is the serving runtime; the
+      // SDK client keeps the same floor.
+      supportedFrom: '1.18.29',
       tested: '1.18.33',
     }),
     Object.freeze({
@@ -180,9 +211,10 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       package: 'opencode-ai',
       repairSpec: 'opencode-ai@1.18.33',
       command: 'opencode',
-      // The managed CLI serves the same 1.18.12 reasoning-route boundary as
-      // the SDK above; package-23 requires their conformance targets to match.
-      supportedFrom: '1.18.12',
+      // The managed CLI is the server that serves the latest models, with
+      // the 1.18.29 boundary evidenced on the SDK target above; package-23
+      // requires their conformance targets to match.
+      supportedFrom: '1.18.29',
       tested: '1.18.33',
     }),
   ]),
