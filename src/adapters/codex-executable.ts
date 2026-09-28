@@ -235,42 +235,68 @@ export interface CodexExecutableLookup {
   arch?: string;
 }
 
-/** @internal What a Codex executable lookup found. */
+/**
+ * @internal What a Codex executable lookup found, with the host it looked
+ * on wherever the executable is not there. `no-entry` carries codex-13's
+ * diagnostic for a launcher entry no codex-12 route resolves.
+ */
 export type CodexExecutableProbe =
   | { readonly state: 'present'; readonly path: string }
-  | { readonly state: 'missing'; readonly package: string }
-  | { readonly state: 'unsupported' }
-  | { readonly state: 'no-sdk' };
+  | {
+      readonly state: 'missing';
+      readonly package: string;
+      readonly platform: NodeJS.Platform;
+      readonly arch: string;
+    }
+  | {
+      readonly state: 'unsupported';
+      readonly platform: NodeJS.Platform;
+      readonly arch: string;
+    }
+  | {
+      readonly state: 'no-entry';
+      readonly error: Error;
+      readonly platform: NodeJS.Platform;
+      readonly arch: string;
+    };
+
+/**
+ * @internal Whether the Codex SDK resolves from one of codex-12's SDK
+ * anchors, apart from its final fallback to this module's own scope.
+ */
+export function codexSdkResolves(
+  resolution: CodexBinPathResolutionDeps = {},
+): boolean {
+  const { baseRequire, importMetaResolve } = codexResolutionScope(resolution);
+  return codexSdkAnchors(importMetaResolve, baseRequire, []).length > 0;
+}
 
 /**
  * @internal Look for the native binary the Codex SDK's launcher would
- * spawn: the SDK must resolve from one of codex-12's SDK anchors, the
- * launcher must support this platform, the launcher entry must resolve
- * (else `@openai/codex` itself is what is missing), and codex-64's lookup
- * must find the binary (else its platform package is).
+ * spawn: the launcher must support this platform (else `unsupported`), its
+ * entry must resolve by codex-12's routes (else `no-entry`), and codex-64's
+ * lookup must find the binary (else its platform package is `missing`).
  */
 export function probeCodexExecutable(
   lookup: CodexExecutableLookup = {},
 ): CodexExecutableProbe {
-  const resolution = lookup.resolution ?? {};
-  const { baseRequire, importMetaResolve } = codexResolutionScope(resolution);
-  if (codexSdkAnchors(importMetaResolve, baseRequire, []).length === 0) {
-    return { state: 'no-sdk' };
-  }
-  const candidate = codexExecutableCandidate(lookup.platform, lookup.arch);
-  if (candidate === undefined) return { state: 'unsupported' };
+  const platform = lookup.platform ?? process.platform;
+  const arch = lookup.arch ?? process.arch;
+  const candidate = codexExecutableCandidate(platform, arch);
+  if (candidate === undefined) return { state: 'unsupported', platform, arch };
   let launcherPath: string;
   try {
-    launcherPath = resolveCodexBinPath(resolution);
-  } catch {
-    return { state: 'missing', package: CODEX_LAUNCHER_PACKAGE };
+    launcherPath = resolveCodexBinPath(lookup.resolution);
+  } catch (error) {
+    return {
+      state: 'no-entry',
+      error: error instanceof Error ? error : new Error(String(error)),
+      platform,
+      arch,
+    };
   }
-  const path = locateCodexExecutable({
-    launcherPath,
-    platform: lookup.platform,
-    arch: lookup.arch,
-  });
+  const path = locateCodexExecutable({ launcherPath, platform, arch });
   return path === undefined
-    ? { state: 'missing', package: candidate.package }
+    ? { state: 'missing', package: candidate.package, platform, arch }
     : { state: 'present', path };
 }

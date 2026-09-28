@@ -26,7 +26,8 @@ import {
   CLAUDE_SDK_PACKAGE,
   claudeExecutableCandidates,
   claudeExecutablePackage,
-  locateClaudeExecutable,
+  probeClaudeExecutable,
+  type ClaudeExecutableProbe,
 } from './claude-executable.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
@@ -196,32 +197,55 @@ interface ClaudeErrorMessage {
 interface ClaudeAdapterDeps {
   loadSdk?: () => Promise<ClaudeAgentSdk>;
   /**
-   * Where the SDK's native binary stands, or undefined when the platform
-   * package that carries it is not installed (claude-code-57). The real
-   * lookup over the tree this module resolves the SDK from is the default
-   * only alongside the default loader: an injected `loadSdk` supplies no
+   * Where the SDK's native binary stands (claude-code-57). The real lookup
+   * over the tree this module resolves the SDK from is the default only
+   * alongside the default loader: an injected `loadSdk` supplies no
    * installed tree to search, so its binary counts as present unless this
    * is injected too.
    */
-  locateExecutable?: () => string | undefined;
+  probeExecutable?: () => ClaudeExecutableProbe;
 }
 
+const INJECTED_SDK_EXECUTABLE: ClaudeExecutableProbe = {
+  state: 'present',
+  path: 'injected-sdk',
+};
+
 /**
- * The refusal a missing binary earns (claude-code-56): the package the SDK
- * tries first on this host, the host, and the reinstall that restores it.
+ * The refusal a binary the lookup did not find earns (claude-code-56): on a
+ * host the SDK publishes no binary for, that fact, since no reinstall can
+ * help; otherwise the package the SDK tries first on this host, the host,
+ * and the reinstall that restores it.
  */
-function missingClaudeExecutableMessage(): string {
-  const [first] = claudeExecutableCandidates();
-  const pkg =
-    first === undefined ? CLAUDE_SDK_PACKAGE : claudeExecutablePackage(first);
+function claudeExecutableRefusal(
+  probe: Exclude<ClaudeExecutableProbe, { state: 'present' }>,
+): string {
+  const host =
+    probe.state === 'no-sdk'
+      ? `${process.platform}-${process.arch}`
+      : `${probe.platform}-${probe.arch}`;
+  if (probe.state === 'unsupported') {
+    return (
+      `ClaudeCodeAdapter cannot run on ${host}: ${CLAUDE_SDK_PACKAGE} ` +
+      `publishes no native binary for ${host}.`
+    );
+  }
+  let pkg: string;
+  if (probe.state === 'missing') {
+    pkg = probe.package;
+  } else {
+    const [first] = claudeExecutableCandidates();
+    pkg =
+      first === undefined ? CLAUDE_SDK_PACKAGE : claudeExecutablePackage(first);
+  }
   const tested = AGENT_RUNTIME_TARGETS.claude[0]!.tested;
   return (
     `ClaudeCodeAdapter found ${CLAUDE_SDK_PACKAGE} but not the native binary ` +
     `it spawns: the optional platform package ${pkg} is not installed for ` +
-    `${process.platform}-${process.arch}. Reinstall so npm installs it: run ` +
-    `npm ci in a checkout, or reinstall the SDK where '@sublang/cligent' ` +
-    `resolves it (npm install ${CLAUDE_SDK_PACKAGE}@${tested}, with -g for a ` +
-    `global install), without --omit=optional.`
+    `${host}. Reinstall so npm installs it: run npm ci in a checkout, or ` +
+    `reinstall the SDK where '@sublang/cligent' resolves it (npm install ` +
+    `${CLAUDE_SDK_PACKAGE}@${tested}, with -g for a global install), without ` +
+    `--omit=optional.`
   );
 }
 
@@ -974,15 +998,15 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
-  private readonly locateExecutable: () => string | undefined;
+  private readonly probeExecutable: () => ClaudeExecutableProbe;
 
   constructor(deps: ClaudeAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadClaudeAgentSdk;
-    this.locateExecutable =
-      deps.locateExecutable ??
+    this.probeExecutable =
+      deps.probeExecutable ??
       (deps.loadSdk === undefined
-        ? locateClaudeExecutable
-        : () => 'injected-sdk');
+        ? () => probeClaudeExecutable()
+        : () => INJECTED_SDK_EXECUTABLE);
   }
 
   /** claude-code-13: the SDK loads and the native binary it spawns is
@@ -992,7 +1016,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
-      return this.locateExecutable() !== undefined;
+      return this.probeExecutable().state === 'present';
     } catch {
       return false;
     }
@@ -1016,8 +1040,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
     }
     // claude-code-56: refuse before any SDK call rather than let the SDK
     // fail on the binary it cannot spawn.
-    if (this.locateExecutable() === undefined) {
-      throw new Error(missingClaudeExecutableMessage());
+    const executable = this.probeExecutable();
+    if (executable.state !== 'present') {
+      throw new Error(claudeExecutableRefusal(executable));
     }
 
     const inboundResume = options?.resume || undefined;

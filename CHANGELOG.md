@@ -30,7 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unavailable, and `classifyRuntime` calls it `missing` with its installed
   version; a run refuses before any SDK call, naming the package and the
   platform. Repair: reinstall so npm installs the optional platform package —
-  `npm ci` in a checkout, or reinstall the SDK without `--omit=optional`.
+  `npm ci` in a checkout, or reinstall the SDK without `--omit=optional`. On a
+  host the SDK publishes no native binary for, such as FreeBSD, the refusal
+  says so and advises no reinstall, and an unresolvable Codex launcher entry
+  keeps its own resolution diagnostic.
 
 ## [0.27.0] - 2026-09-08
 

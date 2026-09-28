@@ -6,6 +6,8 @@ import {
   type ClaudeExecutableLookup,
 } from './adapters/claude-executable.js';
 import {
+  CODEX_LAUNCHER_PACKAGE,
+  codexSdkResolves,
   probeCodexExecutable,
   type CodexExecutableLookup,
 } from './adapters/codex-executable.js';
@@ -58,25 +60,21 @@ export function locateAgentExecutableWith(
 ): AgentExecutable {
   const platform = lookup.platform ?? process.platform;
   const arch = lookup.arch ?? process.arch;
-  const probe =
-    runtime === 'claude'
-      ? probeClaudeExecutable({
-          ...lookup.claude,
-          platform,
-          arch,
-          preferMusl: lookup.preferMusl,
-        })
-      : probeCodexExecutable({ ...lookup.codex, platform, arch });
-  switch (probe.state) {
-    case 'present':
-      return { state: 'present', path: probe.path };
-    case 'missing':
-      return { state: 'missing', package: probe.package, platform, arch };
-    case 'unsupported':
-      return { state: 'unsupported', platform, arch };
-    case 'no-sdk':
-      return { state: 'no-sdk' };
+  if (runtime === 'claude') {
+    // The Claude probe's states are engine-88's own.
+    return probeClaudeExecutable({
+      ...lookup.claude,
+      platform,
+      arch,
+      preferMusl: lookup.preferMusl,
+    });
   }
+  if (!codexSdkResolves(lookup.codex?.resolution)) return { state: 'no-sdk' };
+  const probe = probeCodexExecutable({ ...lookup.codex, platform, arch });
+  // An unresolvable launcher entry leaves @openai/codex itself missing.
+  return probe.state === 'no-entry'
+    ? { state: 'missing', package: CODEX_LAUNCHER_PACKAGE, platform, arch }
+    : probe;
 }
 
 /**

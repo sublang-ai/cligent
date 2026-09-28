@@ -151,33 +151,50 @@ export interface ClaudeExecutableLookup {
   preferMusl?: boolean;
 }
 
-/** @internal What a Claude executable lookup found. */
+/**
+ * @internal What a Claude executable lookup found, with the host it looked
+ * on wherever the executable is not there.
+ */
 export type ClaudeExecutableProbe =
   | { readonly state: 'present'; readonly path: string }
-  | { readonly state: 'missing'; readonly package: string }
-  | { readonly state: 'unsupported' }
+  | {
+      readonly state: 'missing';
+      readonly package: string;
+      readonly platform: NodeJS.Platform;
+      readonly arch: string;
+    }
+  | {
+      readonly state: 'unsupported';
+      readonly platform: NodeJS.Platform;
+      readonly arch: string;
+    }
   | { readonly state: 'no-sdk' };
 
 /**
  * @internal Look for the native binary the Claude SDK would spawn, by the
  * SDK's own rule (claude-code-57): each candidate platform package
- * resolved from the SDK's location, the first whose binary exists. With
- * none installed, the SDK's manifest tells a platform it publishes no
- * binary for (`unsupported`) from one whose optional package npm dropped
- * (`missing`, naming the package the SDK tries first on this host).
+ * resolved from the SDK's location, the first whose binary exists, found
+ * whatever the manifest lists. With none installed, the SDK's manifest
+ * tells a platform it publishes no binary for (`unsupported`) from one
+ * whose optional package npm dropped (`missing`, naming the package the
+ * SDK tries first on this host); a manifest that says nothing either way
+ * reads `missing`, since a vendored layout is legitimate. An unresolvable
+ * SDK is `no-sdk`.
  */
 export function probeClaudeExecutable(
   lookup: ClaudeExecutableLookup = {},
 ): ClaudeExecutableProbe {
   const found = 'anchor' in lookup ? lookup.anchor : claudeSdkAnchor();
   if (found === undefined) return { state: 'no-sdk' };
+  const platform = lookup.platform ?? process.platform;
+  const arch = lookup.arch ?? process.arch;
   // Node resolves the SDK's own imports from its physical location, so a
   // linked install searches the tree the link points into (the search-path
   // manifest is not canonical where Node predates import.meta.resolve).
   const anchor = toRealPath(found);
   const candidates = claudeExecutableCandidates(
-    lookup.platform,
-    lookup.arch,
+    platform,
+    arch,
     lookup.preferMusl,
   );
   const resolveFromSdk = createRequire(anchor);
@@ -192,20 +209,7 @@ export function probeClaudeExecutable(
   const packages = candidates.map(claudeExecutablePackage);
   const published = claudeSdkPlatformPackages(anchor);
   if (published !== undefined && !packages.some((pkg) => published.has(pkg))) {
-    return { state: 'unsupported' };
+    return { state: 'unsupported', platform, arch };
   }
-  return { state: 'missing', package: packages[0]! };
-}
-
-/**
- * @internal Locate the native binary the Claude SDK would spawn
- * (claude-code-57). `undefined` means no candidate is installed — npm
- * dropped the optional platform package, yet the SDK module still loads
- * and a run would fail with "executable not found".
- */
-export function locateClaudeExecutable(
-  lookup: ClaudeExecutableLookup = {},
-): string | undefined {
-  const probe = probeClaudeExecutable(lookup);
-  return probe.state === 'present' ? probe.path : undefined;
+  return { state: 'missing', package: packages[0]!, platform, arch };
 }

@@ -123,6 +123,68 @@ describe('locateAgentExecutable over fake module trees (engine-89)', () => {
     });
   });
 
+  it('finds a Claude executable before consulting the manifest', () => {
+    // engine-88's present row precedes its unsupported row: the SDK spawns
+    // what it finds, so an installed package its manifest does not list is
+    // present.
+    withTree((modules) => {
+      const sdk = writeManifest(modules, CLAUDE_SDK, {
+        optionalDependencies: { [`${CLAUDE_SDK}-linux-arm64`]: '0.0.0-test' },
+      });
+      const host = {
+        claude: { anchor: join(sdk, 'package.json') },
+        platform: 'android',
+        arch: 'arm64',
+      } as const;
+      expect(locateAgentExecutableWith('claude', host)).toEqual({
+        state: 'unsupported',
+        platform: 'android',
+        arch: 'arm64',
+      });
+      const binary = writeFile(
+        join(
+          writeManifest(modules, `${CLAUDE_SDK}-linux-arm64-android`),
+          'claude',
+        ),
+      );
+      expect(locateAgentExecutableWith('claude', host)).toEqual({
+        state: 'present',
+        path: binary,
+      });
+    });
+  });
+
+  it('reads a Claude manifest that says nothing as a missing package', () => {
+    // engine-88: an unreadable manifest, or one declaring no optional
+    // dependencies, is no evidence of an unsupported host, so the lookup
+    // names the package the SDK would try on it.
+    const freebsd = { platform: 'freebsd', arch: 'x64' } as const;
+    const expected = {
+      state: 'missing',
+      package: `${CLAUDE_SDK}-freebsd-x64`,
+      ...freebsd,
+    };
+    withTree((modules) => {
+      const sdk = writeManifest(modules, CLAUDE_SDK);
+      writeFileSync(join(sdk, 'package.json'), '{ not json');
+      expect(
+        locateAgentExecutableWith('claude', {
+          claude: { anchor: join(sdk, 'package.json') },
+          ...freebsd,
+        }),
+      ).toEqual(expected);
+    });
+    withTree((modules) => {
+      const sdk = writeManifest(modules, CLAUDE_SDK);
+      expect(
+        locateAgentExecutableWith('claude', {
+          claude: { anchor: join(sdk, 'package.json') },
+          ...freebsd,
+        }),
+      ).toEqual(expected);
+    });
+  });
+
   it('reports each Codex state by the launcher rule beside the SDK', () => {
     withTree((modules) => {
       const codex = {

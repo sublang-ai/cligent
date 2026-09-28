@@ -24,11 +24,10 @@ import {
   trimCodexRustWhitespace,
 } from './codex-path.js';
 import {
-  CODEX_LAUNCHER_PACKAGE,
   CODEX_SDK_PACKAGE,
-  codexExecutableCandidate,
-  locateCodexExecutable,
+  probeCodexExecutable,
   resolveCodexBinPath,
+  type CodexExecutableProbe,
 } from './codex-executable.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
@@ -135,14 +134,18 @@ interface CodexSdk {
 interface CodexAdapterDeps {
   loadSdk?: () => Promise<CodexSdk>;
   /**
-   * Where the Codex CLI's native binary stands, or undefined when the
-   * platform package that carries it is not installed (codex-64). The real
-   * lookup beside the resolved launcher is the default only alongside the
-   * default loader: an injected `loadSdk` supplies no installed tree to
-   * search, so its binary counts as present unless this is injected too.
+   * Where the Codex CLI's native binary stands (codex-64). The real lookup
+   * beside the resolved launcher is the default only alongside the default
+   * loader: an injected `loadSdk` supplies no installed tree to search, so
+   * its binary counts as present unless this is injected too.
    */
-  locateExecutable?: () => string | undefined;
+  probeExecutable?: () => CodexExecutableProbe;
 }
+
+const INJECTED_SDK_EXECUTABLE: CodexExecutableProbe = {
+  state: 'present',
+  path: 'injected-sdk',
+};
 
 const AGENT = 'codex' as const;
 const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
@@ -1120,21 +1123,37 @@ interface CodexConfigOverrideWrapper {
 }
 
 /**
- * The refusal a missing binary earns (codex-63): the platform package the
- * launcher spawns from on this host, the host, and the reinstall that
- * restores it.
+ * The refusal a binary the lookup did not find earns (codex-63): on a host
+ * the launcher has no target for, that fact, since no reinstall can help;
+ * for an unresolvable launcher entry, codex-13's diagnostic; otherwise the
+ * platform package the launcher spawns from on this host, the host, and
+ * the reinstall that restores it.
  */
-function missingCodexExecutableMessage(): string {
-  const pkg = codexExecutableCandidate()?.package ?? CODEX_LAUNCHER_PACKAGE;
-  const tested = AGENT_RUNTIME_TARGETS.codex[0]!.tested;
-  return (
-    `CodexAdapter found ${CODEX_SDK_PACKAGE} but not the native binary the ` +
-    `Codex launcher spawns: the optional platform package ${pkg} is not ` +
-    `installed for ${process.platform}-${process.arch}. Reinstall so npm ` +
-    `installs it: run npm ci in a checkout, or reinstall the SDK where ` +
-    `'@sublang/cligent' resolves it (npm install ${CODEX_SDK_PACKAGE}@${tested}, ` +
-    `with -g for a global install), without --omit=optional.`
-  );
+function codexExecutableRefusal(
+  probe: Exclude<CodexExecutableProbe, { state: 'present' }>,
+): Error {
+  const host = `${probe.platform}-${probe.arch}`;
+  switch (probe.state) {
+    case 'unsupported':
+      return new Error(
+        `CodexAdapter cannot run on ${host}: ${CODEX_SDK_PACKAGE} publishes ` +
+          `no native binary for ${host}.`,
+      );
+    case 'no-entry':
+      return probe.error;
+    case 'missing': {
+      const tested = AGENT_RUNTIME_TARGETS.codex[0]!.tested;
+      return new Error(
+        `CodexAdapter found ${CODEX_SDK_PACKAGE} but not the native binary ` +
+          `the Codex launcher spawns: the optional platform package ` +
+          `${probe.package} is not installed for ${host}. Reinstall so npm ` +
+          `installs it: run npm ci in a checkout, or reinstall the SDK where ` +
+          `'@sublang/cligent' resolves it (npm install ` +
+          `${CODEX_SDK_PACKAGE}@${tested}, with -g for a global install), ` +
+          `without --omit=optional.`,
+      );
+    }
+  }
 }
 
 // codex-12's resolution stays on this subpath, where it was public before
@@ -1246,7 +1265,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
-  private readonly locateExecutable: () => string | undefined;
+  private readonly probeExecutable: () => CodexExecutableProbe;
 
   /**
    * codex-15: `turn.completed.usage` reports the thread's cumulative total,
@@ -1266,11 +1285,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
 
   constructor(deps: CodexAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadCodexSdk;
-    this.locateExecutable =
-      deps.locateExecutable ??
+    this.probeExecutable =
+      deps.probeExecutable ??
       (deps.loadSdk === undefined
-        ? locateCodexExecutable
-        : () => 'injected-sdk');
+        ? () => probeCodexExecutable()
+        : () => INJECTED_SDK_EXECUTABLE);
   }
 
   private async acquireResumeSession(sessionId: string): Promise<() => void> {
@@ -1393,7 +1412,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
-      return this.locateExecutable() !== undefined;
+      return this.probeExecutable().state === 'present';
     } catch {
       return false;
     }
@@ -1422,8 +1441,9 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     // codex-63: refuse before any SDK call rather than let the launcher
     // fail on the binary it cannot spawn. An unresolvable launcher raises
     // codex-13's diagnostic from here, before any abort registration.
-    if (this.locateExecutable() === undefined) {
-      throw new Error(missingCodexExecutableMessage());
+    const executable = this.probeExecutable();
+    if (executable.state !== 'present') {
+      throw codexExecutableRefusal(executable);
     }
 
     const {
