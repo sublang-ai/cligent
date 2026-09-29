@@ -50,7 +50,7 @@ describe.each([
         const path = new URL(request.url).pathname;
         requests.push({ method: request.method, path });
         if (path === '/global/health')
-          return Response.json({ healthy: true, version: '1.18.25' });
+          return Response.json({ healthy: true, version: '1.18.33' });
         if (path === '/session/saved' && request.method === 'GET') {
           if (status === 0)
             throw new Error('session not found: transport lost');

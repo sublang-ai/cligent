@@ -6,9 +6,9 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
@@ -28,6 +28,7 @@ import type {
   UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
+import { createGeminiHomeOverlay } from './gemini-home.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
@@ -74,6 +75,7 @@ interface GeminiAdapterDeps {
   probeAvailability?: () => Promise<boolean>;
   createSettingsOverride?: (
     settingsConfig: GeminiSettingsConfig,
+    context: GeminiSettingsOverrideContext,
   ) => Promise<GeminiSettingsOverride>;
   createPolicyOverride?: (
     toolConfig: GeminiToolConfig,
@@ -638,7 +640,19 @@ export interface GeminiSettingsConfig {
 
 interface GeminiSettingsOverride {
   env: NodeJS.ProcessEnv;
+  /**
+   * `false` when a selected effort alias cannot reach the CLI, so the run
+   * sends the concrete model instead.
+   */
+  deliversAlias?: boolean;
   cleanup: () => Promise<void>;
+}
+
+interface GeminiSettingsOverrideContext {
+  /** The child's effective working directory. */
+  cwd: string;
+  /** The environment the child inherits before any override applies. */
+  env: NodeJS.ProcessEnv;
 }
 
 interface GeminiPolicyOverride {
@@ -1047,10 +1061,14 @@ function stripJsonComments(content: string): string {
   return result;
 }
 
-async function readConfiguredSystemDefaults(
-  env: NodeJS.ProcessEnv,
+/**
+ * Reads one Gemini settings file, which may carry JSON comments. An absent
+ * file reads as `{}`; any other failure rejects naming the file.
+ */
+async function readGeminiSettingsFile(
+  path: string,
+  label: string,
 ): Promise<Record<string, unknown>> {
-  const path = systemDefaultsPath(env);
   let content: string;
 
   try {
@@ -1067,31 +1085,30 @@ async function readConfiguredSystemDefaults(
     parsed = JSON.parse(stripJsonComments(content)) as unknown;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Unable to parse Gemini system defaults at ${path}: ${detail}`,
-    );
+    throw new Error(`Unable to parse Gemini ${label} at ${path}: ${detail}`);
   }
 
-  return jsonObject(parsed, `Gemini system defaults at ${path}`);
+  return jsonObject(parsed, `Gemini ${label} at ${path}`);
 }
 
 function mergeGeminiModelAlias(
-  defaults: Record<string, unknown>,
+  settings: Record<string, unknown>,
   alias: GeminiModelAliasConfig,
+  path: string,
 ): Record<string, unknown> {
   const existingModelConfigs =
-    defaults.modelConfigs === undefined
+    settings.modelConfigs === undefined
       ? {}
       : jsonObject(
-          defaults.modelConfigs,
-          'Gemini system defaults modelConfigs',
+          settings.modelConfigs,
+          `Gemini user settings modelConfigs at ${path}`,
         );
   const existingAliases =
     existingModelConfigs.customAliases === undefined
       ? {}
       : jsonObject(
           existingModelConfigs.customAliases,
-          'Gemini system defaults modelConfigs.customAliases',
+          `Gemini user settings modelConfigs.customAliases at ${path}`,
         );
   const generatedAlias =
     buildGeminiModelAliasSettings(alias).modelConfigs.customAliases[
@@ -1099,7 +1116,7 @@ function mergeGeminiModelAlias(
     ]!;
 
   return {
-    ...defaults,
+    ...settings,
     modelConfigs: {
       ...existingModelConfigs,
       customAliases: {
@@ -1110,35 +1127,120 @@ function mergeGeminiModelAlias(
   };
 }
 
+/** The home a Gemini child resolves before any Cligent overlay applies. */
+function geminiRealHome(context: GeminiSettingsOverrideContext): string {
+  const configured = context.env.GEMINI_CLI_HOME;
+  return configured ? resolve(context.cwd, configured) : homedir();
+}
+
+async function comparablePath(path: string): Promise<string> {
+  let resolved: string;
+  try {
+    resolved = await realpath(path);
+  } catch {
+    resolved = resolve(path);
+  }
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? resolved.toLowerCase()
+    : resolved;
+}
+
+/** Whether a `tools.sandbox` value turns Gemini's sandbox on. */
+function sandboxSettingEnables(value: unknown): boolean {
+  if (Array.isArray(value)) return false;
+  if (typeof value === 'object' && value !== null) {
+    return Boolean((value as { enabled?: unknown }).enabled);
+  }
+  if (typeof value === 'string') {
+    return value !== '' && value !== '0' && value !== 'false';
+  }
+  return Boolean(value);
+}
+
+/**
+ * Whether the Gemini child would start its own sandbox, which confines writes
+ * to paths under the home it is given and so cannot follow the overlay's
+ * links. The environment decides when set; otherwise the highest-precedence
+ * settings layer that sets `tools.sandbox` does.
+ */
+async function geminiSandboxRequested(
+  context: GeminiSettingsOverrideContext,
+  userSettings: Record<string, unknown>,
+): Promise<boolean> {
+  if (context.env.SANDBOX) return false;
+  const fromEnv = context.env.GEMINI_SANDBOX?.trim().toLowerCase();
+  if (fromEnv) return fromEnv !== '0' && fromEnv !== 'false';
+
+  const optional = (path: string): Promise<Record<string, unknown>> =>
+    readGeminiSettingsFile(path, 'settings').catch(() => ({}));
+  const layers: Record<string, unknown>[] = [
+    await optional(systemSettingsPath(context.env)),
+    await optional(join(context.cwd, '.gemini', 'settings.json')),
+    userSettings,
+    await optional(systemDefaultsPath(context.env)),
+  ];
+  for (const layer of layers) {
+    const tools = layer.tools;
+    if (typeof tools !== 'object' || tools === null) continue;
+    const sandbox = (tools as Record<string, unknown>).sandbox;
+    if (sandbox !== undefined) return sandboxSettingEnables(sandbox);
+  }
+  return false;
+}
+
+const UNDELIVERED_ALIAS_OVERRIDE: GeminiSettingsOverride = {
+  env: {},
+  deliversAlias: false,
+  cleanup: async () => {},
+};
+
+/**
+ * gemini-34: delivers an effort alias through a per-run user-settings home,
+ * the one settings layer every supported Gemini CLI loads from a path the
+ * caller chooses.
+ */
 async function defaultCreateSettingsOverride(
   settingsConfig: GeminiSettingsConfig,
+  context: GeminiSettingsOverrideContext = {
+    cwd: process.cwd(),
+    env: process.env,
+  },
 ): Promise<GeminiSettingsOverride> {
   if (!settingsConfig.modelAlias) {
     return NOOP_SETTINGS_OVERRIDE;
   }
 
-  const defaults = await readConfiguredSystemDefaults(process.env);
-  const settings = mergeGeminiModelAlias(defaults, settingsConfig.modelAlias);
-  const dir = await mkdtemp(join(tmpdir(), 'cligent-gemini-'));
-  const filePath = join(dir, 'system-defaults.json');
-
-  try {
-    await writeFile(filePath, `${JSON.stringify(settings)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-  } catch (error) {
-    await rm(dir, { recursive: true, force: true });
-    throw error;
+  const realHome = geminiRealHome(context);
+  // Gemini reads a workspace that is its home as neither workspace nor
+  // project; a separate home would make it load the real settings twice.
+  if (
+    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
+  ) {
+    return UNDELIVERED_ALIAS_OVERRIDE;
   }
 
+  const settingsPath = join(realHome, '.gemini', 'settings.json');
+  const userSettings = await readGeminiSettingsFile(
+    settingsPath,
+    'user settings',
+  );
+  if (await geminiSandboxRequested(context, userSettings)) {
+    return UNDELIVERED_ALIAS_OVERRIDE;
+  }
+
+  const settings = mergeGeminiModelAlias(
+    userSettings,
+    settingsConfig.modelAlias,
+    settingsPath,
+  );
+  const overlay = await createGeminiHomeOverlay(
+    realHome,
+    `${JSON.stringify(settings, null, 2)}\n`,
+  );
+
   return {
-    env: {
-      GEMINI_CLI_SYSTEM_DEFAULTS_PATH: filePath,
-    },
-    cleanup: async () => {
-      await rm(dir, { recursive: true, force: true });
-    },
+    env: { GEMINI_CLI_HOME: overlay.home },
+    cleanup: overlay.close,
   };
 }
 
@@ -1329,8 +1431,10 @@ function buildInitPayload(
   sourceEvent: Record<string, unknown> | undefined,
   options: AgentOptions<GeminiEffort> | undefined,
   toolConfig: GeminiToolConfig,
+  effortAlias: string | undefined,
 ): {
   model: string;
+  reportedModel?: string;
   cwd: string;
   tools: string[];
   capabilities: Record<string, unknown>;
@@ -1346,8 +1450,13 @@ function buildInitPayload(
         ? toolConfig.allowedTools
         : [];
 
+  const namedModel = asString(sourceEvent?.model);
+  // The runtime names this run's effort alias, not a model (gemini-11).
+  const reportedModel = namedModel === effortAlias ? undefined : namedModel;
+
   return {
-    model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
+    model: options?.model ?? namedModel ?? 'unknown',
+    ...(reportedModel !== undefined ? { reportedModel } : {}),
     cwd: options?.cwd ?? asString(sourceEvent?.cwd) ?? process.cwd(),
     tools,
     capabilities: {
@@ -1376,6 +1485,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
   private readonly createSettingsOverride: (
     settingsConfig: GeminiSettingsConfig,
+    context: GeminiSettingsOverrideContext,
   ) => Promise<GeminiSettingsOverride>;
 
   private readonly createPolicyOverride: (
@@ -1466,7 +1576,22 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     try {
       settingsOverride = await this.createSettingsOverride(
         mapped.settingsConfig,
+        {
+          cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
+          env: process.env,
+        },
       );
+      // gemini-7: an alias the override cannot deliver would name no model,
+      // so the run sends the concrete model and leaves effort unapplied.
+      const modelAlias = mapped.settingsConfig.modelAlias;
+      const args =
+        modelAlias && settingsOverride.deliversAlias === false
+          ? mapped.args.map((arg) =>
+              arg === `--model=${modelAlias.alias}`
+                ? `--model=${modelAlias.model}`
+                : arg,
+            )
+          : mapped.args;
       policyOverride = await this.createPolicyOverride(mapped.toolConfig);
       try {
         telemetryCapture = await this.createTelemetryCapture();
@@ -1488,11 +1613,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
       child = this.spawnProcess(
         mapped.command,
-        [
-          ...mapped.args.slice(0, -1),
-          ...policyOverride.args,
-          ...mapped.args.slice(-1),
-        ],
+        [...args.slice(0, -1), ...policyOverride.args, ...args.slice(-1)],
         spawnOptions,
       );
 
@@ -1544,7 +1665,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             yield createEvent(
               'init',
               AGENT,
-              buildInitPayload(undefined, options, mapped.toolConfig),
+              buildInitPayload(
+                undefined,
+                options,
+                mapped.toolConfig,
+                mapped.settingsConfig.modelAlias?.alias,
+              ),
               sessionId,
             );
             initYielded = true;
@@ -1581,7 +1707,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
             yield createEvent(
               'init',
               AGENT,
-              buildInitPayload(message, options, mapped.toolConfig),
+              buildInitPayload(
+                message,
+                options,
+                mapped.toolConfig,
+                mapped.settingsConfig.modelAlias?.alias,
+              ),
               sessionId,
             );
             initYielded = true;
@@ -1593,7 +1724,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           yield createEvent(
             'init',
             AGENT,
-            buildInitPayload(message, options, mapped.toolConfig),
+            buildInitPayload(
+              message,
+              options,
+              mapped.toolConfig,
+              mapped.settingsConfig.modelAlias?.alias,
+            ),
             sessionId,
           );
           initYielded = true;
@@ -1789,7 +1925,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         yield createEvent(
           'init',
           AGENT,
-          buildInitPayload(undefined, options, mapped.toolConfig),
+          buildInitPayload(
+            undefined,
+            options,
+            mapped.toolConfig,
+            mapped.settingsConfig.modelAlias?.alias,
+          ),
           sessionId,
         );
         initYielded = true;
@@ -1903,7 +2044,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         yield createEvent(
           'init',
           AGENT,
-          buildInitPayload(undefined, options, mapped.toolConfig),
+          buildInitPayload(
+            undefined,
+            options,
+            mapped.toolConfig,
+            mapped.settingsConfig.modelAlias?.alias,
+          ),
           sessionId,
         );
         initYielded = true;

@@ -1568,6 +1568,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       sourceEvent?: Record<string, unknown>,
     ): {
       model: string;
+      reportedModel?: string;
       cwd: string;
       tools: string[];
       capabilities: Record<string, unknown>;
@@ -1598,10 +1599,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
           ? inferredTools
           : [];
 
-      rateCardModel ??= asString(sourceEvent?.model);
+      const reportedModel = asString(sourceEvent?.model);
+      rateCardModel ??= reportedModel;
 
       return {
-        model: options?.model ?? asString(sourceEvent?.model) ?? 'unknown',
+        model: options?.model ?? reportedModel ?? 'unknown',
+        ...(reportedModel !== undefined ? { reportedModel } : {}),
         cwd: options?.cwd ?? asString(sourceEvent?.cwd) ?? process.cwd(),
         tools,
         capabilities: {

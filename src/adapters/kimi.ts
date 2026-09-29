@@ -549,6 +549,61 @@ function selectedConfigValue(
   return typeof currentValue === 'string' ? currentValue : undefined;
 }
 
+/**
+ * The values a session's `thinking` select advertises, flat or grouped as ACP
+ * allows, or `undefined` when the session advertises no such select
+ * (kimi-38). Reading them makes them a consumed field, so values that cannot
+ * be read are malformed traffic rather than an unknown answer (kimi-27).
+ */
+function advertisedThinkingValues(
+  options: AcpSessionConfigOption[] | null | undefined,
+): string[] | undefined {
+  const option = options?.find((candidate) => candidate.id === 'thinking');
+  if (option?.type !== 'select') return undefined;
+  const entries = (option as { options?: unknown }).options;
+  if (!Array.isArray(entries)) {
+    throw malformedAcpTraffic('thinking config option lists no values');
+  }
+  const values: string[] = [];
+  const readValue = (entry: unknown): void => {
+    const value = asRecord(entry)?.value;
+    if (typeof value !== 'string') {
+      throw malformedAcpTraffic(
+        'thinking config option carries a malformed value',
+      );
+    }
+    values.push(value);
+  };
+  for (const entry of entries) {
+    const group = asRecord(entry)?.options;
+    if (Array.isArray(group)) {
+      group.forEach(readValue);
+    } else {
+      readValue(entry);
+    }
+  }
+  return values;
+}
+
+/** kimi-38: the selected model cannot take the requested thinking value. */
+class KimiEffortUnavailableError extends Error {
+  constructor(
+    model: string | undefined,
+    requested: string,
+    advertised: readonly string[],
+  ) {
+    super(
+      `Kimi model ${model ?? 'unknown'} cannot take thinking '${requested}': ` +
+        `it advertises ${
+          advertised.length > 0
+            ? advertised.map((value) => `'${value}'`).join(', ')
+            : 'no thinking values'
+        }. Request 'on' or omit effort for this model.`,
+    );
+    this.name = 'KimiEffortUnavailableError';
+  }
+}
+
 function errorCode(error: unknown): number | undefined {
   return typeof error === 'object' &&
     error !== null &&
@@ -1351,8 +1406,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           throw new Error('Kimi ACP run aborted during session setup');
         }
 
-        let effectiveModel =
-          mapped.model ?? selectedConfigValue(configOptions, 'model');
+        // kimi-17: the session configuration's own selection, never the
+        // request, is the reported model.
+        let selectedModel = selectedConfigValue(configOptions, 'model');
+        let effectiveModel = mapped.model ?? selectedModel;
         if (mapped.model !== undefined) {
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
@@ -1366,14 +1423,27 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             'session/set_config_option',
           );
           configOptions = response.configOptions;
-          effectiveModel =
-            selectedConfigValue(configOptions, 'model') ?? mapped.model;
+          selectedModel = selectedConfigValue(configOptions, 'model');
+          effectiveModel = selectedModel ?? mapped.model;
           if (abortRequested) {
             onAbort();
             throw new Error('Kimi ACP run aborted during model configuration');
           }
         }
         if (mapped.effort !== undefined) {
+          // kimi-38: a model that always thinks advertises no `off`. Stop
+          // before the prompt with that cause instead of sending a value the
+          // runtime rejects or silently keeps thinking through.
+          if (mapped.effort === 'off') {
+            const advertised = advertisedThinkingValues(configOptions);
+            if (advertised !== undefined && !advertised.includes('off')) {
+              throw new KimiEffortUnavailableError(
+                effectiveModel,
+                mapped.effort,
+                advertised,
+              );
+            }
+          }
           const response = parseAcpResult(
             zSetSessionConfigOptionResponse,
             await awaitAcp(
@@ -1418,6 +1488,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             AGENT,
             {
               model: effectiveModel ?? 'unknown',
+              ...(selectedModel ? { reportedModel: selectedModel } : {}),
               cwd: mapped.cwd,
               tools: [],
               capabilities: {
@@ -1499,7 +1570,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         } else {
           status = 'success';
         }
-        // Kimi Code 0.39.1's prompt response publishes only the stop reason.
+        // Kimi Code 2.1.1's prompt response publishes only the stop reason.
         // Its later usage_update is session context occupancy, not
         // invocation-scoped input/output or cost accounting. This adapter
         // maps neither surface into Cligent's authentic usage report.
@@ -1519,10 +1590,15 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         const reportedError = structuredAuthError
           ? error
           : (protocolFailure ?? closeFailure ?? error);
+        // kimi-33: the effort check ranks with other setup failures, so a
+        // protocol or process failure found while stopping still prevails.
+        const effortUnavailable =
+          reportedError instanceof KimiEffortUnavailableError;
         const authError =
-          structuredAuthError ||
-          (!resumeRejected &&
-            isAuthenticationError(errorMessage(reportedError, stderr)));
+          !effortUnavailable &&
+          (structuredAuthError ||
+            (!resumeRejected &&
+              isAuthenticationError(errorMessage(reportedError, stderr))));
         push(
           createEvent(
             'error',
@@ -1532,10 +1608,14 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
                 ? 'SESSION_RESUME_REJECTED'
                 : authError
                   ? 'KIMI_AUTH_REQUIRED'
-                  : 'KIMI_ACP_ERROR',
+                  : effortUnavailable
+                    ? 'KIMI_EFFORT_UNAVAILABLE'
+                    : 'KIMI_ACP_ERROR',
               message: authError
                 ? `${errorMessage(reportedError, stderr)}. Authenticate the Kimi Code CLI with \`kimi login\` before using ACP.`
-                : errorMessage(reportedError, stderr),
+                : effortUnavailable
+                  ? reportedError.message
+                  : errorMessage(reportedError, stderr),
               recoverable: resumeRejected,
             },
             sessionId,

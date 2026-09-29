@@ -28,6 +28,7 @@ import type {
   ClaudeEffort,
   CligentOptions,
   CodexEffort,
+  DiscoveredModel,
   DonePayload,
   DoneUsage,
   Effort,
@@ -40,6 +41,7 @@ import type {
   InitPayload,
   InputTokenUsage,
   KimiEffort,
+  ModelDiscovery,
   OpenCodeEffort,
   OutputTokenUsage,
   PermissionCapability,
@@ -441,7 +443,7 @@ describe('core types', () => {
       responseSpeed: 'fast',
     };
     const init: InitPayload = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       cwd: '/workspace',
       tools: [],
       fastMode: initObservation,
@@ -460,7 +462,7 @@ describe('core types', () => {
     >();
 
     const invalidInit: InitPayload = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       cwd: '/workspace',
       tools: [],
       fastMode: {
@@ -469,6 +471,25 @@ describe('core types', () => {
       },
     };
     void invalidInit;
+  });
+
+  it('types discovered model identity as optional facts', () => {
+    expectTypeOf<DiscoveredModel['description']>().toEqualTypeOf<
+      string | undefined
+    >();
+    expectTypeOf<
+      Extract<ModelDiscovery, { status: 'available' }>['defaultModel']
+    >().toEqualTypeOf<string | undefined>();
+    const catalog: ModelDiscovery = { status: 'available', models: [] };
+    void catalog;
+  });
+
+  it('types the runtime-reported init model as an optional fact', () => {
+    expectTypeOf<InitPayload['reportedModel']>().toEqualTypeOf<
+      string | undefined
+    >();
+    const init: InitPayload = { model: 'opus', cwd: '/workspace', tools: [] };
+    void init;
   });
 
   it('correlates fast-mode support across built-in and custom APIs', () => {

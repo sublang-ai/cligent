@@ -676,7 +676,7 @@ function writeYamlConfig(
       'captain:',
       `  from: '${options.captainFrom}'`,
       '  adapter: claude',
-      '  model: claude-opus-4-8',
+      '  model: claude-opus-5-5',
       '  instruction: Coordinate players.',
       '  options: {}',
       'players:',

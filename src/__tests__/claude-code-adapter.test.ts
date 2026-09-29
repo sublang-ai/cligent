@@ -2036,6 +2036,10 @@ describe('ClaudeCodeAdapter', () => {
               cacheReadInputTokens: 900,
               cacheCreationInputTokens: 200,
               outputTokens: 400,
+              // claude-code-30: counted only on runtimes that record it, so
+              // it may be partial for a resumed session and is never promoted
+              // into an exact output reasoning subset.
+              thinkingTokens: 150,
               costUSD: 0.22,
               canonicalModel: 'claude-sonnet-5',
               provider: 'firstParty',
@@ -2292,6 +2296,47 @@ describe('ClaudeCodeAdapter', () => {
     // overwritten by a later notice that carries none.
     expect((inits[0]!.payload as InitPayload).tools).toEqual(['Bash', 'Read']);
     expect(events.map((event) => event.type)).toEqual(['init', 'text', 'done']);
+  });
+
+  it('reports only a model the handshake names (claude-code-43, engine-28)', async () => {
+    const result = {
+      type: 'result',
+      status: 'success',
+      result: 'ok',
+      usage: { input_tokens: 1, output_tokens: 1 },
+      duration_ms: 5,
+    };
+    for (const [handshake, requested, expected] of [
+      // The runtime's own name wins over the request and is reported verbatim.
+      [{ model: 'claude-opus-5-5[1m]' }, 'opus', 'claude-opus-5-5[1m]'],
+      [{ model: 'claude-fable-5-1' }, undefined, 'claude-fable-5-1'],
+      [{}, 'opus', undefined],
+      [{ model: '' }, undefined, undefined],
+    ] as const) {
+      const adapter = new ClaudeCodeAdapter({
+        loadSdk: makeLoader([
+          {
+            type: 'system',
+            subtype: 'init',
+            cwd: '/repo',
+            tools: [],
+            ...handshake,
+          },
+          result,
+        ]),
+      });
+      const events = await collect(
+        adapter.run('prompt', requested ? { model: requested } : {}),
+      );
+      const init = events[0]!.payload as InitPayload;
+      expect(events[0]!.type).toBe('init');
+      expect(init.model).toBe(expected ?? requested ?? 'unknown');
+      if (expected === undefined) {
+        expect(init).not.toHaveProperty('reportedModel');
+      } else {
+        expect(init.reportedModel).toBe(expected);
+      }
+    }
   });
 
   it('ignores system notices that precede the handshake', async () => {

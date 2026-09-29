@@ -168,6 +168,16 @@ interface OpenCodeClient {
     cwd?: string;
     signal?: AbortSignal;
   }) => Promise<boolean>;
+  /**
+   * The selected `provider/model`'s variant names from the server's
+   * connected-provider catalog for `cwd`, or `undefined` when the catalog
+   * does not list the model; rejects when the catalog cannot be read.
+   */
+  getModelVariants?: (options: {
+    model: string;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<readonly string[] | undefined>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
 }
@@ -202,6 +212,8 @@ interface OpenCodeAdapterDeps {
   ) => Promise<string>;
   managedServerTermGraceMs?: number;
   managedServerKillGraceMs?: number;
+  /** Bound on opencode-12's catalog read; at most the 10,000 ms default. */
+  modelCatalogTimeoutMs?: number;
   observePermissionState?: (state: {
     activeRequests: number;
     completedResponses: number;
@@ -1046,7 +1058,7 @@ function assertOpenCodeToolRestrictionsUnsupported(
 
   throw new Error(
     'OpenCode adapter does not support explicit allowedTools or ' +
-      'disallowedTools: OpenCode 1.18.25 merges prompt `tools` into ' +
+      'disallowedTools: OpenCode 1.18.33 merges prompt `tools` into ' +
       'persistent session permission rules, where they can override native ' +
       'or explicit denies, and exposes no independent exact per-call tool ' +
       'registry surface. Omit both options or choose an adapter with exact ' +
@@ -1060,7 +1072,7 @@ function assertOpenCodeTurnLimitUnsupported(
   if (options?.maxTurns === undefined) return;
 
   throw new Error(
-    'OpenCode adapter does not support explicit maxTurns: OpenCode 1.18.25 ' +
+    'OpenCode adapter does not support explicit maxTurns: OpenCode 1.18.33 ' +
       'exposes turn ceilings only through persistent agent configuration, ' +
       'not an exact per-run control. Omit maxTurns or choose an adapter with ' +
       'an exact per-run turn limit.',
@@ -1095,6 +1107,83 @@ export function mapEffortToOpenCodeVariant(
   }
 
   return undefined;
+}
+
+/** The engine-39 ladder in order, shared by the OpenCode vocabulary. */
+const OPENCODE_VARIANT_LADDER: readonly OpenCodeVariant[] = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/**
+ * opencode-12's catalog rows: the requested variant where the model
+ * advertises it, else the nearest advertised ladder variant (the greater on a
+ * tie), else unset because the model offers no mappable effort control.
+ */
+function selectOpenCodeVariant(
+  advertised: readonly string[],
+  effort: OpenCodeEffort,
+): OpenCodeVariant | undefined {
+  assertSupportedEffort(AGENT, effort);
+  const requested = OPENCODE_VARIANT_LADDER.indexOf(effort);
+  let selected: OpenCodeVariant | undefined;
+  let selectedDistance = Number.POSITIVE_INFINITY;
+  // Ascending order lets `<=` settle a tie on the greater value.
+  OPENCODE_VARIANT_LADDER.forEach((value, index) => {
+    if (!advertised.includes(value)) return;
+    const distance = Math.abs(index - requested);
+    if (distance <= selectedDistance) {
+      selected = value;
+      selectedDistance = distance;
+    }
+  });
+  return selected;
+}
+
+/**
+ * The selected model's variant names in a `/config/providers` answer, or
+ * `undefined` when the catalog does not list the model. An answer this
+ * cannot read throws, so the caller falls back to the documented table.
+ */
+function readOpenCodeModelVariants(
+  catalog: unknown,
+  model: string,
+): string[] | undefined {
+  const slashIdx = model.indexOf('/');
+  if (slashIdx <= 0) return undefined;
+  const providerId = model.slice(0, slashIdx);
+  const modelId = model.slice(slashIdx + 1);
+  const providers = asRecord(catalog).providers;
+  if (!Array.isArray(providers)) {
+    throw new Error('OpenCode provider catalog lists no providers');
+  }
+  const provider = providers.find(
+    (candidate) => asRecord(candidate).id === providerId,
+  );
+  if (provider === undefined) return undefined;
+  const models = (provider as Record<string, unknown>).models;
+  if (typeof models !== 'object' || models === null || Array.isArray(models)) {
+    throw new Error(`OpenCode provider ${providerId} lists no model map`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(models, modelId)) return undefined;
+  const entry = (models as Record<string, unknown>)[modelId];
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    throw new Error(`OpenCode model ${model} has a malformed catalog entry`);
+  }
+  const variants = (entry as Record<string, unknown>).variants;
+  if (variants === undefined) return [];
+  if (
+    typeof variants !== 'object' ||
+    variants === null ||
+    Array.isArray(variants)
+  ) {
+    throw new Error(`OpenCode model ${model} has malformed variants`);
+  }
+  return Object.keys(variants);
 }
 
 function toOpenCodePromptModel(model: unknown): unknown {
@@ -1164,6 +1253,7 @@ export function wrapOpencodeClient(
   const instance = real.instance as Record<string, unknown> | undefined;
   const globalService = real.global as Record<string, unknown> | undefined;
   const permission = real.permission as Record<string, unknown> | undefined;
+  const configService = real.config as Record<string, unknown> | undefined;
 
   if (!session || typeof session.create !== 'function') {
     throw new Error('OpenCode SDK client.session.create() not available');
@@ -1271,6 +1361,13 @@ export function wrapOpencodeClient(
           args: unknown,
         ) => Promise<unknown>)
       : undefined;
+  const configProviders =
+    configService && typeof configService.providers === 'function'
+      ? (configService.providers.bind(configService) as (
+          args?: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
   let instanceDirectory: string | undefined;
 
   const abortSessionViaSdk = async (
@@ -1299,11 +1396,41 @@ export function wrapOpencodeClient(
   };
 
   return {
+    ...(configProviders
+      ? {
+          async getModelVariants(options: {
+            model: string;
+            cwd?: string;
+            signal?: AbortSignal;
+          }): Promise<readonly string[] | undefined> {
+            const result = await configProviders(
+              apiVersion === 'v2'
+                ? options.cwd
+                  ? { directory: options.cwd }
+                  : undefined
+                : {
+                    ...(options.cwd
+                      ? { query: { directory: options.cwd } }
+                      : {}),
+                    ...(options.signal ? { signal: options.signal } : {}),
+                  },
+              apiVersion === 'v2' && options.signal
+                ? { signal: options.signal }
+                : undefined,
+            );
+            throwIfSdkResultError(result, 'OpenCode config.providers failed');
+            return readOpenCodeModelVariants(
+              unwrapSdkData(result),
+              options.model,
+            );
+          },
+        }
+      : {}),
     async run(options: Record<string, unknown>): Promise<unknown> {
       if (options.tools !== undefined) {
         throw new Error(
           'OpenCode compatibility client does not support prompt `tools`: ' +
-            'OpenCode 1.18.25 merges them into persistent session permission ' +
+            'OpenCode 1.18.33 merges them into persistent session permission ' +
             'rules, where they can override native or explicit denies, ' +
             'instead of enforcing an independent exact tool registry. Omit ' +
             '`tools` or choose an adapter with exact tool filtering.',
@@ -2106,6 +2233,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
   private readonly managedServerKillGraceMs: number;
 
+  private readonly modelCatalogTimeoutMs: number;
+
   private readonly observePermissionState?: NonNullable<
     OpenCodeAdapterDeps['observePermissionState']
   >;
@@ -2133,6 +2262,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       deps.managedServerTermGraceMs ?? DEFAULT_MANAGED_SERVER_TERM_GRACE_MS;
     this.managedServerKillGraceMs =
       deps.managedServerKillGraceMs ?? DEFAULT_MANAGED_SERVER_KILL_GRACE_MS;
+    this.modelCatalogTimeoutMs = Math.min(
+      deps.modelCatalogTimeoutMs ?? MAX_STATUS_QUERY_TIMEOUT_MS,
+      MAX_STATUS_QUERY_TIMEOUT_MS,
+    );
+    assertFinitePositiveTimeout(
+      'OpenCodeAdapter modelCatalogTimeoutMs',
+      this.modelCatalogTimeoutMs,
+    );
     this.observePermissionState = deps.observePermissionState;
   }
 
@@ -3720,6 +3857,70 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode SDK client does not provide run()/query()');
       }
 
+      // opencode-12: a variant the model does not advertise has no effect,
+      // so the model's own catalog entry decides the variant; the documented
+      // table stays the answer when that entry cannot be read in time.
+      const catalogModel = options?.model;
+      const catalogEffort = options?.effort;
+      const readModelVariants = client.getModelVariants;
+      if (
+        catalogEffort !== undefined &&
+        catalogModel !== undefined &&
+        catalogModel.indexOf('/') > 0 &&
+        typeof readModelVariants === 'function'
+      ) {
+        const catalogClient = client;
+        const catalogController = new AbortController();
+        let catalogTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const catalogOutcome = await Promise.race([
+            Promise.resolve()
+              .then(() =>
+                readModelVariants.call(catalogClient, {
+                  model: catalogModel,
+                  ...(options?.cwd ? { cwd: options.cwd } : {}),
+                  signal: catalogController.signal,
+                }),
+              )
+              .then(
+                (advertised) => ({ kind: 'read' as const, advertised }),
+                () => ({ kind: 'unreadable' as const }),
+              ),
+            new Promise<{ kind: 'unreadable' }>((resolve) => {
+              catalogTimer = setTimeout(
+                () => resolve({ kind: 'unreadable' }),
+                this.modelCatalogTimeoutMs,
+              );
+            }),
+            callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+            ...(serverLifecyclePromise
+              ? [serverLifecyclePromise.then(toServerWaitResult)]
+              : []),
+          ]);
+          if (catalogOutcome.kind === 'caller_abort') {
+            throw new Error('OpenCode run aborted during model catalog read');
+          }
+          if (catalogOutcome.kind === 'server_exit') {
+            throw new OpenCodeManagedServerExitError(catalogOutcome.exit);
+          }
+          if (catalogOutcome.kind === 'server_error') {
+            throw catalogOutcome.error;
+          }
+          if (
+            catalogOutcome.kind === 'read' &&
+            Array.isArray(catalogOutcome.advertised)
+          ) {
+            variant = selectOpenCodeVariant(
+              catalogOutcome.advertised,
+              catalogEffort,
+            );
+          }
+        } finally {
+          if (catalogTimer) clearTimeout(catalogTimer);
+          catalogController.abort();
+        }
+      }
+
       if (abortRequested) {
         throw new Error('OpenCode run aborted before prompt dispatch');
       }
@@ -3833,12 +4034,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       if (!initYielded) {
         const runRecord = asRecord(runResult);
         const runTools = asStringArray(runRecord.tools);
+        const reportedModel = asString(runRecord.model);
 
         yield createEvent(
           'init',
           AGENT,
           {
-            model: options?.model ?? asString(runRecord.model) ?? 'unknown',
+            model: options?.model ?? reportedModel ?? 'unknown',
+            ...(reportedModel !== undefined ? { reportedModel } : {}),
             cwd: options?.cwd ?? asString(runRecord.cwd) ?? process.cwd(),
             tools: runTools,
             capabilities: {

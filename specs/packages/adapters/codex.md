@@ -129,6 +129,7 @@ When a run emits its exactly one `init`, the adapter shall select its payload ac
 | Payload member | First available value |
 | --- | --- |
 | `model` | requested model when supplied, including an empty string, then non-empty first-event model, otherwise `unknown` |
+| `reportedModel` [[engine-27](../engine.md#engine-27)] | non-empty first-event model only, otherwise omitted |
 | `cwd` | requested cwd when supplied, including an empty string, then non-empty first-event cwd, otherwise the process cwd |
 | `tools` | first non-empty string list from first-event `tools`, `session.tools`, or `turn.tools`, otherwise `[]`; object entries contribute their non-empty `name` |
 | `capabilities.toolsKnown` | `true` when a non-empty native tool list was selected, otherwise `false` |
@@ -515,7 +516,7 @@ Given canned native Codex events typed against the SDK's canonical exported even
 
 ### codex-41
 
-Given the SDK stream supplies events, no events, or throws before its first event, when the adapter runs, it shall emit exactly one `init` before every other output with the model, cwd, tool, and capability selections in [[codex-22](#codex-22)].
+Given the SDK stream supplies events with and without a model, no events, or throws before its first event, when the adapter runs with and without a requested model, it shall emit exactly one `init` before every other output with the model, reported-model, cwd, tool, and capability selections in [[codex-22](#codex-22)].
 
 ### codex-42
 
@@ -696,10 +697,10 @@ Given repeated executable-resolution or wrapper-setup failures on one caller sig
 [3]: https://developers.openai.com/codex/config-reference 'Codex: Configuration Reference'
 [4]: https://developers.openai.com/codex/permissions 'Codex: Permission profiles and sandbox settings'
 [5]: https://openai.com/index/gpt-5-6/ 'Introducing GPT-5.6'
-[6]: https://github.com/openai/codex/blob/rust-v0.151.0/sdk/typescript/src/events.ts#L20-L38 'Codex SDK 0.151.0 turn usage'
-[7]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/protocol/src/protocol.rs#L2169-L2198 'Codex 0.151.0 token-usage protocol'
+[6]: https://github.com/openai/codex/blob/rust-v0.159.0/sdk/typescript/src/events.ts#L20-L38 'Codex SDK 0.159.0 turn usage'
+[7]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/protocol/src/protocol.rs#L2240-L2282 'Codex 0.159.0 token-usage protocol'
 [8]: https://nodejs.org/api/esm.html#importmetaresolvespecifier "Node.js import.meta.resolve"
 [9]: https://learn.chatgpt.com/docs/agent-configuration/speed "Codex speed"
-[10]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/core/config.schema.json "Codex 0.151.0 configuration schema"
-[11]: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/tui/src/chatwidget/service_tiers.rs "Codex 0.151.0 fast-tier selection"
-[12]: https://unpkg.com/@openai/codex-sdk@0.151.0/dist/index.d.ts "Codex SDK 0.151.0 public event declarations"
+[10]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core/config.schema.json "Codex 0.159.0 configuration schema"
+[11]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/tui/src/chatwidget/service_tiers.rs "Codex 0.159.0 fast-tier selection"
+[12]: https://unpkg.com/@openai/codex-sdk@0.159.0/dist/index.d.ts "Codex SDK 0.159.0 public event declarations"

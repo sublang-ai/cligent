@@ -97,6 +97,7 @@ When a run selects its `init`, the adapter shall emit exactly one handshake acco
 | an `init` was already emitted | suppress every later native `init` |
 
 - The model is the requested model when present, otherwise the first non-empty source `model`, otherwise `unknown`.
+- The reported model [[engine-27](../engine.md#engine-27)] is the first non-empty source `model` unless it names the per-run effort alias selected by [[gemini-11](#gemini-11)], and is otherwise omitted.
 - The cwd is the requested cwd when present, otherwise the first non-empty source `cwd`, otherwise the process cwd.
 - The handshake carries the session identifier selected by [[gemini-43](#gemini-43)].
 
@@ -250,7 +251,7 @@ When the adapter maps ordinary `AgentOptions` to Gemini arguments and process op
 | --- | --- |
 | absent or empty `model` | no model argument |
 | non-empty `model` without an effort alias from [[gemini-11](#gemini-11)] | one joined `--model=<model>` token |
-| matching effort alias | one joined `--model=cligent-reasoning-effort` token |
+| matching effort alias | one joined `--model=cligent-reasoning-effort` token, replaced by `--model=<model>` where [[gemini-34](#gemini-34)] delivers no alias |
 | non-empty `resume` | one joined `--resume=<token>` token |
 | absent or empty `resume` | no resume argument and the fresh-run identity from [[gemini-43](#gemini-43)] |
 | `cwd` | child working directory, otherwise the spawn default |
@@ -384,18 +385,35 @@ The helpers ignore policy rules, approval mode, writable paths, and command argu
 
 ### gemini-34
 
-Where [[gemini-11](#gemini-11)] selects an effort alias, when the adapter prepares Gemini defaults, it shall produce the override through this matrix while leaving `GEMINI_CLI_SYSTEM_SETTINGS_PATH` unchanged so system overrides, Admin policy, user settings, and project settings retain authority:
+Where [[gemini-11](#gemini-11)] selects an effort alias, when the adapter prepares the child environment, it shall deliver the alias through a per-run user-settings home, since Gemini CLI loads system settings and system defaults only from root-owned paths, leaving every system and real-home file's contents unchanged and system overrides, Admin policy, and project settings in authority, through this matrix, evaluated top to bottom [[2]][[10]][[11]]:
 
-| Defaults state | Outcome |
+| Step or state | Outcome |
 | --- | --- |
-| non-empty `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` | read that file |
-| otherwise | read `system-defaults.json` beside the configured system-settings path or its macOS, Windows, or other-platform default |
-| selected file absent with `ENOENT` | begin from `{}` |
-| selected file uses line or block comments | strip comments for parsing while preserving parsed unrelated values |
+| real home | the caller's non-empty `GEMINI_CLI_HOME`, resolved against the effective working directory, otherwise the operating-system home directory |
+| effective working directory resolves to the real home | deliver no alias: create no overlay and send `--model=<model>` in its place, leaving effort unapplied, because Gemini skips workspace settings, project commands, and workspace policies only for a workspace that is its home [[12]][[13]][[14]] |
+| real `.gemini/settings.json` absent with `ENOENT` | begin from `{}` |
+| real settings use line or block comments | strip comments for parsing, preserving every parsed value, including unknown keys and existing aliases |
 | another read error, malformed JSON, or non-object root, `modelConfigs`, or `customAliases` | reject through [[gemini-19](#gemini-19)] |
-| valid object | preserve unrelated values and aliases, replace only the reserved Cligent alias with its self-contained model and thinking configuration |
+| Gemini would start its own sandbox: `SANDBOX` unset and a `GEMINI_SANDBOX` other than empty, `0`, or `false`, or, with none, a `tools.sandbox` of `true`, a string other than empty, `0`, or `false`, or an object with a truthy `enabled` in the highest-precedence of the system, workspace, user, and system-default settings that sets it | deliver no alias, as for the real home, because the sandbox confines writes to paths under the home it is given, which the overlay's links leave [[16]][[17]][[18]] |
+| overlay | a new private temporary directory given to the child as `GEMINI_CLI_HOME`, whose `.gemini/settings.json` is the real user settings with only the reserved Cligent alias replaced by its self-contained model and thinking configuration |
+| every other real `.gemini` entry and every other real home entry | an overlay link to the real entry, so credentials, sessions, trust state, and other home state read and write through to the real home: a symbolic link, except on Windows a junction for a directory and a hard link for a file where symbolic links are not permitted |
+| real `.gemini`, `.gemini/tmp`, or `.gemini/history` absent | create it in the real home before linking, so session state lands there directly |
 
-The selected override is a unique per-run `system-defaults.json` written with mode `0600`; a write failure removes its newly created directory before rejecting, and a successful return points only the child environment at that file until [[gemini-35](#gemini-35)] cleans it.
+The overlay settings file is written with mode `0600`; a setup failure removes the overlay before rejecting, and a successful return points only the child environment at the overlay until [[gemini-45](#gemini-45)] reconciles it and [[gemini-35](#gemini-35)] removes it.
+
+### gemini-45
+
+When cleanup reaches a run's settings overlay after its child has closed, the adapter shall reconcile into the real home each entry of the overlay home and of its `.gemini` that is no longer the link it created, before removing the overlay, attempting every entry and rejecting cleanup with each one it could not reconcile, through this matrix, because the CLI replaces some files by writing a temporary file and renaming it over the link [[15]]:
+
+| Overlay entry at cleanup | Real-home outcome |
+| --- | --- |
+| the link the adapter created, or a link naming the same real entry in its place, or no entry where that link was | nothing |
+| the overlay's `.gemini/settings.json` | nothing; settings written during the run stay in the overlay |
+| a `.gemini` name marking an unfinished or locked write, with a `.tmp` segment or a `.rollback` or `.lock` suffix | nothing |
+| `.gemini/projects.json` | add the project entries the real registry lacks while holding the registry's `.lock` directory, which counts as stale after 10 s untouched; a lock still held after 10 s leaves the registry to Gemini's ownership markers |
+| another non-directory entry | replace the real entry with it atomically, unless the real entry is a directory |
+| a directory absent from the real home | move it into the real home |
+| a directory the real home also holds | copy in only the entries the real directory lacks, at every depth |
 
 ### gemini-35
 
@@ -469,6 +487,7 @@ Given canned native Gemini NDJSON flows, when the adapter runs, the emitted even
 | Flow | Assertions |
 | --- | --- |
 | canonical init, message, tool use, tool result, native error, and result | exact ordered event types, session identity, init tool source, and canonical payload fields [[gemini-4](#gemini-4)], [[gemini-16](#gemini-16)], [[gemini-20](#gemini-20)], [[gemini-21](#gemini-21)], [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)], [[gemini-24](#gemini-24)], [[gemini-25](#gemini-25)], [[gemini-27](#gemini-27)], [[gemini-43](#gemini-43)] |
+| native init naming a model, the per-run effort alias, or no model, with and without a requested model | `reportedModel` presence and absence beside the unchanged `model` selection [[gemini-20](#gemini-20)] |
 | direct snake-case tool fields | selected name, identifier, input, and success status [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)] |
 | top-level and value-wrapped `functionCall` / `functionResponse` | selected name, identifier, input, output, and success status [[gemini-22](#gemini-22)], [[gemini-23](#gemini-23)] |
 | malformed line after init followed by valid message and result | recoverable diagnostic with raw input, continued text, and terminal done [[gemini-21](#gemini-21)], [[gemini-25](#gemini-25)], [[gemini-26](#gemini-26)] |
@@ -553,7 +572,7 @@ Where each portable effort input and model condition is supplied, when the adapt
 | unset model, CLI alias, or non-matching model | no alias; ordinary model forwarding preserved [[gemini-11](#gemini-11)] |
 | omitted effort | no effort, orchestration, or settings-alias override [[gemini-15](#gemini-15)] |
 | another adapter's value or arbitrary unknown string | pre-spawn metadata-backed rejection naming this adapter and its allowed values [[gemini-15](#gemini-15)] |
-| generated alias | self-contained model configuration delivered through the temporary defaults mechanism [[gemini-34](#gemini-34)] |
+| generated alias | self-contained model configuration delivered through the per-run user-settings overlay [[gemini-34](#gemini-34)] |
 
 ### gemini-219
 
@@ -593,7 +612,8 @@ Given direct Gemini mappings and a fake Gemini CLI implementing the 0.50 argumen
 | absent policy and lists versus empty policy | no policy surface versus default-ask rules [[gemini-12](#gemini-12)] |
 | invalid and accepted tool names | indexed pre-spawn rejection or valid TOML escaping [[gemini-13](#gemini-13)], [[gemini-31](#gemini-31)] |
 | source-module compatibility settings helpers | historical undefined, tool-member, and model-alias shapes without runtime use [[gemini-33](#gemini-33)] |
-| concrete-model effort | existing defaults and aliases preserved, self-contained alias merged into a temporary configured or sibling defaults copy, system settings unchanged, and temporary copy removed after success, stream error, and abort [[gemini-34](#gemini-34)], [[gemini-35](#gemini-35)] |
+| concrete-model effort | the child's `GEMINI_CLI_HOME` is a private overlay whose `0600` settings are the real user settings, read from the caller's `GEMINI_CLI_HOME` or the operating-system home, with comments stripped and unknown keys and existing aliases preserved, plus the self-contained alias; every other real `.gemini` and home entry is a link, and a credential written through it lands in the real file; missing shared state directories are created in the real home; malformed settings reject before spawn; system settings and defaults paths are untouched; a working directory that is, or links to, the real home, and a sandbox the environment or the highest-precedence settings layer requests, get no overlay and `--model=<model>`, while a request a higher layer overrides does not; and the overlay is removed after success, stream error, abort, and a setup failure once it exists [[gemini-34](#gemini-34)], [[gemini-35](#gemini-35)] |
+| overlay reconciliation | a registry replaced during the run adds to the real `projects.json` only the entries it lacks, keeping a real entry on conflict and releasing the lock; other replaced `.gemini` and home files replace the real ones; new files and directories move into the real home; a directory the real home holds gains only missing entries; while untouched, recreated and deleted links, overlay settings, and `.gemini` unfinished-write leftovers leave the real home unchanged, a home-level name of the same form moving in [[gemini-45](#gemini-45)] |
 | run-owned telemetry environment and cleanup | private local controls override inherited settings, file read occurs after close, and cleanup occurs after success, stream error, and abort [[gemini-35](#gemini-35)], [[gemini-42](#gemini-42)] |
 | multiple cleanup failures | all initialized cleanups attempted before an aggregate failure is surfaced [[gemini-35](#gemini-35)] |
 
@@ -632,3 +652,12 @@ Under [[gemini-219](#gemini-219)]'s real-target, credential, and sandbox precond
 [4]: https://geminicli.com/docs/cli/cli-reference/ 'Gemini CLI: CLI reference'
 [8]: https://geminicli.com/docs/cli/telemetry/ 'Gemini CLI telemetry'
 [9]: https://github.com/googleapis/js-genai/blob/38cac5bbf4941ec5fa760238bd423c0ecc2c6f04/src/types.ts#L2607-L2628 'Google Gen AI SDK 1.30.0 UsageMetadata'
+[10]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/utils/paths.ts#L17-L28 'Gemini CLI 0.61.0 home directory honoring GEMINI_CLI_HOME'
+[11]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/settings.ts#L849-L890 'Gemini CLI 0.61.0 root-owned system files, user settings, and home-workspace settings skip'
+[12]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/config/storage.ts#L207-L224 'Gemini CLI 0.61.0 workspace-is-home check'
+[13]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/services/FileCommandLoader.ts#L216-L226 'Gemini CLI 0.61.0 project commands skipped in the home directory'
+[14]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/policy.ts#L108-L118 'Gemini CLI 0.61.0 workspace policies skipped in the home directory'
+[15]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/config/projectRegistry.ts#L103-L135 'Gemini CLI 0.61.0 project registry saved through a temporary file and rename'
+[16]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/sandboxConfig.ts#L43-L63 'Gemini CLI 0.61.0 sandbox request: SANDBOX, then GEMINI_SANDBOX over the configured value'
+[17]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/sandboxConfig.ts#L126-L148 'Gemini CLI 0.61.0 tools.sandbox setting forms'
+[18]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/utils/sandbox.ts#L216-L224 'Gemini CLI 0.61.0 macOS sandbox home path from the real path of its home'

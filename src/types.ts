@@ -63,7 +63,17 @@ export type FastModeTerminalObservation =
   FastModeObservation<FastModeResponseSpeed>;
 
 export interface InitPayload {
+  /**
+   * The runtime-named model, otherwise the requested model, otherwise
+   * `'unknown'`; kept for compatibility. Read `reportedModel` for evidence.
+   */
   model: string;
+  /**
+   * The model the runtime itself names for this call, verbatim. Absent when
+   * the runtime names none; never filled from the requested model, a
+   * Cligent-internal alias, or a placeholder.
+   */
+  reportedModel?: string;
   cwd: string;
   tools: string[];
   capabilities?: Record<string, unknown>;

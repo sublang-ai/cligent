@@ -64,13 +64,13 @@ A provided policy with no supported whole-mode mapping shall be rejected because
 Explicit tool lists shall likewise be rejected because ACP exposes no exact tool-registry restriction.
 Valid `writablePaths` accompanying a supported `auto` policy shall be reported as ambient rather than sandbox-enforced.
 
-Kimi's ACP configuration surface exposes thinking as the provider-native binary values `off` and `on`; enabled thinking uses the selected model's default effort [[11]].
+Kimi's ACP `thinking` option accepts the provider-native value `on`, which selects the chosen model's default effort even where the option lists that model's declared effort levels, and `off` wherever the model can disable thinking [[11]].
 `KimiEffort` shall therefore be `'off' | 'on'` rather than Cligent's portable reasoning-depth ladder.
 Explicit model selection shall be applied before the thinking toggle.
 
 The adapter shall not start an authentication flow.
-Kimi Code `0.39.1` dispatches `kimi acp` to its native v2 server unless `KIMI_CODE_LEGACY_FLAG` is truthy [[18]].
-That native server gates ACP session creation on any of three routes: stored OAuth material resolved from the default model or reported by any logged-in provider, including after `kimi login`; a configured default model whose alias resolves to non-OAuth credentials; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[5]][[6]][[14]][[15]][[16]][[19]][[20]].
+Kimi Code `2.1.1` always dispatches `kimi acp` to its native v2 server [[18]].
+That native server gates ACP session creation on any of three routes: stored OAuth material resolved from the default model or reported by any logged-in provider, including after `kimi login`; a configured default model whose alias resolves to non-OAuth credentials, including a provider `api_key_env` that names a non-empty environment variable; or the `KIMI_MODEL_NAME` plus `KIMI_MODEL_API_KEY` environment overlay, which synthesizes a provider and alias in the runtime configuration only and makes it the default model [[5]][[6]][[14]][[15]][[16]][[19]][[20]].
 A bare provider key such as `MOONSHOT_API_KEY` or `KIMI_API_KEY` satisfies none of them, because it establishes no default model alias.
 ACP authentication failures shall therefore instruct the user to authenticate through `kimi login`.
 
@@ -121,16 +121,16 @@ A future public, documented Kimi Code SDK may replace the ACP subprocess only th
 [5]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command "Kimi Code command reference"
 [6]: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html "Kimi Code ACP reference"
 [7]: https://agentclientprotocol.com/libraries/typescript "Official ACP TypeScript library"
-[8]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/kaos-acp.ts "Kimi Code ACP filesystem bridge"
-[9]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/modes.ts "Kimi Code ACP modes"
+[8]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/acp-fs/acpFsService.ts#L68-L87 "Kimi Code 2.1.1 ACP filesystem bridge and local fallback"
+[9]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/modes.ts#L22-L87 "Kimi Code 2.1.1 ACP modes"
 [10]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files "Kimi Code permission rules"
-[11]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-adapter/src/config-options.ts "Kimi Code ACP configuration options"
+[11]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/session.ts#L1065-L1100 "Kimi Code 2.1.1 ACP thinking values"
 [12]: https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/src/cli/run-prompt.ts "Kimi Code prompt-mode implementation"
 [13]: https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html "Kimi Code data locations"
-[14]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/acp-server/src/server.ts#L619-L640 "Kimi Code 0.39.1 native ACP authentication gate"
-[15]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/auth/authService.ts#L628-L695 "Kimi Code 0.39.1 default-model and OAuth readiness"
-[16]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/envOverlay.ts#L87-L174 "Kimi Code 0.39.1 environment model overlay"
+[14]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L625-L646 "Kimi Code 2.1.1 native ACP authentication gate"
+[15]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/auth/authService.ts#L658-L739 "Kimi Code 2.1.1 default-model and OAuth readiness"
+[16]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/kosongConfig/envOverlay.ts#L87-L174 "Kimi Code 2.1.1 environment model overlay"
 [17]: https://github.com/MoonshotAI/kimi-code/blob/main/packages/oauth/src/oauth-manager.ts "Kimi Code OAuth manager — refresh rotation, persistence, and revoked tombstone"
-[18]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/apps/kimi-code/src/cli/sub/acp.ts#L1-L44 "Kimi Code 0.39.1 native ACP dispatch"
-[19]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L23-L71 "Kimi Code 0.39.1 environment provider credentials"
-[20]: https://github.com/MoonshotAI/kimi-code/blob/5efca0c3116743855c28426000073bfe34a4862f/packages/agent-core-v2/src/kosong/model/modelAuth.ts#L27-L73 "Kimi Code 0.39.1 model and provider authentication resolution"
+[18]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/apps/kimi-code/src/cli/sub/acp.ts#L30-L75 "Kimi Code 2.1.1 native ACP dispatch"
+[19]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/app/kosongConfig/configSection.ts#L24-L73 "Kimi Code 2.1.1 provider and environment credentials"
+[20]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/llm-adapter/model/model-auth.ts#L21-L76 "Kimi Code 2.1.1 model and provider authentication resolution"

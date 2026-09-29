@@ -1106,11 +1106,13 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
             continue;
           }
           const fastMode = readFastModeObservation(system);
+          const reportedModel = asString(system.model);
           yield createEvent(
             'init',
             AGENT,
             {
-              model: asString(system.model) ?? options?.model ?? 'unknown',
+              model: reportedModel ?? options?.model ?? 'unknown',
+              ...(reportedModel !== undefined ? { reportedModel } : {}),
               cwd: asString(system.cwd) ?? options?.cwd ?? process.cwd(),
               tools: asStringArray(system.tools),
               ...(fastMode !== undefined ? { fastMode } : {}),

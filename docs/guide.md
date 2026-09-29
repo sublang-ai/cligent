@@ -12,9 +12,9 @@ npm install @sublang/cligent
 Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
 
 ```bash
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
-npm install "@openai/codex-sdk@>=0.144.0"                 # Codex CLI
-npm install "@opencode-ai/sdk@>=1.18.12"                  # OpenCode
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
+npm install "@openai/codex-sdk@>=0.156.1"                 # Codex CLI
+npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
 # Kimi Code uses an external CLI — no Kimi-specific SDK required
 ```
@@ -36,13 +36,13 @@ and run, even though Cligent and its other adapter surfaces support Node.js
 18.3:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.39.1
+npm install -g @moonshot-ai/kimi-code@2.1.1
 kimi --version
 kimi login
 ```
 
 `kimi login` performs the one-time Kimi Code OAuth flow, which is the
-simplest way to satisfy the exact 0.39.1 ACP target's session gate. That gate
+simplest way to satisfy the exact 2.1.1 ACP target's session gate. That gate
 accepts stored OAuth material resolved from the default model or reported by
 any logged-in provider, including after `kimi login`; a [model/provider
 configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html)
@@ -63,7 +63,7 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 // session continuity, option merging, and protocol hardening.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
 });
 
 // agent.run(prompt, overrides?) → AsyncGenerator<CligentEvent>
@@ -106,7 +106,7 @@ import type { CligentOptions, RunOptions } from '@sublang/cligent';
 // CligentOptions — instance-level defaults (no abortSignal, no resume).
 const agent = new Cligent(adapter, {
   role: 'coder', // injected into every event as event.role
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
   permissions: { fileWrite: 'allow', shellExecute: 'ask' },
   maxTurns: 10,
 });
@@ -116,7 +116,7 @@ const agent = new Cligent(adapter, {
 // Per-call overrides win for scalars; permissions are merged by field;
 // allowedTools/disallowedTools arrays are replaced entirely.
 for await (const event of agent.run('Fix the bug', {
-  model: 'claude-sonnet-4-6', // overrides the default
+  model: 'claude-sonnet-5-5', // overrides the default
   abortSignal: controller.signal,
 })) {
   // event.role === 'coder' (always from constructor defaults)
@@ -237,16 +237,31 @@ The mappings have a few important qualifications:
   2.5 Flash and Flash Lite collapse `xhigh` and `max` to the same maximum
   budget. If the model is omitted, is a CLI alias such as `auto` or `flash`,
   or does not match those model families, the adapter preserves ordinary model
-  forwarding and applies no effort override.
-- **OpenCode:** Variant mappings depend on the `provider/model` prefix and can
-  be lossy. Anthropic collapses `minimal` through `high` to `high` and
-  `xhigh`/`max` to `max`; OpenAI collapses `max` to `xhigh`; Google collapses
-  `minimal` through `medium` to `low` and `high` through `max` to `high`. An
-  unknown provider or malformed or omitted model receives no variant override.
+  forwarding and applies no effort override. The adapter delivers effort as a
+  model alias in a private per-run Gemini home (`GEMINI_CLI_HOME`) whose
+  settings are your user settings plus that alias; every other file there
+  links to your real home, so credentials, sessions, and trust state stay
+  shared, and files the run replaces are reconciled back when it ends. A run
+  whose working directory is the Gemini home, or that Gemini would sandbox,
+  gets the concrete model with no effort override.
+- **OpenCode:** Effort selects the prompt `variant` the chosen model
+  advertises in the server's provider catalog for the run's directory, or else
+  its nearest advertised effort variant, the higher on a tie: GPT-6 Sol's
+  `max` reaches `max`, and its `minimal` reaches `low`. A model listed without
+  effort variants receives none. Only when the catalog cannot be read within
+  10 seconds or does not list the model does a lossy provider table apply:
+  Anthropic collapses `minimal` through `high` to `high` and `xhigh`/`max` to
+  `max`; OpenAI collapses `max` to `xhigh`; Google collapses `minimal` through
+  `medium` to `low` and `high` through `max` to `high`, and any other provider
+  receives no variant override. A malformed or omitted model never receives
+  one.
 - **Kimi:** `off` and `on` pass directly to ACP's `thinking` configuration
   option. `on` enables the selected model's native default thinking behavior;
   it does not select a portable Cligent effort tier. When both `model` and
-  `effort` are provided, the model is selected before thinking is toggled.
+  `effort` are provided, the model is selected before thinking is toggled. A
+  model that always thinks, such as `kimi-code/k3`, offers no `off`: the run
+  then stops before the prompt with `KIMI_EFFORT_UNAVAILABLE`, naming the
+  thinking values the model does offer.
 
 Omitting `effort` sets no effort, orchestration, generated alias, or variant
 override and leaves applicable adapter, model, account, and user-configuration
@@ -447,7 +462,7 @@ an invoice. Adapter accounting never fills this field from a Cligent calculation
 | `codex`       | partial                                                                                                                                                       | per turn only when the effective model is observed | none           | exec omits descendant threads and often the effective model                                                                                                                                                                                           |
 | `gemini`      | complete after telemetry reconciliation; partial after failed-request evidence                                                                                | per response with authentication route             | none           | failed-request tokens, subscription tier, storage duration, grounding, modality, and service-tier dimensions may be absent                                                                                                                            |
 | `opencode`    | complete only when the live server matches the tested version and the title and pinned causal boundaries prove the settled task tree; exact partial where an attributable observed subset remains; omitted where no run-owned prompt boundary can be proved | per request                                        | agent estimate | missing or mismatched server proof, reused task sessions, causal/unattributed retries, overflow replay, unproved internal prompts, or unsettled background work prevent complete coverage; the estimate follows OpenCode's price catalog, not billing |
-| `kimi`        | unavailable                                                                                                                                                   | none                                               | none           | Kimi 0.39.1 exposes session context occupancy over ACP, not invocation token or cost accounting                                                                                                                                                       |
+| `kimi`        | unavailable                                                                                                                                                   | none                                               | none           | Kimi 2.1.1 exposes session context occupancy over ACP, not invocation token or cost accounting                                                                                                                                                        |
 
 Token records are enough to calculate ordinary text-token list price only when
 the model, request tier, cache details, and service-specific modifiers are all
@@ -498,7 +513,7 @@ const custom = await estimateCost(usage, {
 // This Codex example supplies both because native usage often omits them.
 const estimate = await estimateCost(usage, {
   provider: 'openai',
-  model: 'gpt-5.6-luna',
+  model: 'gpt-6-luna',
 });
 
 if (estimate.status === 'estimated') {
@@ -596,13 +611,13 @@ const codexGitPermissions: PermissionPolicy = {
 };
 
 const codexAgent = new Cligent(new CodexAdapter(), {
-  model: 'gpt-5.3-codex',
+  model: 'gpt-6-sol',
   permissions: codexGitPermissions,
 });
 
 // Set permissions as defaults, or override per-call.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
   permissions,
 });
 
@@ -627,7 +642,7 @@ native request, permission scope, and tool correlation. It remains distinct
 from `permission_request`, which means a human decision is needed.
 
 OpenCode does not support explicit `allowedTools` or `disallowedTools`,
-including empty arrays. In OpenCode 1.18.25 the prompt `tools` field is merged
+including empty arrays. In OpenCode 1.18.33 the prompt `tools` field is merged
 into persistent session permission rules rather than applied as an independent
 per-call tool registry; an enabled tool can therefore override a native or
 explicit deny and affect later resumed calls. Cligent rejects either option
@@ -635,7 +650,7 @@ before loading the OpenCode SDK. Omit both options or choose an adapter with
 exact tool filtering.
 
 OpenCode also rejects an explicit `maxTurns`, including zero, before loading
-the SDK. OpenCode 1.18.25 exposes turn ceilings only through persistent agent
+the SDK. OpenCode 1.18.33 exposes turn ceilings only through persistent agent
 configuration, not an exact per-run control, so Cligent neither leaves a
 requested limit silently unenforced nor mutates shared agent state. Omit
 `maxTurns` or choose an adapter with an exact per-run turn limit.
@@ -669,11 +684,11 @@ import { CodexAdapter } from '@sublang/cligent/adapters/codex';
 
 const coder = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
 });
 const reviewer = new Cligent(new CodexAdapter(), {
   role: 'reviewer',
-  model: 'gpt-5.3-codex',
+  model: 'gpt-6-sol',
 });
 
 // Cligent.parallel(tasks) → AsyncGenerator<CligentEvent>
@@ -702,12 +717,12 @@ for await (const event of runParallel([
   {
     adapter: new ClaudeCodeAdapter(),
     prompt: 'Write unit tests',
-    options: { model: 'claude-opus-4-8', effort: 'ultracode' },
+    options: { model: 'claude-opus-5-5', effort: 'ultracode' },
   },
   {
     adapter: new CodexAdapter(),
     prompt: 'Write integration tests',
-    options: { model: 'gpt-5.3-codex', effort: 'ultra' },
+    options: { model: 'gpt-6-sol', effort: 'ultra' },
   },
 ])) {
   console.log(`[${event.agent}] ${event.type}`);
@@ -745,7 +760,7 @@ for await (const event of agent.run('Fix the login bug', {
 
 | Type                           | Payload                                                                              | Description                                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `init`                         | `model`, `cwd`, `tools`, `fastMode?`                                                 | Session started; Claude may report authentic fast-mode state             |
+| `init`                         | `model`, `reportedModel?`, `cwd`, `tools`, `fastMode?`                               | Session started; `reportedModel` and fast-mode state only when reported  |
 | `text`                         | `content`                                                                            | Complete text response                                                   |
 | `text_delta`                   | `delta`                                                                              | Streaming text chunk                                                     |
 | `thinking`                     | `summary`                                                                            | Agent reasoning                                                          |

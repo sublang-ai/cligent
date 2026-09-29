@@ -91,7 +91,7 @@ describe('Codex real resumed token accounting (codex-60)', () => {
         new CodexAdapter({ loadSdk: async () => ({ Codex: CapturingCodex }) }),
         {
           cwd: root,
-          model: process.env.CODEX_MODEL ?? 'gpt-5.6-luna',
+          model: process.env.CODEX_MODEL ?? 'gpt-6-luna',
           effort: 'low',
           permissions: { mode: 'auto' },
         },

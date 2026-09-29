@@ -24,10 +24,10 @@ adapters you use:
 # `>=` keeps the declaration open so a cligent upgrade can carry the runtime
 # forward. A bare `npm install <pkg>` writes a caret instead, and for a
 # `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
-# `0.151.0`, however often you run `npm update`.
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.219"   # Claude Code
-npm install "@openai/codex-sdk@>=0.144.0"                # Codex
-npm install "@opencode-ai/sdk@>=1.18.12"                 # OpenCode
+# `0.159.0`, however often you run `npm update`.
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
+npm install "@openai/codex-sdk@>=0.156.1"                # Codex
+npm install "@opencode-ai/sdk@>=1.18.29"                 # OpenCode
 ```
 
 Gemini and default managed-mode OpenCode also need their CLI on `PATH`.
@@ -59,13 +59,13 @@ the exact conformance target. The external Kimi CLI itself requires Node.js
 22.19 or newer to install and run, then authenticate once:
 
 ```bash
-npm install -g @moonshot-ai/kimi-code@0.39.1
+npm install -g @moonshot-ai/kimi-code@2.1.1
 kimi login
 ```
 
 Adapters reuse each vendor's own authentication from your environment —
 a signed-in CLI (e.g. `claude`, `codex`) or its API-key variable
-(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 0.39.1 ACP accepts any
+(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Kimi Code 2.1.1 ACP accepts any
 of three: stored OAuth material resolved from the default model or reported
 by any logged-in provider, including after `kimi login`; a configured
 default-model alias resolving to non-OAuth credentials; or `KIMI_MODEL_NAME`
@@ -89,7 +89,7 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 // option merging, and protocol hardening.
 const agent = new Cligent(new ClaudeCodeAdapter(), {
   role: 'coder',
-  model: 'claude-opus-4-8',
+  model: 'claude-opus-5-5',
 });
 
 for await (const event of agent.run('Refactor auth module')) {
@@ -126,8 +126,9 @@ import { discoverAgentModels } from '@sublang/cligent';
 
 const catalog = await discoverAgentModels('codex', { timeoutMs: 10_000 });
 if (catalog.status === 'available') {
+  console.log('unconfigured runs select', catalog.defaultModel);
   for (const model of catalog.models) {
-    console.log(model.id, model.effortValues, model.fastModeSupported);
+    console.log(model.id, model.name, model.description, model.resolvedModel);
   }
 } else {
   console.log(catalog.reason);
@@ -136,12 +137,24 @@ if (catalog.status === 'available') {
 
 Model metadata comes from the provider: an empty `effortValues` list or
 `fastModeSupported: false` means unsupported; an absent field means unknown.
-`resolvedModel`, when present, names the model behind an alias. Keep custom
-model input available: catalogs may be incomplete and do not guarantee account
-access. `getEffortSupport()` and `getFastModeSupport()` describe what the
-adapter accepts, independently of model support.
+`name` is the runtime's human name when it reports one, otherwise the ID;
+`description` (the runtime's own text) and `resolvedModel` (the model behind an
+alias) appear only when reported. Keep custom model input available: catalogs
+may be incomplete and do not guarantee account access. `getEffortSupport()` and
+`getFastModeSupport()` describe what the adapter accepts, independently of
+model support.
 Catalog `unreportedEffortValues` lists adapter choices its discovery interface
 cannot describe; these are not claims of support by every model.
+
+`defaultModel` names what a run selects when you configure no model, read from
+the runtime's own configuration for the discovery `cwd` (Claude settings and
+`ANTHROPIC_MODEL`, Codex `config/read`, Kimi's configured default). It can name
+a value outside `models`, such as `opus[1m]`, and is absent when the runtime
+cannot report it; OpenCode reports none. A listing's own default flag counts
+only when the configuration names no model.
+
+At run time, `init` events carry `reportedModel` only when the runtime itself
+names the model for that call; `model` keeps its requested-model fallback.
 
 Claude, Codex, Kimi and OpenCode expose read-only catalogs; Gemini currently
 returns `unavailable`. Discovery accepts `cwd`, `env` and `signal`, cleans up
@@ -172,7 +185,7 @@ whichever providers you have credentials for:
 | `claude` | `npm install -g @anthropic-ai/claude-agent-sdk` |
 | `codex` | `npm install -g @openai/codex-sdk` |
 | `gemini` | `npm install -g @google/gemini-cli` |
-| `kimi` | `npm install -g @moonshot-ai/kimi-code@0.39.1` then `kimi login` (or configure a default model) |
+| `kimi` | `npm install -g @moonshot-ai/kimi-code@2.1.1` then `kimi login` (or configure a default model) |
 | `opencode` | `npm install -g @opencode-ai/sdk opencode-ai` |
 
 On first run, if neither the cwd nor the home config exists, `tmux-play`

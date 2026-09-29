@@ -220,8 +220,8 @@ const DEFAULT_ROLE_BY_ADAPTER: {
     readonly effort?: EffortForAgent<A>;
   };
 } = {
-  claude: { model: 'claude-opus-4-8', effort: 'xhigh' },
-  codex: { model: 'gpt-5.5', effort: 'xhigh' },
+  claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
+  codex: { model: 'gpt-6-sol', effort: 'xhigh' },
   gemini: {},
   kimi: {},
   opencode: {},
