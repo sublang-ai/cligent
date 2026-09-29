@@ -12,7 +12,7 @@ npm install @sublang/cligent
 Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
 
 ```bash
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.280"   # Claude Code
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
 npm install "@openai/codex-sdk@>=0.156.1"                 # Codex CLI
 npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
@@ -116,7 +116,7 @@ const agent = new Cligent(adapter, {
 // Per-call overrides win for scalars; permissions are merged by field;
 // allowedTools/disallowedTools arrays are replaced entirely.
 for await (const event of agent.run('Fix the bug', {
-  model: 'claude-sonnet-5', // overrides the default
+  model: 'claude-sonnet-5-5', // overrides the default
   abortSignal: controller.signal,
 })) {
   // event.role === 'coder' (always from constructor defaults)

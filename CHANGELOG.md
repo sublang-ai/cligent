@@ -23,14 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Built-in agent runtime targets move to the latest published versions this
-  release verifies: Claude Agent SDK 0.3.283, Codex SDK 0.158.0 with its Codex
-  CLI 0.158.0, Gemini CLI 0.61.0, Kimi Code 2.1.1, and OpenCode SDK and CLI
+  release verifies: Claude Agent SDK 0.3.284, Codex SDK 0.159.0 with its Codex
+  CLI 0.159.0, Gemini CLI 0.61.0, Kimi Code 2.1.1, and OpenCode SDK and CLI
   1.18.33. Repair commands pin those versions — DR-013
 - Supported runtime floors now follow the latest models each provider offers.
-  `@anthropic-ai/claude-agent-sdk` rises from `>=0.3.219` to `>=0.3.280`, the
-  first release whose model catalog carries Claude Opus 5.5, and
-  `@openai/codex-sdk` with its bundled Codex CLI rises from `>=0.144.0` to
-  `>=0.156.1`, the first carrying GPT-6-Sol and GPT-6-Luna. The OpenCode SDK
+  `@anthropic-ai/claude-agent-sdk` rises from `>=0.3.219` to `>=0.3.284`, the
+  first release whose model catalog carries Claude Sonnet 5.5, after Claude
+  Opus 5.5 arrived in 0.3.280, and `@openai/codex-sdk` with its bundled Codex
+  CLI rises from `>=0.144.0` to `>=0.156.1`, the first carrying GPT-6-Sol and
+  GPT-6-Luna. The OpenCode SDK
   and CLI rise from `1.18.12` to `1.18.29`, the first that keeps Claude Fable
   5.1 and Opus 5.5 conversations working across turns and lists GPT-6 models
   for ChatGPT sign-in. Gemini CLI rises from `0.45.1` to `0.61.0`, the first

@@ -5,7 +5,7 @@
 
 ## Status
 
-Completed (2026-09-28): every runtime follows [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md); the deliverables were reviewed and merged into the release candidate.
+Completed (2026-09-29): every runtime follows [DR-027](../decisions/027-latest-models-oldest-serving-runtime.md); the deliverables were reviewed and merged into the release candidate.
 
 ## Intent
 
@@ -13,11 +13,11 @@ Move every built-in adapter's runtime conformance target to its latest published
 
 ## Deliverables
 
-- [x] Claude Agent SDK `0.3.283`, Codex SDK `0.158.0` with Codex CLI `0.158.0`, Gemini CLI `0.61.0`, Kimi Code `2.1.1` paired with ACP SDK `1.4.0`, and OpenCode SDK and CLI `1.18.33` are the tested versions, repairs, development pins, and exact CI installs.
+- [x] Claude Agent SDK `0.3.284`, Codex SDK `0.159.0` with Codex CLI `0.159.0`, Gemini CLI `0.61.0`, Kimi Code `2.1.1` paired with ACP SDK `1.4.0`, and OpenCode SDK and CLI `1.18.33` are the tested versions, repairs, development pins, and exact CI installs.
 - [x] Claude's per-model `thinkingTokens` stays out of exact reasoning detail.
 - [x] tmux-play's generated roles pin `claude-opus-5-5` and `gpt-6-sol` at `xhigh`.
 - [x] DR-027 records the latest-model floor rule and amends the floor rules of DR-013 and DR-023.
-- [x] Claude's floor rises to `0.3.280`, Codex's to `0.156.1`, OpenCode's SDK and CLI floors to `1.18.29`, and Gemini's to `0.61.0`, each with bisected evidence beside the descriptor target and matching peer floors.
+- [x] Claude's floor rises to `0.3.284`, Codex's to `0.156.1`, OpenCode's SDK and CLI floors to `1.18.29`, and Gemini's to `0.61.0`, each with bisected evidence beside the descriptor target and matching peer floors.
 - [x] Kimi's floor stays `0.28.1`, recording that serving the latest Kimi models does not depend on the CLI version.
 - [x] Every remaining default and example names the latest model of its line.
 - [x] OpenCode effort selects the variant the chosen model advertises in the server's catalog, else the nearest advertised one, so GPT-6's `max` reaches `max` and its `minimal` reaches `low`; the documented provider table remains the fallback.
@@ -34,6 +34,7 @@ Move every built-in adapter's runtime conformance target to its latest published
 6. Stop Kimi `off` before the prompt on models that always think.
 7. Select OpenCode variants from the server's model catalog.
 8. Deliver Gemini effort through a per-run user-settings home and move Gemini to CLI `0.61.0`.
+9. Follow Claude Agent SDK `0.3.284`, whose catalog first carries Claude Sonnet 5.5, and Codex `0.159.0`, and know the Gemini home's links by their target.
 
 ## Verification
 
@@ -46,3 +47,6 @@ Move every built-in adapter's runtime conformance target to its latest published
 - Gemini CLI `0.61.0` through the built adapter against a local Gemini API stand-in requested `gemini-3.8-flash` with `thinkingLevel: LOW` and `gemini-2.5-flash` with `thinkingBudget: 24576`, resumed its session, and sent the concrete model without an overlay from the Gemini home, with no security warning; the former system-defaults route instead drew `Security Warning: Skipping` and requested `cligent-reasoning-effort`.
 - An OAuth run through the overlay on this machine's real Gemini home wrote the refreshed credential through to the real file, registered the new project in the real registry, left the real settings byte-identical, and removed the overlay; Code Assist then rejected the account's tier as an unsupported client, with or without the overlay, so no model request was made.
 - Live auto-mode create-then-resume-update runs pass for `claude-opus-5-5` and `gpt-6-sol` at `xhigh` and for a free OpenCode model; a Codex `max` plus fast-tier run completes.
+- Task 9 (2026-09-29): Claude Agent SDK `0.3.284`'s bundled catalog, diffed against `0.3.283`'s on the darwin-arm64 and linux-x64 binaries, adds only `claude-sonnet-5-5` and moves the `sonnet` alias to it; Codex `0.159.0`'s embedded catalog, `model/list`, and `config/read` match `0.158.0`'s.
+  After the refresh, `npm ci`, lint, typecheck, `npm test` (1,483 passed), `npx spex lint`, `node scripts/verify-agent-targets.mjs` (bundled Claude Code `2.1.284`), and `npm run smoke:release` pass, and the acceptance suite passes 46 with 18 skipped under a UTF-8 locale, which its real-tmux launcher cases need.
+  On Linux CI a run that replaced a linked `.gemini` directory reused the link's inode number, so the overlay now knows a link by its target; the recreated-link case fails on the former inode rule and passes on the new one.

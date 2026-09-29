@@ -549,5 +549,5 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 [4]: https://code.claude.com/docs/en/fast-mode "Claude Code fast mode"
 [5]: https://code.claude.com/docs/en/agent-sdk/typescript "Claude Agent SDK TypeScript reference"
 [6]: https://platform.claude.com/docs/en/build-with-claude/fast-mode#checking-which-speed-was-used "Checking which Claude serving speed was used"
-[7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.283/sdk.d.ts "Claude Agent SDK 0.3.283 declarations"
+[7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.284/sdk.d.ts "Claude Agent SDK 0.3.284 declarations"
 [8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"

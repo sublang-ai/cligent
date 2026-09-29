@@ -102,29 +102,29 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
-      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.283',
+      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.284',
       // The first release whose baked-in model catalog, which Claude Code
       // calls its source of truth for per-model IDs and metadata, carries
-      // `claude-opus-5-5`, the latest Claude model: 0.3.278 lacks the entry
-      // and still maps the `opus` alias to `claude-opus-5`, 0.3.279 was
-      // never published, and 0.3.280 carries it with its xhigh and max
-      // effort, adaptive-thinking, and fast-mode capabilities and makes it
-      // the `opus` default. The other latest lines arrived earlier:
-      // `claude-fable-5-1` in 0.3.257 (0.3.252 lacks it and 0.3.253 through
-      // 0.3.256 were never published), while 0.3.251 already carries
-      // `claude-sonnet-5` and `claude-haiku-4-5`. Bisected against the
-      // published darwin-arm64 and linux-x64 platform binaries, because the
-      // catalog is data inside the bundled executable rather than something
-      // the SDK's API surface reveals.
-      supportedFrom: '0.3.280',
-      tested: '0.3.283',
+      // `claude-sonnet-5-5`, the latest Sonnet: 0.3.283 lacks the entry and
+      // still maps the `sonnet` alias to `claude-sonnet-5`, and 0.3.284, the
+      // next published release, carries it with its low-to-max efforts and
+      // adaptive thinking and makes it the `sonnet` default. The other
+      // latest lines arrived earlier: `claude-opus-5-5` in 0.3.280 (0.3.278
+      // lacks it and 0.3.279 was never published), `claude-fable-5-1` in
+      // 0.3.257 (0.3.252 lacks it and 0.3.253 through 0.3.256 were never
+      // published), while 0.3.251 already carries `claude-haiku-4-5`.
+      // Bisected against the published darwin-arm64 and linux-x64 platform
+      // binaries, because the catalog is data inside the bundled executable
+      // rather than something the SDK's API surface reveals.
+      supportedFrom: '0.3.284',
+      tested: '0.3.284',
     }),
   ]),
   codex: Object.freeze([
     Object.freeze({
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
-      repairSpec: '@openai/codex-sdk@0.158.0',
+      repairSpec: '@openai/codex-sdk@0.159.0',
       // The first release whose bundled model catalog carries the whole
       // GPT-6 family, the latest OpenAI models: the published 0.156.0 binary
       // carries only `gpt-6-astra` (absent from 0.153.0, bundled since
@@ -139,7 +139,7 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
       // darwin-arm64 binaries and the tagged `models.json`. 0.139.0, the
       // runtime DR-013 was written about, stays refused.
       supportedFrom: '0.156.1',
-      tested: '0.158.0',
+      tested: '0.159.0',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
       bundles: '@openai/codex',
