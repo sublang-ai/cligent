@@ -52,8 +52,16 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
-function identity(stats: BigIntStats): string {
-  return `${stats.dev}:${stats.ino}`;
+/**
+ * What makes an entry the link the overlay created: a symbolic link (or a
+ * Windows junction) while it still names the real entry, and a hard link
+ * while it is still the real file. An inode number alone cannot tell: a
+ * filesystem may give a removed link's number to the entry replacing it.
+ */
+async function identity(path: string, stats: BigIntStats): Promise<string> {
+  if (stats.isSymbolicLink()) return `link:${await readlink(path)}`;
+  const type = stats.mode & BigInt(fsConstants.S_IFMT);
+  return `${type}:${stats.dev}:${stats.ino}`;
 }
 
 async function lstatOrUndefined(
@@ -108,7 +116,7 @@ async function linkEntries(
     if (name === skip) continue;
     const path = join(overlayDir, name);
     await linkEntry(join(realDir, name), path);
-    links.set(path, identity(await lstat(path, { bigint: true })));
+    links.set(path, await identity(path, await lstat(path, { bigint: true })));
   }
 }
 
@@ -300,7 +308,7 @@ async function reconcileEntries(
 
     try {
       const stats = await lstatOrUndefined(path);
-      if (!stats || links.get(path) === identity(stats)) continue;
+      if (!stats || links.get(path) === (await identity(path, stats))) continue;
 
       if (scope.gemini && name === REGISTRY_FILE && stats.isFile()) {
         await mergeRegistry(path, realPath);
@@ -344,7 +352,10 @@ async function removeOverlay(
   // Unlink the links first so no removal can reach through one.
   for (const [path, linked] of links) {
     const stats = await lstatOrUndefined(path).catch(() => undefined);
-    if (stats && identity(stats) === linked) {
+    const current = stats
+      ? await identity(path, stats).catch(() => undefined)
+      : undefined;
+    if (current === linked) {
       // A Windows directory junction is removed as a directory.
       await unlink(path).catch(() => rmdir(path));
     }

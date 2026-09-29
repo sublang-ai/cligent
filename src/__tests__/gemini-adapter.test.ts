@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -1909,6 +1910,7 @@ describe('GeminiAdapter', () => {
     );
     writeFileSync(join(realGemini, 'trustedFolders.json'), 'trust-before');
     writeFileSync(join(realGemini, 'google_accounts.json'), 'accounts');
+    writeFileSync(join(realGemini, 'oauth_creds.json'), 'creds');
     writeFileSync(join(realHome, '.env'), 'KEY=old\n');
     writeFileSync(join(realHome, 'unrelated.txt'), 'untouched\n');
 
@@ -1957,6 +1959,11 @@ describe('GeminiAdapter', () => {
       mkdirSync(join(gemini, 'state.json.lock'));
       writeFileSync(join(gemini, 'settings.json'), '{"model":{"name":"x"}}');
       unlinkSync(join(gemini, 'google_accounts.json'));
+      // A link recreated to the same real entry is still that link.
+      const creds = join(gemini, 'oauth_creds.json');
+      const credsTarget = readlinkSync(creds);
+      unlinkSync(creds);
+      symlinkSync(credsTarget, creds);
       writeEventsAndClose(child, [successResult()], 0, null);
     });
 
@@ -1989,6 +1996,8 @@ describe('GeminiAdapter', () => {
     expect(real('draft.tmp')).toBe('draft');
     expect(real('.gemini/settings.json')).toBe('{}');
     expect(real('.gemini/google_accounts.json')).toBe('accounts');
+    expect(lstatSync(join(realGemini, 'oauth_creds.json')).isFile()).toBe(true);
+    expect(real('.gemini/oauth_creds.json')).toBe('creds');
     expect(real('unrelated.txt')).toBe('untouched\n');
     for (const leftover of [
       'projects.json.123.tmp',
