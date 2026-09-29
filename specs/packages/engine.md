@@ -456,9 +456,25 @@ The public engine API shall expose a runtime-readiness classification carrying t
 | --- | --- | --- |
 | available within the supported floor and tested ceiling | `satisfied` | `true` |
 | absent | `missing` | `false` |
+| installed at or above the supported floor, but the adapter is unavailable, as when its native executable is missing | `missing`, carrying the installed version | `false` |
 | below the supported floor | `unsupported` | `false` |
-| above the tested version | `untested` | `true` |
+| available above the tested version | `untested` | `true` |
 | available but version unreadable | `unknown`, never a failure in this package's caller-facing behavior | `true` |
+
+### engine-88
+
+When a caller passes `claude` or `codex` to `locateAgentExecutable(runtime)`, the public engine API shall report the native executable that runtime's SDK spawns, found by the lookup behind that adapter's availability [[claude-code-13](adapters/claude-code.md#claude-code-13)], [[codex-8](adapters/codex.md#codex-8)], as the result of the first matching row of this matrix:
+
+| Lookup outcome | Result |
+| --- | --- |
+| the runtime's SDK does not resolve from the installed `@sublang/cligent` tree | `{ state: 'no-sdk' }`, so a host reports no second fault beside the missing SDK |
+| the lookup finds the executable | `{ state: 'present', path }` |
+| the SDK publishes no executable for the host [[claude-code-56](adapters/claude-code.md#claude-code-56)], [[codex-63](adapters/codex.md#codex-63)]: for Claude, the SDK manifest declares at least one optional dependency and none of them is a host candidate package; for Codex, the launcher has no target for the host | `{ state: 'unsupported', platform, arch }` |
+| Codex's CLI entry does not resolve | `{ state: 'missing', package: '@openai/codex', platform, arch }` |
+| no platform package the SDK would spawn from on this host holds the executable | `{ state: 'missing', package, platform, arch }`, with `package` the first of those packages the SDK would try |
+
+- `platform` and `arch` are the host's `process.platform` and `process.arch`.
+- A Claude SDK manifest that is unreadable, is not the SDK's, or declares no optional dependency is no evidence of an unsupported host, so such a lookup reads `missing`.
 
 ### Authentic Usage Accounting
 
@@ -685,7 +701,11 @@ Where a TypeScript consumer uses the legacy mutable-registry declarations, the t
 
 ### engine-118
 
-Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
+Where installed peer and executable runtimes exercise every supported, missing, installed-but-unavailable, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
+
+### engine-89
+
+Given fake module trees in which each of the `claude` and `codex` runtimes lacks its SDK, meets a host its SDK publishes no executable for, lacks its platform package, and holds its executable, with Codex also lacking its CLI entry, and Claude on both glibc and musl Linux hosts, holding an executable its manifest does not list, and with an unreadable manifest or one declaring no optional dependencies on a host it publishes nothing for, together with this checkout's own install of both SDKs and their platform packages, when the lookup runs over each, the check shall assert every [[engine-88](#engine-88)] result with its package, platform, architecture, or path.
 
 ### engine-122
 

@@ -390,6 +390,41 @@ describe('the runtimes DR-013 was written about', () => {
     expect(classifyRuntime(opencodeCli, true, '1.18.11').state).toBe('unsupported');
   });
 
+  it('reads an installed runtime its adapter cannot load as missing', () => {
+    // engine-118: at or above the floor, a version cannot show the piece an
+    // unavailable adapter lacks, such as the native executable its SDK
+    // spawns, so the verdict follows the adapter rather than the version.
+    const claude = AGENT_RUNTIME_TARGETS.claude[0]!;
+    const aboveTested = claude.tested.replace(
+      /^(\d+)\./,
+      (_, major) => `${Number(major) + 1}.`,
+    );
+    for (const installed of [
+      claude.supportedFrom,
+      claude.tested,
+      aboveTested,
+    ]) {
+      const verdict = classifyRuntime(claude, false, installed);
+      expect(verdict.state).toBe('missing');
+      expect(verdict.installed).toBe(installed);
+      expect(verdict.repair.spec).toBe(claude.repairSpec);
+      expect(describeRuntimeReadiness(verdict)).toBe(
+        `${claude.package} ${installed} is installed but unavailable`,
+      );
+    }
+    expect(classifyRuntime(claude, true, aboveTested).state).toBe('untested');
+    // Below the floor the version already explains the refusal.
+    expect(classifyRuntime(claude, false, '0.0.1').state).toBe('unsupported');
+    // With nothing installed, the verdict still says so.
+    const absent: RuntimeTarget = {
+      ...claude,
+      package: '@example/definitely-not-installed',
+    };
+    expect(describeRuntimeReadiness(classifyRuntime(absent, false))).toBe(
+      `${absent.package} is not installed (requires >=${absent.supportedFrom})`,
+    );
+  });
+
   it('carries the repair the verdict promises', () => {
     // engine-26 and the changelog both say the verdict carries repair
     // commands; without it a consumer rebuilds the adapter-to-package map

@@ -3,7 +3,18 @@
 
 import { getEventListeners } from 'node:events';
 
-import { describe, it, expect } from 'vitest';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { describe, it, expect, vi } from 'vitest';
 
 import {
   ClaudeCodeAdapter,
@@ -11,6 +22,10 @@ import {
   mapEffortToClaudeOptions,
   mapPermissionsToClaudeOptions,
 } from '../adapters/claude-code.js';
+import {
+  claudeExecutableCandidates,
+  probeClaudeExecutable,
+} from '../adapters/claude-executable.js';
 import type {
   AgentEvent,
   AgentOptions,
@@ -354,6 +369,319 @@ describe('ClaudeCodeAdapter', () => {
       'text',
       'done',
     ]);
+  });
+
+  // A module tree for the native-binary lookup: `write` adds a package
+  // manifest (raw text, or JSON with extra fields) and optionally the named
+  // file inside it, returning that file's physical path or the directory.
+  async function withClaudeTree<T>(
+    body: (tree: {
+      root: string;
+      modules: string;
+      write: (
+        name: string,
+        options?: {
+          manifest?: Record<string, unknown> | string;
+          file?: string;
+        },
+      ) => string;
+    }) => T | Promise<T>,
+  ): Promise<T> {
+    const root = mkdtempSync(join(tmpdir(), 'cligent-claude-tree-'));
+    const modules = join(root, 'store', 'node_modules');
+    const write = (
+      name: string,
+      options: {
+        manifest?: Record<string, unknown> | string;
+        file?: string;
+      } = {},
+    ): string => {
+      const directory = join(modules, ...name.split('/'));
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, 'package.json'),
+        typeof options.manifest === 'string'
+          ? options.manifest
+          : `${JSON.stringify({ name, ...options.manifest })}\n`,
+      );
+      if (options.file === undefined) return directory;
+      writeFileSync(join(directory, options.file), '');
+      return realpathSync(join(directory, options.file));
+    };
+    try {
+      return await body({ root, modules, write });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  const CLAUDE_SDK = '@anthropic-ai/claude-agent-sdk';
+
+  it('is unavailable and refuses a run when the SDK loads without its native binary', async () => {
+    // claude-code-58 / claude-code-59: npm drops the optional platform
+    // package without failing the install; the SDK module still imports, and
+    // the first run would fail with "executable not found". On a host the
+    // SDK publishes nothing for, no reinstall can help, so none is advised.
+    const queries: unknown[] = [];
+    const sdk = {
+      query: ((params: unknown) => {
+        queries.push(params);
+        throw new Error('the SDK must not be called');
+      }) as never,
+    };
+    const refusalOf = async (adapter: ClaudeCodeAdapter): Promise<string> => {
+      try {
+        await adapter.run('prompt').next();
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        return (error as Error).message;
+      }
+      throw new Error('run() did not refuse');
+    };
+
+    await withClaudeTree(async ({ write }) => {
+      const sdkDir = write(CLAUDE_SDK, {
+        manifest: {
+          optionalDependencies: {
+            [`${CLAUDE_SDK}-linux-x64`]: '0.0.0-test',
+            [`${CLAUDE_SDK}-linux-x64-musl`]: '0.0.0-test',
+          },
+        },
+      });
+      const anchor = join(sdkDir, 'package.json');
+      const adapterOn = (
+        platform: NodeJS.Platform,
+        arch: string,
+      ): ClaudeCodeAdapter =>
+        new ClaudeCodeAdapter({
+          loadSdk: async () => sdk,
+          probeExecutable: () =>
+            probeClaudeExecutable({
+              anchor,
+              platform,
+              arch,
+              preferMusl: false,
+            }),
+        });
+
+      const published = adapterOn('linux', 'x64');
+      const unpublished = adapterOn('freebsd', 'x64');
+      await expect(published.isAvailable()).resolves.toBe(false);
+      await expect(unpublished.isAvailable()).resolves.toBe(false);
+
+      // A published host: the package the SDK tries first, the host, and
+      // the reinstall, before any SDK call.
+      const missing = await refusalOf(published);
+      expect(missing).toContain(
+        `the optional platform package ${CLAUDE_SDK}-linux-x64 is not ` +
+          'installed for linux-x64',
+      );
+      expect(missing).toContain('run npm ci in a checkout');
+      expect(missing).toContain('reinstall the SDK');
+
+      // An unpublished host: that fact, and no reinstall.
+      const unsupported = await refusalOf(unpublished);
+      expect(unsupported).toContain(
+        `${CLAUDE_SDK} publishes no native binary for freebsd-x64`,
+      );
+      expect(unsupported).not.toContain('npm ci');
+      expect(unsupported).not.toMatch(/reinstall/i);
+
+      write(`${CLAUDE_SDK}-linux-x64`, { file: 'claude' });
+      await expect(published.isAvailable()).resolves.toBe(true);
+    });
+    expect(queries).toEqual([]);
+  });
+
+  it('locates the native binary by the SDK rule over the SDK physical tree', async () => {
+    // claude-code-58: the SDK's candidate order, musl first only on a musl
+    // Linux host.
+    expect(claudeExecutableCandidates('linux', 'arm64', false)).toEqual([
+      `${CLAUDE_SDK}-linux-arm64/claude`,
+      `${CLAUDE_SDK}-linux-arm64-musl/claude`,
+    ]);
+    expect(claudeExecutableCandidates('linux', 'arm64', true)).toEqual([
+      `${CLAUDE_SDK}-linux-arm64-musl/claude`,
+      `${CLAUDE_SDK}-linux-arm64/claude`,
+    ]);
+    expect(claudeExecutableCandidates('darwin', 'arm64', true)).toEqual([
+      `${CLAUDE_SDK}-darwin-arm64/claude`,
+    ]);
+    expect(claudeExecutableCandidates('win32', 'x64')).toEqual([
+      `${CLAUDE_SDK}-win32-x64/claude.exe`,
+    ]);
+    expect(claudeExecutableCandidates('android', 'arm64')).toEqual([
+      `${CLAUDE_SDK}-linux-arm64-android/claude`,
+    ]);
+
+    // A linked install: the SDK and its platform packages live in a store,
+    // and the consumer tree holds only a link to the SDK, so every package
+    // found below is found from the SDK's physical location.
+    await withClaudeTree(({ root, write }) => {
+      const sdkDir = write(CLAUDE_SDK);
+      const linked = join(root, 'consumer', 'node_modules', '@anthropic-ai');
+      mkdirSync(linked, { recursive: true });
+      symlinkSync(sdkDir, join(linked, 'claude-agent-sdk'), 'junction');
+      const anchor = join(linked, 'claude-agent-sdk', 'package.json');
+      const glibcHost = {
+        anchor,
+        platform: 'linux',
+        arch: 'x64',
+        preferMusl: false,
+      } as const;
+      const muslHost = { ...glibcHost, preferMusl: true } as const;
+      expect(probeClaudeExecutable(glibcHost)).toEqual({
+        state: 'missing',
+        package: `${CLAUDE_SDK}-linux-x64`,
+        platform: 'linux',
+        arch: 'x64',
+      });
+
+      // The only installed candidate answers whatever its place in the order.
+      const musl = write(`${CLAUDE_SDK}-linux-x64-musl`, { file: 'claude' });
+      expect(probeClaudeExecutable(glibcHost)).toEqual({
+        state: 'present',
+        path: musl,
+      });
+      // With both installed, the first candidate on the host wins.
+      const glibc = write(`${CLAUDE_SDK}-linux-x64`, { file: 'claude' });
+      expect(probeClaudeExecutable(glibcHost)).toEqual({
+        state: 'present',
+        path: glibc,
+      });
+      expect(probeClaudeExecutable(muslHost)).toEqual({
+        state: 'present',
+        path: musl,
+      });
+      // Another platform's package does not answer for this one.
+      expect(
+        probeClaudeExecutable({ anchor, platform: 'darwin', arch: 'arm64' }),
+      ).toMatchObject({
+        state: 'missing',
+        package: `${CLAUDE_SDK}-darwin-arm64`,
+      });
+    });
+  });
+
+  it('concludes an unpublished host only from the SDK manifest', async () => {
+    // claude-code-58: claude-code-57's publishes-no-binary conclusion needs
+    // the SDK's own manifest naming none of the host's candidates; a binary
+    // found wins over the manifest, and a manifest that says nothing either
+    // way leaves the package missing.
+    const freebsd = { platform: 'freebsd', arch: 'x64' } as const;
+    const freebsdMissing = {
+      state: 'missing',
+      package: `${CLAUDE_SDK}-freebsd-x64`,
+      ...freebsd,
+    };
+
+    await withClaudeTree(({ write }) => {
+      const anchor = join(
+        write(CLAUDE_SDK, {
+          manifest: {
+            optionalDependencies: { [`${CLAUDE_SDK}-linux-arm64`]: '1.0.0' },
+          },
+        }),
+        'package.json',
+      );
+      expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual({
+        state: 'unsupported',
+        ...freebsd,
+      });
+      const android = { anchor, platform: 'android', arch: 'arm64' } as const;
+      expect(probeClaudeExecutable(android)).toEqual({
+        state: 'unsupported',
+        platform: 'android',
+        arch: 'arm64',
+      });
+      // The SDK spawns what it finds, listed or not.
+      const binary = write(`${CLAUDE_SDK}-linux-arm64-android`, {
+        file: 'claude',
+      });
+      expect(probeClaudeExecutable(android)).toEqual({
+        state: 'present',
+        path: binary,
+      });
+    });
+
+    // An unreadable manifest, one declaring no optional dependencies, and
+    // another package's manifest are no evidence of an unpublished host.
+    await withClaudeTree(({ write }) => {
+      const sdkDir = write(CLAUDE_SDK, { manifest: '{ not json' });
+      const anchor = join(sdkDir, 'package.json');
+      expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual(
+        freebsdMissing,
+      );
+    });
+    await withClaudeTree(({ write }) => {
+      const anchor = join(write(CLAUDE_SDK), 'package.json');
+      expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual(
+        freebsdMissing,
+      );
+    });
+    for (const optionalDependencies of [{}, []]) {
+      await withClaudeTree(({ write }) => {
+        const sdkDir = write(CLAUDE_SDK, {
+          manifest: { optionalDependencies },
+        });
+        const anchor = join(sdkDir, 'package.json');
+        expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual(
+          freebsdMissing,
+        );
+      });
+    }
+    await withClaudeTree(({ write }) => {
+      const bundle = write('vendored-bundle', {
+        manifest: {
+          optionalDependencies: { [`${CLAUDE_SDK}-linux-arm64`]: '1.0.0' },
+        },
+      });
+      const anchor = join(bundle, 'dist', 'sdk.mjs');
+      expect(probeClaudeExecutable({ anchor, ...freebsd })).toEqual(
+        freebsdMissing,
+      );
+    });
+  });
+
+  it('follows the SDK libc test on a Linux host', async () => {
+    // claude-code-58: on Linux, a process report without a glibc runtime
+    // version is a musl host, whose lookup tries the musl package first.
+    // The answer is memoized per module, so each case loads a fresh one.
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+    const glibc = `${CLAUDE_SDK}-linux-${process.arch}`;
+    try {
+      await withClaudeTree(async ({ write }) => {
+        const anchor = join(write(CLAUDE_SDK), 'package.json');
+        for (const [header, first] of [
+          [{ glibcVersionRuntime: '2.39' }, glibc],
+          [{}, `${glibc}-musl`],
+        ] as const) {
+          vi.resetModules();
+          const getReport = vi
+            .spyOn(process.report, 'getReport')
+            .mockReturnValue({ header } as never);
+          try {
+            const lookup = await import('../adapters/claude-executable.js');
+            expect(lookup.claudeExecutableCandidates()[0]).toBe(
+              `${first}/claude`,
+            );
+            expect(lookup.probeClaudeExecutable({ anchor })).toEqual({
+              state: 'missing',
+              package: first,
+              platform: 'linux',
+              arch: process.arch,
+            });
+            expect(getReport).toHaveBeenCalledTimes(1);
+          } finally {
+            getReport.mockRestore();
+          }
+        }
+      });
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      vi.resetModules();
+    }
   });
 
   it('returns false from isAvailable when SDK load fails', async () => {

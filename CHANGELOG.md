@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `locateAgentExecutable('claude' | 'codex')` reports where the native
+  executable each SDK spawns stands — `present` with its path, `missing` with
+  the platform package the SDK would spawn from first on this host,
+  `unsupported` for a host the SDK publishes no executable for, or `no-sdk` —
+  by the same lookup the adapters apply, so a host can name the missing piece
+  without copying any SDK's layout rule.
+
+### Fixed
+
+- `ClaudeCodeAdapter` and `CodexAdapter` availability now also requires the
+  native binary their SDKs spawn from an optional platform package
+  (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`, musl first on a musl
+  Linux host; `@openai/codex-<platform>-<arch>`). npm can drop that package
+  without failing the install, after which the SDK still imported and the
+  first run failed with "executable not found". Such an install now reads
+  unavailable, and `classifyRuntime` calls it `missing` with its installed
+  version; a run refuses before any SDK call, naming the package and the
+  platform. Repair: reinstall so npm installs the optional platform package —
+  `npm ci` in a checkout, or reinstall the SDK without `--omit=optional`. On a
+  host the SDK publishes no native binary for, such as FreeBSD, the refusal
+  says so and advises no reinstall, and an unresolvable Codex launcher entry
+  keeps its own resolution diagnostic.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added

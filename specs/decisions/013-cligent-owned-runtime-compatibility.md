@@ -6,6 +6,7 @@
 ## Status
 
 Accepted
+Amended by [DR-025](025-native-executable-availability.md): native-executable presence joins availability and readiness, an installed runtime its adapter cannot load reads missing, an unsupported host is refused without a reinstall, and hosts locate the executable through Cligent.
 
 ## Context
 

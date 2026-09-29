@@ -240,7 +240,7 @@ export type RuntimeReadinessState =
 export interface RuntimeReadiness {
   readonly state: RuntimeReadinessState;
   readonly target: RuntimeTarget;
-  /** The version found, absent when missing or unreadable. */
+  /** The version found, absent when not installed or unreadable. */
   readonly installed?: string;
   /**
    * The `node_modules` tree a peer runtime resolved from, when known. A CLI's
@@ -291,12 +291,15 @@ export function classifyRuntime(
   if (isBelowFloor(installed, target)) {
     return { state: 'unsupported', installed, ...base };
   }
-  if (isAboveTested(installed, target)) {
-    return { state: 'untested', installed, ...base };
+  // At or above the floor, an adapter that still cannot load is missing a
+  // piece the version cannot show, such as the native executable its SDK
+  // spawns; no version, however new, makes that runtime usable.
+  if (!available) {
+    return { state: 'missing', installed, ...base };
   }
-  return available
-    ? { state: 'satisfied', installed, ...base }
-    : { state: 'missing', installed, ...base };
+  return isAboveTested(installed, target)
+    ? { state: 'untested', installed, ...base }
+    : { state: 'satisfied', installed, ...base };
 }
 
 /** A one-line human summary of a verdict, for a caller that renders text. */
@@ -307,7 +310,9 @@ export function describeRuntimeReadiness(readiness: RuntimeReadiness): string {
     case 'satisfied':
       return `${named} ${installed} is supported`;
     case 'missing':
-      return `${named} is not installed (requires >=${target.supportedFrom})`;
+      return installed === undefined
+        ? `${named} is not installed (requires >=${target.supportedFrom})`
+        : `${named} ${installed} is installed but unavailable`;
     case 'unsupported':
       return `${named} ${installed} is too old (requires >=${target.supportedFrom}, tested at ${target.tested})`;
     case 'untested':
