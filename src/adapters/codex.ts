@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
@@ -25,6 +23,12 @@ import {
   normalizeCodexWindowsDevicePath,
   trimCodexRustWhitespace,
 } from './codex-path.js';
+import {
+  CODEX_SDK_PACKAGE,
+  probeCodexExecutable,
+  resolveCodexBinPath,
+  type CodexExecutableProbe,
+} from './codex-executable.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
@@ -129,12 +133,23 @@ interface CodexSdk {
 
 interface CodexAdapterDeps {
   loadSdk?: () => Promise<CodexSdk>;
+  /**
+   * Where the Codex CLI's native binary stands (codex-64). The real lookup
+   * beside the resolved launcher is the default only alongside the default
+   * loader: an injected `loadSdk` supplies no installed tree to search, so
+   * its binary counts as present unless this is injected too.
+   */
+  probeExecutable?: () => CodexExecutableProbe;
 }
+
+const INJECTED_SDK_EXECUTABLE: CodexExecutableProbe = {
+  state: 'present',
+  path: 'injected-sdk',
+};
 
 const AGENT = 'codex' as const;
 const CODEX_WORKSPACE_EXTRA_WRITES_PROFILE: CodexWorkspaceExtraWritesProfile =
   'cligent-workspace-extra-writes';
-const requireFromHere = createRequire(import.meta.url);
 
 const DEFAULT_DONE_USAGE: DonePayload['usage'] = {
   toolUses: 0,
@@ -1107,136 +1122,44 @@ interface CodexConfigOverrideWrapper {
   cleanup: () => Promise<void>;
 }
 
-const CODEX_SDK_PACKAGE = '@openai/codex-sdk';
-const CODEX_BIN_SPECIFIER = '@openai/codex/bin/codex.js';
-
-export interface CodexBinPathResolutionDeps {
-  // Loader-provided ESM resolution; pass undefined to model runtimes that
-  // predate import.meta.resolve (Node < 18.19).
-  importMetaResolve?: ((specifier: string) => string) | undefined;
-  // Module scope whose search paths anchor the lookup and whose resolution
-  // serves as the final fallback.
-  baseRequire?: Pick<NodeJS.Require, 'resolve'>;
-}
-
-interface CodexSdkAnchor {
-  anchor: string;
-  route: string;
-}
-
-function firstErrorLine(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
-  return text.split('\n', 1)[0] ?? text;
-}
-
-function toRealPath(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
-
-// @openai/codex is a dependency of @openai/codex-sdk, not of cligent, so
-// anchors must sit inside the installed SDK tree for layouts that do not
-// hoist it (npm global prefixes, nested-strategy consumers). Anchors are
-// realpath-canonicalized so pnpm-style symlinked layouts resolve from the
-// SDK's physical tree, matching how Node resolves the SDK's own imports.
-function codexSdkAnchors(
-  importMetaResolve: ((specifier: string) => string) | undefined,
-  baseRequire: Pick<NodeJS.Require, 'resolve'>,
-  failures: string[],
-): CodexSdkAnchor[] {
-  const anchors: CodexSdkAnchor[] = [];
-
-  if (importMetaResolve) {
-    try {
-      const resolvedUrl = new URL(importMetaResolve(CODEX_SDK_PACKAGE));
-      if (resolvedUrl.protocol === 'file:') {
-        anchors.push({
-          anchor: toRealPath(fileURLToPath(resolvedUrl)),
-          route: `loader-resolved ${CODEX_SDK_PACKAGE}`,
-        });
-      } else {
-        failures.push(
-          `loader resolved ${CODEX_SDK_PACKAGE} to a non-file URL ${resolvedUrl.href}`,
-        );
-      }
-    } catch (error) {
-      failures.push(
-        `loader resolution of ${CODEX_SDK_PACKAGE} failed: ${firstErrorLine(error)}`,
+/**
+ * The refusal a binary the lookup did not find earns (codex-63): on a host
+ * the launcher has no target for, that fact, since no reinstall can help;
+ * for an unresolvable launcher entry, codex-13's diagnostic; otherwise the
+ * platform package the launcher spawns from on this host, the host, and
+ * the reinstall that restores it.
+ */
+function codexExecutableRefusal(
+  probe: Exclude<CodexExecutableProbe, { state: 'present' }>,
+): Error {
+  const host = `${probe.platform}-${probe.arch}`;
+  switch (probe.state) {
+    case 'unsupported':
+      return new Error(
+        `CodexAdapter cannot run on ${host}: ${CODEX_SDK_PACKAGE} publishes ` +
+          `no native binary for ${host}.`,
+      );
+    case 'no-entry':
+      return probe.error;
+    case 'missing': {
+      const tested = AGENT_RUNTIME_TARGETS.codex[0]!.tested;
+      return new Error(
+        `CodexAdapter found ${CODEX_SDK_PACKAGE} but not the native binary ` +
+          `the Codex launcher spawns: the optional platform package ` +
+          `${probe.package} is not installed for ${host}. Reinstall so npm ` +
+          `installs it: run npm ci in a checkout, or reinstall the SDK where ` +
+          `'@sublang/cligent' resolves it (npm install ` +
+          `${CODEX_SDK_PACKAGE}@${tested}, with -g for a global install), ` +
+          `without --omit=optional.`,
       );
     }
   }
-
-  const searchPaths = baseRequire.resolve.paths(CODEX_SDK_PACKAGE) ?? [];
-  const manifest = searchPaths
-    .map((searchPath) =>
-      join(searchPath, ...CODEX_SDK_PACKAGE.split('/'), 'package.json'),
-    )
-    .find((candidate) => existsSync(candidate));
-  if (manifest) {
-    anchors.push({
-      anchor: toRealPath(manifest),
-      route: `search-path ${CODEX_SDK_PACKAGE} manifest`,
-    });
-  } else {
-    failures.push(
-      `no ${CODEX_SDK_PACKAGE} package manifest on module search paths ` +
-        `(${searchPaths.join(', ')})`,
-    );
-  }
-
-  return anchors;
 }
 
-export function resolveCodexBinPath(
-  deps: CodexBinPathResolutionDeps = {},
-): string {
-  const baseRequire = deps.baseRequire ?? requireFromHere;
-  // An injected baseRequire scopes resolution to a caller-chosen tree, so the
-  // ambient loader is only auto-detected when no scope was injected; letting
-  // it through would silently resolve against this module's own tree instead.
-  const importMetaResolve =
-    'importMetaResolve' in deps
-      ? deps.importMetaResolve
-      : deps.baseRequire === undefined &&
-          typeof import.meta.resolve === 'function'
-        ? (specifier: string) => import.meta.resolve(specifier)
-        : undefined;
-
-  const failures: string[] = [];
-  for (const { anchor, route } of codexSdkAnchors(
-    importMetaResolve,
-    baseRequire,
-    failures,
-  )) {
-    try {
-      return createRequire(anchor).resolve(CODEX_BIN_SPECIFIER);
-    } catch (error) {
-      failures.push(`${route} (${anchor}): ${firstErrorLine(error)}`);
-    }
-  }
-
-  try {
-    return baseRequire.resolve(CODEX_BIN_SPECIFIER);
-  } catch (error) {
-    failures.push(`cligent module scope: ${firstErrorLine(error)}`);
-  }
-
-  // Keep Node's module-resolution code so callers that degrade on a missing
-  // optional CLI by testing error.code keep matching.
-  throw Object.assign(
-    new Error(
-      `CodexAdapter could not resolve '${CODEX_BIN_SPECIFIER}', the Codex CLI ` +
-        `entry owned by the '${CODEX_SDK_PACKAGE}' peer dependency.\n` +
-        `Attempted:\n${failures.map((failure) => `  - ${failure}`).join('\n')}\n` +
-        `Install '${CODEX_SDK_PACKAGE}' where '@sublang/cligent' can resolve ` +
-        `it (for a global cligent install: npm install -g ${CODEX_SDK_PACKAGE}).`,
-    ),
-    { code: 'MODULE_NOT_FOUND' },
-  );
-}
+// codex-12's resolution stays on this subpath, where it was public before
+// it moved beside the native-binary lookup.
+export { resolveCodexBinPath };
+export type { CodexBinPathResolutionDeps } from './codex-executable.js';
 
 function codexWrapperScript(
   codexBinPath: string,
@@ -1342,6 +1265,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
+  private readonly probeExecutable: () => CodexExecutableProbe;
 
   /**
    * codex-15: `turn.completed.usage` reports the thread's cumulative total,
@@ -1361,6 +1285,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
 
   constructor(deps: CodexAdapterDeps = {}) {
     this.loadSdk = deps.loadSdk ?? loadCodexSdk;
+    this.probeExecutable =
+      deps.probeExecutable ??
+      (deps.loadSdk === undefined
+        ? () => probeCodexExecutable()
+        : () => INJECTED_SDK_EXECUTABLE);
   }
 
   private async acquireResumeSession(sessionId: string): Promise<() => void> {
@@ -1476,10 +1405,14 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     return tokens ? { ...usage, tokens } : usage;
   }
 
+  /** codex-8: the SDK loads, its launcher resolves, and the native binary
+   * the launcher spawns is installed. An importable SDK whose optional
+   * platform package npm dropped is not available, since its first run
+   * fails on "Missing optional dependency". */
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
-      return true;
+      return this.probeExecutable().state === 'present';
     } catch {
       return false;
     }
@@ -1504,6 +1437,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       throw new Error(
         'CodexAdapter requires @openai/codex-sdk. Install it to use this adapter.',
       );
+    }
+    // codex-63: refuse before any SDK call rather than let the launcher
+    // fail on the binary it cannot spawn. An unresolvable launcher raises
+    // codex-13's diagnostic from here, before any abort registration.
+    const executable = this.probeExecutable();
+    if (executable.state !== 'present') {
+      throw codexExecutableRefusal(executable);
     }
 
     const {

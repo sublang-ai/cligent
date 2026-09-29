@@ -60,7 +60,7 @@ When the adapter emits `init`, it shall select the payload through this matrix:
 | `cwd` | the absolute effective working directory |
 | `model`, no requested model | the initial session configuration's selected model, otherwise `unknown` |
 | `model`, requested model | the post-update selected model, otherwise the requested value |
-| `reportedModel` [[engine-89](../engine.md#engine-89)], no requested model | the initial session configuration's non-empty selected model, otherwise omitted |
+| `reportedModel` [[engine-27](../engine.md#engine-27)], no requested model | the initial session configuration's non-empty selected model, otherwise omitted |
 | `reportedModel`, requested model | the post-update non-empty selected model, otherwise omitted |
 | `tools` | `[]` |
 | `capabilities.toolsKnown` | `false` |

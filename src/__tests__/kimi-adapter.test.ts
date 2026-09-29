@@ -557,7 +557,7 @@ describe('KimiAdapter', () => {
     });
   });
 
-  it('reports only the session configuration model selection (kimi-230, engine-90)', async () => {
+  it('reports only the session configuration model selection (kimi-230, engine-28)', async () => {
     const cases: Array<
       [FakeScenario, string | undefined, string, string | undefined]
     > = [

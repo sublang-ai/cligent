@@ -89,7 +89,7 @@ payload is selected by this matrix:
 
 | Available state | `InitPayload` |
 | --- | --- |
-| normal setup reaches a usable SSE iterator | `model`: non-nullish requested model, otherwise non-empty wrapper model, otherwise `unknown`; `reportedModel` [[engine-89](../engine.md#engine-89)]: non-empty wrapper model only, otherwise omitted; `cwd`: non-nullish requested cwd, otherwise non-empty wrapper cwd, otherwise `process.cwd()`; `tools`: the wrapper's array entries that are non-empty strings or objects with non-empty string `name`; `capabilities.mode`: configured server mode; `capabilities.toolsKnown`: whether that tool list is non-empty; `capabilities.toolsSource`: `sdk` when known and `unavailable` otherwise |
+| normal setup reaches a usable SSE iterator | `model`: non-nullish requested model, otherwise non-empty wrapper model, otherwise `unknown`; `reportedModel` [[engine-27](../engine.md#engine-27)]: non-empty wrapper model only, otherwise omitted; `cwd`: non-nullish requested cwd, otherwise non-empty wrapper cwd, otherwise `process.cwd()`; `tools`: the wrapper's array entries that are non-empty strings or objects with non-empty string `name`; `capabilities.mode`: configured server mode; `capabilities.toolsKnown`: whether that tool list is non-empty; `capabilities.toolsSource`: `sdk` when known and `unavailable` otherwise |
 | setup fails before normal init, including after a wrapper result with no usable stream | `model`: non-nullish requested model or `unknown`; no `reportedModel`; `cwd`: non-nullish requested cwd or `process.cwd()`; `tools: []`; configured `capabilities.mode`; `capabilities.toolsKnown: false`; `capabilities.toolsSource: 'unavailable'` |
 
 ### opencode-25

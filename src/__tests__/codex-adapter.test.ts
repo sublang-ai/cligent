@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Usage as CodexUsage } from '@openai/codex-sdk';
@@ -25,6 +25,11 @@ import {
   mapPermissionsToCodexOptions,
   resolveCodexBinPath,
 } from '../adapters/codex.js';
+import {
+  codexExecutableCandidate,
+  locateCodexExecutable,
+  probeCodexExecutable,
+} from '../adapters/codex-executable.js';
 import { normalizeCodexWindowsDevicePath } from '../adapters/codex-path.js';
 import type {
   AgentEvent,
@@ -1910,7 +1915,7 @@ describe('CodexAdapter', () => {
     expect(done.payload.status).toBe('error');
   });
 
-  it('reports only a model the first event names (codex-41, engine-90)', async () => {
+  it('reports only a model the first event names (codex-41, engine-28)', async () => {
     const completed = {
       type: 'turn.completed',
       usage: { input_tokens: 0, output_tokens: 0 },
@@ -2048,6 +2053,192 @@ describe('CodexAdapter', () => {
     );
     expect(error.payload.message).not.toContain('{"detail"');
     expect(error.payload.code).toBe('model_not_found');
+  });
+
+  it('is unavailable and refuses a run when the launcher lacks its native binary', async () => {
+    // codex-65 / codex-66: npm drops the optional platform package without
+    // failing the install; the SDK and its launcher still load, and the first
+    // run would fail with "Missing optional dependency". A host the launcher
+    // has no target for, or a launcher entry that does not resolve, is a
+    // different fault that no platform-package reinstall repairs.
+    let constructed = 0;
+    const sdk = {
+      Codex: class {
+        constructor() {
+          constructed += 1;
+          throw new Error('the SDK must not be called');
+        }
+      } as never,
+    };
+    const refusalOf = async (adapter: CodexAdapter): Promise<unknown> => {
+      try {
+        await adapter.run('prompt').next();
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        return error;
+      }
+      throw new Error('run() did not refuse');
+    };
+
+    const root = mkdtempSync(join(tmpdir(), 'cligent-codex-refusal-'));
+    try {
+      const modules = join(root, 'node_modules');
+      const sdkRoot = join(modules, '@openai', 'codex-sdk');
+      mkdirSync(sdkRoot, { recursive: true });
+      writeFileSync(
+        join(sdkRoot, 'package.json'),
+        '{"name":"@openai/codex-sdk","dependencies":{"@openai/codex":"0.0.0-test"}}',
+      );
+      const resolution = {
+        importMetaResolve: undefined,
+        baseRequire: createRequire(join(root, 'probe.mjs')),
+      };
+      const adapterOn = (
+        platform: NodeJS.Platform,
+        arch: string,
+      ): CodexAdapter =>
+        new CodexAdapter({
+          loadSdk: async () => sdk,
+          probeExecutable: () =>
+            probeCodexExecutable({ resolution, platform, arch }),
+        });
+      const published = adapterOn('darwin', 'arm64');
+      const unpublished = adapterOn('freebsd', 'x64');
+
+      // No launcher entry resolves: codex-13's diagnostic, not a platform
+      // package claim.
+      await expect(published.isAvailable()).resolves.toBe(false);
+      const noEntry = (await refusalOf(published)) as Error & {
+        code?: unknown;
+      };
+      expect(noEntry.code).toBe('MODULE_NOT_FOUND');
+      expect(noEntry.message).toContain('@openai/codex/bin/codex.js');
+      expect(noEntry.message).not.toContain('optional platform package');
+
+      // An unpublished host: that fact, and no reinstall.
+      await expect(unpublished.isAvailable()).resolves.toBe(false);
+      const unsupported = ((await refusalOf(unpublished)) as Error).message;
+      expect(unsupported).toContain(
+        '@openai/codex-sdk publishes no native binary for freebsd-x64',
+      );
+      expect(unsupported).not.toContain('npm ci');
+      expect(unsupported).not.toMatch(/reinstall/i);
+
+      // The launcher resolves but its platform package is absent: the
+      // package, the host, and the reinstall.
+      const launcherRoot = join(sdkRoot, 'node_modules', '@openai', 'codex');
+      mkdirSync(join(launcherRoot, 'bin'), { recursive: true });
+      writeFileSync(
+        join(launcherRoot, 'package.json'),
+        '{"name":"@openai/codex"}',
+      );
+      writeFileSync(join(launcherRoot, 'bin', 'codex.js'), '');
+      await expect(published.isAvailable()).resolves.toBe(false);
+      const missing = ((await refusalOf(published)) as Error).message;
+      expect(missing).toContain(
+        'the optional platform package @openai/codex-darwin-arm64 is not ' +
+          'installed for darwin-arm64',
+      );
+      expect(missing).toContain('run npm ci in a checkout');
+      expect(missing).toContain('reinstall the SDK');
+
+      const binary = join(
+        modules,
+        '@openai',
+        'codex-darwin-arm64',
+        'vendor',
+        'aarch64-apple-darwin',
+        'bin',
+        'codex',
+      );
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(
+        join(modules, '@openai', 'codex-darwin-arm64', 'package.json'),
+        '{"name":"@openai/codex-darwin-arm64"}',
+      );
+      writeFileSync(binary, '');
+      await expect(published.isAvailable()).resolves.toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+    expect(constructed).toBe(0);
+  });
+
+  it('locates the native binary by the launcher rule beside the resolved launcher', () => {
+    // codex-65: every row of the launcher's target table.
+    const hosts: ReadonlyArray<
+      [NodeJS.Platform, string, string | undefined, string | undefined]
+    > = [
+      ['linux', 'x64', 'linux-x64', 'x86_64-unknown-linux-musl'],
+      ['android', 'x64', 'linux-x64', 'x86_64-unknown-linux-musl'],
+      ['linux', 'arm64', 'linux-arm64', 'aarch64-unknown-linux-musl'],
+      ['android', 'arm64', 'linux-arm64', 'aarch64-unknown-linux-musl'],
+      ['darwin', 'x64', 'darwin-x64', 'x86_64-apple-darwin'],
+      ['darwin', 'arm64', 'darwin-arm64', 'aarch64-apple-darwin'],
+      ['win32', 'x64', 'win32-x64', 'x86_64-pc-windows-msvc'],
+      ['win32', 'arm64', 'win32-arm64', 'aarch64-pc-windows-msvc'],
+      ['linux', 'ia32', undefined, undefined],
+      ['freebsd', 'x64', undefined, undefined],
+    ];
+    for (const [platform, arch, suffix, triple] of hosts) {
+      const exe = platform === 'win32' ? 'codex.exe' : 'codex';
+      expect(codexExecutableCandidate(platform, arch)).toEqual(
+        suffix === undefined || triple === undefined
+          ? undefined
+          : {
+              package: `@openai/codex-${suffix}`,
+              file: join('vendor', triple, 'bin', exe),
+            },
+      );
+    }
+
+    const tree = mkdtempSync(join(tmpdir(), 'cligent-codex-tree-'));
+    try {
+      const modules = join(tree, 'node_modules');
+      const launcherRoot = join(modules, '@openai', 'codex');
+      mkdirSync(join(launcherRoot, 'bin'), { recursive: true });
+      writeFileSync(
+        join(launcherRoot, 'package.json'),
+        '{"name":"@openai/codex"}',
+      );
+      const launcherPath = join(launcherRoot, 'bin', 'codex.js');
+      writeFileSync(launcherPath, '');
+      const host = { launcherPath, platform: 'darwin', arch: 'arm64' } as const;
+      expect(locateCodexExecutable(host)).toBeUndefined();
+
+      // The launcher's own vendor directory serves when no platform package
+      // resolves beside it.
+      const vendored = join(
+        launcherRoot,
+        'vendor',
+        'aarch64-apple-darwin',
+        'bin',
+        'codex',
+      );
+      mkdirSync(dirname(vendored), { recursive: true });
+      writeFileSync(vendored, '');
+      expect(locateCodexExecutable(host)).toBe(vendored);
+
+      // A resolvable platform package is where the launcher looks instead.
+      const platformRoot = join(modules, '@openai', 'codex-darwin-arm64');
+      const binary = join(
+        platformRoot,
+        'vendor',
+        'aarch64-apple-darwin',
+        'bin',
+        'codex',
+      );
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(
+        join(platformRoot, 'package.json'),
+        '{"name":"@openai/codex-darwin-arm64"}',
+      );
+      expect(locateCodexExecutable(host)).toBeUndefined();
+      writeFileSync(binary, '');
+      expect(locateCodexExecutable(host)).toBe(realpathSync(binary));
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
   });
 
   it('returns false from isAvailable when SDK load fails', async () => {

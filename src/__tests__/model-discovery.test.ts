@@ -770,7 +770,7 @@ ${response}
   });
 });
 
-describe('engine-88: runtime default model', () => {
+describe('engine-19: runtime default model', () => {
   const claudeCatalog = () => ({
     supportedModels: async () => [
       {

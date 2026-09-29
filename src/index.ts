@@ -99,6 +99,8 @@ export {
   isUnsupportedRuntimeError,
   readCommandVersion,
 } from './runtime-version.js';
+export { locateAgentExecutable } from './native-executable.js';
+export type { AgentExecutable } from './native-executable.js';
 
 export { discoverAgentModels } from './model-discovery.js';
 export type {

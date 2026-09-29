@@ -1646,7 +1646,7 @@ describe('GeminiAdapter', () => {
     expect(events[2]?.payload).toMatchObject({ status: 'error' });
   });
 
-  it('reports only a model the native init names (gemini-201, engine-90)', async () => {
+  it('reports only a model the native init names (gemini-201, engine-28)', async () => {
     const cases: Array<
       [
         Record<string, unknown> | undefined,

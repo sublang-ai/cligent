@@ -97,7 +97,7 @@ When a run selects its `init`, the adapter shall emit exactly one handshake acco
 | an `init` was already emitted | suppress every later native `init` |
 
 - The model is the requested model when present, otherwise the first non-empty source `model`, otherwise `unknown`.
-- The reported model [[engine-89](../engine.md#engine-89)] is the first non-empty source `model` unless it names the per-run effort alias selected by [[gemini-11](#gemini-11)], and is otherwise omitted.
+- The reported model [[engine-27](../engine.md#engine-27)] is the first non-empty source `model` unless it names the per-run effort alias selected by [[gemini-11](#gemini-11)], and is otherwise omitted.
 - The cwd is the requested cwd when present, otherwise the first non-empty source `cwd`, otherwise the process cwd.
 - The handshake carries the session identifier selected by [[gemini-43](#gemini-43)].
 

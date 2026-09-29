@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Codex through the `@openai/codex-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns how a portable request becomes a Codex thread, including native fast-tier selection, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery, observation limits, and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary its CLI spawns are ready to run and how a portable request becomes a Codex thread, including native fast-tier selection, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery, observation limits, and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 Further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the generated extra-writes profile this adapter names and delivers, and the programmatic working directory that motivates bypassing the interactive git-repository gate.
 
@@ -26,11 +26,28 @@ Where the Codex SDK is not installed, the adapter module shall remain importable
 
 ### codex-8
 
-Where the Codex SDK is missing under [[engine-26](../engine.md#engine-26)] runtime readiness, when `isAvailable()` is called, the adapter shall return `false`.
+When `isAvailable()` is called, the adapter shall return the result of the first matching row of this matrix:
+
+| SDK, CLI entry, and native binary | Result |
+| --- | --- |
+| the Codex SDK cannot be loaded, as when it is missing under [[engine-26](../engine.md#engine-26)] runtime readiness | `false` |
+| the SDK loads, but no route in [[codex-12](#codex-12)] resolves the Codex CLI entry | `false` |
+| the SDK loads and the entry resolves, but [[codex-64](#codex-64)]'s lookup finds no native binary | `false` |
+| the SDK loads, the entry resolves, and that lookup finds the native binary | `true` |
 
 ### codex-18
 
 Where the Codex SDK is not installed and both tool-list fields are omitted, when `run()` is called, the adapter shall throw `CodexAdapter requires @openai/codex-sdk. Install it to use this adapter.`.
+
+### codex-63
+
+Where the Codex SDK loads but [[codex-64](#codex-64)]'s lookup finds no native binary, when `run()` is called, the adapter shall throw before any SDK call the error of the first matching row of this matrix:
+
+| Lookup outcome | Error |
+| --- | --- |
+| the host matches no platform row of [[codex-64](#codex-64)] | a message that the SDK publishes no native binary for the host as `<platform>-<arch>`, with no reinstall advice |
+| no route in [[codex-12](#codex-12)] resolves the Codex CLI entry | [[codex-13](#codex-13)]'s diagnostic |
+| any other | a message naming the lookup's platform package, the host as `<platform>-<arch>`, and the repair of reinstalling so npm installs that optional package: `npm ci` in a checkout, or reinstalling the SDK where `@sublang/cligent` resolves it without omitting optional dependencies |
 
 ### Event Normalization
 
@@ -112,7 +129,7 @@ When a run emits its exactly one `init`, the adapter shall select its payload ac
 | Payload member | First available value |
 | --- | --- |
 | `model` | requested model when supplied, including an empty string, then non-empty first-event model, otherwise `unknown` |
-| `reportedModel` [[engine-89](../engine.md#engine-89)] | non-empty first-event model only, otherwise omitted |
+| `reportedModel` [[engine-27](../engine.md#engine-27)] | non-empty first-event model only, otherwise omitted |
 | `cwd` | requested cwd when supplied, including an empty string, then non-empty first-event cwd, otherwise the process cwd |
 | `tools` | first non-empty string list from first-event `tools`, `session.tools`, or `turn.tools`, otherwise `[]`; object entries contribute their non-empty `name` |
 | `capabilities.toolsKnown` | `true` when a non-empty native tool list was selected, otherwise `false` |
@@ -437,7 +454,7 @@ When the adapter serializes [[codex-37](#codex-37)]'s trust override, it shall e
 
 ### codex-12
 
-When a run requires the Codex CLI entry `@openai/codex/bin/codex.js` for [[codex-10](#codex-10)] and [[codex-31](#codex-31)], the adapter shall resolve it through this ordered anchor matrix, because `@openai/codex` belongs to the optional `@openai/codex-sdk` peer's tree rather than Cligent's [[package-4](../package.md#package-4)]:
+When the adapter requires the Codex CLI entry `@openai/codex/bin/codex.js` — for [[codex-10](#codex-10)] and [[codex-31](#codex-31)] in a run, or to locate its native binary [[codex-64](#codex-64)] in `isAvailable()` and at the start of every run — the adapter shall resolve it through this ordered anchor matrix, because `@openai/codex` belongs to the optional `@openai/codex-sdk` peer's tree rather than Cligent's [[package-4](../package.md#package-4)]:
 
 | Resolution state | Outcome |
 | --- | --- |
@@ -459,6 +476,22 @@ When every route in [[codex-12](#codex-12)] fails, the adapter shall raise an er
 | --- | --- |
 | message | the attempted `@openai/codex/bin/codex.js` specifier, every attempted resolution anchor, the fact that `@openai/codex-sdk` provides the entry, and the instruction to install that SDK where Cligent can resolve it |
 | `code` | `MODULE_NOT_FOUND` |
+
+### codex-64
+
+When the adapter locates the native binary the Codex CLI entry spawns, it shall mirror that launcher's own lookup by selecting the host's platform package and binary path from this table and finding the binary only where that path exists:
+
+| Host | Platform package | Binary inside the package |
+| --- | --- | --- |
+| Linux or Android on `x64` | `@openai/codex-linux-x64` | `vendor/x86_64-unknown-linux-musl/bin/codex` |
+| Linux or Android on `arm64` | `@openai/codex-linux-arm64` | `vendor/aarch64-unknown-linux-musl/bin/codex` |
+| macOS on `x64` | `@openai/codex-darwin-x64` | `vendor/x86_64-apple-darwin/bin/codex` |
+| macOS on `arm64` | `@openai/codex-darwin-arm64` | `vendor/aarch64-apple-darwin/bin/codex` |
+| Windows on `x64` | `@openai/codex-win32-x64` | `vendor/x86_64-pc-windows-msvc/bin/codex.exe` |
+| Windows on `arm64` | `@openai/codex-win32-arm64` | `vendor/aarch64-pc-windows-msvc/bin/codex.exe` |
+| any other host | none, so no binary is found | - |
+
+- The platform package is resolved from the entry [[codex-12](#codex-12)] resolves; where it does not resolve, the binary path is taken inside the entry's own `@openai/codex` package instead.
 
 ### codex-40
 
@@ -516,6 +549,18 @@ Where the Codex SDK is not installed, `isAvailable()` shall return `false` [[cod
 ### codex-48
 
 Where the Codex SDK is not installed and both tool-list fields are omitted, when `run()` starts, it shall throw the install diagnostic in [[codex-18](#codex-18)].
+
+### codex-65
+
+Given every host row's platform package and binary path, a fake entry with neither a platform package nor a vendored binary, with only its own vendored binary, and with a resolvable platform package lacking and then holding the binary, and a loadable SDK whose lookup finds, misses, or cannot resolve the entry, when the lookup runs and `isAvailable()` answers, the verification shall assert every selection and found binary in [[codex-64](#codex-64)] and each loadable-SDK row in [[codex-8](#codex-8)].
+
+### codex-66
+
+Where a loadable SDK's lookup finds no native binary on a host with no platform row, with no resolvable CLI entry, and with the entry but no binary, when `run()` is consumed, the verification shall assert that it throws before any SDK construction each row's error in [[codex-63](#codex-63)]:
+
+- the unpublished host's `<platform>-<arch>`, with neither `npm ci` nor a reinstall;
+- the entry's `MODULE_NOT_FOUND` diagnostic, naming no platform package;
+- the host's platform package, `<platform>-<arch>`, `npm ci` in a checkout, and reinstalling the SDK.
 
 ### codex-203
 

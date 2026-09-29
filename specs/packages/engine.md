@@ -456,9 +456,25 @@ The public engine API shall expose a runtime-readiness classification carrying t
 | --- | --- | --- |
 | available within the supported floor and tested ceiling | `satisfied` | `true` |
 | absent | `missing` | `false` |
+| installed at or above the supported floor, but the adapter is unavailable, as when its native executable is missing | `missing`, carrying the installed version | `false` |
 | below the supported floor | `unsupported` | `false` |
-| above the tested version | `untested` | `true` |
+| available above the tested version | `untested` | `true` |
 | available but version unreadable | `unknown`, never a failure in this package's caller-facing behavior | `true` |
+
+### engine-88
+
+When a caller passes `claude` or `codex` to `locateAgentExecutable(runtime)`, the public engine API shall report the native executable that runtime's SDK spawns, found by the lookup behind that adapter's availability [[claude-code-13](adapters/claude-code.md#claude-code-13)], [[codex-8](adapters/codex.md#codex-8)], as the result of the first matching row of this matrix:
+
+| Lookup outcome | Result |
+| --- | --- |
+| the runtime's SDK does not resolve from the installed `@sublang/cligent` tree | `{ state: 'no-sdk' }`, so a host reports no second fault beside the missing SDK |
+| the lookup finds the executable | `{ state: 'present', path }` |
+| the SDK publishes no executable for the host [[claude-code-56](adapters/claude-code.md#claude-code-56)], [[codex-63](adapters/codex.md#codex-63)]: for Claude, the SDK manifest declares at least one optional dependency and none of them is a host candidate package; for Codex, the launcher has no target for the host | `{ state: 'unsupported', platform, arch }` |
+| Codex's CLI entry does not resolve | `{ state: 'missing', package: '@openai/codex', platform, arch }` |
+| no platform package the SDK would spawn from on this host holds the executable | `{ state: 'missing', package, platform, arch }`, with `package` the first of those packages the SDK would try |
+
+- `platform` and `arch` are the host's `process.platform` and `process.arch`.
+- A Claude SDK manifest that is unreadable, is not the SDK's, or declares no optional dependency is no evidence of an unsupported host, so such a lookup reads `missing`.
 
 ### Authentic Usage Accounting
 
@@ -571,7 +587,7 @@ When a caller requests `discoverAgentModels(adapter, options?)`, Cligent shall r
 
 - `options` accepts `cwd`, an environment overlay, an abort signal, and a positive `timeoutMs` (default `10000`); discovery ends on cancellation or deadline and closes each owned SDK query or child process; after discovery settles, child cleanup allows at most 500 ms for termination before closing inherited pipes, without discarding an obtained catalog or replacing its failure.
 - A catalog is obtained after complete valid protocol replies, or successful CLI exit and stream closure; printed output alone does not settle a CLI listing.
-- Success is `{status:'available',models}` in provider order, retaining only the first row for each exact `id`, plus any `defaultModel` selected by [[engine-88](#engine-88)]; unsupported discovery, unavailable runtime, malformed responses and operational failures return `{status:'unavailable',reason}`, never an invented catalog.
+- Success is `{status:'available',models}` in provider order, retaining only the first row for each exact `id`, plus any `defaultModel` selected by [[engine-19](#engine-19)]; unsupported discovery, unavailable runtime, malformed responses and operational failures return `{status:'unavailable',reason}`, never an invented catalog.
 - Each model has `id` and `name`, the runtime's human name or otherwise the `id`, with `description`, `resolvedModel`, `effortValues`, `defaultEffort` and `fastModeSupported` only when reported or derived through an existing adapter mapping [[engine-42](#engine-42)]; `description` is the runtime's own text, verbatim; absent effort/fast support means unknown, while `[]` and `false` mean known unsupported.
 - Available catalogs may expose `unreportedEffortValues`: adapter choices the discovery interface cannot describe, not guarantees of model eligibility; Claude reports its orchestration values [[engine-47](#engine-47)] here, and other adapters omit the field.
 - Model effort choices include only levels this adapter transports [[engine-24](#engine-24)]; they remain distinct from adapter-wide acceptance, orchestration capabilities and installed-runtime readiness [[engine-26](#engine-26)] [[engine-76](#engine-76)].
@@ -580,7 +596,7 @@ When a caller requests `discoverAgentModels(adapter, options?)`, Cligent shall r
 - OpenCode uses `opencode models --verbose`, taking only `name` from the pretty-printed JSON detail that follows each `<provider>/<model>` ID; Kimi uses `kimi provider list --json` and returns only model aliases, each with its `displayName` as `name` and its concrete `model` as `resolvedModel`, never provider credentials; listing failures never quote listing output; Gemini reports discovery unavailable until a non-session listing is supported.
 - The catalog is advisory: absence never rejects a custom model string, establishes account entitlement, substitutes settings, or triggers discovery during ordinary validation or execution.
 
-### engine-88
+### engine-19
 
 When discovery obtains an available catalog, Cligent shall set `defaultModel` to the model value the runtime's own configuration selects when the caller configures none, as a run in the discovery context would resolve it, through this matrix, omitting it whenever the row cannot establish that value ([DR-026](../decisions/026-runtime-reported-model-identity.md)):
 
@@ -594,7 +610,7 @@ When discovery obtains an available catalog, Cligent shall set `defaultModel` to
 - The value may name a model absent from `models`, and no catalog row substitutes for configuration the runtime cannot report.
 - Configuration reads share discovery's deadline and cancellation, and their failure omits only `defaultModel`.
 
-### engine-89
+### engine-27
 
 When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` to the model identifier its runtime's own stream or protocol names for that call, verbatim ([DR-026](../decisions/026-runtime-reported-model-identity.md)):
 
@@ -706,7 +722,11 @@ Where a TypeScript consumer uses the legacy mutable-registry declarations, the t
 
 ### engine-118
 
-Where installed peer and executable runtimes exercise every supported, missing, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
+Where installed peer and executable runtimes exercise every supported, missing, installed-but-unavailable, below-floor, above-tested, and unreadable-version state, the check shall assert [[engine-25](#engine-25)]'s load outcomes and the exact [[engine-26](#engine-26)] verdict, peer-tree or CLI-command identity, repair, and boolean compatibility rows.
+
+### engine-89
+
+Given fake module trees in which each of the `claude` and `codex` runtimes lacks its SDK, meets a host its SDK publishes no executable for, lacks its platform package, and holds its executable, with Codex also lacking its CLI entry, and Claude on both glibc and musl Linux hosts, holding an executable its manifest does not list, and with an unreadable manifest or one declaring no optional dependencies on a host it publishes nothing for, together with this checkout's own install of both SDKs and their platform packages, when the lookup runs over each, the check shall assert every [[engine-88](#engine-88)] result with its package, platform, architecture, or path.
 
 ### engine-122
 
@@ -805,16 +825,16 @@ When the adapter/engine integration matrix supplies proven rejection before exec
 
 ### engine-87
 
-When a discovery integration suite supplies provider initialization responses, the installed Claude settings resolver over fixture settings, and real fixture child processes, it shall verify model discovery [[engine-86](#engine-86)] and its default model [[engine-88](#engine-88)]:
+When a discovery integration suite supplies provider initialization responses, the installed Claude settings resolver over fixture settings, and real fixture child processes, it shall verify model discovery [[engine-86](#engine-86)] and its default model [[engine-19](#engine-19)]:
 
 - exact IDs, human names, descriptions, aliases, defaults, mapped model effort levels and true/false/unknown fast support, with Claude’s unreported orchestration choices separate from model facts and absent on other catalogs;
 - OpenCode verbose names and Kimi display names and resolved models, with no other listing detail or credential in any result or failure;
-- `defaultModel` for every [[engine-88](#engine-88)] row, present and absent: Claude settings for a `cwd` versus without one, environment precedence, `default`, and each omission; Codex configuration versus the listing flag and a refused read; Kimi's matched and unmatched default line; and OpenCode's absence;
+- `defaultModel` for every [[engine-19](#engine-19)] row, present and absent: Claude settings for a `cwd` versus without one, environment precedence, `default`, and each omission; Codex configuration versus the listing flag and a refused read; Kimi's matched and unmatched default line; and OpenCode's absence;
 - native CLI command arguments and peer-runtime checks through the public entry point, plus complete paginated Codex results with only initialization, configuration-read and model-list requests;
 - JavaScript child execution under Electron despite a missing or conflicting caller mode flag, with other environment values preserved;
 - no prompt, durable session, tool, hook or credential disclosure;
 - success, empty catalog, malformed response, unavailable interface, timeout and cancellation: bounded cleanup preserves completed protocol results and earlier failures, while CLI listings await stream closure and remain subject to cancellation or timeout.
 
-### engine-90
+### engine-28
 
-Where each built-in adapter's runtime names a model, names none, or names a Cligent-internal alias, with and without a requested model, when the adapter emits `init`, the check shall assert [[engine-89](#engine-89)]'s verbatim `reportedModel`, its absence without a runtime-named model, no requested-value, alias, or placeholder echo, and unchanged `InitPayload.model`.
+Where each built-in adapter's runtime names a model, names none, or names a Cligent-internal alias, with and without a requested model, when the adapter emits `init`, the check shall assert [[engine-27](#engine-27)]'s verbatim `reportedModel`, its absence without a runtime-named model, no requested-value, alias, or placeholder echo, and unchanged `InitPayload.model`.

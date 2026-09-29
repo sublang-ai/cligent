@@ -51,7 +51,7 @@ const deps = {
   }),
 };
 
-describe('engine-88: Claude default through the installed settings resolver', () => {
+describe('engine-19: Claude default through the installed settings resolver', () => {
   it('resolves project settings for a cwd and user settings without one', async () => {
     settings(userSettings, { model: 'opus[1m]' });
     settings(projectSettings, { model: 'sonnet' });

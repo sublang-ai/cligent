@@ -490,7 +490,7 @@ describe('OpenCodeAdapter', () => {
       };
     };
     expect(init.payload.model).toBe('override-model');
-    // The wrapper's own model name, not the request (engine-90).
+    // The wrapper's own model name, not the request (engine-28).
     expect(init.payload.reportedModel).toBe('opencode-model');
     expect(init.payload.cwd).toBe('/repo');
     expect(init.payload.tools).toEqual(['edit', 'bash']);
@@ -1065,7 +1065,7 @@ describe('OpenCodeAdapter', () => {
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
-  it('reports no model when the wrapper names none (opencode-201, engine-90)', async () => {
+  it('reports no model when the wrapper names none (opencode-201, engine-28)', async () => {
     for (const requested of ['provider/requested', undefined]) {
       const adapter = new OpenCodeAdapter(
         { mode: 'external', serverUrl: 'http://opencode.local:7777' },
