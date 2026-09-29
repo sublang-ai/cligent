@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-09-29
+
 ### Added
 
 - `locateAgentExecutable('claude' | 'codex')` reports where the native
@@ -34,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host the SDK publishes no native binary for, such as FreeBSD, the refusal
   says so and advises no reinstall, and an unresolvable Codex launcher entry
   keeps its own resolution diagnostic.
+
+### Security
+
+- The repository's lockfiles move `ip-address`, reached through the
+  development dependency `@modelcontextprotocol/sdk`, from 10.4.0 to 10.7.2,
+  past two moderate SSRF advisories (GHSA-rpw4-54j3-4h4q and
+  GHSA-2vr4-cq9g-pvrc). The published package does not ship a lockfile, so
+  installs resolve it through their own ranges, which admit the fixed version.
 
 ## [0.27.0] - 2026-09-08
 
@@ -527,7 +537,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/sublang-ai/cligent/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/sublang-ai/cligent/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/sublang-ai/cligent/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/sublang-ai/cligent/compare/v0.24.0...v0.25.0
