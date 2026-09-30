@@ -6,6 +6,9 @@
 // the environment pair and system prompt reach the SDK query; only a real run
 // can show that Claude Code honours them. Two independent pieces of evidence:
 //
+// - every Agent call's own input carries the competing per-call `sonnet` the
+//   prompt asks for, or no model, never a Haiku one — so Haiku frames cannot
+//   be the main agent's own choice;
 // - the raw SDK stream, tapped between the real SDK and the adapter, carries
 //   each subagent frame (`parent_tool_use_id` set) with the model that served
 //   it — decisive, because it cannot come from any main-loop or auxiliary call;
@@ -119,6 +122,26 @@ describe('Claude subagent-model real-run acceptance (claude-code-66)', () => {
         'the main agent started no subagent',
       ).toBeGreaterThan(0);
 
+      // The main agent was asked for a competing per-call `sonnet`. Each call
+      // may carry it (then `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` overrode it) or
+      // no model at all (the runtime withheld the choice) — never a Haiku one,
+      // so a Haiku frame below can come only from the environment pair, not
+      // from the main agent's own choice.
+      const perCallModels = agentCalls.map((event) => {
+        const input = (event.payload as ToolUsePayload).input as
+          { model?: unknown } | undefined;
+        return input?.model;
+      });
+      for (const model of perCallModels) {
+        expect(
+          model === undefined || model === 'sonnet',
+          `per-call subagent model: ${String(model)}`,
+        ).toBe(true);
+      }
+      process.stderr.write(
+        `Claude subagent-model acceptance: per-call models ${JSON.stringify(perCallModels)}\n`,
+      );
+
       // Decisive: frames produced inside a subagent name the model that served
       // them, and every one of them must be Haiku.
       const subagentModels = frames
@@ -166,7 +189,7 @@ async function runProbe(): Promise<ProbeOutcome> {
       },
     });
     const prompt = [
-      'Start exactly one subagent with the Agent tool.',
+      'Start exactly one subagent with the Agent tool, passing subagent_type "general-purpose" and model "sonnet".',
       `Its whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
       'When the subagent returns, reply with exactly the word it returned and nothing else.',
     ].join(' ');

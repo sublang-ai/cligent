@@ -520,7 +520,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - each stream shall terminate with successful `done`;
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip when the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg.
+- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip, with one stderr diagnostic naming the missing dependency, when the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg.
 
 ### claude-code-220
 
@@ -594,13 +594,12 @@ Where a consumer imports the adapter module, the verification shall assert [[cla
 
 ### claude-code-66
 
-Where `ANTHROPIC_API_KEY` is available, when a `Cligent` on the adapter runs with `subagentModel: 'claude-haiku-4-5'`, a non-Haiku main `model`, a permission policy denying file writes, shell execution, and network access, and a prompt directing one Agent-tool subagent to read a one-word file with the Read tool and return its contents, the acceptance check shall assert [[claude-code-60](#claude-code-60)]'s effect on a real run through these conditions:
+Under [[claude-code-219](#claude-code-219)]'s real-run harness, where `ANTHROPIC_API_KEY` is available, when a `Cligent` on the adapter runs with `subagentModel: 'claude-haiku-4-5'`, a non-Haiku main `model`, a permission policy denying file writes, shell execution, and network access, and a prompt directing one `general-purpose` Agent-tool subagent, asked for with the competing per-call model `sonnet`, to read a one-word file with the Read tool and return its contents, the acceptance check shall assert [[claude-code-60](#claude-code-60)]'s effect on a real run through these conditions:
 
 - a successful terminal `done` whose result carries the word;
+- every Agent-tool call's input carrying `sonnet` or no model, never a Haiku one, so that a Haiku subagent frame can come only from the environment pair and not from the main agent's own choice, with the observed per-call models written to stderr;
 - at least one SDK assistant frame produced inside the subagent, each naming a Haiku model;
-- terminal usage records that name a Haiku model;
-- retry only after an explicit upstream overload, rate limit, or service unavailability, at most twice;
-- self-skip preceded by one stderr diagnostic naming the missing key when it is absent, and hard failure instead under `CI`.
+- terminal usage records that name a Haiku model.
 
 ## References
 
