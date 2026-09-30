@@ -45,6 +45,17 @@ type FastModeMap<T> = {
   [A in PlayerAdapterName]: FastModeOf<T, A>;
 };
 
+type SubagentModelOf<T, A extends PlayerAdapterName> =
+  Extract<T, { adapter: A }> extends infer Config
+    ? Config extends { subagentModel?: infer SM }
+      ? SM | undefined
+      : never
+    : never;
+
+type SubagentModelMap<T> = {
+  [A in PlayerAdapterName]: SubagentModelOf<T, A>;
+};
+
 type ExpectedEffortMap = {
   claude: ClaudeEffort | undefined;
   codex: CodexEffort | undefined;
@@ -73,6 +84,21 @@ type ConfigSurfaceFastModes = {
   player: FastModeMap<PlayerConfig>;
   runtimeCaptain: FastModeMap<RuntimeCaptainConfig>;
   runtimePlayer: FastModeMap<RuntimePlayerConfig>;
+};
+
+type ExpectedSubagentModelMap = {
+  claude: string | undefined;
+  codex: undefined;
+  gemini: undefined;
+  kimi: undefined;
+  opencode: undefined;
+};
+
+type ConfigSurfaceSubagentModels = {
+  captain: SubagentModelMap<CaptainConfig>;
+  player: SubagentModelMap<PlayerConfig>;
+  runtimeCaptain: SubagentModelMap<RuntimeCaptainConfig>;
+  runtimePlayer: SubagentModelMap<RuntimePlayerConfig>;
 };
 
 describe('tmux-play effort types (tmux-play-190)', () => {
@@ -159,7 +185,7 @@ describe('tmux-play effort types (tmux-play-190)', () => {
     });
 
     expectTypeOf(claude).toEqualTypeOf<
-      Promise<Cligent<ClaudeEffort, boolean>>
+      Promise<Cligent<ClaudeEffort, boolean, string>>
     >();
     expectTypeOf(codex).toEqualTypeOf<
       Promise<Cligent<CodexEffort, boolean>>
@@ -180,6 +206,9 @@ describe('tmux-play effort types (tmux-play-190)', () => {
     void createPlayerCligent('kimi', { effort: 'high' });
     // @ts-expect-error - unsupported adapters expose no fast-mode request
     void createPlayerCligent('gemini', { fastMode: false });
+    void createPlayerCligent('claude', { subagentModel: 'claude-haiku-4-5' });
+    // @ts-expect-error - unsupported adapters expose no subagent model
+    void createPlayerCligent('codex', { subagentModel: 'gpt-6-sol-mini' });
   });
 });
 
@@ -230,6 +259,70 @@ describe('tmux-play fast-mode types (tmux-play-209)', () => {
     };
 
     void [
+      runtimeCaptain,
+      runtimePlayer,
+      invalidCaptain,
+      invalidPlayer,
+      invalidRuntimeCaptain,
+      invalidRuntimePlayer,
+    ];
+  });
+});
+
+describe('tmux-play subagent-model types (tmux-play-214)', () => {
+  it('keeps every config surface adapter-discriminated', () => {
+    expectTypeOf<ConfigSurfaceSubagentModels>().toEqualTypeOf<{
+      captain: ExpectedSubagentModelMap;
+      player: ExpectedSubagentModelMap;
+      runtimeCaptain: ExpectedSubagentModelMap;
+      runtimePlayer: ExpectedSubagentModelMap;
+    }>();
+  });
+
+  it('accepts Claude roles and rejects every other adapter', () => {
+    const captain = {
+      from: '@example/captain',
+      adapter: 'claude',
+      subagentModel: 'claude-haiku-4-5',
+      options: {},
+    } satisfies CaptainConfig;
+    const player = {
+      id: 'reviewer',
+      adapter: 'claude',
+      subagentModel: 'claude-haiku-4-5',
+    } satisfies PlayerConfig;
+    const runtimeCaptain = {
+      adapter: 'claude',
+      subagentModel: 'claude-haiku-4-5',
+      fastMode: false,
+      effort: 'high',
+    } satisfies RuntimeCaptainConfig;
+    const runtimePlayer = {
+      id: 'reviewer',
+      adapter: 'claude',
+      subagentModel: 'claude-haiku-4-5',
+    } satisfies RuntimePlayerConfig;
+
+    // @ts-expect-error - a Codex Captain has no subagent model
+    const invalidCaptain: CaptainConfig = {
+      from: '@example/captain', adapter: 'codex', subagentModel: 'x', options: {},
+    };
+    // @ts-expect-error - a Gemini player has no subagent model
+    const invalidPlayer: PlayerConfig = {
+      id: 'reviewer', adapter: 'gemini', subagentModel: 'x',
+    };
+    // @ts-expect-error - a Kimi runtime Captain has no subagent model
+    const invalidRuntimeCaptain: RuntimeCaptainConfig = {
+      adapter: 'kimi', subagentModel: 'x',
+    };
+    // @ts-expect-error - an OpenCode runtime player has no subagent model
+    const invalidRuntimePlayer: RuntimePlayerConfig = {
+      id: 'reviewer', adapter: 'opencode', subagentModel: 'x',
+    };
+
+    void [
+      captain,
+      player,
       runtimeCaptain,
       runtimePlayer,
       invalidCaptain,
