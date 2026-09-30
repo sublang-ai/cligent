@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `subagentModel` names the model every subagent of a run uses, on
+  `AgentOptions`, `Cligent` defaults, and per-run overrides; a per-run value
+  replaces the default. Only Claude accepts it: the adapter sets
+  `CLAUDE_CODE_SUBAGENT_MODEL` to the value and
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, so built-in subagents and per-call
+  choices follow it too, and passes a custom, unsnapshotted system prompt whose
+  last part is a directive telling the agent to hand well-bounded work to
+  subagents on that model while keeping the design work and verifying what
+  comes back. `subagentDirective()` returns that directive and
+  `composeClaudeSystemPrompt()` the prompt built from ordered parts.
+  `SUBAGENT_MODEL_SUPPORT` with `getSubagentModelSupport()`,
+  `isSubagentModelSupported()`, and `assertSubagentModelSupported()` tell hosts
+  where to offer it; Codex, Gemini, Kimi, and OpenCode reject any value before
+  provider work. `tmux-play` accepts the key on Claude Captain and player
+  configurations and in complete call settings. Omitting it leaves every query
+  unchanged. Annotations that widen a Claude adapter's effort type, such as
+  `AgentAdapter<Effort, boolean>`, add `string` as a third type argument —
+  DR-028
+
 ## [0.28.0] - 2026-09-29
 
 ### Added

@@ -117,6 +117,13 @@ account, provider, and policy, and fast serving may cost more. Use the exported
 `FAST_MODE_SUPPORT` metadata before presenting the option; see the
 [fast-mode guide](docs/guide.md#fast-mode) for request and observation limits.
 
+Claude alone accepts the optional `subagentModel`: the model every subagent of
+the run uses, enforced through Claude Code's forced subagent-model setting and
+paired with a short delegation directive in the system prompt. Other adapters
+reject a defined value before any provider work. Use `SUBAGENT_MODEL_SUPPORT`
+before presenting the option; see the
+[subagent-model guide](docs/guide.md#subagent-model).
+
 ## Model discovery
 
 Query the installed runtime on demand, without sending a prompt:

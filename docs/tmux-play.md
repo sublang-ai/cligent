@@ -64,7 +64,7 @@ When an older home config is loaded through fallback discovery, `tmux-play`
 adds only missing safe defaults to that home YAML: `theme: auto`, resolved
 layout defaults, `captain.options: {}`, and the notification defaults shown
 below. It preserves existing values and does not add model, instruction,
-permissions, `fastMode`, or an `effort` default to old files.
+permissions, `fastMode`, `subagentModel`, or an `effort` default to old files.
 
 Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 `tmux-play.config.json` are ignored; when one is present without a cwd YAML
@@ -135,6 +135,7 @@ Remove the blocks to fall back to each adapter's SDK default; cligent itself shi
 
 - Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$`, are unique, and may not be `captain`. Dot-delimited IDs such as `dev.coder` provide namespacing. Multiple players may share an adapter or model; `players: []` selects the Boss/Captain-only form.
+- `subagentModel` is accepted only on `claude` Captain and player entries; see [Subagent model](#subagent-model).
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
 
@@ -242,6 +243,36 @@ The generated home config always omits `fastMode`, so first-run configuration
 never opts into an account-dependent paid serving mode. Request support does
 not guarantee availability for a selected model, account, provider, policy,
 network, or installed runtime.
+
+### Subagent model
+
+The Captain and each Claude player may name the model their subagents run on,
+separately from `model`. Only Claude accepts the optional `subagentModel` key:
+
+```yaml
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  model: claude-opus-5-5
+  subagentModel: claude-haiku-4-5
+  options: {}
+players:
+  - id: claude
+    adapter: claude
+    subagentModel: claude-haiku-4-5
+```
+
+| Adapter                               | `subagentModel`                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `claude`                              | The model ID or alias every subagent the role starts runs on; the role is also told to delegate deliberately |
+| `codex`, `gemini`, `opencode`, `kimi` | Rejected when present                                                                                        |
+
+The value must be a string with a non-whitespace character; the loader checks
+it against the role's adapter before runtime startup and names the offending
+Captain or player path and adapter on error. Omission adds no override. The
+generated home config always omits `subagentModel`. See the
+[subagent-model guide](guide.md#subagent-model) for what the Claude adapter
+sends.
 
 ### Legacy `reasoningEffort` compatibility
 
@@ -466,11 +497,12 @@ await context.callPlayer('dev.coder', prompt, {
 
 Player IDs may use dot-delimited namespaces such as `dev.coder` and
 `dev.reviewer`. When `settings` is omitted, tmux-play supplies the YAML model,
-effort, fast mode, instruction, and permissions as runtime-held call defaults.
-A supplied `settings` object is the entire effective call configuration:
-omitted `fastMode` restores provider-default selection rather than merging the
-YAML value; omitted `instruction` and `permissions` mean none, and neither is
-merged with YAML defaults. Each `model` and `effort` selector is either a
+effort, fast mode, subagent model, instruction, and permissions as runtime-held
+call defaults. A supplied `settings` object is the entire effective call
+configuration: omitted `fastMode` or `subagentModel` restores provider-default
+selection rather than merging the YAML value, and `subagentModel` is accepted
+only for a Claude role; omitted `instruction` and `permissions` mean none, and
+neither is merged with YAML defaults. Each `model` and `effort` selector is either a
 concrete value or `provider-default`; the latter omits that option so Codex or
 Gemini chooses its current default even on a resumed call. Claude and OpenCode
 support provider defaults on fresh calls and can use default effort beside a
