@@ -253,6 +253,10 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.players.every((player) => !('fastMode' in player))).toBe(
       true,
     );
+    expect(loaded.config.captain).not.toHaveProperty('subagentModel');
+    expect(
+      loaded.config.players.every((player) => !('subagentModel' in player)),
+    ).toBe(true);
     expect(loaded.config.players.map((player) => player.instruction)).toEqual([
       'You are the claude player in a fanout Captain session. Provide an independent answer.',
       'You are the codex player in a fanout Captain session. Provide an independent answer.',
@@ -289,6 +293,7 @@ describe('tmux-play config loading', () => {
     expect(homeSource).toContain('turn_finished: desktop');
     expect(homeSource).not.toContain('turn_aborted:');
     expect(homeSource).not.toContain('fastMode:');
+    expect(homeSource).not.toContain('subagentModel:');
   });
 
   // tmux-play-192: the generated roster follows the installed runtimes, so the
@@ -896,6 +901,119 @@ describe('tmux-play config loading', () => {
     }
   });
 
+  // tmux-play-213
+  it('retains a Claude subagent model without creating omitted overrides', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    for (const location of ['captain', 'player'] as const) {
+      const configPath = join(workDir, `subagent-${location}.yaml`);
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: claude',
+          ...(location === 'captain'
+            ? ['  subagentModel: claude-haiku-4-5']
+            : []),
+          '  options: {}',
+          'players:',
+          '  - id: worker',
+          '    adapter: claude',
+          ...(location === 'player'
+            ? ["    subagentModel: 'claude-haiku-4-5[1m]'"]
+            : []),
+          '',
+        ].join('\n'),
+      );
+
+      const loaded = await loadTmuxPlayConfig({ configPath });
+      const configured =
+        location === 'captain'
+          ? loaded.config.captain
+          : loaded.config.players[0]!;
+      const omitted =
+        location === 'captain'
+          ? loaded.config.players[0]!
+          : loaded.config.captain;
+      expect(configured.subagentModel).toBe(
+        location === 'captain' ? 'claude-haiku-4-5' : 'claude-haiku-4-5[1m]',
+      );
+      expect(omitted).not.toHaveProperty('subagentModel');
+    }
+  });
+
+  it('rejects malformed or adapter-unsupported subagent models with role context', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const cases = [
+      ['captain', 'claude', "''", 'non-blank string'],
+      ['player', 'claude', "'   '", 'non-blank string'],
+      ['captain', 'claude', '42', 'non-blank string'],
+      ['player', 'claude', 'null', 'non-blank string'],
+      ['captain', 'codex', 'gpt-6-sol-mini', 'is not supported'],
+      ['player', 'codex', 'gpt-6-sol-mini', 'is not supported'],
+      ['captain', 'gemini', 'gemini-flash', 'is not supported'],
+      ['player', 'gemini', "''", 'is not supported'],
+      ['captain', 'opencode', 'small', 'is not supported'],
+      ['player', 'opencode', 'small', 'is not supported'],
+      ['captain', 'kimi', 'small', 'is not supported'],
+      ['player', 'kimi', 'small', 'is not supported'],
+    ] as const;
+
+    for (const [location, adapter, value, reason] of cases) {
+      const configPath = join(
+        workDir,
+        `bad-subagent-${location}-${adapter}.yaml`,
+      );
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          `  adapter: ${adapter}`,
+          ...(location === 'captain' ? [`  subagentModel: ${value}`] : []),
+          '  options: {}',
+          'players:',
+          '  - id: worker',
+          `    adapter: ${adapter}`,
+          ...(location === 'player' ? [`    subagentModel: ${value}`] : []),
+          '',
+        ].join('\n'),
+      );
+
+      const rejection = await loadTmuxPlayConfig({ configPath }).catch(
+        (error: unknown) => error,
+      );
+      const path = location === 'captain' ? 'captain' : 'players[0]';
+      expect(rejection).toBeInstanceOf(Error);
+      expect((rejection as Error).message).toContain(`${path}.subagentModel`);
+      expect((rejection as Error).message).toContain(`"${adapter}"`);
+      expect((rejection as Error).message).toContain(reason);
+    }
+  });
+
+  it('keeps rejecting a misspelled subagent-model key', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configPath = join(workDir, 'misspelled-subagent.yaml');
+    writeFileSync(
+      configPath,
+      [
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  options: {}',
+        'players:',
+        '  - id: worker',
+        '    adapter: claude',
+        '    subagentModels: claude-haiku-4-5',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+      'players[0].subagentModels',
+    );
+  });
+
   it('updates only direct legacy effort key tokens after validation', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, TMUX_PLAY_CONFIG_FILE);
@@ -1317,6 +1435,7 @@ describe('tmux-play config loading', () => {
     expect(migrated).not.toContain('permissions:');
     expect(migrated).not.toContain('effort:');
     expect(migrated).not.toContain('fastMode:');
+    expect(migrated).not.toContain('subagentModel:');
   });
 
   it('preserves an existing partial home notifications block', async () => {

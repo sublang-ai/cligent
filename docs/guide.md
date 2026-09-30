@@ -356,6 +356,93 @@ unrecognized upstream data stays absent. Codex accepts requests but exposes no
 effective-tier event through its public SDK, so its events carry no fast-mode
 observation and never echo the requested boolean as one.
 
+## Subagent model
+
+`subagentModel` names the model every subagent of a run uses, separately from
+the run's own `model`. It lets a strong main agent keep the reasoning and
+design work while it hands well-defined, fine-grained tasks to subagents on a
+cheaper or faster model. Only Claude Code accepts the option. Codex, Gemini,
+Kimi, and OpenCode expose no per-run subagent-model surface, so their
+adapter-bound TypeScript options admit no value and dynamic calls reject any
+defined value before provider work starts.
+
+- A model ID or alias string selects the subagent model; the value is passed
+  verbatim and must contain a non-whitespace character.
+- A per-run value overrides a constructor default.
+- Omission adds no Cligent override and leaves the runtime's own order in
+  force.
+
+```ts
+import { Cligent } from '@sublang/cligent';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
+
+const claude = new Cligent(new ClaudeCodeAdapter(), {
+  model: 'claude-opus-5-5',
+  subagentModel: 'claude-haiku-4-5',
+});
+
+for await (const event of claude.run('Refactor the parser module')) {
+  // ...
+}
+```
+
+When a run carries `subagentModel`, the Claude adapter does two things:
+
+- It sets `CLAUDE_CODE_SUBAGENT_MODEL` to the value and
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1` in the run's own copy of the
+  process environment. The force flag makes the value bind every subagent,
+  including the built-in ones whose definitions name a model and any model the
+  main agent would pass for one call. Your process environment is not changed.
+- It passes a custom, unsnapshotted system prompt whose last part is this
+  directive, with `{model}` replaced by the value:
+
+  > Your subagents run on {model}. Offload to them the work you can specify
+  > completely and bound tightly — well-defined, fine-grained tasks that
+  > {model} can implement well — and keep the deep thinking, reasoning, and
+  > design work yourself. Offloading must never lower the quality of what you
+  > deliver: brief each subagent fully, and verify its result before you build
+  > on it.
+
+Without `subagentModel` the adapter sets neither variable and passes no system
+prompt, so the query is exactly what it would be without the feature. The
+option changes which model subagents use, never whether the agent may start
+them: a run whose `allowedTools` omits `Agent` still has no subagents. Cligent
+checks that a value is present, not that the model exists; a model the runtime
+cannot serve is refused through the ordinary error path.
+
+The adapter module exports `subagentDirective(model)`, which returns the
+directive for a model, and `composeClaudeSystemPrompt(parts)`, which joins
+ordered parts with a blank line into the system prompt the adapter sends.
+
+Use `SUBAGENT_MODEL_SUPPORT` and its helpers to decide where to offer the
+option. The metadata is deeply frozen, and `claude` is accepted as an alias for
+`claude-code`.
+
+| Adapter       | `requestSupported` |
+| ------------- | ------------------ |
+| `claude-code` | `true`             |
+| `codex`       | `false`            |
+| `gemini`      | `false`            |
+| `opencode`    | `false`            |
+| `kimi`        | `false`            |
+
+```ts
+import {
+  SUBAGENT_MODEL_SUPPORT,
+  assertSubagentModelSupported,
+  getSubagentModelSupport,
+  isSubagentModelSupported,
+} from '@sublang/cligent';
+
+console.log(SUBAGENT_MODEL_SUPPORT['claude-code'].requestSupported); // true
+console.log(getSubagentModelSupport('codex')?.notes);
+console.log(isSubagentModelSupported('claude')); // true
+assertSubagentModelSupported('claude-code');
+```
+
+To offer model choices, reuse the adapter's catalog from
+[model discovery](../README.md#model-discovery).
+
 ## Session continuity
 
 When an adapter's `done` event includes a `resumeToken`, `Cligent` stores it

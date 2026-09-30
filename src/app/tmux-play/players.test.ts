@@ -243,6 +243,55 @@ describe('resolvePlayers', () => {
     expect(captured[0]?.fastMode).toBeUndefined();
   });
 
+  it('forwards a Claude PlayerConfig subagent model into adapter run options', async () => {
+    const captured: (AgentOptions | undefined)[] = [];
+
+    class CapturingAdapter implements AgentAdapter {
+      readonly agent = 'claude-code';
+      async *run(
+        _prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.push(options);
+      }
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    const adapterImports: PlayerAdapterImports = {
+      claude: async () => CapturingAdapter,
+      codex: async () => adapterClass('codex'),
+      gemini: async () => adapterClass('gemini'),
+      kimi: async () => adapterClass('kimi'),
+      opencode: async () => adapterClass('opencode'),
+    };
+    const players = await resolvePlayers(
+      [
+        {
+          id: 'reviewer',
+          adapter: 'claude',
+          subagentModel: 'claude-haiku-4-5',
+        },
+        { id: 'plain', adapter: 'claude' },
+      ],
+      { adapterImports },
+    );
+
+    expect(players[0]?.subagentModel).toBe('claude-haiku-4-5');
+    for (const player of players) {
+      const gen = player.cligent.run('hello');
+      while (!(await gen.next()).done) {
+        // drain
+      }
+    }
+
+    expect(captured.map((options) => options?.subagentModel)).toEqual([
+      'claude-haiku-4-5',
+      undefined,
+    ]);
+  });
+
   it('allows multiple players to use the same adapter and model', async () => {
     const configs: PlayerConfig[] = [
       { id: 'coder', adapter: 'claude', model: 'same-model' },

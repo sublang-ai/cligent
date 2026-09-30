@@ -5,6 +5,7 @@ import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import type { RecordObserver } from './records.js';
 import type { Effort, EffortForAgent } from '../../effort.js';
 import type { FastModeForAgent } from '../../fast-mode.js';
+import type { SubagentModelForAgent } from '../../subagent-model.js';
 import type { PermissionPolicy } from '../../types.js';
 
 export interface Captain {
@@ -62,14 +63,19 @@ export type TuningSelection<T extends string = string> =
  * Complete effective settings for one player or Captain invocation.
  * `model` and `effort` are required so a caller cannot accidentally combine
  * a current value with a configured value from another logical session.
- * Omitting `fastMode` selects the provider default. Omitting `instruction` or
- * `permissions` means no per-call instruction or permission policy;
- * configured values are not merged into this object.
+ * Omitting `fastMode` or `subagentModel` selects the provider default.
+ * Omitting `instruction` or `permissions` means no per-call instruction or
+ * permission policy; configured values are not merged into this object.
  */
 export interface AgentCallSettings {
   readonly model: TuningSelection;
   readonly effort: TuningSelection<Effort>;
   readonly fastMode?: boolean;
+  /**
+   * The model every subagent of this call uses; only adapters that support
+   * a subagent model accept it (tmux-play-93).
+   */
+  readonly subagentModel?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
 }
@@ -235,6 +241,7 @@ type RuntimePlayerConfigByAdapter = {
     readonly adapter: A;
     readonly effort?: EffortForAgent<A>;
     readonly fastMode?: FastModeForAgent<A>;
+    readonly subagentModel?: SubagentModelForAgent<A>;
   };
 };
 
@@ -253,6 +260,7 @@ type RuntimeCaptainConfigByAdapter = {
     readonly adapter: A;
     readonly effort?: EffortForAgent<A>;
     readonly fastMode?: FastModeForAgent<A>;
+    readonly subagentModel?: SubagentModelForAgent<A>;
   };
 };
 

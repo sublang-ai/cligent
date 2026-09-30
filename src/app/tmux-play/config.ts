@@ -38,6 +38,11 @@ import {
   assertFastModeSupported,
   type FastModeForAgent,
 } from '../../fast-mode.js';
+import {
+  assertSubagentModelSupported,
+  isNonBlankString,
+  type SubagentModelForAgent,
+} from '../../subagent-model.js';
 import { normalizeWritablePaths } from '../../permissions.js';
 import {
   KNOWN_PLAYER_ADAPTERS,
@@ -69,6 +74,7 @@ type CaptainConfigByAdapter = {
     adapter: A;
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
+    subagentModel?: SubagentModelForAgent<A>;
   };
 };
 
@@ -1190,6 +1196,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'permissions',
     'effort',
     'fastMode',
+    'subagentModel',
     'reasoningEffort',
     'options',
   ]);
@@ -1218,14 +1225,16 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     configuredEffort.path,
   );
   const fastMode = optionalFastMode(input, adapter, 'captain');
-  // `adapter`, `effort`, and `fastMode` were validated together immediately
-  // above. Keep the exported discriminated union without repeating the same
-  // runtime branch.
+  const subagentModel = optionalSubagentModel(input, adapter, 'captain');
+  // `adapter`, `effort`, `fastMode`, and `subagentModel` were validated
+  // together immediately above. Keep the exported discriminated union without
+  // repeating the same runtime branch.
   return {
     ...common,
     adapter,
     ...(effort === undefined ? {} : { effort }),
     ...(fastMode === undefined ? {} : { fastMode }),
+    ...(subagentModel === undefined ? {} : { subagentModel }),
   } as CaptainConfig;
 }
 
@@ -1250,6 +1259,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     'permissions',
     'effort',
     'fastMode',
+    'subagentModel',
     'reasoningEffort',
   ]);
   rejectUnknownKeys(input, allowed, path);
@@ -1275,13 +1285,15 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     configuredEffort.path,
   );
   const fastMode = optionalFastMode(input, adapter, path);
-  // `adapter`, `effort`, and `fastMode` were validated together immediately
-  // above.
+  const subagentModel = optionalSubagentModel(input, adapter, path);
+  // `adapter`, `effort`, `fastMode`, and `subagentModel` were validated
+  // together immediately above.
   return {
     ...common,
     adapter,
     ...(effort === undefined ? {} : { effort }),
     ...(fastMode === undefined ? {} : { fastMode }),
+    ...(subagentModel === undefined ? {} : { subagentModel }),
   } as PlayerConfig;
 }
 
@@ -1431,6 +1443,24 @@ function optionalFastMode<A extends PlayerAdapterName>(
     throw new Error(`${path} for adapter "${adapter}" must be a boolean`);
   }
   return input.fastMode as FastModeForAgent<A>;
+}
+
+// tmux-play-211: a present key is validated against the role's adapter first,
+// so any value on an adapter without the surface names the adapter.
+function optionalSubagentModel<A extends PlayerAdapterName>(
+  input: Record<string, unknown>,
+  adapter: A,
+  objectPath: string,
+): SubagentModelForAgent<A> | undefined {
+  if (!Object.hasOwn(input, 'subagentModel')) return undefined;
+  const path = `${objectPath}.subagentModel`;
+  assertSubagentModelSupported(adapter, path);
+  if (!isNonBlankString(input.subagentModel)) {
+    throw new Error(
+      `${path} for adapter "${adapter}" must be a non-blank string`,
+    );
+  }
+  return input.subagentModel as SubagentModelForAgent<A>;
 }
 
 function requireAdapterName(value: unknown, path: string): PlayerAdapterName {

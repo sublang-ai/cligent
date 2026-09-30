@@ -17,16 +17,22 @@ import {
 } from './protocol.js';
 import type { AdapterRegistry } from './registry.js';
 
-type AnyAgentAdapter = AgentAdapter<string, boolean>;
+type AnyAgentAdapter = AgentAdapter<string, boolean, string>;
 type AdapterParameters<A extends AnyAgentAdapter> =
-  A extends AgentAdapter<infer E, infer FM> ? [E, FM] : never;
+  A extends AgentAdapter<infer E, infer FM, infer SM> ? [E, FM, SM] : never;
 type AdapterEffort<A extends AnyAgentAdapter> = AdapterParameters<A>[0];
 type AdapterFastMode<A extends AnyAgentAdapter> = AdapterParameters<A>[1];
+type AdapterSubagentModel<A extends AnyAgentAdapter> = AdapterParameters<A>[2];
+type AdapterOptions<A extends AnyAgentAdapter> = AgentOptions<
+  AdapterEffort<A>,
+  AdapterFastMode<A>,
+  AdapterSubagentModel<A>
+>;
 
 export interface ParallelTask<A extends AnyAgentAdapter = AnyAgentAdapter> {
   adapter: A;
   prompt: string;
-  options?: AgentOptions<AdapterEffort<A>, AdapterFastMode<A>>;
+  options?: AdapterOptions<A>;
 }
 
 type CheckedParallelTask<T> = T extends {
@@ -34,7 +40,7 @@ type CheckedParallelTask<T> = T extends {
   prompt: string;
 }
   ? Omit<T, 'options'> & {
-      options?: AgentOptions<AdapterEffort<A>, AdapterFastMode<A>>;
+      options?: AdapterOptions<A>;
     }
   : never;
 
@@ -45,7 +51,7 @@ type CheckedParallelTasks<T extends readonly ParallelTask[]> = {
 export async function* runAgent(
   agent: AgentType,
   prompt: string,
-  options: AgentOptions<string, boolean> | undefined,
+  options: AgentOptions<string, boolean, string> | undefined,
   registry: AdapterRegistry,
 ): AsyncGenerator<AgentEvent, void, void> {
   const adapter = registry.get(agent);

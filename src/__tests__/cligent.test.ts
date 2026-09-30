@@ -259,6 +259,44 @@ describe('Cligent lifecycle', () => {
     expect(captured).toEqual([false, true, undefined]);
   });
 
+  // engine-3 / engine-96: subagentModel is a scalar shared by both option
+  // types — the per-call value when provided, otherwise the instance default.
+  it('selects the per-call subagent model over the instance default', async () => {
+    const captured: Array<string | undefined> = [];
+    const adapter: AgentAdapter<'quick', never, string> = {
+      agent: 'custom-subagent-model',
+      async *run(_prompt, options) {
+        captured.push(options?.subagentModel);
+        yield doneEvent('custom-subagent-model');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+
+    const withDefault = new Cligent(adapter, {
+      subagentModel: 'default-subagent',
+    });
+    await collectEvents(
+      withDefault.run('override', { subagentModel: 'per-call-subagent' }),
+    );
+    await collectEvents(withDefault.run('inherit'));
+    await collectEvents(withDefault.run('explicit-undefined', {}));
+    const withoutDefault = new Cligent(adapter);
+    await collectEvents(
+      withoutDefault.run('per-call', { subagentModel: 'per-call-subagent' }),
+    );
+    await collectEvents(withoutDefault.run('omitted'));
+
+    expect(captured).toEqual([
+      'per-call-subagent',
+      'default-subagent',
+      'default-subagent',
+      'per-call-subagent',
+      undefined,
+    ]);
+  });
+
   it('replaces writablePaths when per-call permissions provide the array', async () => {
     const { adapter, captured } = createCapturingAdapter('claude-code', [
       doneEvent('claude-code'),

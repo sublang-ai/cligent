@@ -14,6 +14,7 @@ import { promisify } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
+import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -1380,6 +1381,7 @@ export function mapAgentOptionsToGeminiCommand(
   options: AgentOptions<GeminiEffort> | undefined,
 ): GeminiCommandConfig {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   const toolConfig = mapPermissionsToGeminiToolConfig(options?.permissions, {
     allowedTools: options?.allowedTools,
     disallowedTools: options?.disallowedTools,
@@ -1514,6 +1516,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     options?: AgentOptions<GeminiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     // engine-25: `isAvailable()` is not on this path. Cligent.run() reaches
     // the adapter directly, so without this a below-floor CLI is spawned and
     // fails mid-turn — the failure mode this work exists to remove.

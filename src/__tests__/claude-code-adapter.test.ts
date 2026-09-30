@@ -18,9 +18,11 @@ import { describe, it, expect, vi } from 'vitest';
 
 import {
   ClaudeCodeAdapter,
+  composeClaudeSystemPrompt,
   mapAgentOptionsToClaudeQueryOptions,
   mapEffortToClaudeOptions,
   mapPermissionsToClaudeOptions,
+  subagentDirective,
 } from '../adapters/claude-code.js';
 import {
   claudeExecutableCandidates,
@@ -65,6 +67,17 @@ interface MockSdkInnerOptions {
     fastMode?: boolean;
     fastModePerSessionOptIn?: boolean;
   };
+  systemPrompt?:
+    | string
+    | string[]
+    | { type: 'custom'; prompt: string | string[]; snapshot?: boolean }
+    | {
+        type: 'preset';
+        preset: 'claude_code';
+        append?: string;
+        excludeDynamicSections?: boolean;
+        snapshot?: boolean;
+      };
   sessionId?: string;
 }
 
@@ -2918,4 +2931,229 @@ it('does not promote a Claude provider error or result subtype to resume rejecti
     expect(events.filter((event) => event.type === 'error').every((event) => (event.payload as { code?: string }).code !== 'SESSION_RESUME_REJECTED')).toBe(true);
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
   }
+});
+
+// claude-code-64 / claude-code-65: the subagent model reaches the SDK query as
+// the forced environment pair plus a composed, unsnapshotted directive.
+describe('ClaudeCodeAdapter subagent model', () => {
+  const SUBAGENT_MODEL = 'claude-haiku-4-5';
+  // Spelled out rather than built from subagentDirective(), so a drift in the
+  // adapter's wording fails here instead of passing by construction.
+  const EXPECTED_DIRECTIVE =
+    'Your subagents run on claude-haiku-4-5. Offload to them the work you ' +
+    'can specify completely and bound tightly — well-defined, fine-grained ' +
+    'tasks that claude-haiku-4-5 can implement well — and keep the deep ' +
+    'thinking, reasoning, and design work yourself. Offloading must never ' +
+    'lower the quality of what you deliver: brief each subagent fully, and ' +
+    'verify its result before you build on it.';
+  const VARIABLES = [
+    'CLAUDE_CODE_SUBAGENT_MODEL',
+    'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
+  ] as const;
+
+  function withCallerEnvironment(
+    values: Partial<Record<(typeof VARIABLES)[number] | 'CLAUDECODE', string>>,
+    body: () => void | Promise<void>,
+  ): () => Promise<void> {
+    return async () => {
+      const keys = [...VARIABLES, 'CLAUDECODE'] as const;
+      const saved = Object.fromEntries(
+        keys.map((key) => [key, process.env[key]]),
+      );
+      for (const key of keys) {
+        if (values[key] === undefined) delete process.env[key];
+        else process.env[key] = values[key];
+      }
+      try {
+        await body();
+      } finally {
+        for (const key of keys) {
+          if (saved[key] === undefined) delete process.env[key];
+          else process.env[key] = saved[key];
+        }
+      }
+    };
+  }
+
+  function callerCloneWithout(
+    ...omitted: readonly string[]
+  ): Record<string, string | undefined> {
+    const clone: Record<string, string | undefined> = { ...process.env };
+    for (const key of omitted) delete clone[key];
+    return clone;
+  }
+
+  it(
+    'leaves both variables to the caller and sends no system prompt when omitted',
+    withCallerEnvironment(
+      {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model',
+        CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '0',
+      },
+      () => {
+        const before = { ...process.env };
+        const mapped = mapAgentOptionsToClaudeQueryOptions({});
+
+        expect(mapped.queryOptions).not.toHaveProperty('systemPrompt');
+        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
+          'caller-model',
+        );
+        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe(
+          '0',
+        );
+        expect(mapped.queryOptions.env).toEqual(
+          callerCloneWithout('CLAUDECODE'),
+        );
+        expect(process.env).toEqual(before);
+      },
+    ),
+  );
+
+  it(
+    'leaves both variables absent without a caller value when omitted',
+    withCallerEnvironment({}, () => {
+      const mapped = mapAgentOptionsToClaudeQueryOptions(undefined);
+
+      for (const key of VARIABLES) {
+        expect(mapped.queryOptions.env).not.toHaveProperty(key);
+      }
+      expect(mapped.queryOptions).not.toHaveProperty('systemPrompt');
+    }),
+  );
+
+  it(
+    'forces the value over caller variables and composes the exact directive',
+    withCallerEnvironment(
+      {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model',
+        CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '0',
+      },
+      () => {
+        const before = { ...process.env };
+        const mapped = mapAgentOptionsToClaudeQueryOptions({
+          subagentModel: SUBAGENT_MODEL,
+        });
+
+        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
+          SUBAGENT_MODEL,
+        );
+        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe(
+          '1',
+        );
+        expect(mapped.queryOptions.env).toEqual({
+          ...callerCloneWithout('CLAUDECODE'),
+          CLAUDE_CODE_SUBAGENT_MODEL: SUBAGENT_MODEL,
+          CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '1',
+        });
+        expect(mapped.queryOptions.systemPrompt).toEqual({
+          type: 'custom',
+          prompt: EXPECTED_DIRECTIVE,
+          snapshot: false,
+        });
+        expect(process.env).toEqual(before);
+      },
+    ),
+  );
+
+  it('forwards the value verbatim, naming it at both places', () => {
+    const verbatim = ' claude-opus-5-5[1m] ';
+    const mapped = mapAgentOptionsToClaudeQueryOptions({
+      subagentModel: verbatim,
+    });
+
+    expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(verbatim);
+    const prompt = (mapped.queryOptions.systemPrompt as { prompt: string })
+      .prompt;
+    expect(prompt.split(verbatim)).toHaveLength(3);
+    expect(prompt).toBe(subagentDirective(verbatim));
+  });
+
+  it('reaches the SDK query boundary on set and omitted runs', async () => {
+    const captured: MockSdkInnerOptions[] = [];
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader(
+        [
+          {
+            type: 'result',
+            status: 'success',
+            result: 'ok',
+            usage: { input_tokens: 1 },
+            duration_ms: 1,
+          },
+        ],
+        (options) => {
+          captured.push(options);
+        },
+      ),
+    });
+
+    await collect(adapter.run('set', { subagentModel: SUBAGENT_MODEL }));
+    await collect(adapter.run('omitted'));
+
+    expect(captured[0]?.systemPrompt).toEqual({
+      type: 'custom',
+      prompt: EXPECTED_DIRECTIVE,
+      snapshot: false,
+    });
+    expect(captured[0]?.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(SUBAGENT_MODEL);
+    expect(captured[0]?.env?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1');
+    expect(captured[1]).not.toHaveProperty('systemPrompt');
+    expect(captured[1]?.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
+      process.env.CLAUDE_CODE_SUBAGENT_MODEL,
+    );
+    expect(captured[1]?.env?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe(
+      process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
+    );
+  });
+
+  it('rejects malformed values before the SDK query without a leaked listener', async () => {
+    let queryCalls = 0;
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query(): AsyncIterable<unknown> {
+          queryCalls += 1;
+          return {
+            async *[Symbol.asyncIterator]() {},
+          };
+        },
+      }),
+    });
+    const controller = new AbortController();
+
+    for (const subagentModel of [null, '', '   ', 42, ['haiku']]) {
+      const malformed = {
+        subagentModel,
+        abortSignal: controller.signal,
+      } as unknown as AgentOptions<ClaudeEffort, boolean, string>;
+      expect(() => mapAgentOptionsToClaudeQueryOptions(malformed)).toThrow(
+        'subagentModel for adapter "claude-code" must be a non-blank string',
+      );
+      await expect(collect(adapter.run('prompt', malformed))).rejects.toThrow(
+        'subagentModel for adapter "claude-code" must be a non-blank string',
+      );
+    }
+    expect(queryCalls).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('exports the directive and the ordered system-prompt composition', () => {
+    expect(subagentDirective(SUBAGENT_MODEL)).toBe(EXPECTED_DIRECTIVE);
+    expect(composeClaudeSystemPrompt([])).toBeUndefined();
+    expect(composeClaudeSystemPrompt([EXPECTED_DIRECTIVE])).toEqual({
+      type: 'custom',
+      prompt: EXPECTED_DIRECTIVE,
+      snapshot: false,
+    });
+
+    const callerPrompt = 'You are the release bot for this repository.';
+    expect(
+      composeClaudeSystemPrompt([callerPrompt, EXPECTED_DIRECTIVE]),
+    ).toEqual({
+      type: 'custom',
+      prompt: `${callerPrompt}\n\n${EXPECTED_DIRECTIVE}`,
+      snapshot: false,
+    });
+  });
 });

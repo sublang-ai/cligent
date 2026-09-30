@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode and subagent-model selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -256,6 +256,43 @@ When the adapter normalizes Claude SDK initialization or terminal result data, i
 
 Every mapped value is forwarded verbatim, `cooldown` remains state without an invented disabled reason, and `AgentOptions.fastMode` never becomes an observation source.
 
+### Subagent Model
+
+### claude-code-60
+
+When the adapter maps `AgentOptions.subagentModel` under [[engine-91](../engine.md#engine-91)], it shall select these variables of [[claude-code-34](#claude-code-34)]'s per-run environment clone through this matrix per [[9]]:
+
+| `AgentOptions.subagentModel` | `CLAUDE_CODE_SUBAGENT_MODEL` | `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` |
+| --- | --- | --- |
+| omitted | the caller environment's value or absence | the caller environment's value or absence |
+| accepted value | the value, verbatim | `'1'` |
+
+### claude-code-61
+
+When the adapter maps `AgentOptions.subagentModel` under [[engine-91](../engine.md#engine-91)], it shall select its contribution to [[claude-code-62](#claude-code-62)]'s system-prompt parts through this matrix:
+
+| `AgentOptions.subagentModel` | Contribution |
+| --- | --- |
+| omitted | no part |
+| accepted value | the delegation directive below as the final part, with each `{model}` replaced by the value verbatim |
+
+```text
+Your subagents run on {model}. Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks that {model} can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it.
+```
+
+### claude-code-62
+
+When the adapter prepares an SDK query, it shall compose the SDK `systemPrompt` from its ordered system-prompt parts through this matrix per [[5]] and [[7]]:
+
+| Parts | SDK `systemPrompt` |
+| --- | --- |
+| none | omitted |
+| one or more | `{ type: 'custom', prompt, snapshot: false }`, where `prompt` joins the parts in order with one blank line between consecutive parts |
+
+### claude-code-63
+
+The adapter module shall export `subagentDirective(model)`, returning [[claude-code-61](#claude-code-61)]'s directive for `model`, and `composeClaudeSystemPrompt(parts)`, returning [[claude-code-62](#claude-code-62)]'s `systemPrompt` value for `parts`, or `undefined` for none.
+
 ### Terminal Results
 
 ### claude-code-24
@@ -373,7 +410,7 @@ When the adapter observes an SDK message, it shall update the current run sessio
 
 ### claude-code-34
 
-When the adapter prepares an SDK query, it shall pass a per-run clone of the caller's process environment with `CLAUDECODE` omitted while leaving the caller's environment unchanged.
+When the adapter prepares an SDK query, it shall pass a per-run clone of the caller's process environment with `CLAUDECODE` omitted and no other change than [[claude-code-60](#claude-code-60)]'s subagent-model variables, while leaving the caller's environment unchanged.
 
 ### Native Binary Lookup
 
@@ -483,7 +520,7 @@ Where a `Cligent` is constructed on the adapter with `CligentOptions.permissions
 - each stream shall terminate with successful `done`;
 - filesystem state shall be the ground-truth assertion, because adapters normalize file edits differently;
 - the harness shall retry the complete fresh probe after, and only after, an explicit upstream-overload, rate-limit, or service-unavailable failure, shall make at most two retries, and shall treat any other failure and the third consecutive named transient failure as fatal;
-- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip when the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg.
+- the leg shall run against the real SDK, which any checkout able to run this suite has installed as a `devDependency`, so SDK absence shall not be a skip condition; the leg shall self-skip, with one stderr diagnostic naming the missing dependency, when the adapter's credential is absent from the environment, shall hard-fail instead under `CI`, and a missing dependency for one adapter shall never skip another's leg.
 
 ### claude-code-220
 
@@ -541,6 +578,29 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 - `web_search_request` quantities preserve zero and nonzero values [[claude-code-29](#claude-code-29)]; and
 - absent, empty, or malformed `modelUsage` omits tokens and never promotes main-loop usage [[claude-code-12](#claude-code-12)], while observed tool uses remain independently preserved [[claude-code-50](#claude-code-50)].
 
+### claude-code-64
+
+Where `subagentModel` is omitted or set to a model ID, with and without caller-environment values of both variables, when the adapter reaches the SDK query boundary, the verification shall assert this matrix:
+
+| `subagentModel` | Assertion |
+| --- | --- |
+| omitted | both variables keep the caller environment's value or absence [[claude-code-60](#claude-code-60)]; no `systemPrompt` key is passed [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)] |
+| model ID | `CLAUDE_CODE_SUBAGENT_MODEL` equals the ID verbatim and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'`, replacing caller values [[claude-code-60](#claude-code-60)]; `systemPrompt` is the custom, unsnapshotted prompt whose text is exactly the directive naming the ID at both places [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)] |
+| either | the caller environment remains unchanged and no other clone value differs from it apart from the omitted `CLAUDECODE` [[claude-code-34](#claude-code-34)] |
+
+### claude-code-65
+
+Where a consumer imports the adapter module, the verification shall assert [[claude-code-63](#claude-code-63)]'s exports: `subagentDirective(model)` equals the exact [[claude-code-61](#claude-code-61)] directive for a model ID, and `composeClaudeSystemPrompt(parts)` returns `undefined` for no part, the custom unsnapshotted prompt for one part, and for a caller part followed by the directive a prompt that keeps that order with one blank line between them [[claude-code-62](#claude-code-62)].
+
+### claude-code-66
+
+Under [[claude-code-219](#claude-code-219)]'s real-run harness, where `ANTHROPIC_API_KEY` is available, when a `Cligent` on the adapter runs with `subagentModel: 'claude-haiku-4-5'`, a non-Haiku main `model`, a permission policy denying file writes, shell execution, and network access, and a prompt directing one `general-purpose` Agent-tool subagent, asked for with the competing per-call model `sonnet`, to read a one-word file with the Read tool and return its contents, the acceptance check shall assert [[claude-code-60](#claude-code-60)]'s effect on a real run through these conditions:
+
+- a successful terminal `done` whose result carries the word;
+- every Agent-tool call's input carrying `sonnet` or no model, never a Haiku one, so that a Haiku subagent frame can come only from the environment pair and not from the main agent's own choice, with the observed per-call models written to stderr;
+- at least one SDK assistant frame produced inside the subagent, each naming a Haiku model;
+- terminal usage records that name a Haiku model.
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
@@ -551,3 +611,4 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 [6]: https://platform.claude.com/docs/en/build-with-claude/fast-mode#checking-which-speed-was-used "Checking which Claude serving speed was used"
 [7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.284/sdk.d.ts "Claude Agent SDK 0.3.284 declarations"
 [8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"
+[9]: https://code.claude.com/docs/en/sub-agents "Claude Code subagents"

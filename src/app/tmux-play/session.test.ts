@@ -220,6 +220,55 @@ describe('TmuxPlaySession', () => {
     expect(readline.promptCount).toBe(3);
   });
 
+  // tmux-play-213: the session seam carries each Claude role's subagent model
+  // from the snapshot into the runtime configuration.
+  it('passes Captain and player subagent models to the runtime', async () => {
+    tempDir = makeWorkDir({
+      captainSubagentModel: 'claude-haiku-4-5',
+      claudePlayerSubagentModel: 'claude-sonnet-5-5',
+    });
+    const readline = new FakeReadline();
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      runBossTurn: vi.fn(async () => undefined),
+    }));
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime,
+      importCaptain: async () => ({
+        default: (): Captain => ({
+          async handleBossTurn() {
+            // no-op
+          },
+        }),
+      }),
+      output: new MemoryOutput(),
+    });
+
+    await session.start();
+
+    expect(createRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        captainConfig: expect.objectContaining({
+          adapter: 'claude',
+          subagentModel: 'claude-haiku-4-5',
+        }),
+        players: [
+          expect.objectContaining({
+            id: 'coder',
+            adapter: 'claude',
+            subagentModel: 'claude-sonnet-5-5',
+          }),
+        ],
+      }),
+    );
+
+    readline.close();
+    await session.done;
+  });
+
   it('colors the boss> prompt with the snapshot-resolved Latte blue', async () => {
     // tmux-play-37 + tmux-play-194: when the snapshot's `theme` is `latte` the
     // readline prompt shall render in Latte `speakerBoss` (#1e66f5 / RGB
@@ -1978,6 +2027,8 @@ function makeWorkDir(
     emptyPlayers?: boolean;
     captainFastMode?: boolean;
     playerFastMode?: boolean;
+    captainSubagentModel?: string;
+    claudePlayerSubagentModel?: string;
   } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
@@ -1992,11 +2043,22 @@ function makeWorkDir(
       ...(overrides.captainFastMode === undefined
         ? {}
         : { fastMode: overrides.captainFastMode }),
+      ...(overrides.captainSubagentModel === undefined
+        ? {}
+        : { subagentModel: overrides.captainSubagentModel }),
       options: { tone: 'direct' },
     },
     players: emptyPlayers
       ? []
-      : [
+      : overrides.claudePlayerSubagentModel !== undefined
+        ? [
+            {
+              id: 'coder',
+              adapter: 'claude',
+              subagentModel: overrides.claudePlayerSubagentModel,
+            },
+          ]
+        : [
           {
             id: 'coder',
             adapter: 'codex',

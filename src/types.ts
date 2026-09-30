@@ -277,12 +277,13 @@ export interface PermissionPolicy {
 export interface AgentAdapter<
   E extends string = Effort,
   FM extends boolean = never,
+  SM extends string = never,
 > {
   readonly agent: AgentType;
 
   run(
     prompt: string,
-    options?: AgentOptions<E, FM>,
+    options?: AgentOptions<E, FM, SM>,
   ): AsyncGenerator<AgentEvent, void, void>;
 
   isAvailable(): Promise<boolean>;
@@ -291,6 +292,7 @@ export interface AgentAdapter<
 export interface AgentOptions<
   E extends string = Effort,
   FM extends boolean = never,
+  SM extends string = never,
 > {
   cwd?: string;
   model?: string;
@@ -299,6 +301,11 @@ export interface AgentOptions<
   maxBudgetUsd?: number;
   effort?: E;
   fastMode?: FM;
+  /**
+   * The model every subagent of the run uses, per engine-91. Adapter-scoped:
+   * only adapters binding `SM` to `string` accept it.
+   */
+  subagentModel?: SM;
   resume?: string;
   abortSignal?: AbortSignal;
   allowedTools?: string[];
@@ -310,6 +317,7 @@ export type CligentEvent = AgentEvent & { role?: string };
 export interface CligentOptions<
   E extends string = Effort,
   FM extends boolean = never,
+  SM extends string = never,
 > {
   role?: string;
   cwd?: string;
@@ -319,6 +327,7 @@ export interface CligentOptions<
   maxBudgetUsd?: number;
   effort?: E;
   fastMode?: FM;
+  subagentModel?: SM;
   allowedTools?: string[];
   disallowedTools?: string[];
 }
@@ -326,10 +335,8 @@ export interface CligentOptions<
 export interface RunOptions<
   E extends string = Effort,
   FM extends boolean = never,
-> extends Omit<
-  CligentOptions<E, FM>,
-  'role'
-> {
+  SM extends string = never,
+> extends Omit<CligentOptions<E, FM, SM>, 'role'> {
   abortSignal?: AbortSignal;
   resume?: string | false;
 }

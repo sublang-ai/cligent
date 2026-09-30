@@ -836,6 +836,103 @@ describe('TmuxPlayRuntime', () => {
     );
   });
 
+  // tmux-play-215: configured subagent models are complete runtime-held
+  // defaults; complete settings replace them, and omission selects the
+  // provider default without restoring the configured role value.
+  it('carries configured subagent models and replaces them only with complete settings', async () => {
+    const records: TmuxPlayRecord[] = [];
+    const observed: Array<{ prompt: string; subagentModel: unknown }> = [];
+    let codexRuns = 0;
+    const providerDefaults = {
+      model: { kind: 'provider-default' as const },
+      effort: { kind: 'provider-default' as const },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('dev.claude', 'configured');
+          await context.callPlayer('dev.claude', 'replaced', {
+            settings: {
+              ...providerDefaults,
+              subagentModel: 'claude-haiku-4-5',
+            },
+          });
+          await context.callPlayer('dev.claude', 'provider default', {
+            settings: providerDefaults,
+          });
+          await context.callPlayer('dev.claude', 'configured again');
+          await context.callCaptain('captain configured');
+          await context.callCaptain('captain provider default', {
+            settings: providerDefaults,
+          });
+
+          for (const subagentModel of ['', '   ', 42, null]) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('dev.claude', 'malformed', {
+                settings: { ...providerDefaults, subagentModel } as never,
+              }),
+              'subagentModel must be a non-blank string',
+            );
+          }
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.codex', 'unsupported', {
+              settings: { ...providerDefaults, subagentModel: 'gpt-mini' },
+            }),
+            'subagentModel is not supported for adapter "codex"',
+          );
+        },
+      },
+      captainConfig: { adapter: 'claude', subagentModel: 'captain-subagent' },
+      players: [
+        {
+          id: 'dev.claude',
+          adapter: 'claude',
+          subagentModel: 'player-subagent',
+        },
+        { id: 'dev.codex', adapter: 'codex' },
+      ],
+      observers: [{ onRecord: (record) => records.push(record) }],
+      adapterImports: adapterImports({
+        claude: {
+          agent: 'claude-code',
+          async *run(prompt, options) {
+            observed.push({ prompt, subagentModel: options?.subagentModel });
+            yield doneEvent('claude-code', 'done');
+          },
+        },
+        codex: {
+          agent: 'codex',
+          async *run() {
+            codexRuns += 1;
+            yield doneEvent('codex', 'done');
+          },
+        },
+      }),
+    });
+
+    await runtime.runBossTurn('go');
+
+    expect(observed).toEqual([
+      { prompt: 'configured', subagentModel: 'player-subagent' },
+      { prompt: 'replaced', subagentModel: 'claude-haiku-4-5' },
+      { prompt: 'provider default', subagentModel: undefined },
+      { prompt: 'configured again', subagentModel: 'player-subagent' },
+      { prompt: 'captain configured', subagentModel: 'captain-subagent' },
+      { prompt: 'captain provider default', subagentModel: undefined },
+    ]);
+    expect(codexRuns).toBe(0);
+    expect(
+      records
+        .filter((record) => record.type === 'player_prompt')
+        .map((record) => record.prompt),
+    ).toEqual([
+      'configured',
+      'replaced',
+      'provider default',
+      'configured again',
+    ]);
+  });
+
   it('rejects fast mode on unsupported adapters before records or provider work', async () => {
     const records: TmuxPlayRecord[] = [];
     let providerRuns = 0;

@@ -4,6 +4,7 @@
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
+import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -75,6 +76,27 @@ type ClaudeCanUseTool = (
   input: Record<string, unknown>,
 ) => Promise<ClaudePermissionResult>;
 
+// The SDK's `systemPrompt` option shape, mirrored locally for the same reason
+// as `ClaudeCanUseTool` above; package-104's conformance check rejects drift.
+type ClaudeSystemPrompt =
+  | string
+  | string[]
+  | { type: 'custom'; prompt: string | string[]; snapshot?: boolean }
+  | {
+      type: 'preset';
+      preset: 'claude_code';
+      append?: string;
+      excludeDynamicSections?: boolean;
+      snapshot?: boolean;
+    };
+
+/** The custom, unsnapshotted system prompt the adapter composes. */
+export interface ClaudeComposedSystemPrompt {
+  type: 'custom';
+  prompt: string;
+  snapshot: false;
+}
+
 interface ClaudeQueryOptions {
   prompt: string;
   cwd?: string;
@@ -94,6 +116,7 @@ interface ClaudeQueryOptions {
   env?: Record<string, string | undefined>;
   effort?: ClaudeSdkEffort;
   settings?: ClaudeSettings;
+  systemPrompt?: ClaudeSystemPrompt;
   sessionId?: string;
 }
 
@@ -928,10 +951,41 @@ export function mapEffortToClaudeOptions(
   };
 }
 
+/**
+ * claude-code-61: the delegation directive an accepted `subagentModel`
+ * contributes, naming the model verbatim at both places.
+ */
+export function subagentDirective(model: string): string {
+  return (
+    `Your subagents run on ${model}. Offload to them the work you can ` +
+    'specify completely and bound tightly — well-defined, fine-grained ' +
+    `tasks that ${model} can implement well — and keep the deep thinking, ` +
+    'reasoning, and design work yourself. Offloading must never lower the ' +
+    'quality of what you deliver: brief each subagent fully, and verify its ' +
+    'result before you build on it.'
+  );
+}
+
+/**
+ * claude-code-62: compose the SDK `systemPrompt` from ordered parts, joined
+ * by one blank line. A future caller-supplied prompt comes first; each
+ * Cligent directive follows, so it is joined, never replaced. No part means
+ * no `systemPrompt`, leaving the query exactly as it was before any part
+ * existed. Unsnapshotted, so a changed or cleared part is phrased afresh on
+ * the next request rather than replaying a recorded prompt.
+ */
+export function composeClaudeSystemPrompt(
+  parts: readonly string[],
+): ClaudeComposedSystemPrompt | undefined {
+  if (parts.length === 0) return undefined;
+  return { type: 'custom', prompt: parts.join('\n\n'), snapshot: false };
+}
+
 export function mapAgentOptionsToClaudeQueryOptions(
-  options: AgentOptions<ClaudeEffort, boolean> | undefined,
+  options: AgentOptions<ClaudeEffort, boolean, string> | undefined,
 ): MappedClaudeOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
   const settings =
@@ -963,6 +1017,18 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.CLAUDECODE;
 
+  // claude-code-60 / claude-code-61: FORCE makes the value bind every
+  // subagent, including built-in ones whose definitions pin a model and any
+  // per-call `model` the agent passes; the directive is the final part.
+  const systemPromptParts: string[] = [];
+  const subagentModel = options?.subagentModel;
+  if (subagentModel !== undefined) {
+    env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
+    env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1';
+    systemPromptParts.push(subagentDirective(subagentModel));
+  }
+  const systemPrompt = composeClaudeSystemPrompt(systemPromptParts);
+
   const explicitAllowlist = options?.allowedTools !== undefined;
   const toolFreeIsolation = options?.allowedTools?.length === 0;
 
@@ -989,12 +1055,17 @@ export function mapAgentOptionsToClaudeQueryOptions(
       env,
       ...effortOptions,
       ...(settings !== undefined ? { settings } : {}),
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
     },
     cleanupAbort,
   };
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
+export class ClaudeCodeAdapter implements AgentAdapter<
+  ClaudeEffort,
+  boolean,
+  string
+> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<ClaudeAgentSdk>;
@@ -1024,7 +1095,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<ClaudeEffort, boolean> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<ClaudeEffort, boolean>,
+    options?: AgentOptions<ClaudeEffort, boolean, string>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: ClaudeAgentSdk;
     try {
