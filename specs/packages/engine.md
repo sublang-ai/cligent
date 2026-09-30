@@ -398,7 +398,7 @@ Per [DR-028](../decisions/028-subagent-model.md), the public statically adapter-
 | Codex, Gemini, OpenCode, or Kimi | bind `never`, making an explicit string a compile-time error |
 | custom adapter omitting `SM` | default to `never` |
 | custom adapter opting in | bind `string` |
-| existing one- or two-parameter generic source | remain source- and assignment-compatible when it does not supply `subagentModel`, including assignment of an inferred supported or unsupported adapter and `Cligent` instance to its existing `AgentAdapter<E>`, `AgentAdapter<E, FM>`, `Cligent<E>`, or `Cligent<E, FM>` annotation |
+| existing one- or two-parameter generic source | remain source- and assignment-compatible when it does not supply `subagentModel`, including assignment of an inferred supported or unsupported adapter and `Cligent` instance to its existing `AgentAdapter<E>`, `AgentAdapter<E, FM>`, `Cligent<E>`, or `Cligent<E, FM>` annotation whose `E` is that adapter's own vocabulary |
 
 ### engine-91
 

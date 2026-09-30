@@ -594,7 +594,7 @@ Where a consumer imports the adapter module, the verification shall assert [[cla
 
 ### claude-code-66
 
-Where `ANTHROPIC_API_KEY` is available, when a `Cligent` on the adapter runs with `subagentModel: 'claude-haiku-4-5'`, a non-Haiku main `model`, `permissions: { mode: 'auto' }`, and a prompt directing one Agent-tool subagent to read a one-word file with a tool and return its contents, the acceptance check shall assert [[claude-code-60](#claude-code-60)]'s effect on a real run through these conditions:
+Where `ANTHROPIC_API_KEY` is available, when a `Cligent` on the adapter runs with `subagentModel: 'claude-haiku-4-5'`, a non-Haiku main `model`, a permission policy denying file writes, shell execution, and network access, and a prompt directing one Agent-tool subagent to read a one-word file with the Read tool and return its contents, the acceptance check shall assert [[claude-code-60](#claude-code-60)]'s effect on a real run through these conditions:
 
 - a successful terminal `done` whose result carries the word;
 - at least one SDK assistant frame produced inside the subagent, each naming a Haiku model;

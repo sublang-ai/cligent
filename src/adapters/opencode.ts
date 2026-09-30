@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
+import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   PermissionRuleset,
@@ -2292,6 +2293,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertOpenCodeToolRestrictionsUnsupported(options);
     assertOpenCodeTurnLimitUnsupported(options);
 

@@ -20,7 +20,7 @@ type KnownAgentName = (typeof KNOWN_AGENTS)[number];
 
 const ADAPTER_IMPORTS: Record<
   KnownAgentName,
-  () => Promise<{ new (): AgentAdapter<Effort, boolean> }>
+  () => Promise<{ new (): AgentAdapter<Effort, boolean, string> }>
 > = {
   claude: async () =>
     (await import('../adapters/claude-code.js')).ClaudeCodeAdapter,

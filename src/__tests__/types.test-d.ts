@@ -12,10 +12,13 @@ import {
   Cligent,
   EFFORT_SUPPORT,
   FAST_MODE_SUPPORT,
+  SUBAGENT_MODEL_SUPPORT,
   assertFastModeSupported,
+  assertSubagentModelSupported,
   assertSupportedEffort,
   isFastModeSupported,
   isEffortSupported,
+  isSubagentModelSupported,
   runAgent,
   runParallel,
 } from '../index.js';
@@ -63,9 +66,10 @@ type SupportEffortMap = {
 };
 
 type AdapterParameters<T> =
-  T extends AgentAdapter<infer E, infer FM> ? [E, FM] : never;
+  T extends AgentAdapter<infer E, infer FM, infer SM> ? [E, FM, SM] : never;
 type AdapterEffort<T> = AdapterParameters<T>[0];
 type AdapterFastMode<T> = AdapterParameters<T>[1];
+type AdapterSubagentModel<T> = AdapterParameters<T>[2];
 
 describe('core types', () => {
   it('narrows discriminated union on type field', () => {
@@ -604,5 +608,161 @@ describe('core types', () => {
     expectTypeOf(asserted).toMatchTypeOf<
       'claude' | 'claude-code' | 'codex'
     >();
+  });
+  // engine-94
+  it('correlates subagent-model support across built-in and custom APIs', () => {
+    expectTypeOf<{
+      claude: AdapterSubagentModel<ClaudeCodeAdapter>;
+      codex: AdapterSubagentModel<CodexAdapter>;
+      gemini: AdapterSubagentModel<GeminiAdapter>;
+      kimi: AdapterSubagentModel<KimiAdapter>;
+      opencode: AdapterSubagentModel<OpenCodeAdapter>;
+    }>().toEqualTypeOf<{
+      claude: string;
+      codex: never;
+      gemini: never;
+      kimi: never;
+      opencode: never;
+    }>();
+
+    const claudeAdapter = new ClaudeCodeAdapter();
+    const codexAdapter = new CodexAdapter();
+    const geminiAdapter = new GeminiAdapter();
+    void claudeAdapter.run('prompt', { subagentModel: 'claude-haiku-4-5' });
+    // @ts-expect-error - Codex has no per-run subagent-model surface.
+    void codexAdapter.run('prompt', { subagentModel: 'gpt-6-sol-mini' });
+    // @ts-expect-error - the value is a model ID string.
+    void claudeAdapter.run('prompt', { subagentModel: true });
+
+    type CustomEffort = 'quick' | 'deep';
+    const customDefault = {} as AgentAdapter<CustomEffort>;
+    const customSupported = {} as AgentAdapter<CustomEffort, never, string>;
+    // @ts-expect-error - custom adapters default to unsupported.
+    void customDefault.run('prompt', { subagentModel: 'small' });
+    void customSupported.run('prompt', { subagentModel: 'small' });
+
+    const claude = new Cligent(claudeAdapter, {
+      subagentModel: 'claude-haiku-4-5',
+    });
+    const codex = new Cligent(codexAdapter);
+    const gemini = new Cligent(geminiAdapter);
+    const custom = new Cligent(customSupported, { subagentModel: 'small' });
+    void claude.run('prompt', { subagentModel: 'claude-sonnet-5-5' });
+    void custom.run('prompt', { subagentModel: 'large' });
+    // @ts-expect-error - NoInfer keeps constructor defaults adapter-scoped.
+    new Cligent(codexAdapter, { subagentModel: 'gpt-6-sol-mini' });
+    // @ts-expect-error - unsupported Cligent instances reject strings.
+    void codex.run('prompt', { subagentModel: 'gpt-6-sol-mini' });
+    // @ts-expect-error - unsupported Cligent instances reject strings.
+    void gemini.run('prompt', { subagentModel: 'gemini-flash' });
+
+    void Cligent.parallel([
+      {
+        agent: claude,
+        prompt: 'Claude',
+        overrides: { subagentModel: 'claude-haiku-4-5' },
+      },
+      { agent: codex, prompt: 'Codex' },
+      { agent: custom, prompt: 'Custom', overrides: { subagentModel: 'x' } },
+    ]);
+    void Cligent.parallel([
+      {
+        agent: codex,
+        prompt: 'Codex',
+        // @ts-expect-error - parallel overrides retain adapter capability.
+        overrides: { subagentModel: 'gpt-6-sol-mini' },
+      },
+    ]);
+    void runParallel([
+      {
+        adapter: claudeAdapter,
+        prompt: 'Claude',
+        options: { subagentModel: 'claude-haiku-4-5' },
+      },
+      { adapter: codexAdapter, prompt: 'Codex' },
+      {
+        adapter: customSupported,
+        prompt: 'Custom',
+        options: { subagentModel: 'small' },
+      },
+    ]);
+    void runParallel([
+      {
+        adapter: geminiAdapter,
+        prompt: 'Gemini',
+        // @ts-expect-error - parallel options retain adapter capability.
+        options: { subagentModel: 'gemini-flash' },
+      },
+    ]);
+
+    const registry = new AdapterRegistry();
+    registry.register(customSupported);
+    registry.register(claudeAdapter);
+    void runAgent(
+      'custom-agent',
+      'prompt',
+      { subagentModel: 'small' },
+      registry,
+    );
+  });
+
+  it('keeps existing one- and two-parameter generic uses compatible', () => {
+    const claudeAdapter = new ClaudeCodeAdapter();
+    const codexAdapter = new CodexAdapter();
+    const legacyClaudeOne: AgentAdapter<ClaudeEffort> = claudeAdapter;
+    const legacyClaudeTwo: AgentAdapter<ClaudeEffort, boolean> = claudeAdapter;
+    const legacyCodexOne: AgentAdapter<CodexEffort> = codexAdapter;
+    const legacyCodexTwo: AgentAdapter<CodexEffort, boolean> = codexAdapter;
+    const legacyGemini: AgentAdapter<GeminiEffort> = new GeminiAdapter();
+
+    const claude = new Cligent(claudeAdapter, {
+      fastMode: true,
+      subagentModel: 'claude-haiku-4-5',
+    });
+    const codex = new Cligent(codexAdapter, { fastMode: true });
+    const legacyClaudeCligentOne: Cligent<ClaudeEffort> = claude;
+    const legacyClaudeCligentTwo: Cligent<ClaudeEffort, boolean> = claude;
+    const legacyCodexCligentTwo: Cligent<CodexEffort, boolean> = codex;
+
+    const agentOptions: AgentOptions<ClaudeEffort, boolean> = {
+      fastMode: true,
+    };
+    const cligentOptions: CligentOptions<ClaudeEffort, boolean> = {
+      fastMode: true,
+    };
+    const runOptions: RunOptions<ClaudeEffort, boolean> = { fastMode: false };
+    const noSubagentModel: AgentOptions<ClaudeEffort, boolean> = {
+      // @ts-expect-error - two-parameter options bind no subagent model.
+      subagentModel: 'claude-haiku-4-5',
+    };
+    void legacyClaudeOne;
+    void legacyClaudeTwo;
+    void legacyCodexOne;
+    void legacyCodexTwo;
+    void legacyGemini;
+    void legacyClaudeCligentOne;
+    void legacyClaudeCligentTwo;
+    void legacyCodexCligentTwo;
+    void agentOptions;
+    void cligentOptions;
+    void runOptions;
+    void noSubagentModel;
+  });
+
+  it('exports subagent-model metadata types and helper narrowing', () => {
+    expectTypeOf(
+      SUBAGENT_MODEL_SUPPORT['claude-code'].requestSupported,
+    ).toEqualTypeOf<true>();
+    expectTypeOf(
+      SUBAGENT_MODEL_SUPPORT.codex.requestSupported,
+    ).toEqualTypeOf<false>();
+
+    let candidate: string = 'claude';
+    if (isSubagentModelSupported(candidate)) {
+      expectTypeOf(candidate).toMatchTypeOf<'claude' | 'claude-code'>();
+    }
+    let asserted: string = 'claude-code';
+    assertSubagentModelSupported(asserted);
+    expectTypeOf(asserted).toMatchTypeOf<'claude' | 'claude-code'>();
   });
 });

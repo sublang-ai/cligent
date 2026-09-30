@@ -3344,6 +3344,32 @@ describe('CodexAdapter', () => {
     expect(loadCalls).toBe(0);
   });
 
+  // engine-91: Codex binds no subagent-model surface, so any defined value,
+  // including a blank one, is refused before the SDK loads.
+  it('rejects any subagent model before loading the Codex SDK', async () => {
+    let loadCalls = 0;
+    const loader = makeLoader({ events: [] });
+    const adapter = new CodexAdapter({
+      loadSdk: async () => {
+        loadCalls += 1;
+        return loader();
+      },
+    });
+
+    for (const subagentModel of ['gpt-6-sol-mini', '']) {
+      const invalid = {
+        subagentModel,
+      } as unknown as AgentOptions<CodexEffort, boolean>;
+      expect(() => mapAgentOptionsToCodexOptions(invalid)).toThrow(
+        'subagentModel is not supported for adapter "codex"',
+      );
+      await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
+        'subagentModel is not supported for adapter "codex"',
+      );
+    }
+    expect(loadCalls).toBe(0);
+  });
+
   it('rejects Claude and unknown effort values before starting a thread', async () => {
     let startCalls = 0;
     const adapter = new CodexAdapter({

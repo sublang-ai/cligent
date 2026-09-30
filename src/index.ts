@@ -50,6 +50,13 @@ export {
 } from './fast-mode.js';
 
 export {
+  SUBAGENT_MODEL_SUPPORT,
+  getSubagentModelSupport,
+  isSubagentModelSupported,
+  assertSubagentModelSupported,
+} from './subagent-model.js';
+
+export {
   EFFORT_SUPPORT,
   getEffortSupport,
   supportedEffortValues,
