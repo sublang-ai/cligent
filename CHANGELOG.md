@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AgentAdapter<Effort, boolean>`, add `string` as a third type argument —
   DR-028
 
+### Security
+
+- The repository's lockfile moves `brace-expansion`, reached through the
+  development dependencies `eslint` and `@typescript-eslint/parser`, from
+  1.1.18 to 1.1.21 and from 5.0.9 to 5.0.12, past three denial-of-service
+  advisories (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7 and
+  GHSA-6j4f-fj2g-mc7p), and `fast-uri`, reached through the development
+  dependency `@modelcontextprotocol/sdk`, from 3.1.7 to 3.1.8, past a
+  moderate host-normalization advisory (GHSA-hrr3-gc8f-f4qj). The published
+  package does not ship a lockfile, so installs resolve them through their
+  own ranges, which admit the fixed versions.
+
 ## [0.28.0] - 2026-09-29
 
 ### Added
