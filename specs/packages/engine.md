@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
-It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
+It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, adapter-scoped subagent-model selection, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
 Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
@@ -20,7 +20,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | Input | Contract |
 | --- | --- |
 | `AgentAdapter` | required adapter |
-| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `allowedTools`, and `disallowedTools` |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `allowedTools`, and `disallowedTools` |
 | `abortSignal` and `resume` | excluded from instance defaults and available only in `RunOptions` |
 
 ### engine-2
@@ -36,7 +36,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `permissions` object | merge by member, with a provided per-call member taking precedence |
 | `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
-| `fastMode` or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
+| `fastMode`, `subagentModel`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
 | `abortSignal` or `resume` | accept only the per-call value because neither field exists in instance defaults |
 
 ### engine-4
@@ -384,6 +384,64 @@ Where [[engine-76](#engine-76)] marks an adapter request-supported but fast mode
 | native standard-speed fallback or cooldown | preserve the ordinary backend completion and any authentic [[engine-78](#engine-78)] observation without manufacturing an error or fast-delivery claim |
 | no effective-tier observation | emit no placeholder or requested-value echo |
 
+### Subagent Model
+
+### engine-90
+
+Per [DR-028](../decisions/028-subagent-model.md), the public statically adapter-bound surfaces shall preserve a defaulted subagent-model capability parameter `SM extends string = never` through this matrix:
+
+| Surface or adapter | Contract |
+| --- | --- |
+| `AgentAdapter<E, FM, SM>`, `AgentOptions<E, FM, SM>`, `CligentOptions<E, FM, SM>`, `RunOptions<E, FM, SM>`, and `Cligent<E, FM, SM>` | expose `subagentModel?: SM` and retain `SM` through constructor defaults and run overrides |
+| `Cligent.parallel()` and `runParallel()` | preserve each source adapter's `SM` independently |
+| Claude Code | bind `string` |
+| Codex, Gemini, OpenCode, or Kimi | bind `never`, making an explicit string a compile-time error |
+| custom adapter omitting `SM` | default to `never` |
+| custom adapter opting in | bind `string` |
+| existing one- or two-parameter generic source | remain source- and assignment-compatible when it does not supply `subagentModel`, including assignment of an inferred supported or unsupported adapter and `Cligent` instance to its existing `AgentAdapter<E>`, `AgentAdapter<E, FM>`, `Cligent<E>`, or `Cligent<E, FM>` annotation |
+
+### engine-91
+
+When a `subagentModel` option reaches a typed or dynamic adapter path, Cligent shall select this outcome per [DR-028](../decisions/028-subagent-model.md):
+
+| Input and adapter | Outcome |
+| --- | --- |
+| omitted | add no Cligent subagent-model override, leaving the runtime's own subagent-model order in force |
+| a string containing a non-whitespace character on a request-supported adapter | forward it verbatim to the adapter's native control for the model of every subagent the run starts, without checking it against any model catalog |
+| a defined non-string, empty, or whitespace-only value on a request-supported built-in adapter | reject before backend invocation with an error naming the adapter, validation path, and expected non-blank string |
+| any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
+| any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
+| legacy name-based mutable-registry path | accept `AgentOptions<string, boolean, string>` without claiming compile-time name-to-capability correlation |
+| forwarded value the runtime refuses | expose the ordinary upstream error path without substituting another model |
+
+### engine-92
+
+The exported `SUBAGENT_MODEL_SUPPORT` object shall be deeply frozen at runtime and expose immutable `requestSupported` and `notes` descriptors through this adapter-transport matrix without promising selected-model, account, provider, or installed-runtime availability:
+
+| Adapter | `requestSupported` |
+| --- | ---: |
+| `claude-code` | `true` |
+| `codex` | `false` |
+| `gemini` | `false` |
+| `opencode` | `false` |
+| `kimi` | `false` |
+
+The `notes` define support as native-request delivery, disclose Claude's forced subagent-model variables and delegation directive under [[claude-code-60](adapters/claude-code.md#claude-code-60)] and [[claude-code-61](adapters/claude-code.md#claude-code-61)], and state that the other four adapters expose no per-run subagent-model surface under [[engine-91](#engine-91)].
+
+### engine-93
+
+The public `getSubagentModelSupport()`, `isSubagentModelSupported()`, and `assertSubagentModelSupported()` helpers shall read the same [[engine-92](#engine-92)] data and select this result:
+
+| Input and helper | Result |
+| --- | --- |
+| `claude` alias | resolve to `claude-code` |
+| known adapter; `getSubagentModelSupport()` | its frozen descriptor |
+| known adapter; `isSubagentModelSupported()` | its `requestSupported` value |
+| known unsupported adapter; `assertSubagentModelSupported()` | error naming the adapter and validation path |
+| unknown adapter; `getSubagentModelSupport()` | `undefined` |
+| unknown adapter; `isSubagentModelSupported()` | `false` |
+| unknown adapter; `assertSubagentModelSupported()` | error naming the adapter and validation path |
+
 ### Permission Policy Mode
 
 ### engine-21
@@ -715,6 +773,18 @@ Where supported built-in adapters, unsupported built-in adapters, and custom ada
 ### engine-83
 
 Where request-supported adapter integrations produce refusal, standard-speed fallback, cooldown, authentic partial observation, null or unrecognized speed, speed without completed-response evidence, and no-observation outcomes, when their unified streams are consumed, the check shall assert every [[engine-79](#engine-79)] outcome and [[engine-78](#engine-78)] omission, verbatim-value, completed-response-evidence, response-scope, and no-placeholder rule.
+
+### engine-94
+
+Where a TypeScript consumer uses the public subagent-model API, the type-level check shall assert [[engine-1](#engine-1)] constructor-option placement; [[engine-90](#engine-90)] built-in, custom, direct, and heterogeneous-parallel capability correlation; and source and assignment compatibility for existing one- and two-parameter `AgentAdapter`, `AgentOptions`, `CligentOptions`, `RunOptions`, and `Cligent` uses that omit `subagentModel`.
+
+### engine-95
+
+Where a consumer imports subagent-model metadata and helpers from the public entry point, the check shall assert [[engine-92](#engine-92)] deep immutability, every descriptor row, and required notes content plus [[engine-93](#engine-93)] alias, known-adapter, unsupported-adapter, and unknown-adapter outcomes.
+
+### engine-96
+
+Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-91](#engine-91)] omitted, forwarded, malformed-value, unsupported-adapter, custom-validation, and upstream-refusal outcomes, [[engine-3](#engine-3)] per-call precedence over an instance default, and pre-backend rejection for Codex, Gemini, OpenCode, and Kimi.
 
 ### engine-68
 

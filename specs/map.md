@@ -53,6 +53,7 @@ meta.md       The spec of specs
 | [DR-025](decisions/025-native-executable-availability.md) | 025-native-executable-availability.md | Native-executable presence in availability and readiness, unsupported hosts, host-facing lookup; amends DR-013 |
 | [DR-026](decisions/026-runtime-reported-model-identity.md) | 026-runtime-reported-model-identity.md | Runtime-reported model descriptions, names, unconfigured default and init-time model |
 | [DR-027](decisions/027-latest-models-oldest-serving-runtime.md) | 027-latest-models-oldest-serving-runtime.md | Latest models in every default and example; floors at the oldest release serving the latest models |
+| [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt |
 
 ## Packages
 
