@@ -14,6 +14,7 @@ import type {
   RuntimeCaptainConfig,
   RuntimePlayerConfig,
 } from '../app/tmux-play/index.js';
+import type { ClaudeSubagentEffort } from '../index.js';
 import type {
   ClaudeEffort,
   CodexEffort,
@@ -329,6 +330,89 @@ describe('tmux-play subagent-model types (tmux-play-214)', () => {
       invalidPlayer,
       invalidRuntimeCaptain,
       invalidRuntimePlayer,
+    ];
+  });
+});
+
+type SubagentEffortOf<T, A extends PlayerAdapterName> =
+  Extract<T, { adapter: A }> extends infer Config
+    ? Config extends { subagentEffort?: infer SE }
+      ? SE | undefined
+      : never
+    : never;
+
+type SubagentEffortMap<T> = {
+  [A in PlayerAdapterName]: SubagentEffortOf<T, A>;
+};
+
+type ExpectedSubagentEffortMap = {
+  claude: ClaudeSubagentEffort | undefined;
+  codex: undefined;
+  gemini: undefined;
+  kimi: undefined;
+  opencode: undefined;
+};
+
+describe('tmux-play subagent-effort types (tmux-play-214)', () => {
+  it('keeps every config surface adapter-discriminated', () => {
+    expectTypeOf<{
+      captain: SubagentEffortMap<CaptainConfig>;
+      player: SubagentEffortMap<PlayerConfig>;
+      runtimeCaptain: SubagentEffortMap<RuntimeCaptainConfig>;
+      runtimePlayer: SubagentEffortMap<RuntimePlayerConfig>;
+    }>().toEqualTypeOf<{
+      captain: ExpectedSubagentEffortMap;
+      player: ExpectedSubagentEffortMap;
+      runtimeCaptain: ExpectedSubagentEffortMap;
+      runtimePlayer: ExpectedSubagentEffortMap;
+    }>();
+  });
+
+  it('accepts Claude roles and rejects ultracode and every other adapter', () => {
+    const captain = {
+      from: '@example/captain',
+      adapter: 'claude',
+      subagentModel: 'inherit',
+      subagentEffort: 'low',
+      options: {},
+    } satisfies CaptainConfig;
+    const runtimePlayer = {
+      id: 'reviewer',
+      adapter: 'claude',
+      subagentModel: 'claude-haiku-4-5',
+      subagentEffort: 'max',
+    } satisfies RuntimePlayerConfig;
+    const invalidEffort: PlayerConfig = {
+      id: 'reviewer',
+      adapter: 'claude',
+      subagentModel: 'inherit',
+      // @ts-expect-error - ultracode is never a subagent effort
+      subagentEffort: 'ultracode',
+    };
+    const invalidPlayer: PlayerConfig = {
+      id: 'reviewer',
+      adapter: 'codex',
+      // @ts-expect-error - a Codex player has no subagent effort
+      subagentEffort: 'low',
+    };
+    const invalidRuntimeCaptain: RuntimeCaptainConfig = {
+      adapter: 'gemini',
+      // @ts-expect-error - a Gemini runtime Captain has no subagent effort
+      subagentEffort: 'low',
+    };
+    void createPlayerCligent('claude', {
+      subagentModel: 'inherit',
+      subagentEffort: 'medium',
+    });
+    // @ts-expect-error - unsupported adapters expose no subagent effort
+    void createPlayerCligent('kimi', { subagentEffort: 'low' });
+
+    void [
+      captain,
+      runtimePlayer,
+      invalidEffort,
+      invalidPlayer,
+      invalidRuntimeCaptain,
     ];
   });
 });

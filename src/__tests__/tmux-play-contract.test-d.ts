@@ -64,6 +64,7 @@ describe('tmux-play public types', () => {
             effort: { kind: 'value', value: 'high' },
             fastMode: false,
             subagentModel: 'claude-haiku-4-5',
+            subagentEffort: 'low',
           },
         };
         await context.callCaptain('summarize', captainControl);

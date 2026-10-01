@@ -5,7 +5,10 @@ import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import type { RecordObserver } from './records.js';
 import type { Effort, EffortForAgent } from '../../effort.js';
 import type { FastModeForAgent } from '../../fast-mode.js';
-import type { SubagentModelForAgent } from '../../subagent-model.js';
+import type {
+  SubagentEffortForAgent,
+  SubagentModelForAgent,
+} from '../../subagent-model.js';
 import type { PermissionPolicy } from '../../types.js';
 
 export interface Captain {
@@ -63,7 +66,8 @@ export type TuningSelection<T extends string = string> =
  * Complete effective settings for one player or Captain invocation.
  * `model` and `effort` are required so a caller cannot accidentally combine
  * a current value with a configured value from another logical session.
- * Omitting `fastMode` or `subagentModel` selects the provider default.
+ * Omitting `fastMode` or `subagentModel` selects the provider default, and
+ * omitting `subagentEffort` leaves each subagent's effort to the agent.
  * Omitting `instruction` or `permissions` means no per-call instruction or
  * permission policy; configured values are not merged into this object.
  */
@@ -72,10 +76,17 @@ export interface AgentCallSettings {
   readonly effort: TuningSelection<Effort>;
   readonly fastMode?: boolean;
   /**
-   * The model every subagent of this call uses; only adapters that support
-   * a subagent model accept it (tmux-play-93).
+   * The model every subagent of this call uses — a model ID or alias, or
+   * `'inherit'` for the call's own model; only adapters that support a
+   * subagent model accept it (tmux-play-93).
    */
   readonly subagentModel?: string;
+  /**
+   * The effort every subagent of this call uses; it requires
+   * `subagentModel` and a value of the adapter's effort vocabulary other
+   * than its orchestration values (tmux-play-93).
+   */
+  readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
 }
@@ -242,6 +253,7 @@ type RuntimePlayerConfigByAdapter = {
     readonly effort?: EffortForAgent<A>;
     readonly fastMode?: FastModeForAgent<A>;
     readonly subagentModel?: SubagentModelForAgent<A>;
+    readonly subagentEffort?: SubagentEffortForAgent<A>;
   };
 };
 
@@ -261,6 +273,7 @@ type RuntimeCaptainConfigByAdapter = {
     readonly effort?: EffortForAgent<A>;
     readonly fastMode?: FastModeForAgent<A>;
     readonly subagentModel?: SubagentModelForAgent<A>;
+    readonly subagentEffort?: SubagentEffortForAgent<A>;
   };
 };
 

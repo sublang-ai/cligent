@@ -836,12 +836,16 @@ describe('TmuxPlayRuntime', () => {
     );
   });
 
-  // tmux-play-215: configured subagent models are complete runtime-held
-  // defaults; complete settings replace them, and omission selects the
-  // provider default without restoring the configured role value.
-  it('carries configured subagent models and replaces them only with complete settings', async () => {
+  // tmux-play-215: configured subagent models and efforts are complete
+  // runtime-held defaults; complete settings replace them, and omission
+  // selects the provider default without restoring the configured role value.
+  it('carries configured subagent models and efforts and replaces them only with complete settings', async () => {
     const records: TmuxPlayRecord[] = [];
-    const observed: Array<{ prompt: string; subagentModel: unknown }> = [];
+    const observed: Array<{
+      prompt: string;
+      subagentModel: unknown;
+      subagentEffort: unknown;
+    }> = [];
     let codexRuns = 0;
     const providerDefaults = {
       model: { kind: 'provider-default' as const },
@@ -855,6 +859,13 @@ describe('TmuxPlayRuntime', () => {
             settings: {
               ...providerDefaults,
               subagentModel: 'claude-haiku-4-5',
+            },
+          });
+          await context.callPlayer('dev.claude', 'replaced with effort', {
+            settings: {
+              ...providerDefaults,
+              subagentModel: 'inherit',
+              subagentEffort: 'max',
             },
           });
           await context.callPlayer('dev.claude', 'provider default', {
@@ -880,14 +891,44 @@ describe('TmuxPlayRuntime', () => {
             }),
             'subagentModel is not supported for adapter "codex"',
           );
+          const effortRejections: Array<[Record<string, unknown>, string]> = [
+            [{ subagentEffort: 'low' }, 'requires subagentModel'],
+            [
+              { subagentModel: 'inherit', subagentEffort: 'ultracode' },
+              'must be one of: minimal, low, medium, high, xhigh, max',
+            ],
+            [
+              { subagentModel: 'inherit', subagentEffort: 42 },
+              'subagentEffort must be a string',
+            ],
+          ];
+          for (const [fields, message] of effortRejections) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('dev.claude', 'malformed effort', {
+                settings: { ...providerDefaults, ...fields } as never,
+              }),
+              message,
+            );
+          }
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('dev.codex', 'unsupported effort', {
+              settings: { ...providerDefaults, subagentEffort: 'low' },
+            }),
+            'subagentEffort is not supported for adapter "codex"',
+          );
         },
       },
-      captainConfig: { adapter: 'claude', subagentModel: 'captain-subagent' },
+      captainConfig: {
+        adapter: 'claude',
+        subagentModel: 'captain-subagent',
+        subagentEffort: 'high',
+      },
       players: [
         {
           id: 'dev.claude',
           adapter: 'claude',
           subagentModel: 'player-subagent',
+          subagentEffort: 'low',
         },
         { id: 'dev.codex', adapter: 'codex' },
       ],
@@ -896,7 +937,11 @@ describe('TmuxPlayRuntime', () => {
         claude: {
           agent: 'claude-code',
           async *run(prompt, options) {
-            observed.push({ prompt, subagentModel: options?.subagentModel });
+            observed.push({
+              prompt,
+              subagentModel: options?.subagentModel,
+              subagentEffort: options?.subagentEffort,
+            });
             yield doneEvent('claude-code', 'done');
           },
         },
@@ -912,13 +957,19 @@ describe('TmuxPlayRuntime', () => {
 
     await runtime.runBossTurn('go');
 
+    const call = (
+      prompt: string,
+      subagentModel?: string,
+      subagentEffort?: string,
+    ) => ({ prompt, subagentModel, subagentEffort });
     expect(observed).toEqual([
-      { prompt: 'configured', subagentModel: 'player-subagent' },
-      { prompt: 'replaced', subagentModel: 'claude-haiku-4-5' },
-      { prompt: 'provider default', subagentModel: undefined },
-      { prompt: 'configured again', subagentModel: 'player-subagent' },
-      { prompt: 'captain configured', subagentModel: 'captain-subagent' },
-      { prompt: 'captain provider default', subagentModel: undefined },
+      call('configured', 'player-subagent', 'low'),
+      call('replaced', 'claude-haiku-4-5'),
+      call('replaced with effort', 'inherit', 'max'),
+      call('provider default'),
+      call('configured again', 'player-subagent', 'low'),
+      call('captain configured', 'captain-subagent', 'high'),
+      call('captain provider default'),
     ]);
     expect(codexRuns).toBe(0);
     expect(
@@ -928,6 +979,7 @@ describe('TmuxPlayRuntime', () => {
     ).toEqual([
       'configured',
       'replaced',
+      'replaced with effort',
       'provider default',
       'configured again',
     ]);

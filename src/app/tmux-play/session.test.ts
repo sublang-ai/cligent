@@ -221,11 +221,13 @@ describe('TmuxPlaySession', () => {
   });
 
   // tmux-play-213: the session seam carries each Claude role's subagent model
-  // from the snapshot into the runtime configuration.
-  it('passes Captain and player subagent models to the runtime', async () => {
+  // and effort from the snapshot into the runtime configuration.
+  it('passes Captain and player subagent models and efforts to the runtime', async () => {
     tempDir = makeWorkDir({
       captainSubagentModel: 'claude-haiku-4-5',
-      claudePlayerSubagentModel: 'claude-sonnet-5-5',
+      captainSubagentEffort: 'low',
+      claudePlayerSubagentModel: 'inherit',
+      claudePlayerSubagentEffort: 'max',
     });
     const readline = new FakeReadline();
     const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
@@ -254,12 +256,14 @@ describe('TmuxPlaySession', () => {
         captainConfig: expect.objectContaining({
           adapter: 'claude',
           subagentModel: 'claude-haiku-4-5',
+          subagentEffort: 'low',
         }),
         players: [
           expect.objectContaining({
             id: 'coder',
             adapter: 'claude',
-            subagentModel: 'claude-sonnet-5-5',
+            subagentModel: 'inherit',
+            subagentEffort: 'max',
           }),
         ],
       }),
@@ -2028,7 +2032,9 @@ function makeWorkDir(
     captainFastMode?: boolean;
     playerFastMode?: boolean;
     captainSubagentModel?: string;
+    captainSubagentEffort?: string;
     claudePlayerSubagentModel?: string;
+    claudePlayerSubagentEffort?: string;
   } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
@@ -2046,6 +2052,9 @@ function makeWorkDir(
       ...(overrides.captainSubagentModel === undefined
         ? {}
         : { subagentModel: overrides.captainSubagentModel }),
+      ...(overrides.captainSubagentEffort === undefined
+        ? {}
+        : { subagentEffort: overrides.captainSubagentEffort }),
       options: { tone: 'direct' },
     },
     players: emptyPlayers
@@ -2056,6 +2065,9 @@ function makeWorkDir(
               id: 'coder',
               adapter: 'claude',
               subagentModel: overrides.claudePlayerSubagentModel,
+              ...(overrides.claudePlayerSubagentEffort === undefined
+                ? {}
+                : { subagentEffort: overrides.claudePlayerSubagentEffort }),
             },
           ]
         : [
