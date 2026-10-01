@@ -6,7 +6,8 @@
 ## Status
 
 Accepted (2026-10-01).
-Amends [DR-028](028-subagent-model.md): `subagentModel` gains the literal `inherit`, a companion `subagentEffort` joins it, the directive's first sentence follows both, and the adapter registers subagent definitions; the composition rule, the environment pair and every other decision of DR-028 stand.
+Amends [DR-028](028-subagent-model.md): `subagentModel` gains the literal `inherit`, whose environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone with the caller's `CLAUDE_CODE_SUBAGENT_MODEL` removed; a companion `subagentEffort` joins it; the adapter registers subagent definitions; and the directive's first sentence follows both settings while its remaining sentences no longer name the model.
+The composition rule of DR-028 stands unchanged.
 
 ## Context
 
