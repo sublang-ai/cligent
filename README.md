@@ -130,7 +130,8 @@ the options; see the
 Local media can be attached per call with `attachments: [{ path: 'screen.png' }]`.
 Claude, Codex, Kimi, and OpenCode use native media inputs with adapter-specific
 formats; Gemini already accepts native `@file` references in the text prompt.
-Configured browser and computer tools are invoked through ordinary prompts.
+Where the adapter exposes configured browser and computer tools, ordinary
+prompts invoke them. Claude currently excludes inherited MCP tools.
 See the [media and computer-use guide](docs/media-and-computer-use.md) for the
 capability matrix, examples, and native tool setup.
 

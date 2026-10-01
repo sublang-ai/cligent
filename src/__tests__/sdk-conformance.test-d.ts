@@ -163,6 +163,7 @@ type CurrentClaudeSettings = Exclude<
 >;
 const currentClaudeUltracodeSettings: CurrentClaudeSettings = {
   ultracode: true,
+  disableClaudeAiConnectors: true,
 };
 const unsupportedClaudeOptionKeys: Record<
   Exclude<keyof MappedClaudeOptions, keyof CurrentClaudeOptions>,

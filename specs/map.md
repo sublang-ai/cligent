@@ -35,7 +35,7 @@ meta.md       The spec of specs
 | [DR-007](decisions/007-tmux-play-dynamic-player-visibility.md) | 007-tmux-play-dynamic-player-visibility.md | tmux-play dynamic player visibility |
 | [DR-008](decisions/008-captain-pre-close-lifecycle.md) | 008-captain-pre-close-lifecycle.md | Captain pre-close lifecycle |
 | [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies |
-| [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls |
+| [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls; Claude MCP confinement amended by DR-030 |
 | [DR-011](decisions/011-kimi-code-acp-integration.md) | 011-kimi-code-acp-integration.md | Kimi Code ACP integration |
 | [DR-012](decisions/012-runtime-derived-tmux-play-defaults.md) | 012-runtime-derived-tmux-play-defaults.md | Runtime-derived tmux-play defaults |
 | [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Agent-runtime compatibility ownership; native executables amended by DR-025; floor definition amended by DR-027 |
@@ -55,7 +55,8 @@ meta.md       The spec of specs
 | [DR-027](decisions/027-latest-models-oldest-serving-runtime.md) | 027-latest-models-oldest-serving-runtime.md | Latest models in every default and example; floors at the oldest release serving the latest models |
 | [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt; `inherit` and its environment, subagent effort, definitions and the directive's wording amended by DR-029 |
 | [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar; amends DR-028 |
-| [DR-030](decisions/030-media-input-and-computer-use.md) | 030-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
+| [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
+| [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 
 ## Packages
 

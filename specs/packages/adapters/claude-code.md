@@ -185,7 +185,7 @@ When `run(prompt, options)` invokes the SDK query, the adapter shall select its 
 - Each PDF block has `type: 'document'` and a base64 source carrying `media_type: 'application/pdf'` and the file's bytes.
 - The adapter reads attachment bytes before invoking the SDK query so a read failure never becomes an SDK generator-abort error.
 
-### claude-code-71
+### claude-code-73
 
 When attachment preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
 
@@ -207,13 +207,25 @@ When the adapter maps `AgentOptions.abortSignal`, it shall control SDK cancellat
 
 ### claude-code-9
 
-When the adapter maps `AgentOptions.allowedTools` under the portable tool restriction in [[engine-17](../engine.md#engine-17)], it shall preserve the raw list and apply the provider controls in this matrix, which isolates only the ambient sources those controls cover and makes no claim about other provider context:
+When the adapter maps `AgentOptions.allowedTools` under the portable tool restriction in [[engine-17](../engine.md#engine-17)], it shall preserve the raw list and apply the provider controls in this matrix, which isolates only the ambient settings source its empty row covers and makes no claim about other provider context, MCP confinement being the same for every row [[claude-code-70](#claude-code-70)]:
 
 | `allowedTools` input | SDK controls |
 | --- | --- |
-| omitted | leave `tools`, `allowedTools`, `settingSources`, and `strictMcpConfig` `undefined`, preserving native tool, MCP, and settings behavior |
-| empty | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
-| non-empty | copy the list to `tools`, pass it to `allowedTools`, set `strictMcpConfig: true`, and leave `settingSources` `undefined` |
+| omitted | leave `tools`, `allowedTools`, and `settingSources` `undefined`, preserving native tool and settings behavior |
+| empty | `tools: []`, `allowedTools: []`, and `settingSources: []` |
+| non-empty | copy the list to `tools`, pass it to `allowedTools`, and leave `settingSources` `undefined` |
+
+### claude-code-70
+
+When the adapter maps a run to SDK query options, it shall confine the run's MCP servers to those the query itself passes — none, since `AgentOptions` names no server — whatever its `allowedTools`, `effort`, or `fastMode`, per [DR-030](../../decisions/030-players-see-only-their-own-mcp-servers.md) and [[7]]:
+
+| SDK control | Value | Ambient source it removes |
+| --- | --- | --- |
+| `strictMcpConfig` | `true` | project `.mcp.json`, user-settings MCP servers, plugins, and on-disk agent frontmatter |
+| `settings.disableClaudeAiConnectors` | `true`, in the same settings object as the effort and fast-mode keys | the account's auto-fetched claude.ai connectors, with the reminder that they need authorizing |
+| `mcpServers` | omitted | — |
+
+- `settingSources` is untouched, so filesystem settings and `CLAUDE.md` still load as [[claude-code-9](#claude-code-9)] maps them.
 
 ### claude-code-22
 
@@ -603,9 +615,13 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 | Tool-list input | Observable SDK options |
 | --- | --- |
 | neither list supplied | allowlist controls and `disallowedTools` are `undefined` |
-| explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
-| non-empty `allowedTools` | raw list in `tools` and `allowedTools`, `strictMcpConfig: true`, and `settingSources: undefined` |
+| explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, and `settingSources: []` |
+| non-empty `allowedTools` | raw list in `tools` and `allowedTools`, and `settingSources: undefined` |
 | `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence |
+
+### claude-code-71
+
+Given `allowedTools` omitted, empty, and non-empty, each crossed with effort omitted and `ultracode` and with `fastMode` omitted and `true`, when the adapter reaches the SDK query boundary, the verification shall assert `strictMcpConfig: true`, no `mcpServers` key, and `settings.disableClaudeAiConnectors: true` beside the effort and fast-mode keys in one settings object, with `settingSources` as the allowlist alone selects it [[claude-code-70](#claude-code-70)].
 
 ### claude-code-240
 
@@ -665,9 +681,9 @@ Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` o
 - every subagent frame naming a Sonnet model, the model [[claude-code-60](#claude-code-60)]'s environment binds;
 - the observed types, levels, and listed tools written to stderr.
 
-### claude-code-70
+### claude-code-72
 
-Given temporary image and PDF files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture, verification shall assert [[claude-code-46](#claude-code-46)]'s content, byte encoding, order, unchanged text-only transport, resumed transport, and refusal before SDK invocation, and [[claude-code-71](#claude-code-71)]'s interrupted terminal before attachment submission.
+Given temporary image and PDF files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture, verification shall assert [[claude-code-46](#claude-code-46)]'s content, byte encoding, order, unchanged text-only transport, resumed transport, and refusal before SDK invocation, and [[claude-code-73](#claude-code-73)]'s interrupted terminal before attachment submission.
 
 ## References
 

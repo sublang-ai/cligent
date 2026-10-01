@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
 
-# DR-030: Media Input and Computer Use
+# DR-031: Media Input and Computer Use
 
 ## Status
 
@@ -16,6 +16,7 @@ These transports have different supported media, so a common-denominator feature
 
 Computer use requires a configured tool and the applicable runtime and operating-system permissions.
 Configured MCP tools can be invoked with ordinary prompts in Claude [[7]], Codex [[8]], and OpenCode [[9]]; Gemini exposes a separately enabled browser agent [[10]], and Kimi supports tool-providing plugins [[11]].
+Cligent confines every Claude run to explicitly supplied MCP servers and currently exposes no server option, so native Claude MCP setup alone cannot enable those tools through Cligent, per [DR-030](030-players-see-only-their-own-mcp-servers.md).
 An API computer-use tool and a desktop application's computer-use integration do not establish availability in that vendor's headless coding SDK.
 
 ## Decision
@@ -27,7 +28,8 @@ An API computer-use tool and a desktop application's computer-use integration do
 - Gemini keeps native `@file` prompt syntax rather than introducing a second quoting, path-resolution, or file-reading implementation; its structured attachment option explicitly directs callers to that syntax.
 - Leave model eligibility, size limits, decoding, and provider refusals to each runtime; transport support metadata makes no model guarantee.
 - Attachments are turn-local and never become instance defaults or implicit resumed-turn input.
-- Keep computer-use invocation as a normal prompt to an already configured native or MCP tool, and document setup and configuration-isolation limits instead of inventing a universal enablement flag.
+- Keep computer-use invocation as a normal prompt where the adapter admits an already configured native or MCP tool, and document setup and configuration-isolation limits instead of inventing a universal enablement flag.
+- Preserve Claude MCP confinement; admitting explicit per-run servers remains a separate engine-level decision under [DR-030](030-players-see-only-their-own-mcp-servers.md).
 - Do not download remote URLs, introduce media conversion or a computer-control execution loop, change tool restrictions, or broaden permissions.
 
 ## Consequences

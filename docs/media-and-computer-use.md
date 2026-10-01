@@ -4,8 +4,8 @@
 # Media and computer use
 
 Cligent accepts local files on individual calls to supported adapters. Computer
-use is requested in the text prompt after configuring a browser or desktop tool
-in the underlying agent runtime.
+use is requested in the text prompt where the selected adapter exposes a
+configured browser or desktop tool. Setup is separate from invocation.
 
 ## Attach local files
 
@@ -87,14 +87,19 @@ structured attachment list is an SDK feature.
 
 ## Invoke computer use
 
-Once the underlying runtime exposes a browser/desktop tool, call it through a
-normal prompt and consume the existing tool and text events the adapter emits.
+Once the underlying runtime and adapter expose a browser/desktop tool, call it
+through a normal prompt and consume the existing tool and text events the
+adapter emits.
 `tool_result` availability follows that adapter's existing event mapping.
 No Cligent `computerUse` flag or separate control loop is required.
 
 ```ts
-// Configure the tool in this adapter's native runtime first.
-for await (const event of agent.run(
+import { Cligent } from '@sublang/cligent';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
+
+// Configure Codex MCP first; omit permissions to retain native configuration.
+const browserAgent = new Cligent(new CodexAdapter());
+for await (const event of browserAgent.run(
   'Use the configured browser tool to open http://localhost:3000 and report the page title.',
 )) {
   if (event.type === 'tool_use') console.log(event.payload.toolName);
@@ -104,22 +109,80 @@ for await (const event of agent.run(
 
 | Adapter | Native setup and scope |
 | --- | --- |
-| Claude Code | Configure a browser/desktop MCP server through [Claude MCP settings](https://code.claude.com/docs/en/mcp). Ambient MCP configuration is preserved with omitted tool lists. An explicit `allowedTools` list enables strict MCP isolation in Cligent and can remove those tools. |
+| Claude Code | The native runtime supports [MCP tools](https://code.claude.com/docs/en/mcp), but Cligent confines every run to explicitly supplied MCP servers and currently exposes no server option. It also disables account connectors. Native MCP/plugin setup alone therefore does **not** enable those tools through Cligent. |
 | Codex | Configure a browser/desktop MCP server through [Codex MCP configuration](https://developers.openai.com/codex/mcp/). Cligent preserves native config when `permissions` is omitted; supplying a policy invokes its existing configuration isolation, so user-configured MCP tools are not assured. |
 | Gemini | Enable the native [browser agent](https://geminicli.com/docs/core/subagents/#browser-agent) in Gemini settings or configure an MCP tool. The built-in agent controls a browser, not a general desktop. |
 | Kimi | Install and authorize the native [Computer Use plugin](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins), or configure an MCP tool. ACP's empty client-supplied MCP list preserves native MCP configuration. |
 | OpenCode | Configure a browser/desktop [MCP server](https://opencode.ai/docs/mcp-servers/) or custom tool on the server that executes the session. This may be a different machine in external mode. |
 
+A fresh install does not provide ready-to-use computer control.
+Cligent does not currently install tools or diagnose their readiness.
+
+### First browser setup with Codex or OpenCode
+
+For a browser-only starting point, [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)
+works with both runtimes. Install Node.js 18+ with npm/npx and Google Chrome on
+the machine running the tools, and complete the agent's normal authentication.
+The following opt-in recipe can download the MCP package on first use; pin a
+tested version instead of `latest` for a reproducible deployment.
+
+For Codex, register the tool in its native configuration:
+
+```sh
+codex mcp add playwright -- npx -y @playwright/mcp@latest --browser chrome --headless --isolated
+codex mcp list
+```
+
+For OpenCode, merge this entry into `mcp` in the project's `opencode.json` or its
+native global configuration, preserving existing entries:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx", "-y", "@playwright/mcp@latest",
+        "--browser", "chrome", "--headless", "--isolated"
+      ],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Run `opencode mcp list` to inspect the native registration. For an external
+OpenCode server, configure its host and working directory and restart the
+server as needed. The longer startup timeout allows for a first-run package
+download. These commands register a browser tool; a status listing
+alone does not verify that Chrome can launch. Use the Cligent prompt example
+above (with a running local page) to check navigation and the returned title.
+For OpenCode, construct the agent with `new OpenCodeAdapter()` instead.
+
+`--isolated` uses a temporary browser profile without personal login sessions;
+`--headless` runs without a visible browser window. Neither option grants
+permissions or controls other desktop applications. Codex CLI does not inherit
+the desktop app's [built-in browser](https://learn.chatgpt.com/docs/browser).
+
+### Native Gemini and Kimi tools
+
 For Gemini, enable `agents.overrides.browser_agent.enabled` in its settings;
 `agents.browser.sessionMode: "isolated"` selects an isolated browser session.
 Then ask `Use browser_agent to open http://localhost:3000 and report the title`.
-Chrome requirements and any native confirmation behavior still apply.
+Chrome 144+ is required. Native `fill` and `fill_form` actions require
+confirmation even in permissive approval modes, so unattended form completion
+is not assured.
 
 For Kimi, run the native CLI and use `/plugins` → Official → Kimi Computer Use.
 Reload or start a new session after installing. Follow its OS-access setup; on
 macOS that includes Accessibility and Screen Recording permissions and enabling
 Kimi Code under “Connect local agents.” Restart Kimi Code as instructed before
-invoking the configured tool through Cligent.
+invoking the configured tool through Cligent. Browser-only use can instead
+install the Kimi Browser Extension plugin and its Chrome/Edge extension.
+Cligent rejects ACP permission requests, so actions requiring confirmation can
+stop even when a plugin is installed.
 
 These routes invoke tools already available to the selected runtime. They do
 not install a browser, provide OS access, or import desktop-app integrations

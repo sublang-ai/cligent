@@ -146,7 +146,7 @@ process.stdin.on('end', () => {
 }
 
 describe('native attachment SDK transports', () => {
-  it('sends Claude images and PDF bytes through the installed SDK and resumes without resending attachments (claude-code-70)', async () => {
+  it('sends Claude images and PDF bytes through the installed SDK and resumes without resending attachments (claude-code-72)', async () => {
     const { root, png, pdf } = await fixtureFiles();
     const { adapter, recording, calls } = await claudeFixture(root);
     const client = new Cligent(adapter, { cwd: root });

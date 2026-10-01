@@ -60,6 +60,7 @@ type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 interface ClaudeSettings {
   ultracode?: boolean;
   fastMode?: boolean;
+  disableClaudeAiConnectors?: boolean;
   [key: string]: unknown;
 }
 
@@ -1141,15 +1142,15 @@ export function mapAgentOptionsToClaudeQueryOptions(
   );
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
-  const settings =
-    effortOptions.settings === undefined && options?.fastMode === undefined
-      ? undefined
-      : {
-          ...effortOptions.settings,
-          ...(options?.fastMode !== undefined
-            ? { fastMode: options.fastMode }
-            : {}),
-        };
+  // claude-code-70: a run's MCP surface is the servers the query passes —
+  // none — never the account's auto-fetched claude.ai connectors, whose
+  // "connectors need authorizing" reminder otherwise reaches the transcript.
+  // `strictMcpConfig` below removes the other ambient MCP sources.
+  const settings: ClaudeSettings = {
+    disableClaudeAiConnectors: true,
+    ...effortOptions.settings,
+    ...(options?.fastMode !== undefined ? { fastMode: options.fastMode } : {}),
+  };
 
   let cleanupAbort = () => {};
   let abortController: AbortController | undefined;
@@ -1198,7 +1199,6 @@ export function mapAgentOptionsToClaudeQueryOptions(
   }
   const systemPrompt = composeClaudeSystemPrompt(systemPromptParts);
 
-  const explicitAllowlist = options?.allowedTools !== undefined;
   const toolFreeIsolation = options?.allowedTools?.length === 0;
 
   return {
@@ -1215,7 +1215,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       allowedTools: options?.allowedTools,
       disallowedTools: options?.disallowedTools,
       settingSources: toolFreeIsolation ? [] : undefined,
-      strictMcpConfig: explicitAllowlist ? true : undefined,
+      strictMcpConfig: true,
       permissionMode: permissionOptions.permissionMode,
       allowDangerouslySkipPermissions:
         permissionOptions.allowDangerouslySkipPermissions,
@@ -1223,7 +1223,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       abortController,
       env,
       ...effortOptions,
-      ...(settings !== undefined ? { settings } : {}),
+      settings,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(agents !== undefined ? { agents } : {}),
     },

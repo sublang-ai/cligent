@@ -5,7 +5,7 @@
 
 ## Intent
 
-This package defines local-file attachments and their transport discovery and preparation, per [DR-030](../decisions/030-media-input-and-computer-use.md).
+This package defines local-file attachments and their transport discovery and preparation, per [DR-031](../decisions/031-media-input-and-computer-use.md).
 Its project-specific vocabulary is the public `Attachment`, `AttachmentSupport`, `ATTACHMENT_SUPPORT`, and `getAttachmentSupport` API.
 It owns input validation and local-file identity, leaving native request serialization and selected-model eligibility to each adapter.
 
