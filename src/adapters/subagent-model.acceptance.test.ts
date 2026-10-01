@@ -24,8 +24,9 @@
 // claude-code-68 and claude-code-69 reuse this harness for the registered
 // subagent definitions of DR-029: which subagent type the main agent's Agent
 // call names, and — through a PreToolUse hook the harness adds to the tapped
-// query — the effort each subagent runs at when a pinned effort replaces the
-// built-in general-purpose by name and leaves Explore and Plan their own.
+// query — the effort each subagent runs at where general-purpose is replaced
+// by name, at the pinned effort or at medium where the agent chooses, and
+// Explore and Plan keep their own.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -103,7 +104,10 @@ interface ProbeSettings {
   readonly observeHooks?: boolean;
 }
 
-const DELEGATE_CHOICES = /^delegate-(?:low|medium|high|xhigh|max)$/;
+// Where the agent chooses: a delegate-<effort>, or the replacing
+// general-purpose a call naming no type lands on.
+const CHOSEN_TYPES =
+  /^(?:delegate-(?:low|medium|high|xhigh|max)|general-purpose)$/;
 
 const ONE_NEUTRAL_SUBAGENT = (wordFile: string): string =>
   [
@@ -203,6 +207,7 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
     readonly name: string;
     readonly subagentModel: string;
     readonly subagentEffort?: ClaudeSubagentEffort;
+    readonly effort?: ClaudeEffort;
     readonly type: RegExp;
     readonly frameModel: RegExp;
     readonly effortNamedByType?: boolean;
@@ -221,15 +226,20 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
       builtInsOnlyByName: true,
     },
     {
+      // With the effort left to the agent `general-purpose` is replaced at
+      // medium, so a call naming no type lands there, never on the built-in.
       name: 'a pinned model leaves the effort to a delegate-<effort> choice',
       subagentModel: SUBAGENT_MODEL,
-      type: DELEGATE_CHOICES,
+      type: CHOSEN_TYPES,
       frameModel: /haiku/i,
     },
     {
+      // The main agent runs at high, so a subagent at high could only be a
+      // chosen delegate-high, never one inheriting the agent's effort.
       name: "inherit keeps subagents on the agent's own model",
       subagentModel: 'inherit',
-      type: DELEGATE_CHOICES,
+      effort: 'high',
+      type: CHOSEN_TYPES,
       frameModel: /sonnet/i,
       // Sonnet reports the effort it runs at; Haiku reports none.
       effortNamedByType: true,
@@ -246,6 +256,7 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
           ...(testCase.subagentEffort !== undefined
             ? { subagentEffort: testCase.subagentEffort }
             : {}),
+          ...(testCase.effort !== undefined ? { effort: testCase.effort } : {}),
           prompt: ONE_NEUTRAL_SUBAGENT,
           observeHooks: true,
         });
@@ -273,7 +284,20 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
         for (const call of ran) {
           expect(call.agentType).toMatch(testCase.type);
           if (testCase.effortNamedByType) {
-            expect(call.effort).toBe(call.agentType?.replace('delegate-', ''));
+            // A delegate runs at the effort its type names; the replacing
+            // general-purpose at medium.
+            expect(call.effort).toBe(
+              call.agentType === 'general-purpose'
+                ? 'medium'
+                : call.agentType?.replace('delegate-', ''),
+            );
+            if (testCase.effort !== undefined) {
+              expect(
+                call.effort !== testCase.effort ||
+                  call.agentType === `delegate-${testCase.effort}`,
+                `${call.agentType} inherited the agent's ${testCase.effort}`,
+              ).toBe(true);
+            }
           }
           if (
             testCase.builtInsOnlyByName &&
@@ -284,8 +308,8 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
             );
           }
         }
-        if (testCase.builtInsOnlyByName && named.includes(null)) {
-          // A call naming no type lands on the pinned general-purpose.
+        if (named.includes(null)) {
+          // A call naming no type lands on the replacing general-purpose.
           expect(ran.map((call) => call.agentType)).toContain(
             'general-purpose',
           );
