@@ -27,12 +27,14 @@ A new option `subagentEffort`, a value of the adapter's effort vocabulary other 
 When the Claude adapter prepares a query with `subagentModel`:
 
 - the environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, and `CLAUDE_CODE_SUBAGENT_MODEL=<model>` where a model is named;
-- the query registers subagent definitions on that model (`inherit` for the agent's own): with `subagentEffort` pinned, one definition named `delegate` at that effort; otherwise one definition per effort the vocabulary admits, named `delegate-<effort>`, so the agent's choice of effort is a choice of definition the Agent tool enforces;
+- the query registers subagent definitions on that model (`inherit` for the agent's own): with `subagentEffort` pinned, one definition named `delegate` at that effort; otherwise one definition per distinct effort the vocabulary maps to, named `delegate-<effort>` — `minimal` and `low` share `delegate-low`, the effort the runtime runs — so the agent's choice of effort is a choice of definition the Agent tool enforces;
 - each definition's description names its model — "your model" for `inherit` — and its effort, and its prompt is one short delegate prompt: complete exactly the task given within its bounds, with the tools available, and report precisely what was done and verified and what could not be;
 - the directive's first sentence follows the two settings with one grammar — "Your subagents run on your own model" or "Your subagents run on <model>", then "; give each one the effort its task warrants." or " at <effort> effort." — and its remaining sentences are those of [DR-028](028-subagent-model.md), with "a subagent can implement well" in place of the model's name, so the four combinations differ in that first sentence alone;
-- the directive names no definition and no effort level: the definitions explain themselves in the tool, and effort vocabularies differ between model lines.
+- the directive names no definition and explains no effort level — the pinned sentence names the pinned effort and nothing more — because the definitions explain themselves in the tool, and effort vocabularies differ between model lines.
 
-Where the runtime lets a registered definition override a built-in one by name, a pinned `subagentEffort` also overrides `general-purpose`, `Explore` and `Plan` at that effort, so a built-in the agent still reaches runs at the pinned effort; the verification records which of the two the installed runtime does.
+The runtime lets a registered definition replace a built-in one by name, whole — prompt, description and tool restrictions included — and runs a call that names no type as `general-purpose`.
+So a pinned `subagentEffort` also registers `general-purpose` at that effort, with a description of the same kind and the delegate prompt, since the built-in's own definition is the generic one and a call naming no type must land on the pin; `Explore` and `Plan` are not replaced, because an override would cost them their read-only tool restrictions and their own prompts, so they keep their definitions and run at the agent's effort, which the documentation states.
+With `subagentEffort` omitted, no built-in is replaced.
 
 tmux-play admits `subagentEffort` beside `subagentModel` on Claude Captain and player configurations and in complete call settings, with the same omission semantics.
 
@@ -44,7 +46,9 @@ Canonical behavior is specified by [[engine-90](../packages/engine.md#engine-90)
 
 The option, the literal, the definitions and the directive's first sentence are additive; omission preserves existing behavior, so this ships in a MINOR release.
 A host that defaults a Claude agent's subagent model to `inherit` gives every such agent the directive and the definitions; that default is the host's decision, not this adapter's, which still composes nothing when the option is omitted.
-A registered definition replaces the subagent's system prompt with the delegate prompt, so the built-in `general-purpose` keeps its own; the agent may still reach it, at the agent's effort unless the runtime lets a pinned effort override it by name.
+A registered definition carries the delegate prompt as the subagent's system prompt.
+With the effort pinned, `general-purpose` runs that prompt at the pinned effort in place of its own; `Explore` and `Plan` keep their own definitions and the agent's effort, the one place a pinned effort does not reach.
+With the effort left to the agent, every built-in keeps its own definition and the agent's effort, and the agent reaches the pin only through a `delegate-<effort>` type.
 
 ## References
 
