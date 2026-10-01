@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every Claude run confines its MCP servers to those the query passes — none,
+  as `AgentOptions` names no server: `strictMcpConfig: true` on every run, not
+  only under an explicit `allowedTools`, and `disableClaudeAiConnectors: true`
+  in the query's settings, so the account's auto-fetched claude.ai connectors
+  are neither fetched nor connected and their "connectors need authorizing"
+  reminder no longer reaches a player's transcript or a Captain's reply (#61).
+  `settingSources` is unchanged, so filesystem settings and `CLAUDE.md` still
+  load for a tool-using run, and the run's settings object now always exists.
+
 ## [0.30.0] - 2026-10-01
 
 ### Added

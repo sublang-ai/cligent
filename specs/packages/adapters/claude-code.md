@@ -194,13 +194,25 @@ When the adapter maps `AgentOptions.abortSignal`, it shall control SDK cancellat
 
 ### claude-code-9
 
-When the adapter maps `AgentOptions.allowedTools` under the portable tool restriction in [[engine-17](../engine.md#engine-17)], it shall preserve the raw list and apply the provider controls in this matrix, which isolates only the ambient sources those controls cover and makes no claim about other provider context:
+When the adapter maps `AgentOptions.allowedTools` under the portable tool restriction in [[engine-17](../engine.md#engine-17)], it shall preserve the raw list and apply the provider controls in this matrix, which isolates only the ambient settings source its empty row covers and makes no claim about other provider context, MCP confinement being the same for every row [[claude-code-70](#claude-code-70)]:
 
 | `allowedTools` input | SDK controls |
 | --- | --- |
-| omitted | leave `tools`, `allowedTools`, `settingSources`, and `strictMcpConfig` `undefined`, preserving native tool, MCP, and settings behavior |
-| empty | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
-| non-empty | copy the list to `tools`, pass it to `allowedTools`, set `strictMcpConfig: true`, and leave `settingSources` `undefined` |
+| omitted | leave `tools`, `allowedTools`, and `settingSources` `undefined`, preserving native tool and settings behavior |
+| empty | `tools: []`, `allowedTools: []`, and `settingSources: []` |
+| non-empty | copy the list to `tools`, pass it to `allowedTools`, and leave `settingSources` `undefined` |
+
+### claude-code-70
+
+When the adapter maps a run to SDK query options, it shall confine the run's MCP servers to those the query itself passes — none, since `AgentOptions` names no server — whatever its `allowedTools`, `effort`, or `fastMode`, per [DR-030](../../decisions/030-players-see-only-their-own-mcp-servers.md) and [[7]]:
+
+| SDK control | Value | Ambient source it removes |
+| --- | --- | --- |
+| `strictMcpConfig` | `true` | project `.mcp.json`, user-settings MCP servers, plugins, and on-disk agent frontmatter |
+| `settings.disableClaudeAiConnectors` | `true`, in the same settings object as the effort and fast-mode keys | the account's auto-fetched claude.ai connectors, with the reminder that they need authorizing |
+| `mcpServers` | omitted | — |
+
+- `settingSources` is untouched, so filesystem settings and `CLAUDE.md` still load as [[claude-code-9](#claude-code-9)] maps them.
 
 ### claude-code-22
 
@@ -590,9 +602,13 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 | Tool-list input | Observable SDK options |
 | --- | --- |
 | neither list supplied | allowlist controls and `disallowedTools` are `undefined` |
-| explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, `settingSources: []`, and `strictMcpConfig: true` |
-| non-empty `allowedTools` | raw list in `tools` and `allowedTools`, `strictMcpConfig: true`, and `settingSources: undefined` |
+| explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, and `settingSources: []` |
+| non-empty `allowedTools` | raw list in `tools` and `allowedTools`, and `settingSources: undefined` |
 | `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence |
+
+### claude-code-71
+
+Given `allowedTools` omitted, empty, and non-empty, each crossed with effort omitted and `ultracode` and with `fastMode` omitted and `true`, when the adapter reaches the SDK query boundary, the verification shall assert `strictMcpConfig: true`, no `mcpServers` key, and `settings.disableClaudeAiConnectors: true` beside the effort and fast-mode keys in one settings object, with `settingSources` as the allowlist alone selects it [[claude-code-70](#claude-code-70)].
 
 ### claude-code-240
 

@@ -6,6 +6,7 @@
 ## Status
 
 Accepted
+Amended by [DR-030](030-players-see-only-their-own-mcp-servers.md): Claude Code's `strictMcpConfig: true` applies to every run, not only an explicit allowlist, and the account's claude.ai connectors are gated beside it; the allowlist mapping of `tools`, `allowedTools`, and `settingSources` stands.
 
 ## Context
 

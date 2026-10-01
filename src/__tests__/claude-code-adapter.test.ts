@@ -66,7 +66,9 @@ interface MockSdkInnerOptions {
     ultracode?: boolean;
     fastMode?: boolean;
     fastModePerSessionOptIn?: boolean;
+    disableClaudeAiConnectors?: boolean;
   };
+  mcpServers?: Record<string, unknown>;
   agents?: Record<
     string,
     { description: string; prompt: string; model?: string; effort?: string }
@@ -899,7 +901,64 @@ describe('ClaudeCodeAdapter', () => {
     expect(native.tools).toBeUndefined();
     expect(native.allowedTools).toBeUndefined();
     expect(native.settingSources).toBeUndefined();
-    expect(native.strictMcpConfig).toBeUndefined();
+    expect(native.strictMcpConfig).toBe(true);
+  });
+
+  // claude-code-71: every run sees only the MCP servers the query passes —
+  // none — whatever its allowlist, effort, or fast mode (claude-code-70).
+  it('confines every run to the MCP servers the query passes', async () => {
+    const allowlists: Array<string[] | undefined> = [undefined, [], ['Bash']];
+    const efforts: Array<ClaudeEffort | undefined> = [undefined, 'ultracode'];
+    const fastModes: Array<boolean | undefined> = [undefined, true];
+
+    for (const allowedTools of allowlists) {
+      for (const effort of efforts) {
+        for (const fastMode of fastModes) {
+          let captured: (MockSdkInnerOptions & { prompt: string }) | undefined;
+          const adapter = new ClaudeCodeAdapter({
+            loadSdk: makeLoader(
+              [
+                {
+                  type: 'result',
+                  status: 'success',
+                  result: 'ok',
+                  usage: { input_tokens: 1 },
+                  duration_ms: 1,
+                  sessionId: 'session-mcp-confinement',
+                },
+              ],
+              (options) => {
+                captured = options;
+              },
+            ),
+          });
+
+          await collect(
+            adapter.run('prompt', {
+              ...(allowedTools !== undefined ? { allowedTools } : {}),
+              ...(effort !== undefined ? { effort } : {}),
+              ...(fastMode !== undefined ? { fastMode } : {}),
+            }),
+          );
+
+          expect(captured).toBeDefined();
+          expect(captured?.strictMcpConfig).toBe(true);
+          expect('mcpServers' in captured!).toBe(false);
+          expect(captured?.settings?.disableClaudeAiConnectors).toBe(true);
+          // The connector gate shares one settings object with the effort
+          // and fast-mode keys rather than replacing them.
+          expect(captured?.settings).toEqual({
+            disableClaudeAiConnectors: true,
+            ...(effort === 'ultracode' ? { ultracode: true } : {}),
+            ...(fastMode !== undefined ? { fastMode } : {}),
+          });
+          // Filesystem settings and CLAUDE.md stay as claude-code-9 maps them.
+          expect(captured?.settingSources).toEqual(
+            allowedTools?.length === 0 ? [] : undefined,
+          );
+        }
+      }
+    }
   });
 
   it('treats an empty resume value as absent for SDK query options', async () => {
@@ -2506,7 +2565,11 @@ describe('ClaudeCodeAdapter', () => {
       );
       if (input === undefined) {
         expect(mapped.queryOptions).not.toHaveProperty('effort');
-        expect(mapped.queryOptions).not.toHaveProperty('settings');
+        // claude-code-8 omits the `ultracode` key; the settings object itself
+        // always carries claude-code-70's connector gate.
+        expect(mapped.queryOptions.settings).toEqual({
+          disableClaudeAiConnectors: true,
+        });
       } else {
         expect(mapped.queryOptions.effort).toBe(expectedEffort);
         expect(mapped.queryOptions.settings?.ultracode).toBe(expectedUltracode);
@@ -2552,13 +2615,11 @@ describe('ClaudeCodeAdapter', () => {
         await collect(adapter.run('prompt', options));
 
         expect(captured?.effort).toBe(expectedEffort);
-        const expectedSettings =
-          ultracode === undefined && fastMode === undefined
-            ? undefined
-            : {
-                ...(ultracode !== undefined ? { ultracode } : {}),
-                ...(fastMode !== undefined ? { fastMode } : {}),
-              };
+        const expectedSettings = {
+          disableClaudeAiConnectors: true,
+          ...(ultracode !== undefined ? { ultracode } : {}),
+          ...(fastMode !== undefined ? { fastMode } : {}),
+        };
         expect(captured?.settings).toEqual(expectedSettings);
         expect(captured?.settings?.fastModePerSessionOptIn).toBeUndefined();
       }
@@ -2751,7 +2812,10 @@ describe('ClaudeCodeAdapter', () => {
     await collect(adapter.run('prompt', { effort: 'ultracode' }));
 
     expect(captured?.effort).toBe('xhigh');
-    expect(captured?.settings).toEqual({ ultracode: true });
+    expect(captured?.settings).toEqual({
+      disableClaudeAiConnectors: true,
+      ultracode: true,
+    });
   });
 
   it('rejects invalid efforts without querying or retaining abort listeners', async () => {
@@ -2827,7 +2891,10 @@ describe('ClaudeCodeAdapter', () => {
     );
 
     expect(captured?.effort).toBe('xhigh');
-    expect(captured?.settings).toEqual({ ultracode: true });
+    expect(captured?.settings).toEqual({
+      disableClaudeAiConnectors: true,
+      ultracode: true,
+    });
     expect(events.map((event) => event.type)).toEqual(['error', 'done']);
     expect(events[0]?.payload).toMatchObject({
       code: 'SDK_STREAM_ERROR',
