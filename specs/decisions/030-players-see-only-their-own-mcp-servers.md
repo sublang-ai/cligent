@@ -6,6 +6,7 @@
 ## Status
 
 Accepted (2026-10-01).
+Amended by [DR-032](032-browser-tools-and-media-output.md): callers may explicitly supply servers while confinement and the account-connector gate remain.
 Amends [DR-010](010-isolated-captain-control-calls.md): Claude Code's `strictMcpConfig: true` moves from every explicit allowlist to every run, and the account's claude.ai connectors are gated beside it; the allowlist mapping of `tools`, `allowedTools`, and `settingSources` stands unchanged.
 
 ## Context

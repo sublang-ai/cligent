@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Usage as CodexUsage } from '@openai/codex-sdk';
+import { Cligent } from '../cligent.js';
 
 import {
   CodexAdapter,
@@ -259,6 +260,114 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
+  it('emits native MCP media once without changing the opaque result or tool count', async () => {
+    const content = [
+      {
+        type: 'text',
+        text: 'Screenshot captured. ![literal](file:///not-read.png)',
+      },
+      { type: 'image', mimeType: 'image/png', data: 'cGl4ZWw=' },
+      { type: 'audio', mimeType: 'audio/wav', data: 'c291bmQ=' },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'artifact:report',
+          mimeType: 'application/pdf',
+          blob: 'cGRm',
+        },
+      },
+      {
+        type: 'resource_link',
+        name: 'clip',
+        mimeType: 'video/mp4',
+        uri: 'https://example.test/clip.mp4',
+      },
+      { type: 'image', mimeType: 'image/png', data: 'invalid base64!' },
+    ];
+    const item = {
+      id: 'screenshot-call',
+      type: 'mcp_tool_call',
+      server: 'browser',
+      tool: 'screenshot',
+      arguments: {},
+      status: 'completed',
+      result: { content, structured_content: { kept: true } },
+    };
+    const adapter = new CodexAdapter({
+      loadSdk: makeLoader({
+        events: [
+          { type: 'thread.started', thread_id: 'media-thread' },
+          { type: 'item.completed', item },
+          { type: 'item.completed', item },
+          {
+            type: 'item.completed',
+            item: {
+              type: 'agent_message',
+              id: 'answer',
+              text: 'The button is blue.',
+            },
+          },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 10,
+              cached_input_tokens: 0,
+              output_tokens: 2,
+            },
+          },
+        ],
+      }),
+    });
+    const events = await collect(
+      new Cligent(adapter, { role: 'visual' }).run('Inspect the UI'),
+    );
+    const media = events.filter((event) => event.type === 'media');
+    expect(media.map((event) => event.payload)).toEqual([
+      {
+        mimeType: 'image/png',
+        source: { type: 'base64', data: 'cGl4ZWw=' },
+        toolUseId: 'screenshot-call',
+      },
+      {
+        mimeType: 'audio/wav',
+        source: { type: 'base64', data: 'c291bmQ=' },
+        toolUseId: 'screenshot-call',
+      },
+      {
+        mimeType: 'application/pdf',
+        source: { type: 'base64', data: 'cGRm' },
+        toolUseId: 'screenshot-call',
+      },
+      {
+        mimeType: 'video/mp4',
+        source: { type: 'uri', uri: 'https://example.test/clip.mp4' },
+        name: 'clip',
+        toolUseId: 'screenshot-call',
+      },
+    ]);
+    expect(
+      media.every(
+        (event) =>
+          event.sessionId === 'media-thread' &&
+          'role' in event &&
+          event.role === 'visual',
+      ),
+    ).toBe(true);
+    expect(events.filter((event) => event.type === 'tool_result')).toHaveLength(
+      1,
+    );
+    expect(
+      toolResultPayload(events.find((event) => event.type === 'tool_result')!)
+        .output,
+    ).toEqual(item.result);
+    expect(donePayload(events.at(-1)!).usage.toolUses).toBe(1);
+    expect(
+      events
+        .filter((event) => event.type === 'text')
+        .map((event) => event.payload),
+    ).toEqual([{ content: 'The button is blue.' }]);
+  });
+
   it('maps canonical SDK tool lifecycles to unified events (codex-201)', async () => {
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({ events: canonicalToolLifecycleEvents }),

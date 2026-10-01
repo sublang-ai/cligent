@@ -86,6 +86,7 @@
     "test:package": "node ./scripts/verify-package-output.mjs",
     "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",
+    "test:browser": "vitest run --config config/vitest.browser.config.ts",
     "smoke:release": "npm run build && npm run test:package && npm run test:distributable && npm run test:smoke",
     "tmux-play-dev": "node ./bin/tmux-play-dev.mjs",
     "prepack": "npm run build"
@@ -129,6 +130,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
+    "@playwright/mcp": "0.0.77",
     "yaml": "^2.8.4",
     "zod": "4.4.3"
   }

@@ -8,6 +8,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments } from '../attachments.js';
+import { mediaFromMcpContent } from '../media.js';
+import { normalizeMcpServers, prepareMcpServers } from '../mcp.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -721,6 +723,31 @@ export function mapAgentOptionsToCodexOptions(
   assertCodexToolRestrictionsSupported(options);
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
   const effort = mapEffortToCodexEffort(options?.effort);
+  const mcpServers = normalizeMcpServers(options?.mcpServers);
+  const mcpOverrides = Object.entries(mcpServers ?? {}).map(
+    ([name, server]) => {
+      const config =
+        server.type === 'stdio'
+          ? {
+              command: server.command,
+              args: [...(server.args ?? [])],
+              ...(server.env ? { env: server.env } : {}),
+              required: true,
+              default_tools_approval_mode: 'approve',
+            }
+          : {
+              url: server.url,
+              ...(server.headers ? { http_headers: server.headers } : {}),
+              required: true,
+              default_tools_approval_mode: 'approve',
+            };
+      // Replace a complete entry: SDK leaf overrides would retain a previous
+      // transport's fields when this run reuses a native server name.
+      // Codex splits override paths on dots without TOML-decoding path keys.
+      // The shared name validator limits this key to safe bare characters.
+      return `mcp_servers.${name}=${codexMcpToml(config)}`;
+    },
+  );
 
   let cleanupAbort = () => {};
   let abortController: AbortController | undefined;
@@ -771,9 +798,12 @@ export function mapAgentOptionsToCodexOptions(
     codexDefaultPermissions(options.permissions) !== ':read-only'
       ? codexProjectTrustConfigOverride(options.cwd)
       : undefined;
-  const codexCliConfigOverrides = projectTrustOverride
-    ? [projectTrustOverride, ...(permissions.codexCliConfigOverrides ?? [])]
-    : permissions.codexCliConfigOverrides;
+  const overrides = [
+    ...(projectTrustOverride ? [projectTrustOverride] : []),
+    ...(permissions.codexCliConfigOverrides ?? []),
+    ...mcpOverrides,
+  ];
+  const codexCliConfigOverrides = overrides.length ? overrides : undefined;
 
   const threadOptions: CodexThreadOptions = {
     workingDirectory: options?.cwd,
@@ -803,6 +833,16 @@ export function mapAgentOptionsToCodexOptions(
     },
     cleanupAbort,
   };
+}
+
+function codexMcpToml(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(codexMcpToml).join(', ')}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .map(([key, entry]) => `${JSON.stringify(key)} = ${codexMcpToml(entry)}`)
+    .join(', ')}}`;
 }
 
 function parseToolInput(value: unknown): Record<string, unknown> {
@@ -1450,6 +1490,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
     try {
+      const mcpServers = await prepareMcpServers(options);
+      if (mcpServers !== undefined) options = { ...options, mcpServers };
       const attachments = await prepareAttachments(
         AGENT,
         options?.attachments,
@@ -1743,6 +1785,14 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
               codexLifecycleToolResult(lifecycleType, item, toolUse),
               sessionId,
             );
+            if (lifecycleType === 'mcp_tool_call') {
+              for (const media of mediaFromMcpContent(
+                asRecord(item.result).content,
+                id,
+              )) {
+                yield createEvent('media', AGENT, media, sessionId);
+              }
+            }
             continue;
           }
 

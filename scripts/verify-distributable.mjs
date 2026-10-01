@@ -31,6 +31,7 @@ const TYPESCRIPT_VERSION = '5.4.5';
 const NODE_TYPES_VERSION = '18.19.24';
 const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
   '@agentclientprotocol/sdk': '1.4.0',
+  '@playwright/mcp': '0.0.77',
   yaml: '^2.8.4',
   zod: '4.4.3',
 });
@@ -537,6 +538,7 @@ process.stdout.write(
     join(consumerDirectory, 'type-consumer.ts'),
     `import {
   Cligent,
+  createEvent,
   EFFORT_SUPPORT,
   FAST_MODE_SUPPORT,
   assertFastModeSupported,
@@ -559,6 +561,8 @@ process.stdout.write(
   type KimiEffort,
   type OpenCodeEffort,
   type Attachment,
+  type McpServers,
+  type MediaPayload,
 } from '@sublang/cligent';
 import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 import { CodexAdapter } from '@sublang/cligent/adapters/codex';
@@ -586,6 +590,16 @@ const codex = new Cligent(new CodexAdapter(), {
 const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
 const kimi = new Cligent(new KimiAdapter(), { effort: 'on' });
 const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'minimal' });
+
+const mcpServers: McpServers = { browser: { type: 'stdio', command: 'server', args: [] } };
+const browserAgent = new Cligent(new ClaudeCodeAdapter(), { browser: true, mcpServers });
+browserAgent.run('inspect', { browser: false, mcpServers: {} });
+const figure: MediaPayload = { mimeType: 'image/png', source: { type: 'base64', data: 'cGl4ZWw=' } };
+createEvent('media', 'claude-code', figure);
+// @ts-expect-error Browser selection is boolean.
+browserAgent.run('inspect', { browser: 'automatic' });
+// @ts-expect-error Unknown MCP transports are not accepted.
+browserAgent.run('inspect', { mcpServers: { server: { type: 'sse', url: 'https://example.com' } } });
 
 const attachments: readonly Attachment[] = [{ path: 'screen.png' }];
 claude.run('describe', { attachments });

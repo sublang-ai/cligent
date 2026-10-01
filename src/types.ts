@@ -3,6 +3,8 @@
 
 import type { Effort } from './effort.js';
 import type { DefaultSubagentEffort } from './subagent-model.js';
+import type { McpServers } from './mcp.js';
+
 import type { Attachment } from './attachments.js';
 
 export type {
@@ -19,6 +21,7 @@ export type AgentEventType =
   | 'init'
   | 'text'
   | 'text_delta'
+  | 'media'
   | 'tool_use'
   | 'tool_result'
   | 'thinking'
@@ -92,6 +95,14 @@ export interface TextDeltaPayload {
 
 export interface ThinkingPayload {
   summary: string;
+}
+
+/** Native media or resource output; rendering and URI access belong to the host. */
+export interface MediaPayload {
+  mimeType: string;
+  source: { type: 'base64'; data: string } | { type: 'uri'; uri: string };
+  name?: string;
+  toolUseId?: string;
 }
 
 export interface ErrorPayload {
@@ -232,6 +243,7 @@ export type AgentEvent =
   | (BaseEvent & { type: 'init'; payload: InitPayload })
   | (BaseEvent & { type: 'text'; payload: TextPayload })
   | (BaseEvent & { type: 'text_delta'; payload: TextDeltaPayload })
+  | (BaseEvent & { type: 'media'; payload: MediaPayload })
   | (BaseEvent & { type: 'tool_use'; payload: ToolUsePayload })
   | (BaseEvent & { type: 'tool_result'; payload: ToolResultPayload })
   | (BaseEvent & { type: 'thinking'; payload: ThinkingPayload })
@@ -300,6 +312,10 @@ export interface AgentOptions<
 > {
   /** Local files for this call only; support depends on the adapter. */
   attachments?: readonly Attachment[];
+  /** Caller-selected native tools; per-call maps replace instance defaults. */
+  mcpServers?: McpServers;
+  /** Prepare an isolated browser so ordinary prompts can inspect and capture pages. */
+  browser?: boolean;
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
@@ -335,6 +351,10 @@ export interface CligentOptions<
   SE extends string = DefaultSubagentEffort<E, SM>,
 > {
   role?: string;
+  /** Caller-selected native tools; per-call maps replace instance defaults. */
+  mcpServers?: McpServers;
+  /** Prepare an isolated browser so ordinary prompts can inspect and capture pages. */
+  browser?: boolean;
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;

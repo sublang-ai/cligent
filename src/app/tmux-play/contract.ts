@@ -246,6 +246,7 @@ interface RuntimePlayerConfigBase {
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly browser?: boolean;
 }
 
 type RuntimePlayerConfigByAdapter = {
@@ -266,6 +267,7 @@ interface RuntimeCaptainConfigBase {
   readonly model?: string;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly browser?: boolean;
 }
 
 type RuntimeCaptainConfigByAdapter = {

@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in `browser: true` prepares a pinned Playwright MCP runtime and managed
+  Chromium for ordinary app-inspection and screenshot prompts. Per-instance
+  and per-call `mcpServers` admit caller-selected stdio/HTTP tools through
+  supported native transports, preserving Claude's account-connector isolation
+  and explicit tool restrictions — DR-032.
+- Typed `media` events expose native screenshots and file references alongside
+  text and tool activity. Claude now preserves actual SDK user-frame tool
+  results; Codex, Kimi, and OpenCode normalize native media independently.
+  The terminal presenter summarizes media without dumping inline binary data.
+
 - Per-call local-file `attachments` on direct, registered, and parallel SDK
   calls: Claude images/PDFs, Codex images, capability-gated Kimi images, and
   OpenCode images/audio/video/PDFs/plain text. `ATTACHMENT_SUPPORT` and

@@ -11,6 +11,12 @@ import { basename } from 'node:path';
 import { promisify } from 'node:util';
 
 import { prepareAttachments, readAttachment } from '../attachments.js';
+import { mediaFromUri } from '../media.js';
+import {
+  normalizeMcpServers,
+  prepareMcpServers,
+  type McpServers,
+} from '../mcp.js';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
@@ -29,6 +35,7 @@ import type {
   AgentEvent,
   AgentOptions,
   DonePayload,
+  MediaPayload,
   OpenCodeEffort,
   PermissionCapability,
   PermissionLevel,
@@ -150,6 +157,12 @@ interface PermissionOperationBudget {
 }
 
 interface OpenCodeClient {
+  addMcpServers?: (options: {
+    servers: McpServers;
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<void>;
+  isAdmittedMcpTool?: (toolName: string) => boolean;
   run?: (options: Record<string, unknown>) => Promise<unknown>;
   query?: (options: Record<string, unknown>) => Promise<unknown>;
   events?: (options?: Record<string, unknown>) => AsyncIterable<unknown>;
@@ -1262,6 +1275,14 @@ export function wrapOpencodeClient(
   const globalService = real.global as Record<string, unknown> | undefined;
   const permission = real.permission as Record<string, unknown> | undefined;
   const configService = real.config as Record<string, unknown> | undefined;
+  const mcpService = real.mcp as Record<string, unknown> | undefined;
+  const mcpAdd =
+    mcpService && typeof mcpService.add === 'function'
+      ? (mcpService.add.bind(mcpService) as (
+          parameters: Record<string, unknown>,
+          options?: Record<string, unknown>,
+        ) => Promise<unknown>)
+      : undefined;
 
   if (!session || typeof session.create !== 'function') {
     throw new Error('OpenCode SDK client.session.create() not available');
@@ -1377,6 +1398,8 @@ export function wrapOpencodeClient(
         ) => Promise<unknown>)
       : undefined;
   let instanceDirectory: string | undefined;
+  const admittedMcpNames = new Set<string>();
+  let knownMcpNames: string[] = [];
 
   const abortSessionViaSdk = async (
     sessionId: string,
@@ -1404,6 +1427,73 @@ export function wrapOpencodeClient(
   };
 
   const client: OpenCodeClient = {
+    ...(mcpAdd
+      ? {
+          async addMcpServers({
+            servers,
+            cwd,
+            signal,
+          }: {
+            servers: McpServers;
+            cwd?: string;
+            signal?: AbortSignal;
+          }) {
+            admittedMcpNames.clear();
+            knownMcpNames = [];
+            for (const [name, server] of Object.entries(servers)) {
+              signal?.throwIfAborted();
+              const config =
+                server.type === 'stdio'
+                  ? {
+                      type: 'local',
+                      command: [server.command, ...(server.args ?? [])],
+                      ...(server.env ? { environment: server.env } : {}),
+                      enabled: true,
+                    }
+                  : {
+                      type: 'remote',
+                      url: server.url,
+                      ...(server.headers ? { headers: server.headers } : {}),
+                      oauth: false,
+                      enabled: true,
+                    };
+              const result = await mcpAdd(
+                apiVersion === 'v2'
+                  ? { name, config, ...(cwd ? { directory: cwd } : {}) }
+                  : {
+                      body: { name, config },
+                      ...(cwd ? { query: { directory: cwd } } : {}),
+                      signal,
+                    },
+                apiVersion === 'v2' ? { signal } : undefined,
+              );
+              throwIfSdkResultError(
+                result,
+                `OpenCode MCP server ${name} registration failed`,
+              );
+              const status = asRecord(asRecord(unwrapSdkData(result))[name]);
+              if (status.status !== 'connected') {
+                throw new Error(
+                  `OpenCode MCP server ${name} did not connect (${asString(status.status) ?? 'unknown status'})`,
+                );
+              }
+              admittedMcpNames.add(name);
+              knownMcpNames = Object.keys(asRecord(unwrapSdkData(result)));
+            }
+          },
+          isAdmittedMcpTool(toolName: string) {
+            const candidates = knownMcpNames.filter((name) =>
+              toolName.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_`),
+            );
+            // Native tool names concatenate server and tool with one underscore.
+            // Ambiguous ambient prefixes must never gain the caller's approval.
+            return (
+              candidates.length > 0 &&
+              candidates.every((name) => admittedMcpNames.has(name))
+            );
+          },
+        }
+      : {}),
     ...(configProviders
       ? {
           async getModelVariants(options: {
@@ -2315,8 +2405,29 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     );
     assertOpenCodeToolRestrictionsUnsupported(options);
     assertOpenCodeTurnLimitUnsupported(options);
+    const requestedMcp = normalizeMcpServers(options?.mcpServers);
+    if (
+      this.mode === 'external' &&
+      (options?.browser === true || Object.keys(requestedMcp ?? {}).length > 0)
+    ) {
+      throw new Error(
+        'OpenCode per-run MCP servers and browser support require managed mode; an external server shares its MCP registry across sessions',
+      );
+    }
+    if (
+      options?.browser === true ||
+      Object.keys(requestedMcp ?? {}).length > 0
+    ) {
+      // Reject unsupported controls before a browser download can start.
+      mapPermissionsToOpenCodeOptions(options?.permissions, {
+        allowedTools: options?.allowedTools,
+        disallowedTools: options?.disallowedTools,
+      });
+      mapEffortToOpenCodeVariant(options?.model, options?.effort);
+    }
 
     let sdk: OpenCodeSdk;
+    let hasAdmittedMcpServers = false;
     let mappedPermissions: OpenCodePermissionOptions;
     let variant: OpenCodeVariant | undefined;
     let normalizeRunFailure = false;
@@ -3571,6 +3682,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           messageId?: string;
           partId?: string;
           contentKind?: OpenCodeContentKind;
+          media?: MediaPayload;
         }
     > = [];
     let pendingContentHead = 0;
@@ -3653,9 +3765,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const role = item.messageId
           ? messageRoles.get(item.messageId)
           : 'assistant';
-        const contentKind =
-          item.contentKind ??
-          (item.partId ? partKinds.get(item.partId) : undefined);
+        const contentKind = item.media
+          ? 'media'
+          : (item.contentKind ??
+            (item.partId ? partKinds.get(item.partId) : undefined));
         const knownDiscard = role === 'user' || contentKind === 'other';
 
         if (!knownDiscard && (!role || !contentKind) && !dropUnresolved) {
@@ -3663,7 +3776,27 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
 
         pendingContentHead++;
-        if (role === 'assistant' && contentKind && contentKind !== 'other') {
+        if (role === 'assistant' && item.media) {
+          const signature = `media\0${JSON.stringify(item.media)}`;
+          const signatures = item.partId
+            ? (settledPartSnapshots.get(item.partId) ?? new Set<string>())
+            : undefined;
+          if (!signatures?.has(signature)) {
+            signatures?.add(signature);
+            if (item.partId && signatures)
+              settledPartSnapshots.set(item.partId, signatures);
+            normalizedEvents.push(
+              createEvent('media', AGENT, item.media, sessionId),
+            );
+          }
+          continue;
+        }
+        if (
+          role === 'assistant' &&
+          contentKind &&
+          contentKind !== 'other' &&
+          contentKind !== 'media'
+        ) {
           const normalized = normalizeContentOnce(
             item.eventType,
             item.event,
@@ -3690,6 +3823,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       eventType: string,
       event: Record<string, unknown>,
       contentKind?: OpenCodeContentKind,
+      media?: MediaPayload,
     ): AgentEvent[] => {
       const messageId = loadOpenCodePartMessageId(event);
       const partId = loadOpenCodePartId(event);
@@ -3717,6 +3851,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         ...(messageId ? { messageId } : {}),
         ...(partId ? { partId } : {}),
         ...(contentKind ? { contentKind } : {}),
+        ...(media ? { media } : {}),
       });
       return drainPendingContent();
     };
@@ -3771,6 +3906,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       if (abortRequested) {
         throw new Error('OpenCode run aborted before SDK loading');
       }
+
+      const mcpServers = await prepareMcpServers(options);
 
       const attachmentParts: FilePartInput[] = [];
       if (options?.attachments !== undefined) {
@@ -3897,6 +4034,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       client = createClientFromSdk(sdk, actualServerUrl);
+
+      if (Object.keys(mcpServers ?? {}).length > 0) {
+        if (!client.addMcpServers)
+          throw new Error(
+            'OpenCode SDK client cannot register per-run MCP servers',
+          );
+        await client.addMcpServers({
+          servers: mcpServers!,
+          cwd: options?.cwd,
+          signal: eventStreamController.signal,
+        });
+        hasAdmittedMcpServers = true;
+      }
 
       if (attachmentParts.length > 0 && !nativeFilePartClients.has(client)) {
         throw new Error(
@@ -5088,12 +5238,45 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                 },
                 sessionId,
               );
+              if (
+                stateStatus === 'completed' &&
+                Array.isArray(state.attachments)
+              ) {
+                for (const attachment of state.attachments) {
+                  const file = asRecord(attachment);
+                  const uri = asString(file.url);
+                  if (!uri) continue;
+                  const media = mediaFromUri(uri, {
+                    mimeType: asString(file.mime),
+                    name: asString(file.filename),
+                    toolUseId,
+                  });
+                  if (media)
+                    yield createEvent('media', AGENT, media, sessionId);
+                }
+              }
             }
             continue;
           }
 
           if (partType === 'file' || partType === 'file_part') {
             yield createEvent('opencode:file_part', AGENT, part, sessionId);
+            const uri = asString(part.url);
+            const media = uri
+              ? mediaFromUri(uri, {
+                  mimeType: asString(part.mime),
+                  name: asString(part.filename),
+                })
+              : undefined;
+            if (media) {
+              for (const normalized of queueContent(
+                eventType,
+                event,
+                undefined,
+                media,
+              ))
+                yield normalized;
+            }
             continue;
           }
 
@@ -5216,7 +5399,10 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             reportPermissionState();
           }
 
-          if (options?.permissions?.mode !== 'auto') {
+          const admittedMcpTool =
+            hasAdmittedMcpServers &&
+            client?.isAdmittedMcpTool?.(toolName) === true;
+          if (options?.permissions?.mode !== 'auto' && !admittedMcpTool) {
             yield createEvent(
               'permission_request',
               AGENT,
@@ -5338,7 +5524,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           requestKey ??= permissionRequestKey(permissionSessionId, requestId);
 
           const decision =
-            options?.permissions?.mode === 'auto' ? 'once' : 'reject';
+            options?.permissions?.mode === 'auto' || admittedMcpTool
+              ? 'once'
+              : 'reject';
           const replyStartedAt = performance.now();
           const replyPromise = client?.replyPermission
             ? client.replyPermission({

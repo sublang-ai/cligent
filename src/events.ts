@@ -10,6 +10,7 @@ import type {
   InitPayload,
   TextPayload,
   TextDeltaPayload,
+  MediaPayload,
   ThinkingPayload,
   ErrorPayload,
   PermissionRequestPayload,
@@ -22,6 +23,7 @@ export interface AgentEventMap {
   init: InitPayload;
   text: TextPayload;
   text_delta: TextDeltaPayload;
+  media: MediaPayload;
   thinking: ThinkingPayload;
   error: ErrorPayload;
   permission_request: PermissionRequestPayload;

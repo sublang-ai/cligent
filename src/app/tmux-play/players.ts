@@ -25,6 +25,7 @@ interface PlayerConfigBase {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
+  browser?: boolean;
 }
 
 type PlayerConfigByAdapter = {
@@ -47,6 +48,7 @@ type ResolvedPlayerByAdapter = {
     model?: string;
     instruction?: string;
     permissions?: PermissionPolicy;
+    browser?: boolean;
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
@@ -74,6 +76,7 @@ export interface CreatePlayerCligentOptions<
   model?: string;
   role?: string;
   permissions?: PermissionPolicy;
+  browser?: boolean;
   effort?: EffortForAgent<A>;
   fastMode?: FastModeForAgent<A>;
   subagentModel?: SubagentModelForAgent<A>;
@@ -182,6 +185,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
   return new Cligent(new AdapterClass(), {
     cwd: options.cwd,
     role: options.role,
+    browser: options.browser,
     ...(inheritCallDefaults
       ? {
           model: options.model,
@@ -248,6 +252,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       model: config.model,
       role: config.id,
       permissions: config.permissions,
+      browser: config.browser,
       effort: config.effort,
       fastMode: config.fastMode,
       subagentModel: config.subagentModel,
@@ -261,6 +266,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     model: config.model,
     instruction: config.instruction,
     permissions: config.permissions,
+    browser: config.browser,
     effort: config.effort,
     fastMode: config.fastMode,
     subagentModel: config.subagentModel,

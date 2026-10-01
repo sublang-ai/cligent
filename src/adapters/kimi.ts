@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { execFile, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
@@ -18,6 +19,7 @@ import {
 import type {
   Client,
   ContentBlock,
+  McpServer,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionNotification,
@@ -25,6 +27,7 @@ import type {
   ToolCallContent,
   ToolCallStatus,
 } from '@agentclientprotocol/sdk';
+import { prepareMcpServers } from '../mcp.js';
 import type { AcpSessionConfigOption } from './acp-schema.js';
 import {
   ACTED_ON_UPDATES,
@@ -40,6 +43,7 @@ import {
 
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments, readAttachment } from '../attachments.js';
+import { mediaFromKimiContent, mediaFromMcpContent } from '../media.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -855,6 +859,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     let terminalQueued = false;
     let protocolFailure: Error | undefined;
     let promptActive = false;
+    const admittedMcpPrefixes: string[] = [];
     let stdinEnded = false;
     let cleanupSigtermSent = false;
     let cleanupSigkillSent = false;
@@ -1186,6 +1191,32 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             sessionId,
           ),
         );
+        // The native CLI currently sends model media parts in rawOutput.
+        // ACP-native content is independent of its textual display fallback.
+        const nativeMedia = mediaFromKimiContent(
+          state.rawOutput,
+          update.toolCallId,
+        );
+        const nativeCounts = new Map<string, number>();
+        for (const payload of nativeMedia) {
+          const key = JSON.stringify(payload);
+          nativeCounts.set(key, (nativeCounts.get(key) ?? 0) + 1);
+          push(createEvent('media', AGENT, payload, sessionId));
+        }
+        for (const payload of mediaFromMcpContent(
+          state.content?.flatMap((item) =>
+            item.type === 'content' ? [item.content] : [],
+          ),
+          update.toolCallId,
+        )) {
+          const key = JSON.stringify(payload);
+          const nativeCount = nativeCounts.get(key) ?? 0;
+          if (nativeCount > 0) {
+            nativeCounts.set(key, nativeCount - 1);
+            continue;
+          }
+          push(createEvent('media', AGENT, payload, sessionId));
+        }
       }
     };
 
@@ -1205,6 +1236,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
                 sessionId,
               ),
             );
+          }
+          for (const media of mediaFromMcpContent(update.content)) {
+            push(createEvent('media', AGENT, media, sessionId));
           }
           return;
         case 'agent_thought_chunk':
@@ -1252,6 +1286,24 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           'session/request_permission referenced a non-active prompt session',
         );
         return { outcome: { outcome: 'cancelled' } };
+      }
+      if (abortRequested || terminalQueued)
+        return { outcome: { outcome: 'cancelled' } };
+      const allowOnce = request.options.find(
+        (option) => option.kind === 'allow_once',
+      );
+      if (
+        allowOnce &&
+        request.toolCall.title &&
+        admittedMcpPrefixes.some(
+          (prefix) =>
+            request.toolCall.title!.startsWith(prefix) &&
+            request.toolCall.title!.length > prefix.length,
+        )
+      ) {
+        return {
+          outcome: { outcome: 'selected', optionId: allowOnce.optionId },
+        };
       }
       if (!terminalQueued) {
         push(
@@ -1335,6 +1387,41 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
     const execute = async (): Promise<void> => {
       try {
+        const servers = await prepareMcpServers(options);
+        const mcpServers: McpServer[] = Object.entries(servers ?? {}).map(
+          ([requestedName, server]) => {
+            // Kimi normalizes underscores and truncates qualified tool names.
+            // A unique short alias preserves an unambiguous permission namespace
+            // even when ambient server names normalize to the caller's name.
+            const prefix =
+              requestedName
+                .replace(/_+/g, '_')
+                .replace(/^_|_$/g, '')
+                .slice(0, 20)
+                .replace(/_$/g, '') || 'mcp';
+            const name = `${prefix}-${randomUUID().replaceAll('-', '').slice(0, 20)}`;
+            admittedMcpPrefixes.push(`mcp__${name}__`);
+            return server.type === 'stdio'
+              ? {
+                  name,
+                  command: server.command,
+                  args: [...(server.args ?? [])],
+                  env: Object.entries(server.env ?? {}).map(
+                    ([name, value]) => ({ name, value }),
+                  ),
+                }
+              : {
+                  name,
+                  type: 'http',
+                  url: server.url,
+                  headers: Object.entries(server.headers ?? {}).map(
+                    ([name, value]) => ({ name, value }),
+                  ),
+                };
+          },
+        );
+        if (abortRequested)
+          throw new Error('Kimi ACP run aborted during MCP preparation');
         child = this.spawnProcess('kimi', ['acp'], {
           cwd: mapped.cwd,
           env: process.env,
@@ -1408,6 +1495,16 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           );
         }
         if (
+          mcpServers.some(
+            (server) => 'type' in server && server.type === 'http',
+          ) &&
+          initialized.agentCapabilities?.mcpCapabilities?.http !== true
+        ) {
+          throw new Error(
+            'Kimi ACP did not advertise HTTP MCP support; use stdio servers or a runtime with mcpCapabilities.http enabled',
+          );
+        }
+        if (
           promptContent.length > 1 &&
           initialized.agentCapabilities?.promptCapabilities?.image !== true
         ) {
@@ -1425,7 +1522,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
                 .resumeSession({
                   sessionId: options.resume,
                   cwd: mapped.cwd,
-                  mcpServers: [],
+                  mcpServers,
                 })
                 .catch((error: unknown) => {
                   // Kimi's resume endpoint uses invalid_params plus the exact
@@ -1450,7 +1547,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             await awaitAcp(
               connection.newSession({
                 cwd: mapped.cwd,
-                mcpServers: [],
+                mcpServers,
               }),
             ),
             'session/new',

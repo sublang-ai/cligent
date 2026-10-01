@@ -78,7 +78,7 @@ When the loader resolves the top-level configuration, it shall admit this surfac
 
 ### tmux-play-6
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], `browser` per [[tmux-play-219](#tmux-play-219)], and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### tmux-play-60
 
@@ -149,7 +149,7 @@ When the loader resolves an entry in `players`, it shall apply this matrix:
 | Field or roster condition | Outcome |
 | --- | --- |
 | `id` and `adapter` | require both; accept only adapters `claude`, `codex`, `gemini`, `opencode`, and `kimi` |
-| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], and `subagentEffort` per [[tmux-play-216](#tmux-play-216)] |
+| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], and `browser` per [[tmux-play-219](#tmux-play-219)] |
 | `id` | require a unique non-`captain` value matching `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$` |
 | adapter and model reused by several players | accept the entries |
 
@@ -1032,7 +1032,7 @@ When the presenter handles a `tool_use` or `tool_result`, it shall render the ev
 | `tool_result` | header `<who>> [tool <symbol>] <toolName>[ <duration>]` plus any continuation body; keep the body unstyled |
 | result `success` / `error` / `denied` | respectively select [[tmux-play-39](#tmux-play-39)]'s green `✓`, red `✗`, or yellow `·` tag |
 | `durationMs < 1000` / `>= 1000` / absent | respectively render `<n>ms`, `<n.n>s`, or no duration segment |
-| output extraction | use a string directly, then `output.stdout` when present, then pretty-printed JSON; an empty or absent extraction leaves the header alone |
+| output extraction | use a string directly, then `output.stdout` when present, then pretty-printed JSON with recognized native media blocks summarized through [[tmux-play-217](#tmux-play-217)]; an empty or absent extraction leaves the header alone |
 
 For a non-empty extracted output, the pipeline performs these ordered transformations:
 
@@ -1329,7 +1329,29 @@ When the launcher verifies a composed pane title against the tmux server, it sha
 | read-back round-trips exactly | print no warning |
 | launcher process locale differs from server behavior | decide from the server read-back, not the launcher's locale variables |
 
+### tmux-play-217
+
+When a visible normalized media event [[engine-100](engine.md#engine-100)] or native media block normalized per [[media-2](media.md#media-2)] inside a tool result reaches the presenter, it shall display MIME type, any native name, and either the quoted URI or `[inline media]`, without base64 bytes, URI access, or mutation of the event, selecting the ordinary calling-entity pane and hidden-Captain suppression from [[tmux-play-40](#tmux-play-40)], flushing preceding text and using a `[media]` operational line for a media event.
+
+### tmux-play-219
+
+When Captain or player configuration supplies optional `browser`, tmux-play shall retain the role's managed-browser selection through configuration loading, snapshots, session setup, and its runtime-owned `Cligent` instance [[engine-124](engine.md#engine-124)]:
+
+| Value | Outcome |
+| --- | --- |
+| omitted | preserve omission and do not enable browser tools |
+| boolean | preserve `true` or `false` as an instance default independent of per-call settings replacements, selecting managed browser behavior per [[mcp-3](mcp.md#mcp-3)] |
+| other value | reject with the offending `captain.browser` or `players[i].browser` path |
+
 ## Verification
+
+### tmux-play-220
+
+When configuration and runtime integration flows exercise omitted, enabled, disabled, and malformed browser values, verification shall assert path-specific validation, unchanged snapshots, independent Captain and player selections reaching adapter calls, and retained selection after a per-call settings replacement [[tmux-play-219](#tmux-play-219)].
+
+### tmux-play-218
+
+When the presenter receives explanation text, inline screenshot content in a tool result and media event, a player URI-media event, and hidden Captain media, the integration check shall verify readable ordered summaries, correct pane ownership, no inline-byte dump or hidden output, and unchanged native payloads [[tmux-play-217](#tmux-play-217)].
 
 ### tmux-play-73
 

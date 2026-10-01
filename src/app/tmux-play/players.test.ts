@@ -190,6 +190,7 @@ describe('resolvePlayers', () => {
           permissions: { mode: 'auto' },
           effort: 'ultra',
           fastMode: false,
+          browser: false,
         },
       ],
       { adapterImports },
@@ -203,6 +204,7 @@ describe('resolvePlayers', () => {
     expect(captured[0]?.permissions).toEqual({ mode: 'auto' });
     expect(captured[0]?.effort).toBe('ultra');
     expect(captured[0]?.fastMode).toBe(false);
+    expect(captured[0]?.browser).toBe(false);
   });
 
   it('leaves adapter effort unset when PlayerConfig omits it', async () => {

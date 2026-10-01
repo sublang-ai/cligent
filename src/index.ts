@@ -13,6 +13,7 @@ export type {
   InitPayload,
   TextPayload,
   TextDeltaPayload,
+  MediaPayload,
   ThinkingPayload,
   ErrorPayload,
   PermissionRequestPayload,
@@ -41,6 +42,8 @@ export type {
   CligentOptions,
   RunOptions,
 } from './types.js';
+
+export type { McpServerConfig, McpServers } from './mcp.js';
 
 export { ATTACHMENT_SUPPORT, getAttachmentSupport } from './attachments.js';
 export type { Attachment, AttachmentSupport } from './attachments.js';

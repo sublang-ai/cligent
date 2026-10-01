@@ -4,8 +4,8 @@
 # Media and computer use
 
 Cligent accepts local files on individual calls to supported adapters. Computer
-use is requested in the text prompt where the selected adapter exposes a
-configured browser or desktop tool. Setup is separate from invocation.
+use is requested in an ordinary prompt after the host enables `browser: true`
+or supplies a suitable tool server. Native media is returned in typed events.
 
 ## Attach local files
 
@@ -85,118 +85,163 @@ The reference `tmux-play` composer remains text-based. Native Gemini `@file`
 references and prompts asking agents to read local media work there too; the
 structured attachment list is an SDK feature.
 
-## Invoke computer use
+## Inspect an app with an isolated browser
 
-Once the underlying runtime and adapter expose a browser/desktop tool, call it
-through a normal prompt and consume the existing tool and text events the
-adapter emits.
-`tool_result` availability follows that adapter's existing event mapping.
-No Cligent `computerUse` flag or separate control loop is required.
+Enable `browser: true` once on the agent. End users then make ordinary requests
+such as “Open my app, take a screenshot, and explain its UX problems.” They do
+not need to choose or configure an MCP server.
 
 ```ts
 import { Cligent } from '@sublang/cligent';
-import { CodexAdapter } from '@sublang/cligent/adapters/codex';
+import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 
-// Configure Codex MCP first; omit permissions to retain native configuration.
-const browserAgent = new Cligent(new CodexAdapter());
-for await (const event of browserAgent.run(
-  'Use the configured browser tool to open http://localhost:3000 and report the page title.',
+const agent = new Cligent(new ClaudeCodeAdapter(), {
+  cwd: '/work/project',
+  browser: true,
+});
+
+for await (const event of agent.run(
+  'Open http://localhost:3000, take a screenshot, and explain the layout problems.',
 )) {
   if (event.type === 'text') console.log(event.payload.content);
-  if (event.type === 'tool_use') console.log(event.payload.toolName);
-  if (event.type === 'tool_result') console.log(event.payload.status);
-}
-```
-
-| Adapter | Native setup and scope |
-| --- | --- |
-| Claude Code | The native runtime supports [MCP tools](https://code.claude.com/docs/en/mcp), but Cligent confines every run to explicitly supplied MCP servers and currently exposes no server option. It also disables account connectors. Native MCP/plugin setup alone therefore does **not** enable those tools through Cligent. |
-| Codex | Configure a browser/desktop MCP server through [Codex MCP configuration](https://developers.openai.com/codex/mcp/). Cligent preserves native config when `permissions` is omitted; supplying a policy invokes its existing configuration isolation, so user-configured MCP tools are not assured. |
-| Gemini | Enable the native [browser agent](https://geminicli.com/docs/core/subagents/#browser-agent) in Gemini settings or configure an MCP tool. The built-in agent controls a browser, not a general desktop. |
-| Kimi | Install and authorize the native [Computer Use plugin](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins), or configure an MCP tool. ACP's empty client-supplied MCP list preserves native MCP configuration. |
-| OpenCode | Configure a browser/desktop [MCP server](https://opencode.ai/docs/mcp-servers/) or custom tool on the server that executes the session. This may be a different machine in external mode. |
-
-A fresh install does not provide ready-to-use computer control.
-Cligent does not currently install tools or diagnose their readiness.
-
-### First browser setup with Codex or OpenCode
-
-For a browser-only starting point, [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)
-works with both runtimes. Install Node.js 18+ with npm/npx and Google Chrome on
-the machine running the tools, and complete the agent's normal authentication.
-The following opt-in recipe can download the MCP package on first use; pin a
-tested version instead of `latest` for a reproducible deployment.
-
-For Codex, register the tool in its native configuration:
-
-```sh
-codex mcp add playwright -- npx -y @playwright/mcp@latest --browser chrome --headless --isolated
-codex mcp list
-```
-
-For OpenCode, merge this entry into `mcp` in the project's `opencode.json` or its
-native global configuration, preserving existing entries:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "playwright": {
-      "type": "local",
-      "command": [
-        "npx", "-y", "@playwright/mcp@latest",
-        "--browser", "chrome", "--headless", "--isolated"
-      ],
-      "enabled": true,
-      "timeout": 60000
-    }
+  if (event.type === 'media') {
+    // Pass this typed payload to your UI, or save its inline bytes to a file.
+    console.log(event.payload.mimeType, event.payload.toolUseId);
   }
 }
 ```
 
-Run `opencode mcp list` to inspect the native registration. For an external
-OpenCode server, configure its host and working directory and restart the
-server as needed. The longer startup timeout allows for a first-run package
-download. These commands register a browser tool; a status listing
-alone does not verify that Chrome can launch. Use the Cligent prompt example
-above (with a running local page) to check navigation and the returned title.
-For OpenCode, construct the agent with `new OpenCodeAdapter()` instead.
+The app's development server must be running. The managed browser needs
+`URL.canParse` (available in Node 18.17+ and Node 20+); ordinary Cligent calls
+retain the Node 18.3.0 floor. Cligent supplies its pinned
+Playwright MCP runtime and downloads the matching managed Chromium on first
+use if needed. Subsequent calls reuse the installed browser. Preparation is
+cancellable and bounded; offline downloads or missing host prerequisites fail
+with a diagnostic. Cligent does not install system libraries or replace a
+system browser. Plain text calls and importing the library install nothing.
 
-`--isolated` uses a temporary browser profile without personal login sessions;
-`--headless` runs without a visible browser window. Neither option grants
-permissions or controls other desktop applications. Codex CLI does not inherit
-the desktop app's [built-in browser](https://learn.chatgpt.com/docs/browser).
+Every browser process uses an isolated temporary profile. It has no personal
+browser logins and does not import the desktop application's tabs or plugins.
+Existing native policy precedence still applies; no global permission bypass
+is enabled. Supplying a tool
+server authorizes its tools within that run; Cligent uses scoped approval
+rather than enabling every tool. See adapter limitations below.
 
-### Native Gemini and Kimi tools
+`browser` is also available on per-call options, including direct and parallel
+calls. `{ browser: false }` disables an instance default for one call. In the
+bundled `tmux-play` YAML configuration, a player or Captain can set `browser: true`.
 
-For Gemini, enable `agents.overrides.browser_agent.enabled` in its settings;
-`agents.browser.sessionMode: "isolated"` selects an isolated browser session.
-Then ask `Use browser_agent to open http://localhost:3000 and report the title`.
-Chrome 144+ is required. Native `fill` and `fill_form` actions require
-confirmation even in permissive approval modes, so unattended form completion
-is not assured.
+## Return figures alongside an explanation
 
-For Kimi, run the native CLI and use `/plugins` → Official → Kimi Computer Use.
-Reload or start a new session after installing. Follow its OS-access setup; on
-macOS that includes Accessibility and Screen Recording permissions and enabling
-Kimi Code under “Connect local agents.” Restart Kimi Code as instructed before
-invoking the configured tool through Cligent. Browser-only use can instead
-install the Kimi Browser Extension plugin and its Chrome/Edge extension.
-Cligent rejects ACP permission requests, so actions requiring confirmation can
-stop even when a plugin is installed.
+The agent's native loop receives screenshot tool results and can reason about
+them. Cligent separately emits a `media` event so the host can present the same
+figure alongside the agent's `text` events. The event contains:
 
-These routes invoke tools already available to the selected runtime. They do
-not install a browser, provide OS access, or import desktop-app integrations
-into a headless SDK. Native tool configuration, authentication, and permissions
-remain in force. Keep restrictions appropriate to your deployment and verify
-that the required tool is available under that configuration. Headless runs
-cannot necessarily satisfy an interactive native confirmation.
+- `mimeType` and `source: { type: 'base64', data }` for inline bytes, or
+  `source: { type: 'uri', uri }` for a native resource reference;
+- optional `name` and `toolUseId` for display and correlation with tool activity.
+
+`done.result` remains text. A host that only consumes the final result must also
+listen for `media` events to show figures. Existing opaque `tool_result.output`
+is preserved. Media is emitted from native assistant/tool content, never
+inferred by reading files or fetching URLs mentioned in generated prose.
+
+For example, a web host can render an inline screenshot with this handler:
+
+```ts
+import type { MediaPayload } from '@sublang/cligent';
+
+function showScreenshot(media: MediaPayload, container: HTMLElement) {
+  if (media.source.type !== 'base64') return;
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(media.mimeType)) return;
+  const image = document.createElement('img');
+  image.src = `data:${media.mimeType};base64,${media.source.data}`;
+  image.alt = media.name ?? 'Agent screenshot';
+  container.append(image);
+}
+```
+
+A Node host can save an inline PNG using
+`await writeFile(chosenPath, Buffer.from(media.source.data, 'base64'), { flag: 'wx' })`
+after checking the source and MIME type. The host chooses the destination.
+Native URIs may point at a remote runtime or an application-specific resource;
+the host decides whether and how to resolve them. Cligent does not fetch them.
+The terminal presenter shows concise media notices and references; it does not
+render image pixels or dump base64 into the conversation. Raw event payloads
+remain intact for a host or observer to render or persist; `tmux-play` does not
+automatically save the media bytes.
+
+## Supply other tools or desktop control
+
+For an existing browser service or full operating-system control, pass a
+`mcpServers` map. A per-call map replaces the instance default map; it does not
+merge individual entries. The managed browser is added separately when enabled.
+
+```ts
+const agent = new Cligent(new ClaudeCodeAdapter(), {
+  mcpServers: {
+    desktop: {
+      type: 'stdio',
+      command: '/absolute/path/to/your-desktop-mcp-server',
+      args: [],
+    },
+    remote: {
+      type: 'http',
+      url: 'https://your-service.example/mcp',
+      headers: { Authorization: 'Bearer YOUR_TOKEN' },
+    },
+  },
+});
+```
+
+A stdio server supports `command`, optional `args`, and optional `env`; an HTTP
+server supports `url` and optional `headers`. Authentication and operating-system
+permissions must already be available to those tools. The name `cligent_browser`
+is reserved when the managed browser is enabled. No persistent native agent
+configuration is changed. Ambient configuration follows each runtime's existing
+semantics; this API does not promise universal MCP isolation.
+
+| Adapter | Admission and output |
+| --- | --- |
+| Claude Code | Only supplied servers are admitted; account connectors remain disabled. Their tools receive scoped approval, with `disallowedTools` retained. A supplied server or managed browser together with an explicit `allowedTools` list is rejected because that combination cannot preserve Cligent's exact tool-availability contract. Native tool-result screenshots produce correlated `media` events. |
+| Codex | Supplied servers are passed as runtime configuration, including under existing permission-policy isolation. Native MCP image/resource results produce `media`. |
+| Gemini | Supplied servers use a temporary native settings overlay. Unsupported overlay contexts fail explicitly. The CLI exposes text-only tool display output, so the model can use screenshots while screenshot bytes are unavailable to Cligent; use the runtime's saved-file references where needed. |
+| Kimi | Servers are supplied through ACP, with HTTP capability negotiation. Run-specific server names keep scoped approvals separate from ambient tools. Native rules naming the original server do not match those aliases; use applicable wildcard rules or the exposed native names. Native image/tool content produces `media`. |
+| OpenCode | Supplied servers are admitted into the run's managed server. External shared servers reject caller MCP/browser options because changing their tool registry affects other sessions; configure those servers independently. Native file and completed-tool attachments produce `media`. |
+
+Other agents and parallel runs remain usable when one adapter rejects a mode.
+The selected model must support the visual reasoning you request. Native policy
+decisions, managed organization controls, and unavailable tools can still prevent
+a browser or desktop action.
+
+## How this compares with the desktop applications
+
+[Claude Desktop's preview](https://code.claude.com/docs/en/desktop#preview-your-app)
+provides a host-managed browser for inspecting the app under development.
+Claude's separate built-in [computer use](https://code.claude.com/docs/en/computer-use)
+is unavailable in headless print mode. [Codex Desktop's browser](https://learn.chatgpt.com/docs/browser)
+is included with the desktop app but is unavailable in Codex CLI. Its full
+[computer-use integration](https://learn.chatgpt.com/docs/computer-use) also has
+installation and operating-system access requirements.
+
+Those desktop products combine a tool runtime, model loop, and visual renderer.
+Cligent now supplies the browser setup and media transport needed for the same
+web-app inspection workflow through supported headless runtimes. Your host UI
+renders the figures. Full desktop control remains a separate tool capability;
+a browser option does not grant control over arbitrary native applications.
+
+Claude's isolation remains deliberate: it keeps unrelated auto-fetched account
+connectors out of each run. The former missing piece was explicit tool admission,
+which `mcpServers` and the managed browser now provide.
 
 ## Investigation evidence
 
 The implementation was checked against the repository's targeted transports:
 Claude Agent SDK 0.3.284, Codex SDK 0.159.0, Gemini CLI 0.61.0, Kimi Code 2.1.1
-with ACP 1.4.0, and OpenCode SDK/CLI 1.18.33. No runtime upgrade was required.
+with ACP 1.4.0, and OpenCode SDK/CLI 1.18.33. Browser setup pins Playwright MCP
+0.0.77 and its matching Chromium; this is the latest MCP release whose complete
+runtime dependency tree retains Node 18 support. No agent runtime upgrade was
+required.
 
 - [Claude SDK input modes](https://platform.claude.com/docs/en/agent-sdk/streaming-vs-single-mode): direct image input requires streamed user-message content.
 - [Codex SDK](https://developers.openai.com/codex/sdk/): structured text and local-image input; installed declarations and executable transport confirm the mapping.

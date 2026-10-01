@@ -40,7 +40,7 @@ When the child starts ACP, the adapter shall initialize protocol version 1 with 
 
 ### kimi-4
 
-After initialization, the adapter shall select session setup through this matrix, always sending the absolute effective cwd and `mcpServers: []`:
+After initialization, the adapter shall select session setup through this matrix, always sending the absolute effective cwd and the MCP list selected by [[kimi-43](#kimi-43)]:
 
 | `AgentOptions.resume` | Session operation and identity |
 | --- | --- |
@@ -135,7 +135,8 @@ When the adapter normalizes a validated `agent_message_chunk`, `agent_thought_ch
 | Content | Outcome |
 | --- | --- |
 | `agent_message_chunk` text, including an empty string | emit `text_delta` with the exact text; append the deltas in order for `DonePayload.result`; omit that result only when no assistant text accumulated |
-| non-text agent-message content, `agent_thought_chunk`, or `user_message_chunk` | emit no `text_delta` and contribute neither text nor terminal result |
+| non-text agent-message content | emit no `text_delta` and contribute neither text nor terminal result; select media through [[kimi-45](#kimi-45)] |
+| `agent_thought_chunk` or `user_message_chunk` | emit neither text nor media and contribute no terminal result |
 
 ### Terminal Outcomes
 
@@ -211,7 +212,7 @@ When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../
 
 ### kimi-22
 
-When an active prompt receives `session/request_permission` for its session, the adapter shall emit `permission_request` with the native tool identifier, title then kind then `unknown_tool` name, a headless-run reason, and input selected immediately through this matrix, then select its reply through the option matrix [[7]]:
+When an active prompt receives `session/request_permission` for its session and [[kimi-43](#kimi-43)] does not select an admitted-tool once response, the adapter shall emit `permission_request` with the native tool identifier, title then kind then `unknown_tool` name, a headless-run reason, and input selected immediately through this matrix, then select its reply through the option matrix [[7]]:
 
 | Native input | Unified input |
 | --- | --- |
@@ -324,6 +325,34 @@ Where a schema-valid ACP prompt-response or session-update surface lacks the evi
 | token report | invocation ownership and input/output, cache, and reasoning semantics |
 | cost report | invocation ownership and amount, currency, and provenance semantics [[engine-61](../engine.md#engine-61)] |
 
+### kimi-45
+
+When the adapter receives assistant or terminal tool content, it shall emit normalized media events [[engine-100](../engine.md#engine-100)] through this matrix using [[media-2](../media.md#media-2)]'s content mapping:
+
+| Native content | Selection |
+| --- | --- |
+| assistant message chunk | emit its supported ACP media block without altering accumulated text |
+| first terminal tool update | preserve the existing tool result, then emit supported Kimi model-content parts in `rawOutput` and ACP blocks in tool `content`, with the tool's identifier |
+| equivalent media represented in both tool output forms | emit once for that terminal result |
+| repeated tool terminal | emit no further media |
+| malformed consumed ACP media fields | select the protocol failure from [[kimi-27](#kimi-27)] before the SDK can discard the block |
+
+### kimi-43
+
+When a run supplies MCP servers or selects the browser preset, the adapter shall prepare the map through [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] before spawning, and send it on the selected session operation through this matrix [[18]][[19]]:
+
+| Selection | ACP representation or outcome |
+| --- | --- |
+| stdio | `name`, `command`, `args` (empty when absent), and `env` as name/value pairs |
+| HTTP | `name`, `type: 'http'`, `url`, and `headers` as name/value pairs; proceed to session setup only when initialization advertises `mcpCapabilities.http: true` |
+| server name | a recognizable normalized caller-name prefix of at most 20 characters followed by a random 20-hex-character suffix, unique to this run and short enough to retain the qualified-tool separator under native truncation |
+| fresh or resumed session | send the current map, using new private aliases and reconnecting servers even on resume |
+| absent or empty map without browser | `mcpServers: []`, preserving native ambient behavior |
+| abort during preparation | interrupted terminal without spawning |
+| active permission request whose native title begins with this run's complete `mcp__<private alias>__` prefix, has a non-empty tool suffix, and offers `allow_once` | select the first offered once option without emitting a user permission request |
+| no admitted namespace match, or no offered once option | ordinary headless handling selected by [[kimi-22](#kimi-22)] |
+| native denials and unrelated permission modes | unchanged |
+
 ## Internal Behavior
 
 ### Protocol Dependency
@@ -378,7 +407,16 @@ After a run has spawned a child, cleanup shall perform this containment sequence
 | process requires `SIGKILL` or remains alive after final grace, with no caller abort or higher authentication / protocol candidate selected | surface the failure through [[kimi-29](#kimi-29)] and select error through [[kimi-33](#kimi-33)] |
 | caller-aborted run later closes nonzero or on an unexpected signal, requires `SIGKILL`, or survives final grace | preserve its queued interrupted terminal and report the exact cleanup failure once through [[kimi-35](#kimi-35)], without emitting another event or starting another cleanup sequence |
 
+
 ## Verification
+
+### kimi-44
+
+When fixture subprocesses exchange real ACP messages with the adapter for fresh and resumed sessions, the integration check shall verify both transports, private names, exact environment and header values, approval of only an offered once option for an admitted namespace, denial of ambient and ordinary tools, and fallback denial when no once option is offered; an HTTP-capability refusal shall send no session request [[kimi-43](#kimi-43)].
+
+### kimi-46
+
+When the engine and adapter receive native Kimi raw-output image parts and ACP media through the real protocol transport, integration checks shall verify exact image bytes beside unchanged explanation and raw tool output, assistant media visibility, user-media suppression, correlated and non-duplicated terminal media, and protocol rejection of malformed consumed fields [[kimi-45](#kimi-45)].
 
 ### kimi-42
 
@@ -559,3 +597,6 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [15]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L532-L556 "Kimi Code 2.1.1 structured resume rejection"
 [16]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/config-options.ts#L50-L79 "Kimi Code 2.1.1 advertised thinking values, without off for a model that always thinks"
 [17]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L182-L195 "Kimi Code 2.1.1 ACP image prompt capability"
+
+[18]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/mcpCore/tool-naming.ts "Kimi 2.1.1 qualified MCP tool names"
+[19]: https://agentclientprotocol.com/protocol/session-setup "ACP per-session MCP stdio and HTTP server inputs"

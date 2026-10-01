@@ -67,10 +67,7 @@ describe('agent SDK and CLI conformance targets', () => {
 
   it('reports each absent Claude version datum without fabrication', () => {
     expect(
-      inspectClaudeSdkSelectedBinary(
-        { claudeCodeVersion: 'package-only' },
-        {},
-      ),
+      inspectClaudeSdkSelectedBinary({ claudeCodeVersion: 'package-only' }, {}),
     ).toEqual({
       identity: 'unreported',
       version: 'package-only',
@@ -175,7 +172,11 @@ describe('agent SDK and CLI conformance targets', () => {
     );
     expect(verifyIndex).toBeGreaterThan(installIndex);
     expect(steps[verifyIndex]?.run).toBe('npm run test:distributable');
-    expect(workflow.jobs?.acceptance?.needs).toEqual(['ci', 'distributable']);
+    expect(workflow.jobs?.acceptance?.needs).toEqual([
+      'ci',
+      'distributable',
+      'browser',
+    ]);
   });
 
   it('authenticates Kimi acceptance through the model API-key route', () => {

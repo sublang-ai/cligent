@@ -20,7 +20,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | Input | Contract |
 | --- | --- |
 | `AgentAdapter` | required adapter |
-| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `allowedTools`, and `disallowedTools` |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `allowedTools`, and `disallowedTools` |
 | `abortSignal`, `resume`, and `attachments` | excluded from instance defaults and available only in `RunOptions` |
 
 ### engine-2
@@ -35,6 +35,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | --- | --- |
 | `permissions` object | merge by member, with a provided per-call member taking precedence |
 | `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
+| `mcpServers` | replace the instance map with a provided per-call map, including an empty one |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
 | `fastMode`, `subagentModel`, `subagentEffort`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
 | `abortSignal`, `resume`, or `attachments` | accept only the per-call value because these fields do not exist in instance defaults |
@@ -53,6 +54,12 @@ When `Cligent.run()` yields an event, it shall select the `role` member through 
 ### engine-98
 
 When `AgentAdapter.run()`, `Cligent.run()`, `runAgent()`, `runParallel()`, or `Cligent.parallel()` receives `attachments?: readonly Attachment[]`, the engine shall pass the turn-local file list [[attachments-1](attachments.md#attachments-1)] to its selected adapter unchanged, without validating custom-adapter support or carrying the list into any later call, including an automatically resumed call.
+
+### Caller Tools and Browser
+
+### engine-124
+
+When an engine entrypoint selects options for its adapter, it shall pass the effective caller MCP server map [[mcp-1](mcp.md#mcp-1)] and browser selection [[mcp-3](mcp.md#mcp-3)] unchanged, allowing custom adapters to implement their own admission and leaving built-in native configuration to each adapter.
 
 ### Session Continuity
 
@@ -80,6 +87,10 @@ When the adapter emits `done` without a `resumeToken`, `Cligent` shall leave sub
 ### engine-7
 
 The engine shall export `createEvent()`, `generateSessionId()`, and `isAgentEvent()` helpers for constructing events, generating unique session IDs, and runtime type-guarding `AgentEvent` values.
+
+### engine-100
+
+When an adapter emits a `media` event before terminal completion, the engine shall forward its normalized native media payload [[media-1](media.md#media-1)] unchanged with ordinary agent, session, timestamp, and optional role identity, without adding it to textual terminal results or changing tool-use accounting.
 
 ### Protocol Hardening (run)
 
@@ -696,6 +707,14 @@ When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` t
 - `InitPayload.model` keeps its requested-model and `unknown` fallbacks.
 
 ## Verification
+
+### engine-123
+
+When a native-media adapter is run through direct and parallel engine entry points, integration checks shall verify unchanged media payloads and source identity, ordinary ordering before one terminal, role attribution, and unchanged tool counts and textual results [[engine-100](#engine-100)].
+
+### engine-125
+
+Given instance defaults and per-call overrides of caller tools and browser selection, when direct, registered, and parallel calls run, integration verification shall assert option forwarding [[engine-124](#engine-124)], map replacement and explicit browser disabling [[engine-3](#engine-3)], and failure isolation [[engine-15](#engine-15)].
 
 ### engine-99
 
