@@ -356,21 +356,28 @@ unrecognized upstream data stays absent. Codex accepts requests but exposes no
 effective-tier event through its public SDK, so its events carry no fast-mode
 observation and never echo the requested boolean as one.
 
-## Subagent model
+## Subagent model and effort
 
 `subagentModel` names the model every subagent of a run uses, separately from
-the run's own `model`. It lets a strong main agent keep the reasoning and
-design work while it hands well-defined, fine-grained tasks to subagents on a
-cheaper or faster model. Only Claude Code accepts the option. Codex, Gemini,
-Kimi, and OpenCode expose no per-run subagent-model surface, so their
-adapter-bound TypeScript options admit no value and dynamic calls reject any
-defined value before provider work starts.
+the run's own `model`, and `subagentEffort` names the effort they run at. They
+let a strong main agent keep the reasoning and design work while it hands
+well-defined, fine-grained tasks to subagents on a cheaper or faster model,
+without those subagents silently inheriting the main agent's effort. Only
+Claude Code accepts the options. Codex, Gemini, Kimi, and OpenCode expose no
+per-run subagent surface, so their adapter-bound TypeScript options admit no
+value and dynamic calls reject any defined value before provider work starts.
 
-- A model ID or alias string selects the subagent model; the value is passed
-  verbatim and must contain a non-whitespace character.
-- A per-run value overrides a constructor default.
-- Omission adds no Cligent override and leaves the runtime's own order in
-  force.
+- `subagentModel` is a model ID or alias string, passed verbatim, or the
+  literal `inherit` for the run's own model. It must contain a non-whitespace
+  character.
+- `subagentEffort` is a Claude effort value other than `ultracode`: `minimal`,
+  `low`, `medium`, `high`, `xhigh`, or `max`. It requires `subagentModel`;
+  omitted beside it, the agent chooses an effort for each task. Without
+  `subagentModel`, outside that vocabulary, or on another adapter it is
+  rejected before provider work.
+- A per-run value of either overrides a constructor default.
+- Omitting `subagentModel` adds no Cligent subagent configuration and leaves
+  the runtime's own order in force.
 
 ```ts
 import { Cligent } from '@sublang/cligent';
@@ -378,7 +385,9 @@ import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 
 const claude = new Cligent(new ClaudeCodeAdapter(), {
   model: 'claude-opus-5-5',
+  effort: 'ultracode',
   subagentModel: 'claude-haiku-4-5',
+  subagentEffort: 'medium',
 });
 
 for await (const event of claude.run('Refactor the parser module')) {
@@ -386,36 +395,65 @@ for await (const event of claude.run('Refactor the parser module')) {
 }
 ```
 
-When a run carries `subagentModel`, the Claude adapter does two things:
+When a run carries `subagentModel`, the Claude adapter does three things:
 
-- It sets `CLAUDE_CODE_SUBAGENT_MODEL` to the value and
-  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1` in the run's own copy of the
-  process environment. The force flag makes the value bind every subagent,
-  including the built-in ones whose definitions name a model and any model the
-  main agent would pass for one call. Your process environment is not changed.
-- It passes a custom, unsnapshotted system prompt whose last part is this
-  directive, with `{model}` replaced by the value:
+- It sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1` in the run's own copy of
+  the process environment, with `CLAUDE_CODE_SUBAGENT_MODEL` set to a named
+  model or, for `inherit`, removed. The force flag makes that model — or, alone,
+  the run's own — bind every subagent, including the built-in ones whose
+  definitions name a model and any model the main agent would pass for one
+  call. Your process environment is not changed.
+- It registers subagent definitions on that model, which the Agent tool lists
+  with their descriptions — "Runs on {model} at {effort} effort.", or "Runs on
+  your model at {effort} effort." for `inherit` — and one short delegate prompt:
+  - With `subagentEffort`, one definition named `delegate` at that effort, and
+    overrides of the built-in `general-purpose`, `Explore`, and `Plan` at the
+    same effort, so a built-in the agent still reaches — by name, or by
+    omitting the type, which runs `general-purpose` — runs at the pinned effort
+    too. The overrides carry the delegate prompt in place of the built-ins' own.
+    Claude Code 2.1.284 honours a definition registered under a built-in's
+    name; without one, both built-ins run at the main agent's effort.
+  - Without it, one definition per effort Claude accepts for a definition —
+    `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and
+    `delegate-max` — so the agent's choice of effort is a choice of definition
+    the Agent tool enforces. The built-ins keep their own definitions, and a
+    subagent the agent starts as one of them runs at the main agent's effort.
+  - `minimal` maps to `low`, as it does for the run's own effort, and is named
+    `low` in the definitions and the directive.
+- It passes a custom, unsnapshotted system prompt whose last part is the
+  delegation directive. Its first sentence follows the two options:
 
-  > Your subagents run on {model}. Offload to them the work you can specify
-  > completely and bound tightly — well-defined, fine-grained tasks that
-  > {model} can implement well — and keep the deep thinking, reasoning, and
-  > design work yourself. Offloading must never lower the quality of what you
-  > deliver: brief each subagent fully, and verify its result before you build
-  > on it.
+  | `subagentModel` | `subagentEffort` | First sentence                                                                    |
+  | --------------- | ---------------- | --------------------------------------------------------------------------------- |
+  | `inherit`       | omitted          | Your subagents run on your own model; give each one the effort its task warrants. |
+  | a model         | omitted          | Your subagents run on {model}; give each one the effort its task warrants.        |
+  | `inherit`       | an effort        | Your subagents run on your own model at {effort} effort.                          |
+  | a model         | an effort        | Your subagents run on {model} at {effort} effort.                                 |
 
-Without `subagentModel` the adapter sets neither variable and passes no system
-prompt, so the query is exactly what it would be without the feature. The
-option changes which model subagents use, never whether the agent may start
-them: a run whose `allowedTools` omits `Agent` still has no subagents. Cligent
-checks that a value is present, not that the model exists; a model the runtime
-cannot serve is refused through the ordinary error path.
+  The rest is the same in all four:
 
-The adapter module exports `subagentDirective(model)`, which returns the
-directive for a model, and `composeClaudeSystemPrompt(parts)`, which joins
-ordered parts with a blank line into the system prompt the adapter sends.
+  > Offload to them the work you can specify completely and bound tightly —
+  > well-defined, fine-grained tasks a subagent can implement well — and keep
+  > the deep thinking, reasoning, and design work yourself. Offloading must
+  > never lower the quality of what you deliver: brief each subagent fully, and
+  > verify its result before you build on it.
 
-Use `SUBAGENT_MODEL_SUPPORT` and its helpers to decide where to offer the
-option. The metadata is deeply frozen, and `claude` is accepted as an alias for
+Without `subagentModel` the adapter sets neither variable, registers no
+definition, and passes no system prompt, so the query is exactly what it would
+be without the feature. The options change which model and effort subagents
+use, never whether the agent may start them: a run whose `allowedTools` omits
+`Agent` still has no subagents. Cligent checks that a model is present, not
+that it exists; a model the runtime cannot serve is refused through the
+ordinary error path.
+
+The adapter module exports `subagentDirective(selection)`, which returns the
+directive for `{ model, effort? }` (a bare model string reads as `{ model }`),
+and `composeClaudeSystemPrompt(parts)`, which joins ordered parts with a blank
+line into the system prompt the adapter sends. The package exports the
+`ClaudeSubagentEffort` type for the accepted efforts.
+
+Use `SUBAGENT_MODEL_SUPPORT` and its helpers to decide where to offer both
+options. The metadata is deeply frozen, and `claude` is accepted as an alias for
 `claude-code`.
 
 | Adapter       | `requestSupported` |
@@ -441,7 +479,8 @@ assertSubagentModelSupported('claude-code');
 ```
 
 To offer model choices, reuse the adapter's catalog from
-[model discovery](../README.md#model-discovery).
+[model discovery](../README.md#model-discovery), and offer efforts from
+`EFFORT_SUPPORT['claude-code']` less its `orchestrationValues`.
 
 ## Session continuity
 
