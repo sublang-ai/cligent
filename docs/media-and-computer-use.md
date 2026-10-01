@@ -120,6 +120,15 @@ cancellable and bounded; offline downloads or missing host prerequisites fail
 with a diagnostic. Cligent does not install system libraries or replace a
 system browser. Plain text calls and importing the library install nothing.
 
+Preparation verifies the Node requirement, native installation completion, and
+executable presence. It does not launch a browser as a readiness probe. Ubuntu
+Server needs no desktop or display for this headless browser, but still needs
+Chromium's system libraries. Missing libraries can pass installation with a
+native warning and fail when the first browser tool launches Chromium. Hosts
+should treat `browser: true` as a requested capability, not a readiness result,
+and show the resulting setup or tool diagnostic to the user. An administrator
+must install missing system dependencies; Cligent does not run `sudo` for them.
+
 Every browser process uses an isolated temporary profile. It has no personal
 browser logins and does not import the desktop application's tabs or plugins.
 Existing native policy precedence still applies; no global permission bypass
@@ -204,7 +213,7 @@ semantics; this API does not promise universal MCP isolation.
 | Adapter | Admission and output |
 | --- | --- |
 | Claude Code | Only supplied servers are admitted; account connectors remain disabled. Their tools receive scoped approval, with `disallowedTools` retained. A supplied server or managed browser together with an explicit `allowedTools` list is rejected because that combination cannot preserve Cligent's exact tool-availability contract. Native tool-result screenshots produce correlated `media` events. |
-| Codex | Supplied servers are passed as runtime configuration, including under existing permission-policy isolation. Native MCP image/resource results produce `media`. |
+| Codex | Supplied servers are passed as runtime configuration, including under existing permission-policy isolation. Native MCP image/resource results produce `media`. MCP/browser configuration is unsupported on native Windows in this release because its configuration wrapper cannot be launched by the SDK there; use a Linux or macOS host for this capability. |
 | Gemini | Supplied servers use a temporary native settings overlay. Unsupported overlay contexts fail explicitly. The CLI exposes text-only tool display output, so the model can use screenshots while screenshot bytes are unavailable to Cligent; use the runtime's saved-file references where needed. |
 | Kimi | Servers are supplied through ACP, with HTTP capability negotiation. Run-specific server names keep scoped approvals separate from ambient tools. Native rules naming the original server do not match those aliases; use applicable wildcard rules or the exposed native names. Native image/tool content produces `media`. |
 | OpenCode | Supplied servers are admitted into the run's managed server. External shared servers reject caller MCP/browser options because changing their tool registry affects other sessions; configure those servers independently. Native file and completed-tool attachments produce `media`. |
@@ -253,3 +262,9 @@ Tests cover exact file bytes and ordering across installed SDK serialization,
 ACP negotiation, unsupported media, missing files, cancellation, resumed turns,
 and parallel failure isolation. They establish transport behavior without
 claiming that every model or account accepts every transported format.
+
+For the 0.31.0 milestone, automated CI covers Ubuntu with Node 20, 22, and 24,
+including a separate real browser/MCP job on Node 22. Local macOS verification
+also exercises browser screenshots and native Claude/Codex loops. Automated
+macOS/Windows coverage and a browser launch preflight are follow-up work; this
+release does not claim that those environments have equivalent CI coverage.

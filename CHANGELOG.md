@@ -10,13 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-01
+
 ### Added
 
 - Opt-in `browser: true` prepares a pinned Playwright MCP runtime and managed
   Chromium for ordinary app-inspection and screenshot prompts. Per-instance
   and per-call `mcpServers` admit caller-selected stdio/HTTP tools through
   supported native transports, preserving Claude's account-connector isolation
-  and explicit tool restrictions — DR-032.
+  and explicit tool restrictions — DR-032. Preparation verifies installation
+  and executable presence; browser launch and host-library failures can still
+  surface on the first tool call. Full desktop control requires separate tools.
+  Codex MCP/browser configuration is unsupported on native Windows in this release.
 - Typed `media` events expose native screenshots and file references alongside
   text and tool activity. Claude now preserves actual SDK user-frame tool
   results; Codex, Kimi, and OpenCode normalize native media independently.
@@ -35,9 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Every Claude run confines its MCP servers to those the query passes — none,
-  as `AgentOptions` names no server: `strictMcpConfig: true` on every run, not
-  only under an explicit `allowedTools`, and `disableClaudeAiConnectors: true`
+- Every Claude run confines its MCP servers to caller-selected or managed-browser
+  servers, with none admitted when neither is configured: `strictMcpConfig: true`
+  on every run, not only under an explicit `allowedTools`, and
+  `disableClaudeAiConnectors: true`
   in the query's settings, so the account's auto-fetched claude.ai connectors
   are neither fetched nor connected and their "connectors need authorizing"
   reminder no longer reaches a player's transcript or a Captain's reply (#61).
@@ -722,7 +728,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/sublang-ai/cligent/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/sublang-ai/cligent/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/sublang-ai/cligent/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/sublang-ai/cligent/compare/v0.27.1...v0.28.0
