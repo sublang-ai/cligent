@@ -53,7 +53,7 @@ Canonical behavior is specified by [[engine-90](../packages/engine.md#engine-90)
 ## Consequences
 
 The option, capability parameter, table, helpers, environment variables, system prompt, and tmux-play key are additive; every new member is optional, and omission preserves existing behavior, so this ships in a MINOR release.
-The Claude supported floor of 0.3.284 already bundles Claude Code 2.1.283, past the 2.1.257 that `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` requires [[1]], so no floor rises under [[package-17](../packages/package.md#package-17)].
+The Claude supported floor of 0.3.284 already bundles Claude Code 2.1.284, past the 2.1.257 that `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` requires [[1]], so no floor rises under [[package-17](../packages/package.md#package-17)].
 A run with `allowedTools` that omits `Agent` keeps its subagents unavailable as before; the option changes which model subagents use, never whether the agent may start them.
 Hosts that expose the choice reuse the adapter's model list from discovery and `isSubagentModelSupported` to decide where to offer it.
 A future system-prompt option changes the composition's first part and nothing about the directive, so it will not be a breaking change to this contract.
