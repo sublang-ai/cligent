@@ -12,24 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `subagentEffort` names the effort every subagent of a run uses, beside
-  `subagentModel`, on `AgentOptions`, `Cligent` defaults, and per-run
-  overrides; a per-run value replaces the default, and with it omitted the
-  agent chooses an effort for each task. Only Claude accepts it, as a Claude
-  effort other than `ultracode` and only beside `subagentModel`; any other
-  value, a value without `subagentModel`, and any value on Codex, Gemini, Kimi,
-  or OpenCode is rejected before provider work. The Claude adapter enforces it
-  through subagent definitions registered on the subagent model, which the
-  Agent tool lists by name and description: a pinned effort registers
-  `delegate` and overrides the built-in `general-purpose`, `Explore`, and `Plan`
-  at that effort, and an effort left to the agent registers `delegate-low`
-  through `delegate-max`, one per effort Claude accepts for a definition.
-  Claude Code 2.1.284 honours a definition registered under a built-in's name,
-  which the live acceptance observed for `general-purpose` and `Explore`
-  against a control running both at the main agent's effort, so a built-in the
-  agent still reaches — by name, or by omitting the subagent type, which runs
-  `general-purpose` — runs at the pinned effort too. `subagentModel` also
-  accepts `inherit`, the run's own model: the adapter then sets
+- `subagentEffort` names the effort the subagents of a run use, beside
+  `subagentModel`, on `AgentOptions`, `Cligent` defaults, and per-run overrides;
+  a per-run value replaces the default, and with it omitted the agent chooses an
+  effort for each task. Only Claude accepts it, as a Claude effort other than
+  `ultracode` and only beside `subagentModel`; any other value, a value without
+  `subagentModel`, and any value on Codex, Gemini, Kimi, or OpenCode is rejected
+  before provider work. The Claude adapter enforces it through subagent
+  definitions registered on the subagent model, which the Agent tool lists by
+  name and description: a pinned effort registers `delegate` and a
+  `general-purpose` that replaces the built-in of that name at that effort, and
+  an effort left to the agent registers `delegate-low` through `delegate-max`,
+  one per effort Claude accepts for a definition, and replaces no built-in.
+  Claude Code 2.1.284 lets a registered definition replace a built-in by name
+  and runs a call naming no subagent type as `general-purpose`, so such a call
+  lands on the pinned effort too. Under a pinned subagent effort the built-in
+  `Explore` and `Plan` keep their own definitions and run at the agent's own
+  effort, because a replacement takes a built-in whole and would cost them their
+  read-only tool restrictions and their own prompts; the live acceptance
+  observed `general-purpose` at a pinned `low` and `Explore` at the main agent's
+  `high`, still without `Write` or `Edit`. `subagentModel` also accepts
+  `inherit`, the run's own model: the adapter then sets
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone and clears any inherited
   `CLAUDE_CODE_SUBAGENT_MODEL`. `ClaudeSubagentEffort` names the accepted
   efforts. `tmux-play` accepts `subagentEffort` beside `subagentModel` on Claude

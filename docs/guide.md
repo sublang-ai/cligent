@@ -407,12 +407,18 @@ When a run carries `subagentModel`, the Claude adapter does three things:
   with their descriptions — "Runs on {model} at {effort} effort.", or "Runs on
   your model at {effort} effort." for `inherit` — and one short delegate prompt:
   - With `subagentEffort`, one definition named `delegate` at that effort, and
-    overrides of the built-in `general-purpose`, `Explore`, and `Plan` at the
-    same effort, so a built-in the agent still reaches — by name, or by
-    omitting the type, which runs `general-purpose` — runs at the pinned effort
-    too. The overrides carry the delegate prompt in place of the built-ins' own.
-    Claude Code 2.1.284 honours a definition registered under a built-in's
-    name; without one, both built-ins run at the main agent's effort.
+    one named `general-purpose` at the same effort that replaces the built-in
+    of that name — "General-purpose agent for research, code search and
+    multi-step tasks, on {model} at {effort} effort.", or "on your model" for
+    `inherit` — with the delegate prompt in place of the built-in's own and no
+    model of its own, so the forced model applies. A subagent the agent starts
+    as `general-purpose`, or without naming a type, which runs
+    `general-purpose`, therefore runs at the pinned effort too; Claude Code
+    2.1.284 honours a definition registered under a built-in's name. The
+    built-in `Explore` and `Plan` are not replaced, because a replacement would
+    cost them their read-only tool restrictions and their own prompts: they
+    keep their definitions and run at the main agent's effort, the one place a
+    pinned effort does not reach.
   - Without it, one definition per effort Claude accepts for a definition —
     `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and
     `delegate-max` — so the agent's choice of effort is a choice of definition
