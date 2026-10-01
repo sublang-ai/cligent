@@ -4,7 +4,12 @@
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
-import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
+import {
+  assertBuiltInSubagentEffortOption,
+  assertBuiltInSubagentModelOption,
+  subagentEffortValues,
+  type ClaudeSubagentEffort,
+} from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -90,6 +95,15 @@ type ClaudeSystemPrompt =
       snapshot?: boolean;
     };
 
+// The SDK's `AgentDefinition` fields the adapter sets, mirrored locally for
+// the same reason; package-104's conformance check rejects drift.
+export interface ClaudeAgentDefinition {
+  description: string;
+  prompt: string;
+  model?: string;
+  effort?: ClaudeSdkEffort;
+}
+
 /** The custom, unsnapshotted system prompt the adapter composes. */
 export interface ClaudeComposedSystemPrompt {
   type: 'custom';
@@ -117,6 +131,7 @@ interface ClaudeQueryOptions {
   effort?: ClaudeSdkEffort;
   settings?: ClaudeSettings;
   systemPrompt?: ClaudeSystemPrompt;
+  agents?: Record<string, ClaudeAgentDefinition>;
   sessionId?: string;
 }
 
@@ -951,19 +966,109 @@ export function mapEffortToClaudeOptions(
   };
 }
 
+/** The literal `subagentModel` value naming the run's own model (DR-029). */
+export const INHERIT_SUBAGENT_MODEL = 'inherit';
+
+/**
+ * What the delegation directive names: the subagents' model, or `'inherit'`
+ * for the agent's own, and their effort, omitted when the agent chooses.
+ */
+export interface SubagentDirectiveSelection {
+  model: string;
+  effort?: string;
+}
+
 /**
  * claude-code-61: the delegation directive an accepted `subagentModel`
- * contributes, naming the model verbatim at both places.
+ * contributes. Only its first sentence follows the model and effort; a bare
+ * model string reads as `{ model }`.
  */
-export function subagentDirective(model: string): string {
+export function subagentDirective(
+  selection: string | SubagentDirectiveSelection,
+): string {
+  const { model, effort } =
+    typeof selection === 'string' ? { model: selection } : selection;
+  const subject =
+    model === INHERIT_SUBAGENT_MODEL
+      ? 'Your subagents run on your own model'
+      : `Your subagents run on ${model}`;
+  const first =
+    effort === undefined
+      ? `${subject}; give each one the effort its task warrants.`
+      : `${subject} at ${effort} effort.`;
   return (
-    `Your subagents run on ${model}. Offload to them the work you can ` +
-    'specify completely and bound tightly — well-defined, fine-grained ' +
-    `tasks that ${model} can implement well — and keep the deep thinking, ` +
-    'reasoning, and design work yourself. Offloading must never lower the ' +
-    'quality of what you deliver: brief each subagent fully, and verify its ' +
-    'result before you build on it.'
+    `${first} Offload to them the work you can specify completely and ` +
+    'bound tightly — well-defined, fine-grained tasks a subagent can ' +
+    'implement well — and keep the deep thinking, reasoning, and design ' +
+    'work yourself. Offloading must never lower the quality of what you ' +
+    'deliver: brief each subagent fully, and verify its result before you ' +
+    'build on it.'
   );
+}
+
+/** claude-code-67: the one prompt every registered definition carries. */
+const DELEGATE_PROMPT =
+  'You are a delegate subagent. Complete exactly the task you are given, ' +
+  'within the bounds it sets, using the tools available to you. Do not ' +
+  'widen the task or change anything it does not ask for. When you finish, ' +
+  'report precisely what you did and what you verified, and name anything ' +
+  'you could not do or could not verify.';
+
+/** Built-in subagents a pinned effort overrides by name (claude-code-69). */
+const OVERRIDDEN_BUILT_IN_SUBAGENTS = [
+  'general-purpose',
+  'Explore',
+  'Plan',
+] as const;
+
+function toClaudeSdkEffort(effort: ClaudeSubagentEffort): ClaudeSdkEffort {
+  // claude-code-8's mapping; a subagent effort is never `ultracode`.
+  return mapEffortToClaudeOptions(effort).effort as ClaudeSdkEffort;
+}
+
+function delegateDescription(model: string, effort: ClaudeSdkEffort): string {
+  return model === INHERIT_SUBAGENT_MODEL
+    ? `Runs on your model at ${effort} effort.`
+    : `Runs on ${model} at ${effort} effort.`;
+}
+
+/**
+ * claude-code-67: the subagent definitions a query registers. A pinned
+ * effort registers `delegate` and overrides the built-ins by name, which the
+ * runtime honours; otherwise one `delegate-<effort>` per distinct SDK effort,
+ * so the agent's choice of effort is a choice of definition.
+ */
+function claudeSubagentDefinitions(
+  model: string,
+  effort: ClaudeSubagentEffort | undefined,
+): Record<string, ClaudeAgentDefinition> {
+  const definition = (
+    sdkEffort: ClaudeSdkEffort,
+    withModel: boolean,
+  ): ClaudeAgentDefinition => ({
+    description: delegateDescription(model, sdkEffort),
+    prompt: DELEGATE_PROMPT,
+    ...(withModel ? { model } : {}),
+    effort: sdkEffort,
+  });
+
+  if (effort !== undefined) {
+    const sdkEffort = toClaudeSdkEffort(effort);
+    const agents: Record<string, ClaudeAgentDefinition> = {
+      delegate: definition(sdkEffort, true),
+    };
+    for (const name of OVERRIDDEN_BUILT_IN_SUBAGENTS) {
+      agents[name] = definition(sdkEffort, false);
+    }
+    return agents;
+  }
+
+  const agents: Record<string, ClaudeAgentDefinition> = {};
+  for (const value of subagentEffortValues(AGENT) ?? []) {
+    const sdkEffort = toClaudeSdkEffort(value as ClaudeSubagentEffort);
+    agents[`delegate-${sdkEffort}`] ??= definition(sdkEffort, true);
+  }
+  return agents;
 }
 
 /**
@@ -982,10 +1087,17 @@ export function composeClaudeSystemPrompt(
 }
 
 export function mapAgentOptionsToClaudeQueryOptions(
-  options: AgentOptions<ClaudeEffort, boolean, string> | undefined,
+  options:
+    | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
+    | undefined,
 ): MappedClaudeOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
+  assertBuiltInSubagentEffortOption(
+    AGENT,
+    options?.subagentModel,
+    options?.subagentEffort,
+  );
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
   const settings =
@@ -1017,15 +1129,31 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.CLAUDECODE;
 
-  // claude-code-60 / claude-code-61: FORCE makes the value bind every
-  // subagent, including built-in ones whose definitions pin a model and any
-  // per-call `model` the agent passes; the directive is the final part.
+  // claude-code-60 / claude-code-61 / claude-code-67: FORCE makes the model
+  // bind every subagent, including built-in ones whose definitions pin a
+  // model and any per-call `model` the agent passes; FORCE alone binds them
+  // to the run's own model, so `inherit` clears any caller model. The
+  // definitions carry the effort, and the directive is the final part.
   const systemPromptParts: string[] = [];
+  let agents: Record<string, ClaudeAgentDefinition> | undefined;
   const subagentModel = options?.subagentModel;
   if (subagentModel !== undefined) {
-    env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
+    if (subagentModel === INHERIT_SUBAGENT_MODEL) {
+      delete env.CLAUDE_CODE_SUBAGENT_MODEL;
+    } else {
+      env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
+    }
     env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1';
-    systemPromptParts.push(subagentDirective(subagentModel));
+    const subagentEffort = options?.subagentEffort;
+    agents = claudeSubagentDefinitions(subagentModel, subagentEffort);
+    systemPromptParts.push(
+      subagentDirective({
+        model: subagentModel,
+        ...(subagentEffort !== undefined
+          ? { effort: toClaudeSdkEffort(subagentEffort) }
+          : {}),
+      }),
+    );
   }
   const systemPrompt = composeClaudeSystemPrompt(systemPromptParts);
 
@@ -1056,6 +1184,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       ...effortOptions,
       ...(settings !== undefined ? { settings } : {}),
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(agents !== undefined ? { agents } : {}),
     },
     cleanupAbort,
   };
@@ -1064,7 +1193,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
 export class ClaudeCodeAdapter implements AgentAdapter<
   ClaudeEffort,
   boolean,
-  string
+  string,
+  ClaudeSubagentEffort
 > {
   readonly agent = AGENT;
 
@@ -1095,7 +1225,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
 
   async *run(
     prompt: string,
-    options?: AgentOptions<ClaudeEffort, boolean, string>,
+    options?: AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     let sdk: ClaudeAgentSdk;
     try {

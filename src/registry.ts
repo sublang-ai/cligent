@@ -3,14 +3,17 @@
 
 import type { AgentType, AgentAdapter } from './types.js';
 
-type DynamicAgentAdapter = AgentAdapter<string, boolean, string>;
+type DynamicAgentAdapter = AgentAdapter<string, boolean, string, string>;
 
 export class AdapterRegistry {
   private readonly adapters = new Map<AgentType, DynamicAgentAdapter>();
 
-  register<E extends string, FM extends boolean, SM extends string>(
-    adapter: AgentAdapter<E, FM, SM>,
-  ): void {
+  register<
+    E extends string,
+    FM extends boolean,
+    SM extends string,
+    SE extends string,
+  >(adapter: AgentAdapter<E, FM, SM, SE>): void {
     if (this.adapters.has(adapter.agent)) {
       throw new Error(`Adapter already registered for agent: ${adapter.agent}`);
     }
