@@ -379,6 +379,7 @@ for (const [label, value] of [
   ['getFastModeSupport', root.getFastModeSupport],
   ['isFastModeSupported', root.isFastModeSupported],
   ['assertFastModeSupported', root.assertFastModeSupported],
+  ['getAttachmentSupport', root.getAttachmentSupport],
   ['estimateCost', root.estimateCost],
   ['getDefaultPricingCachePath', root.getDefaultPricingCachePath],
 ]) {
@@ -430,6 +431,15 @@ if (
   throw new Error('root fast-mode helpers are unavailable or stale');
 }
 root.assertFastModeSupported('codex');
+
+if (
+  !Object.isFrozen(root.ATTACHMENT_SUPPORT) ||
+  root.getAttachmentSupport('claude') !== root.ATTACHMENT_SUPPORT['claude-code'] ||
+  !root.ATTACHMENT_SUPPORT.opencode.mimeTypes.includes('video/*') ||
+  root.getAttachmentSupport('custom') !== undefined
+) {
+  throw new Error('root attachment transport metadata is unavailable or stale');
+}
 
 // cost-estimation-15: exercise the installed public API on the Node floor.
 const cachePath = root.getDefaultPricingCachePath();
@@ -548,6 +558,7 @@ process.stdout.write(
   type InitPayload,
   type KimiEffort,
   type OpenCodeEffort,
+  type Attachment,
 } from '@sublang/cligent';
 import { ClaudeCodeAdapter } from '@sublang/cligent/adapters/claude-code';
 import { CodexAdapter } from '@sublang/cligent/adapters/codex';
@@ -575,6 +586,14 @@ const codex = new Cligent(new CodexAdapter(), {
 const gemini = new Cligent(new GeminiAdapter(), { effort: 'max' });
 const kimi = new Cligent(new KimiAdapter(), { effort: 'on' });
 const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'minimal' });
+
+const attachments: readonly Attachment[] = [{ path: 'screen.png' }];
+claude.run('describe', { attachments });
+codex.run('describe', { attachments });
+kimi.run('describe', { attachments });
+opencode.run('describe', { attachments: [{ path: 'clip.mp4' }] });
+// @ts-expect-error Attachments are per-call and not instance defaults.
+new Cligent(new CodexAdapter(), { attachments });
 
 claude.run('typed consumer', { effort: 'ultracode', fastMode: false });
 codex.run('typed consumer', { effort: 'ultra', fastMode: true });

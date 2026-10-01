@@ -285,6 +285,36 @@ afterEach(() => {
 });
 
 describe('GeminiAdapter', () => {
+  it('rejects typed attachments before starting Gemini with native @file guidance', async () => {
+    const { spawnProcess, invocations } = makeSpawn(() => {});
+    await expect(
+      collect(
+        new GeminiAdapter({ spawnProcess }).run('Describe', {
+          attachments: [{ path: './clip.mp4' }],
+        }),
+      ),
+    ).rejects.toThrow(/@/);
+    expect(invocations).toHaveLength(0);
+  });
+
+  it.each([undefined, []])(
+    'preserves native media @references with attachments %j',
+    async (attachments) => {
+      const prompt =
+        'Describe @./photo.png @./clip.mp4 @./audio.wav @./report.pdf';
+      const { spawnProcess, invocations } = makeSpawn((process) => {
+        writeEventsAndClose(process, [
+          JSON.stringify({ type: 'result', status: 'success' }),
+        ]);
+      });
+      const events = await collect(
+        new GeminiAdapter({ spawnProcess }).run(prompt, { attachments }),
+      );
+      expect(invocations[0]?.args.at(-1)).toBe(`--prompt=${prompt}`);
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    },
+  );
+
   it('maps Gemini NDJSON events to unified events', async () => {
     const { spawnProcess } = makeSpawn((process) => {
       writeEventsAndClose(

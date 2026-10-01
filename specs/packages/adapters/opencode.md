@@ -466,7 +466,7 @@ matrix:
 
 | Portable input | OpenCode outcome |
 | --- | --- |
-| prompt | one native text part with the exact string and no caller-supplied message identifier, because OpenCode mints the identifier and a foreign one leaves the session busy without a terminal [[14]] |
+| prompt | one native text part with the exact string, followed by any [[opencode-58](#opencode-58)] file parts, and no caller-supplied message identifier, because OpenCode mints the identifier and a foreign one leaves the session busy without a terminal [[14]] |
 | non-empty `cwd` | wrapper `cwd` and the version-specific request placement in [[opencode-41](#opencode-41)]; omit provider directory data for absent or empty `cwd` |
 | any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
 | non-empty model without `/` | pass through unchanged |
@@ -476,6 +476,19 @@ matrix:
 | any `maxBudgetUsd` | no OpenCode request member because this runtime has no corresponding control |
 | non-empty resume | select the existing session rather than create one |
 | permission, effort, or tool-list input | the outcomes in [[opencode-7](#opencode-7)], [[opencode-12](#opencode-12)], [[opencode-14](#opencode-14)], and [[opencode-15](#opencode-15)] |
+
+### opencode-58
+
+When a run receives per-call local attachments [[attachments-1](../attachments.md#attachments-1)], the adapter shall transport the files validated under [[attachments-2](../attachments.md#attachments-2)] through this matrix:
+
+| Input or SDK path | Outcome |
+| --- | --- |
+| `image/*`, `audio/*`, `video/*`, `application/pdf`, or `text/plain` | read local bytes before backend work and append one native `{ type: 'file', mime, filename, url }` part per attachment in caller order, with the resolved MIME, basename, and `data:<mime>;base64,<bytes>` URL [[5]][[19]] |
+| managed or external server, v1 or v2 SDK, asynchronous or synchronous prompt route | the same inline file parts, without requiring the server to access the caller's local paths |
+| legacy direct `run` or `query` client without the native session wrapper | fail before session or prompt execution rather than silently dropping attachments |
+| omitted or empty attachments | unchanged text-only prompt |
+| selected provider or model cannot interpret a transported file | preserve native eligibility handling; OpenCode may substitute model-visible error text for unsupported modalities [[20]] |
+
 
 ### Token Accounting
 
@@ -704,6 +717,14 @@ adapter shall classify it through this matrix [[11]]:
 | causal descendant still active at root completion | retain exact subset as partial |
 
 ## Verification
+
+### opencode-59
+
+Given local image, audio, video, PDF, text, and explicitly typed files, when the engine and adapter drive installed v1 and v2 SDK clients against a local HTTP fixture on both prompt routes, the integration checks shall assert [[opencode-58](#opencode-58)]'s ordered MIME, basename, and byte-exact data URLs, text-only omitted and empty cases, rejection before backend loading for invalid files, caller cancellation [[opencode-9](#opencode-9)], explicit refusal on legacy direct clients, and no attachment inheritance on resumed turns, with [[opencode-44](#opencode-44)]'s exact text part and absent caller message identifier.
+
+### opencode-60
+
+Where the credential-free real-server dependencies in [[opencode-54](#opencode-54)] are present, when the engine and managed adapter submit local image, audio, video, PDF, and text files through a native `noReply` prompt to an isolated server configured with a local-only provider, the acceptance check shall verify [[opencode-58](#opencode-58)]'s inline file parts by reading back the exact stored MIME, basename, and bytes, the native expansion of text files, one user-only message without model execution, and bounded managed cleanup [[opencode-36](#opencode-36)].
 
 ### opencode-56
 
@@ -1024,3 +1045,5 @@ causal report matrix while preserving independently observed `toolUses`
 [16]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/tool/task.ts#L227-L254 'OpenCode 1.18.33 background task result injected into the parent session'
 [17]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/provider/provider.ts#L1364-L1370 'OpenCode 1.18.33 per-model variants from the model catalog'
 [18]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/llm/request.ts#L80-L83 'OpenCode 1.18.33 prompt variant lookup, where an unadvertised name has no effect'
+[19]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/sdk/js/src/v2/gen/types.gen.ts 'OpenCode 1.18.33 native file-part and prompt types'
+[20]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/provider/transform.ts#L385-L417 'OpenCode 1.18.33 model-specific media eligibility handling'

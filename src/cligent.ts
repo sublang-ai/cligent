@@ -184,6 +184,7 @@ export class Cligent<
       subagentEffort: merged.subagentEffort,
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
+      attachments: overrides?.attachments,
       abortSignal: merged.abortSignal,
       resume,
     };

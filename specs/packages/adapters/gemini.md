@@ -243,6 +243,10 @@ When `run()` maps permission controls, the adapter shall emit neither deprecated
 
 ### Options Mapping
 
+### gemini-46
+
+When a run supplies the per-call attachment option [[attachments-1](../attachments.md#attachments-1)], the adapter shall reject a non-empty list before runtime invocation with guidance to use native `@file` prompt references, while absence or an empty list preserves the exact prompt forwarded by [[gemini-3](#gemini-3)], whose native headless processing accepts image, video, audio, PDF, and text references [[19]][[20]].
+
 ### gemini-7
 
 When the adapter maps ordinary `AgentOptions` to Gemini arguments and process options, it shall select this matrix:
@@ -480,6 +484,10 @@ When a run owns a caller abort signal and child process, it shall contain their 
 
 ## Verification
 
+### gemini-47
+
+When the adapter runs with attachment options, its process integration shall verify that a non-empty list rejects before spawn with `@file` guidance and that omitted and empty lists pass media and document references unchanged in the final prompt argument [[gemini-46](#gemini-46)].
+
 ### gemini-201
 
 Given canned native Gemini NDJSON flows, when the adapter runs, the emitted events shall match this normalization matrix:
@@ -661,3 +669,5 @@ Under [[gemini-219](#gemini-219)]'s real-target, credential, and sandbox precond
 [16]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/sandboxConfig.ts#L43-L63 'Gemini CLI 0.61.0 sandbox request: SANDBOX, then GEMINI_SANDBOX over the configured value'
 [17]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/sandboxConfig.ts#L126-L148 'Gemini CLI 0.61.0 tools.sandbox setting forms'
 [18]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/utils/sandbox.ts#L216-L224 'Gemini CLI 0.61.0 macOS sandbox home path from the real path of its home'
+[19]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/nonInteractiveCli.ts#L257-L275 'Gemini CLI 0.61.0 headless prompt reference expansion'
+[20]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/utils/fileUtils.ts#L577-L614 'Gemini CLI 0.61.0 audio, image, PDF, and video file content'

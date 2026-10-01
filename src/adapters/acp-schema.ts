@@ -35,6 +35,13 @@ export const zAcpError = z.object({
 /** `initialize` result; the adapter enforces the negotiated version itself. */
 export const zAcpInitializeResponse = z.object({
   protocolVersion: z.number(),
+  agentCapabilities: z
+    .object({
+      promptCapabilities: z
+        .object({ image: z.boolean().optional() })
+        .optional(),
+    })
+    .optional(),
 });
 
 /**

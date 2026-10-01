@@ -3,6 +3,7 @@
 
 import type { Effort } from './effort.js';
 import type { DefaultSubagentEffort } from './subagent-model.js';
+import type { Attachment } from './attachments.js';
 
 export type {
   ClaudeEffort,
@@ -297,6 +298,8 @@ export interface AgentOptions<
   SM extends string = never,
   SE extends string = DefaultSubagentEffort<E, SM>,
 > {
+  /** Local files for this call only; support depends on the adapter. */
+  attachments?: readonly Attachment[];
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
@@ -351,6 +354,8 @@ export interface RunOptions<
   SM extends string = never,
   SE extends string = DefaultSubagentEffort<E, SM>,
 > extends Omit<CligentOptions<E, FM, SM, SE>, 'role'> {
+  /** Local files for this turn; never reused automatically on resume. */
+  attachments?: readonly Attachment[];
   abortSignal?: AbortSignal;
   resume?: string | false;
 }

@@ -117,7 +117,10 @@ const currentAcpSetConfig: Promise<CurrentAcpSetConfigResponse> =
 const currentAcpPrompt: Promise<CurrentAcpPromptResponse> =
   currentAcpConnection.prompt({
     sessionId: 'conformance-session',
-    prompt: [{ type: 'text', text: 'conformance prompt' }],
+    prompt: [
+      { type: 'text', text: 'conformance prompt' },
+      { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+    ],
   });
 const currentAcpCancel: Promise<void> = currentAcpConnection.cancel({
   sessionId: 'conformance-session',

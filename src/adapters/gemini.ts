@@ -12,6 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { prepareAttachments } from '../attachments.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -1530,6 +1531,9 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       options?.subagentModel,
       options?.subagentEffort,
     );
+    if (options?.attachments !== undefined) {
+      await prepareAttachments(AGENT, options.attachments, options.cwd);
+    }
     // engine-25: `isAvailable()` is not on this path. Cligent.run() reaches
     // the adapter directly, so without this a below-floor CLI is spawned and
     // fails mid-turn — the failure mode this work exists to remove.

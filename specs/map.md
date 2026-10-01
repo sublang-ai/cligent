@@ -56,12 +56,14 @@ meta.md       The spec of specs
 | [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt; `inherit` and its environment, subagent effort, definitions and the directive's wording amended by DR-029 |
 | [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar; amends DR-028 |
 | [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
+| [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 
 ## Packages
 
 | File | Summary |
 | --- | --- |
 | [claude-code.md](packages/adapters/claude-code.md) | Claude Code SDK adapter |
+| [attachments.md](packages/attachments.md) | Local-file attachment inputs, validation, and transport discovery |
 | [codex.md](packages/adapters/codex.md) | Codex SDK adapter |
 | [cost-estimation.md](packages/cost-estimation.md) | Optional text-token cost estimation and external pricing cache |
 | [engine.md](packages/engine.md) | Cligent engine and shared adapter contract |

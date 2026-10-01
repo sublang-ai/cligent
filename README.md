@@ -127,6 +127,14 @@ either before any provider work. Use `SUBAGENT_MODEL_SUPPORT` before presenting
 the options; see the
 [subagent guide](docs/guide.md#subagent-model-and-effort).
 
+Local media can be attached per call with `attachments: [{ path: 'screen.png' }]`.
+Claude, Codex, Kimi, and OpenCode use native media inputs with adapter-specific
+formats; Gemini already accepts native `@file` references in the text prompt.
+Where the adapter exposes configured browser and computer tools, ordinary
+prompts invoke them. Claude currently excludes inherited MCP tools.
+See the [media and computer-use guide](docs/media-and-computer-use.md) for the
+capability matrix, examples, and native tool setup.
+
 ## Model discovery
 
 Query the installed runtime on demand, without sending a prompt:

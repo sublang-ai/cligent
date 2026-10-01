@@ -174,7 +174,20 @@ When `canUseTool` decides a classified or unclassified call, it shall resolve ac
 
 ### claude-code-46
 
-When `run(prompt, options)` invokes the SDK query, the adapter shall pass `prompt` through unchanged.
+When `run(prompt, options)` invokes the SDK query, the adapter shall select its prompt representation according to this matrix after [[attachments-2](../attachments.md#attachments-2)] prepares any [[attachments-1](../attachments.md#attachments-1)] attachments, per [[10]] and [[7]]:
+
+| Prepared attachments | SDK prompt                                                                                                                                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                 | original `prompt` string unchanged                                                                                                                                                                                                 |
+| one or more          | an async iterable yielding exactly one `user` message with `parent_tool_use_id: null`, `message.role: 'user'`, and content consisting of the unchanged prompt in a text block followed by one block per attachment in caller order |
+
+- Each raster image block has `type: 'image'` and a base64 source carrying the prepared MIME type and the file's bytes.
+- Each PDF block has `type: 'document'` and a base64 source carrying `media_type: 'application/pdf'` and the file's bytes.
+- The adapter reads attachment bytes before invoking the SDK query so a read failure never becomes an SDK generator-abort error.
+
+### claude-code-73
+
+When attachment preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
 
 ### claude-code-6
 
@@ -668,6 +681,10 @@ Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` o
 - every subagent frame naming a Sonnet model, the model [[claude-code-60](#claude-code-60)]'s environment binds;
 - the observed types, levels, and listed tools written to stderr.
 
+### claude-code-72
+
+Given temporary image and PDF files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture, verification shall assert [[claude-code-46](#claude-code-46)]'s content, byte encoding, order, unchanged text-only transport, resumed transport, and refusal before SDK invocation, and [[claude-code-73](#claude-code-73)]'s interrupted terminal before attachment submission.
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
@@ -679,3 +696,4 @@ Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` o
 [7]: https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.284/sdk.d.ts "Claude Agent SDK 0.3.284 declarations"
 [8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"
 [9]: https://code.claude.com/docs/en/sub-agents "Claude Code subagents"
+[10]: https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode "Claude Agent SDK streaming input and image attachments"
