@@ -406,24 +406,27 @@ When a run carries `subagentModel`, the Claude adapter does three things:
 - It registers subagent definitions on that model, which the Agent tool lists
   with their descriptions — "Runs on {model} at {effort} effort.", or "Runs on
   your model at {effort} effort." for `inherit` — and one short delegate prompt:
-  - With `subagentEffort`, one definition named `delegate` at that effort, and
-    one named `general-purpose` at the same effort that replaces the built-in
-    of that name — "General-purpose agent for research, code search and
-    multi-step tasks, on {model} at {effort} effort.", or "on your model" for
-    `inherit` — with the delegate prompt in place of the built-in's own and no
-    model of its own, so the forced model applies. A subagent the agent starts
-    as `general-purpose`, or without naming a type, which runs
-    `general-purpose`, therefore runs at the pinned effort too; Claude Code
-    2.1.284 honours a definition registered under a built-in's name. The
-    built-in `Explore` and `Plan` are not replaced, because a replacement would
-    cost them their read-only tool restrictions and their own prompts: they
-    keep their definitions and run at the main agent's effort, the one place a
-    pinned effort does not reach.
+  - With `subagentEffort`, one definition named `delegate` at that effort.
   - Without it, one definition per effort Claude accepts for a definition —
     `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and
     `delegate-max` — so the agent's choice of effort is a choice of definition
-    the Agent tool enforces. The built-ins keep their own definitions, and a
-    subagent the agent starts as one of them runs at the main agent's effort.
+    the Agent tool enforces.
+  - In both, one definition named `general-purpose` that replaces the built-in
+    of that name, with the delegate prompt in place of the built-in's own and
+    no model of its own, so the forced model applies. Claude Code 2.1.284 runs
+    a subagent started without a type as `general-purpose` and honours a
+    definition registered under a built-in's name, so no subagent inherits the
+    main agent's effort by omission. With `subagentEffort` it runs at that
+    effort — "General-purpose agent for research, code search and multi-step
+    tasks, on {model} at {effort} effort." Without it, it runs at `medium`, the
+    level a session runs at when none is set, and points to the delegates —
+    "General-purpose agent for research, code search and multi-step tasks, on
+    {model} at medium effort; start a delegate-\<effort\> subagent for another
+    effort." Both read "on your model" for `inherit`.
+  - The built-in `Explore` and `Plan` are never replaced, because a
+    replacement would cost them their read-only tool restrictions and their
+    own prompts: they keep their definitions and run at the main agent's
+    effort, the one place neither option reaches.
   - `minimal` maps to `low`, as it does for the run's own effort, and is named
     `low` in the definitions and the directive.
 - It passes a custom, unsnapshotted system prompt whose last part is the

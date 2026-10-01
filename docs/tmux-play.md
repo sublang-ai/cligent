@@ -272,11 +272,13 @@ players:
 
 `subagentModel` must be a string with a non-whitespace character.
 `subagentEffort` requires `subagentModel` on the same role and is never
-`ultracode`. A pinned effort reaches the role's delegate subagents and the
-built-in `general-purpose`, while the built-in `Explore` and `Plan` keep their
-own definitions, read-only tools included, and the role's own effort. The
-loader checks both against the role's adapter before runtime startup and names
-the offending Captain or player path and adapter on error.
+`ultracode`. With either setting, the built-in `general-purpose`, which a
+subagent started without a type runs as, is replaced: at the pinned effort, or
+at `medium` when the role chooses, so no subagent inherits the role's effort by
+omission. The built-in `Explore` and `Plan` keep their own definitions,
+read-only tools included, and the role's own effort. The loader checks both
+against the role's adapter before runtime startup and names the offending
+Captain or player path and adapter on error.
 Omission adds no override. The generated home config always omits both. See
 the [subagent guide](guide.md#subagent-model-and-effort) for what the Claude
 adapter sends.
