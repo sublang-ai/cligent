@@ -16,8 +16,10 @@ import type {
 import { getEffortSupport } from '../../effort.js';
 import { assertFastModeSupported } from '../../fast-mode.js';
 import {
+  assertBuiltInSubagentEffortOption,
   assertSubagentModelSupported,
   isNonBlankString,
+  type BuiltinSubagentModelAgent,
 } from '../../subagent-model.js';
 import { normalizeWritablePaths } from '../../permissions.js';
 import { createPermissionPolicyReset } from '../../internal/permission-reset.js';
@@ -77,12 +79,13 @@ interface ActiveTurn {
 }
 
 interface RunCligentCallOptions {
-  readonly cligent: Cligent<string, boolean, string>;
+  readonly cligent: Cligent<string, boolean, string, string>;
   readonly prompt: string;
   readonly model?: string;
   readonly effort?: Effort;
   readonly fastMode?: boolean;
   readonly subagentModel?: string;
+  readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
   readonly resetPermissionPolicy?: boolean;
@@ -105,6 +108,7 @@ interface ConfiguredAgentCallSettings {
   readonly effort?: Effort;
   readonly fastMode?: boolean;
   readonly subagentModel?: string;
+  readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
 }
@@ -149,6 +153,7 @@ export class TmuxPlayRuntime {
       effort: options.captainConfig.effort,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,
+      subagentEffort: options.captainConfig.subagentEffort,
       instruction: options.captainConfig.instruction,
       permissions: options.captainConfig.permissions,
     };
@@ -466,6 +471,7 @@ export class TmuxPlayRuntime {
         effort: player.effort,
         fastMode: player.fastMode,
         subagentModel: player.subagentModel,
+        subagentEffort: player.subagentEffort,
         instruction: player.instruction,
         permissions: player.permissions,
       },
@@ -488,6 +494,7 @@ export class TmuxPlayRuntime {
         effort: settings.effort,
         fastMode: settings.fastMode,
         subagentModel: settings.subagentModel,
+        subagentEffort: settings.subagentEffort,
         instruction: settings.instruction,
         permissions: settings.permissions,
         resetPermissionPolicy: settings.resetPermissionPolicy,
@@ -562,6 +569,7 @@ export class TmuxPlayRuntime {
         effort: settings.effort,
         fastMode: settings.fastMode,
         subagentModel: settings.subagentModel,
+        subagentEffort: settings.subagentEffort,
         instruction: settings.instruction,
         permissions: settings.permissions,
         resetPermissionPolicy: settings.resetPermissionPolicy,
@@ -918,6 +926,7 @@ export async function createTmuxPlayRuntime(
       effort: options.captainConfig.effort,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,
+      subagentEffort: options.captainConfig.subagentEffort,
       adapterImports: options.adapterImports,
     },
   );
@@ -937,6 +946,7 @@ async function runCligentCall(
       effort: options.effort,
       fastMode: options.fastMode,
       subagentModel: options.subagentModel,
+      subagentEffort: options.subagentEffort,
       permissions: options.permissions,
       ...(options.resetPermissionPolicy
         ? { permissions: createPermissionPolicyReset() }
@@ -1040,6 +1050,7 @@ function resolveAgentCallSettings(
         snapshot.effort.kind === 'value' ? snapshot.effort.value : undefined,
       fastMode: snapshot.fastMode,
       subagentModel: snapshot.subagentModel,
+      subagentEffort: snapshot.subagentEffort,
       instruction: snapshot.instruction,
       permissions: snapshot.permissions,
       explicit: true,
@@ -1083,6 +1094,7 @@ function snapshotAgentCallSettings(
       key !== 'effort' &&
       key !== 'fastMode' &&
       key !== 'subagentModel' &&
+      key !== 'subagentEffort' &&
       key !== 'instruction' &&
       key !== 'permissions',
   );
@@ -1106,6 +1118,12 @@ function snapshotAgentCallSettings(
       'tmux-play call settings subagentModel must be a non-blank string',
     );
   }
+  const subagentEffort = fields.subagentEffort;
+  if (subagentEffort !== undefined && typeof subagentEffort !== 'string') {
+    throw new TypeError(
+      'tmux-play call settings subagentEffort must be a string',
+    );
+  }
   const instruction = fields.instruction;
   if (instruction !== undefined && typeof instruction !== 'string') {
     throw new TypeError('tmux-play call settings instruction must be a string');
@@ -1116,6 +1134,9 @@ function snapshotAgentCallSettings(
     effort,
     ...(fastMode !== undefined ? { fastMode } : {}),
     ...(subagentModel !== undefined ? { subagentModel } : {}),
+    ...(subagentEffort !== undefined
+      ? { subagentEffort: subagentEffort as Effort }
+      : {}),
     ...(instruction !== undefined ? { instruction } : {}),
     ...(permissions !== undefined ? { permissions } : {}),
   });
@@ -1166,6 +1187,14 @@ function assertCompleteSettingsEnforceable(
       'tmux-play call settings subagentModel',
     );
   }
+  // tmux-play-93 / tmux-play-216: the adapter, the call's own subagent
+  // model, then the vocabulary less its orchestration values.
+  assertBuiltInSubagentEffortOption(
+    adapter as BuiltinSubagentModelAgent | 'claude',
+    settings.subagentModel,
+    settings.subagentEffort,
+    'tmux-play call settings subagentEffort',
+  );
   if (
     (adapter === 'claude' || adapter === 'claude-code') &&
     isResumedCall(resume) &&

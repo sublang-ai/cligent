@@ -272,6 +272,7 @@ describe('resolvePlayers', () => {
           id: 'reviewer',
           adapter: 'claude',
           subagentModel: 'claude-haiku-4-5',
+          subagentEffort: 'medium',
         },
         { id: 'plain', adapter: 'claude' },
       ],
@@ -288,6 +289,11 @@ describe('resolvePlayers', () => {
 
     expect(captured.map((options) => options?.subagentModel)).toEqual([
       'claude-haiku-4-5',
+      undefined,
+    ]);
+    expect(players[0]?.subagentEffort).toBe('medium');
+    expect(captured.map((options) => options?.subagentEffort)).toEqual([
+      'medium',
       undefined,
     ]);
   });

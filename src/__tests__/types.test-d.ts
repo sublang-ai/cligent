@@ -29,6 +29,7 @@ import type {
   AgentOptions,
   BaseEvent,
   ClaudeEffort,
+  ClaudeSubagentEffort,
   CligentOptions,
   CodexEffort,
   DiscoveredModel,
@@ -70,6 +71,8 @@ type AdapterParameters<T> =
 type AdapterEffort<T> = AdapterParameters<T>[0];
 type AdapterFastMode<T> = AdapterParameters<T>[1];
 type AdapterSubagentModel<T> = AdapterParameters<T>[2];
+type AdapterSubagentEffort<T> =
+  T extends AgentAdapter<string, boolean, string, infer SE> ? SE : never;
 
 describe('core types', () => {
   it('narrows discriminated union on type field', () => {
@@ -747,6 +750,103 @@ describe('core types', () => {
     void cligentOptions;
     void runOptions;
     void noSubagentModel;
+  });
+
+  // engine-94
+  it('correlates subagent-effort support across built-in and custom APIs', () => {
+    expectTypeOf<ClaudeSubagentEffort>().toEqualTypeOf<
+      'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    >();
+    expectTypeOf<{
+      claude: AdapterSubagentEffort<ClaudeCodeAdapter>;
+      codex: AdapterSubagentEffort<CodexAdapter>;
+      gemini: AdapterSubagentEffort<GeminiAdapter>;
+      kimi: AdapterSubagentEffort<KimiAdapter>;
+      opencode: AdapterSubagentEffort<OpenCodeAdapter>;
+    }>().toEqualTypeOf<{
+      claude: ClaudeSubagentEffort;
+      codex: never;
+      gemini: never;
+      kimi: never;
+      opencode: never;
+    }>();
+
+    const claudeAdapter = new ClaudeCodeAdapter();
+    const codexAdapter = new CodexAdapter();
+    void claudeAdapter.run('prompt', {
+      subagentModel: 'inherit',
+      subagentEffort: 'minimal',
+    });
+    // @ts-expect-error - ultracode is session-scoped, never a subagent effort.
+    void claudeAdapter.run('prompt', { subagentEffort: 'ultracode' });
+    // @ts-expect-error - Codex has no per-run subagent-effort surface.
+    void codexAdapter.run('prompt', { subagentEffort: 'low' });
+
+    type CustomEffort = 'quick' | 'deep';
+    const customDefault = {} as AgentAdapter<CustomEffort>;
+    const customModel = {} as AgentAdapter<CustomEffort, never, string>;
+    const customOptOut = {} as AgentAdapter<CustomEffort, never, string, never>;
+    // @ts-expect-error - without a subagent model there is no subagent effort.
+    void customDefault.run('prompt', { subagentEffort: 'quick' });
+    void customModel.run('prompt', { subagentEffort: 'deep' });
+    // @ts-expect-error - binding SE to never opts out.
+    void customOptOut.run('prompt', { subagentEffort: 'quick' });
+
+    const claude = new Cligent(claudeAdapter, {
+      subagentModel: 'claude-haiku-4-5',
+      subagentEffort: 'low',
+    });
+    void claude.run('prompt', { subagentEffort: 'max' });
+    // @ts-expect-error - NoInfer keeps constructor defaults adapter-scoped.
+    new Cligent(codexAdapter, { subagentEffort: 'low' });
+    void Cligent.parallel([
+      {
+        agent: claude,
+        prompt: 'Claude',
+        overrides: { subagentEffort: 'high' },
+      },
+    ]);
+    void runParallel([
+      {
+        adapter: codexAdapter,
+        prompt: 'Codex',
+        // @ts-expect-error - parallel options retain adapter capability.
+        options: { subagentEffort: 'low' },
+      },
+    ]);
+    const registry = new AdapterRegistry();
+    registry.register(claudeAdapter);
+    void runAgent(
+      'claude-code',
+      'prompt',
+      { subagentModel: 'inherit', subagentEffort: 'anything' },
+      registry,
+    );
+  });
+
+  it('keeps existing three-parameter generic uses compatible', () => {
+    const claudeAdapter = new ClaudeCodeAdapter();
+    const ownVocabulary: AgentAdapter<ClaudeEffort, boolean, string> =
+      claudeAdapter;
+    // The 0.29.0 widening annotation stays assignable.
+    const widened: AgentAdapter<Effort, boolean, string> = claudeAdapter;
+    const claude = new Cligent(claudeAdapter, { subagentModel: 'inherit' });
+    const ownCligent: Cligent<ClaudeEffort, boolean, string> = claude;
+    const widenedCligent: Cligent<Effort, boolean, string> = claude;
+    const options: AgentOptions<ClaudeEffort, boolean, string> = {
+      subagentModel: 'inherit',
+      subagentEffort: 'low',
+    };
+    const rejected: AgentOptions<ClaudeEffort, boolean, string> = {
+      // @ts-expect-error - the default excludes ultracode.
+      subagentEffort: 'ultracode',
+    };
+    void ownVocabulary;
+    void widened;
+    void ownCligent;
+    void widenedCligent;
+    void options;
+    void rejected;
   });
 
   it('exports subagent-model metadata types and helper narrowing', () => {

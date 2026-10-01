@@ -4,7 +4,10 @@
 import { Cligent } from '../../cligent.js';
 import type { EffortForAgent } from '../../effort.js';
 import type { FastModeForAgent } from '../../fast-mode.js';
-import type { SubagentModelForAgent } from '../../subagent-model.js';
+import type {
+  SubagentEffortForAgent,
+  SubagentModelForAgent,
+} from '../../subagent-model.js';
 import type { AgentAdapter, PermissionPolicy } from '../../types.js';
 
 export const KNOWN_PLAYER_ADAPTERS = [
@@ -30,6 +33,7 @@ type PlayerConfigByAdapter = {
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
+    subagentEffort?: SubagentEffortForAgent<A>;
   };
 };
 
@@ -46,6 +50,7 @@ type ResolvedPlayerByAdapter = {
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
+    subagentEffort?: SubagentEffortForAgent<A>;
     cligent: PlayerCligent<A>;
   };
 };
@@ -53,12 +58,13 @@ type ResolvedPlayerByAdapter = {
 export type ResolvedPlayer<A extends PlayerAdapterName = PlayerAdapterName> =
   ResolvedPlayerByAdapter[A];
 
-/** A `Cligent` bound to one built-in adapter's effort, fast-mode, and
- * subagent-model capabilities. */
+/** A `Cligent` bound to one built-in adapter's effort, fast-mode,
+ * subagent-model, and subagent-effort capabilities. */
 type PlayerCligent<A extends PlayerAdapterName> = Cligent<
   EffortForAgent<A>,
   FastModeForAgent<A>,
-  SubagentModelForAgent<A>
+  SubagentModelForAgent<A>,
+  SubagentEffortForAgent<A>
 >;
 
 export interface CreatePlayerCligentOptions<
@@ -71,6 +77,7 @@ export interface CreatePlayerCligentOptions<
   effort?: EffortForAgent<A>;
   fastMode?: FastModeForAgent<A>;
   subagentModel?: SubagentModelForAgent<A>;
+  subagentEffort?: SubagentEffortForAgent<A>;
   adapterImports?: PlayerAdapterImports;
 }
 
@@ -82,7 +89,8 @@ export interface ResolvePlayersOptions {
 type AdapterConstructor<A extends PlayerAdapterName> = new () => AgentAdapter<
   EffortForAgent<A>,
   FastModeForAgent<A>,
-  SubagentModelForAgent<A>
+  SubagentModelForAgent<A>,
+  SubagentEffortForAgent<A>
 >;
 
 export type PlayerAdapterImports = {
@@ -181,6 +189,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
           effort: options.effort,
           fastMode: options.fastMode,
           subagentModel: options.subagentModel,
+          subagentEffort: options.subagentEffort,
         }
       : {}),
   });
@@ -242,6 +251,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       effort: config.effort,
       fastMode: config.fastMode,
       subagentModel: config.subagentModel,
+      subagentEffort: config.subagentEffort,
     },
     inheritCallDefaults,
   );
@@ -254,6 +264,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     effort: config.effort,
     fastMode: config.fastMode,
     subagentModel: config.subagentModel,
+    subagentEffort: config.subagentEffort,
     cligent,
   } as ResolvedPlayer<A>;
 }

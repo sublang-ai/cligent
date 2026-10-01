@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import type { Effort } from './effort.js';
+import type { DefaultSubagentEffort } from './subagent-model.js';
 
 export type {
   ClaudeEffort,
@@ -278,12 +279,13 @@ export interface AgentAdapter<
   E extends string = Effort,
   FM extends boolean = never,
   SM extends string = never,
+  SE extends string = DefaultSubagentEffort<E, SM>,
 > {
   readonly agent: AgentType;
 
   run(
     prompt: string,
-    options?: AgentOptions<E, FM, SM>,
+    options?: AgentOptions<E, FM, SM, SE>,
   ): AsyncGenerator<AgentEvent, void, void>;
 
   isAvailable(): Promise<boolean>;
@@ -293,6 +295,7 @@ export interface AgentOptions<
   E extends string = Effort,
   FM extends boolean = never,
   SM extends string = never,
+  SE extends string = DefaultSubagentEffort<E, SM>,
 > {
   cwd?: string;
   model?: string;
@@ -302,10 +305,18 @@ export interface AgentOptions<
   effort?: E;
   fastMode?: FM;
   /**
-   * The model every subagent of the run uses, per engine-91. Adapter-scoped:
+   * The model every subagent of the run uses, per engine-91: a model ID or
+   * alias, or the literal `'inherit'` for the run's own model. Adapter-scoped:
    * only adapters binding `SM` to `string` accept it.
    */
   subagentModel?: SM;
+  /**
+   * The effort the run's subagents use, per engine-97; on Claude the
+   * built-in Explore and Plan keep the run's own. Requires `subagentModel`;
+   * when omitted with it, the agent chooses an effort per task.
+   * Adapter-scoped: only adapters binding `SE` accept it.
+   */
+  subagentEffort?: SE;
   resume?: string;
   abortSignal?: AbortSignal;
   allowedTools?: string[];
@@ -318,6 +329,7 @@ export interface CligentOptions<
   E extends string = Effort,
   FM extends boolean = never,
   SM extends string = never,
+  SE extends string = DefaultSubagentEffort<E, SM>,
 > {
   role?: string;
   cwd?: string;
@@ -328,6 +340,7 @@ export interface CligentOptions<
   effort?: E;
   fastMode?: FM;
   subagentModel?: SM;
+  subagentEffort?: SE;
   allowedTools?: string[];
   disallowedTools?: string[];
 }
@@ -336,7 +349,8 @@ export interface RunOptions<
   E extends string = Effort,
   FM extends boolean = never,
   SM extends string = never,
-> extends Omit<CligentOptions<E, FM, SM>, 'role'> {
+  SE extends string = DefaultSubagentEffort<E, SM>,
+> extends Omit<CligentOptions<E, FM, SM, SE>, 'role'> {
   abortSignal?: AbortSignal;
   resume?: string | false;
 }

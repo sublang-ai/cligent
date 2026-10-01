@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode and subagent-model selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode, subagent-model, and subagent-effort selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -256,7 +256,7 @@ When the adapter normalizes Claude SDK initialization or terminal result data, i
 
 Every mapped value is forwarded verbatim, `cooldown` remains state without an invented disabled reason, and `AgentOptions.fastMode` never becomes an observation source.
 
-### Subagent Model
+### Subagent Model and Effort
 
 ### claude-code-60
 
@@ -265,19 +265,45 @@ When the adapter maps `AgentOptions.subagentModel` under [[engine-91](../engine.
 | `AgentOptions.subagentModel` | `CLAUDE_CODE_SUBAGENT_MODEL` | `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` |
 | --- | --- | --- |
 | omitted | the caller environment's value or absence | the caller environment's value or absence |
-| accepted value | the value, verbatim | `'1'` |
+| `inherit` | absent, removing any caller value | `'1'` |
+| any other accepted value | the value, verbatim | `'1'` |
 
 ### claude-code-61
 
-When the adapter maps `AgentOptions.subagentModel` under [[engine-91](../engine.md#engine-91)], it shall select its contribution to [[claude-code-62](#claude-code-62)]'s system-prompt parts through this matrix:
+When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEffort` under [[engine-91](../engine.md#engine-91)] and [[engine-97](../engine.md#engine-97)], it shall contribute to [[claude-code-62](#claude-code-62)]'s system-prompt parts no part when `subagentModel` is omitted, and otherwise the delegation directive below as the final part, its `{first}` selected through this matrix, `{model}` being the `subagentModel` value verbatim and `{effort}` the [[claude-code-8](#claude-code-8)] SDK effort of the accepted `subagentEffort`:
 
-| `AgentOptions.subagentModel` | Contribution |
-| --- | --- |
-| omitted | no part |
-| accepted value | the delegation directive below as the final part, with each `{model}` replaced by the value verbatim |
+| `subagentModel` | `subagentEffort` | `{first}` |
+| --- | --- | --- |
+| `inherit` | omitted | `Your subagents run on your own model; give each one the effort its task warrants.` |
+| any other value | omitted | `Your subagents run on {model}; give each one the effort its task warrants.` |
+| `inherit` | accepted value | `Your subagents run on your own model at {effort} effort.` |
+| any other value | accepted value | `Your subagents run on {model} at {effort} effort.` |
 
 ```text
-Your subagents run on {model}. Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks that {model} can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it.
+{first} Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks a subagent can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it.
+```
+
+### claude-code-67
+
+When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEffort` under [[engine-91](../engine.md#engine-91)] and [[engine-97](../engine.md#engine-97)], it shall select the SDK `agents` option through this matrix per [[9]] and [[7]]:
+
+| `subagentModel` | `subagentEffort` | SDK `agents` |
+| --- | --- | --- |
+| omitted | omitted | omitted |
+| accepted value | accepted value | a definition named `delegate` and one named `general-purpose`, replacing that built-in, both at the value's [[claude-code-8](#claude-code-8)] SDK effort, and none named `Explore` or `Plan`, which keep their built-in definitions |
+| accepted value | omitted | one definition named `delegate-<effort>` per distinct [[claude-code-8](#claude-code-8)] SDK effort of the [[engine-40](../engine.md#engine-40)] `ClaudeEffort` values other than `ultracode`, in that vocabulary's order — `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and `delegate-max` — then one named `general-purpose`, replacing that built-in, at `medium`, and none named `Explore` or `Plan`, which keep their built-in definitions |
+
+Each definition carries exactly these fields, `{model}` being the `subagentModel` value verbatim, `{on}` being `your model` for `inherit` and `{model}` otherwise, and `{effort}` the definition's SDK effort:
+
+| Field | `delegate` and `delegate-<effort>` | `general-purpose` |
+| --- | --- | --- |
+| `description` | `Runs on {on} at {effort} effort.` | with `subagentEffort` accepted, `General-purpose agent for research, code search and multi-step tasks, on {on} at {effort} effort.`; with it omitted, `General-purpose agent for research, code search and multi-step tasks, on {on} at medium effort; start a delegate-<effort> subagent for another effort.` |
+| `prompt` | the delegate prompt below | the delegate prompt below |
+| `model` | `{model}`, `inherit` passing as `inherit` | absent, so the model [[claude-code-60](#claude-code-60)]'s environment binds applies |
+| `effort` | `{effort}` | `{effort}` |
+
+```text
+You are a delegate subagent. Complete exactly the task you are given, within the bounds it sets, using the tools available to you. Do not widen the task or change anything it does not ask for. When you finish, report precisely what you did and what you verified, and name anything you could not do or could not verify.
 ```
 
 ### claude-code-62
@@ -291,7 +317,7 @@ When the adapter prepares an SDK query, it shall compose the SDK `systemPrompt` 
 
 ### claude-code-63
 
-The adapter module shall export `subagentDirective(model)`, returning [[claude-code-61](#claude-code-61)]'s directive for `model`, and `composeClaudeSystemPrompt(parts)`, returning [[claude-code-62](#claude-code-62)]'s `systemPrompt` value for `parts`, or `undefined` for none.
+The adapter module shall export `subagentDirective(selection)`, returning [[claude-code-61](#claude-code-61)]'s directive for a `selection` of `{ model, effort? }`, `model` being a model or `inherit` and an omitted `effort` the agent's choice, with a bare model string read as `{ model }`, and `composeClaudeSystemPrompt(parts)`, returning [[claude-code-62](#claude-code-62)]'s `systemPrompt` value for `parts`, or `undefined` for none.
 
 ### Terminal Results
 
@@ -580,17 +606,20 @@ Given authentic zero, nonzero, absent, and malformed terminal accounting, when a
 
 ### claude-code-64
 
-Where `subagentModel` is omitted or set to a model ID, with and without caller-environment values of both variables, when the adapter reaches the SDK query boundary, the verification shall assert this matrix:
+Where `subagentModel` and `subagentEffort` take each combination below, with and without caller-environment values of both variables, when the adapter reaches the SDK query boundary, the verification shall assert this matrix:
 
-| `subagentModel` | Assertion |
+| `subagentModel` and `subagentEffort` | Assertion |
 | --- | --- |
-| omitted | both variables keep the caller environment's value or absence [[claude-code-60](#claude-code-60)]; no `systemPrompt` key is passed [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)] |
-| model ID | `CLAUDE_CODE_SUBAGENT_MODEL` equals the ID verbatim and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'`, replacing caller values [[claude-code-60](#claude-code-60)]; `systemPrompt` is the custom, unsnapshotted prompt whose text is exactly the directive naming the ID at both places [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)] |
-| either | the caller environment remains unchanged and no other clone value differs from it apart from the omitted `CLAUDECODE` [[claude-code-34](#claude-code-34)] |
+| both omitted | both variables keep the caller environment's value or absence [[claude-code-60](#claude-code-60)]; no `systemPrompt` key and no `agents` key is passed [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)], [[claude-code-67](#claude-code-67)]; the serialized query options equal those of the same input without either key |
+| model ID, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` equals the ID verbatim and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'`, replacing caller values [[claude-code-60](#claude-code-60)]; `systemPrompt` is the custom, unsnapshotted prompt whose text is exactly the directive naming the ID and leaving the effort to the agent [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)]; `agents` holds exactly the five `delegate-<effort>` definitions on the ID with their descriptions, prompt, and efforts, then `general-purpose` without a model at `medium` with the delegate prompt and its description naming the ID and pointing to the `delegate-<effort>` types, and no `Explore` or `Plan` key [[claude-code-67](#claude-code-67)] |
+| `inherit`, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` is absent even where the caller sets it and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'` [[claude-code-60](#claude-code-60)]; the directive names the agent's own model [[claude-code-61](#claude-code-61)]; the five `delegate-<effort>` definitions carry `model: 'inherit'`, and they and `general-purpose` at `medium` carry "your model" descriptions [[claude-code-67](#claude-code-67)] |
+| model ID, effort `high` | the variables as for the ID alone [[claude-code-60](#claude-code-60)]; the directive pins the ID at `high` effort [[claude-code-61](#claude-code-61)]; `agents` holds exactly `delegate` on the ID and `general-purpose` without a model, both at `high` with their descriptions and the delegate prompt, and no `Explore` or `Plan` key [[claude-code-67](#claude-code-67)] |
+| `inherit`, effort `minimal` | the variables as for `inherit` alone [[claude-code-60](#claude-code-60)]; the directive and both definitions name `low`, the SDK effort of `minimal`, the descriptions naming "your model" [[claude-code-61](#claude-code-61)], [[claude-code-67](#claude-code-67)] |
+| any | the caller environment remains unchanged and no other clone value differs from it apart from the omitted `CLAUDECODE` [[claude-code-34](#claude-code-34)] |
 
 ### claude-code-65
 
-Where a consumer imports the adapter module, the verification shall assert [[claude-code-63](#claude-code-63)]'s exports: `subagentDirective(model)` equals the exact [[claude-code-61](#claude-code-61)] directive for a model ID, and `composeClaudeSystemPrompt(parts)` returns `undefined` for no part, the custom unsnapshotted prompt for one part, and for a caller part followed by the directive a prompt that keeps that order with one blank line between them [[claude-code-62](#claude-code-62)].
+Where a consumer imports the adapter module, the verification shall assert [[claude-code-63](#claude-code-63)]'s exports: `subagentDirective(selection)` equals the exact [[claude-code-61](#claude-code-61)] directive for each of the four model-and-effort combinations, and for a bare model string equals the directive for `{ model }`; `composeClaudeSystemPrompt(parts)` returns `undefined` for no part, the custom unsnapshotted prompt for one part, and for a caller part followed by the directive a prompt that keeps that order with one blank line between them [[claude-code-62](#claude-code-62)].
 
 ### claude-code-66
 
@@ -600,6 +629,28 @@ Under [[claude-code-219](#claude-code-219)]'s real-run harness, where `ANTHROPIC
 - every Agent-tool call's input carrying `sonnet` or no model, never a Haiku one, so that a Haiku subagent frame can come only from the environment pair and not from the main agent's own choice, with the observed per-call models written to stderr;
 - at least one SDK assistant frame produced inside the subagent, each naming a Haiku model;
 - terminal usage records that name a Haiku model.
+
+### claude-code-68
+
+Under [[claude-code-66](#claude-code-66)]'s harness, key, and permission policy, with a `PreToolUse` hook the harness adds to the tapped query recording each tool call's agent type and effort level, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'` and a prompt asking for exactly one Agent-tool subagent, naming no subagent type, to read a one-word file with the Read tool and return its contents, the acceptance check shall assert a successful terminal `done` whose result carries the word, write the named subagent types, the observed tool calls, and the subagent models to stderr, and assert this matrix:
+
+| `subagentModel` and `subagentEffort` | Assertion |
+| --- | --- |
+| `claude-haiku-4-5`, `low` | every tool call inside a subagent reports a pinned definition's agent type, `delegate` or `general-purpose`, or an `Explore` or `Plan` type an Agent call named; where an Agent call omits the type, a `general-purpose` subagent runs, the pin such a call lands on [[claude-code-67](#claude-code-67)]; every SDK assistant frame inside the subagent names a Haiku model [[claude-code-60](#claude-code-60)] |
+| `claude-haiku-4-5`, omitted | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types, or `general-purpose`, the replacement a call naming no type lands on [[claude-code-67](#claude-code-67)]; every subagent frame names a Haiku model [[claude-code-60](#claude-code-60)] |
+| `inherit`, omitted, with main `effort: 'high'` | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types at that effort level, or `general-purpose`, where a call naming no type lands, at `medium`, so none runs at the agent's `high` unless its Agent call chose `delegate-high` [[claude-code-67](#claude-code-67)]; every subagent frame names a Sonnet model [[claude-code-60](#claude-code-60)] |
+
+### claude-code-69
+
+Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'`, `effort: 'high'`, `subagentModel: 'inherit'`, and `subagentEffort: 'low'`, and a prompt directing one `general-purpose` and then one `Explore` Agent-tool subagent, each by its subagent type, to read the one-word file and reply with a `TOOLS:` line naming every tool available to it and then the word, the acceptance check shall assert that a pinned effort replaces `general-purpose` alone, as Claude Code 2.1.284 lets a registered definition replace a built-in one by name, through these conditions:
+
+- a successful terminal `done` whose result carries the word;
+- Agent-tool calls naming both `general-purpose` and `Explore`;
+- every tool call inside a `general-purpose` subagent reporting effort `low`, the pinned effort of its replacing definition [[claude-code-67](#claude-code-67)];
+- every tool call inside an `Explore` subagent reporting effort `high`, the main agent's, no definition replacing that built-in [[claude-code-67](#claude-code-67)];
+- the `TOOLS:` line of the reply each Agent call returns, read from the raw stream, naming `Read` and neither `Write` nor `Edit` for `Explore`, its built-in read-only restrictions intact, and both for `general-purpose` [[claude-code-67](#claude-code-67)];
+- every subagent frame naming a Sonnet model, the model [[claude-code-60](#claude-code-60)]'s environment binds;
+- the observed types, levels, and listed tools written to stderr.
 
 ## References
 

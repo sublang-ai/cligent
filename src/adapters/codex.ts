@@ -9,7 +9,10 @@ import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
-import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
+import {
+  assertBuiltInSubagentEffortOption,
+  assertBuiltInSubagentModelOption,
+} from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -705,6 +708,11 @@ export function mapAgentOptionsToCodexOptions(
 ): MappedCodexOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
+  assertBuiltInSubagentEffortOption(
+    AGENT,
+    options?.subagentModel,
+    options?.subagentEffort,
+  );
   assertCodexToolRestrictionsSupported(options);
   const permissions = mapPermissionsToCodexOptions(options?.permissions);
   const effort = mapEffortToCodexEffort(options?.effort);
@@ -1426,6 +1434,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
+    assertBuiltInSubagentEffortOption(
+      AGENT,
+      options?.subagentModel,
+      options?.subagentEffort,
+    );
     assertCodexToolRestrictionsSupported(options);
     const resumeSessionId = asString(options?.resume);
 

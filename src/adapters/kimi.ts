@@ -40,7 +40,10 @@ import {
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
-import { assertBuiltInSubagentModelOption } from '../subagent-model.js';
+import {
+  assertBuiltInSubagentEffortOption,
+  assertBuiltInSubagentModelOption,
+} from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
   AgentAdapter,
@@ -226,6 +229,11 @@ export function mapAgentOptionsToKimiOptions(
 ): KimiMappedOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
+  assertBuiltInSubagentEffortOption(
+    AGENT,
+    options?.subagentModel,
+    options?.subagentEffort,
+  );
   if (options?.allowedTools !== undefined) {
     throw new Error(
       'allowedTools is unsupported by Kimi ACP because it cannot constrain the available tool registry',
@@ -756,6 +764,11 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
+    assertBuiltInSubagentEffortOption(
+      AGENT,
+      options?.subagentModel,
+      options?.subagentEffort,
+    );
     const startTime = Date.now();
     const initialSessionId = options?.resume || generateSessionId();
     if (options?.abortSignal?.aborted) {

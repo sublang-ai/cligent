@@ -12,6 +12,7 @@ import type {
   PermissionPolicy,
   RunOptions,
 } from './types.js';
+import type { DefaultSubagentEffort } from './subagent-model.js';
 import {
   safeReturn,
   nextWithAbortDrain,
@@ -21,16 +22,20 @@ import {
 } from './protocol.js';
 import { generateSessionId } from './events.js';
 
-type AnyCligent = Cligent<string, boolean, string>;
+type AnyCligent = Cligent<string, boolean, string, string>;
 type CligentParameters<C extends AnyCligent> =
-  C extends Cligent<infer E, infer FM, infer SM> ? [E, FM, SM] : never;
+  C extends Cligent<infer E, infer FM, infer SM, infer SE>
+    ? [E, FM, SM, SE]
+    : never;
 type CligentEffort<C extends AnyCligent> = CligentParameters<C>[0];
 type CligentFastMode<C extends AnyCligent> = CligentParameters<C>[1];
 type CligentSubagentModel<C extends AnyCligent> = CligentParameters<C>[2];
+type CligentSubagentEffort<C extends AnyCligent> = CligentParameters<C>[3];
 type CligentRunOptions<C extends AnyCligent> = RunOptions<
   CligentEffort<C>,
   CligentFastMode<C>,
-  CligentSubagentModel<C>
+  CligentSubagentModel<C>,
+  CligentSubagentEffort<C>
 >;
 
 export interface CligentParallelTask<C extends AnyCligent = AnyCligent> {
@@ -76,10 +81,15 @@ function mergePermissions(
   return { ...defaults, ...overrides };
 }
 
-function mergeOptions<E extends string, FM extends boolean, SM extends string>(
-  defaults: CligentOptions<E, FM, SM>,
-  overrides: RunOptions<E, FM, SM> | undefined,
-): { merged: RunOptions<E, FM, SM>; role: string | undefined } {
+function mergeOptions<
+  E extends string,
+  FM extends boolean,
+  SM extends string,
+  SE extends string,
+>(
+  defaults: CligentOptions<E, FM, SM, SE>,
+  overrides: RunOptions<E, FM, SM, SE> | undefined,
+): { merged: RunOptions<E, FM, SM, SE>; role: string | undefined } {
   if (!overrides) {
     return {
       merged: { ...defaults },
@@ -87,7 +97,7 @@ function mergeOptions<E extends string, FM extends boolean, SM extends string>(
     };
   }
 
-  const merged: RunOptions<E, FM, SM> = {
+  const merged: RunOptions<E, FM, SM, SE> = {
     cwd: overrides.cwd ?? defaults.cwd,
     model: overrides.model ?? defaults.model,
     permissions: mergePermissions(defaults.permissions, overrides.permissions),
@@ -102,6 +112,10 @@ function mergeOptions<E extends string, FM extends boolean, SM extends string>(
       overrides.subagentModel !== undefined
         ? overrides.subagentModel
         : defaults.subagentModel,
+    subagentEffort:
+      overrides.subagentEffort !== undefined
+        ? overrides.subagentEffort
+        : defaults.subagentEffort,
     allowedTools: overrides.allowedTools ?? defaults.allowedTools,
     disallowedTools: overrides.disallowedTools ?? defaults.disallowedTools,
     abortSignal: overrides.abortSignal,
@@ -118,15 +132,16 @@ export class Cligent<
   E extends string = Effort,
   FM extends boolean = never,
   SM extends string = never,
+  SE extends string = DefaultSubagentEffort<E, SM>,
 > {
-  private readonly adapter: AgentAdapter<E, boolean, string>;
-  private readonly defaults: CligentOptions<E, boolean, string>;
+  private readonly adapter: AgentAdapter<E, boolean, string, string>;
+  private readonly defaults: CligentOptions<E, boolean, string, string>;
   private _resumeToken: string | undefined = undefined;
   private _running = false;
 
   constructor(
-    adapter: AgentAdapter<E, FM, SM>,
-    options?: CligentOptions<NoInfer<E>, NoInfer<FM>, NoInfer<SM>>,
+    adapter: AgentAdapter<E, FM, SM, SE>,
+    options?: CligentOptions<NoInfer<E>, NoInfer<FM>, NoInfer<SM>, NoInfer<SE>>,
   ) {
     this.adapter = adapter;
     this.defaults = options ?? {};
@@ -146,7 +161,7 @@ export class Cligent<
 
   async *run(
     prompt: string,
-    overrides?: RunOptions<E, FM, SM>,
+    overrides?: RunOptions<E, FM, SM, SE>,
   ): AsyncGenerator<CligentEvent, void, void> {
     if (this._running) {
       throw new Error('Cligent.run() is already active on this instance');
@@ -157,7 +172,7 @@ export class Cligent<
 
     const resume = resolveResume(merged.resume, this._resumeToken);
 
-    const agentOptions: AgentOptions<E, boolean, string> = {
+    const agentOptions: AgentOptions<E, boolean, string, string> = {
       cwd: merged.cwd,
       model: merged.model,
       permissions: merged.permissions,
@@ -166,6 +181,7 @@ export class Cligent<
       effort: merged.effort,
       fastMode: merged.fastMode,
       subagentModel: merged.subagentModel,
+      subagentEffort: merged.subagentEffort,
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
       abortSignal: merged.abortSignal,
