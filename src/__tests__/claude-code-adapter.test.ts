@@ -3173,62 +3173,93 @@ describe('ClaudeCodeAdapter subagent model', () => {
   );
 
   it(
-    'pins a subagent effort through delegate and the overridden built-ins',
+    'pins a subagent effort through delegate and general-purpose alone',
     withCallerEnvironment(
-      { CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model' },
+      {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model',
+        CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '0',
+      },
       () => {
+        const before = { ...process.env };
         const mapped = mapAgentOptionsToClaudeQueryOptions({
           subagentModel: SUBAGENT_MODEL,
           subagentEffort: 'high',
         });
 
-        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
-          SUBAGENT_MODEL,
-        );
-        expect(mapped.queryOptions.env?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe(
-          '1',
-        );
+        expect(mapped.queryOptions.env).toEqual({
+          ...callerCloneWithout('CLAUDECODE'),
+          CLAUDE_CODE_SUBAGENT_MODEL: SUBAGENT_MODEL,
+          CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '1',
+        });
         expect(mapped.queryOptions.systemPrompt).toEqual({
           type: 'custom',
           prompt: `Your subagents run on claude-haiku-4-5 at high effort. ${TAIL}`,
           snapshot: false,
         });
-        const builtIn = {
-          description: 'Runs on claude-haiku-4-5 at high effort.',
-          prompt: DELEGATE_PROMPT,
-          effort: 'high',
-        };
+        // Explore and Plan are never replaced: they keep their read-only
+        // tool restrictions, their own prompts, and the agent's effort.
         expect(mapped.queryOptions.agents).toEqual({
-          delegate: { ...builtIn, model: SUBAGENT_MODEL },
-          'general-purpose': builtIn,
-          Explore: builtIn,
-          Plan: builtIn,
+          delegate: {
+            description: 'Runs on claude-haiku-4-5 at high effort.',
+            prompt: DELEGATE_PROMPT,
+            model: SUBAGENT_MODEL,
+            effort: 'high',
+          },
+          'general-purpose': {
+            description:
+              'General-purpose agent for research, code search and ' +
+              'multi-step tasks, on claude-haiku-4-5 at high effort.',
+            prompt: DELEGATE_PROMPT,
+            effort: 'high',
+          },
         });
+        expect(process.env).toEqual(before);
       },
     ),
   );
 
-  it('names minimal as the low effort its definitions carry', () => {
-    const mapped = mapAgentOptionsToClaudeQueryOptions({
-      subagentModel: 'inherit',
-      subagentEffort: 'minimal',
-    });
+  it(
+    'names minimal as the low effort its definitions carry',
+    withCallerEnvironment(
+      {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model',
+        CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '0',
+      },
+      () => {
+        const before = { ...process.env };
+        const mapped = mapAgentOptionsToClaudeQueryOptions({
+          subagentModel: 'inherit',
+          subagentEffort: 'minimal',
+        });
 
-    expect(
-      (mapped.queryOptions.systemPrompt as { prompt: string }).prompt,
-    ).toBe(`Your subagents run on your own model at low effort. ${TAIL}`);
-    const builtIn = {
-      description: 'Runs on your model at low effort.',
-      prompt: DELEGATE_PROMPT,
-      effort: 'low',
-    };
-    expect(mapped.queryOptions.agents).toEqual({
-      delegate: { ...builtIn, model: 'inherit' },
-      'general-purpose': builtIn,
-      Explore: builtIn,
-      Plan: builtIn,
-    });
-  });
+        expect(mapped.queryOptions.env).toEqual({
+          ...callerCloneWithout('CLAUDECODE', 'CLAUDE_CODE_SUBAGENT_MODEL'),
+          CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '1',
+        });
+        expect(
+          (mapped.queryOptions.systemPrompt as { prompt: string }).prompt,
+        ).toBe(`Your subagents run on your own model at low effort. ${TAIL}`);
+        expect(mapped.queryOptions.agents).toEqual({
+          delegate: {
+            description: 'Runs on your model at low effort.',
+            prompt: DELEGATE_PROMPT,
+            model: 'inherit',
+            effort: 'low',
+          },
+          'general-purpose': {
+            description:
+              'General-purpose agent for research, code search and ' +
+              'multi-step tasks, on your model at low effort.',
+            prompt: DELEGATE_PROMPT,
+            effort: 'low',
+          },
+        });
+        expect(process.env).toEqual(before);
+      },
+    ),
+  );
 
   it('forwards the value verbatim to the variable, directive, and definitions', () => {
     const verbatim = ' claude-opus-5-5[1m] ';
@@ -3289,8 +3320,6 @@ describe('ClaudeCodeAdapter subagent model', () => {
     expect(Object.keys(captured[2]?.agents ?? {})).toEqual([
       'delegate',
       'general-purpose',
-      'Explore',
-      'Plan',
     ]);
     expect(captured[1]?.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
       process.env.CLAUDE_CODE_SUBAGENT_MODEL,

@@ -82,9 +82,10 @@ export interface AgentCallSettings {
    */
   readonly subagentModel?: string;
   /**
-   * The effort every subagent of this call uses; it requires
-   * `subagentModel` and a value of the adapter's effort vocabulary other
-   * than its orchestration values (tmux-play-93).
+   * The effort this call's subagents use — on Claude the built-in Explore
+   * and Plan keep the call's own; it requires `subagentModel` and a value of
+   * the adapter's effort vocabulary other than its orchestration values
+   * (tmux-play-93).
    */
   readonly subagentEffort?: Effort;
   readonly instruction?: string;

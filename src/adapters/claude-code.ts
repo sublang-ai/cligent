@@ -1014,59 +1014,56 @@ const DELEGATE_PROMPT =
   'report precisely what you did and what you verified, and name anything ' +
   'you could not do or could not verify.';
 
-/** Built-in subagents a pinned effort overrides by name (claude-code-69). */
-const OVERRIDDEN_BUILT_IN_SUBAGENTS = [
-  'general-purpose',
-  'Explore',
-  'Plan',
-] as const;
-
 function toClaudeSdkEffort(effort: ClaudeSubagentEffort): ClaudeSdkEffort {
   // claude-code-8's mapping; a subagent effort is never `ultracode`.
   return mapEffortToClaudeOptions(effort).effort as ClaudeSdkEffort;
 }
 
-function delegateDescription(model: string, effort: ClaudeSdkEffort): string {
-  return model === INHERIT_SUBAGENT_MODEL
-    ? `Runs on your model at ${effort} effort.`
-    : `Runs on ${model} at ${effort} effort.`;
+/** claude-code-67: what a definition's description says it runs on. */
+function runsOn(model: string, effort: ClaudeSdkEffort): string {
+  const subject = model === INHERIT_SUBAGENT_MODEL ? 'your model' : model;
+  return `${subject} at ${effort} effort`;
 }
 
 /**
  * claude-code-67: the subagent definitions a query registers. A pinned
- * effort registers `delegate` and overrides the built-ins by name, which the
- * runtime honours; otherwise one `delegate-<effort>` per distinct SDK effort,
- * so the agent's choice of effort is a choice of definition.
+ * effort registers `delegate` and replaces the built-in `general-purpose` by
+ * name, the type a call naming none runs as; `Explore` and `Plan` are left
+ * alone, since a replacement would cost them their read-only tool
+ * restrictions and their own prompts. Otherwise one `delegate-<effort>` per
+ * distinct SDK effort, so the agent's choice of effort is a choice of
+ * definition, and no built-in is replaced.
  */
 function claudeSubagentDefinitions(
   model: string,
   effort: ClaudeSubagentEffort | undefined,
 ): Record<string, ClaudeAgentDefinition> {
-  const definition = (
-    sdkEffort: ClaudeSdkEffort,
-    withModel: boolean,
-  ): ClaudeAgentDefinition => ({
-    description: delegateDescription(model, sdkEffort),
+  const delegate = (sdkEffort: ClaudeSdkEffort): ClaudeAgentDefinition => ({
+    description: `Runs on ${runsOn(model, sdkEffort)}.`,
     prompt: DELEGATE_PROMPT,
-    ...(withModel ? { model } : {}),
+    model,
     effort: sdkEffort,
   });
 
   if (effort !== undefined) {
     const sdkEffort = toClaudeSdkEffort(effort);
-    const agents: Record<string, ClaudeAgentDefinition> = {
-      delegate: definition(sdkEffort, true),
+    return {
+      delegate: delegate(sdkEffort),
+      // No model: claude-code-60's environment binds it, as for any built-in.
+      'general-purpose': {
+        description:
+          'General-purpose agent for research, code search and multi-step ' +
+          `tasks, on ${runsOn(model, sdkEffort)}.`,
+        prompt: DELEGATE_PROMPT,
+        effort: sdkEffort,
+      },
     };
-    for (const name of OVERRIDDEN_BUILT_IN_SUBAGENTS) {
-      agents[name] = definition(sdkEffort, false);
-    }
-    return agents;
   }
 
   const agents: Record<string, ClaudeAgentDefinition> = {};
   for (const value of subagentEffortValues(AGENT) ?? []) {
     const sdkEffort = toClaudeSdkEffort(value as ClaudeSubagentEffort);
-    agents[`delegate-${sdkEffort}`] ??= definition(sdkEffort, true);
+    agents[`delegate-${sdkEffort}`] ??= delegate(sdkEffort);
   }
   return agents;
 }

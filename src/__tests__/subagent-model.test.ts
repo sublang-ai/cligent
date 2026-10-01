@@ -87,7 +87,10 @@ describe('built-in subagent-model metadata', () => {
     expect(claude).toContain('delegation directive');
     expect(claude).toContain('subagentEffort');
     expect(claude).toContain('subagent definitions');
-    expect(claude).toContain('general-purpose, Explore, and Plan');
+    expect(claude).toContain('replacing general-purpose by name');
+    expect(claude).toContain(
+      "Explore and Plan keep their own definitions and the agent's effort",
+    );
     for (const adapter of ['codex', 'gemini', 'opencode', 'kimi'] as const) {
       expect(SUBAGENT_MODEL_SUPPORT[adapter].notes).toContain(
         'no per-run subagent-model or subagent-effort surface',

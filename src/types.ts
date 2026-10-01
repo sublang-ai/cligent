@@ -311,9 +311,10 @@ export interface AgentOptions<
    */
   subagentModel?: SM;
   /**
-   * The effort every subagent of the run uses, per engine-97. Requires
-   * `subagentModel`; when omitted with it, the agent chooses an effort per
-   * task. Adapter-scoped: only adapters binding `SE` accept it.
+   * The effort the run's subagents use, per engine-97; on Claude the
+   * built-in Explore and Plan keep the run's own. Requires `subagentModel`;
+   * when omitted with it, the agent chooses an effort per task.
+   * Adapter-scoped: only adapters binding `SE` accept it.
    */
   subagentEffort?: SE;
   resume?: string;
