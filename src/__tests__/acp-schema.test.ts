@@ -125,6 +125,31 @@ describe('owned ACP wire schemas (kimi-27 / kimi-31)', () => {
     ).toThrow();
   });
 
+  it('retains image prompt capability while ignoring unconsumed capabilities', () => {
+    expect(
+      zAcpInitializeResponse.parse({
+        protocolVersion: 1,
+        agentCapabilities: {
+          promptCapabilities: {
+            image: true,
+            audio: false,
+            embeddedContext: true,
+          },
+          futureCapability: { enabled: true },
+        },
+      }),
+    ).toEqual({
+      protocolVersion: 1,
+      agentCapabilities: { promptCapabilities: { image: true } },
+    });
+    expect(
+      zAcpInitializeResponse.parse({
+        protocolVersion: 1,
+        agentCapabilities: {},
+      }).agentCapabilities,
+    ).toEqual({});
+  });
+
   it('rejects session/update parameters that name no update', () => {
     expect(() => zAcpSessionNotification.parse({})).toThrow();
     expect(() =>

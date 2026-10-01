@@ -42,6 +42,9 @@ export type {
   RunOptions,
 } from './types.js';
 
+export { ATTACHMENT_SUPPORT, getAttachmentSupport } from './attachments.js';
+export type { Attachment, AttachmentSupport } from './attachments.js';
+
 export {
   FAST_MODE_SUPPORT,
   getFastModeSupport,

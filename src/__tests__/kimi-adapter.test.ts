@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { EventEmitter } from 'node:events';
-import { isAbsolute, resolve } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 
 import {
@@ -45,6 +47,7 @@ interface FakeScenario {
   omitModelOption?: boolean;
   ignoreModelSelection?: boolean;
   initialize?: () => Promise<void>;
+  imageCapability?: boolean;
   setConfig?: (request: SetSessionConfigOptionRequest) => Promise<void>;
   /**
    * The `thinking` select's `options` for the current model, as Kimi
@@ -229,6 +232,9 @@ class FakeKimi {
           agentCapabilities: {
             loadSession: true,
             sessionCapabilities: { resume: {} },
+            ...(this.scenario.imageCapability !== undefined
+              ? { promptCapabilities: { image: this.scenario.imageCapability } }
+              : {}),
           },
         };
       },
@@ -297,6 +303,144 @@ function eventOf<T extends AgentEvent['type']>(
 }
 
 describe('KimiAdapter', () => {
+  it.each([undefined, 'existing-kimi-session'])(
+    'sends ordered image bytes through the engine and ACP transport (resume %s)',
+    async (resume) => {
+      const cwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-images-'));
+      try {
+        const first = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff]);
+        const second = Buffer.from([0xff, 0xd8, 0xff, 0, 0xfe]);
+        writeFileSync(join(cwd, 'first.png'), first);
+        writeFileSync(join(cwd, 'second.data'), second);
+        const fake = new FakeKimi({ imageCapability: true });
+        const agent = new Cligent(
+          new KimiAdapter({ spawnProcess: fake.spawn }),
+        );
+        const prompt = 'Compare these images. @literal stays unchanged.';
+        const events = await collect(
+          agent.run(prompt, {
+            cwd,
+            resume,
+            attachments: [
+              { path: 'first.png' },
+              { path: './second.data', mimeType: 'image/jpeg' },
+            ],
+          }),
+        );
+        expect(fake.promptRequests).toEqual([
+          {
+            sessionId: resume ?? 'kimi-session',
+            prompt: [
+              { type: 'text', text: prompt },
+              {
+                type: 'image',
+                mimeType: 'image/png',
+                data: first.toString('base64'),
+              },
+              {
+                type: 'image',
+                mimeType: 'image/jpeg',
+                data: second.toString('base64'),
+              },
+            ],
+          },
+        ]);
+        expect(eventOf(events, 'done').payload.status).toBe('success');
+        expect(fake.calls).toEqual([
+          'initialize',
+          resume ? 'session/resume' : 'session/new',
+          'session/prompt',
+        ]);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([undefined, false])(
+    'rejects an image before session setup when ACP image support is %s',
+    async (imageCapability) => {
+      const cwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-images-'));
+      try {
+        writeFileSync(join(cwd, 'image.png'), Buffer.from([0, 255]));
+        const fake = new FakeKimi({ imageCapability });
+        const events = await collect(
+          new KimiAdapter({ spawnProcess: fake.spawn }).run('Look', {
+            cwd,
+            resume: 'existing-session',
+            attachments: [{ path: 'image.png' }],
+          }),
+        );
+        expect(fake.calls).toEqual(['initialize']);
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(eventOf(events, 'error').payload).toMatchObject({
+          code: 'KIMI_ACP_ERROR',
+          message: expect.stringContaining(
+            'did not advertise image prompt support',
+          ),
+        });
+        expect(eventOf(events, 'done').payload.status).toBe('error');
+        expect(fake.children[0]?.exitCode).toBe(0);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([undefined, []])(
+    'keeps text-only ACP prompts unchanged for attachments %j without image capability',
+    async (attachments) => {
+      const fake = new FakeKimi();
+      const events = await collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run(
+          'ReadMediaFile ./clip.mp4',
+          {
+            attachments,
+          },
+        ),
+      );
+      expect(fake.promptRequests[0]?.prompt).toEqual([
+        { type: 'text', text: 'ReadMediaFile ./clip.mp4' },
+      ]);
+      expect(eventOf(events, 'done').payload.status).toBe('success');
+    },
+  );
+
+  it('rejects unsupported audio attachments before spawning', async () => {
+    const fake = new FakeKimi();
+    await expect(
+      collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run('Listen', {
+          attachments: [{ path: 'audio.wav' }],
+        }),
+      ),
+    ).rejects.toThrow(/attachments.*(?:unsupported|support)/i);
+    expect(fake.spawns).toHaveLength(0);
+  });
+
+  it('preserves cancellation during attachment preparation without spawning', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'cligent-kimi-images-'));
+    try {
+      writeFileSync(join(cwd, 'image.png'), Buffer.from([0, 255]));
+      const fake = new FakeKimi();
+      const controller = new AbortController();
+      const pending = collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run('Look', {
+          cwd,
+          abortSignal: controller.signal,
+          attachments: [{ path: 'image.png' }],
+        }),
+      );
+      queueMicrotask(() => controller.abort());
+      const events = await pending;
+      expect(events.map((event) => event.type)).toEqual(['done']);
+      expect(eventOf(events, 'done').payload.status).toBe('interrupted');
+      expect(fake.spawns).toHaveLength(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('probes availability through its injected version check', async () => {
     const available = vi.fn(async () => true);
     const missing = vi.fn(async () => false);
@@ -1300,6 +1444,38 @@ describe('KimiAdapter', () => {
     );
     expect(eventOf(events, 'done').payload.status).toBe('error');
   });
+
+  it.each([
+    { promptCapabilities: { image: 'true' } },
+    { promptCapabilities: null },
+    { promptCapabilities: [] },
+  ])(
+    'rejects malformed image capability on the ACP wire: %j',
+    async (agentCapabilities) => {
+      const child = new FakeChild();
+      child.stdin.once('data', () => {
+        child.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: 0,
+            result: { protocolVersion: 1, agentCapabilities },
+          })}\n`,
+        );
+      });
+      const events = await collect(
+        new KimiAdapter({
+          spawnProcess: () =>
+            child as unknown as ReturnType<
+              typeof import('node:child_process').spawn
+            >,
+        }).run('Hello'),
+      );
+      expect(eventOf(events, 'error').payload.message).toContain(
+        'invalid initialize response result',
+      );
+      expect(eventOf(events, 'done').payload.status).toBe('error');
+    },
+  );
 
   it('rejects invalid UTF-8 in ACP traffic', async () => {
     const child = new FakeChild();

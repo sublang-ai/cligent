@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-call local-file `attachments` on direct, registered, and parallel SDK
+  calls: Claude images/PDFs, Codex images, capability-gated Kimi images, and
+  OpenCode images/audio/video/PDFs/plain text. `ATTACHMENT_SUPPORT` and
+  `getAttachmentSupport()` expose transport-specific MIME support. Files use
+  the call's cwd, remain turn-local, and fail explicitly on unsupported
+  adapters or formats without blocking other parallel runs — DR-030.
+- A media and computer-use guide documents Gemini's existing native `@file`
+  inputs, Kimi's tool-directed video reads, and prompt-based invocation of
+  configured native or MCP computer/browser tools, including configuration
+  isolation and model-support limits.
+
 ## [0.30.0] - 2026-10-01
 
 ### Added

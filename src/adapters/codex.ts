@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
+import { prepareAttachments } from '../attachments.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -118,7 +119,11 @@ interface CodexRunOptions {
 
 interface CodexThread {
   runStreamed?: (
-    prompt: string,
+    prompt:
+      | string
+      | Array<
+          { type: 'text'; text: string } | { type: 'local_image'; path: string }
+        >,
     options?: CodexRunOptions,
   ) => Promise<{ events: AsyncIterable<unknown> }>;
 }
@@ -1441,6 +1446,47 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     );
     assertCodexToolRestrictionsSupported(options);
     const resumeSessionId = asString(options?.resume);
+    const attachmentPreparationStart = Date.now();
+    let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
+      prompt;
+    try {
+      const attachments = await prepareAttachments(
+        AGENT,
+        options?.attachments,
+        options?.cwd,
+        options?.abortSignal,
+      );
+      sdkPrompt =
+        attachments.length === 0
+          ? prompt
+          : [
+              { type: 'text', text: prompt },
+              ...attachments.map((attachment) => ({
+                type: 'local_image' as const,
+                path: attachment.path,
+              })),
+            ];
+    } catch (error) {
+      if (!options?.abortSignal?.aborted) throw error;
+      const sessionId = resumeSessionId ?? generateSessionId();
+      yield createEvent(
+        'done',
+        AGENT,
+        {
+          status: 'interrupted',
+          ...doneResumeTokenPayload(
+            'interrupted',
+            false,
+            sessionId,
+            resumeSessionId,
+          ),
+          usage: { ...DEFAULT_DONE_USAGE },
+          durationMs: Date.now() - attachmentPreparationStart,
+        },
+        sessionId,
+      );
+      return;
+    }
 
     let sdk: CodexSdk;
     try {
@@ -1535,7 +1581,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       }
 
       streamRequested = typeof thread.runStreamed === 'function';
-      streamResult = await (thread.runStreamed?.(prompt, runOptions) as
+      streamResult = await (thread.runStreamed?.(sdkPrompt, runOptions) as
         | Promise<{ events: AsyncIterable<unknown> } | AsyncIterable<unknown>>
         | undefined);
     } catch (err) {

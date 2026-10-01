@@ -255,6 +255,19 @@ When terminal `done` has `status: 'interrupted'`, whether selected from a native
 
 ### Options Mapping
 
+### codex-67
+
+When `run(prompt, options)` invokes SDK `runStreamed()`, the adapter shall select its input according to this matrix after [[attachments-2](../attachments.md#attachments-2)] prepares any [[attachments-1](../attachments.md#attachments-1)] attachments, per [[1]] and [[12]]:
+
+| Prepared attachments | SDK input                                                                                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                 | original `prompt` string unchanged                                                                                                                                           |
+| one or more          | an array containing `{ type: 'text', text: prompt }` followed by one `{ type: 'local_image', path }` entry per attachment in caller order, using each prepared absolute path |
+
+### codex-69
+
+When attachment preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
+
 ### codex-7
 
 When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [[engine-40](../engine.md#engine-40)] per [DR-009](../../decisions/009-adapter-scoped-effort-vocabularies.md), it shall produce this matrix per [[1]], [[3]], and [[5]]:
@@ -689,6 +702,10 @@ Given absent, empty, and non-empty caller working directories, when the adapter 
 ### codex-50
 
 Given repeated executable-resolution or wrapper-setup failures on one caller signal, when each attempted run rejects, no abort listener shall remain registered after any rejection [[codex-40](#codex-40)].
+
+### codex-68
+
+Given temporary image files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Codex SDK against a recording CLI fixture, verification shall assert [[codex-67](#codex-67)]'s unchanged prompt, ordered repeated `--image` arguments containing absolute paths, resumed transport, and refusal before SDK invocation, and [[codex-69](#codex-69)]'s interrupted terminal before attachment submission.
 
 ## References
 

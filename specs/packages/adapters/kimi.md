@@ -49,7 +49,22 @@ After initialization, the adapter shall select session setup through this matrix
 
 ### kimi-16
 
-While no caller abort or setup or configuration failure intervenes after session setup, the adapter shall perform the run sequence in this order: apply a provided model through `session/set_config_option`, apply a provided thinking value, apply a mapped permission mode, emit `init` as the run's first unified event, then call `session/prompt` with exactly one text content block, with omitted controls causing no corresponding configuration call.
+While no caller abort or setup or configuration failure intervenes after session setup, the adapter shall perform the run sequence in this order: apply a provided model through `session/set_config_option`, apply a provided thinking value, apply a mapped permission mode, emit `init` as the run's first unified event, then call `session/prompt` with the content selected by [[kimi-39](#kimi-39)], with omitted controls causing no corresponding configuration call.
+
+### kimi-39
+
+When a run supplies per-call file attachments [[attachments-1](../attachments.md#attachments-1)], the adapter shall prepare them before spawning through the common resolution and validation rules [[attachments-2](../attachments.md#attachments-2)] and select its prompt through this matrix [[2]]:
+
+| Attachments | Prompt outcome |
+| --- | --- |
+| absent or empty | one text block containing the exact prompt |
+| PNG, JPEG, GIF, or WebP files | the exact prompt text block followed by one ACP `image` block per attachment in caller order, with its MIME type and base64 file bytes |
+| any other MIME type | rejection before spawn; no text fallback or dropped attachment |
+| caller abort during preparation | one interrupted `done` with [[kimi-12](#kimi-12)]'s resume selection and no child spawn |
+
+### kimi-40
+
+Where a run has image attachments, after a valid protocol initialization the adapter shall proceed to session creation or resume only when `agentCapabilities.promptCapabilities.image` is `true`, otherwise selecting a setup failure through [[kimi-29](#kimi-29)] with guidance that the runtime must advertise image support and sending no session or prompt request [[17]].
 
 ### kimi-17
 
@@ -328,7 +343,7 @@ When ACP bytes and messages cross the adapter-owned wire boundary, it shall vali
 | inbound UTF-8 JSON lines split or coalesced across arbitrary chunks, including one unterminated final line | reconstruct and forward each complete non-empty message in order |
 | invalid UTF-8 or JSON, or the accumulated decoded buffer exceeding 16 MiB in JavaScript code units immediately after one input chunk is appended | protocol failure |
 | inbound value not a JSON-RPC 2.0 object; invalid request, notification, response, error, or id shape; response id not pending | protocol failure |
-| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field, including a `thinking` select's values once [[kimi-38](#kimi-38)] reads them | protocol failure |
+| handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field, including a `thinking` select's values once [[kimi-38](#kimi-38)] reads them and a supplied image-capability boolean or its containing objects from [[kimi-40](#kimi-40)] | protocol failure |
 | valid object with unknown fields, or `session/update` with an unhandled non-empty case | admit the unknown fields without treating them as malformed; drop an unhandled update before the SDK |
 | malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
 | handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
@@ -364,6 +379,23 @@ After a run has spawned a child, cleanup shall perform this containment sequence
 | caller-aborted run later closes nonzero or on an unexpected signal, requires `SIGKILL`, or survives final grace | preserve its queued interrupted terminal and report the exact cleanup failure once through [[kimi-35](#kimi-35)], without emitting another event or starting another cleanup sequence |
 
 ## Verification
+
+### kimi-42
+
+Where the exact Kimi Code conformance target is installed with an isolated native configuration and a loopback-only provider, when the engine and adapter run a prompt with a PNG attachment through that CLI, the acceptance check shall verify its advertised image capability admits the session [[kimi-40](#kimi-40)], the provider receives the exact prompt and base64 image bytes [[kimi-39](#kimi-39)], and the provider's streamed response becomes one successful terminal with its exact result [[kimi-6](#kimi-6)] [[kimi-19](#kimi-19)], without using real credentials or changing user configuration.
+
+### kimi-41
+
+When the engine and adapter execute prompts through the real ACP transport, the integration matrix shall verify these attachment outcomes:
+
+| Case | Assertion |
+| --- | --- |
+| fresh and resumed runs with two image files, relative paths, and an explicit MIME override | exact text followed by ordered image blocks containing the original file bytes [[kimi-39](#kimi-39)] |
+| absent and empty attachments without image capability | unchanged text-only prompt and successful completion [[kimi-39](#kimi-39)] |
+| unsupported audio file | rejection before spawn [[kimi-39](#kimi-39)] |
+| abort during file preparation | interrupted terminal without spawn [[kimi-39](#kimi-39)] |
+| missing or false image capability with attachments | diagnostic error and error terminal before any session or prompt request [[kimi-40](#kimi-40)] |
+| malformed image capability or container in raw initialize bytes | protocol error before the SDK can salvage it [[kimi-27](#kimi-27)] |
 
 ### kimi-37
 
@@ -526,3 +558,4 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 [14]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/llm-adapter/model/model-auth.ts#L21-L76 "Kimi Code 2.1.1 model and provider authentication resolution"
 [15]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L532-L556 "Kimi Code 2.1.1 structured resume rejection"
 [16]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/config-options.ts#L50-L79 "Kimi Code 2.1.1 advertised thinking values, without off for a model that always thinks"
+[17]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/server.ts#L182-L195 "Kimi Code 2.1.1 ACP image prompt capability"

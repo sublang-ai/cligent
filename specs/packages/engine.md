@@ -21,7 +21,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | --- | --- |
 | `AgentAdapter` | required adapter |
 | `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `allowedTools`, and `disallowedTools` |
-| `abortSignal` and `resume` | excluded from instance defaults and available only in `RunOptions` |
+| `abortSignal`, `resume`, and `attachments` | excluded from instance defaults and available only in `RunOptions` |
 
 ### engine-2
 
@@ -37,7 +37,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
 | `fastMode`, `subagentModel`, `subagentEffort`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
-| `abortSignal` or `resume` | accept only the per-call value because neither field exists in instance defaults |
+| `abortSignal`, `resume`, or `attachments` | accept only the per-call value because these fields do not exist in instance defaults |
 
 ### engine-4
 
@@ -47,6 +47,12 @@ When `Cligent.run()` yields an event, it shall select the `role` member through 
 | --- | --- |
 | set | the configured value |
 | omitted | omitted |
+
+### Attachments
+
+### engine-98
+
+When `AgentAdapter.run()`, `Cligent.run()`, `runAgent()`, `runParallel()`, or `Cligent.parallel()` receives `attachments?: readonly Attachment[]`, the engine shall pass the turn-local file list [[attachments-1](attachments.md#attachments-1)] to its selected adapter unchanged, without validating custom-adapter support or carrying the list into any later call, including an automatically resumed call.
 
 ### Session Continuity
 
@@ -690,6 +696,10 @@ When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` t
 - `InitPayload.model` keeps its requested-model and `unknown` fallbacks.
 
 ## Verification
+
+### engine-99
+
+When engine integration tests submit attachments through direct, registered, and both parallel call paths, they shall verify unchanged per-call forwarding and omission on a resumed turn [[engine-98](#engine-98)], exclusion from instance defaults [[engine-1](#engine-1)], and independent successful completion beside one rejected attachment request [[engine-15](#engine-15)].
 
 ### engine-101
 

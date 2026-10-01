@@ -7,8 +7,10 @@ import type {
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { basename } from 'node:path';
 import { promisify } from 'node:util';
 
+import { prepareAttachments, readAttachment } from '../attachments.js';
 import { createEvent, generateSessionId } from '../events.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
@@ -18,6 +20,7 @@ import {
 } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
 import type {
+  FilePartInput,
   PermissionRuleset,
   SessionPromptAsyncData,
 } from '@opencode-ai/sdk/v2';
@@ -86,6 +89,7 @@ type OpenCodeMessageRole = 'user' | 'assistant';
 type OpenCodeContentKind = 'text' | 'reasoning';
 type OpenCodePartKind = OpenCodeContentKind | 'other';
 type OpenCodeV2PromptBody = NonNullable<SessionPromptAsyncData['body']>;
+const nativeFilePartClients = new WeakSet<OpenCodeClient>();
 
 type SpawnProcessFn = (
   command: string,
@@ -1399,7 +1403,7 @@ export function wrapOpencodeClient(
     }
   };
 
-  return {
+  const client: OpenCodeClient = {
     ...(configProviders
       ? {
           async getModelVariants(options: {
@@ -1787,9 +1791,11 @@ export function wrapOpencodeClient(
         }
         if (signal?.aborted) return stopAbortedDispatch();
         const promptSessionId = sessionId;
+        const attachmentParts = (options.attachmentParts ??
+          []) as FilePartInput[];
 
         const promptBody = {
-          parts: [{ type: 'text', text: options.prompt }],
+          parts: [{ type: 'text', text: options.prompt }, ...attachmentParts],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
           ...(effectivePermissionObj !== undefined
@@ -1802,7 +1808,10 @@ export function wrapOpencodeClient(
           directory?: string;
         } = {
           sessionID: promptSessionId,
-          parts: [{ type: 'text', text: asString(options.prompt) ?? '' }],
+          parts: [
+            { type: 'text', text: asString(options.prompt) ?? '' },
+            ...attachmentParts,
+          ],
           ...(modelVal
             ? { model: modelVal as OpenCodeV2PromptBody['model'] }
             : {}),
@@ -2148,6 +2157,8 @@ export function wrapOpencodeClient(
       }
     },
   };
+  nativeFilePartClients.add(client);
+  return client;
 }
 
 export async function loadOpenCodeSdk(): Promise<OpenCodeSdk> {
@@ -3761,6 +3772,31 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode run aborted before SDK loading');
       }
 
+      const attachmentParts: FilePartInput[] = [];
+      if (options?.attachments !== undefined) {
+        const attachments = await prepareAttachments(
+          AGENT,
+          options.attachments,
+          options.cwd,
+          eventStreamController.signal,
+        );
+        for (const attachment of attachments) {
+          const data = await readAttachment(
+            attachment,
+            eventStreamController.signal,
+          );
+          attachmentParts.push({
+            type: 'file',
+            mime: attachment.mimeType,
+            filename: basename(attachment.path),
+            url: `data:${attachment.mimeType};base64,${data.toString('base64')}`,
+          });
+        }
+        if (abortRequested) {
+          throw new Error('OpenCode run aborted while reading attachments');
+        }
+      }
+
       const sdkLoadOutcome = await Promise.race([
         Promise.resolve()
           .then(() => this.loadSdkFn())
@@ -3862,6 +3898,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
       client = createClientFromSdk(sdk, actualServerUrl);
 
+      if (attachmentParts.length > 0 && !nativeFilePartClients.has(client)) {
+        throw new Error(
+          'OpenCode attachments require a native session prompt client; ' +
+            'the legacy run/query client cannot transport file parts.',
+        );
+      }
+
       const runFn = resolveRunFunction(client);
       if (!runFn) {
         throw new Error('OpenCode SDK client does not provide run()/query()');
@@ -3950,6 +3993,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       };
       const runPromise = runFn({
         prompt,
+        ...(attachmentParts.length > 0 ? { attachmentParts } : {}),
         cwd: options?.cwd,
         model: options?.model,
         signal: eventStreamController.signal,

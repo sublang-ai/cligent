@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createEvent, generateSessionId } from '../events.js';
+import { prepareAttachments, readAttachment } from '../attachments.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -111,8 +112,37 @@ export interface ClaudeComposedSystemPrompt {
   snapshot: false;
 }
 
+interface ClaudeUserMessage {
+  type: 'user';
+  parent_tool_use_id: null;
+  message: {
+    role: 'user';
+    content: Array<
+      | { type: 'text'; text: string }
+      | {
+          type: 'image';
+          source: {
+            type: 'base64';
+            media_type: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+            data: string;
+          };
+        }
+      | {
+          type: 'document';
+          source: {
+            type: 'base64';
+            media_type: 'application/pdf';
+            data: string;
+          };
+        }
+    >;
+  };
+}
+
+type ClaudePrompt = string | AsyncIterable<ClaudeUserMessage>;
+
 interface ClaudeQueryOptions {
-  prompt: string;
+  prompt: ClaudePrompt;
   cwd?: string;
   model?: string;
   maxTurns?: number;
@@ -137,7 +167,7 @@ interface ClaudeQueryOptions {
 
 interface ClaudeAgentSdk {
   query(options: {
-    prompt: string;
+    prompt: ClaudePrompt;
     options?: Omit<ClaudeQueryOptions, 'prompt'>;
   }): AsyncIterable<unknown>;
 }
@@ -640,9 +670,7 @@ const MODEL_USAGE_ALIASES = [
  * records and matching engine-59 totals. Return undefined when the map is
  * absent or malformed rather than publishing a partial table.
  */
-function foldModelUsage(
-  rawModelUsage: unknown,
-):
+function foldModelUsage(rawModelUsage: unknown):
   | {
       totals: NonNullable<DonePayload['usage']['tokens']>['totals'];
       records: UsageRecord[];
@@ -1240,6 +1268,71 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     prompt: string,
     options?: AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    const attachmentPreparationStart = Date.now();
+    let sdkPrompt: ClaudePrompt = prompt;
+    try {
+      const attachments = await prepareAttachments(
+        AGENT,
+        options?.attachments,
+        options?.cwd,
+        options?.abortSignal,
+      );
+      if (attachments.length > 0) {
+        const content: ClaudeUserMessage['message']['content'] = [
+          { type: 'text', text: prompt },
+        ];
+        // Read before constructing the SDK iterable: a generator read failure
+        // is otherwise masked by the SDK as "aborted by user".
+        for (const attachment of attachments) {
+          const data = (
+            await readAttachment(attachment, options?.abortSignal)
+          ).toString('base64');
+          if (attachment.mimeType === 'application/pdf') {
+            content.push({
+              type: 'document',
+              source: { type: 'base64', media_type: 'application/pdf', data },
+            });
+          } else {
+            content.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType as
+                  'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+                data,
+              },
+            });
+          }
+        }
+        sdkPrompt = (async function* () {
+          yield {
+            type: 'user' as const,
+            parent_tool_use_id: null,
+            message: { role: 'user' as const, content },
+          };
+        })();
+      }
+    } catch (error) {
+      if (!options?.abortSignal?.aborted) throw error;
+      const sessionId = options.resume || generateSessionId();
+      yield createEvent(
+        'done',
+        AGENT,
+        {
+          status: 'interrupted',
+          ...doneResumeTokenPayload(
+            'interrupted',
+            false,
+            sessionId,
+            options.resume,
+          ),
+          usage: { ...DEFAULT_DONE_USAGE },
+          durationMs: Date.now() - attachmentPreparationStart,
+        },
+        sessionId,
+      );
+      return;
+    }
     let sdk: ClaudeAgentSdk;
     try {
       sdk = await this.loadSdk();
@@ -1289,7 +1382,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
 
     try {
       for await (const message of sdk.query({
-        prompt,
+        prompt: sdkPrompt,
         options: queryOptions,
       })) {
         const messageType = isObjectWithType(message)

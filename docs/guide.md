@@ -3,6 +3,9 @@
 
 # cligent guide
 
+For per-call file attachments and invoking configured browser or desktop tools,
+see [Media and computer use](media-and-computer-use.md).
+
 ## Install
 
 ```bash

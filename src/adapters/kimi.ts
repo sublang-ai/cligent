@@ -17,6 +17,7 @@ import {
 } from '@agentclientprotocol/sdk';
 import type {
   Client,
+  ContentBlock,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionNotification,
@@ -38,6 +39,7 @@ import {
 } from './acp-schema.js';
 
 import { createEvent, generateSessionId } from '../events.js';
+import { prepareAttachments, readAttachment } from '../attachments.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -797,6 +799,44 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0]!.repairSpec}`,
     );
     const mapped = mapAgentOptionsToKimiOptions(options);
+    const promptContent: ContentBlock[] = [{ type: 'text', text: prompt }];
+    if (options?.attachments !== undefined) {
+      try {
+        const attachments = await prepareAttachments(
+          AGENT,
+          options.attachments,
+          mapped.cwd,
+          options.abortSignal,
+        );
+        for (const attachment of attachments) {
+          const data = await readAttachment(attachment, options.abortSignal);
+          promptContent.push({
+            type: 'image',
+            data: data.toString('base64'),
+            mimeType: attachment.mimeType,
+          });
+        }
+      } catch (error) {
+        if (!options.abortSignal?.aborted) throw error;
+        yield createEvent(
+          'done',
+          AGENT,
+          {
+            status: 'interrupted',
+            ...kimiResumeTokenPayload(
+              'interrupted',
+              false,
+              initialSessionId,
+              options.resume,
+            ),
+            usage: { ...DEFAULT_DONE_USAGE },
+            durationMs: Date.now() - startTime,
+          },
+          initialSessionId,
+        );
+        return;
+      }
+    }
     const queue = new AsyncEventQueue();
 
     let sessionId = initialSessionId;
@@ -1367,6 +1407,14 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             `Kimi ACP negotiated unsupported protocol version ${initialized.protocolVersion}; expected ${PROTOCOL_VERSION}`,
           );
         }
+        if (
+          promptContent.length > 1 &&
+          initialized.agentCapabilities?.promptCapabilities?.image !== true
+        ) {
+          throw new Error(
+            'Kimi ACP did not advertise image prompt support; use a Kimi runtime with promptCapabilities.image enabled',
+          );
+        }
 
         let configOptions: AcpSessionConfigOption[] | null | undefined;
         if (options?.resume) {
@@ -1532,7 +1580,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           promptResponse = await awaitAcp(
             connection.prompt({
               sessionId,
-              prompt: [{ type: 'text', text: prompt }],
+              prompt: promptContent,
             }),
           );
         } finally {
