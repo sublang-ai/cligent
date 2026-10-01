@@ -102,6 +102,7 @@ const browserAgent = new Cligent(new CodexAdapter());
 for await (const event of browserAgent.run(
   'Use the configured browser tool to open http://localhost:3000 and report the page title.',
 )) {
+  if (event.type === 'text') console.log(event.payload.content);
   if (event.type === 'tool_use') console.log(event.payload.toolName);
   if (event.type === 'tool_result') console.log(event.payload.status);
 }
