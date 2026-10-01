@@ -967,7 +967,7 @@ export function mapEffortToClaudeOptions(
 }
 
 /** The literal `subagentModel` value naming the run's own model (DR-029). */
-export const INHERIT_SUBAGENT_MODEL = 'inherit';
+const INHERIT_SUBAGENT_MODEL = 'inherit';
 
 /**
  * What the delegation directive names: the subagents' model, or `'inherit'`
