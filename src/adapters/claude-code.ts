@@ -1026,13 +1026,23 @@ function runsOn(model: string, effort: ClaudeSdkEffort): string {
 }
 
 /**
+ * claude-code-67: the effort `general-purpose` runs at where the agent
+ * chooses: the level a session runs at when none is set.
+ */
+const CHOSEN_GENERAL_PURPOSE_EFFORT: ClaudeSdkEffort = 'medium';
+
+const GENERAL_PURPOSE_DESCRIPTION =
+  'General-purpose agent for research, code search and multi-step tasks';
+
+/**
  * claude-code-67: the subagent definitions a query registers. A pinned
- * effort registers `delegate` and replaces the built-in `general-purpose` by
- * name, the type a call naming none runs as; `Explore` and `Plan` are left
- * alone, since a replacement would cost them their read-only tool
- * restrictions and their own prompts. Otherwise one `delegate-<effort>` per
+ * effort registers `delegate`; otherwise one `delegate-<effort>` per
  * distinct SDK effort, so the agent's choice of effort is a choice of
- * definition, and no built-in is replaced.
+ * definition. Both replace the built-in `general-purpose` by name, the type
+ * a call naming none runs as — at the pinned effort, or at `medium` with a
+ * pointer to the delegates — so no subagent inherits the agent's effort by
+ * omission. `Explore` and `Plan` are left alone, since a replacement would
+ * cost them their read-only tool restrictions and their own prompts.
  */
 function claudeSubagentDefinitions(
   model: string,
@@ -1044,19 +1054,21 @@ function claudeSubagentDefinitions(
     model,
     effort: sdkEffort,
   });
+  // No model: claude-code-60's environment binds it, as for any built-in.
+  const generalPurpose = (
+    sdkEffort: ClaudeSdkEffort,
+    pointer: string,
+  ): ClaudeAgentDefinition => ({
+    description: `${GENERAL_PURPOSE_DESCRIPTION}, on ${runsOn(model, sdkEffort)}${pointer}.`,
+    prompt: DELEGATE_PROMPT,
+    effort: sdkEffort,
+  });
 
   if (effort !== undefined) {
     const sdkEffort = toClaudeSdkEffort(effort);
     return {
       delegate: delegate(sdkEffort),
-      // No model: claude-code-60's environment binds it, as for any built-in.
-      'general-purpose': {
-        description:
-          'General-purpose agent for research, code search and multi-step ' +
-          `tasks, on ${runsOn(model, sdkEffort)}.`,
-        prompt: DELEGATE_PROMPT,
-        effort: sdkEffort,
-      },
+      'general-purpose': generalPurpose(sdkEffort, ''),
     };
   }
 
@@ -1065,6 +1077,10 @@ function claudeSubagentDefinitions(
     const sdkEffort = toClaudeSdkEffort(value as ClaudeSubagentEffort);
     agents[`delegate-${sdkEffort}`] ??= delegate(sdkEffort);
   }
+  agents['general-purpose'] = generalPurpose(
+    CHOSEN_GENERAL_PURPOSE_EFFORT,
+    '; start a delegate-<effort> subagent for another effort',
+  );
   return agents;
 }
 

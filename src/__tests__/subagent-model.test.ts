@@ -87,7 +87,9 @@ describe('built-in subagent-model metadata', () => {
     expect(claude).toContain('delegation directive');
     expect(claude).toContain('subagentEffort');
     expect(claude).toContain('subagent definitions');
-    expect(claude).toContain('replacing general-purpose by name');
+    expect(claude).toContain(
+      'replacing general-purpose by name at the pinned effort or, where the agent chooses, at medium',
+    );
     expect(claude).toContain(
       "Explore and Plan keep their own definitions and the agent's effort",
     );

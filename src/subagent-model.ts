@@ -17,7 +17,7 @@ export const SUBAGENT_MODEL_SUPPORT = Object.freeze({
   'claude-code': Object.freeze({
     requestSupported: true,
     notes:
-      "Support means native-request delivery of subagentModel and subagentEffort, not selected-model, account, provider, or installed-runtime availability. Claude sets CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1, with CLAUDE_CODE_SUBAGENT_MODEL for a named model or alone for inherit, so the model binds every subagent of the run; registers subagent definitions carrying the pinned effort, replacing general-purpose by name while Explore and Plan keep their own definitions and the agent's effort, or one definition per effort for the agent to choose; and composes a delegation directive into the system prompt. It changes which model and effort subagents use, never whether the agent may start them.",
+      "Support means native-request delivery of subagentModel and subagentEffort, not selected-model, account, provider, or installed-runtime availability. Claude sets CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1, with CLAUDE_CODE_SUBAGENT_MODEL for a named model or alone for inherit, so the model binds every subagent of the run; registers subagent definitions, one carrying the pinned effort or one per effort for the agent to choose, replacing general-purpose by name at the pinned effort or, where the agent chooses, at medium, while Explore and Plan keep their own definitions and the agent's effort; and composes a delegation directive into the system prompt. It changes which model and effort subagents use, never whether the agent may start them.",
   }),
   codex: Object.freeze({
     requestSupported: false,

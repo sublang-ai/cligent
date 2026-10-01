@@ -2960,18 +2960,34 @@ describe('ClaudeCodeAdapter subagent model', () => {
     'anything you could not do or could not verify.';
   const SDK_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
+  // The general-purpose replacement where the agent chooses: medium, no
+  // model of its own, and a pointer to the delegates for any other effort.
+  function chosenGeneralPurpose(described: string) {
+    return {
+      description:
+        'General-purpose agent for research, code search and multi-step ' +
+        `tasks, on ${described} at medium effort; start a ` +
+        'delegate-<effort> subagent for another effort.',
+      prompt: DELEGATE_PROMPT,
+      effort: 'medium',
+    };
+  }
+
   function chooserDefinitions(model: string, described: string) {
-    return Object.fromEntries(
-      SDK_EFFORTS.map((effort) => [
-        `delegate-${effort}`,
-        {
-          description: `Runs on ${described} at ${effort} effort.`,
-          prompt: DELEGATE_PROMPT,
-          model,
-          effort,
-        },
-      ]),
-    );
+    return {
+      ...Object.fromEntries(
+        SDK_EFFORTS.map((effort) => [
+          `delegate-${effort}`,
+          {
+            description: `Runs on ${described} at ${effort} effort.`,
+            prompt: DELEGATE_PROMPT,
+            model,
+            effort,
+          },
+        ]),
+      ),
+      'general-purpose': chosenGeneralPurpose(described),
+    };
   }
   const VARIABLES = [
     'CLAUDE_CODE_SUBAGENT_MODEL',
@@ -3272,10 +3288,49 @@ describe('ClaudeCodeAdapter subagent model', () => {
       .prompt;
     expect(prompt.split(verbatim)).toHaveLength(2);
     expect(prompt).toBe(subagentDirective(verbatim));
-    for (const definition of Object.values(mapped.queryOptions.agents ?? {})) {
+    const { 'general-purpose': generalPurpose, ...delegates } =
+      mapped.queryOptions.agents ?? {};
+    for (const definition of Object.values(delegates)) {
       expect(definition.model).toBe(verbatim);
     }
+    expect(generalPurpose).not.toHaveProperty('model');
+    expect(generalPurpose?.description.split(verbatim)).toHaveLength(2);
   });
+
+  it.each([
+    [SUBAGENT_MODEL, SUBAGENT_MODEL],
+    ['inherit', 'your model'],
+  ] as const)(
+    'replaces general-purpose at medium where the agent chooses (%s)',
+    (model, described) => {
+      const agents =
+        mapAgentOptionsToClaudeQueryOptions({ subagentModel: model })
+          .queryOptions.agents ?? {};
+
+      expect(Object.keys(agents)).toEqual([
+        'delegate-low',
+        'delegate-medium',
+        'delegate-high',
+        'delegate-xhigh',
+        'delegate-max',
+        'general-purpose',
+      ]);
+      // No subagent inherits the agent's effort by omission: a call naming
+      // no type runs this replacement, with no model of its own, at medium.
+      expect(agents['general-purpose']).toEqual(
+        chosenGeneralPurpose(described),
+      );
+      expect(agents['general-purpose']?.effort).toBe('medium');
+      expect(agents['general-purpose']?.prompt).toBe(DELEGATE_PROMPT);
+      expect(agents['general-purpose']?.description).toBe(
+        'General-purpose agent for research, code search and multi-step ' +
+          `tasks, on ${described} at medium effort; start a ` +
+          'delegate-<effort> subagent for another effort.',
+      );
+      expect(agents).not.toHaveProperty('Explore');
+      expect(agents).not.toHaveProperty('Plan');
+    },
+  );
 
   it('reaches the SDK query boundary on set and omitted runs', async () => {
     const captured: MockSdkInnerOptions[] = [];
