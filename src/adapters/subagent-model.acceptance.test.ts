@@ -24,8 +24,8 @@
 // claude-code-68 and claude-code-69 reuse this harness for the registered
 // subagent definitions of DR-029: which subagent type the main agent's Agent
 // call names, and — through a PreToolUse hook the harness adds to the tapped
-// query — the effort each built-in subagent runs at when a pinned effort
-// overrides it by name.
+// query — the effort each subagent runs at when a pinned effort replaces the
+// built-in general-purpose by name and leaves Explore and Plan their own.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -206,16 +206,19 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
     readonly type: RegExp;
     readonly frameModel: RegExp;
     readonly effortNamedByType?: boolean;
+    readonly builtInsOnlyByName?: boolean;
   }> = [
     {
-      // With a pinned effort the built-ins are overridden by name and match
-      // `delegate`, so the agent may reach any of the four — by name, or by
-      // omitting the type, which runs general-purpose; each runs pinned.
+      // With a pinned effort `general-purpose` is replaced by name and
+      // matches `delegate`, so a call naming either, or naming no type, which
+      // runs general-purpose, runs pinned. Explore and Plan keep their own
+      // definitions; the agent reaches them only by naming them.
       name: 'a pinned model and effort run through a pinned definition',
       subagentModel: SUBAGENT_MODEL,
       subagentEffort: 'low',
       type: /^(?:delegate|general-purpose|Explore|Plan)$/,
       frameModel: /haiku/i,
+      builtInsOnlyByName: true,
     },
     {
       name: 'a pinned model leaves the effort to a delegate-<effort> choice',
@@ -272,6 +275,20 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
           if (testCase.effortNamedByType) {
             expect(call.effort).toBe(call.agentType?.replace('delegate-', ''));
           }
+          if (
+            testCase.builtInsOnlyByName &&
+            (call.agentType === 'Explore' || call.agentType === 'Plan')
+          ) {
+            expect(named, `${call.agentType} ran unnamed`).toContain(
+              call.agentType,
+            );
+          }
+        }
+        if (testCase.builtInsOnlyByName && named.includes(null)) {
+          // A call naming no type lands on the pinned general-purpose.
+          expect(ran.map((call) => call.agentType)).toContain(
+            'general-purpose',
+          );
         }
         expect(
           models.length,
@@ -286,13 +303,14 @@ describe('Claude subagent definitions real-run acceptance (claude-code-68)', () 
   }
 });
 
-describe('Claude built-in override real-run acceptance (claude-code-69)', () => {
+describe('Claude built-in replacement real-run acceptance (claude-code-69)', () => {
   acceptanceIt(
-    'runs general-purpose and Explore at the pinned effort',
+    'runs general-purpose pinned and Explore as its own read-only self',
     async () => {
       requireDependencies();
       // Named explicitly so both built-ins are reached whatever the agent's
-      // habit; the hook shows the effort each one ran at.
+      // habit; the hook shows the effort each one ran at, and each reply
+      // lists the tools that subagent was given.
       const outcome = await runWithRetries({
         subagentModel: 'inherit',
         subagentEffort: 'low',
@@ -302,7 +320,8 @@ describe('Claude built-in override real-run acceptance (claude-code-69)', () => 
           [
             'Start two subagents with the Agent tool, one after the other.',
             'The first with subagent_type "general-purpose", the second with subagent_type "Explore".',
-            `Each one's whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
+            'Give each one this whole task, verbatim:',
+            `"Use the Read tool to read the file ${wordFile}. Then reply with exactly two lines: first, TOOLS: followed by the exact names of all the tools available to you, separated by commas; second, only the single word the file contains."`,
             'When both have returned, reply with exactly the word they returned and nothing else.',
           ].join(' '),
       });
@@ -315,29 +334,46 @@ describe('Claude built-in override real-run acceptance (claude-code-69)', () => 
         (hook) =>
           hook.agentType === 'general-purpose' || hook.agentType === 'Explore',
       );
+      const tools = listedTools(outcome.events, outcome.frames);
       const models = subagentFrameModels(outcome.frames);
       process.stderr.write(
-        `Claude built-in override: types ${JSON.stringify(types)}, ` +
+        `Claude built-in replacement: types ${JSON.stringify(types)}, ` +
           `subagent tool calls ${JSON.stringify(builtIn)}, ` +
           `main-agent efforts ${JSON.stringify(
             outcome.hooks
               .filter((hook) => hook.agentType === undefined)
               .map((hook) => hook.effort),
-          )}, subagent models ${JSON.stringify(models)}\n`,
+          )}, listed tools ${JSON.stringify(tools)}, ` +
+          `subagent models ${JSON.stringify(models)}\n`,
       );
       expect(types).toEqual(
         expect.arrayContaining(['general-purpose', 'Explore']),
       );
-      for (const agentType of ['general-purpose', 'Explore']) {
+      // general-purpose runs the pinned definition that replaces it; Explore
+      // is not replaced and runs at the main agent's effort.
+      for (const [agentType, effort] of [
+        ['general-purpose', 'low'],
+        ['Explore', 'high'],
+      ] as const) {
         const calls = builtIn.filter((hook) => hook.agentType === agentType);
         expect(
           calls.length,
           `no ${agentType} tool call observed`,
         ).toBeGreaterThan(0);
         for (const call of calls) {
-          expect(call.effort, `${agentType} ${call.toolName}`).toBe('low');
+          expect(call.effort, `${agentType} ${call.toolName}`).toBe(effort);
         }
       }
+      // Explore keeps its built-in read-only tool restrictions; the
+      // replacing general-purpose definition names no tools, so it has all.
+      const explore = tools['Explore'];
+      const general = tools['general-purpose'];
+      expect(explore, 'Explore listed no TOOLS: line').toBeDefined();
+      expect(general, 'general-purpose listed no TOOLS: line').toBeDefined();
+      expect(explore).toContain('Read');
+      expect(explore).not.toContain('Write');
+      expect(explore).not.toContain('Edit');
+      expect(general).toEqual(expect.arrayContaining(['Write', 'Edit']));
       expect(
         models.length,
         'the SDK forwarded no subagent frame',
@@ -398,6 +434,58 @@ function agentCallInputs(
           model?: unknown;
         },
     );
+}
+
+// The tools each named subagent type listed on the TOOLS: line of the reply
+// its Agent call returned to the main agent, read from the raw stream's
+// main-thread tool results.
+function listedTools(
+  events: readonly CligentEvent[],
+  frames: readonly unknown[],
+): Record<string, string[]> {
+  const typeById = new Map<string, string>();
+  for (const event of events) {
+    if (event.type !== 'tool_use') continue;
+    const payload = event.payload as ToolUsePayload;
+    const type = (payload.input as { subagent_type?: unknown }).subagent_type;
+    if (
+      ['Agent', 'Task'].includes(payload.toolName) &&
+      typeof type === 'string'
+    )
+      typeById.set(payload.toolUseId, type);
+  }
+  const listed: Record<string, string[]> = {};
+  for (const frame of frames) {
+    const user = frame as {
+      type?: unknown;
+      parent_tool_use_id?: unknown;
+      message?: { content?: unknown };
+    };
+    if (user.type !== 'user' || typeof user.parent_tool_use_id === 'string')
+      continue;
+    const blocks = Array.isArray(user.message?.content)
+      ? (user.message.content as Array<Record<string, unknown>>)
+      : [];
+    for (const block of blocks) {
+      const type = typeById.get(String(block.tool_use_id));
+      if (block.type !== 'tool_result' || type === undefined) continue;
+      const text =
+        typeof block.content === 'string'
+          ? block.content
+          : (Array.isArray(block.content) ? block.content : [])
+              .map((part: { text?: unknown }) =>
+                typeof part.text === 'string' ? part.text : '',
+              )
+              .join('\n');
+      const line = /^[\s*_`]*TOOLS:[\s*_`]*(.*)$/m.exec(text)?.[1];
+      if (line === undefined) continue;
+      listed[type] = line
+        .split(',')
+        .map((name) => name.replace(/[\s*_`.]+/g, ''))
+        .filter((name) => name.length > 0);
+    }
+  }
+  return listed;
 }
 
 function subagentFrameModels(frames: readonly unknown[]): string[] {
