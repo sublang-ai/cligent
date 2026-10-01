@@ -236,6 +236,12 @@ it('returns a browser screenshot to both the Claude model loop and the Cligent h
     abort.abort();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
+    // Chromium may still finish profile cleanup after the SDK iterator closes.
+    await rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   }
 }, 120_000);
