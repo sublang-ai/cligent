@@ -8,7 +8,7 @@
 Accepted (2026-09-30).
 Amends [DR-021](021-agent-runtime-fast-mode.md) in nothing; reuses its adapter-scoped option pattern.
 Amends the Claude query preparation of [[claude-code-34](../packages/adapters/claude-code.md#claude-code-34)]: the per-run environment clone may carry two Cligent-set variables.
-Amended by [DR-029](029-subagent-effort.md): `subagentModel` admits `inherit`, a companion `subagentEffort` joins it, the directive's first sentence follows both, and the adapter registers subagent definitions.
+Amended by [DR-029](029-subagent-effort.md): `subagentModel` admits `inherit`, whose environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone with the caller's `CLAUDE_CODE_SUBAGENT_MODEL` removed; a companion `subagentEffort` joins it; the adapter registers subagent definitions; and the directive's first sentence follows both settings while its remaining sentences no longer name the model.
 
 ## Context
 
