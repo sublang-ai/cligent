@@ -632,17 +632,17 @@ Under [[claude-code-219](#claude-code-219)]'s real-run harness, where `ANTHROPIC
 
 ### claude-code-68
 
-Under [[claude-code-66](#claude-code-66)]'s harness, key, and permission policy, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'` and a prompt asking for exactly one Agent-tool subagent, naming no subagent type, to read a one-word file with the Read tool and return its contents, the acceptance check shall assert a successful terminal `done` whose result carries the word, write the observed subagent types and models to stderr, and assert this matrix:
+Under [[claude-code-66](#claude-code-66)]'s harness, key, and permission policy, with a `PreToolUse` hook the harness adds to the tapped query recording each tool call's agent type and effort level, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'` and a prompt asking for exactly one Agent-tool subagent, naming no subagent type, to read a one-word file with the Read tool and return its contents, the acceptance check shall assert a successful terminal `done` whose result carries the word, write the named subagent types, the observed tool calls, and the subagent models to stderr, and assert this matrix:
 
 | `subagentModel` and `subagentEffort` | Assertion |
 | --- | --- |
-| `claude-haiku-4-5`, `low` | every Agent-tool call's input names subagent type `delegate` [[claude-code-67](#claude-code-67)]; every SDK assistant frame inside the subagent names a Haiku model [[claude-code-60](#claude-code-60)] |
-| `claude-haiku-4-5`, omitted | every Agent-tool call's input names one of the five `delegate-<effort>` types [[claude-code-67](#claude-code-67)]; every subagent frame names a Haiku model [[claude-code-60](#claude-code-60)] |
-| `inherit`, omitted | every Agent-tool call's input names one of the five `delegate-<effort>` types [[claude-code-67](#claude-code-67)]; every subagent frame names a Sonnet model [[claude-code-60](#claude-code-60)] |
+| `claude-haiku-4-5`, `low` | every tool call inside a subagent reports a pinned definition's agent type — `delegate`, `general-purpose`, `Explore`, or `Plan` — whether the Agent call names it or omits the type [[claude-code-67](#claude-code-67)]; every SDK assistant frame inside the subagent names a Haiku model [[claude-code-60](#claude-code-60)] |
+| `claude-haiku-4-5`, omitted | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types [[claude-code-67](#claude-code-67)]; every subagent frame names a Haiku model [[claude-code-60](#claude-code-60)] |
+| `inherit`, omitted | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types and that effort level [[claude-code-67](#claude-code-67)]; every subagent frame names a Sonnet model [[claude-code-60](#claude-code-60)] |
 
 ### claude-code-69
 
-Under [[claude-code-66](#claude-code-66)]'s harness, key, and permission policy, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'`, `effort: 'high'`, `subagentModel: 'inherit'`, and `subagentEffort: 'low'`, with a `PreToolUse` hook the harness adds to the tapped query recording each tool call's agent type and effort level, and a prompt directing one `general-purpose` and then one `Explore` Agent-tool subagent, each by its subagent type, to read the one-word file, the acceptance check shall assert that the installed runtime lets a registered definition override a built-in one by name, as Claude Code 2.1.284 does where a definition-free control runs both at the main agent's `high`:
+Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'`, `effort: 'high'`, `subagentModel: 'inherit'`, and `subagentEffort: 'low'`, and a prompt directing one `general-purpose` and then one `Explore` Agent-tool subagent, each by its subagent type, to read the one-word file, the acceptance check shall assert that the installed runtime lets a registered definition override a built-in one by name, as Claude Code 2.1.284 does where a definition-free control runs both at the main agent's `high`:
 
 - a successful terminal `done` whose result carries the word;
 - Agent-tool calls naming both `general-purpose` and `Explore`;

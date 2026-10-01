@@ -20,6 +20,12 @@
 // tool_result blocks from subagents are emitted). The permission policy denies
 // writes, shell, and network, so the probe cannot change anything outside its
 // throwaway directory while Read and Agent stay free.
+//
+// claude-code-68 and claude-code-69 reuse this harness for the registered
+// subagent definitions of DR-029: which subagent type the main agent's Agent
+// call names, and — through a PreToolUse hook the harness adds to the tapped
+// query — the effort each built-in subagent runs at when a pinned effort
+// overrides it by name.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,6 +33,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Cligent } from '../index.js';
 import type {
+  ClaudeEffort,
+  ClaudeSubagentEffort,
   CligentEvent,
   DonePayload,
   ErrorPayload,
@@ -75,10 +83,34 @@ interface RawAssistantFrame {
   message?: { model?: unknown };
 }
 
+interface HookObservation {
+  readonly agentType: string | undefined;
+  readonly toolName: string | undefined;
+  readonly effort: string | undefined;
+}
+
 interface ProbeOutcome {
   readonly events: readonly CligentEvent[];
   readonly frames: readonly unknown[];
+  readonly hooks: readonly HookObservation[];
 }
+
+interface ProbeSettings {
+  readonly subagentModel: string;
+  readonly subagentEffort?: ClaudeSubagentEffort;
+  readonly effort?: ClaudeEffort;
+  readonly prompt: (wordFile: string) => string;
+  readonly observeHooks?: boolean;
+}
+
+const DELEGATE_CHOICES = /^delegate-(?:low|medium|high|xhigh|max)$/;
+
+const ONE_NEUTRAL_SUBAGENT = (wordFile: string): string =>
+  [
+    'Start exactly one subagent with the Agent tool.',
+    `Its whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
+    'When the subagent returns, reply with exactly the word it returned and nothing else.',
+  ].join(' ');
 
 describe('Claude subagent-model real-run acceptance (claude-code-66)', () => {
   acceptanceIt(
@@ -90,17 +122,15 @@ describe('Claude subagent-model real-run acceptance (claude-code-66)', () => {
         );
       }
 
-      let outcome: ProbeOutcome | undefined;
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        outcome = await runProbe();
-        const transient = transientFailure(outcome.events);
-        if (!transient || attempt === MAX_ATTEMPTS) break;
-        process.stderr.write(
-          `Claude subagent-model acceptance attempt ${attempt} hit a ` +
-            `transient upstream error: ${transient}\n`,
-        );
-      }
-      const { events, frames } = outcome!;
+      const { events, frames } = await runWithRetries({
+        subagentModel: SUBAGENT_MODEL,
+        prompt: (wordFile) =>
+          [
+            'Start exactly one subagent with the Agent tool, passing subagent_type "general-purpose" and model "sonnet".',
+            `Its whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
+            'When the subagent returns, reply with exactly the word it returned and nothing else.',
+          ].join(' '),
+      });
 
       const done = events.find((event) => event.type === 'done')?.payload as
         DonePayload | undefined;
@@ -168,31 +198,243 @@ describe('Claude subagent-model real-run acceptance (claude-code-66)', () => {
   );
 });
 
-async function runProbe(): Promise<ProbeOutcome> {
+describe('Claude subagent definitions real-run acceptance (claude-code-68)', () => {
+  const cases: ReadonlyArray<{
+    readonly name: string;
+    readonly subagentModel: string;
+    readonly subagentEffort?: ClaudeSubagentEffort;
+    readonly type: RegExp;
+    readonly frameModel: RegExp;
+    readonly effortNamedByType?: boolean;
+  }> = [
+    {
+      // With a pinned effort the built-ins are overridden by name and match
+      // `delegate`, so the agent may reach any of the four — by name, or by
+      // omitting the type, which runs general-purpose; each runs pinned.
+      name: 'a pinned model and effort run through a pinned definition',
+      subagentModel: SUBAGENT_MODEL,
+      subagentEffort: 'low',
+      type: /^(?:delegate|general-purpose|Explore|Plan)$/,
+      frameModel: /haiku/i,
+    },
+    {
+      name: 'a pinned model leaves the effort to a delegate-<effort> choice',
+      subagentModel: SUBAGENT_MODEL,
+      type: DELEGATE_CHOICES,
+      frameModel: /haiku/i,
+    },
+    {
+      name: "inherit keeps subagents on the agent's own model",
+      subagentModel: 'inherit',
+      type: DELEGATE_CHOICES,
+      frameModel: /sonnet/i,
+      // Sonnet reports the effort it runs at; Haiku reports none.
+      effortNamedByType: true,
+    },
+  ];
+
+  for (const testCase of cases) {
+    acceptanceIt(
+      testCase.name,
+      async () => {
+        requireDependencies();
+        const outcome = await runWithRetries({
+          subagentModel: testCase.subagentModel,
+          ...(testCase.subagentEffort !== undefined
+            ? { subagentEffort: testCase.subagentEffort }
+            : {}),
+          prompt: ONE_NEUTRAL_SUBAGENT,
+          observeHooks: true,
+        });
+        expectSuccessfulWord(outcome.events);
+
+        // The Agent call's input may name a type or omit it; the hook reports
+        // the type each subagent actually ran as.
+        const named = agentCallInputs(outcome.events).map(
+          (input) => input.subagent_type ?? null,
+        );
+        const ran = outcome.hooks.filter(
+          (hook) => hook.agentType !== undefined,
+        );
+        const models = subagentFrameModels(outcome.frames);
+        process.stderr.write(
+          `Claude subagent definitions (${testCase.name}): named types ` +
+            `${JSON.stringify(named)}, subagent tool calls ` +
+            `${JSON.stringify(ran)}, subagent models ${JSON.stringify(models)}\n`,
+        );
+        expect(
+          named.length,
+          'the main agent started no subagent',
+        ).toBeGreaterThan(0);
+        expect(ran.length, 'no subagent tool call observed').toBeGreaterThan(0);
+        for (const call of ran) {
+          expect(call.agentType).toMatch(testCase.type);
+          if (testCase.effortNamedByType) {
+            expect(call.effort).toBe(call.agentType?.replace('delegate-', ''));
+          }
+        }
+        expect(
+          models.length,
+          'the SDK forwarded no subagent frame',
+        ).toBeGreaterThan(0);
+        for (const model of models) {
+          expect(model).toMatch(testCase.frameModel);
+        }
+      },
+      PROBE_TIMEOUT_MS * MAX_ATTEMPTS,
+    );
+  }
+});
+
+describe('Claude built-in override real-run acceptance (claude-code-69)', () => {
+  acceptanceIt(
+    'runs general-purpose and Explore at the pinned effort',
+    async () => {
+      requireDependencies();
+      // Named explicitly so both built-ins are reached whatever the agent's
+      // habit; the hook shows the effort each one ran at.
+      const outcome = await runWithRetries({
+        subagentModel: 'inherit',
+        subagentEffort: 'low',
+        effort: 'high',
+        observeHooks: true,
+        prompt: (wordFile) =>
+          [
+            'Start two subagents with the Agent tool, one after the other.',
+            'The first with subagent_type "general-purpose", the second with subagent_type "Explore".',
+            `Each one's whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
+            'When both have returned, reply with exactly the word they returned and nothing else.',
+          ].join(' '),
+      });
+      expectSuccessfulWord(outcome.events);
+
+      const types = agentCallInputs(outcome.events).map(
+        (input) => input.subagent_type,
+      );
+      const builtIn = outcome.hooks.filter(
+        (hook) =>
+          hook.agentType === 'general-purpose' || hook.agentType === 'Explore',
+      );
+      const models = subagentFrameModels(outcome.frames);
+      process.stderr.write(
+        `Claude built-in override: types ${JSON.stringify(types)}, ` +
+          `subagent tool calls ${JSON.stringify(builtIn)}, ` +
+          `main-agent efforts ${JSON.stringify(
+            outcome.hooks
+              .filter((hook) => hook.agentType === undefined)
+              .map((hook) => hook.effort),
+          )}, subagent models ${JSON.stringify(models)}\n`,
+      );
+      expect(types).toEqual(
+        expect.arrayContaining(['general-purpose', 'Explore']),
+      );
+      for (const agentType of ['general-purpose', 'Explore']) {
+        const calls = builtIn.filter((hook) => hook.agentType === agentType);
+        expect(
+          calls.length,
+          `no ${agentType} tool call observed`,
+        ).toBeGreaterThan(0);
+        for (const call of calls) {
+          expect(call.effort, `${agentType} ${call.toolName}`).toBe('low');
+        }
+      }
+      expect(
+        models.length,
+        'the SDK forwarded no subagent frame',
+      ).toBeGreaterThan(0);
+      for (const model of models) {
+        expect(model).toMatch(/sonnet/i);
+      }
+    },
+    PROBE_TIMEOUT_MS * MAX_ATTEMPTS,
+  );
+});
+
+function requireDependencies(): void {
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing Claude subagent-model acceptance dependencies: ${missing.join(', ')}`,
+    );
+  }
+}
+
+async function runWithRetries(settings: ProbeSettings): Promise<ProbeOutcome> {
+  let outcome: ProbeOutcome | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    outcome = await runProbe(settings);
+    const transient = transientFailure(outcome.events);
+    if (!transient || attempt === MAX_ATTEMPTS) break;
+    process.stderr.write(
+      `Claude subagent-model acceptance attempt ${attempt} hit a ` +
+        `transient upstream error: ${transient}\n`,
+    );
+  }
+  return outcome!;
+}
+
+function expectSuccessfulWord(events: readonly CligentEvent[]): void {
+  const done = events.find((event) => event.type === 'done')?.payload as
+    DonePayload | undefined;
+  const errors = events
+    .filter((event) => event.type === 'error')
+    .map((event) => (event.payload as ErrorPayload).message);
+  expect(done?.status, `errors: ${errors.join(' | ')}`).toBe('success');
+  expect(done?.result ?? '').toContain(WORD);
+}
+
+function agentCallInputs(
+  events: readonly CligentEvent[],
+): Array<{ subagent_type?: unknown; model?: unknown }> {
+  return events
+    .filter(
+      (event) =>
+        event.type === 'tool_use' &&
+        ['Agent', 'Task'].includes((event.payload as ToolUsePayload).toolName),
+    )
+    .map(
+      (event) =>
+        ((event.payload as ToolUsePayload).input ?? {}) as {
+          subagent_type?: unknown;
+          model?: unknown;
+        },
+    );
+}
+
+function subagentFrameModels(frames: readonly unknown[]): string[] {
+  return frames
+    .filter(isSubagentAssistantFrame)
+    .map((frame) => String(frame.message?.model));
+}
+
+async function runProbe(settings: ProbeSettings): Promise<ProbeOutcome> {
   const cwd = mkdtempSync(join(tmpdir(), 'cligent-subagent-model-'));
   const wordFile = join(cwd, 'word.txt');
   writeFileSync(wordFile, `${WORD}\n`);
   const frames: unknown[] = [];
+  const hooks: HookObservation[] = [];
   const events: CligentEvent[] = [];
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
 
   try {
-    const cligent = new Cligent(tappedAdapter(frames), {
-      cwd,
-      model: MAIN_MODEL,
-      subagentModel: SUBAGENT_MODEL,
-      permissions: {
-        fileWrite: 'deny',
-        shellExecute: 'deny',
-        networkAccess: 'deny',
+    const cligent = new Cligent(
+      tappedAdapter(frames, settings.observeHooks ? hooks : undefined),
+      {
+        cwd,
+        model: MAIN_MODEL,
+        ...(settings.effort !== undefined ? { effort: settings.effort } : {}),
+        subagentModel: settings.subagentModel,
+        ...(settings.subagentEffort !== undefined
+          ? { subagentEffort: settings.subagentEffort }
+          : {}),
+        permissions: {
+          fileWrite: 'deny',
+          shellExecute: 'deny',
+          networkAccess: 'deny',
+        },
       },
-    });
-    const prompt = [
-      'Start exactly one subagent with the Agent tool, passing subagent_type "general-purpose" and model "sonnet".',
-      `Its whole task: use the Read tool to read the file ${wordFile} and reply with only the single word it contains.`,
-      'When the subagent returns, reply with exactly the word it returned and nothing else.',
-    ].join(' ');
+    );
+    const prompt = settings.prompt(wordFile);
     for await (const event of cligent.run(prompt, {
       abortSignal: controller.signal,
     })) {
@@ -202,19 +444,26 @@ async function runProbe(): Promise<ProbeOutcome> {
     clearTimeout(timer);
     rmSync(cwd, { recursive: true, force: true });
   }
-  return { events, frames };
+  return { events, frames, hooks };
 }
 
 // A pass-through tap: the real SDK serves the query and the adapter sees every
 // frame unchanged; the test keeps a copy of each for the raw-stream evidence.
-function tappedAdapter(frames: unknown[]): ClaudeCodeAdapter {
+// With `hooks`, the tap adds one PreToolUse hook recording each tool call's
+// agent type (absent on the main thread) and the effort the runtime applied.
+function tappedAdapter(
+  frames: unknown[],
+  hooks?: HookObservation[],
+): ClaudeCodeAdapter {
   return new ClaudeCodeAdapter({
     probeExecutable: () => probeClaudeExecutable(),
     loadSdk: async () => {
       const sdk = await loadClaudeAgentSdk();
       return {
         query(request: QueryRequest): AsyncIterable<unknown> {
-          const stream = sdk.query(request);
+          const stream = sdk.query(
+            hooks === undefined ? request : withEffortHook(request, hooks),
+          );
           return {
             async *[Symbol.asyncIterator]() {
               for await (const frame of stream) {
@@ -227,6 +476,31 @@ function tappedAdapter(frames: unknown[]): ClaudeCodeAdapter {
       };
     },
   });
+}
+
+function withEffortHook(
+  request: QueryRequest,
+  hooks: HookObservation[],
+): QueryRequest {
+  const record = async (input: {
+    agent_type?: string;
+    tool_name?: string;
+    effort?: { level?: string };
+  }) => {
+    hooks.push({
+      agentType: input.agent_type,
+      toolName: input.tool_name,
+      effort: input.effort?.level,
+    });
+    return {};
+  };
+  return {
+    ...request,
+    options: {
+      ...request.options,
+      hooks: { PreToolUse: [{ hooks: [record] }] },
+    },
+  } as unknown as QueryRequest;
 }
 
 function isSubagentAssistantFrame(frame: unknown): frame is RawAssistantFrame {
