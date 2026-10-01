@@ -164,8 +164,17 @@ it('returns a browser screenshot to both the Claude model loop and the Cligent h
             },
             env: {
               PATH: process.env.PATH,
+              SystemRoot: process.env.SystemRoot,
+              WINDIR: process.env.WINDIR,
+              PATHEXT: process.env.PATHEXT,
+              ProgramFiles: process.env.ProgramFiles,
               HOME: root,
+              USERPROFILE: root,
+              APPDATA: join(root, 'appdata'),
+              LOCALAPPDATA: join(root, 'localappdata'),
               TMPDIR: root,
+              TEMP: root,
+              TMP: root,
               CLAUDE_CONFIG_DIR: root,
               ANTHROPIC_API_KEY: 'local-fixture-not-a-real-key',
               ANTHROPIC_BASE_URL: endpoint,
@@ -236,6 +245,11 @@ it('returns a browser screenshot to both the Claude model loop and the Cligent h
     abort.abort();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
+    await rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 }, 120_000);

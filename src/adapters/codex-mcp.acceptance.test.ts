@@ -185,6 +185,9 @@ acceptanceIt(
           WINDIR: process.env.WINDIR,
           PATHEXT: process.env.PATHEXT,
           HOME: root,
+          USERPROFILE: root,
+          APPDATA: join(root, 'appdata'),
+          LOCALAPPDATA: join(root, 'localappdata'),
           CODEX_HOME: home,
           TMPDIR: root,
           TEMP: root,
@@ -278,7 +281,12 @@ acceptanceIt(
       controller.abort();
       provider.closeAllConnections();
       await new Promise<void>((resolve) => provider.close(() => resolve()));
-      await rm(root, { recursive: true, force: true });
+      await rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
     }
   },
   35_000,

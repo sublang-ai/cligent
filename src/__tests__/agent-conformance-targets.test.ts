@@ -11,8 +11,10 @@ import { inspectClaudeSdkSelectedBinary } from '../../scripts/verify-agent-targe
 
 interface WorkflowStep {
   env?: Record<string, string>;
+  if?: string;
   name?: string;
   run?: string;
+  'timeout-minutes'?: number;
 }
 
 interface Workflow {
@@ -22,6 +24,12 @@ interface Workflow {
       steps?: WorkflowStep[];
     };
     distributable?: {
+      steps?: WorkflowStep[];
+    };
+    browser?: {
+      'runs-on'?: string;
+      'timeout-minutes'?: number;
+      strategy?: { 'fail-fast'?: boolean; matrix?: { os?: string[] } };
       steps?: WorkflowStep[];
     };
   };
@@ -177,6 +185,42 @@ describe('agent SDK and CLI conformance targets', () => {
       'distributable',
       'browser',
     ]);
+  });
+
+  it('runs browser readiness and native screenshot acceptance on every supported desktop OS', () => {
+    const workflow = parse(
+      readFileSync(
+        new URL('../../.github/workflows/ci.yml', import.meta.url),
+        'utf8',
+      ),
+    ) as Workflow;
+    const job = workflow.jobs?.browser;
+    expect(job?.['runs-on']).toBe('${{ matrix.os }}');
+    expect(job?.strategy?.matrix?.os).toEqual([
+      'ubuntu-latest',
+      'macos-latest',
+      'windows-latest',
+    ]);
+    expect(job?.strategy?.['fail-fast']).toBe(false);
+    const steps = job?.steps ?? [];
+    const readiness = steps.findIndex((step) =>
+      step.run?.includes('src/__tests__/browser.test.ts'),
+    );
+    const prerequisites = steps.findIndex((step) =>
+      step.run?.includes('install-deps chromium'),
+    );
+    const acceptance = steps.findIndex(
+      (step) => step.run === 'npm run test:browser',
+    );
+    expect(readiness).toBeGreaterThanOrEqual(0);
+    expect(prerequisites).toBeGreaterThan(readiness);
+    expect(steps[prerequisites]?.if).toBe("runner.os == 'Linux'");
+    expect(acceptance).toBeGreaterThan(prerequisites);
+    expect(steps[readiness]?.if).toBeUndefined();
+    expect(steps[acceptance]?.if).toBeUndefined();
+    expect(job?.['timeout-minutes']).toBeGreaterThan(0);
+    expect(steps[prerequisites]?.['timeout-minutes']).toBeGreaterThan(8);
+    expect(steps[acceptance]?.['timeout-minutes']).toBeGreaterThan(0);
   });
 
   it('authenticates Kimi acceptance through the model API-key route', () => {

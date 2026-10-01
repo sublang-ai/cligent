@@ -717,7 +717,7 @@ Given caller stdio and HTTP servers and native user-message tool results, when a
 
 ### claude-code-76
 
-Given the installed native Claude SDK and CLI, packaged managed browser runtime, and a loopback model API fixture with isolated configuration and fake credentials, when a `Cligent` browser run navigates to a loopback page and captures a screenshot, acceptance verification shall assert native server admission and scoped tool approval [[claude-code-74](#claude-code-74)], successful tool-result correlation and a PNG media event [[claude-code-3](#claude-code-3)], the same screenshot in a subsequent native model request, and the final explanation in the ordinary terminal result [[claude-code-10](#claude-code-10)].
+Given the installed native Claude SDK and CLI, packaged managed browser runtime, and a loopback model API fixture with isolated configuration and fake credentials on each Linux, macOS, and Windows CI host, when a `Cligent` browser run navigates to a loopback page and captures a screenshot, acceptance verification shall assert native server admission and scoped tool approval [[claude-code-74](#claude-code-74)], successful tool-result correlation and a PNG media event [[claude-code-3](#claude-code-3)], the same screenshot in a subsequent native model request, and the final explanation in the ordinary terminal result [[claude-code-10](#claude-code-10)].
 
 ## References
 

@@ -534,7 +534,7 @@ Where executable resolution or wrapper setup fails while starting a run, the ada
 
 ### codex-74
 
-Where the exact native Codex conformance target is installed, when the real engine, adapter, SDK, and executable run against isolated configuration with loopback-only provider responses and a fixture MCP subprocess, acceptance verification shall assert the supplied server reaches the native tool catalog and executes without a permission prompt [[codex-70](#codex-70)], its valid PNG reaches the subsequent model request and one correlated host media event beside explanation text [[codex-72](#codex-72)], and completion counts one tool invocation without using real credentials or changing user configuration.
+Where the exact native Codex conformance target is installed on each Linux, macOS, and Windows CI host, when the real engine, adapter, SDK, and executable run against isolated configuration with loopback-only provider responses and a fixture MCP subprocess, acceptance verification shall assert the supplied server reaches the native tool catalog and executes without a permission prompt [[codex-70](#codex-70)], its valid PNG reaches the subsequent model request and one correlated host media event beside explanation text [[codex-72](#codex-72)], and completion counts one tool invocation without using real credentials or changing user configuration.
 
 ### codex-71
 

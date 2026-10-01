@@ -11,6 +11,10 @@ export default defineConfig({
       'src/browser.acceptance.test.ts',
       'src/__tests__/claude-browser.acceptance.test.ts',
       'src/adapters/codex-mcp.acceptance.test.ts',
+      // The regression deliberately exercises the Linux shared-library loader.
+      ...(process.platform === 'linux'
+        ? ['src/browser-environment.acceptance.test.ts']
+        : []),
     ],
     fileParallelism: false,
   },

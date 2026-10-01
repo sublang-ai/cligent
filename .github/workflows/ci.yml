@@ -71,7 +71,12 @@ jobs:
 
   browser:
     needs: ci
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -79,9 +84,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify browser preparation failures and cleanup
+        run: npx vitest run --config config/vitest.config.ts src/__tests__/browser.test.ts src/__tests__/mcp.test.ts
       - name: Prepare managed browser prerequisites
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
         run: node node_modules/playwright/cli.js install-deps chromium
       - name: Verify real browser and agent screenshot loop
+        timeout-minutes: 8
         run: npm run test:browser
 
   acceptance:
