@@ -290,17 +290,17 @@ When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEff
 | `subagentModel` | `subagentEffort` | SDK `agents` |
 | --- | --- | --- |
 | omitted | omitted | omitted |
-| accepted value | accepted value | a definition named `delegate` and definitions named `general-purpose`, `Explore`, and `Plan`, each at the value's [[claude-code-8](#claude-code-8)] SDK effort |
-| accepted value | omitted | one definition named `delegate-<effort>` per distinct [[claude-code-8](#claude-code-8)] SDK effort of the [[engine-40](../engine.md#engine-40)] `ClaudeEffort` values other than `ultracode`, in that vocabulary's order: `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and `delegate-max` |
+| accepted value | accepted value | a definition named `delegate` and one named `general-purpose`, replacing that built-in, both at the value's [[claude-code-8](#claude-code-8)] SDK effort, and none named `Explore` or `Plan`, which keep their built-in definitions |
+| accepted value | omitted | one definition named `delegate-<effort>` per distinct [[claude-code-8](#claude-code-8)] SDK effort of the [[engine-40](../engine.md#engine-40)] `ClaudeEffort` values other than `ultracode`, in that vocabulary's order: `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and `delegate-max`; none named after a built-in |
 
-Each definition carries exactly these fields, `{model}` being the `subagentModel` value verbatim and `{effort}` the definition's SDK effort:
+Each definition carries exactly these fields, `{model}` being the `subagentModel` value verbatim, `{on}` being `your model` for `inherit` and `{model}` otherwise, and `{effort}` the definition's SDK effort:
 
-| Field | Value |
-| --- | --- |
-| `description` | `Runs on your model at {effort} effort.` for `inherit`, otherwise `Runs on {model} at {effort} effort.` |
-| `prompt` | the delegate prompt below |
-| `model` | `{model}` on `delegate` and `delegate-<effort>` definitions, `inherit` passing as `inherit`; absent on `general-purpose`, `Explore`, and `Plan`, which take the model [[claude-code-60](#claude-code-60)]'s environment binds |
-| `effort` | `{effort}` |
+| Field | `delegate` and `delegate-<effort>` | `general-purpose` |
+| --- | --- | --- |
+| `description` | `Runs on {on} at {effort} effort.` | `General-purpose agent for research, code search and multi-step tasks, on {on} at {effort} effort.` |
+| `prompt` | the delegate prompt below | the delegate prompt below |
+| `model` | `{model}`, `inherit` passing as `inherit` | absent, so the model [[claude-code-60](#claude-code-60)]'s environment binds applies |
+| `effort` | `{effort}` | `{effort}` |
 
 ```text
 You are a delegate subagent. Complete exactly the task you are given, within the bounds it sets, using the tools available to you. Do not widen the task or change anything it does not ask for. When you finish, report precisely what you did and what you verified, and name anything you could not do or could not verify.
@@ -613,8 +613,8 @@ Where `subagentModel` and `subagentEffort` take each combination below, with and
 | both omitted | both variables keep the caller environment's value or absence [[claude-code-60](#claude-code-60)]; no `systemPrompt` key and no `agents` key is passed [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)], [[claude-code-67](#claude-code-67)]; the serialized query options equal those of the same input without either key |
 | model ID, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` equals the ID verbatim and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'`, replacing caller values [[claude-code-60](#claude-code-60)]; `systemPrompt` is the custom, unsnapshotted prompt whose text is exactly the directive naming the ID and leaving the effort to the agent [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)]; `agents` holds exactly the five `delegate-<effort>` definitions on the ID with their descriptions, prompt, and efforts [[claude-code-67](#claude-code-67)] |
 | `inherit`, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` is absent even where the caller sets it and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'` [[claude-code-60](#claude-code-60)]; the directive names the agent's own model [[claude-code-61](#claude-code-61)]; the five definitions carry `model: 'inherit'` and "your model" descriptions [[claude-code-67](#claude-code-67)] |
-| model ID, effort `high` | the variables as for the ID alone [[claude-code-60](#claude-code-60)]; the directive pins the ID at `high` effort [[claude-code-61](#claude-code-61)]; `agents` holds exactly `delegate` on the ID and `general-purpose`, `Explore`, and `Plan` without a model, all at `high` [[claude-code-67](#claude-code-67)] |
-| `inherit`, effort `minimal` | the directive and every definition name `low`, the SDK effort of `minimal` [[claude-code-61](#claude-code-61)], [[claude-code-67](#claude-code-67)] |
+| model ID, effort `high` | the variables as for the ID alone [[claude-code-60](#claude-code-60)]; the directive pins the ID at `high` effort [[claude-code-61](#claude-code-61)]; `agents` holds exactly `delegate` on the ID and `general-purpose` without a model, both at `high` with their descriptions and the delegate prompt, and no `Explore` or `Plan` key [[claude-code-67](#claude-code-67)] |
+| `inherit`, effort `minimal` | the variables as for `inherit` alone [[claude-code-60](#claude-code-60)]; the directive and both definitions name `low`, the SDK effort of `minimal`, the descriptions naming "your model" [[claude-code-61](#claude-code-61)], [[claude-code-67](#claude-code-67)] |
 | any | the caller environment remains unchanged and no other clone value differs from it apart from the omitted `CLAUDECODE` [[claude-code-34](#claude-code-34)] |
 
 ### claude-code-65
@@ -636,18 +636,21 @@ Under [[claude-code-66](#claude-code-66)]'s harness, key, and permission policy,
 
 | `subagentModel` and `subagentEffort` | Assertion |
 | --- | --- |
-| `claude-haiku-4-5`, `low` | every tool call inside a subagent reports a pinned definition's agent type — `delegate`, `general-purpose`, `Explore`, or `Plan` — whether the Agent call names it or omits the type [[claude-code-67](#claude-code-67)]; every SDK assistant frame inside the subagent names a Haiku model [[claude-code-60](#claude-code-60)] |
+| `claude-haiku-4-5`, `low` | every tool call inside a subagent reports a pinned definition's agent type, `delegate` or `general-purpose`, or an `Explore` or `Plan` type an Agent call named; where an Agent call omits the type, a `general-purpose` subagent runs, the pin such a call lands on [[claude-code-67](#claude-code-67)]; every SDK assistant frame inside the subagent names a Haiku model [[claude-code-60](#claude-code-60)] |
 | `claude-haiku-4-5`, omitted | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types [[claude-code-67](#claude-code-67)]; every subagent frame names a Haiku model [[claude-code-60](#claude-code-60)] |
 | `inherit`, omitted | every tool call inside a subagent reports one of the five `delegate-<effort>` agent types and that effort level [[claude-code-67](#claude-code-67)]; every subagent frame names a Sonnet model [[claude-code-60](#claude-code-60)] |
 
 ### claude-code-69
 
-Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'`, `effort: 'high'`, `subagentModel: 'inherit'`, and `subagentEffort: 'low'`, and a prompt directing one `general-purpose` and then one `Explore` Agent-tool subagent, each by its subagent type, to read the one-word file, the acceptance check shall assert that the installed runtime lets a registered definition override a built-in one by name, as Claude Code 2.1.284 does where a definition-free control runs both at the main agent's `high`:
+Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` on the adapter runs with main `model: 'claude-sonnet-5-5'`, `effort: 'high'`, `subagentModel: 'inherit'`, and `subagentEffort: 'low'`, and a prompt directing one `general-purpose` and then one `Explore` Agent-tool subagent, each by its subagent type, to read the one-word file and reply with a `TOOLS:` line naming every tool available to it and then the word, the acceptance check shall assert that a pinned effort replaces `general-purpose` alone, as Claude Code 2.1.284 lets a registered definition replace a built-in one by name, through these conditions:
 
 - a successful terminal `done` whose result carries the word;
 - Agent-tool calls naming both `general-purpose` and `Explore`;
-- every tool call inside a `general-purpose` or `Explore` subagent reporting effort `low`, the pinned effort of its overriding definition [[claude-code-67](#claude-code-67)], with the observed types and levels written to stderr;
-- every subagent frame naming a Sonnet model, the model [[claude-code-60](#claude-code-60)]'s environment binds.
+- every tool call inside a `general-purpose` subagent reporting effort `low`, the pinned effort of its replacing definition [[claude-code-67](#claude-code-67)];
+- every tool call inside an `Explore` subagent reporting effort `high`, the main agent's, no definition replacing that built-in [[claude-code-67](#claude-code-67)];
+- the `TOOLS:` line of the reply each Agent call returns, read from the raw stream, naming `Read` and neither `Write` nor `Edit` for `Explore`, its built-in read-only restrictions intact, and both for `general-purpose` [[claude-code-67](#claude-code-67)];
+- every subagent frame naming a Sonnet model, the model [[claude-code-60](#claude-code-60)]'s environment binds;
+- the observed types, levels, and listed tools written to stderr.
 
 ## References
 

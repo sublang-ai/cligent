@@ -425,7 +425,7 @@ When a `subagentEffort` option reaches a typed or dynamic adapter path, Cligent 
 | any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
 | any defined value on a request-supported built-in adapter without a `subagentModel` | reject before backend invocation with an error naming the adapter and validation path and stating that `subagentModel` is required |
 | a defined value outside the adapter's [[engine-40](#engine-40)] vocabulary less its orchestration values, including a non-string, empty, or `ultracode` value, on a request-supported built-in adapter with a `subagentModel` | reject before backend invocation with an error naming the adapter, validation path, and accepted values |
-| a value inside that vocabulary on a request-supported built-in adapter with a `subagentModel` | forward it to the adapter's native control for the effort of every subagent the run starts |
+| a value inside that vocabulary on a request-supported built-in adapter with a `subagentModel` | forward it to the adapter's native control for the effort of the subagents the run starts |
 | any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
 
 ### engine-92
