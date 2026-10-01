@@ -220,6 +220,34 @@ describe('TmuxPlaySession', () => {
     expect(readline.promptCount).toBe(3);
   });
 
+  it('passes each role browser selection from the snapshot to the runtime', async () => {
+    tempDir = makeWorkDir({ captainBrowser: true, playerBrowser: false });
+    const readline = new FakeReadline();
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      runBossTurn: vi.fn(async () => undefined),
+    }));
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime,
+      importCaptain: async () => ({
+        default: (): Captain => ({ async handleBossTurn() {} }),
+      }),
+      output: new MemoryOutput(),
+    });
+    await session.start();
+    expect(createRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        captainConfig: expect.objectContaining({ browser: true }),
+        players: [expect.objectContaining({ id: 'coder', browser: false })],
+      }),
+    );
+    readline.close();
+    await session.done;
+  });
+
   // tmux-play-213: the session seam carries each Claude role's subagent model
   // and effort from the snapshot into the runtime configuration.
   it('passes Captain and player subagent models and efforts to the runtime', async () => {
@@ -2031,6 +2059,8 @@ function makeWorkDir(
     emptyPlayers?: boolean;
     captainFastMode?: boolean;
     playerFastMode?: boolean;
+    captainBrowser?: boolean;
+    playerBrowser?: boolean;
     captainSubagentModel?: string;
     captainSubagentEffort?: string;
     claudePlayerSubagentModel?: string;
@@ -2046,6 +2076,7 @@ function makeWorkDir(
       adapter: 'claude',
       instruction: 'Coordinate players.',
       effort: 'ultracode',
+      ...(overrides.captainBrowser === undefined ? {} : { browser: overrides.captainBrowser }),
       ...(overrides.captainFastMode === undefined
         ? {}
         : { fastMode: overrides.captainFastMode }),
@@ -2075,6 +2106,7 @@ function makeWorkDir(
             id: 'coder',
             adapter: 'codex',
             effort: 'ultra',
+            ...(overrides.playerBrowser === undefined ? {} : { browser: overrides.playerBrowser }),
             ...(overrides.playerFastMode === undefined
               ? {}
               : { fastMode: overrides.playerFastMode }),

@@ -380,6 +380,25 @@ When the adapter consumes `turn.completed` or `turn.failed`, it shall emit one `
 | counter fields | required `inputTokens` and `outputTokens`, plus only the present `cachedInputTokens`, `cacheWriteInputTokens`, and `reasoningOutputTokens`; exclude raw provider objects and invalid counter values |
 | numeric difference failing subset validation | retain it as diagnostic evidence; only `status: 'reported'` confirms a valid token report |
 
+### codex-72
+
+When a canonical MCP tool call first completes, after its unchanged tool result the adapter shall emit one `media` event [[engine-100](../engine.md#engine-100)] per supported native block in `result.content`, normalized through [[media-2](../media.md#media-2)] with the same `toolUseId`, and emit no duplicate media for a repeated completion.
+
+### codex-70
+
+When a run supplies MCP servers or selects the browser preset, the adapter shall prepare the server map through [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] before SDK invocation and apply each entry as one complete native `mcp_servers.<validated bare name>` TOML-value override through the executable wrapper, using this matrix [[13]]:
+
+| Entry | Native configuration |
+| --- | --- |
+| stdio | `command`, `args` (empty when absent), optional `env` |
+| HTTP | `url`, optional `http_headers` |
+| either | `required: true` and `default_tools_approval_mode: 'approve'`, granting only the explicitly admitted server's tools while native enforced policy retains authority |
+| same-named native transport | complete replacement, retaining no incompatible transport leaves |
+| unrelated native servers | retain existing configuration-loading semantics |
+| absent or empty map without browser | no MCP override |
+| unsupported tool restrictions | reject before browser preparation |
+| cancellation during preparation | interrupted terminal selected by [[codex-27](#codex-27)] without starting the SDK |
+
 ## Internal Behavior
 
 ### Session Identity
@@ -510,7 +529,20 @@ When the adapter locates the native binary the Codex CLI entry spawns, it shall 
 
 Where executable resolution or wrapper setup fails while starting a run, the adapter shall release that run's abort registration before propagating the error so repeated failures on one long-lived caller signal accumulate no listeners.
 
+
 ## Verification
+
+### codex-74
+
+Where the exact native Codex conformance target is installed, when the real engine, adapter, SDK, and executable run against isolated configuration with loopback-only provider responses and a fixture MCP subprocess, acceptance verification shall assert the supplied server reaches the native tool catalog and executes without a permission prompt [[codex-70](#codex-70)], its valid PNG reaches the subsequent model request and one correlated host media event beside explanation text [[codex-72](#codex-72)], and completion counts one tool invocation without using real credentials or changing user configuration.
+
+### codex-71
+
+When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK through the generated executable wrapper into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and wrapper cleanup [[codex-70](#codex-70)].
+
+### codex-73
+
+When the engine and adapter consume MCP completion snapshots containing text, image, audio, binary resource, URI resource, and malformed media blocks, the integration check shall verify exact supported payloads and correlation, unchanged raw results and explanation text, ordinary role and session identity, and no repeated media or extra tool counts on duplicate completion [[codex-72](#codex-72)].
 
 ### codex-201
 
@@ -721,3 +753,5 @@ Given temporary image files and absent, empty, invalid, unsupported, and valid a
 [10]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core/config.schema.json "Codex 0.159.0 configuration schema"
 [11]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/tui/src/chatwidget/service_tiers.rs "Codex 0.159.0 fast-tier selection"
 [12]: https://unpkg.com/@openai/codex-sdk@0.159.0/dist/index.d.ts "Codex SDK 0.159.0 public event declarations"
+
+[13]: https://learn.chatgpt.com/docs/extend/mcp?surface=cli "Codex MCP server configuration and scoped tool approvals"

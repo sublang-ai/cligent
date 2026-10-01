@@ -3,6 +3,12 @@
 
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments, readAttachment } from '../attachments.js';
+import {
+  normalizeMcpServers,
+  prepareMcpServers,
+  type McpServers,
+} from '../mcp.js';
+import { mediaFromMcpContent } from '../media.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -142,6 +148,15 @@ interface ClaudeUserMessage {
 
 type ClaudePrompt = string | AsyncIterable<ClaudeUserMessage>;
 
+type ClaudeMcpServer =
+  | {
+      type: 'stdio';
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  | { type: 'http'; url: string; headers?: Record<string, string> };
+
 interface ClaudeQueryOptions {
   prompt: ClaudePrompt;
   cwd?: string;
@@ -154,6 +169,7 @@ interface ClaudeQueryOptions {
   disallowedTools?: string[];
   settingSources?: Array<'user' | 'project' | 'local'>;
   strictMcpConfig?: boolean;
+  mcpServers?: Record<string, ClaudeMcpServer>;
   permissionMode?: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: ClaudeCanUseTool;
@@ -216,6 +232,7 @@ interface ClaudeSystemMessage {
   model?: unknown;
   cwd?: unknown;
   tools?: unknown;
+  mcp_servers?: unknown;
   sessionId?: unknown;
   fast_mode_state?: unknown;
   fast_mode_disabled_reason?: unknown;
@@ -1133,6 +1150,37 @@ export function mapAgentOptionsToClaudeQueryOptions(
     | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
     | undefined,
 ): MappedClaudeOptions {
+  const mcpServers = normalizeMcpServers(options?.mcpServers);
+  assertClaudeMcpAllowlist(options, mcpServers);
+  const sdkMcpServers =
+    mcpServers === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(mcpServers).map(([name, server]) => [
+            name,
+            server.type === 'stdio'
+              ? {
+                  type: 'stdio' as const,
+                  command: server.command,
+                  ...(server.args === undefined
+                    ? {}
+                    : { args: [...server.args] }),
+                  ...(server.env === undefined
+                    ? {}
+                    : { env: { ...server.env } }),
+                }
+              : {
+                  type: 'http' as const,
+                  url: server.url,
+                  ...(server.headers === undefined
+                    ? {}
+                    : { headers: { ...server.headers } }),
+                },
+          ]),
+        );
+  const mcpToolGrants = Object.keys(mcpServers ?? {}).map(
+    (name) => `mcp__${name}__*`,
+  );
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
@@ -1142,8 +1190,8 @@ export function mapAgentOptionsToClaudeQueryOptions(
   );
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
-  // claude-code-70: a run's MCP surface is the servers the query passes —
-  // none — never the account's auto-fetched claude.ai connectors, whose
+  // claude-code-70: a run's MCP surface is the servers the query passes,
+  // never the account's auto-fetched claude.ai connectors, whose
   // "connectors need authorizing" reminder otherwise reaches the transcript.
   // `strictMcpConfig` below removes the other ambient MCP sources.
   const settings: ClaudeSettings = {
@@ -1212,10 +1260,12 @@ export function mapAgentOptionsToClaudeQueryOptions(
         options?.allowedTools !== undefined
           ? [...options.allowedTools]
           : undefined,
-      allowedTools: options?.allowedTools,
+      allowedTools:
+        mcpToolGrants.length > 0 ? mcpToolGrants : options?.allowedTools,
       disallowedTools: options?.disallowedTools,
       settingSources: toolFreeIsolation ? [] : undefined,
       strictMcpConfig: true,
+      ...(sdkMcpServers === undefined ? {} : { mcpServers: sdkMcpServers }),
       permissionMode: permissionOptions.permissionMode,
       allowDangerouslySkipPermissions:
         permissionOptions.allowDangerouslySkipPermissions,
@@ -1229,6 +1279,23 @@ export function mapAgentOptionsToClaudeQueryOptions(
     },
     cleanupAbort,
   };
+}
+
+function assertClaudeMcpAllowlist(
+  options:
+    | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
+    | undefined,
+  mcpServers: McpServers | undefined,
+): void {
+  if (
+    options?.allowedTools !== undefined &&
+    (options.browser === true || Object.keys(mcpServers ?? {}).length > 0)
+  ) {
+    throw new Error(
+      'ClaudeCodeAdapter cannot combine allowedTools with nonempty mcpServers or browser: true; ' +
+        'the SDK cannot enforce the portable allowlist on explicit MCP tools. Use disallowedTools to deny selected tools.',
+    );
+  }
 }
 
 export class ClaudeCodeAdapter implements AgentAdapter<
@@ -1270,7 +1337,11 @@ export class ClaudeCodeAdapter implements AgentAdapter<
   ): AsyncGenerator<AgentEvent, void, void> {
     const attachmentPreparationStart = Date.now();
     let sdkPrompt: ClaudePrompt = prompt;
+    let mcpServers: McpServers | undefined;
     try {
+      options?.abortSignal?.throwIfAborted();
+      mcpServers = normalizeMcpServers(options?.mcpServers);
+      assertClaudeMcpAllowlist(options, mcpServers);
       const attachments = await prepareAttachments(
         AGENT,
         options?.attachments,
@@ -1312,6 +1383,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
           };
         })();
       }
+      mcpServers = await prepareMcpServers({ ...options, mcpServers });
+      options?.abortSignal?.throwIfAborted();
     } catch (error) {
       if (!options?.abortSignal?.aborted) throw error;
       const sessionId = options.resume || generateSessionId();
@@ -1355,8 +1428,11 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     const inboundResume = options?.resume || undefined;
     let sessionId = inboundResume ?? generateSessionId();
     let resumableSessionIdKnown = false;
-    const { queryOptions, cleanupAbort } =
-      mapAgentOptionsToClaudeQueryOptions(options);
+    const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions({
+      ...options,
+      browser: false,
+      mcpServers,
+    });
     if (!inboundResume) {
       // The SDK forwards this typed option to `claude --session-id`. It gives
       // fresh runs a stable id once Claude persists the conversation, but an
@@ -1369,8 +1445,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     let initYielded = false;
     // True once this call's stream has produced any model-turn output event
     // (text, text_delta, thinking, tool_use, tool_result). Those are exactly
-    // the events the adapter derives from assistant messages and stream
-    // deltas — the submitted turn doing work — and exactly what downstream
+    // the events the adapter derives from assistant messages, tool-result
+    // user messages, and stream deltas — the submitted turn doing work — and what downstream
     // consumers capture to synthesize a final text. `init` stays excluded
     // because the system handshake precedes every turn (including the
     // resume-repair no-op), and `error` events are diagnostics rather than
@@ -1379,6 +1455,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     // terminal and must not be swallowed.
     let submittedTurnActivity = false;
     const observedToolUseIds = new Set<string>();
+    const toolNames = new Map<string, string>();
 
     try {
       for await (const message of sdk.query({
@@ -1427,6 +1504,27 @@ export class ClaudeCodeAdapter implements AgentAdapter<
             sessionId,
           );
           initYielded = true;
+          if (mcpServers && Array.isArray(system.mcp_servers)) {
+            // Native cached clients report pending while connecting in the
+            // background; only definitive unavailability ends the run here.
+            for (const entry of system.mcp_servers) {
+              const server = asRecord(entry);
+              const name = asString(server.name);
+              const status = asString(server.status);
+              if (
+                name &&
+                Object.hasOwn(mcpServers, name) &&
+                (status === 'failed' ||
+                  status === 'needs-auth' ||
+                  status === 'disabled')
+              ) {
+                throw new Error(
+                  `Claude MCP server "${name}" is unavailable (${status}). ` +
+                    'Check its command or endpoint, authentication, and native policy before retrying.',
+                );
+              }
+            }
+          }
           continue;
         }
 
@@ -1481,6 +1579,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
 
             if (contentEvent.type === 'tool_use') {
               observedToolUseIds.add(contentEvent.toolUseId);
+              toolNames.set(contentEvent.toolUseId, contentEvent.toolName);
               yield createEvent(
                 'tool_use',
                 AGENT,
@@ -1499,7 +1598,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<
                 'tool_result',
                 AGENT,
                 {
-                  toolName: contentEvent.toolName,
+                  toolName:
+                    toolNames.get(contentEvent.toolUseId) ??
+                    contentEvent.toolName,
                   toolUseId: contentEvent.toolUseId,
                   status: contentEvent.status,
                   output: contentEvent.output,
@@ -1507,10 +1608,57 @@ export class ClaudeCodeAdapter implements AgentAdapter<
                 },
                 sessionId,
               );
+              for (const media of mediaFromMcpContent(
+                contentEvent.output,
+                contentEvent.toolUseId,
+              )) {
+                yield createEvent('media', AGENT, media, sessionId);
+              }
               continue;
             }
           }
 
+          continue;
+        }
+
+        if (messageType === 'user') {
+          const user = message as {
+            isReplay?: boolean;
+            message?: { content?: unknown };
+          };
+          if (user.isReplay === true || !Array.isArray(user.message?.content)) {
+            continue;
+          }
+          // Tool execution results are user messages in the real SDK, not
+          // assistant messages. Do not echo ordinary user text or attachments.
+          const results = parseAssistantContent(
+            user.message.content.filter(
+              (block: unknown) =>
+                isObjectWithType(block) && block.type === 'tool_result',
+            ),
+          );
+          for (const result of results) {
+            if (result.type !== 'tool_result') continue;
+            submittedTurnActivity = true;
+            yield createEvent(
+              'tool_result',
+              AGENT,
+              {
+                toolName: toolNames.get(result.toolUseId) ?? result.toolName,
+                toolUseId: result.toolUseId,
+                status: result.status,
+                output: result.output,
+                durationMs: result.durationMs,
+              },
+              sessionId,
+            );
+            for (const media of mediaFromMcpContent(
+              result.output,
+              result.toolUseId,
+            )) {
+              yield createEvent('media', AGENT, media, sessionId);
+            }
+          }
           continue;
         }
 

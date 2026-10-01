@@ -40,6 +40,7 @@ export const zAcpInitializeResponse = z.object({
       promptCapabilities: z
         .object({ image: z.boolean().optional() })
         .optional(),
+      mcpCapabilities: z.object({ http: z.boolean().optional() }).optional(),
     })
     .optional(),
 });
@@ -71,9 +72,7 @@ export const zAcpSessionConfigOption = z.union([
  */
 export type AcpSessionConfigOption = z.infer<typeof zAcpSessionConfigOption>;
 
-const zAcpConfigOptions = z
-  .array(zAcpSessionConfigOption)
-  .nullish();
+const zAcpConfigOptions = z.array(zAcpSessionConfigOption).nullish();
 
 /** `session/new` result. An empty id is rejected by the adapter, not here. */
 export const zAcpNewSessionResponse = z.object({
@@ -130,14 +129,49 @@ export const zAcpPromptResponse = z.object({
 /**
  * Content the adapter renders as assistant text. A `text` chunk must carry
  * its text: the adapter concatenates that field, so a chunk that omits it is
- * malformed rather than empty. Other content types are read only for their
- * discriminant.
+ * malformed rather than empty. Media blocks are validated to the fields used
+ * to construct normalized host output before the SDK can discard them.
  */
 const zAcpContentChunk = z.union([
   z.looseObject({ type: z.literal('text'), text: z.string() }),
-  z.looseObject({ type: z.string() }).refine((c) => c.type !== 'text', {
-    message: 'a text content chunk must carry its text',
+  z.looseObject({
+    type: z.enum(['image', 'audio']),
+    data: z.string(),
+    mimeType: z.string(),
   }),
+  z.looseObject({
+    type: z.literal('resource_link'),
+    uri: z.string(),
+    name: z.string(),
+    mimeType: z.string().nullish(),
+    title: z.string().nullish(),
+  }),
+  z.looseObject({
+    type: z.literal('resource'),
+    resource: z.union([
+      z.looseObject({
+        uri: z.string(),
+        blob: z.string(),
+        mimeType: z.string().nullish(),
+      }),
+      z.looseObject({
+        uri: z.string(),
+        text: z.string(),
+        mimeType: z.string().nullish(),
+      }),
+    ]),
+  }),
+  z
+    .looseObject({ type: z.string() })
+    .refine(
+      (c) =>
+        !['text', 'image', 'audio', 'resource_link', 'resource'].includes(
+          c.type,
+        ),
+      {
+        message: 'a consumed content chunk must carry its content fields',
+      },
+    ),
 ]);
 
 /**
@@ -162,9 +196,11 @@ const zAcpToolCallContent = z.union([
     type: z.literal('content'),
     content: zAcpContentChunk,
   }),
-  z.looseObject({ type: z.string() }).refine((item) => item.type !== 'content', {
-    message: 'a content tool-call item must carry its content',
-  }),
+  z
+    .looseObject({ type: z.string() })
+    .refine((item) => item.type !== 'content', {
+      message: 'a content tool-call item must carry its content',
+    }),
 ]);
 
 /**

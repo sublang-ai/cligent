@@ -923,6 +923,7 @@ export async function createTmuxPlayRuntime(
       model: options.captainConfig.model,
       role: 'captain',
       permissions: options.captainConfig.permissions,
+      browser: options.captainConfig.browser,
       effort: options.captainConfig.effort,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,

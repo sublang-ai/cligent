@@ -31,6 +31,7 @@ The package manifest shall place dependencies according to their role:
 
 - runtime `dependencies` contain only single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation;
 - an official generic protocol SDK and its zero-transitive-dependency schema peer may be runtime dependencies where a built-in adapter imports them directly; and
+- the exact Playwright MCP runtime may be a runtime dependency for the opt-in managed browser per [DR-032](../decisions/032-browser-tools-and-media-output.md); and
 - build-time and test-time packages are `devDependencies`.
 
 ### package-4
@@ -214,7 +215,7 @@ Where stale and current files exist under `dist/` and the package documentation 
 
 ### package-102
 
-Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when runtime consumers import every documented surface and run the installed launcher's help and a type consumer exercises adapter-scoped effort, fast-mode, and per-call attachment declarations, the verification shall assert the installed-package contract:
+Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeScript 5.4, when runtime consumers import every documented surface and run the installed launcher's help and a type consumer exercises adapter-scoped effort, fast-mode, per-call attachment, browser/MCP, and media-event declarations, the verification shall assert the installed-package contract:
 
 - the root entry point loads [[package-6](#package-6)];
 - every adapter subpath loads [[package-7](#package-7)];

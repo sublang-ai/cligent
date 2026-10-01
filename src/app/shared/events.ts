@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import type { CligentEvent, TokenUsage } from '../../types.js';
+import { formatMediaSummary, mediaJsonReplacer } from './media.js';
 
 /** Render only the exact subsets the producer reported (engine-57). */
 function formatTokenDetails(tokens: TokenUsage): string {
@@ -24,6 +25,8 @@ export function formatCligentEvent(event: CligentEvent): string | null {
       return (event.payload as { delta: string }).delta;
     case 'text':
       return (event.payload as { content: string }).content + '\n';
+    case 'media':
+      return `[media] ${formatMediaSummary(event.payload)}\n`;
     case 'tool_use':
       return `[tool: ${(event.payload as { toolName: string }).toolName}]\n`;
     case 'tool_result': {
@@ -32,7 +35,7 @@ export function formatCligentEvent(event: CligentEvent): string | null {
       if (typeof output === 'object' && output !== null && 'stdout' in output) {
         return String((output as { stdout: unknown }).stdout) + '\n';
       }
-      return JSON.stringify(output) + '\n';
+      return JSON.stringify(output, mediaJsonReplacer) + '\n';
     }
     case 'error':
       return `[error: ${(event.payload as { message: string }).message}]\n`;

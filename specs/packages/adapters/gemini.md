@@ -368,6 +368,23 @@ When the adapter selects a terminal `done`, it shall preserve continuity accordi
 | `interrupted`, no backend identifier or non-empty inbound resume | omitted |
 | any non-interrupted status with no backend identifier, including a resumed run | omitted |
 
+### gemini-48
+
+When a run supplies MCP servers or selects the browser preset, the adapter shall deliver the prepared map through the private per-run settings home used by [[gemini-34](#gemini-34)], applying [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] through this matrix [[21]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| stdio | replace the named user-settings entry with `command`, `args` (empty when absent), optional `env`, and `trust: true` |
+| HTTP | replace the named entry with `httpUrl`, optional `headers`, and `trust: true` |
+| trust | consent to admitted server calls under native per-server trust, without overriding explicit tool restrictions, project settings, system overrides, or Admin policy |
+| unrelated user settings or MCP names | retain their parsed values |
+| absent or empty map without browser | no MCP-specific settings overlay |
+| effective cwd is the real home, or the native sandbox would be enabled | reject before browser preparation rather than silently omit the servers |
+| injected settings writer cannot attest delivery of a non-empty map | setup failure before spawn |
+| abort during preparation or settings setup | interrupted terminal and no child spawn |
+
+The run creates no permanent MCP configuration, and overlay cleanup follows [[gemini-45](#gemini-45)] and [[gemini-35](#gemini-35)].
+
 ## Internal Behavior
 
 ### Per-Run Configuration
@@ -399,7 +416,7 @@ Where [[gemini-11](#gemini-11)] selects an effort alias, when the adapter prepar
 | real settings use line or block comments | strip comments for parsing, preserving every parsed value, including unknown keys and existing aliases |
 | another read error, malformed JSON, or non-object root, `modelConfigs`, or `customAliases` | reject through [[gemini-19](#gemini-19)] |
 | Gemini would start its own sandbox: `SANDBOX` unset and a `GEMINI_SANDBOX` other than empty, `0`, or `false`, or, with none, a `tools.sandbox` of `true`, a string other than empty, `0`, or `false`, or an object with a truthy `enabled` in the highest-precedence of the system, workspace, user, and system-default settings that sets it | deliver no alias, as for the real home, because the sandbox confines writes to paths under the home it is given, which the overlay's links leave [[16]][[17]][[18]] |
-| overlay | a new private temporary directory given to the child as `GEMINI_CLI_HOME`, whose `.gemini/settings.json` is the real user settings with only the reserved Cligent alias replaced by its self-contained model and thinking configuration |
+| overlay | a new private temporary directory given to the child as `GEMINI_CLI_HOME`, whose `.gemini/settings.json` is the real user settings with the reserved Cligent alias replaced by its self-contained model and thinking configuration and any admitted MCP entries selected by [[gemini-48](#gemini-48)] |
 | every other real `.gemini` entry and every other real home entry | an overlay link to the real entry, so credentials, sessions, trust state, and other home state read and write through to the real home: a symbolic link, except on Windows a junction for a directory and a hard link for a file where symbolic links are not permitted |
 | real `.gemini`, `.gemini/tmp`, or `.gemini/history` absent | create it in the real home before linking, so session state lands there directly |
 
@@ -483,6 +500,10 @@ When a run owns a caller abort signal and child process, it shall contain their 
 | any run exit | remove an installed listener; if the child remains active, send `SIGTERM`, await close, then perform [[gemini-35](#gemini-35)]'s resource cleanup |
 
 ## Verification
+
+### gemini-49
+
+When a real fixture subprocess reads its per-run Gemini settings and policy files, the integration check shall verify both MCP transports, same-name transport replacement, preservation of ambient settings, scoped trust without removing explicit tool denials, unchanged real settings, and overlay cleanup; home-workspace and native-sandbox cases shall reject browser delivery before spawn [[gemini-48](#gemini-48)].
 
 ### gemini-47
 
@@ -671,3 +692,5 @@ Under [[gemini-219](#gemini-219)]'s real-target, credential, and sandbox precond
 [18]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/utils/sandbox.ts#L216-L224 'Gemini CLI 0.61.0 macOS sandbox home path from the real path of its home'
 [19]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/nonInteractiveCli.ts#L257-L275 'Gemini CLI 0.61.0 headless prompt reference expansion'
 [20]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/utils/fileUtils.ts#L577-L614 'Gemini CLI 0.61.0 audio, image, PDF, and video file content'
+
+[21]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/policy/config.ts "Gemini CLI native per-server MCP trust rules and priority"

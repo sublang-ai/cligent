@@ -55,6 +55,8 @@ When the adapter normalizes a non-terminal, non-system SDK message, it shall yie
 | SDK Message | AgentEvent |
 | --- | --- |
 | `assistant` | each event selected by the ordered assistant mapping below |
+| `user` without `isReplay: true` | emit only `tool_result` blocks from `message.content`, preserving their order and the mapping below; ignore ordinary user text and attached media |
+| `user` with `isReplay: true` | no event |
 | `stream`, `stream_event`, or `delta` | `text_delta` from the first non-empty `delta`, then `text`, or no event |
 | `error` | `error` with the payload selected by [[claude-code-32](#claude-code-32)] |
 | missing or any other `type` | no event |
@@ -70,8 +72,9 @@ When the adapter normalizes a non-terminal, non-system SDK message, it shall yie
 | `tool_result` | the tool-result mapping below |
 | any other block | no event |
 
-- A `tool_result` selects `toolUseId` from the first non-empty `toolUseId`, `tool_use_id`, and `id`, or generates one through [[engine-7](../engine.md#engine-7)]; selects `toolName` from non-empty `name`, then `toolName`, or `unknown_tool`; selects output from the first non-nullish `output`, `result`, and `content`, or `null`; and selects numeric duration from `durationMs`, then `duration_ms`, or omits it.
+- A `tool_result` selects `toolUseId` from the first non-empty `toolUseId`, `tool_use_id`, and `id`, or generates one through [[engine-7](../engine.md#engine-7)]; selects `toolName` from the matching tool-use identifier observed in this run, then non-empty `name`, then `toolName`, or `unknown_tool`; selects output from the first non-nullish `output`, `result`, and `content`, or `null`; and selects numeric duration from `durationMs`, then `duration_ms`, or omits it.
 - Its status is `denied` for case-insensitive source status `denied`, otherwise `error` for `isError: true`, `is_error: true`, or case-insensitive source status `error`, and otherwise `success`.
+- Each tool result is followed by normalized media payloads [[media-1](../media.md#media-1)] for its explicit image, audio, document, or resource content [[media-2](../media.md#media-2)], preserving content order and the tool-use identifier without reading paths or interpreting ordinary text as media [[media-3](../media.md#media-3)].
 
 ### claude-code-32
 
@@ -187,7 +190,7 @@ When `run(prompt, options)` invokes the SDK query, the adapter shall select its 
 
 ### claude-code-73
 
-When attachment preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
+When attachment or MCP preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
 
 ### claude-code-6
 
@@ -217,15 +220,38 @@ When the adapter maps `AgentOptions.allowedTools` under the portable tool restri
 
 ### claude-code-70
 
-When the adapter maps a run to SDK query options, it shall confine the run's MCP servers to those the query itself passes — none, since `AgentOptions` names no server — whatever its `allowedTools`, `effort`, or `fastMode`, per [DR-030](../../decisions/030-players-see-only-their-own-mcp-servers.md) and [[7]]:
+When the adapter maps a run to SDK query options, it shall confine the run's MCP servers to those the query itself passes [[claude-code-74](#claude-code-74)], whatever its `allowedTools`, `effort`, or `fastMode`, per [DR-030](../../decisions/030-players-see-only-their-own-mcp-servers.md), [DR-032](../../decisions/032-browser-tools-and-media-output.md), and [[7]]:
 
 | SDK control | Value | Ambient source it removes |
 | --- | --- | --- |
 | `strictMcpConfig` | `true` | project `.mcp.json`, user-settings MCP servers, plugins, and on-disk agent frontmatter |
 | `settings.disableClaudeAiConnectors` | `true`, in the same settings object as the effort and fast-mode keys | the account's auto-fetched claude.ai connectors, with the reminder that they need authorizing |
-| `mcpServers` | omitted | — |
+| `mcpServers` | explicitly prepared caller servers, or omitted when none were configured | — |
 
 - `settingSources` is untouched, so filesystem settings and `CLAUDE.md` still load as [[claude-code-9](#claude-code-9)] maps them.
+
+### claude-code-74
+
+When a run prepares caller MCP servers or a managed browser, the adapter shall admit the validated configuration [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)] and resolved browser server [[mcp-3](../mcp.md#mcp-3)] through this SDK mapping, per [DR-032](../../decisions/032-browser-tools-and-media-output.md) and [[11]]:
+
+| Effective input | Outcome |
+| --- | --- |
+| nonempty server map or `browser: true`, together with any explicit `allowedTools` | reject before browser installation or SDK loading because the native built-in tool selector cannot enforce the portable MCP allowlist |
+| absent server map without a browser | omit SDK `mcpServers` and preserve the existing tool mapping [[claude-code-9](#claude-code-9)] |
+| empty explicit map without a browser | pass `mcpServers: {}` and preserve the existing tool mapping [[claude-code-9](#claude-code-9)] |
+| stdio server | pass its `type`, `command`, and copied optional `args` and `env` |
+| HTTP server | pass its `type`, `url`, and copied optional `headers` |
+| one or more prepared servers | pass only those servers and auto-approve their tools through SDK `allowedTools` entries `mcp__<server-name>__*`, without changing the built-in `tools` selection or permission mode |
+| `disallowedTools` supplied | preserve the SDK deny mapping and its precedence [[claude-code-22](#claude-code-22)] |
+
+### claude-code-77
+
+When the first native initialization reports MCP connection states for the selected servers in [[claude-code-74](#claude-code-74)], the adapter shall emit the ordinary `init` selected by [[claude-code-15](#claude-code-15)] and apply this readiness matrix:
+
+| Native state | Outcome |
+| --- | --- |
+| a selected server reports `failed`, `needs-auth`, or `disabled` | stop consuming the SDK stream and select [[claude-code-42](#claude-code-42)]'s failure with the server name, status, and guidance to check command or endpoint, authentication, and native policy |
+| `connected`, `pending`, unknown or missing status, absent status list, or an unselected server | preserve normal stream processing, because pending and cached servers can connect after initialization and omitted evidence does not establish failure |
 
 ### claude-code-22
 
@@ -621,7 +647,7 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 
 ### claude-code-71
 
-Given `allowedTools` omitted, empty, and non-empty, each crossed with effort omitted and `ultracode` and with `fastMode` omitted and `true`, when the adapter reaches the SDK query boundary, the verification shall assert `strictMcpConfig: true`, no `mcpServers` key, and `settings.disableClaudeAiConnectors: true` beside the effort and fast-mode keys in one settings object, with `settingSources` as the allowlist alone selects it [[claude-code-70](#claude-code-70)].
+Given no caller MCP servers or browser and `allowedTools` omitted, empty, and non-empty, each crossed with effort omitted and `ultracode` and with `fastMode` omitted and `true`, when the adapter reaches the SDK query boundary, the verification shall assert `strictMcpConfig: true`, no `mcpServers` key, and `settings.disableClaudeAiConnectors: true` beside the effort and fast-mode keys in one settings object, with `settingSources` as the allowlist alone selects it [[claude-code-70](#claude-code-70)].
 
 ### claude-code-240
 
@@ -685,6 +711,14 @@ Under [[claude-code-68](#claude-code-68)]'s harness and hook, when a `Cligent` o
 
 Given temporary image and PDF files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture, verification shall assert [[claude-code-46](#claude-code-46)]'s content, byte encoding, order, unchanged text-only transport, resumed transport, and refusal before SDK invocation, and [[claude-code-73](#claude-code-73)]'s interrupted terminal before attachment submission.
 
+### claude-code-75
+
+Given caller stdio and HTTP servers and native user-message tool results, when a `Cligent` run crosses the installed SDK serialization boundary with a recording CLI fixture, integration verification shall assert explicit configuration and server-scoped approval [[claude-code-74](#claude-code-74)], unchanged connector and ambient-source confinement [[claude-code-70](#claude-code-70)], tool-name correlation, raw screenshot bytes, media emission order, orphan results, native errors, and suppression of ordinary or replayed user messages [[claude-code-3](#claude-code-3)], together with rejection of incompatible allowlists before browser preparation or SDK loading [[claude-code-74](#claude-code-74)] and the selected-server initialization status matrix [[claude-code-77](#claude-code-77)].
+
+### claude-code-76
+
+Given the installed native Claude SDK and CLI, packaged managed browser runtime, and a loopback model API fixture with isolated configuration and fake credentials, when a `Cligent` browser run navigates to a loopback page and captures a screenshot, acceptance verification shall assert native server admission and scoped tool approval [[claude-code-74](#claude-code-74)], successful tool-result correlation and a PNG media event [[claude-code-3](#claude-code-3)], the same screenshot in a subsequent native model request, and the final explanation in the ordinary terminal result [[claude-code-10](#claude-code-10)].
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
@@ -697,3 +731,4 @@ Given temporary image and PDF files and absent, empty, invalid, unsupported, and
 [8]: https://unpkg.com/@anthropic-ai/sdk@0.98.0/resources/beta/messages/messages.d.ts "Anthropic TypeScript SDK 0.98.0 beta message declarations"
 [9]: https://code.claude.com/docs/en/sub-agents "Claude Code subagents"
 [10]: https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode "Claude Agent SDK streaming input and image attachments"
+[11]: https://code.claude.com/docs/en/agent-sdk/mcp "Claude Agent SDK explicit MCP servers and scoped tool approvals"

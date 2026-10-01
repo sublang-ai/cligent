@@ -23,7 +23,7 @@ const available =
   (version.error as NodeJS.ErrnoException | undefined)?.code !== 'ENOENT';
 const acceptanceIt = available || process.env.CI ? it : it.skip;
 const png =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGNQCt0NRAwQCgAfIgTJbJMJcQAAAABJRU5ErkJggg==';
 
 interface ProviderRequest {
   stream?: boolean;

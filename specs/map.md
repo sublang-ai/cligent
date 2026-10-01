@@ -58,6 +58,8 @@ meta.md       The spec of specs
 | [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
 | [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 
+| [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
+
 ## Packages
 
 | File | Summary |
@@ -66,6 +68,8 @@ meta.md       The spec of specs
 | [attachments.md](packages/attachments.md) | Local-file attachment inputs, validation, and transport discovery |
 | [codex.md](packages/adapters/codex.md) | Codex SDK adapter |
 | [cost-estimation.md](packages/cost-estimation.md) | Optional text-token cost estimation and external pricing cache |
+| [mcp.md](packages/mcp.md) | Caller MCP servers and managed browser |
+| [media.md](packages/media.md) | Normalized media output and host rendering |
 | [engine.md](packages/engine.md) | Cligent engine and shared adapter contract |
 | [gemini.md](packages/adapters/gemini.md) | Gemini CLI child-process adapter |
 | [git.md](packages/git.md) | Commit workflow and message conventions |

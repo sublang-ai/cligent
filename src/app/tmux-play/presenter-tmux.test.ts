@@ -118,6 +118,83 @@ describe('TmuxPresenter', () => {
     renderMarkdownMock.mockImplementation((text: string) => text);
   });
 
+  it('renders media references beside explanation without dumping inline bytes or mutating records', () => {
+    const boss = new MemoryWriter();
+    const coder = new MemoryWriter();
+    const presenter = createTmuxPresenter({
+      boss,
+      players: new Map([['coder', coder]]),
+    });
+    const native = {
+      content: [
+        { type: 'text', text: 'Captured' },
+        { type: 'image', mimeType: 'image/png', data: 'cGl4ZWw=' },
+      ],
+    };
+    presenter.onRecord(captainEvent(textDeltaEvent('The button is blue.')));
+    presenter.onRecord(
+      captainEvent(
+        createEvent(
+          'media',
+          'codex',
+          {
+            mimeType: 'image/png',
+            source: { type: 'base64', data: 'cGl4ZWw=' },
+            toolUseId: 'shot',
+          },
+          'sid',
+        ),
+      ),
+    );
+    presenter.onRecord(
+      captainEvent(toolResultEvent('screenshot', 'success', native)),
+    );
+    presenter.onRecord({
+      type: 'player_event',
+      turnId: 1,
+      timestamp: 1,
+      playerId: 'coder',
+      event: createEvent(
+        'media',
+        'kimi',
+        {
+          mimeType: 'image/png',
+          name: 'Screen',
+          source: { type: 'uri', uri: 'file:///tmp/screen%20shot.png' },
+        },
+        'sid',
+      ),
+    });
+    presenter.onRecord({
+      ...captainEvent(
+        createEvent(
+          'media',
+          'codex',
+          {
+            mimeType: 'image/png',
+            source: { type: 'uri', uri: 'file:///hidden.png' },
+          },
+          'sid',
+        ),
+      ),
+      visibility: 'hidden',
+    });
+    expect(boss.text()).toContain('The button is blue.');
+    expect(boss.text()).toContain('captain> [media] image/png [inline media]');
+    expect(boss.text()).toContain('Captured');
+    expect(boss.text()).not.toContain('cGl4ZWw=');
+    expect(boss.text()).not.toContain('hidden.png');
+    expect(boss.text()).not.toContain('screen%20shot.png');
+    expect(coder.text()).toBe(
+      'coder> [media] image/png "Screen" "file:///tmp/screen%20shot.png"\n',
+    );
+    expect(native.content[1]).toEqual({
+      type: 'image',
+      mimeType: 'image/png',
+      data: 'cGl4ZWw=',
+    });
+  });
+
   // Buffer-then-render core (tmux-play-50).
 
   it('routes player records to the matching player log and renders each block', () => {

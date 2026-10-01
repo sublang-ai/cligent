@@ -303,6 +303,118 @@ function eventOf<T extends AgentEvent['type']>(
 }
 
 describe('KimiAdapter', () => {
+  it.each([1, 2])(
+    'preserves %i native screenshots beside text across ACP and Cligent',
+    async (count) => {
+      const rawOutput = [
+        { type: 'text', text: 'Screenshot captured' },
+        ...Array.from({ length: count }, () => ({
+          type: 'image_url',
+          imageUrl: { url: 'data:image/png;base64,cGl4ZWw=' },
+        })),
+      ];
+      const fake = new FakeKimi({
+        async prompt(connection, request) {
+          const update = {
+            sessionUpdate: 'tool_call_update' as const,
+            toolCallId: 'screenshot',
+            title: 'browser.screenshot',
+            status: 'completed' as const,
+            rawInput: {},
+            rawOutput,
+            content: [
+              {
+                type: 'content' as const,
+                content: { type: 'text' as const, text: 'Display text' },
+              },
+              {
+                type: 'content' as const,
+                content: {
+                  type: 'image' as const,
+                  mimeType: 'image/png',
+                  data: 'cGl4ZWw=',
+                },
+              },
+            ],
+          };
+          await connection.sessionUpdate({
+            sessionId: request.sessionId,
+            update,
+          });
+          await connection.sessionUpdate({
+            sessionId: request.sessionId,
+            update,
+          });
+          await connection.sessionUpdate({
+            sessionId: request.sessionId,
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: {
+                type: 'image',
+                mimeType: 'image/jpeg',
+                data: 'anBlZw==',
+              },
+            },
+          });
+          await connection.sessionUpdate({
+            sessionId: request.sessionId,
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              content: {
+                type: 'image',
+                mimeType: 'image/png',
+                data: 'dXNlcg==',
+              },
+            },
+          });
+          await connection.sessionUpdate({
+            sessionId: request.sessionId,
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'The button is blue.' },
+            },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const events = await collect(
+        new Cligent(new KimiAdapter({ spawnProcess: fake.spawn })).run(
+          'Inspect the UI',
+        ),
+      );
+      expect(
+        events
+          .filter((event) => event.type === 'media')
+          .map((event) => event.payload),
+      ).toEqual([
+        ...Array.from({ length: count }, () => ({
+          mimeType: 'image/png',
+          source: { type: 'base64', data: 'cGl4ZWw=' },
+          toolUseId: 'screenshot',
+        })),
+        {
+          mimeType: 'image/jpeg',
+          source: { type: 'base64', data: 'anBlZw==' },
+        },
+      ]);
+      expect(eventOf(events, 'tool_result').payload.output).toEqual(rawOutput);
+      expect(eventOf(events, 'done').payload).toMatchObject({
+        status: 'success',
+        result: 'The button is blue.',
+        usage: { toolUses: 1 },
+      });
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'tool_use',
+        'tool_result',
+        ...Array.from({ length: count }, () => 'media'),
+        'media',
+        'text_delta',
+        'done',
+      ]);
+    },
+  );
+
   it.each([undefined, 'existing-kimi-session'])(
     'sends ordered image bytes through the engine and ACP transport (resume %s)',
     async (resume) => {
@@ -1511,6 +1623,33 @@ describe('KimiAdapter', () => {
   // express the malformed shapes.
   it.each([
     [
+      'an image chunk missing its data',
+      {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'image', mimeType: 'image/png' },
+      },
+    ],
+    [
+      'an image chunk with a non-string MIME type',
+      {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'image', data: 'aW1hZ2U=', mimeType: 7 },
+      },
+    ],
+    [
+      'a tool image with non-string data',
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-1',
+        content: [
+          {
+            type: 'content',
+            content: { type: 'image', data: false, mimeType: 'image/png' },
+          },
+        ],
+      },
+    ],
+    [
       'a text chunk missing its text',
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text' } },
     ],
@@ -1537,39 +1676,36 @@ describe('KimiAdapter', () => {
         entries: [{ content: 'step', priority: 'high', status: 'invented' }],
       },
     ],
-    [
-      'a plan update with no plan content',
-      { sessionUpdate: 'plan_update' },
-    ],
-    [
-      'a plan removal with no plan id',
-      { sessionUpdate: 'plan_removed' },
-    ],
-  ])('rejects %s rather than letting the turn succeed', async (_case, update) => {
-    const fake = new FakeKimi({
-      prompt: async (_connection, request, state) => {
-        state.children[0]?.stdout.write(
-          `${JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'session/update',
-            params: { sessionId: request.sessionId, update },
-          })}\n`,
-        );
-        return new Promise<PromptResponse>(() => {});
-      },
-    });
-    const events = await collect(
-      new KimiAdapter({ spawnProcess: fake.spawn }).run('Hello'),
-    );
+    ['a plan update with no plan content', { sessionUpdate: 'plan_update' }],
+    ['a plan removal with no plan id', { sessionUpdate: 'plan_removed' }],
+  ])(
+    'rejects %s rather than letting the turn succeed',
+    async (_case, update) => {
+      const fake = new FakeKimi({
+        prompt: async (_connection, request, state) => {
+          state.children[0]?.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'session/update',
+              params: { sessionId: request.sessionId, update },
+            })}\n`,
+          );
+          return new Promise<PromptResponse>(() => {});
+        },
+      });
+      const events = await collect(
+        new KimiAdapter({ spawnProcess: fake.spawn }).run('Hello'),
+      );
 
-    expect(eventOf(events, 'error').payload).toMatchObject({
-      message: expect.stringContaining(
-        'Malformed Kimi ACP traffic: invalid session/update parameters',
-      ),
-      recoverable: false,
-    });
-    expect(eventOf(events, 'done').payload.status).toBe('error');
-  });
+      expect(eventOf(events, 'error').payload).toMatchObject({
+        message: expect.stringContaining(
+          'Malformed Kimi ACP traffic: invalid session/update parameters',
+        ),
+        recoverable: false,
+      });
+      expect(eventOf(events, 'done').payload.status).toBe('error');
+    },
+  );
 
   // Results are validated on the raw wire, not on what the SDK hands back:
   // SDK 1.3 salvages a malformed `configOptions` into an empty array, so a

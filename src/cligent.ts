@@ -118,6 +118,12 @@ function mergeOptions<
         : defaults.subagentEffort,
     allowedTools: overrides.allowedTools ?? defaults.allowedTools,
     disallowedTools: overrides.disallowedTools ?? defaults.disallowedTools,
+    mcpServers:
+      overrides.mcpServers !== undefined
+        ? overrides.mcpServers
+        : defaults.mcpServers,
+    browser:
+      overrides.browser !== undefined ? overrides.browser : defaults.browser,
     abortSignal: overrides.abortSignal,
     resume: overrides.resume,
   };
@@ -185,6 +191,8 @@ export class Cligent<
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
       attachments: overrides?.attachments,
+      mcpServers: merged.mcpServers,
+      browser: merged.browser,
       abortSignal: merged.abortSignal,
       resume,
     };

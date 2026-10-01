@@ -68,6 +68,7 @@ interface CaptainConfigBase {
   model?: string;
   instruction?: string;
   permissions?: PermissionPolicy;
+  browser?: boolean;
   options: JsonValue;
 }
 
@@ -1197,6 +1198,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'model',
     'instruction',
     'permissions',
+    'browser',
     'effort',
     'fastMode',
     'subagentModel',
@@ -1210,6 +1212,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   const adapter = requireAdapterName(input.adapter, 'captain.adapter');
   const model = optionalString(input.model, 'captain.model');
   const instruction = optionalString(input.instruction, 'captain.instruction');
+  const browser = optionalBrowser(input, 'captain');
   const permissions = optionalPermissionPolicy(
     input.permissions,
     'captain.permissions',
@@ -1222,6 +1225,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   if (model !== undefined) common.model = model;
   if (instruction !== undefined) common.instruction = instruction;
   if (permissions !== undefined) common.permissions = permissions;
+  if (browser !== undefined) common.browser = browser;
   const configuredEffort = configuredEffortValue(input, 'captain');
   const effort = optionalEffort(
     configuredEffort.value,
@@ -1268,6 +1272,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     'model',
     'instruction',
     'permissions',
+    'browser',
     'effort',
     'fastMode',
     'subagentModel',
@@ -1280,6 +1285,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
   const adapter = requireAdapterName(input.adapter, `${path}.adapter`);
   const model = optionalString(input.model, `${path}.model`);
   const instruction = optionalString(input.instruction, `${path}.instruction`);
+  const browser = optionalBrowser(input, path);
   const permissions = optionalPermissionPolicy(
     input.permissions,
     `${path}.permissions`,
@@ -1289,6 +1295,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     ...(model === undefined ? {} : { model }),
     ...(instruction === undefined ? {} : { instruction }),
     ...(permissions === undefined ? {} : { permissions }),
+    ...(browser === undefined ? {} : { browser }),
   };
   const configuredEffort = configuredEffortValue(input, path);
   const effort = optionalEffort(
@@ -1314,6 +1321,17 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     ...(subagentModel === undefined ? {} : { subagentModel }),
     ...(subagentEffort === undefined ? {} : { subagentEffort }),
   } as PlayerConfig;
+}
+
+function optionalBrowser(
+  input: Record<string, unknown>,
+  objectPath: string,
+): boolean | undefined {
+  if (!Object.hasOwn(input, 'browser')) return undefined;
+  if (typeof input.browser !== 'boolean') {
+    throw new Error(`${objectPath}.browser must be a boolean`);
+  }
+  return input.browser;
 }
 
 function configuredEffortValue(

@@ -13,6 +13,11 @@ import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments } from '../attachments.js';
+import {
+  normalizeMcpServers,
+  prepareMcpServers,
+  type McpServers,
+} from '../mcp.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -641,6 +646,7 @@ export interface GeminiModelAliasConfig {
 export interface GeminiSettingsConfig {
   toolConfig: GeminiToolConfig;
   modelAlias?: GeminiModelAliasConfig;
+  mcpServers?: McpServers;
 }
 
 interface GeminiSettingsOverride {
@@ -650,6 +656,7 @@ interface GeminiSettingsOverride {
    * sends the concrete model instead.
    */
   deliversAlias?: boolean;
+  deliversMcp?: boolean;
   cleanup: () => Promise<void>;
 }
 
@@ -1211,7 +1218,9 @@ async function defaultCreateSettingsOverride(
     env: process.env,
   },
 ): Promise<GeminiSettingsOverride> {
-  if (!settingsConfig.modelAlias) {
+  const servers = normalizeMcpServers(settingsConfig.mcpServers);
+  const hasMcpServers = Object.keys(servers ?? {}).length > 0;
+  if (!settingsConfig.modelAlias && !hasMcpServers) {
     return NOOP_SETTINGS_OVERRIDE;
   }
 
@@ -1221,6 +1230,10 @@ async function defaultCreateSettingsOverride(
   if (
     (await comparablePath(context.cwd)) === (await comparablePath(realHome))
   ) {
+    if (hasMcpServers)
+      throw new Error(
+        'Gemini per-run MCP servers require a working directory different from its user home',
+      );
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
 
@@ -1230,14 +1243,46 @@ async function defaultCreateSettingsOverride(
     'user settings',
   );
   if (await geminiSandboxRequested(context, userSettings)) {
+    if (hasMcpServers)
+      throw new Error(
+        'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
+      );
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
 
-  const settings = mergeGeminiModelAlias(
-    userSettings,
-    settingsConfig.modelAlias,
-    settingsPath,
-  );
+  const settings = settingsConfig.modelAlias
+    ? mergeGeminiModelAlias(
+        userSettings,
+        settingsConfig.modelAlias,
+        settingsPath,
+      )
+    : { ...userSettings };
+  if (hasMcpServers) {
+    const existing =
+      settings.mcpServers === undefined
+        ? {}
+        : jsonObject(settings.mcpServers, `${settingsPath} mcpServers`);
+    settings.mcpServers = {
+      ...existing,
+      ...Object.fromEntries(
+        Object.entries(servers!).map(([name, server]) => [
+          name,
+          server.type === 'stdio'
+            ? {
+                command: server.command,
+                args: [...(server.args ?? [])],
+                ...(server.env ? { env: server.env } : {}),
+                trust: true,
+              }
+            : {
+                httpUrl: server.url,
+                ...(server.headers ? { headers: server.headers } : {}),
+                trust: true,
+              },
+        ]),
+      ),
+    };
+  }
   const overlay = await createGeminiHomeOverlay(
     realHome,
     `${JSON.stringify(settings, null, 2)}\n`,
@@ -1245,6 +1290,7 @@ async function defaultCreateSettingsOverride(
 
   return {
     env: { GEMINI_CLI_HOME: overlay.home },
+    ...(hasMcpServers ? { deliversMcp: true } : {}),
     cleanup: overlay.close,
   };
 }
@@ -1594,13 +1640,52 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     }
 
     try {
+      const requestedMcp = normalizeMcpServers(options?.mcpServers);
+      const context = {
+        cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
+        env: process.env,
+      };
+      if (
+        options?.browser === true ||
+        Object.keys(requestedMcp ?? {}).length > 0
+      ) {
+        const realHome = geminiRealHome(context);
+        if (
+          (await comparablePath(context.cwd)) ===
+          (await comparablePath(realHome))
+        ) {
+          throw new Error(
+            'Gemini per-run MCP servers require a working directory different from its user home',
+          );
+        }
+        const userSettings = await readGeminiSettingsFile(
+          join(realHome, '.gemini', 'settings.json'),
+          'user settings',
+        );
+        if (await geminiSandboxRequested(context, userSettings)) {
+          throw new Error(
+            'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
+          );
+        }
+      }
+      const mcpServers = await prepareMcpServers(options);
+      if (abortRequested || options?.abortSignal?.aborted) {
+        throw new Error('Gemini run aborted during MCP preparation');
+      }
+      if (mcpServers !== undefined)
+        mapped.settingsConfig.mcpServers = mcpServers;
       settingsOverride = await this.createSettingsOverride(
         mapped.settingsConfig,
-        {
-          cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
-          env: process.env,
-        },
+        context,
       );
+      if (
+        Object.keys(mcpServers ?? {}).length > 0 &&
+        settingsOverride.deliversMcp !== true
+      ) {
+        throw new Error(
+          'Gemini settings override cannot deliver the requested MCP servers',
+        );
+      }
       // gemini-7: an alias the override cannot deliver would name no model,
       // so the run sends the concrete model and leaves effort unapplied.
       const modelAlias = mapped.settingsConfig.modelAlias;
@@ -1631,6 +1716,9 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         },
       };
 
+      if (abortRequested || options?.abortSignal?.aborted) {
+        throw new Error('Gemini run aborted during configuration');
+      }
       child = this.spawnProcess(
         mapped.command,
         [...args.slice(0, -1), ...policyOverride.args, ...args.slice(-1)],
@@ -1957,12 +2045,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
 
       if (abortRequested || options?.abortSignal?.aborted) {
-        yield createEvent(
-          'done',
-          AGENT,
-          interruptedDonePayload(),
-          sessionId,
-        );
+        yield createEvent('done', AGENT, interruptedDonePayload(), sessionId);
         doneYielded = true;
       } else if (pendingDone) {
         let tokens: TokenUsageReport | undefined;
@@ -1977,20 +2060,10 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         }
 
         if (abortRequested || options?.abortSignal?.aborted) {
-          yield createEvent(
-            'done',
-            AGENT,
-            interruptedDonePayload(),
-            sessionId,
-          );
+          yield createEvent('done', AGENT, interruptedDonePayload(), sessionId);
         } else {
           if (pendingResultError) {
-            yield createEvent(
-              'error',
-              AGENT,
-              pendingResultError,
-              sessionId,
-            );
+            yield createEvent('error', AGENT, pendingResultError, sessionId);
           }
           yield createEvent(
             'done',
@@ -2009,12 +2082,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       } else if (!doneYielded) {
         const status = mapExitCodeToDoneStatus(close, abortRequested);
         if (status === 'interrupted') {
-          yield createEvent(
-            'done',
-            AGENT,
-            interruptedDonePayload(),
-            sessionId,
-          );
+          yield createEvent('done', AGENT, interruptedDonePayload(), sessionId);
         } else {
           const stderrText = stderr.trim();
           const fallbackMsg =
@@ -2077,24 +2145,14 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
       if (!doneYielded) {
         if (abortRequested || options?.abortSignal?.aborted) {
-          yield createEvent(
-            'done',
-            AGENT,
-            interruptedDonePayload(),
-            sessionId,
-          );
+          yield createEvent('done', AGENT, interruptedDonePayload(), sessionId);
           doneYielded = true;
           return;
         }
 
         if (pendingDone) {
           if (pendingResultError) {
-            yield createEvent(
-              'error',
-              AGENT,
-              pendingResultError,
-              sessionId,
-            );
+            yield createEvent('error', AGENT, pendingResultError, sessionId);
           }
           yield createEvent(
             'done',

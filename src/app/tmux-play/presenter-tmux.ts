@@ -3,6 +3,7 @@
 
 import { iterateDisplay } from '../shared/display-width.js';
 import { formatCligentEvent } from '../shared/events.js';
+import { formatMediaSummary, mediaJsonReplacer } from '../shared/media.js';
 import { renderMarkdown } from '../shared/glow.js';
 import type {
   CaptainRunResult,
@@ -272,6 +273,18 @@ export class TmuxPresenter implements RecordObserver {
     }
     if (event.type === 'tool_result') {
       this.writeToolResult(writer, who, event.payload as ToolResultPayload);
+      return;
+    }
+    if (event.type === 'media') {
+      this.flushBlock(writer);
+      this.writeBracketedLine(
+        writer,
+        who,
+        'media',
+        undefined,
+        undefined,
+        formatMediaSummary(event.payload),
+      );
       return;
     }
 
@@ -807,7 +820,7 @@ function stringifyToolOutput(output: unknown): string {
     if (typeof stdout === 'string') return stdout;
   }
   try {
-    return JSON.stringify(output, null, 2);
+    return JSON.stringify(output, mediaJsonReplacer, 2);
   } catch {
     return '';
   }

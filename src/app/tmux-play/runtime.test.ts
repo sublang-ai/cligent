@@ -141,6 +141,65 @@ async function expectAgentCallSettingsRejection(
 }
 
 describe('TmuxPlayRuntime', () => {
+  it.each([true, false, undefined])(
+    'retains instance browser %s across role calls and settings replacement',
+    async (browser) => {
+      const captured: { prompt: string; browser: boolean | undefined }[] = [];
+      const script: RunScript = async function* (prompt, options) {
+        captured.push({ prompt, browser: options?.browser });
+        yield doneEvent('test-agent', 'done');
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            await context.callCaptain('captain default');
+            await context.callCaptain('captain replacement', {
+              settings: {
+                model: { kind: 'provider-default' },
+                effort: { kind: 'provider-default' },
+              },
+            });
+            await context.callPlayer('worker', 'player default');
+            await context.callPlayer('worker', 'player replacement', {
+              settings: {
+                model: { kind: 'provider-default' },
+                effort: { kind: 'provider-default' },
+              },
+            });
+          },
+        },
+        captainConfig: { adapter: 'claude', browser },
+        players: [
+          {
+            id: 'worker',
+            adapter: 'codex',
+            browser: browser === undefined ? undefined : !browser,
+          },
+        ],
+        adapterImports: adapterImports({
+          claude: { agent: 'test-agent', run: script },
+          codex: { agent: 'test-agent', run: script },
+        }),
+      });
+      try {
+        await runtime.runBossTurn('inspect');
+        expect(captured).toEqual([
+          { prompt: 'captain default', browser },
+          { prompt: 'captain replacement', browser },
+          {
+            prompt: 'player default',
+            browser: browser === undefined ? undefined : !browser,
+          },
+          {
+            prompt: 'player replacement',
+            browser: browser === undefined ? undefined : !browser,
+          },
+        ]);
+      } finally {
+        await runtime.dispose();
+      }
+    },
+  );
   it('separates whole captured messages when done brings no result', async () => {
     let playerResult: PlayerRunResult | undefined;
     const captain: Captain = {

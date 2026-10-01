@@ -354,6 +354,94 @@ afterAll(() => {
 });
 
 describe('OpenCodeAdapter', () => {
+  it('normalizes tool screenshots and assistant files without echoing user media or duplicate snapshots', async () => {
+    const file = {
+      id: 'file-1',
+      messageID: 'assistant-1',
+      sessionID: 'session-1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'screen.png',
+      url: 'data:image/png;base64,cGl4ZWw=',
+    };
+    const tool = {
+      type: 'message.part.updated',
+      sessionId: 'session-1',
+      part: {
+        type: 'tool',
+        callID: 'capture',
+        tool: 'browser_screenshot',
+        state: {
+          status: 'completed',
+          input: {},
+          output: 'Captured',
+          attachments: [file],
+        },
+      },
+    };
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', baseUrl: 'http://localhost:4096' },
+      {
+        loadSdk: makeLoader({
+          events: [
+            tool,
+            tool,
+            { type: 'message.part.updated', part: file },
+            { type: 'message.part.updated', part: file },
+            {
+              type: 'message.part.updated',
+              part: { ...file, id: 'user-file', messageID: 'user-1' },
+            },
+            {
+              type: 'message.updated',
+              info: {
+                id: 'assistant-1',
+                sessionID: 'session-1',
+                role: 'assistant',
+              },
+            },
+            {
+              type: 'message.updated',
+              info: { id: 'user-1', sessionID: 'session-1', role: 'user' },
+            },
+            {
+              type: 'message.part.updated',
+              part: { ...file, id: 'unknown-file', messageID: 'unresolved' },
+            },
+            { type: 'session.idle', sessionId: 'session-1' },
+          ],
+        }),
+      },
+    );
+    const events = await collect(new Cligent(adapter).run('Inspect the UI'));
+    expect(
+      events
+        .filter((event) => event.type === 'media')
+        .map((event) => event.payload),
+    ).toEqual([
+      {
+        mimeType: 'image/png',
+        source: { type: 'base64', data: 'cGl4ZWw=' },
+        name: 'screen.png',
+        toolUseId: 'capture',
+      },
+      {
+        mimeType: 'image/png',
+        source: { type: 'base64', data: 'cGl4ZWw=' },
+        name: 'screen.png',
+      },
+    ]);
+    expect(
+      events
+        .filter((event) => event.type === 'tool_result')
+        .map((event) => event.payload.output),
+    ).toEqual(['Captured']);
+    expect(events.at(-1)?.payload).toMatchObject({
+      status: 'success',
+      usage: { toolUses: 1 },
+    });
+  });
+
   it('maps OpenCode SSE events to unified events and filters by session', async () => {
     const adapter = new OpenCodeAdapter(
       {

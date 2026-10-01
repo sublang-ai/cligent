@@ -145,6 +145,64 @@ function expectNoEffortTemps(directory: string): void {
 }
 
 describe('tmux-play config loading', () => {
+  it.each([true, false, undefined])(
+    'preserves browser selection %s for independent Captain and player snapshots',
+    async (browser) => {
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+      const configPath = join(workDir, 'browser.yaml');
+      writeFileSync(
+        configPath,
+        [
+          'captain:',
+          "  from: '@sublang/cligent/captains/fanout'",
+          '  adapter: kimi',
+          ...(browser === undefined ? [] : [`  browser: ${browser}`]),
+          'players:',
+          '  - id: worker',
+          '    adapter: codex',
+          ...(browser === undefined ? [] : [`    browser: ${!browser}`]),
+        ].join('\n'),
+      );
+      const loaded = await loadTmuxPlayConfig({ configPath });
+      const snapshot = createTmuxPlayConfigSnapshot(loaded);
+      expect(loaded.config.captain.browser).toBe(browser);
+      expect(loaded.config.players[0]?.browser).toBe(
+        browser === undefined ? undefined : !browser,
+      );
+      expect(snapshot.captain).toEqual(loaded.config.captain);
+      expect(snapshot.players).toEqual(loaded.config.players);
+      if (browser === undefined) {
+        expect(snapshot.captain).not.toHaveProperty('browser');
+        expect(snapshot.players[0]).not.toHaveProperty('browser');
+      }
+    },
+  );
+
+  it.each(['null', '1', '"true"', '{}'])(
+    'rejects browser %s with the configuration path',
+    async (value) => {
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+      for (const scope of ['captain', 'player']) {
+        const configPath = join(workDir, `browser-${scope}.yaml`);
+        writeFileSync(
+          configPath,
+          [
+            'captain:',
+            "  from: '@sublang/cligent/captains/fanout'",
+            '  adapter: claude',
+            ...(scope === 'captain' ? [`  browser: ${value}`] : []),
+            'players:',
+            '  - id: worker',
+            '    adapter: kimi',
+            ...(scope === 'player' ? [`    browser: ${value}`] : []),
+          ].join('\n'),
+        );
+        await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+          `${scope === 'captain' ? 'captain' : 'players[0]'}.browser must be a boolean`,
+        );
+      }
+    },
+  );
   let workDir: string | undefined;
   const originalHome = process.env.HOME;
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;

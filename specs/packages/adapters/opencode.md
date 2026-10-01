@@ -247,7 +247,7 @@ matrix, mapping `fileWrite` → `edit`, `shellExecute` → `bash`, and
 | supplied with omitted mode and capability values | map every present value and normalize every omitted capability to `ask` |
 | `mode: 'auto'` without capability values | no wildcard or capability rule; preserve native and user-configured rules and answer only surviving asks `once` through [[opencode-20](#opencode-20)] |
 | `mode: 'auto'` with capability values | map only present values, leave omitted values absent, append no wildcard, and apply the same surviving-ask response posture |
-| `mode: 'bypass'` with absent or valid `writablePaths` | reject with the SDK/server-architecture diagnostic because no unchecked-bypass route exists; a direct mapper call rejects immediately, while `run()` rejects after SDK loading but before managed spawn, client creation, session work, subscription, or prompt |
+| `mode: 'bypass'` with absent or valid `writablePaths` | reject with the SDK/server-architecture diagnostic because no unchecked-bypass route exists; a direct mapper call rejects immediately, while `run()` rejects before browser preparation for MCP admission and otherwise after SDK loading but before managed spawn, client creation, session work, subscription, or prompt |
 | any mode with invalid `writablePaths` | [[opencode-31](#opencode-31)] validation rejects before mode-specific mapping |
 
 ### opencode-31
@@ -274,9 +274,9 @@ outcome matrix, including unknown permission names:
 
 | State | Observable outcome |
 | --- | --- |
-| `mode: 'auto'` and the `once` reply succeeds | no `permission_request`; after confirmation, exactly one `opencode:permission_decision` with native request and session identifiers, permission name, patterns, correlated tool-use identifier, `decision: 'once'`, `automated: true`, normalized input, and optional reason |
-| outside auto mode after the registry confirms pending and before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
-| outside auto mode and the `reject` reply succeeds | no automated-decision extension after that request |
+| `mode: 'auto'` or an admitted-tool match through [[opencode-61](#opencode-61)], and the `once` reply succeeds | no `permission_request`; after confirmation, exactly one `opencode:permission_decision` with native request and session identifiers, permission name, patterns, correlated tool-use identifier, `decision: 'once'`, `automated: true`, normalized input, and optional reason |
+| outside auto mode without an admitted-tool match, after the registry confirms pending and before any reply attempt or failure | one `permission_request` with normalized tool name, correlation identifier, input, and optional reason |
+| outside auto mode without an admitted-tool match, and the `reject` reply succeeds | no automated-decision extension after that request |
 | composite session/request identity absent from OpenCode's pending-permission registry, including a replay after its matching `permission.replied` | no reply or event [[6]] |
 | provider removes the request after the pending lookup but before the reply arrives | treat its exact `PermissionNotFoundError` as already resolved, retain the active denial correlation until matching native confirmation or terminal cleanup, and emit no error or automated-decision extension [[6]] |
 | same composite session/request identity repeated before its matching `permission.replied` is observed | no second reply or event |
@@ -523,6 +523,38 @@ matrix without exposing the sentinel to the SDK:
 | v2 fresh session | an empty `PermissionRuleset` on `session.create` |
 | v2 resumed session | an empty `PermissionRuleset` on `session.update` before the prompt |
 
+### opencode-63
+
+When the adapter receives native file output, it shall emit normalized `media` events [[engine-100](../engine.md#engine-100)] through this matrix, resolving each native URL, MIME type, and optional filename through [[media-2](../media.md#media-2)] without reading server-local paths:
+
+| Native content | Selection |
+| --- | --- |
+| first completed tool snapshot with `state.attachments` | preserve the tool result, then emit its attachment files in order with the correlated `toolUseId` |
+| repeated terminal snapshot | no repeated attachment event |
+| assistant `file` / `file_part` with a URL | retain its extension event and emit media through the role and ordering gate from [[opencode-17](#opencode-17)] |
+| repeated identical file snapshot with a native part identifier | one normalized media event until that part or its owning message is removed |
+| user file or file whose message role remains unresolved at completion | no normalized media event |
+
+### opencode-61
+
+When a run supplies MCP servers or selects the browser preset, the adapter shall admit them only into its managed child server, preparing through [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] and selecting this matrix before session or prompt work [[21]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| external-server mode with a non-empty map or browser | reject before browser preparation because the registry is shared across sessions |
+| unsupported permission or effort controls with admitted MCP | reject before browser preparation |
+| stdio | call native `mcp.add` with the selected name and `{ type: 'local', command: [command, ...args], environment?, enabled: true }` |
+| HTTP | call native `mcp.add` with `{ type: 'remote', url, headers?, oauth: false, enabled: true }` |
+| selected server registration errors or its returned status is not `connected` | fail setup before session or prompt; never silently proceed with missing tools |
+| injected client lacks registration support | setup failure before prompt |
+| absent or empty map without browser | no MCP registration |
+| native v1 or v2 registration | retain the effective directory and run cancellation signal |
+| same-named native server | replace its configuration |
+| unrelated native server | retain its availability |
+| surviving permission ask whose native tool name matches an admitted server prefix, with every matching server prefix in the returned registry admitted | automated once response through [[opencode-20](#opencode-20)] |
+| ambiguous ambient prefix or no admitted match | ordinary headless policy |
+| native hard denial | retain native authority |
+
 ## Internal Behavior
 
 ### opencode-33
@@ -716,7 +748,16 @@ adapter shall classify it through this matrix [[11]]:
 | missing child identity, unmatched or error background result, or child idle before its latest causal observation | retain exact subset as partial |
 | causal descendant still active at root completion | retain exact subset as partial |
 
+
 ## Verification
+
+### opencode-62
+
+When installed v1 and v2 SDK clients register both MCP transports against a local HTTP fixture, the integration check shall verify exact native bodies, directory scope, registration failure handling, and admitted-tool classification including ambiguous ambient prefixes; external-server browser requests shall reject before SDK loading [[opencode-61](#opencode-61)].
+
+### opencode-64
+
+When the engine and adapter consume native screenshot attachments, repeated file and tool snapshots, and late assistant or user role records, integration checks shall verify exact media bytes and filename, unchanged textual tool result, tool correlation, one emission per settled file or tool attachment, and suppression of user and unresolved media [[opencode-63](#opencode-63)].
 
 ### opencode-59
 
@@ -1047,3 +1088,5 @@ causal report matrix while preserving independently observed `toolUses`
 [18]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/session/llm/request.ts#L80-L83 'OpenCode 1.18.33 prompt variant lookup, where an unadvertised name has no effect'
 [19]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/sdk/js/src/v2/gen/types.gen.ts 'OpenCode 1.18.33 native file-part and prompt types'
 [20]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/provider/transform.ts#L385-L417 'OpenCode 1.18.33 model-specific media eligibility handling'
+
+[21]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/mcp/index.ts "OpenCode 1.18.33 dynamic MCP registration and connection status"

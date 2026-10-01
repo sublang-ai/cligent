@@ -6,6 +6,7 @@
 ## Status
 
 Accepted (2026-10-01).
+Amended by [DR-032](032-browser-tools-and-media-output.md): managed browser setup, caller-selected MCP servers, and native media output are now supported.
 
 ## Context
 
