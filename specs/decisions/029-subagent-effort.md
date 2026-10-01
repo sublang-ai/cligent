@@ -33,8 +33,8 @@ When the Claude adapter prepares a query with `subagentModel`:
 - the directive names no definition and explains no effort level — the pinned sentence names the pinned effort and nothing more — because the definitions explain themselves in the tool, and effort vocabularies differ between model lines.
 
 The runtime lets a registered definition replace a built-in one by name, whole — prompt, description and tool restrictions included — and runs a call that names no type as `general-purpose`.
-So a pinned `subagentEffort` also registers `general-purpose` at that effort, with a description of the same kind and the delegate prompt, since the built-in's own definition is the generic one and a call naming no type must land on the pin; `Explore` and `Plan` are not replaced, because an override would cost them their read-only tool restrictions and their own prompts, so they keep their definitions and run at the agent's effort, which the documentation states.
-With `subagentEffort` omitted, no built-in is replaced.
+So whenever `subagentModel` is set, the adapter also registers `general-purpose`, with a description of the same kind and the delegate prompt, since the built-in's own definition is the generic one and a call naming no type lands there: at the pinned effort where `subagentEffort` is pinned, and otherwise at `medium`, the level a session runs at when none is set, with its description pointing to the `delegate-<effort>` types for any other effort — so no subagent inherits the agent's effort by omission, and the agent's choice stays a choice.
+`Explore` and `Plan` are never replaced, because an override would cost them their read-only tool restrictions and their own prompts; they keep their definitions and run at the agent's effort, which the documentation states.
 
 tmux-play admits `subagentEffort` beside `subagentModel` on Claude Captain and player configurations and in complete call settings, with the same omission semantics.
 
@@ -47,8 +47,7 @@ Canonical behavior is specified by [[engine-90](../packages/engine.md#engine-90)
 The option, the literal, the definitions and the directive's first sentence are additive; omission preserves existing behavior, so this ships in a MINOR release.
 A host that defaults a Claude agent's subagent model to `inherit` gives every such agent the directive and the definitions; that default is the host's decision, not this adapter's, which still composes nothing when the option is omitted.
 A registered definition carries the delegate prompt as the subagent's system prompt.
-With the effort pinned, `general-purpose` runs that prompt at the pinned effort in place of its own; `Explore` and `Plan` keep their own definitions and the agent's effort, the one place a pinned effort does not reach.
-With the effort left to the agent, every built-in keeps its own definition and the agent's effort, and the agent reaches the pin only through a `delegate-<effort>` type.
+`general-purpose` runs that prompt in place of its own whenever subagents are configured — at the pinned effort, or at `medium` where the agent chooses and names no type; `Explore` and `Plan` keep their own definitions and the agent's effort, the one place neither setting reaches.
 
 ## References
 
