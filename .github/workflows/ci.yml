@@ -151,6 +151,22 @@ jobs:
       - name: Verify agent CLI targets
         run: node scripts/verify-agent-targets.mjs
 
+      - name: Prepare acceptance browser prerequisites
+        # Acceptance runs on a fresh runner, independent of the browser job.
+        # Scope Ubuntu's user-namespace permission to managed Chromium only.
+        shell: bash
+        run: |
+          node node_modules/playwright/cli.js install-deps chromium
+          chromium_path=$(node --input-type=module -e "import { chromium } from 'playwright'; console.log(chromium.executablePath())")
+          cat > "$RUNNER_TEMP/cligent-acceptance-apparmor" <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile cligent-ci-acceptance-chromium "$chromium_path" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r "$RUNNER_TEMP/cligent-acceptance-apparmor"
+
       - name: Install attached-client driver
         # Real-tmux mouse/key acceptance probes drive an attached client via
         # expect. Without it, those probes self-skip and CI can miss tmux
