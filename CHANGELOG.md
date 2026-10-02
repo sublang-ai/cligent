@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Explicit browser preparation honors the complete caller-selected timeout and
+  defaults to ten minutes, allowing slower first-time Chromium downloads without
+  a hidden three-minute cutoff. Ordinary-call installation limits, launch proof,
+  and cancellation cleanup remain bounded.
+
 ## [0.33.2] - 2026-10-02
 
 ### Fixed

@@ -57,6 +57,14 @@ When a host consumes a readiness result, `ready` shall describe only a point-in-
 
 When a host requests approval capabilities, built-in adapters shall report live host-decision admission [[approvals-1](approvals.md#approvals-1)] as supported for Claude, Kimi, and OpenCode's current pending-registry transport, and unsupported with code `unsupported-transport` for Codex exec and Gemini NDJSON, with absent custom facts denoting unknown and no result promising native policy authorization.
 
+### capabilities-11
+
+When explicit browser preparation runs, its timeout shall cover discovery, agent availability, installation, and launch proof as one caller-selected budget with a default of 600,000 milliseconds, without a shorter installation cap and with the launch proof limited to the lesser of the remaining budget and 10,000 milliseconds and only bounded owned-resource cleanup permitted afterward.
+
+### capabilities-13
+
+When a caller supplies an explicit browser preparation timeout, validation shall reject a nonfinite, nonpositive, or greater-than-2,147,483,647 millisecond value before setup work rather than allowing native timer overflow.
+
 ## Verification
 
 ### capabilities-7
@@ -70,3 +78,7 @@ When real built-in and custom adapters are queried, integration checks shall ver
 ### capabilities-8
 
 When real setup operations execute against successful and failing host-runtime fixtures, integration checks shall verify pre-install refusal and unchanged session state [[capabilities-4](#capabilities-4)], progress and every terminal selection [[capabilities-5](#capabilities-5)], and launch/screenshot evidence without provider invocation [[capabilities-6](#capabilities-6)].
+
+### capabilities-12
+
+When real preparation operations exercise controlled installer subprocesses and accelerated parent deadlines, integration checks shall verify default and caller-selected setup budgets beyond 180,000 milliseconds, exact shorter deadlines, cancellation cleanup, and the bounded launch proof [[capabilities-11](#capabilities-11)], including timeout classification [[capabilities-5](#capabilities-5)] and pre-work rejection of invalid native timer values [[capabilities-13](#capabilities-13)].

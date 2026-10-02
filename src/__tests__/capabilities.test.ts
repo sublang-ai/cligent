@@ -160,14 +160,32 @@ describe('host capability and preparation contract', () => {
   });
 
   it('refuses unavailable runtime and invalid deadline without preparing a browser', async () => {
-    const client = new Cligent(fixtureAdapter({ known: true }));
+    let inspections = 0;
+    const client = new Cligent(
+      fixtureAdapter({
+        known: true,
+        inspect: () => {
+          inspections++;
+        },
+      }),
+    );
     expect(await client.prepareBrowser()).toMatchObject({
       status: 'not-ready',
       code: 'runtime-unavailable',
     });
-    await expect(client.prepareBrowser({ timeoutMs: 0 })).rejects.toThrow(
-      'timeoutMs',
-    );
+    expect(inspections).toBe(1);
+    for (const timeoutMs of [0, -1, Number.NaN, Infinity, 2_147_483_648]) {
+      await expect(client.prepareBrowser({ timeoutMs })).rejects.toThrow(
+        'timeoutMs',
+      );
+    }
+    expect(inspections).toBe(1);
+    await expect(
+      client.prepareBrowser({
+        timeoutMs: 2_147_483_647,
+        abortSignal: AbortSignal.abort(),
+      }),
+    ).resolves.toEqual({ status: 'cancelled' });
     await expect(
       client.prepareBrowser({ onProgress: 'invalid' } as never),
     ).rejects.toThrow('onProgress');

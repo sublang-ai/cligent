@@ -15,7 +15,11 @@ import type {
   BrowserSetupOptions,
   BrowserSetupResult,
 } from './capabilities.js';
-import { assertBrowserHost, CapabilityError } from './capabilities.js';
+import {
+  assertBrowserHost,
+  CapabilityError,
+  DEFAULT_BROWSER_SETUP_TIMEOUT_MS,
+} from './capabilities.js';
 
 /** Internal runtime seam also used by subprocess integration tests. */
 export interface BrowserRuntime {
@@ -213,6 +217,7 @@ async function ensureBrowser(
   signal?: AbortSignal,
   timeoutMs = 180_000,
   progress?: BrowserSetupOptions['onProgress'],
+  deadline?: number,
 ): Promise<void> {
   if (signal?.aborted) throw new Error('Browser preparation interrupted');
   // Feature detection keeps ordinary calls compatible with the older Node floor.
@@ -262,7 +267,13 @@ async function ensureBrowser(
   try {
     await (
       runtime.probe ?? ((abort, budget) => probeBrowser(runtime, abort, budget))
-    )(signal, Math.min(timeoutMs, 10_000));
+    )(
+      signal,
+      Math.min(
+        deadline === undefined ? timeoutMs : Math.max(1, deadline - Date.now()),
+        10_000,
+      ),
+    );
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new BrowserSetupError(
@@ -333,23 +344,26 @@ export async function prepareBrowserRuntime(
     BrowserSetupOptions,
     'abortSignal' | 'timeoutMs' | 'onProgress'
   >,
+  runtime?: BrowserRuntime,
 ): Promise<BrowserSetupResult> {
   const controller = new AbortController();
   let timedOut = false;
   const abort = () => controller.abort();
   options?.abortSignal?.addEventListener('abort', abort, { once: true });
   if (options?.abortSignal?.aborted) abort();
-  const timeoutMs = options?.timeoutMs ?? 195_000;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_BROWSER_SETUP_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   const timer = setTimeout(() => {
     timedOut = true;
     abort();
   }, timeoutMs);
   try {
     await ensureBrowser(
-      resolveBrowserRuntime(),
+      runtime ?? resolveBrowserRuntime(),
       controller.signal,
-      Math.min(180_000, timeoutMs),
+      timeoutMs,
       options?.onProgress,
+      deadline,
     );
     return { status: 'ready', checkedAt: Date.now() };
   } catch (error) {

@@ -142,7 +142,7 @@ const capabilities = await agent.getCapabilities({ cwd: '/work/project' });
 // unknown; custom adapters opt in through an optional getCapabilities hook.
 if (capabilities.browser.status === 'supported') {
   const result = await agent.prepareBrowser({
-    timeoutMs: 195_000,
+    timeoutMs: 900_000, // Optional: allow 15 minutes for a slow first download.
     abortSignal: controller.signal,
     onProgress: ({ stage }) => showSetupStage(stage),
   });
@@ -154,8 +154,16 @@ if (capabilities.browser.status === 'supported') {
 Discovery merges per-call options with instance defaults and performs no install,
 provider session, or tool call. Known contextual conflicts are reported as
 unsupported; unknown custom capabilities are preserved as unknown. Preparation
-first checks admission and agent-runtime availability. It does not enable a run
-option, alter resume state, or invoke a model. A ready result proves only the
+first checks admission and agent-runtime availability. The explicit setup budget
+defaults to 10 minutes and covers discovery, availability, download, and launch
+together. `timeoutMs` replaces that entire budget; installation has no shorter
+hidden cap. Values must be finite, positive, and at most 2,147,483,647 ms;
+invalid values reject before setup. Bounded process cleanup can finish after the
+deadline. The launch/screenshot probe remains limited to 10 seconds or the
+remaining budget, whichever is shorter. Ordinary `browser: true` calls retain
+their 3-minute installation limit.
+
+Preparation does not enable a run option, alter resume state, or invoke a model. A ready result proves only the
 host's launch and screenshot at that time; model/account eligibility, native
 policy, target-app availability, and later failures remain independent.
 
