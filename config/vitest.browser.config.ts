@@ -3,11 +3,14 @@
 
 import { defineConfig } from 'vitest/config';
 
-// Real browser and SDK/CLI tool loops, with local scripted providers.
+// Portable preparation/cleanup and real browser/SDK/CLI tool loops.
+// Scripted providers remain local on the three supported CI platforms.
 // No agent account, API credential, or paid model request is required.
 export default defineConfig({
   test: {
     include: [
+      'src/__tests__/browser.test.ts',
+      'src/__tests__/mcp.test.ts',
       'src/browser.acceptance.test.ts',
       'src/__tests__/claude-browser.acceptance.test.ts',
       'src/adapters/codex-mcp.acceptance.test.ts',
