@@ -311,8 +311,19 @@ ACP negotiation, unsupported media, missing files, cancellation, resumed turns,
 and parallel failure isolation. They establish transport behavior without
 claiming that every model or account accepts every transported format.
 
-For the 0.31.0 milestone, automated CI covers Ubuntu with Node 20, 22, and 24,
-including a separate real browser/MCP job on Node 22. Local macOS verification
-also exercises browser screenshots and native Claude/Codex loops. Automated
-macOS/Windows coverage and a browser launch preflight are follow-up work; this
-release does not claim that those environments have equivalent CI coverage.
+Automated CI runs the ordinary package checks on Ubuntu with Node 20, 22,
+and 24, and a separate native browser/MCP matrix on Ubuntu, macOS, and Windows
+with Node 22. That matrix tests real Chromium screenshots, native Claude and
+Codex loops through scripted local providers, and Electron 44 main-process and
+ASAR layouts without a global Node executable. Gemini's file-byte probe runs on
+supported POSIX hosts; native Windows verifies its explicit unsupported result.
+These probes prove transport and host behavior, not a model's visual judgment.
+
+Ubuntu runners grant user namespaces only to the exact downloaded Chromium and
+Electron test executables, following Chromium's
+[AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+A fresh server with a restrictive host policy can report `not-ready` until its
+administrator supplies the needed browser libraries and sandbox permissions.
+Cligent does not install system packages, change that policy, or disable the
+Chromium sandbox. The launch/screenshot probe runs before an ordinary
+browser-enabled agent call as well as during explicit preparation.

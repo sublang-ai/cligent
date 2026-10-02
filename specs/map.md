@@ -58,7 +58,6 @@ meta.md       The spec of specs
 | [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
 | [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 | [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
-
 | [DR-033](decisions/033-host-capabilities-and-browser-readiness.md) | 033-host-capabilities-and-browser-readiness.md | Contextual host capability facts, browser launch proof, and Electron child invocation |
 
 ## Packages

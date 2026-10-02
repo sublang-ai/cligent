@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-01
+
 ### Added
 
 - Contextual `Cligent.getCapabilities()` and cancellable `prepareBrowser()` expose
@@ -25,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   browser/MCP settings, including explicit clearing without session rotation.
 - Gemini accepts validated per-call media through ordered MIME-canonical snapshots
   and native file references on supported POSIX hosts, with a 20 MiB per-file limit.
-
 
 ## [0.31.0] - 2026-10-01
 
@@ -745,7 +746,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/sublang-ai/cligent/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/sublang-ai/cligent/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/sublang-ai/cligent/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/sublang-ai/cligent/compare/v0.28.0...v0.29.0
